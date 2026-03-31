@@ -51,7 +51,7 @@ export default function HomeScreen() {
         <View style={styles.headerLeft}>
           {/* Dotted-border profile circle */}
           <TouchableOpacity
-            onPress={() => router.push("/profile/edit")}
+            onPress={() => router.push("/(tabs)/profile")}
             style={styles.avatarBorderWrapper}
           >
             <View style={[styles.avatarBorder, { borderColor: colors.primary }]}>
