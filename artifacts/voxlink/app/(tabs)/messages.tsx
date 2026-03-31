@@ -1,5 +1,5 @@
 import React, { useEffect } from "react";
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, Platform } from "react-native";
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, Platform, ActivityIndicator } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { Feather } from "@expo/vector-icons";
@@ -29,7 +29,11 @@ export default function MessagesScreen() {
 
       {conversations.length === 0 ? (
         <View style={styles.empty}>
-          <Feather name="message-circle" size={48} color={colors.mutedForeground} />
+          <Image
+            source={require("@/assets/images/no_chat_list.png")}
+            style={styles.emptyImage}
+            resizeMode="contain"
+          />
           <Text style={[styles.emptyTitle, { color: colors.foreground }]}>No conversations yet</Text>
           <Text style={[styles.emptyDesc, { color: colors.mutedForeground }]}>Start chatting after a call with a host</Text>
         </View>
@@ -72,21 +76,22 @@ export default function MessagesScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   header: { paddingHorizontal: 20, paddingBottom: 12 },
-  title: { fontSize: 24, fontFamily: "Inter_700Bold" },
-  empty: { flex: 1, alignItems: "center", justifyContent: "center", gap: 8, paddingBottom: 80 },
-  emptyTitle: { fontSize: 18, fontFamily: "Inter_600SemiBold" },
-  emptyDesc: { fontSize: 14, fontFamily: "Inter_400Regular" },
+  title: { fontSize: 24, fontFamily: "Poppins_700Bold" },
+  empty: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12, paddingBottom: 80 },
+  emptyImage: { width: 180, height: 140 },
+  emptyTitle: { fontSize: 18, fontFamily: "Poppins_600SemiBold" },
+  emptyDesc: { fontSize: 14, fontFamily: "Poppins_400Regular" },
   convoRow: { flexDirection: "row", paddingHorizontal: 20, paddingVertical: 14, gap: 14, alignItems: "center" },
   avatarWrap: { position: "relative" },
   avatar: { width: 52, height: 52, borderRadius: 26 },
   onlineDot: { position: "absolute", right: 2, bottom: 2, width: 12, height: 12, borderRadius: 6, borderWidth: 2, borderColor: "#fff" },
   convoInfo: { flex: 1, gap: 4 },
   convoTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  name: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
-  time: { fontSize: 12, fontFamily: "Inter_400Regular" },
+  name: { fontSize: 15, fontFamily: "Poppins_600SemiBold" },
+  time: { fontSize: 12, fontFamily: "Poppins_400Regular" },
   convoBottom: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  lastMsg: { fontSize: 13, fontFamily: "Inter_400Regular", flex: 1 },
+  lastMsg: { fontSize: 13, fontFamily: "Poppins_400Regular", flex: 1 },
   badge: { minWidth: 20, height: 20, borderRadius: 10, alignItems: "center", justifyContent: "center", paddingHorizontal: 6 },
-  badgeText: { color: "#fff", fontSize: 11, fontFamily: "Inter_700Bold" },
+  badgeText: { color: "#fff", fontSize: 11, fontFamily: "Poppins_700Bold" },
   separator: { height: StyleSheet.hairlineWidth, marginLeft: 86 },
 });

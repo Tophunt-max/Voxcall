@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert, Platform } from "react-native";
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert, Platform, Image } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
@@ -58,10 +58,12 @@ export default function LoginScreen() {
       keyboardShouldPersistTaps="handled"
     >
       <View style={styles.header}>
-        <View style={[styles.logo, { backgroundColor: colors.primary }]}>
-          <Feather name="headphones" size={28} color="#fff" />
-        </View>
-        <Text style={[styles.appName, { color: colors.foreground }]}>VoxLink</Text>
+        <Image
+          source={require("@/assets/images/app_logo.png")}
+          style={styles.logo}
+          resizeMode="contain"
+        />
+        <Text style={[styles.appName, { color: colors.text }]}>VoxLink</Text>
         <Text style={[styles.tagline, { color: colors.mutedForeground }]}>Connect. Listen. Grow.</Text>
       </View>
 
@@ -123,20 +125,20 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: { paddingHorizontal: 24, gap: 28 },
   header: { alignItems: "center", gap: 8 },
-  logo: { width: 72, height: 72, borderRadius: 24, alignItems: "center", justifyContent: "center" },
-  appName: { fontSize: 32, fontFamily: "Inter_700Bold" },
-  tagline: { fontSize: 15, fontFamily: "Inter_400Regular" },
+  logo: { width: 80, height: 80 },
+  appName: { fontSize: 32, fontFamily: "Poppins_700Bold" },
+  tagline: { fontSize: 15, fontFamily: "Poppins_400Regular" },
   form: { gap: 14 },
   inputWrap: { flexDirection: "row", alignItems: "center", borderRadius: 14, borderWidth: 1, paddingHorizontal: 16, paddingVertical: 14, gap: 12 },
-  input: { flex: 1, fontSize: 15, fontFamily: "Inter_400Regular", padding: 0 },
+  input: { flex: 1, fontSize: 15, fontFamily: "Poppins_400Regular", padding: 0 },
   forgotRow: { alignSelf: "flex-end" },
-  forgotText: { fontSize: 13, fontFamily: "Inter_500Medium" },
+  forgotText: { fontSize: 13, fontFamily: "Poppins_500Medium" },
   divRow: { flexDirection: "row", alignItems: "center", gap: 12 },
   divLine: { flex: 1, height: 1 },
-  divText: { fontSize: 13, fontFamily: "Inter_400Regular" },
+  divText: { fontSize: 13, fontFamily: "Poppins_400Regular" },
   guestBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 14, borderRadius: 14, borderWidth: 1 },
-  guestText: { fontSize: 15, fontFamily: "Inter_500Medium" },
+  guestText: { fontSize: 15, fontFamily: "Poppins_500Medium" },
   signupRow: { flexDirection: "row", justifyContent: "center" },
-  signupText: { fontSize: 14, fontFamily: "Inter_400Regular" },
-  signupLink: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
+  signupText: { fontSize: 14, fontFamily: "Poppins_400Regular" },
+  signupLink: { fontSize: 14, fontFamily: "Poppins_600SemiBold" },
 });

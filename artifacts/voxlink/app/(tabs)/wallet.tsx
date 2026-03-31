@@ -1,11 +1,27 @@
 import React, { useState } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, FlatList, Platform, Alert } from "react-native";
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  FlatList,
+  Platform,
+  Alert,
+  Image,
+  ImageBackground,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { Feather } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
-import { COIN_PLANS, MOCK_CALL_HISTORY, formatDuration, formatRelativeTime } from "@/data/mockData";
+import {
+  COIN_PLANS,
+  MOCK_CALL_HISTORY,
+  formatDuration,
+  formatRelativeTime,
+} from "@/data/mockData";
 
 export default function WalletScreen() {
   const colors = useColors();
@@ -22,28 +38,83 @@ export default function WalletScreen() {
     await new Promise((r) => setTimeout(r, 1200));
     updateCoins((user?.coins ?? 0) + coins + bonus);
     setPurchasing(null);
-    Alert.alert("Purchase Successful!", `${coins + bonus} coins added to your wallet.`);
+    Alert.alert(
+      "Purchase Successful!",
+      `${coins + bonus} coins added to your wallet.`
+    );
   };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={[styles.header, { paddingTop: topPad + 16 }]}>
-        <Text style={[styles.title, { color: colors.foreground }]}>Wallet</Text>
+      {/* Header */}
+      <View style={[styles.header, { paddingTop: topPad + 12 }]}>
+        <Text style={[styles.title, { color: colors.text }]}>My Wallet</Text>
+        <TouchableOpacity
+          onPress={() => router.push("/notifications")}
+          style={[styles.bellBtn, { backgroundColor: colors.muted }]}
+        >
+          <Feather name="bell" size={18} color={colors.text} />
+        </TouchableOpacity>
       </View>
 
-      <View style={[styles.balanceCard, { backgroundColor: colors.primary }]}>
-        <Text style={styles.balanceLabel}>Your Balance</Text>
-        <View style={styles.balanceRow}>
-          <Text style={styles.coinIcon}>🪙</Text>
-          <Text style={styles.balanceAmount}>{(user?.coins ?? 0).toLocaleString()}</Text>
-        </View>
-        <Text style={styles.balanceSubtext}>Coins ready to use</Text>
+      {/* Balance card with wallet_bg */}
+      <View style={[styles.balanceCardOuter, { marginHorizontal: 16, marginBottom: 16 }]}>
+        <ImageBackground
+          source={require("@/assets/images/wallet_bg.png")}
+          style={styles.balanceCardBg}
+          imageStyle={{ borderRadius: 20 }}
+          resizeMode="cover"
+        >
+          <View style={styles.balanceCardContent}>
+            <View style={styles.balanceTop}>
+              <View>
+                <Text style={styles.balanceLabel}>Total Balance</Text>
+                <View style={styles.balanceRow}>
+                  <Image
+                    source={require("@/assets/images/star_coin_big.png")}
+                    style={styles.coinBig}
+                    resizeMode="contain"
+                  />
+                  <Text style={styles.balanceAmount}>
+                    {(user?.coins ?? 0).toLocaleString()}
+                  </Text>
+                  <Text style={styles.balanceCoinLabel}>Coins</Text>
+                </View>
+              </View>
+              <Image
+                source={require("@/assets/images/wallet.png")}
+                style={styles.walletIcon}
+                resizeMode="contain"
+              />
+            </View>
+            <TouchableOpacity
+              style={styles.addCoinBtn}
+              onPress={() => setTab("buy")}
+            >
+              <Feather name="plus" size={14} color="#fff" />
+              <Text style={styles.addCoinText}>Add Coins</Text>
+            </TouchableOpacity>
+          </View>
+        </ImageBackground>
       </View>
 
-      <View style={[styles.tabRow, { borderColor: colors.border }]}>
+      {/* Tabs */}
+      <View style={[styles.tabRow, { borderBottomColor: colors.border }]}>
         {(["buy", "history"] as const).map((t) => (
-          <TouchableOpacity key={t} onPress={() => setTab(t)} style={[styles.tab, t === tab && { borderBottomColor: colors.primary, borderBottomWidth: 2 }]}>
-            <Text style={[styles.tabText, { color: t === tab ? colors.primary : colors.mutedForeground }]}>
+          <TouchableOpacity
+            key={t}
+            onPress={() => setTab(t)}
+            style={[
+              styles.tabItem,
+              t === tab && { borderBottomColor: colors.primary, borderBottomWidth: 2.5 },
+            ]}
+          >
+            <Text
+              style={[
+                styles.tabText,
+                { color: t === tab ? colors.primary : colors.mutedForeground },
+              ]}
+            >
               {t === "buy" ? "Buy Coins" : "Call History"}
             </Text>
           </TouchableOpacity>
@@ -51,8 +122,13 @@ export default function WalletScreen() {
       </View>
 
       {tab === "buy" ? (
-        <ScrollView contentContainerStyle={[styles.content, { paddingBottom: bottomPad + 90 }]} showsVerticalScrollIndicator={false}>
-          <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>Select a package</Text>
+        <ScrollView
+          contentContainerStyle={[styles.content, { paddingBottom: bottomPad + 90 }]}
+          showsVerticalScrollIndicator={false}
+        >
+          <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>
+            Select a coin package
+          </Text>
           {COIN_PLANS.map((plan) => (
             <TouchableOpacity
               key={plan.id}
@@ -60,7 +136,21 @@ export default function WalletScreen() {
               disabled={purchasing === plan.id}
               style={[
                 styles.planCard,
-                { backgroundColor: plan.isPopular ? colors.primary : colors.card, borderColor: plan.isPopular ? colors.primary : colors.border }
+                {
+                  backgroundColor: plan.isPopular ? colors.primary : colors.card,
+                  ...(!plan.isPopular
+                    ? Platform.select({
+                        ios: {
+                          shadowColor: "#000",
+                          shadowOpacity: 0.07,
+                          shadowRadius: 10,
+                          shadowOffset: { width: 0, height: 2 },
+                        },
+                        android: { elevation: 2 },
+                        web: { boxShadow: "0 2px 10px rgba(0,0,0,0.07)" } as any,
+                      })
+                    : {}),
+                },
               ]}
               activeOpacity={0.8}
             >
@@ -70,20 +160,48 @@ export default function WalletScreen() {
                 </View>
               )}
               <View style={styles.planLeft}>
-                <Text style={styles.planCoinIcon}>🪙</Text>
-                <View>
-                  <Text style={[styles.planCoins, { color: plan.isPopular ? "#fff" : colors.foreground }]}>
-                    {plan.coins.toLocaleString()} coins
+                <Image
+                  source={require("@/assets/images/star_coin_big.png")}
+                  style={styles.planCoinIcon}
+                  resizeMode="contain"
+                />
+                <View style={{ gap: 2 }}>
+                  <Text
+                    style={[
+                      styles.planCoins,
+                      { color: plan.isPopular ? "#fff" : colors.text },
+                    ]}
+                  >
+                    {plan.coins.toLocaleString()} Coins
                   </Text>
-                  {plan.bonus && (
-                    <Text style={[styles.planBonus, { color: plan.isPopular ? "#fff" : colors.online }]}>
-                      +{plan.bonus} bonus coins
+                  {plan.bonus ? (
+                    <Text
+                      style={[
+                        styles.planBonus,
+                        { color: plan.isPopular ? "rgba(255,255,255,0.9)" : colors.online },
+                      ]}
+                    >
+                      +{plan.bonus} bonus
                     </Text>
-                  )}
+                  ) : null}
                 </View>
               </View>
-              <View style={[styles.planPriceBadge, { backgroundColor: plan.isPopular ? "rgba(255,255,255,0.2)" : colors.primary + "18" }]}>
-                <Text style={[styles.planPrice, { color: plan.isPopular ? "#fff" : colors.primary }]}>
+              <View
+                style={[
+                  styles.planPriceBadge,
+                  {
+                    backgroundColor: plan.isPopular
+                      ? "rgba(255,255,255,0.2)"
+                      : "#F0E4F8",
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.planPrice,
+                    { color: plan.isPopular ? "#fff" : colors.accent },
+                  ]}
+                >
                   ${plan.price}
                 </Text>
               </View>
@@ -94,27 +212,84 @@ export default function WalletScreen() {
         <FlatList
           data={MOCK_CALL_HISTORY}
           keyExtractor={(c) => c.id}
-          contentContainerStyle={[styles.content, { paddingBottom: bottomPad + 90 }]}
+          contentContainerStyle={[
+            styles.content,
+            { paddingBottom: bottomPad + 90 },
+          ]}
           ListEmptyComponent={
             <View style={styles.empty}>
-              <Feather name="phone-missed" size={40} color={colors.mutedForeground} />
-              <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>No calls yet</Text>
+              <Image
+                source={require("@/assets/images/no_history_found.png")}
+                style={styles.emptyImage}
+                resizeMode="contain"
+              />
+              <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
+                No call history yet
+              </Text>
             </View>
           }
           renderItem={({ item }) => (
-            <View style={[styles.historyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <View style={[styles.callTypeIcon, { backgroundColor: item.type === "video" ? colors.primary + "18" : colors.secondary }]}>
-                <Feather name={item.type === "video" ? "video" : "phone"} size={18} color={colors.primary} />
+            <View
+              style={[
+                styles.historyCard,
+                {
+                  backgroundColor: colors.card,
+                  ...Platform.select({
+                    ios: {
+                      shadowColor: "#000",
+                      shadowOpacity: 0.07,
+                      shadowRadius: 10,
+                      shadowOffset: { width: 0, height: 1 },
+                    },
+                    android: { elevation: 2 },
+                    web: { boxShadow: "0 1px 10px rgba(0,0,0,0.07)" } as any,
+                  }),
+                },
+              ]}
+            >
+              <View
+                style={[
+                  styles.callTypeIconWrapper,
+                  {
+                    backgroundColor:
+                      item.type === "video"
+                        ? "#F1F0FF"
+                        : "#E8CFFF",
+                  },
+                ]}
+              >
+                <Image
+                  source={
+                    item.type === "video"
+                      ? require("@/assets/icons/video_call_icon.png")
+                      : require("@/assets/icons/call_icon.png")
+                  }
+                  style={[styles.historyCallIcon, { tintColor: colors.accent }]}
+                  resizeMode="contain"
+                />
               </View>
               <View style={styles.historyInfo}>
-                <Text style={[styles.historyName, { color: colors.foreground }]}>{item.hostName}</Text>
+                <Text style={[styles.historyName, { color: colors.text }]}>
+                  {item.hostName}
+                </Text>
                 <Text style={[styles.historyMeta, { color: colors.mutedForeground }]}>
                   {formatDuration(item.duration)} • {formatRelativeTime(item.timestamp)}
                 </Text>
               </View>
               <View style={styles.historyRight}>
-                <Text style={[styles.historyCost, { color: colors.coinGold }]}>-{item.coinsSpent} 🪙</Text>
-                {item.rating && <Text style={[styles.historyRating, { color: colors.mutedForeground }]}>{"⭐".repeat(item.rating)}</Text>}
+                <View style={styles.historyCostRow}>
+                  <Image
+                    source={require("@/assets/icons/star_coin.png")}
+                    style={styles.historyCoinIcon}
+                    resizeMode="contain"
+                  />
+                  <Text style={[styles.historyCost, { color: colors.coinGoldText }]}>
+                    -{item.coinsSpent}
+                  </Text>
+                </View>
+                {item.rating ? (
+                  <Text style={styles.historyRating}>{"★".repeat(item.rating)}</Text>
+                ) : null}
               </View>
             </View>
           )}
@@ -126,36 +301,109 @@ export default function WalletScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { paddingHorizontal: 20, paddingBottom: 16 },
-  title: { fontSize: 24, fontFamily: "Inter_700Bold" },
-  balanceCard: { marginHorizontal: 20, borderRadius: 20, padding: 24, marginBottom: 16, gap: 4 },
-  balanceLabel: { color: "rgba(255,255,255,0.8)", fontSize: 13, fontFamily: "Inter_400Regular" },
-  balanceRow: { flexDirection: "row", alignItems: "baseline", gap: 8 },
-  coinIcon: { fontSize: 28 },
-  balanceAmount: { color: "#fff", fontSize: 40, fontFamily: "Inter_700Bold" },
-  balanceSubtext: { color: "rgba(255,255,255,0.7)", fontSize: 12, fontFamily: "Inter_400Regular" },
-  tabRow: { flexDirection: "row", borderBottomWidth: StyleSheet.hairlineWidth, marginHorizontal: 20 },
-  tab: { flex: 1, paddingVertical: 12, alignItems: "center" },
-  tabText: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
-  content: { paddingHorizontal: 20, paddingTop: 16, gap: 12 },
-  sectionTitle: { fontSize: 12, fontFamily: "Inter_500Medium", textTransform: "uppercase", letterSpacing: 1 },
-  planCard: { borderRadius: 16, borderWidth: 1, padding: 16, flexDirection: "row", alignItems: "center", justifyContent: "space-between", position: "relative", overflow: "hidden" },
-  popularBadge: { position: "absolute", top: 8, right: 8, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
-  popularText: { color: "#000", fontSize: 9, fontFamily: "Inter_700Bold" },
+  header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingBottom: 14,
+  },
+  title: { fontSize: 20, fontFamily: "Poppins_700Bold" },
+  bellBtn: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
+
+  balanceCardOuter: { borderRadius: 20, overflow: "hidden" },
+  balanceCardBg: { borderRadius: 20 },
+  balanceCardContent: { padding: 20, gap: 16 },
+  balanceTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
+  balanceLabel: { color: "rgba(255,255,255,0.8)", fontSize: 13, fontFamily: "Poppins_400Regular" },
+  balanceRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 4 },
+  coinBig: { width: 32, height: 32 },
+  balanceAmount: { color: "#fff", fontSize: 36, fontFamily: "Poppins_700Bold" },
+  balanceCoinLabel: { color: "rgba(255,255,255,0.7)", fontSize: 14, fontFamily: "Poppins_400Regular", alignSelf: "flex-end", marginBottom: 4 },
+  walletIcon: { width: 60, height: 60, opacity: 0.9 },
+  addCoinBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(255,255,255,0.25)",
+    alignSelf: "flex-start",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  addCoinText: { color: "#fff", fontSize: 13, fontFamily: "Poppins_600SemiBold" },
+
+  tabRow: {
+    flexDirection: "row",
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    marginHorizontal: 16,
+    marginBottom: 4,
+  },
+  tabItem: { flex: 1, paddingVertical: 12, alignItems: "center" },
+  tabText: { fontSize: 14, fontFamily: "Poppins_600SemiBold" },
+
+  content: { paddingHorizontal: 16, paddingTop: 12, gap: 10 },
+  sectionLabel: {
+    fontSize: 11,
+    fontFamily: "Poppins_500Medium",
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  planCard: {
+    borderRadius: 14,
+    padding: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    position: "relative",
+    overflow: "hidden",
+  },
+  popularBadge: {
+    position: "absolute",
+    top: 8,
+    right: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  popularText: { color: "#000", fontSize: 9, fontFamily: "Poppins_700Bold" },
   planLeft: { flexDirection: "row", alignItems: "center", gap: 12 },
-  planCoinIcon: { fontSize: 28 },
-  planCoins: { fontSize: 18, fontFamily: "Inter_700Bold" },
-  planBonus: { fontSize: 12, fontFamily: "Inter_500Medium" },
-  planPriceBadge: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10 },
-  planPrice: { fontSize: 16, fontFamily: "Inter_700Bold" },
-  historyCard: { borderRadius: 14, borderWidth: 1, padding: 14, flexDirection: "row", alignItems: "center", gap: 12 },
-  callTypeIcon: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
+  planCoinIcon: { width: 36, height: 36 },
+  planCoins: { fontSize: 16, fontFamily: "Poppins_700Bold" },
+  planBonus: { fontSize: 11, fontFamily: "Poppins_500Medium" },
+  planPriceBadge: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  planPrice: { fontSize: 15, fontFamily: "Poppins_700Bold" },
+
+  historyCard: {
+    borderRadius: 12,
+    padding: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  callTypeIconWrapper: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  historyCallIcon: { width: 22, height: 22 },
   historyInfo: { flex: 1, gap: 3 },
-  historyName: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
-  historyMeta: { fontSize: 12, fontFamily: "Inter_400Regular" },
-  historyRight: { alignItems: "flex-end", gap: 2 },
-  historyCost: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
-  historyRating: { fontSize: 12 },
-  empty: { alignItems: "center", gap: 8, paddingTop: 60 },
-  emptyText: { fontSize: 14, fontFamily: "Inter_400Regular" },
+  historyName: { fontSize: 14, fontFamily: "Poppins_600SemiBold" },
+  historyMeta: { fontSize: 11, fontFamily: "Poppins_400Regular" },
+  historyRight: { alignItems: "flex-end", gap: 3 },
+  historyCostRow: { flexDirection: "row", alignItems: "center", gap: 4 },
+  historyCoinIcon: { width: 14, height: 14 },
+  historyCost: { fontSize: 13, fontFamily: "Poppins_600SemiBold" },
+  historyRating: { fontSize: 11, color: "#FFA100" },
+
+  empty: { alignItems: "center", gap: 12, paddingTop: 60 },
+  emptyImage: { width: 180, height: 140 },
+  emptyText: { fontSize: 14, fontFamily: "Poppins_400Regular" },
 });

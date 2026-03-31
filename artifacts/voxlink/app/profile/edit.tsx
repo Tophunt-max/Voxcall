@@ -72,14 +72,14 @@ export default function EditProfileScreen() {
 
 const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingBottom: 14, borderBottomWidth: StyleSheet.hairlineWidth },
-  title: { fontSize: 17, fontFamily: "Inter_600SemiBold" },
+  title: { fontSize: 17, fontFamily: "Poppins_600SemiBold" },
   content: { padding: 24, gap: 24 },
   avatarSection: { alignItems: "center", position: "relative" },
   avatar: { width: 90, height: 90, borderRadius: 45, borderWidth: 2 },
   changeAvatarBtn: { position: "absolute", bottom: 0, right: "35%", width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center" },
   form: { gap: 16 },
-  label: { fontSize: 13, fontFamily: "Inter_500Medium", marginBottom: 6 },
+  label: { fontSize: 13, fontFamily: "Poppins_500Medium", marginBottom: 6 },
   inputWrap: { borderRadius: 14, borderWidth: 1, paddingHorizontal: 16, paddingVertical: 14 },
   textAreaWrap: { minHeight: 100 },
-  input: { fontSize: 15, fontFamily: "Inter_400Regular", padding: 0 },
+  input: { fontSize: 15, fontFamily: "Poppins_400Regular", padding: 0 },
 });

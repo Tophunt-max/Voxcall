@@ -25,5 +25,5 @@ export function CoinBalance({ balance, onPress, size = "md" }: Props) {
 
 const styles = StyleSheet.create({
   container: { flexDirection: "row", alignItems: "center", gap: 4, borderRadius: 20 },
-  text: { fontFamily: "Inter_700Bold" },
+  text: { fontFamily: "Poppins_700Bold" },
 });

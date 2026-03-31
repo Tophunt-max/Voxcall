@@ -38,6 +38,6 @@ const styles = StyleSheet.create({
   center: { flex: 1 },
   side: { minWidth: 48 },
   rightSide: { alignItems: "flex-end" },
-  title: { fontSize: 24, fontFamily: "Inter_700Bold" },
-  subtitle: { fontSize: 13, fontFamily: "Inter_400Regular", marginTop: 2 },
+  title: { fontSize: 24, fontFamily: "Poppins_700Bold" },
+  subtitle: { fontSize: 13, fontFamily: "Poppins_400Regular", marginTop: 2 },
 });

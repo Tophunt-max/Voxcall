@@ -35,5 +35,5 @@ export function SearchBar({ value, onChange, placeholder = "Search hosts...", on
 
 const styles = StyleSheet.create({
   wrapper: { flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingVertical: 10, gap: 10 },
-  input: { flex: 1, fontSize: 15, fontFamily: "Inter_400Regular", padding: 0 },
+  input: { flex: 1, fontSize: 15, fontFamily: "Poppins_400Regular", padding: 0 },
 });

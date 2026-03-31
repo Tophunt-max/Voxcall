@@ -16,5 +16,5 @@ export function NotificationBadge({ count }: Props) {
 
 const styles = StyleSheet.create({
   badge: { position: "absolute", top: -6, right: -6, minWidth: 18, height: 18, borderRadius: 9, alignItems: "center", justifyContent: "center", paddingHorizontal: 4 },
-  text: { color: "#fff", fontSize: 10, fontFamily: "Inter_700Bold" },
+  text: { color: "#fff", fontSize: 10, fontFamily: "Poppins_700Bold" },
 });

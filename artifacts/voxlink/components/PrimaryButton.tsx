@@ -61,5 +61,5 @@ export function PrimaryButton({ title, onPress, loading, disabled, variant = "pr
 
 const styles = StyleSheet.create({
   btn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, width: "100%" },
-  text: { fontFamily: "Inter_600SemiBold" },
+  text: { fontFamily: "Poppins_600SemiBold" },
 });

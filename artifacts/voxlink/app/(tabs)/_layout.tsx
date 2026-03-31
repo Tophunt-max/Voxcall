@@ -1,19 +1,46 @@
-import { BlurView } from "expo-blur";
 import { Tabs } from "expo-router";
-import { Feather } from "@expo/vector-icons";
 import React from "react";
-import { Platform, StyleSheet, View, useColorScheme } from "react-native";
+import { Image, Platform, StyleSheet, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useChat } from "@/context/ChatContext";
 import { NotificationBadge } from "@/components/NotificationBadge";
 
+const TAB_ICONS = {
+  home: require("@/assets/icons/home_filled.png"),
+  random: require("@/assets/icons/random_call.png"),
+  chat: require("@/assets/icons/chat.png"),
+  wallet: require("@/assets/icons/wallet_icon.png"),
+  profile: require("@/assets/icons/profile_icon.png"),
+};
+
+interface TabIconProps {
+  source: any;
+  color: string;
+  focused: boolean;
+  badge?: number;
+}
+
+function TabIcon({ source, color, focused, badge }: TabIconProps) {
+  return (
+    <View style={{ alignItems: "center", justifyContent: "center" }}>
+      <Image
+        source={source}
+        style={[styles.tabIcon, { tintColor: color }]}
+        resizeMode="contain"
+      />
+      {badge ? <NotificationBadge count={badge} /> : null}
+    </View>
+  );
+}
+
 export default function TabLayout() {
   const colors = useColors();
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === "dark";
-  const isIOS = Platform.OS === "ios";
-  const isWeb = Platform.OS === "web";
+  const insets = useSafeAreaInsets();
   const { totalUnread } = useChat();
+  const isWeb = Platform.OS === "web";
+
+  const tabBarHeight = isWeb ? 70 : 60 + (insets.bottom > 0 ? insets.bottom - 8 : 10);
 
   return (
     <Tabs
@@ -22,61 +49,75 @@ export default function TabLayout() {
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.mutedForeground,
         tabBarStyle: {
-          position: "absolute",
-          backgroundColor: isIOS ? "transparent" : colors.background,
+          backgroundColor: colors.card,
           borderTopWidth: StyleSheet.hairlineWidth,
           borderTopColor: colors.border,
-          elevation: 0,
-          height: isWeb ? 84 : undefined,
+          elevation: 8,
+          shadowColor: "#000",
+          shadowOffset: { width: 0, height: -2 },
+          shadowOpacity: 0.06,
+          shadowRadius: 8,
+          height: tabBarHeight,
+          paddingBottom: isWeb ? 10 : insets.bottom > 0 ? insets.bottom - 8 : 8,
+          paddingTop: 8,
         },
-        tabBarBackground: () =>
-          isIOS ? (
-            <BlurView intensity={100} tint={isDark ? "dark" : "light"} style={StyleSheet.absoluteFill} />
-          ) : null,
         tabBarShowLabel: true,
-        tabBarLabelStyle: { fontSize: 11, fontFamily: "Inter_500Medium", marginBottom: isWeb ? 10 : 0 },
+        tabBarLabelStyle: {
+          fontSize: 10,
+          fontFamily: "Poppins_500Medium",
+          marginTop: 2,
+        },
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
-          title: "Discover",
-          tabBarIcon: ({ color }) => <Feather name="home" size={22} color={color} />,
+          title: "Home",
+          tabBarIcon: ({ color, focused }) => (
+            <TabIcon source={TAB_ICONS.home} color={color} focused={focused} />
+          ),
         }}
       />
       <Tabs.Screen
         name="search"
         options={{
-          title: "Search",
-          tabBarIcon: ({ color }) => <Feather name="search" size={22} color={color} />,
+          title: "Random",
+          tabBarIcon: ({ color, focused }) => (
+            <TabIcon source={TAB_ICONS.random} color={color} focused={focused} />
+          ),
         }}
       />
       <Tabs.Screen
         name="messages"
         options={{
-          title: "Messages",
-          tabBarIcon: ({ color }) => (
-            <View>
-              <Feather name="message-circle" size={22} color={color} />
-              <NotificationBadge count={totalUnread} />
-            </View>
+          title: "Chat",
+          tabBarIcon: ({ color, focused }) => (
+            <TabIcon source={TAB_ICONS.chat} color={color} focused={focused} badge={totalUnread} />
           ),
         }}
       />
       <Tabs.Screen
         name="wallet"
         options={{
-          title: "Wallet",
-          tabBarIcon: ({ color }) => <Feather name="credit-card" size={22} color={color} />,
+          title: "History",
+          tabBarIcon: ({ color, focused }) => (
+            <TabIcon source={TAB_ICONS.wallet} color={color} focused={focused} />
+          ),
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
           title: "Profile",
-          tabBarIcon: ({ color }) => <Feather name="user" size={22} color={color} />,
+          tabBarIcon: ({ color, focused }) => (
+            <TabIcon source={TAB_ICONS.profile} color={color} focused={focused} />
+          ),
         }}
       />
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  tabIcon: { width: 22, height: 22 },
+});

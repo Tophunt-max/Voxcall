@@ -30,6 +30,12 @@
       "expo-font",
       "expo-web-browser"
     ],
+    "assetBundlePatterns": [
+      "assets/**",
+      "assets/icons/**",
+      "assets/images/**",
+      "assets/lottie/**"
+    ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
