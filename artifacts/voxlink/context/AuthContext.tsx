@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
+import { AppState } from "react-native";
 import { setItem, getItem, removeItem, StorageKeys } from "@/utils/storage";
+import { apiRequest } from "@/services/api";
 
 export type UserRole = "user" | "host";
 
@@ -34,10 +36,20 @@ interface AuthContextValue extends AuthState {
   logout: () => Promise<void>;
   updateProfile: (updates: Partial<UserProfile>) => Promise<void>;
   updateCoins: (newBalance: number) => void;
+  refreshBalance: () => Promise<void>;
   switchRole: (role: UserRole) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+
+async function fetchFreshBalance(): Promise<number | null> {
+  try {
+    const bal = await apiRequest<{ coins: number }>("GET", "/api/coins/balance");
+    return bal?.coins ?? null;
+  } catch {
+    return null;
+  }
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<AuthState>({
@@ -52,6 +64,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const user = await getItem<UserProfile>(StorageKeys.USER);
         if (user) {
           setState({ user, isLoggedIn: true, isLoading: false });
+          // Silently refresh balance from server so admin changes reflect
+          const freshCoins = await fetchFreshBalance();
+          if (freshCoins !== null) {
+            setState((prev) => {
+              if (!prev.user) return prev;
+              const updated = { ...prev.user, coins: freshCoins };
+              setItem(StorageKeys.USER, updated);
+              return { ...prev, user: updated };
+            });
+          }
         } else {
           setState((s) => ({ ...s, isLoading: false }));
         }
@@ -59,6 +81,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setState((s) => ({ ...s, isLoading: false }));
       }
     })();
+  }, []);
+
+  // Refresh balance when app comes back to foreground
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (nextState) => {
+      if (nextState === "active") {
+        setState((prev) => {
+          if (!prev.isLoggedIn || !prev.user) return prev;
+          fetchFreshBalance().then((freshCoins) => {
+            if (freshCoins !== null) {
+              setState((p) => {
+                if (!p.user) return p;
+                const updated = { ...p.user, coins: freshCoins };
+                setItem(StorageKeys.USER, updated);
+                return { ...p, user: updated };
+              });
+            }
+          });
+          return prev;
+        });
+      }
+    });
+    return () => sub.remove();
   }, []);
 
   const loginWithToken = useCallback(async (token: string, user: UserProfile) => {
@@ -100,6 +145,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const refreshBalance = useCallback(async () => {
+    const freshCoins = await fetchFreshBalance();
+    if (freshCoins !== null) {
+      setState((prev) => {
+        if (!prev.user) return prev;
+        const updated = { ...prev.user, coins: freshCoins };
+        setItem(StorageKeys.USER, updated);
+        return { ...prev, user: updated };
+      });
+    }
+  }, []);
+
   const switchRole = useCallback(async (role: UserRole) => {
     setState((prev) => {
       if (!prev.user) return prev;
@@ -110,7 +167,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ ...state, login, loginWithToken, logout, updateProfile, updateCoins, switchRole }}>
+    <AuthContext.Provider value={{ ...state, login, loginWithToken, logout, updateProfile, updateCoins, refreshBalance, switchRole }}>
       {children}
     </AuthContext.Provider>
   );

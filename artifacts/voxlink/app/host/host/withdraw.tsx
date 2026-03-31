@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, Image,
-  ScrollView, TextInput, Platform
+  ScrollView, TextInput, ActivityIndicator
 } from "react-native";
 import { showErrorToast, showSuccessToast } from "@/components/Toast";
 import { router } from "expo-router";
@@ -9,6 +9,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
+import { API } from "@/services/api";
 
 const QUICK_AMOUNTS = [100, 200, 500, 1000];
 const MIN_WITHDRAW = 100;
@@ -16,13 +17,14 @@ const MIN_WITHDRAW = 100;
 export default function HostWithdrawScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { user } = useAuth();
+  const { user, refreshBalance } = useAuth();
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState<"bank" | "upi" | "paypal">("bank");
+  const [accountInfo, setAccountInfo] = useState("");
   const [loading, setLoading] = useState(false);
 
   const topPad = insets.top;
-  const balance = user?.coins ?? 850;
+  const balance = user?.coins ?? 0;
   const parsedAmt = parseInt(amount) || 0;
   const isValid = parsedAmt >= MIN_WITHDRAW && parsedAmt <= balance;
 
@@ -37,13 +39,19 @@ export default function HostWithdrawScreen() {
       return;
     }
     setLoading(true);
-    await new Promise(r => setTimeout(r, 1500));
-    setLoading(false);
-    showSuccessToast(
-      `Your request to withdraw ${parsedAmt} coins has been submitted. Processing in 3-5 business days.`,
-      "Withdrawal Requested"
-    );
-    router.back();
+    try {
+      await API.requestWithdrawal(parsedAmt, method, accountInfo.trim());
+      await refreshBalance();
+      showSuccessToast(
+        `Your request to withdraw ${parsedAmt} coins has been submitted. Processing in 3-5 business days.`,
+        "Withdrawal Requested"
+      );
+      router.back();
+    } catch (err: any) {
+      showErrorToast(err?.message || "Withdrawal failed. Please try again.", "Failed");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const METHODS = [
@@ -140,6 +148,24 @@ export default function HostWithdrawScreen() {
           </View>
         </View>
 
+        {/* Account info */}
+        <View style={{ paddingHorizontal: 16, marginTop: 16 }}>
+          <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>
+            {method === "bank" ? "Bank Account / IBAN" : method === "upi" ? "UPI ID" : "PayPal Email"}
+          </Text>
+          <View style={[styles.inputWrap, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Feather name={method === "bank" ? "credit-card" : method === "upi" ? "smartphone" : "globe"} size={18} color={colors.mutedForeground} />
+            <TextInput
+              style={[styles.input, { fontSize: 14, color: colors.text }]}
+              placeholder={method === "bank" ? "Enter account number or IBAN" : method === "upi" ? "Enter UPI ID" : "Enter PayPal email"}
+              placeholderTextColor={colors.mutedForeground}
+              value={accountInfo}
+              onChangeText={setAccountInfo}
+              autoCapitalize="none"
+            />
+          </View>
+        </View>
+
         {/* Summary */}
         {parsedAmt >= MIN_WITHDRAW && (
           <View style={[styles.summaryBox, { backgroundColor: colors.surface, marginHorizontal: 16, marginTop: 20 }]}>
@@ -165,10 +191,11 @@ export default function HostWithdrawScreen() {
           onPress={handleWithdraw}
           disabled={!isValid || loading}
         >
-          {loading
-            ? <Text style={styles.submitText}>Processing...</Text>
-            : <Text style={styles.submitText}>Withdraw {parsedAmt > 0 ? `${parsedAmt} Coins` : "Now"}</Text>
-          }
+          {loading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.submitText}>Withdraw {parsedAmt > 0 ? `${parsedAmt} Coins` : "Now"}</Text>
+          )}
         </TouchableOpacity>
       </ScrollView>
     </View>
