@@ -22,7 +22,7 @@ export default function VideoCallScreen() {
       markCallActive(); // sets startTime for outgoing calls
     }, 3000);
     return () => { clearTimeout(t1); clearTimeout(t2); };
-  }, []);
+  }, [markCallActive]);
 
   const handleAutoEnd = useCallback(() => { endCall(true); }, [endCall]);
 
@@ -112,14 +112,17 @@ export default function VideoCallScreen() {
           >
             <Feather name="phone-off" size={26} color="#fff" />
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.ctrlBtn, { backgroundColor: "rgba(255,255,255,0.2)" }]}>
+          <TouchableOpacity
+            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); toggleCamera(); }}
+            style={[styles.ctrlBtn, { backgroundColor: "rgba(255,255,255,0.2)" }]}
+          >
             <Feather name="refresh-cw" size={22} color="#fff" />
           </TouchableOpacity>
           <TouchableOpacity
             onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); toggleSpeaker(); }}
-            style={[styles.ctrlBtn, { backgroundColor: "rgba(255,255,255,0.2)" }]}
+            style={[styles.ctrlBtn, { backgroundColor: activeCall?.isSpeakerOn ? "rgba(255,255,255,0.8)" : "rgba(255,255,255,0.2)" }]}
           >
-            <Feather name="volume-2" size={22} color="#fff" />
+            <Feather name={activeCall?.isSpeakerOn ? "volume-2" : "volume-x"} size={22} color={activeCall?.isSpeakerOn ? "#333" : "#fff"} />
           </TouchableOpacity>
         </View>
       </View>
