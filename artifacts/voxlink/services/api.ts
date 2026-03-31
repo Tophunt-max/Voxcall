@@ -96,6 +96,12 @@ export const API = {
   getChatStatus: (host_id: string) =>
     apiRequest<{ unlocked: boolean; reason: string }>('GET', `/api/hosts/${host_id}/chat-status`),
 
+  // Matchmaking
+  matchFind: (call_type: 'audio' | 'video') =>
+    apiRequest<{ matched: boolean; host?: any; message?: string }>('POST', '/api/match/find', { call_type }),
+  matchOnlineHosts: () =>
+    apiRequest<any[]>('GET', '/api/match/online-hosts'),
+
   // Talk topics (public)
   getTalkTopics: () => apiRequest<any[]>('GET', '/api/talk-topics', undefined, false),
 
