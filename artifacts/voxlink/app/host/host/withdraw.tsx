@@ -22,8 +22,6 @@ export default function HostWithdrawScreen() {
   const [method, setMethod] = useState<"bank" | "upi" | "paypal">("bank");
   const [accountInfo, setAccountInfo] = useState("");
   const [loading, setLoading] = useState(false);
-  const [amtFocused, setAmtFocused] = useState(false);
-  const [acctFocused, setAcctFocused] = useState(false);
   const ACCENT = "#A00EE7";
 
   const topPad = insets.top;
@@ -87,7 +85,7 @@ export default function HostWithdrawScreen() {
         {/* Amount input */}
         <View style={{ paddingHorizontal: 16, marginTop: 20 }}>
           <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Enter Amount</Text>
-          <View style={[styles.inputWrap, { backgroundColor: colors.card, borderColor: parsedAmt > 0 && !isValid ? "#F44336" : amtFocused ? ACCENT : colors.border }]}>
+          <View accessible={false} style={[styles.inputWrap, { backgroundColor: colors.card, borderColor: parsedAmt > 0 && !isValid ? "#F44336" : colors.border }]}>
             <Image source={require("@/assets/icons/ic_coin.png")} style={styles.inputCoin} resizeMode="contain" />
             <TextInput
               style={[styles.input, { color: colors.text }]}
@@ -99,8 +97,6 @@ export default function HostWithdrawScreen() {
               maxLength={6}
               selectionColor={ACCENT}
               underlineColorAndroid="transparent"
-              onFocus={() => setAmtFocused(true)}
-              onBlur={() => setAmtFocused(false)}
             />
             <TouchableOpacity onPress={() => setAmount(String(balance))}>
               <Text style={[styles.maxBtn, { color: colors.primary }]}>MAX</Text>
@@ -160,8 +156,8 @@ export default function HostWithdrawScreen() {
           <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>
             {method === "bank" ? "Bank Account / IBAN" : method === "upi" ? "UPI ID" : "PayPal Email"}
           </Text>
-          <View style={[styles.inputWrap, { backgroundColor: colors.card, borderColor: acctFocused ? ACCENT : colors.border }]}>
-            <Feather name={method === "bank" ? "credit-card" : method === "upi" ? "smartphone" : "globe"} size={18} color={acctFocused ? ACCENT : colors.mutedForeground} />
+          <View accessible={false} style={[styles.inputWrap, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Feather name={method === "bank" ? "credit-card" : method === "upi" ? "smartphone" : "globe"} size={18} color={colors.mutedForeground} />
             <TextInput
               style={[styles.input, { fontSize: 14, color: colors.text }]}
               placeholder={method === "bank" ? "Enter account number or IBAN" : method === "upi" ? "Enter UPI ID" : "Enter PayPal email"}
@@ -171,8 +167,6 @@ export default function HostWithdrawScreen() {
               autoCapitalize="none"
               selectionColor={ACCENT}
               underlineColorAndroid="transparent"
-              onFocus={() => setAcctFocused(true)}
-              onBlur={() => setAcctFocused(false)}
             />
           </View>
         </View>

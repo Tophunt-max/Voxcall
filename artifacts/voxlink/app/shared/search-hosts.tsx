@@ -19,7 +19,6 @@ export default function SearchHostsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const [query, setQuery] = useState("");
-  const [searchFocused, setSearchFocused] = useState(true);
   const [selectedTopic, setSelectedTopic] = useState("All");
   const [selectedLang, setSelectedLang] = useState("All");
   const [selectedStatus, setSelectedStatus] = useState("All");
@@ -106,15 +105,14 @@ export default function SearchHostsScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Image source={require("@/assets/icons/ic_back.png")} style={{ width: 22, height: 22, tintColor: colors.text }} resizeMode="contain" />
         </TouchableOpacity>
-        <View style={[
-          styles.searchBox,
-          {
-            backgroundColor: colors.surface,
-            borderColor: searchFocused ? ACCENT : colors.border,
-            borderWidth: searchFocused ? 1.5 : 1,
-          }
-        ]}>
-          <Feather name="search" size={16} color={searchFocused ? ACCENT : colors.mutedForeground} />
+        <View
+          accessible={false}
+          style={[
+            styles.searchBox,
+            { backgroundColor: colors.surface, borderColor: colors.border }
+          ]}
+        >
+          <Feather name="search" size={16} color={colors.mutedForeground} />
           <TextInput
             style={[styles.searchInput, { color: colors.text }]}
             placeholder="Search hosts by name..."
@@ -124,8 +122,6 @@ export default function SearchHostsScreen() {
             autoFocus
             selectionColor={ACCENT}
             underlineColorAndroid="transparent"
-            onFocus={() => setSearchFocused(true)}
-            onBlur={() => setSearchFocused(false)}
           />
           {query.length > 0 && (
             <TouchableOpacity onPress={() => setQuery("")}>

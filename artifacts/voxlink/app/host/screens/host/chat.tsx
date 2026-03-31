@@ -21,7 +21,6 @@ export default function HostChatScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const [search, setSearch] = useState("");
-  const [searchFocused, setSearchFocused] = useState(false);
   const topPad = insets.top;
 
   const filtered = MOCK_USER_CHATS.filter(c => c.name.toLowerCase().includes(search.toLowerCase()));
@@ -33,15 +32,11 @@ export default function HostChatScreen() {
       </View>
 
       {/* Search */}
-      <View style={[
-        styles.searchWrap,
-        {
-          backgroundColor: colors.surface,
-          borderColor: searchFocused ? ACCENT : colors.border,
-          borderWidth: searchFocused ? 1.5 : 1,
-        }
-      ]}>
-        <Feather name="search" size={16} color={searchFocused ? ACCENT : colors.mutedForeground} />
+      <View
+        accessible={false}
+        style={[styles.searchWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}
+      >
+        <Feather name="search" size={16} color={colors.mutedForeground} />
         <TextInput
           style={[styles.searchInput, { color: colors.text }]}
           placeholder="Search conversations..."
@@ -50,8 +45,6 @@ export default function HostChatScreen() {
           onChangeText={setSearch}
           selectionColor={ACCENT}
           underlineColorAndroid="transparent"
-          onFocus={() => setSearchFocused(true)}
-          onBlur={() => setSearchFocused(false)}
         />
       </View>
 
