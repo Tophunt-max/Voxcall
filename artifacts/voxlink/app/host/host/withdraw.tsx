@@ -1,8 +1,9 @@
 import React, { useState } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, Image,
-  ScrollView, TextInput, Alert, Platform
+  ScrollView, TextInput, Platform
 } from "react-native";
+import { showErrorToast, showSuccessToast } from "@/components/Toast";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
@@ -27,19 +28,22 @@ export default function HostWithdrawScreen() {
 
   const handleWithdraw = async () => {
     if (!isValid) {
-      Alert.alert("Invalid Amount", parsedAmt < MIN_WITHDRAW
-        ? `Minimum withdrawal is ${MIN_WITHDRAW} coins.`
-        : "You don't have enough coins.");
+      showErrorToast(
+        parsedAmt < MIN_WITHDRAW
+          ? `Minimum withdrawal is ${MIN_WITHDRAW} coins.`
+          : "You don't have enough coins.",
+        "Invalid Amount"
+      );
       return;
     }
     setLoading(true);
     await new Promise(r => setTimeout(r, 1500));
     setLoading(false);
-    Alert.alert(
-      "Withdrawal Requested",
+    showSuccessToast(
       `Your request to withdraw ${parsedAmt} coins has been submitted. Processing in 3-5 business days.`,
-      [{ text: "OK", onPress: () => router.back() }]
+      "Withdrawal Requested"
     );
+    router.back();
   };
 
   const METHODS = [

@@ -1,8 +1,9 @@
 import React, { useState } from "react";
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity,
-  ScrollView, Alert, Image,
+  ScrollView, Image,
 } from "react-native";
+import { showErrorToast, showInfoToast } from "@/components/Toast";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -53,14 +54,14 @@ export default function HostLoginScreen() {
         router.replace("/host/auth/host-register");
       }
     } catch (err: any) {
-      Alert.alert("Login Failed", err?.message || "Invalid email or password.");
+      showErrorToast(err?.message || "Invalid email or password.", "Login Failed");
     } finally {
       setLoading(false);
     }
   };
 
   const handleGoogleLogin = () => {
-    Alert.alert("Coming Soon", "Google Sign-In will be available in the next update.");
+    showInfoToast("Google Sign-In will be available in the next update.", "Coming Soon");
   };
 
   return (

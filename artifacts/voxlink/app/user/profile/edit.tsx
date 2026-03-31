@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { View, Text, StyleSheet, TextInput, ScrollView, TouchableOpacity, Alert, Platform, Image } from "react-native";
+import { View, Text, StyleSheet, TextInput, ScrollView, TouchableOpacity, Platform, Image } from "react-native";
+import { showSuccessToast } from "@/components/Toast";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
@@ -22,6 +23,7 @@ export default function EditProfileScreen() {
     await new Promise((r) => setTimeout(r, 800));
     await updateProfile({ name, bio });
     setLoading(false);
+    showSuccessToast("Your profile has been updated.", "Profile Saved");
     router.back();
   };
 

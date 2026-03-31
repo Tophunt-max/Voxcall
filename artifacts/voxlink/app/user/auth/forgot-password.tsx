@@ -1,8 +1,9 @@
 import React, { useState } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
-  Image, KeyboardAvoidingView, Platform, ScrollView, Alert
+  Image, KeyboardAvoidingView, Platform, ScrollView
 } from "react-native";
+import { showErrorToast } from "@/components/Toast";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
@@ -15,7 +16,7 @@ export default function ForgotPasswordScreen() {
 
   const handleSendOTP = async () => {
     if (!email.trim()) {
-      Alert.alert("Error", "Please enter your email address");
+      showErrorToast("Please enter your email address.");
       return;
     }
     setLoading(true);

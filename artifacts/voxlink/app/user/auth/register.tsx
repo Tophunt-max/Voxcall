@@ -1,8 +1,9 @@
 import React, { useState } from "react";
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity,
-  ScrollView, Alert, Image,
+  ScrollView, Image,
 } from "react-native";
+import { showErrorToast, showInfoToast } from "@/components/Toast";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -30,11 +31,11 @@ export default function RegisterScreen() {
 
   const handleRegister = async () => {
     if (!name.trim() || !email.trim() || !password.trim() || !gender) {
-      Alert.alert("Missing Fields", "Please fill in all fields including gender.");
+      showErrorToast("Please fill in all fields including gender.", "Missing Fields");
       return;
     }
     if (password.length < 6) {
-      Alert.alert("Weak Password", "Password must be at least 6 characters.");
+      showErrorToast("Password must be at least 6 characters.", "Weak Password");
       return;
     }
     setLoading(true);
@@ -50,14 +51,14 @@ export default function RegisterScreen() {
       });
       router.replace("/user/auth/fill-profile");
     } catch (err: any) {
-      Alert.alert("Registration Failed", err?.message || "Could not create account. Email may already be in use.");
+      showErrorToast(err?.message || "Could not create account. Email may already be in use.", "Registration Failed");
     } finally {
       setLoading(false);
     }
   };
 
   const handleGoogleRegister = () => {
-    Alert.alert("Coming Soon", "Google Sign-Up will be available in the next update.");
+    showInfoToast("Google Sign-Up will be available in the next update.", "Coming Soon");
   };
 
   return (

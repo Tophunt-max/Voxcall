@@ -2,8 +2,9 @@
 import React, { useState } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  ScrollView, Alert, Image, ActivityIndicator,
+  ScrollView, Image, ActivityIndicator,
 } from "react-native";
+import { showErrorToast, showSuccessToast } from "@/components/Toast";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -81,7 +82,7 @@ export default function HostKYCScreen() {
       const uploadData = await API.uploadFile(formData);
       setFiles((prev) => ({ ...prev, [doc.key]: { uri: asset.uri, uploaded: uploadData.url } }));
     } catch (err) {
-      Alert.alert("Upload Failed", "Could not upload file. Please try again.");
+      showErrorToast("Could not upload file. Please try again.", "Upload Failed");
     } finally {
       setUploading(null);
     }
@@ -92,7 +93,7 @@ export default function HostKYCScreen() {
     const aadharBack = files["aadhar_back"]?.uploaded;
 
     if (!aadharFront || !aadharBack) {
-      Alert.alert("Missing Documents", "Please upload both Aadhar front and back photos.");
+      showErrorToast("Please upload both Aadhar front and back photos.", "Missing Documents");
       return;
     }
 
@@ -115,7 +116,7 @@ export default function HostKYCScreen() {
       });
       router.replace("/host/auth/host-status");
     } catch (err: any) {
-      Alert.alert("Submission Failed", err?.message || "Could not submit your application. Please try again.");
+      showErrorToast(err?.message || "Could not submit your application. Please try again.", "Submission Failed");
     } finally {
       setSubmitting(false);
     }

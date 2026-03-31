@@ -3,8 +3,9 @@
 import React, { useState, useEffect } from "react";
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity,
-  ScrollView, Alert,
+  ScrollView,
 } from "react-native";
+import { showErrorToast, showWarningToast } from "@/components/Toast";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -37,11 +38,11 @@ export default function HostRegisterScreen() {
 
   const handleNext = async () => {
     if (!name.trim() || !email.trim() || !password.trim()) {
-      Alert.alert("Missing Fields", "Please fill in all fields.");
+      showErrorToast("Please fill in all fields.", "Missing Fields");
       return;
     }
     if (password.length < 6) {
-      Alert.alert("Weak Password", "Password must be at least 6 characters.");
+      showWarningToast("Password must be at least 6 characters.", "Weak Password");
       return;
     }
     setLoading(true);
@@ -57,7 +58,7 @@ export default function HostRegisterScreen() {
       await AsyncStorage.setItem("hostAppPending", "true");
       router.push("/host/auth/host-profile-setup");
     } catch (err: any) {
-      Alert.alert("Error", err?.message || "Could not create account. Email may already be in use.");
+      showErrorToast(err?.message || "Could not create account. Email may already be in use.");
     } finally {
       setLoading(false);
     }

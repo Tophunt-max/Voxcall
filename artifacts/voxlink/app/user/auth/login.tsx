@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity,
-  ScrollView, Alert, Image,
+  ScrollView, Image,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
@@ -11,6 +11,7 @@ import { useAuth } from "@/context/AuthContext";
 import { PrimaryButton } from "@/components/PrimaryButton";
 import { API } from "@/services/api";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { showErrorToast, showInfoToast } from "@/components/Toast";
 
 const ACCENT = "#A00EE7";
 
@@ -25,7 +26,7 @@ export default function LoginScreen() {
 
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
-      Alert.alert("Missing Fields", "Please enter both email and password.");
+      showErrorToast("Please enter both email and password.", "Missing Fields");
       return;
     }
     setLoading(true);
@@ -45,7 +46,7 @@ export default function LoginScreen() {
       await AsyncStorage.removeItem("hostAppPending");
       router.replace("/user/screens/user");
     } catch (err: any) {
-      Alert.alert("Login Failed", err?.message || "Invalid email or password.");
+      showErrorToast(err?.message || "Invalid email or password.", "Login Failed");
     } finally {
       setLoading(false);
     }
@@ -65,14 +66,14 @@ export default function LoginScreen() {
       });
       router.replace("/user/screens/user");
     } catch (err: any) {
-      Alert.alert("Error", "Could not start guest session. Please try again.");
+      showErrorToast("Could not start guest session. Please try again.");
     } finally {
       setGuestLoading(false);
     }
   };
 
   const handleGoogleLogin = () => {
-    Alert.alert("Coming Soon", "Google Sign-In will be available in the next update.");
+    showInfoToast("Google Sign-In will be available in the next update.", "Coming Soon");
   };
 
   return (
