@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  Image, ActivityIndicator, Platform,
+  Image, ActivityIndicator, Platform, Alert,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
@@ -22,14 +22,20 @@ WebBrowser.maybeCompleteAuthSession();
 const ACCENT = "#A00EE7";
 const DEVICE_ID_KEY = "@voxlink_device_id";
 
+// Web Client ID from Firebase Console → Authentication → Sign-in method → Google → Web client ID
+// Set this in .env as EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID
+const GOOGLE_WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || "";
+
 async function getDeviceId(): Promise<string> {
-  if (Platform.OS === "android") {
-    const androidId = Application.getAndroidId();
-    if (androidId) return `android_${androidId}`;
-  } else if (Platform.OS === "ios") {
-    const vendorId = await Application.getIosIdForVendorAsync();
-    if (vendorId) return `ios_${vendorId}`;
-  }
+  try {
+    if (Platform.OS === "android") {
+      const androidId = Application.getAndroidId();
+      if (androidId) return `android_${androidId}`;
+    } else if (Platform.OS === "ios") {
+      const vendorId = await Application.getIosIdForVendorAsync();
+      if (vendorId) return `ios_${vendorId}`;
+    }
+  } catch {}
   const stored = await AsyncStorage.getItem(DEVICE_ID_KEY);
   if (stored) return stored;
   const generated = `dev_${Math.random().toString(36).slice(2)}_${Date.now()}`;
@@ -43,42 +49,69 @@ export default function LoginScreen() {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [quickLoading, setQuickLoading] = useState(false);
 
-  const [request, response, promptAsync] = Google.useAuthRequest({
-    webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || "not-configured",
+  // expo-auth-session for native Google Sign-In
+  const [, response, promptAsync] = Google.useAuthRequest({
+    webClientId: GOOGLE_WEB_CLIENT_ID || "not-configured",
     selectAccount: true,
   });
 
   useEffect(() => {
-    if (response?.type === "success") {
+    if (!response) return;
+    if (response.type === "success") {
       const accessToken = response.authentication?.accessToken;
       if (accessToken) {
         handleGoogleToken(accessToken);
       } else {
         setGoogleLoading(false);
-        showErrorToast("Google sign-in failed. Please try again.");
+        showErrorToast("Google sign-in failed. Try again.");
       }
-    } else if (response?.type === "error") {
+    } else if (response.type === "error") {
       setGoogleLoading(false);
-      const msg = response.error?.message || "Google sign-in failed";
+      const msg = response.error?.message || "";
       if (!msg.toLowerCase().includes("cancel")) {
-        showErrorToast(msg, "Sign In Failed");
+        showErrorToast(msg || "Google sign-in failed", "Sign In Failed");
       }
-    } else if (response?.type === "dismiss") {
+    } else if (response.type === "dismiss") {
       setGoogleLoading(false);
     }
   }, [response]);
 
   const handleGoogleLogin = async () => {
-    const clientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
-    if (!clientId) {
-      showErrorToast("Google Sign-In is not configured yet. Use Quick Login.", "Not Available");
-      return;
-    }
     setGoogleLoading(true);
     try {
-      await promptAsync();
-    } catch {
+      if (Platform.OS === "web") {
+        // Web: use Firebase signInWithPopup (auto-handles OAuth, no extra client ID needed)
+        const { GoogleAuthProvider, signInWithPopup } = await import("firebase/auth");
+        const { auth } = await import("@/services/firebase");
+        const provider = new GoogleAuthProvider();
+        const result = await signInWithPopup(auth, provider);
+        const u = result.user;
+        await handleGoogleProfileData(u.uid, u.displayName || "User", u.email || "", u.photoURL);
+      } else {
+        // Native: use expo-auth-session (works in Expo Go + custom builds)
+        if (!GOOGLE_WEB_CLIENT_ID) {
+          setGoogleLoading(false);
+          Alert.alert(
+            "Setup Required",
+            "To enable Google Sign-In:\n\n1. Firebase Console → connectme-80909\n2. Authentication → Sign-in method\n3. Enable Google provider\n4. Copy the Web Client ID\n5. Add to .env:\nEXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=your_client_id\n\nFor now, use Quick Login to continue.",
+            [{ text: "OK" }]
+          );
+          return;
+        }
+        await promptAsync();
+      }
+    } catch (err: any) {
       setGoogleLoading(false);
+      const msg = err?.message || "";
+      if (msg.includes("CONFIGURATION_NOT_FOUND") || msg.includes("configuration-not-found")) {
+        Alert.alert(
+          "Firebase Setup Required",
+          "Google Sign-In is not enabled in your Firebase project.\n\nSteps to fix:\n1. Go to Firebase Console\n2. Authentication → Sign-in method\n3. Enable Google provider\n4. Add your app domain to authorized domains\n\nUse Quick Login for now.",
+          [{ text: "OK" }]
+        );
+      } else if (!msg.toLowerCase().includes("cancel")) {
+        showErrorToast(msg || "Google sign-in failed", "Sign In Failed");
+      }
     }
   };
 
@@ -89,18 +122,27 @@ export default function LoginScreen() {
       });
       if (!res.ok) throw new Error("Failed to get Google profile");
       const gUser = await res.json() as { id: string; name: string; email: string; picture?: string };
+      await handleGoogleProfileData(gUser.id, gUser.name, gUser.email, gUser.picture ?? null);
+    } catch (err: any) {
+      showErrorToast(err?.message || "Google sign-in failed", "Sign In Failed");
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
 
-      const data = await API.googleLogin(gUser.email, gUser.name, gUser.id, gUser.picture ?? null);
-
+  const handleGoogleProfileData = async (
+    id: string, name: string, email: string, photo?: string | null
+  ) => {
+    try {
+      const data = await API.googleLogin(email, name, id, photo ?? null);
       const profile = {
-        id: data.user.id || gUser.id,
-        name: data.user.name || gUser.name,
-        email: data.user.email || gUser.email,
-        avatar: gUser.picture || data.user.avatar_url || null,
+        id: data.user.id || id,
+        name: data.user.name || name,
+        email: data.user.email || email,
+        avatar: photo || data.user.avatar_url || null,
         coins: data.user.coins ?? 50,
         role: "user" as const,
       };
-
       await saveFirestoreUser({
         uid: profile.id,
         name: profile.name,
@@ -110,14 +152,10 @@ export default function LoginScreen() {
         role: "user",
         loginMethod: "google",
       });
-
       await loginWithToken(data.token, profile);
       await AsyncStorage.removeItem("hostAppPending");
       showSuccessToast(`Welcome, ${profile.name}!`);
       router.replace("/user/screens/user");
-    } catch (err: any) {
-      const msg = err?.message || "Google sign-in failed";
-      showErrorToast(msg, "Sign In Failed");
     } finally {
       setGoogleLoading(false);
     }
@@ -128,7 +166,6 @@ export default function LoginScreen() {
     try {
       const deviceId = await getDeviceId();
       const data = await API.quickLogin(deviceId);
-
       const avatarKey = data.user.avatar_url || getRandomAvatarKey();
       const profile = {
         id: data.user.id,
@@ -139,7 +176,6 @@ export default function LoginScreen() {
         role: "user" as const,
         is_guest: true,
       };
-
       await saveFirestoreUser({
         uid: profile.id,
         name: profile.name,
@@ -150,14 +186,12 @@ export default function LoginScreen() {
         is_guest: true,
         loginMethod: "quick",
       });
-
       await loginWithToken(data.token, profile);
-
       if (data.is_returning) {
         showSuccessToast("Welcome back!", "Quick Login");
       }
       router.replace("/user/screens/user");
-    } catch (err: any) {
+    } catch {
       showErrorToast("Quick Login failed. Please try again.");
     } finally {
       setQuickLoading(false);
@@ -175,7 +209,6 @@ export default function LoginScreen() {
         <TouchableOpacity onPress={() => router.back()} style={s.backBtn} activeOpacity={0.8}>
           <Feather name="arrow-left" size={22} color="#fff" />
         </TouchableOpacity>
-
         <View style={s.logoWrap}>
           <Image
             source={require("@/assets/images/app_logo.png")}
