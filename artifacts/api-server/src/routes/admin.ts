@@ -116,13 +116,42 @@ admin.get('/hosts', async (c) => {
 // PATCH /api/admin/hosts/:id
 admin.patch('/hosts/:id', async (c) => {
   const { id } = c.req.param();
-  const { is_active, is_top_rated, identity_verified } = await c.req.json();
+  const body = await c.req.json();
+  const { is_active, is_top_rated, identity_verified, level, audio_coins_per_minute, video_coins_per_minute, coins_per_minute } = body;
   const sets: string[] = []; const vals: any[] = [];
   if (is_active !== undefined) { sets.push('is_active = ?'); vals.push(is_active); }
   if (is_top_rated !== undefined) { sets.push('is_top_rated = ?'); vals.push(is_top_rated); }
   if (identity_verified !== undefined) { sets.push('identity_verified = ?'); vals.push(identity_verified); }
+  if (level !== undefined) { sets.push('level = ?'); vals.push(Math.min(5, Math.max(1, parseInt(level)))); }
+  if (audio_coins_per_minute !== undefined) { sets.push('audio_coins_per_minute = ?'); vals.push(parseInt(audio_coins_per_minute)); }
+  if (video_coins_per_minute !== undefined) { sets.push('video_coins_per_minute = ?'); vals.push(parseInt(video_coins_per_minute)); }
+  if (coins_per_minute !== undefined) { sets.push('coins_per_minute = ?'); vals.push(parseInt(coins_per_minute)); }
+  if (!sets.length) return c.json({ error: 'Nothing to update' }, 400);
+  sets.push('updated_at = unixepoch()');
   vals.push(id);
   await db(c).prepare(`UPDATE hosts SET ${sets.join(', ')} WHERE id = ?`).bind(...vals).run();
+  return c.json({ success: true });
+});
+
+// POST /api/admin/hosts/:id/level — manually set host level
+admin.post('/hosts/:id/level', async (c) => {
+  const { id } = c.req.param();
+  const { level } = await c.req.json<{ level: number }>();
+  const lvl = Math.min(5, Math.max(1, parseInt(String(level))));
+  await db(c).prepare('UPDATE hosts SET level = ?, updated_at = unixepoch() WHERE id = ?').bind(lvl, id).run();
+  return c.json({ success: true, level: lvl });
+});
+
+// POST /api/admin/hosts/recalculate-levels — auto-recalculate all host levels
+admin.post('/hosts/recalculate-levels', async (c) => {
+  const d = db(c);
+  await d.batch([
+    d.prepare("UPDATE hosts SET level = 5 WHERE review_count >= 1000 AND rating >= 4.8"),
+    d.prepare("UPDATE hosts SET level = 4 WHERE level < 4 AND review_count >= 500 AND rating >= 4.6"),
+    d.prepare("UPDATE hosts SET level = 3 WHERE level < 3 AND review_count >= 200 AND rating >= 4.3"),
+    d.prepare("UPDATE hosts SET level = 2 WHERE level < 2 AND review_count >= 50 AND rating >= 4.0"),
+    d.prepare("UPDATE hosts SET level = 1 WHERE level IS NULL"),
+  ]);
   return c.json({ success: true });
 });
 

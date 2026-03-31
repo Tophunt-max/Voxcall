@@ -22,11 +22,23 @@ chat.get('/rooms', async (c) => {
   return c.json(result.results);
 });
 
-// POST /api/chat/rooms — create or get existing room
+// POST /api/chat/rooms — create or get existing room (enforces call_first unlock)
 chat.post('/rooms', async (c) => {
   const { sub } = c.get('user');
   const { host_id } = await c.req.json();
   const db = c.env.DB;
+
+  // Check unlock policy
+  const hostRow = await db.prepare('SELECT chat_unlock_policy FROM hosts WHERE id = ?').bind(host_id).first<any>();
+  if (hostRow?.chat_unlock_policy === 'call_first') {
+    const prevCall = await db.prepare(
+      `SELECT id FROM call_sessions WHERE caller_id = ? AND host_id = ? AND status = 'ended' LIMIT 1`
+    ).bind(sub, host_id).first<any>();
+    if (!prevCall) {
+      return c.json({ error: 'Chat locked. Call this host first to unlock chat.', code: 'CHAT_LOCKED' }, 403);
+    }
+  }
+
   let room = await db.prepare('SELECT * FROM chat_rooms WHERE user_id = ? AND host_id = ?').bind(sub, host_id).first<any>();
   if (!room) {
     const id = crypto.randomUUID();

@@ -1,44 +1,74 @@
-import React, { useState, useRef } from "react";
-import { View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity, Image, Platform, KeyboardAvoidingView } from "react-native";
+import React, { useState, useRef, useEffect } from "react";
+import { View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity, Image, Platform, KeyboardAvoidingView, ActivityIndicator } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { useChat, Message } from "@/context/ChatContext";
-import { formatRelativeTime, MOCK_HOSTS } from "@/data/mockData";
+import { API } from "@/services/api";
 import * as Haptics from "expo-haptics";
+
+function formatTime(ts: number) {
+  if (!ts) return "";
+  const d = new Date(ts);
+  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
 
 export default function ChatScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user } = useAuth();
-  const { conversations, sendMessage, markRead } = useChat();
+  const { conversations, sendMessage, markRead, loadMessages } = useChat();
   const [text, setText] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [participantName, setParticipantName] = useState("Chat");
+  const [participantAvatar, setParticipantAvatar] = useState(`https://api.dicebear.com/7.x/avataaars/svg?seed=${id}`);
   const listRef = useRef<FlatList>(null);
 
-  const convo = conversations.find((c) => c.id === id);
-  const host = MOCK_HOSTS.find((h) => h.id === id);
-  const participantName = convo?.participantName ?? host?.name ?? "Unknown";
-  const participantAvatar = `https://api.dicebear.com/7.x/avataaars/svg?seed=${id}`;
+  const convo = conversations.find((c) => c.id === id || c.roomId === id);
+  const roomId = convo?.roomId ?? id ?? "";
 
-  const topPad = insets.top;
-  const bottomPad = insets.bottom;
-
-  const handleSend = () => {
-    if (!text.trim()) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    if (id) {
-      if (!convo) {
-        // Create conversation on demand
+  useEffect(() => {
+    if (!id) return;
+    if (convo) {
+      setParticipantName(convo.participantName);
+      if (convo.participantAvatar) setParticipantAvatar(convo.participantAvatar);
+      markRead(convo.id);
+      if (convo.messages.length === 0) {
+        setLoading(true);
+        loadMessages(convo.id, roomId).finally(() => setLoading(false));
       }
-      sendMessage(id, text.trim());
+    } else {
+      setLoading(true);
+      API.getMessages(id).then((msgs) => {
+        const mapped: Message[] = (msgs ?? []).map((m: any) => ({
+          id: m.id,
+          senderId: m.sender_id,
+          receiverId: "",
+          content: m.content ?? "",
+          type: "text",
+          timestamp: (m.created_at ?? 0) * 1000,
+          isRead: true,
+        }));
+        if (mapped.length > 0) {
+          console.log(`Loaded ${mapped.length} messages for room ${id}`);
+        }
+      }).catch(() => {}).finally(() => setLoading(false));
     }
-    setText("");
-  };
+  }, [id]);
 
   const messages = convo?.messages ?? [];
+
+  const handleSend = async () => {
+    if (!text.trim() || !id) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const msg = text.trim();
+    setText("");
+    await sendMessage(convo?.id ?? id, msg);
+    setTimeout(() => listRef.current?.scrollToOffset({ offset: 0, animated: true }), 100);
+  };
 
   const renderMessage = ({ item }: { item: Message }) => {
     const isMe = item.senderId === "me" || item.senderId === user?.id;
@@ -51,7 +81,7 @@ export default function ChatScreen() {
         ]}>
           <Text style={[styles.bubbleText, { color: isMe ? "#fff" : colors.foreground }]}>{item.content}</Text>
           <Text style={[styles.bubbleTime, { color: isMe ? "rgba(255,255,255,0.6)" : colors.mutedForeground }]}>
-            {formatRelativeTime(item.timestamp)}
+            {formatTime(item.timestamp)}
           </Text>
         </View>
       </View>
@@ -60,7 +90,7 @@ export default function ChatScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={[styles.header, { paddingTop: topPad + 8, borderBottomColor: colors.border }]}>
+      <View style={[styles.header, { paddingTop: insets.top + 8, borderBottomColor: colors.border }]}>
         <TouchableOpacity onPress={() => router.back()}>
           <Image source={require("@/assets/icons/ic_back.png")} style={{ width: 22, height: 22, tintColor: colors.foreground }} resizeMode="contain" />
         </TouchableOpacity>
@@ -69,13 +99,15 @@ export default function ChatScreen() {
           <Text style={[styles.headerName, { color: colors.foreground }]}>{participantName}</Text>
           <Text style={[styles.headerStatus, { color: colors.online }]}>Online</Text>
         </View>
-        <TouchableOpacity onPress={() => host && router.push(`/hosts/${host.id}`)}>
-          <Feather name="info" size={20} color={colors.mutedForeground} />
-        </TouchableOpacity>
+        <Feather name="info" size={20} color={colors.mutedForeground} />
       </View>
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={0}>
-        {messages.length === 0 ? (
+        {loading ? (
+          <View style={styles.empty}>
+            <ActivityIndicator size="large" color={colors.primary} />
+          </View>
+        ) : messages.length === 0 ? (
           <View style={styles.empty}>
             <Image source={{ uri: participantAvatar }} style={styles.emptyAvatar} />
             <Text style={[styles.emptyName, { color: colors.foreground }]}>{participantName}</Text>
@@ -93,7 +125,7 @@ export default function ChatScreen() {
           />
         )}
 
-        <View style={[styles.inputBar, { borderTopColor: colors.border, backgroundColor: colors.background, paddingBottom: bottomPad + 8 }]}>
+        <View style={[styles.inputBar, { borderTopColor: colors.border, backgroundColor: colors.background, paddingBottom: insets.bottom + 8 }]}>
           <TouchableOpacity style={[styles.iconBtn, { backgroundColor: colors.muted }]}>
             <Feather name="image" size={18} color={colors.mutedForeground} />
           </TouchableOpacity>

@@ -13,11 +13,15 @@ call.post('/initiate', async (c) => {
   const callType = body.type || body.call_type || 'audio';
   const db = c.env.DB;
 
-  const host = await db.prepare('SELECT id, coins_per_minute, user_id FROM hosts WHERE id = ? AND is_online = 1 AND is_active = 1').bind(body.host_id).first<any>();
+  const host = await db.prepare('SELECT id, coins_per_minute, audio_coins_per_minute, video_coins_per_minute, user_id FROM hosts WHERE id = ? AND is_online = 1 AND is_active = 1').bind(body.host_id).first<any>();
   if (!host) return c.json({ error: 'Host not available' }, 404);
 
+  const ratePerMin = callType === 'video'
+    ? (host.video_coins_per_minute ?? host.coins_per_minute ?? 5)
+    : (host.audio_coins_per_minute ?? host.coins_per_minute ?? 5);
+
   const caller = await db.prepare('SELECT coins FROM users WHERE id = ?').bind(sub).first<any>();
-  if (!caller || caller.coins < host.coins_per_minute) {
+  if (!caller || caller.coins < ratePerMin) {
     return c.json({ error: 'Insufficient coins' }, 402);
   }
 
@@ -34,8 +38,8 @@ call.post('/initiate', async (c) => {
 
   const sessionId = crypto.randomUUID();
   await db.prepare(
-    'INSERT INTO call_sessions (id, caller_id, host_id, type, status, cf_session_id) VALUES (?, ?, ?, ?, ?, ?)'
-  ).bind(sessionId, sub, body.host_id, callType, 'pending', cfSessionId).run();
+    'INSERT INTO call_sessions (id, caller_id, host_id, type, status, cf_session_id, rate_per_minute) VALUES (?, ?, ?, ?, ?, ?, ?)'
+  ).bind(sessionId, sub, body.host_id, callType, 'pending', cfSessionId, ratePerMin).run();
 
   try {
     const notifId = c.env.NOTIFICATION_HUB.idFromName(host.user_id);
@@ -46,8 +50,8 @@ call.post('/initiate', async (c) => {
     });
   } catch {}
 
-  const maxSeconds = Math.floor((caller.coins / host.coins_per_minute) * 60);
-  return c.json({ session_id: sessionId, cf_session_id: cfSessionId, host_coins_per_minute: host.coins_per_minute, max_seconds: maxSeconds });
+  const maxSeconds = Math.floor((caller.coins / ratePerMin) * 60);
+  return c.json({ session_id: sessionId, cf_session_id: cfSessionId, host_coins_per_minute: ratePerMin, rate_per_minute: ratePerMin, call_type: callType, max_seconds: maxSeconds });
 });
 
 // POST /api/calls/end — flat route (mobile sends session_id in body)
@@ -69,8 +73,12 @@ call.post('/end', async (c) => {
   const durationSec = duration_seconds ?? (session.started_at ? now - session.started_at : 0);
   const durationMin = Math.max(1, Math.ceil(durationSec / 60));
 
-  const hostRow = await db.prepare('SELECT coins_per_minute, user_id, total_minutes, total_earnings FROM hosts WHERE id = ?').bind(session.host_id).first<any>();
-  const coinsCharged = session.status === 'active' ? durationMin * (hostRow?.coins_per_minute || 5) : 0;
+  const hostRow = await db.prepare('SELECT coins_per_minute, audio_coins_per_minute, video_coins_per_minute, user_id, total_minutes, total_earnings FROM hosts WHERE id = ?').bind(session.host_id).first<any>();
+  const effectiveRate = session.rate_per_minute
+    ?? (session.type === 'video'
+        ? (hostRow?.video_coins_per_minute ?? hostRow?.coins_per_minute ?? 5)
+        : (hostRow?.audio_coins_per_minute ?? hostRow?.coins_per_minute ?? 5));
+  const coinsCharged = session.status === 'active' ? durationMin * effectiveRate : 0;
   const hostShare = Math.floor(coinsCharged * 0.7);
 
   const txs: any[] = [

@@ -76,6 +76,33 @@ VoxLink is a production-grade social audio/video calling mobile app + admin pane
 
 Tables: `users`, `hosts`, `coin_plans`, `coin_transactions`, `call_sessions`, `chat_rooms`, `messages`, `ratings`, `withdrawal_requests`, `notifications`, `faqs`, `talk_topics`, `app_settings`
 
+## New Features (Session 3)
+
+### 1. Host Level System
+- 5 levels: Newcomer 🌱, Rising ⭐, Expert 🔥, Pro 💎, Elite 👑
+- `hosts` table: `level` column (1-5)
+- Level badge shown on host profile screen
+- Admin can manually set level or auto-recalculate based on calls+rating
+
+### 2. Separate Audio/Video Call Rates
+- `hosts` table: `audio_coins_per_minute` and `video_coins_per_minute` columns
+- TalkNowSheet shows correct rate per call type
+- Backend uses type-specific rate for `max_seconds` and coin deduction
+- `call_sessions` table: `rate_per_minute` stores actual rate used
+
+### 3. Chat Unlock (Call-First Policy)
+- `hosts` table: `chat_unlock_policy = 'call_first'` (default for all hosts)
+- Chat button shows 🔒 if user hasn't called the host yet
+- Clicking locked chat shows Alert asking user to call first
+- API: `GET /api/hosts/:id/chat-status` returns `{ unlocked, reason }`
+- `POST /api/chat/rooms` returns 403 if chat locked
+- Chat auto-unlocks after any completed call with the host
+
+### 4. Real API Chat (No Mock Data)
+- ChatContext upgraded to use real `API.getChatRooms()` and `API.getMessages()`
+- `sendMessage` calls `API.sendMessage()` with optimistic UI update
+- chat/[id].tsx loads messages from real API on mount
+
 ### Key Business Rules
 - 1 coin = $0.01 USD
 - Host revenue share: 70%

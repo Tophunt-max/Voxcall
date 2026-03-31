@@ -1,5 +1,5 @@
-import React, { createContext, useContext, useState, useCallback } from "react";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import React, { createContext, useContext, useState, useCallback, useRef } from "react";
+import { API } from "@/services/api";
 
 export type MessageType = "text" | "image" | "audio";
 
@@ -22,13 +22,15 @@ export interface Conversation {
   lastMessageTime?: number;
   unreadCount: number;
   messages: Message[];
+  roomId?: string;
 }
 
 interface ChatContextValue {
   conversations: Conversation[];
-  sendMessage: (conversationId: string, content: string, type?: MessageType) => void;
+  sendMessage: (conversationId: string, content: string, type?: MessageType) => Promise<void>;
   markRead: (conversationId: string) => void;
   loadConversations: (userId: string) => Promise<void>;
+  loadMessages: (conversationId: string, roomId: string) => Promise<void>;
   getOrCreateConversation: (participantId: string, participantName: string, avatar?: string) => Conversation;
   totalUnread: number;
 }
@@ -38,34 +40,57 @@ const ChatContext = createContext<ChatContextValue | null>(null);
 export function ChatProvider({ children }: { children: React.ReactNode }) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
 
-  const loadConversations = useCallback(async (userId: string) => {
+  const totalUnread = conversations.reduce((sum, c) => sum + c.unreadCount, 0);
+
+  const loadConversations = useCallback(async (_userId: string) => {
     try {
-      const raw = await AsyncStorage.getItem(`@voxlink_chats_${userId}`);
-      if (raw) {
-        setConversations(JSON.parse(raw));
-      } else {
-        const mockConvos: Conversation[] = [
-          {
-            id: "c1",
-            participantId: "host1",
-            participantName: "Aria Chen",
-            lastMessage: "Thanks for the great call!",
-            lastMessageTime: Date.now() - 3600000,
-            unreadCount: 2,
-            messages: [
-              { id: "m1", senderId: "host1", receiverId: userId, content: "Thanks for the great call!", type: "text", timestamp: Date.now() - 3600000, isRead: false },
-              { id: "m2", senderId: "host1", receiverId: userId, content: "Hope we can talk again soon.", type: "text", timestamp: Date.now() - 3500000, isRead: false },
-            ],
-          },
-        ];
-        setConversations(mockConvos);
+      const rooms = await API.getChatRooms();
+      if (rooms && rooms.length > 0) {
+        const convos: Conversation[] = rooms.map((r: any) => ({
+          id: r.id,
+          participantId: r.host_id ?? r.user_id,
+          participantName: r.other_name ?? "Host",
+          participantAvatar: r.other_avatar ?? undefined,
+          lastMessage: r.last_message ?? "",
+          lastMessageTime: r.last_message_at ? r.last_message_at * 1000 : Date.now(),
+          unreadCount: 0,
+          messages: [],
+          roomId: r.id,
+        }));
+        setConversations(convos);
       }
-    } catch {}
+    } catch (e) {
+      console.log("loadConversations error:", e);
+    }
   }, []);
 
-  const sendMessage = useCallback((conversationId: string, content: string, type: MessageType = "text") => {
-    const msg: Message = {
-      id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
+  const loadMessages = useCallback(async (conversationId: string, roomId: string) => {
+    try {
+      const msgs = await API.getMessages(roomId);
+      const mapped: Message[] = (msgs ?? []).map((m: any) => ({
+        id: m.id,
+        senderId: m.sender_id,
+        receiverId: "",
+        content: m.content ?? "",
+        type: (m.media_type as MessageType) ?? "text",
+        timestamp: (m.created_at ?? 0) * 1000,
+        isRead: true,
+      }));
+      setConversations((prev) =>
+        prev.map((c) => (c.id === conversationId ? { ...c, messages: mapped } : c))
+      );
+    } catch (e) {
+      console.log("loadMessages error:", e);
+    }
+  }, []);
+
+  const sendMessage = useCallback(async (conversationId: string, content: string, type: MessageType = "text") => {
+    const convo = conversations.find((c) => c.id === conversationId);
+    const roomId = convo?.roomId ?? conversationId;
+
+    const tempId = "tmp_" + Date.now();
+    const tempMsg: Message = {
+      id: tempId,
       senderId: "me",
       receiverId: conversationId,
       content,
@@ -73,14 +98,34 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       timestamp: Date.now(),
       isRead: true,
     };
+
     setConversations((prev) =>
       prev.map((c) =>
         c.id === conversationId
-          ? { ...c, messages: [...c.messages, msg], lastMessage: content, lastMessageTime: msg.timestamp }
+          ? { ...c, messages: [...c.messages, tempMsg], lastMessage: content, lastMessageTime: Date.now() }
           : c
       )
     );
-  }, []);
+
+    try {
+      const sent = await API.sendMessage(roomId, content);
+      setConversations((prev) =>
+        prev.map((c) => {
+          if (c.id !== conversationId) return c;
+          return {
+            ...c,
+            messages: c.messages.map((m) =>
+              m.id === tempId
+                ? { ...m, id: sent.id ?? m.id, senderId: sent.sender_id ?? "me" }
+                : m
+            ),
+          };
+        })
+      );
+    } catch (e) {
+      console.log("sendMessage API error:", e);
+    }
+  }, [conversations]);
 
   const markRead = useCallback((conversationId: string) => {
     setConversations((prev) =>
@@ -92,26 +137,25 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     );
   }, []);
 
-  const getOrCreateConversation = useCallback((participantId: string, participantName: string, avatar?: string) => {
-    let convo = conversations.find((c) => c.participantId === participantId);
-    if (!convo) {
-      convo = {
-        id: participantId,
-        participantId,
-        participantName,
-        participantAvatar: avatar,
-        unreadCount: 0,
-        messages: [],
-      };
-      setConversations((prev) => [convo!, ...prev]);
-    }
-    return convo;
+  const getOrCreateConversation = useCallback((participantId: string, participantName: string, avatar?: string): Conversation => {
+    const existing = conversations.find((c) => c.participantId === participantId || c.id === participantId);
+    if (existing) return existing;
+    const newConvo: Conversation = {
+      id: participantId,
+      participantId,
+      participantName,
+      participantAvatar: avatar,
+      lastMessage: "",
+      lastMessageTime: Date.now(),
+      unreadCount: 0,
+      messages: [],
+    };
+    setConversations((prev) => [newConvo, ...prev]);
+    return newConvo;
   }, [conversations]);
 
-  const totalUnread = conversations.reduce((sum, c) => sum + c.unreadCount, 0);
-
   return (
-    <ChatContext.Provider value={{ conversations, sendMessage, markRead, loadConversations, getOrCreateConversation, totalUnread }}>
+    <ChatContext.Provider value={{ conversations, sendMessage, markRead, loadConversations, loadMessages, getOrCreateConversation, totalUnread }}>
       {children}
     </ChatContext.Provider>
   );

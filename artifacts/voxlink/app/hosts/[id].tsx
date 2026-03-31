@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   Modal,
   Dimensions,
   Platform,
+  ActivityIndicator,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
@@ -17,7 +18,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/context/AuthContext";
 import { useCall } from "@/context/CallContext";
 import { useChat } from "@/context/ChatContext";
-import { MOCK_HOSTS } from "@/data/mockData";
+import { API } from "@/services/api";
 
 const { width: SW, height: SH } = Dimensions.get("window");
 
@@ -60,11 +61,13 @@ function TalkNowSheet({
   visible, host, onClose, onAudio, onVideo,
 }: {
   visible: boolean;
-  host: (typeof MOCK_HOSTS)[0];
+  host: any;
   onClose: () => void;
   onAudio: () => void;
   onVideo: () => void;
 }) {
+  const audioRate = host?.audio_coins_per_minute ?? host?.coinsPerMinute ?? 5;
+  const videoRate = host?.video_coins_per_minute ?? (audioRate + 5);
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <TouchableOpacity style={sht.overlay} activeOpacity={1} onPress={onClose}>
@@ -77,7 +80,7 @@ function TalkNowSheet({
             <Text style={sht.label}>Audio Call</Text>
             <View style={sht.chip}>
               <Image source={require("@/assets/icons/ic_coin.png")} style={sht.chipIco} resizeMode="contain" />
-              <Text style={sht.chipTxt}>{host.coinsPerMinute} Coin/min</Text>
+              <Text style={sht.chipTxt}>{audioRate} Coin/min</Text>
             </View>
           </TouchableOpacity>
 
@@ -88,7 +91,7 @@ function TalkNowSheet({
             <Text style={sht.label}>Video Call</Text>
             <View style={sht.chip}>
               <Image source={require("@/assets/icons/ic_coin.png")} style={sht.chipIco} resizeMode="contain" />
-              <Text style={sht.chipTxt}>{host.coinsPerMinute + 5} Coin/min</Text>
+              <Text style={sht.chipTxt}>{videoRate} Coin/min</Text>
             </View>
           </TouchableOpacity>
         </View>
@@ -96,6 +99,15 @@ function TalkNowSheet({
     </Modal>
   );
 }
+
+/* ─── Level config ─── */
+const LEVEL_CONFIG: Record<number, { name: string; badge: string; color: string }> = {
+  1: { name: "Newcomer", badge: "🌱", color: "#6B7280" },
+  2: { name: "Rising",   badge: "⭐", color: "#F59E0B" },
+  3: { name: "Expert",   badge: "🔥", color: "#EF4444" },
+  4: { name: "Pro",      badge: "💎", color: "#8B5CF6" },
+  5: { name: "Elite",    badge: "👑", color: "#D97706" },
+};
 
 /* ═══════════════════ MAIN SCREEN ═══════════════════ */
 export default function HostDetailScreen() {
@@ -105,8 +117,31 @@ export default function HostDetailScreen() {
   const { initiateCall } = useCall();
   const { getOrCreateConversation } = useChat();
   const [talkSheet, setTalkSheet] = useState(false);
+  const [host, setHost] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [chatUnlocked, setChatUnlocked] = useState(false);
+  const [reviews, setReviews] = useState<any[]>([]);
 
-  const host = MOCK_HOSTS.find((h) => h.id === id);
+  useEffect(() => {
+    if (!id) return;
+    Promise.all([
+      API.getHost(id),
+      API.getHostReviews(id),
+      API.getChatStatus(id).catch(() => ({ unlocked: false })),
+    ]).then(([h, revs, chatStatus]) => {
+      setHost(h);
+      setReviews(revs ?? []);
+      setChatUnlocked((chatStatus as any)?.unlocked ?? false);
+    }).catch(() => {}).finally(() => setLoading(false));
+  }, [id]);
+
+  if (loading) {
+    return (
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#fff" }}>
+        <ActivityIndicator size="large" color={APP_COLOR} />
+      </View>
+    );
+  }
 
   if (!host) {
     return (
@@ -117,12 +152,17 @@ export default function HostDetailScreen() {
   }
 
   /* ─── Derived fields ─── */
-  const num = parseInt(host.id.replace("host", "")) || 1;
-  const age = 24 + (num * 3 % 10);
-  const uniqueId = `VX${String(num).padStart(6, "0")}`;
-  const callCount = host.reviewCount * 2;
-  const experience = `${Math.max(1, Math.floor(host.totalMinutes / 5000))}+`;
-  const rateVideo = host.coinsPerMinute + 5;
+  const hostName = host.display_name || host.name || "Host";
+  const hostAvatar = host.avatar_url
+    ? host.avatar_url
+    : `https://api.dicebear.com/7.x/avataaars/svg?seed=${host.id}`;
+  const uniqueId = `VX${String(host.id).slice(-6).padStart(6, "0")}`;
+  const callCount = host.total_minutes ? Math.floor(host.total_minutes / 30) : host.review_count * 2;
+  const experience = `${Math.max(1, Math.floor((host.total_minutes ?? 0) / 5000))}+`;
+  const audioRate: number = host.audio_coins_per_minute ?? host.coins_per_minute ?? 5;
+  const videoRate: number = host.video_coins_per_minute ?? audioRate + 5;
+  const level: number = host.level ?? 1;
+  const levelInfo = LEVEL_CONFIG[level] ?? LEVEL_CONFIG[1];
 
   /* ─── Handlers ─── */
   const checkCoins = (rate: number) => {
@@ -142,40 +182,58 @@ export default function HostDetailScreen() {
 
   const handleAudio = () => {
     setTalkSheet(false);
-    if (!checkCoins(host.coinsPerMinute)) return;
-    initiateCall({ id: host.id, name: host.name, avatar: host.avatar, role: "host" }, "audio", host.coinsPerMinute);
+    if (!checkCoins(audioRate)) return;
+    initiateCall({ id: host.id, name: hostName, avatar: hostAvatar, role: "host" }, "audio", audioRate);
     router.push({ pathname: "/call/outgoing", params: { hostId: host.id, callType: "audio" } });
   };
 
   const handleVideo = () => {
     setTalkSheet(false);
-    if (!checkCoins(rateVideo)) return;
-    initiateCall({ id: host.id, name: host.name, avatar: host.avatar, role: "host" }, "video", rateVideo);
+    if (!checkCoins(videoRate)) return;
+    initiateCall({ id: host.id, name: hostName, avatar: hostAvatar, role: "host" }, "video", videoRate);
     router.push({ pathname: "/call/outgoing", params: { hostId: host.id, callType: "video" } });
   };
 
-  const handleChat = () => {
-    getOrCreateConversation(host.id, host.name, host.avatar);
-    router.push(`/chat/${host.id}`);
-  };
-
-  const copyId = () => {
-    if (Platform.OS === "android") {
-      // Android clipboard
-      try { require("react-native").Clipboard?.setString(uniqueId); } catch (_) {}
+  const handleChat = async () => {
+    if (!chatUnlocked) {
+      Alert.alert(
+        "🔒 Chat Locked",
+        `Chat ke liye pehle ${hostName} se call karo. Call ke baad chat automatically unlock ho jaayegi!`,
+        [
+          {
+            text: "Call Karo",
+            onPress: () => {
+              if (host.is_online) setTalkSheet(true);
+              else Alert.alert("Offline", `${hostName} abhi online nahi hai.`);
+            },
+          },
+          { text: "Cancel", style: "cancel" },
+        ]
+      );
+      return;
+    }
+    try {
+      const room = await API.createChatRoom(host.id);
+      getOrCreateConversation(host.id, hostName, hostAvatar);
+      router.push(`/chat/${room.id}`);
+    } catch (e: any) {
+      if (e.message?.includes("CHAT_LOCKED") || e.message?.includes("locked")) {
+        Alert.alert("🔒 Chat Locked", "Pehle call karo, phir chat unlock hogi!");
+      } else {
+        console.log("chat error:", e);
+        getOrCreateConversation(host.id, hostName, hostAvatar);
+        router.push(`/chat/${host.id}`);
+      }
     }
   };
 
-  /* ─── Mock reviews ─── */
-  const reviews = [
-    { name: "Sarah M.", seed: "sarah", rating: 5, text: "Amazing listener! Very understanding and gave great advice.", time: "2d ago" },
-    { name: "John D.", seed: "john", rating: 5, text: "Really helped me through a tough time. Professional and empathetic.", time: "5d ago" },
-    { name: "Emma W.", seed: "emma", rating: 4, text: "Insightful conversation. Would definitely recommend!", time: "1w ago" },
-  ];
+  const copyId = () => {
+    try { require("react-native").Clipboard?.setString(uniqueId); } catch (_) {}
+  };
 
   const statsList = [
     { image: require("@/assets/icons/ic_call_gradient.png"), title: "Total Call", count: String(callCount) },
-    { image: require("@/assets/icons/ic_star.png"), title: "Rating", count: host.rating.toFixed(1) },
+    { image: require("@/assets/icons/ic_star.png"), title: "Rating", count: (host.rating ?? 0).toFixed(1) },
     { image: require("@/assets/icons/ic_experience.png"), title: "Experience", count: experience },
   ];
 
@@ -202,12 +260,17 @@ export default function HostDetailScreen() {
           {/* Centered avatar */}
           <View style={s.heroCenterCol}>
             <View style={s.heroDotBorder}>
-              <Image source={{ uri: host.avatar }} style={s.heroAvatar} resizeMode="cover" />
+              <Image source={{ uri: hostAvatar }} style={s.heroAvatar} resizeMode="cover" />
             </View>
-            <Text style={s.heroName}>{host.name}</Text>
+            {/* Level badge */}
+            <View style={[s.levelBadge, { backgroundColor: levelInfo.color + "33", borderColor: levelInfo.color }]}>
+              <Text style={s.levelBadgeEmoji}>{levelInfo.badge}</Text>
+              <Text style={[s.levelBadgeTxt, { color: levelInfo.color }]}>Lv.{level} {levelInfo.name}</Text>
+            </View>
+            <Text style={s.heroName}>{hostName}</Text>
             <View style={s.heroRatingRow}>
               <Image source={require("@/assets/icons/ic_star.png")} style={{ width: 16, height: 16 }} tintColor={STAR_COLOR} resizeMode="contain" />
-              <Text style={s.heroRatingTxt}>{host.rating} ({host.reviewCount} reviews)</Text>
+              <Text style={s.heroRatingTxt}>{(host.rating ?? 0).toFixed(1)} ({host.review_count ?? 0} reviews)</Text>
             </View>
           </View>
         </LinearGradient>
@@ -218,21 +281,21 @@ export default function HostDetailScreen() {
             {/* Avatar dotted (small, 50x50) */}
             <View style={s.infoDotBorder}>
               <View style={s.infoAvatarCircle}>
-                <Image source={{ uri: host.avatar }} style={s.infoAvatarImg} resizeMode="cover" />
+                <Image source={{ uri: hostAvatar }} style={s.infoAvatarImg} resizeMode="cover" />
               </View>
             </View>
 
             {/* Name + status + ID */}
             <View style={s.infoMid}>
-              <Text style={s.infoName} numberOfLines={1}>{host.name}, {age}</Text>
+              <Text style={s.infoName} numberOfLines={1}>{hostName}</Text>
               <View style={s.statusRow}>
                 {/* Status pill */}
-                <View style={[s.statusPill, { backgroundColor: host.isOnline ? GREEN : "#EDEDEF" }]}>
-                  <View style={[s.dotOuter, { backgroundColor: host.isOnline ? "rgba(255,255,255,0.5)" : "rgba(0,0,0,0.08)" }]}>
-                    <View style={[s.dotInner, { backgroundColor: host.isOnline ? "#fff" : PROFILE_LANG }]} />
+                <View style={[s.statusPill, { backgroundColor: host.is_online ? GREEN : "#EDEDEF" }]}>
+                  <View style={[s.dotOuter, { backgroundColor: host.is_online ? "rgba(255,255,255,0.5)" : "rgba(0,0,0,0.08)" }]}>
+                    <View style={[s.dotInner, { backgroundColor: host.is_online ? "#fff" : PROFILE_LANG }]} />
                   </View>
-                  <Text style={[s.statusTxt, { color: host.isOnline ? "#fff" : PROFILE_LANG }]}>
-                    {host.isOnline ? "Online" : "Offline"}
+                  <Text style={[s.statusTxt, { color: host.is_online ? "#fff" : PROFILE_LANG }]}>
+                    {host.is_online ? "Online" : "Offline"}
                   </Text>
                 </View>
                 {/* ID chip */}
@@ -246,7 +309,7 @@ export default function HostDetailScreen() {
             {/* Coin rate chip */}
             <View style={s.coinChip}>
               <Image source={require("@/assets/icons/ic_coin.png")} style={s.coinChipIco} resizeMode="contain" />
-              <Text style={s.coinChipTxt}>{host.coinsPerMinute} Coin</Text>
+              <Text style={s.coinChipTxt}>{audioRate} Coin</Text>
             </View>
           </View>
 
@@ -257,7 +320,7 @@ export default function HostDetailScreen() {
           <View style={s.langRow}>
             <Image source={require("@/assets/icons/ic_language.png")} style={s.langIco} resizeMode="contain" />
             <Text style={s.langLabel}>Language : </Text>
-            <Text style={s.langVal} numberOfLines={2}>{host.languages.join(", ")}</Text>
+            <Text style={s.langVal} numberOfLines={2}>{(host.languages ?? []).join(", ")}</Text>
           </View>
 
           {/* Topics */}
@@ -267,7 +330,7 @@ export default function HostDetailScreen() {
             contentContainerStyle={s.topicsContent}
             style={s.topicsScroll}
           >
-            {host.specialties.map((sp) => (
+            {(host.specialties ?? []).map((sp: string) => (
               <View key={sp} style={s.topicTag}>
                 <Text style={s.topicTxt}>{sp}</Text>
               </View>
@@ -290,32 +353,34 @@ export default function HostDetailScreen() {
         <View style={s.reviewSec}>
           <View style={s.reviewHeader}>
             <Text style={s.reviewHeaderTxt}>Reviews</Text>
-            <TouchableOpacity onPress={() => router.push({ pathname: "/hosts/reviews", params: { hostId: host.id } })}>
-              <Text style={s.viewAllTxt}>View All</Text>
-            </TouchableOpacity>
           </View>
 
-          {reviews.map((r, i) => (
-            <View key={i} style={s.reviewCard}>
+          {reviews.length === 0 && (
+            <Text style={{ color: PROFILE_LANG, fontFamily: "Poppins_400Regular", fontSize: 13, textAlign: "center", paddingVertical: 16 }}>
+              No reviews yet
+            </Text>
+          )}
+
+          {reviews.slice(0, 5).map((r: any, i: number) => (
+            <View key={r.id ?? i} style={s.reviewCard}>
               <View style={s.reviewTop}>
-                {/* Reviewer avatar */}
                 <View style={s.reviewDot}>
                   <View style={s.reviewAvatarCircle}>
                     <Image
-                      source={{ uri: `https://api.dicebear.com/7.x/avataaars/svg?seed=${r.seed}` }}
+                      source={{ uri: r.avatar_url ?? `https://api.dicebear.com/7.x/avataaars/svg?seed=${r.user_id ?? i}` }}
                       style={s.reviewAvatarImg}
                     />
                   </View>
                 </View>
                 <View style={s.reviewInfo}>
-                  <Text style={s.reviewName}>{r.name}</Text>
-                  <StarRating rating={r.rating} size={16} />
+                  <Text style={s.reviewName}>{r.name ?? "User"}</Text>
+                  <StarRating rating={r.stars ?? r.rating ?? 5} size={16} />
                 </View>
                 <View style={s.timeBadge}>
-                  <Text style={s.timeTxt}>{r.time}</Text>
+                  <Text style={s.timeTxt}>{r.created_at ? new Date(r.created_at * 1000).toLocaleDateString() : "Recent"}</Text>
                 </View>
               </View>
-              <Text style={s.reviewTxt}>{r.text}</Text>
+              {r.comment ? <Text style={s.reviewTxt}>{r.comment}</Text> : null}
             </View>
           ))}
         </View>
@@ -323,21 +388,25 @@ export default function HostDetailScreen() {
 
       {/* ══════ ProfileBottomButtonView ══════ */}
       <View style={[s.bottomBar, { paddingBottom: insets.bottom + 10 }]}>
-        <TouchableOpacity onPress={handleChat} style={[s.bottomBtn, { backgroundColor: GREEN }]} activeOpacity={0.85}>
-          <Text style={s.bottomBtnTxt}>Chat Now</Text>
+        <TouchableOpacity onPress={handleChat} style={[s.bottomBtn, { backgroundColor: chatUnlocked ? GREEN : "#9CA3AF" }]} activeOpacity={0.85}>
+          <Text style={s.bottomBtnTxt}>{chatUnlocked ? "Chat Now" : "🔒 Chat"}</Text>
         </TouchableOpacity>
 
-        {host.isOnline && (
+        {host.is_online ? (
           <TouchableOpacity onPress={() => setTalkSheet(true)} style={[s.bottomBtn, { backgroundColor: APP_COLOR }]} activeOpacity={0.85}>
             <Image source={require("@/assets/icons/ic_call_gradient.png")} style={s.talkIco} tintColor="#fff" resizeMode="contain" />
             <Text style={s.bottomBtnTxt}>Talk Now</Text>
           </TouchableOpacity>
+        ) : (
+          <View style={[s.bottomBtn, { backgroundColor: "#D1D5DB" }]}>
+            <Text style={[s.bottomBtnTxt, { color: "#6B7280" }]}>Offline</Text>
+          </View>
         )}
       </View>
 
       <TalkNowSheet
         visible={talkSheet}
-        host={host}
+        host={{ ...host, coinsPerMinute: audioRate }}
         onClose={() => setTalkSheet(false)}
         onAudio={handleAudio}
         onVideo={handleVideo}
@@ -382,6 +451,9 @@ const s = StyleSheet.create({
   heroName: { fontSize: 20, fontFamily: "Poppins_700Bold", color: "#fff", marginTop: 4 },
   heroRatingRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   heroRatingTxt: { fontSize: 13, fontFamily: "Poppins_400Regular", color: "rgba(255,255,255,0.8)" },
+  levelBadge: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, borderWidth: 1, marginTop: 6 },
+  levelBadgeEmoji: { fontSize: 14 },
+  levelBadgeTxt: { fontSize: 12, fontFamily: "Poppins_600SemiBold" },
 
   /* ── Info card ── */
   infoCard: {

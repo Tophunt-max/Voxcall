@@ -4,6 +4,27 @@ import type { Env, JWTPayload } from '../types';
 
 const host = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
 
+/* ─── Level helpers ─── */
+const LEVELS: Record<number, { name: string; badge: string; color: string }> = {
+  1: { name: 'Newcomer', badge: '🌱', color: '#6B7280' },
+  2: { name: 'Rising',   badge: '⭐', color: '#F59E0B' },
+  3: { name: 'Expert',   badge: '🔥', color: '#EF4444' },
+  4: { name: 'Pro',      badge: '💎', color: '#8B5CF6' },
+  5: { name: 'Elite',    badge: '👑', color: '#D97706' },
+};
+
+function enrichHost(h: any) {
+  const lvl = h.level ?? 1;
+  return {
+    ...h,
+    specialties: JSON.parse(h.specialties || '[]'),
+    languages: JSON.parse(h.languages || '[]'),
+    level_info: LEVELS[lvl] ?? LEVELS[1],
+    audio_coins_per_minute: h.audio_coins_per_minute ?? h.coins_per_minute ?? 5,
+    video_coins_per_minute: h.video_coins_per_minute ?? (h.coins_per_minute ?? 5) + 5,
+  };
+}
+
 // GET /api/hosts/featured — top-rated/featured hosts (must be before /:id)
 host.get('/featured', async (c) => {
   const result = await c.env.DB.prepare(
@@ -12,11 +33,7 @@ host.get('/featured', async (c) => {
      WHERE h.is_active = 1 AND h.rating >= 4.0
      ORDER BY h.is_top_rated DESC, h.rating DESC, h.total_minutes DESC LIMIT 10`
   ).all();
-  return c.json(result.results.map((h: any) => ({
-    ...h,
-    specialties: JSON.parse(h.specialties || '[]'),
-    languages: JSON.parse(h.languages || '[]'),
-  })));
+  return c.json(result.results.map(enrichHost));
 });
 
 // GET /api/hosts — public list
@@ -31,7 +48,7 @@ host.get('/', async (c) => {
   query += ' ORDER BY h.is_online DESC, h.rating DESC, h.total_minutes DESC LIMIT ? OFFSET ?';
   params.push(parseInt(limit), offset);
   const result = await c.env.DB.prepare(query).bind(...params).all();
-  return c.json(result.results.map((h: any) => ({ ...h, specialties: JSON.parse(h.specialties || '[]'), languages: JSON.parse(h.languages || '[]') })));
+  return c.json(result.results.map(enrichHost));
 });
 
 // GET /api/hosts/:id — single host
@@ -41,7 +58,21 @@ host.get('/:id', async (c) => {
      JOIN users u ON u.id = h.user_id WHERE h.id = ?`
   ).bind(c.req.param('id')).first<any>();
   if (!h) return c.json({ error: 'Host not found' }, 404);
-  return c.json({ ...h, specialties: JSON.parse(h.specialties || '[]'), languages: JSON.parse(h.languages || '[]') });
+  return c.json(enrichHost(h));
+});
+
+// GET /api/hosts/:id/chat-status — check if caller has called this host (chat unlock)
+host.get('/:id/chat-status', authMiddleware, async (c) => {
+  const { sub } = c.get('user');
+  const hostId = c.req.param('id');
+  const db = c.env.DB;
+  const hostRow = await db.prepare('SELECT chat_unlock_policy FROM hosts WHERE id = ?').bind(hostId).first<any>();
+  if (!hostRow) return c.json({ unlocked: false, reason: 'host_not_found' }, 404);
+  if (hostRow.chat_unlock_policy !== 'call_first') return c.json({ unlocked: true, reason: 'free_chat' });
+  const prevCall = await db.prepare(
+    `SELECT id FROM call_sessions WHERE caller_id = ? AND host_id = ? AND status = 'ended' LIMIT 1`
+  ).bind(sub, hostId).first<any>();
+  return c.json({ unlocked: !!prevCall, reason: prevCall ? 'call_done' : 'no_call_yet' });
 });
 
 // GET /api/hosts/:id/reviews
@@ -62,7 +93,7 @@ hostProtected.use('*', authMiddleware);
 hostProtected.patch('/me', async (c) => {
   const { sub } = c.get('user');
   const body = await c.req.json();
-  const allowed = ['display_name', 'specialties', 'languages', 'coins_per_minute'];
+  const allowed = ['display_name', 'specialties', 'languages', 'coins_per_minute', 'audio_coins_per_minute', 'video_coins_per_minute'];
   const sets: string[] = [];
   const vals: any[] = [];
   for (const key of allowed) {
