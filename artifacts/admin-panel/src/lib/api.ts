@@ -49,4 +49,6 @@ export const api = {
   sendNotification: (data: any) => req<any>('POST', '/admin/notifications/send', data),
   post: (path: string, data: any) => req<any>('POST', path.replace('/api/admin/', '/admin/').replace('/api/', '/'), data),
   recalculateHostLevels: () => req<any>('POST', '/admin/hosts/recalculate-levels', {}),
+  getLevelConfig: () => req<any[]>('GET', '/admin/level-config'),
+  updateLevelConfig: (data: any[]) => req<any>('PUT', '/admin/level-config', data),
 };

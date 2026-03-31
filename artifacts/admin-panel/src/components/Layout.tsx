@@ -4,7 +4,7 @@ import { useAuth } from '@/lib/auth';
 import {
   LayoutDashboard, Users, Mic2, Wallet, Coins, Settings, LogOut,
   Menu, X, ChevronRight, HelpCircle, Phone, Bell, Star,
-  Hash, ArrowRightLeft
+  Hash, ArrowRightLeft, Trophy
 } from 'lucide-react';
 
 const nav = [
@@ -19,6 +19,7 @@ const nav = [
   { href: '/notifications', label: 'Notifications', icon: Bell, section: 'content' },
   { href: '/talk-topics', label: 'Talk Topics', icon: Hash, section: 'content' },
   { href: '/faqs', label: 'FAQs', icon: HelpCircle, section: 'content' },
+  { href: '/level-config', label: 'Level System', icon: Trophy, section: 'system' },
   { href: '/settings', label: 'Settings', icon: Settings, section: 'system' },
 ];
 

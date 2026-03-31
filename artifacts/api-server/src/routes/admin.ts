@@ -142,17 +142,65 @@ admin.post('/hosts/:id/level', async (c) => {
   return c.json({ success: true, level: lvl });
 });
 
-// POST /api/admin/hosts/recalculate-levels — auto-recalculate all host levels
+// DEFAULT level config (fallback if not set in DB)
+const DEFAULT_LEVEL_CONFIG = [
+  { level: 1, name: 'Newcomer', badge: '🌱', color: '#6B7280', min_calls: 0,    min_rating: 0.0, coin_reward: 0,    description: 'New to the platform' },
+  { level: 2, name: 'Rising',   badge: '⭐', color: '#F59E0B', min_calls: 50,   min_rating: 4.0, coin_reward: 100,  description: 'Getting established' },
+  { level: 3, name: 'Expert',   badge: '🔥', color: '#EF4444', min_calls: 200,  min_rating: 4.3, coin_reward: 300,  description: 'Proven expertise' },
+  { level: 4, name: 'Pro',      badge: '💎', color: '#8B5CF6', min_calls: 500,  min_rating: 4.6, coin_reward: 500,  description: 'Professional tier' },
+  { level: 5, name: 'Elite',    badge: '👑', color: '#D97706', min_calls: 1000, min_rating: 4.8, coin_reward: 1000, description: 'Top performer' },
+];
+
+async function getLevelConfig(d: D1Database): Promise<typeof DEFAULT_LEVEL_CONFIG> {
+  try {
+    const row = await d.prepare("SELECT value FROM app_settings WHERE key = 'level_config'").first<any>();
+    if (row?.value) return JSON.parse(row.value);
+  } catch (_) {}
+  return DEFAULT_LEVEL_CONFIG;
+}
+
+// GET /api/admin/level-config
+admin.get('/level-config', async (c) => {
+  const config = await getLevelConfig(db(c));
+  return c.json(config);
+});
+
+// PUT /api/admin/level-config
+admin.put('/level-config', async (c) => {
+  const body = await c.req.json<typeof DEFAULT_LEVEL_CONFIG>();
+  if (!Array.isArray(body) || body.length !== 5) return c.json({ error: 'Invalid config: must be array of 5 levels' }, 400);
+  const normalized = body.map((l, i) => ({
+    level: i + 1,
+    name: String(l.name || DEFAULT_LEVEL_CONFIG[i].name),
+    badge: String(l.badge || DEFAULT_LEVEL_CONFIG[i].badge),
+    color: String(l.color || DEFAULT_LEVEL_CONFIG[i].color),
+    min_calls: Math.max(0, parseInt(String(l.min_calls)) || 0),
+    min_rating: Math.min(5, Math.max(0, parseFloat(String(l.min_rating)) || 0)),
+    coin_reward: Math.max(0, parseInt(String(l.coin_reward)) || 0),
+    description: String(l.description || ''),
+  }));
+  await db(c).prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('level_config', ?, unixepoch())")
+    .bind(JSON.stringify(normalized)).run();
+  return c.json({ success: true, config: normalized });
+});
+
+// POST /api/admin/hosts/recalculate-levels — auto-recalculate all host levels using DB config
 admin.post('/hosts/recalculate-levels', async (c) => {
   const d = db(c);
-  await d.batch([
-    d.prepare("UPDATE hosts SET level = 5 WHERE review_count >= 1000 AND rating >= 4.8"),
-    d.prepare("UPDATE hosts SET level = 4 WHERE level < 4 AND review_count >= 500 AND rating >= 4.6"),
-    d.prepare("UPDATE hosts SET level = 3 WHERE level < 3 AND review_count >= 200 AND rating >= 4.3"),
-    d.prepare("UPDATE hosts SET level = 2 WHERE level < 2 AND review_count >= 50 AND rating >= 4.0"),
-    d.prepare("UPDATE hosts SET level = 1 WHERE level IS NULL"),
-  ]);
-  return c.json({ success: true });
+  const config = await getLevelConfig(d);
+  const sorted = [...config].sort((a, b) => b.level - a.level); // highest first
+  const stmts: D1PreparedStatement[] = [];
+  for (const lvl of sorted) {
+    if (lvl.level === 1) {
+      stmts.push(d.prepare("UPDATE hosts SET level = 1 WHERE level IS NULL OR level < 1"));
+    } else {
+      stmts.push(d.prepare(
+        `UPDATE hosts SET level = ? WHERE (level IS NULL OR level < ?) AND review_count >= ? AND rating >= ?`
+      ).bind(lvl.level, lvl.level, lvl.min_calls, lvl.min_rating));
+    }
+  }
+  await d.batch(stmts);
+  return c.json({ success: true, config });
 });
 
 // GET /api/admin/withdrawals

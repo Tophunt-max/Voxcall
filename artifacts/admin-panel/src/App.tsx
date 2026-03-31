@@ -15,6 +15,7 @@ import CoinTransactions from '@/pages/CoinTransactions';
 import Ratings from '@/pages/Ratings';
 import Notifications from '@/pages/Notifications';
 import SettingsPage from '@/pages/SettingsPage';
+import LevelConfig from '@/pages/LevelConfig';
 
 const queryClient = new QueryClient();
 const base = import.meta.env.BASE_URL.replace(/\/$/, '');
@@ -47,6 +48,7 @@ function ProtectedApp() {
         <Route path="/notifications" component={Notifications} />
         <Route path="/talk-topics" component={TalkTopics} />
         <Route path="/faqs" component={FAQs} />
+        <Route path="/level-config" component={LevelConfig} />
         <Route path="/settings" component={SettingsPage} />
         <Route component={() => <Redirect to="/dashboard" />} />
       </Switch>
