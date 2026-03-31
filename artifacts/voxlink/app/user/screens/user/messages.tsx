@@ -17,6 +17,8 @@ import { useAuth } from "@/context/AuthContext";
 import { useChat } from "@/context/ChatContext";
 import { formatRelativeTime } from "@/utils/format";
 
+const ACCENT = "#A00EE7";
+
 export default function MessagesScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -24,6 +26,7 @@ export default function MessagesScreen() {
   const { conversations, loadConversations } = useChat();
   const [search, setSearch] = useState("");
   const [showSearch, setShowSearch] = useState(false);
+  const [searchFocused, setSearchFocused] = useState(false);
 
   useEffect(() => {
     if (user) loadConversations(user.id);
@@ -37,8 +40,11 @@ export default function MessagesScreen() {
     <View style={[styles.container, { backgroundColor: "#F3E4FF" }]}>
       <View style={[styles.header, { paddingTop: insets.top + 14, backgroundColor: "#F3E4FF" }]}>
         {showSearch ? (
-          <View style={styles.searchBar}>
-            <Feather name="search" size={18} color={colors.mutedForeground} />
+          <View style={[
+            styles.searchBar,
+            { borderWidth: 1.5, borderColor: searchFocused ? ACCENT : "transparent" }
+          ]}>
+            <Feather name="search" size={18} color={searchFocused ? ACCENT : colors.mutedForeground} />
             <TextInput
               style={styles.searchInput}
               value={search}
@@ -46,10 +52,12 @@ export default function MessagesScreen() {
               placeholder="Search conversations..."
               placeholderTextColor={colors.mutedForeground}
               autoFocus
-              selectionColor="#A00EE7"
+              selectionColor={ACCENT}
               underlineColorAndroid="transparent"
+              onFocus={() => setSearchFocused(true)}
+              onBlur={() => setSearchFocused(false)}
             />
-            <TouchableOpacity onPress={() => { setShowSearch(false); setSearch(""); }}>
+            <TouchableOpacity onPress={() => { setShowSearch(false); setSearch(""); setSearchFocused(false); }}>
               <Feather name="x" size={18} color={colors.mutedForeground} />
             </TouchableOpacity>
           </View>

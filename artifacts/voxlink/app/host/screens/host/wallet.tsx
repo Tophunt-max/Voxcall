@@ -63,7 +63,9 @@ export default function HostWalletScreen() {
   const { user, updateCoins, refreshBalance } = useAuth();
   const [tab, setTab] = useState<"history" | "withdraw">("history");
   const [withdrawAmt, setWithdrawAmt] = useState("");
+  const [amtFocused, setAmtFocused] = useState(false);
   const [withdrawing, setWithdrawing] = useState(false);
+  const ACCENT = "#A00EE7";
   const [earnings, setEarnings] = useState<EarningTx[]>([]);
   const [stats, setStats] = useState<EarningsStats>({ thisWeek: 0, sessions: 0, withdrawn: 0, totalEarnings: 0 });
   const [loading, setLoading] = useState(true);
@@ -242,8 +244,8 @@ export default function HostWalletScreen() {
           </View>
 
           <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Or Enter Amount</Text>
-          <View style={[styles.inputWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Image source={require("@/assets/icons/ic_coin.png")} style={styles.inputIcon} tintColor="#FFA100" resizeMode="contain" />
+          <View style={[styles.inputWrap, { backgroundColor: colors.surface, borderColor: amtFocused ? ACCENT : colors.border }]}>
+            <Image source={require("@/assets/icons/ic_coin.png")} style={styles.inputIcon} tintColor={amtFocused ? ACCENT : "#FFA100"} resizeMode="contain" />
             <TextInput
               style={[styles.input, { color: colors.text }]}
               placeholder="Enter coin amount"
@@ -251,8 +253,10 @@ export default function HostWalletScreen() {
               value={withdrawAmt}
               onChangeText={setWithdrawAmt}
               keyboardType="numeric"
-              selectionColor="#A00EE7"
+              selectionColor={ACCENT}
               underlineColorAndroid="transparent"
+              onFocus={() => setAmtFocused(true)}
+              onBlur={() => setAmtFocused(false)}
             />
           </View>
 

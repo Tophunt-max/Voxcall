@@ -15,10 +15,13 @@ const MOCK_USER_CHATS = [
   { id: "u4", name: "Marcus L.", avatar: "marcus", lastMsg: "I'll try the techniques you suggested", time: "3h", unread: 0, online: false },
 ];
 
+const ACCENT = "#A00EE7";
+
 export default function HostChatScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const [search, setSearch] = useState("");
+  const [searchFocused, setSearchFocused] = useState(false);
   const topPad = insets.top;
 
   const filtered = MOCK_USER_CHATS.filter(c => c.name.toLowerCase().includes(search.toLowerCase()));
@@ -30,16 +33,25 @@ export default function HostChatScreen() {
       </View>
 
       {/* Search */}
-      <View style={[styles.searchWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-        <Feather name="search" size={16} color={colors.mutedForeground} />
+      <View style={[
+        styles.searchWrap,
+        {
+          backgroundColor: colors.surface,
+          borderColor: searchFocused ? ACCENT : colors.border,
+          borderWidth: searchFocused ? 1.5 : 1,
+        }
+      ]}>
+        <Feather name="search" size={16} color={searchFocused ? ACCENT : colors.mutedForeground} />
         <TextInput
           style={[styles.searchInput, { color: colors.text }]}
           placeholder="Search conversations..."
           placeholderTextColor={colors.mutedForeground}
           value={search}
           onChangeText={setSearch}
-          selectionColor="#A00EE7"
+          selectionColor={ACCENT}
           underlineColorAndroid="transparent"
+          onFocus={() => setSearchFocused(true)}
+          onBlur={() => setSearchFocused(false)}
         />
       </View>
 
