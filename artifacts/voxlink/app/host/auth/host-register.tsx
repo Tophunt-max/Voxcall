@@ -12,6 +12,7 @@ import { Feather } from "@expo/vector-icons";
 import { useAuth } from "@/context/AuthContext";
 import { PrimaryButton } from "@/components/PrimaryButton";
 import { API } from "@/services/api";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const DARK = "#111329";
 const ACCENT = "#A00EE7";
@@ -53,6 +54,7 @@ export default function HostRegisterScreen() {
         coins: data.user.coins ?? 0,
         role: "user",
       });
+      await AsyncStorage.setItem("hostAppPending", "true");
       router.push("/host/auth/host-profile-setup");
     } catch (err: any) {
       Alert.alert("Error", err?.message || "Could not create account. Email may already be in use.");

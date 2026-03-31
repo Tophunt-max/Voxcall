@@ -10,6 +10,7 @@ import { Feather } from "@expo/vector-icons";
 import { useAuth } from "@/context/AuthContext";
 import { PrimaryButton } from "@/components/PrimaryButton";
 import { API } from "@/services/api";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const ACCENT = "#A00EE7";
 
@@ -41,6 +42,7 @@ export default function LoginScreen() {
         phone: data.user.phone,
         bio: data.user.bio,
       });
+      await AsyncStorage.removeItem("hostAppPending");
       router.replace("/user/screens/user");
     } catch (err: any) {
       Alert.alert("Login Failed", err?.message || "Invalid email or password.");

@@ -10,6 +10,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { useAuth } from "@/context/AuthContext";
 import { API } from "@/services/api";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const DARK = "#111329";
 const ACCENT = "#A00EE7";
@@ -66,9 +67,10 @@ export default function HostStatusScreen() {
     try {
       const res = await API.getHostAppStatus();
       setData(res);
-      // If approved, update local user role
+      // If approved, update local user role and clear pending flag
       if (res?.status === "approved" && user?.role !== "host") {
         await updateProfile({ role: "host" });
+        await AsyncStorage.removeItem("hostAppPending");
       }
     } catch {
       setData(null);
@@ -155,7 +157,10 @@ export default function HostStatusScreen() {
         {status === "approved" && (
           <TouchableOpacity
             style={s.ctaBtn}
-            onPress={() => router.replace("/host/screens/host")}
+            onPress={async () => {
+              await AsyncStorage.removeItem("hostAppPending");
+              router.replace("/host/screens/host");
+            }}
             activeOpacity={0.85}
           >
             <LinearGradient colors={["#A00EE7", "#6A00B8"]} style={s.ctaBtnGrad}>

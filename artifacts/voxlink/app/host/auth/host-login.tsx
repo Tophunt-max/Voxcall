@@ -10,6 +10,7 @@ import { Feather } from "@expo/vector-icons";
 import { useAuth } from "@/context/AuthContext";
 import { PrimaryButton } from "@/components/PrimaryButton";
 import { API } from "@/services/api";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const DARK = "#111329";
 const ACCENT = "#A00EE7";
@@ -42,11 +43,14 @@ export default function HostLoginScreen() {
         phone: userData.phone,
         bio: userData.bio,
       });
-      // If not yet a host — redirect to KYC flow
-      if (userData.role !== "host") {
-        router.replace("/host/auth/host-register");
-      } else {
+      if (userData.role === "host") {
+        // Fully approved host — clear pending flag and go to host app
+        await AsyncStorage.removeItem("hostAppPending");
         router.replace("/host/screens/host");
+      } else {
+        // Not yet a host — mark pending and redirect to KYC flow
+        await AsyncStorage.setItem("hostAppPending", "true");
+        router.replace("/host/auth/host-register");
       }
     } catch (err: any) {
       Alert.alert("Login Failed", err?.message || "Invalid email or password.");
