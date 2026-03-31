@@ -67,7 +67,7 @@ export default function HostDetailScreen() {
         <View style={[styles.heroSection, { paddingTop: (Platform.OS === "web" ? 67 : insets.top) + 8 }]}>
           <View style={styles.heroNav}>
             <TouchableOpacity onPress={() => router.back()} style={[styles.navBtn, { backgroundColor: colors.card }]}>
-              <Feather name="arrow-left" size={20} color={colors.foreground} />
+              <Image source={require("@/assets/icons/ic_back.png")} style={{ width: 20, height: 20, tintColor: colors.foreground }} resizeMode="contain" />
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setIsFav(!isFav); }}

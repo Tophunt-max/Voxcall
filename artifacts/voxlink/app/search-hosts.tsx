@@ -68,7 +68,7 @@ export default function SearchHostsScreen() {
           </View>
           <View style={[styles.dot, { backgroundColor: colors.border }]} />
           <Image source={require("@/assets/icons/ic_coin.png")} style={styles.coinIcon} resizeMode="contain" />
-          <Text style={[styles.coinRate, { color: colors.coinGoldText }]}>{item.pricePerMinute}/min</Text>
+          <Text style={[styles.coinRate, { color: colors.coinGoldText }]}>{item.coinsPerMinute}/min</Text>
         </View>
       </View>
       <TouchableOpacity
@@ -86,7 +86,7 @@ export default function SearchHostsScreen() {
       {/* Search header */}
       <View style={[styles.header, { paddingTop: topPad + 8, backgroundColor: colors.background, borderBottomColor: colors.border }]}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Feather name="arrow-left" size={22} color={colors.text} />
+          <Image source={require("@/assets/icons/ic_back.png")} style={{ width: 22, height: 22, tintColor: colors.text }} resizeMode="contain" />
         </TouchableOpacity>
         <View style={[styles.searchBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <Feather name="search" size={16} color={colors.mutedForeground} />

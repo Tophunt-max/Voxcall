@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert, Platform } from "react-native";
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert, Platform, Image } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
@@ -45,7 +45,7 @@ export default function RegisterScreen() {
       keyboardShouldPersistTaps="handled"
     >
       <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-        <Feather name="arrow-left" size={24} color={colors.foreground} />
+        <Image source={require("@/assets/icons/ic_back.png")} style={{ width: 22, height: 22, tintColor: colors.foreground }} resizeMode="contain" />
       </TouchableOpacity>
 
       <Text style={[styles.title, { color: colors.foreground }]}>Create Account</Text>

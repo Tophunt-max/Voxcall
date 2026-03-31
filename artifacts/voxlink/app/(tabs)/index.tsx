@@ -135,7 +135,7 @@ export default function HomeScreen() {
             </View>
           </View>
           <Image
-            source={require("@/assets/images/hero_person.png")}
+            source={require("@/assets/images/home_call_person.png")}
             style={styles.findMoreImage}
             resizeMode="contain"
           />
