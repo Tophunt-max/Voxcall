@@ -14,9 +14,15 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": false
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSCameraUsageDescription": "VoxLink needs camera access for video calls.",
+        "NSMicrophoneUsageDescription": "VoxLink needs microphone access for calls."
+      }
     },
-    "android": {},
+    "android": {
+      "permissions": ["android.permission.CAMERA", "android.permission.RECORD_AUDIO"]
+    },
     "web": {
       "favicon": "./assets/images/icon.png"
     },
@@ -28,7 +34,15 @@
         }
       ],
       "expo-font",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "VoxLink needs camera access for video calls.",
+          "microphonePermission": "VoxLink needs microphone access for calls.",
+          "recordAudioAndroid": true
+        }
+      ]
     ],
     "assetBundlePatterns": [
       "assets/**",
