@@ -128,7 +128,7 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 22, fontFamily: "Poppins_700Bold", color: "#111329" },
   searchBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: "rgba(255,255,255,0.8)", alignItems: "center", justifyContent: "center" },
   searchBar: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8, gap: 8 },
-  searchInput: { flex: 1, fontSize: 15, fontFamily: "Poppins_400Regular", color: "#111329" },
+  searchInput: { flex: 1, fontSize: 15, fontFamily: "Poppins_400Regular", color: "#111329", backgroundColor: "transparent" },
   emptyWrap: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12, paddingBottom: 80 },
   emptyImg: { width: 180, height: 140 },
   emptyTitle: { fontSize: 18, fontFamily: "Poppins_600SemiBold" },

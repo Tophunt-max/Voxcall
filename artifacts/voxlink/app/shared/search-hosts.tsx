@@ -198,7 +198,7 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingBottom: 10, gap: 8, borderBottomWidth: 1 },
   backBtn: { padding: 6 },
   searchBox: { flex: 1, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12, height: 42, borderRadius: 21, borderWidth: 1 },
-  searchInput: { flex: 1, fontSize: 14, fontFamily: "Poppins_400Regular", height: 42 },
+  searchInput: { flex: 1, fontSize: 14, fontFamily: "Poppins_400Regular", height: 42, backgroundColor: "transparent" },
   filterBtn: { width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center" },
   filtersPanel: { paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, gap: 6 },
   filterGroupLabel: { fontSize: 11, fontFamily: "Poppins_500Medium", textTransform: "uppercase", letterSpacing: 0.5, marginTop: 4 },

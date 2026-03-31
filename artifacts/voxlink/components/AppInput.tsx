@@ -135,6 +135,7 @@ const styles = StyleSheet.create({
     fontFamily: "Poppins_400Regular",
     padding: 0,
     margin: 0,
+    backgroundColor: "transparent",
   },
   rightWrap: { justifyContent: "center" },
 });

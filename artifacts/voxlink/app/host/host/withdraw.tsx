@@ -221,7 +221,7 @@ const styles = StyleSheet.create({
   sectionLabel: { fontSize: 11, fontFamily: "Poppins_500Medium", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 },
   inputWrap: { flexDirection: "row", alignItems: "center", gap: 10, borderRadius: 12, borderWidth: 1, paddingHorizontal: 14, height: 54 },
   inputCoin: { width: 22, height: 22 },
-  input: { flex: 1, fontSize: 22, fontFamily: "Poppins_600SemiBold" },
+  input: { flex: 1, fontSize: 22, fontFamily: "Poppins_600SemiBold", backgroundColor: "transparent" },
   maxBtn: { fontSize: 13, fontFamily: "Poppins_700Bold" },
   errorText: { fontSize: 12, fontFamily: "Poppins_400Regular", color: "#F44336", marginTop: 4 },
   quickRow: { flexDirection: "row", gap: 10, marginTop: 12 },

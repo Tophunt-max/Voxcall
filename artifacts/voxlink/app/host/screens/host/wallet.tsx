@@ -330,7 +330,7 @@ const styles = StyleSheet.create({
   chipAmt: { fontSize: 15, fontFamily: "Poppins_600SemiBold" },
   inputWrap: { flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1.5, borderRadius: 14, paddingHorizontal: 16, height: 54 },
   inputIcon: { width: 20, height: 20 },
-  input: { flex: 1, fontSize: 15, fontFamily: "Poppins_400Regular" },
+  input: { flex: 1, fontSize: 15, fontFamily: "Poppins_400Regular", backgroundColor: "transparent" },
   withdrawBtn: { height: 54, borderRadius: 14, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 10 },
   withdrawIcon: { width: 20, height: 20 },
   withdrawBtnText: { color: "#fff", fontSize: 16, fontFamily: "Poppins_600SemiBold" },
