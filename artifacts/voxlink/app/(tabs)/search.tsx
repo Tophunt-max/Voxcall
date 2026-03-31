@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   View,
   Text,
@@ -7,104 +7,285 @@ import {
   Image,
   Animated,
   Dimensions,
-  ImageBackground,
+  Modal,
+  ScrollView,
 } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useAuth } from "@/context/AuthContext";
 import { MOCK_HOSTS } from "@/data/mockData";
 
-const { width } = Dimensions.get("window");
-const RINGS_SIZE = Math.min(width - 32, 360);
+const { width: SW, height: SH } = Dimensions.get("window");
 
-const PRIMARY = "#757396";
-const ACCENT = "#A00EE7";
-const DARK_BG = "rgba(17, 19, 41, 0.82)";
+/* ─── Colors (exact from Flutter source) ─── */
+const BG        = "#FBF1EA";   // warm peach
+const RIPPLE_C  = "#EDDDD2";   // ripple peach
+const CARD_BG   = "#EFE9F8";   // light lavender
+const AV_BORDER = "#EFE9F8";
+const COIN_BORDER = "#E49F14";
+const COIN_BG   = "#FFFDF1";
+const GRAD: [string, string] = ["#CF00FD", "#8400FF"];
 
+type CallType = "audio" | "video";
 type Phase = "idle" | "searching" | "found";
 
-/* ---------- animated pulse rings ---------- */
-function PulseRings({ active }: { active: boolean }) {
-  const r1 = useRef(new Animated.Value(0)).current;
-  const r2 = useRef(new Animated.Value(0)).current;
-  const r3 = useRef(new Animated.Value(0)).current;
-  const loop = useRef<Animated.CompositeAnimation | null>(null);
+/* ─────────────────── Ripple component ─────────────────── */
+function RippleRings() {
+  const rings = [useRef(new Animated.Value(0)).current, useRef(new Animated.Value(0)).current, useRef(new Animated.Value(0)).current, useRef(new Animated.Value(0)).current, useRef(new Animated.Value(0)).current];
 
   useEffect(() => {
-    if (active) {
-      const makeRing = (v: Animated.Value, delay: number) =>
+    const makeRing = (v: Animated.Value, delay: number) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(delay),
+          Animated.timing(v, { toValue: 1, duration: 3000, useNativeDriver: false }),
+          Animated.timing(v, { toValue: 0, duration: 0, useNativeDriver: false }),
+        ])
+      );
+    const anim = Animated.parallel(rings.map((v, i) => makeRing(v, i * 600)));
+    anim.start();
+    return () => anim.stop();
+  }, []);
+
+  return (
+    <View style={[styles.rippleContainer, { pointerEvents: "none" }]}>
+      {rings.map((v, i) => (
+        <Animated.View
+          key={i}
+          style={[
+            styles.rippleRing,
+            {
+              opacity: v.interpolate({ inputRange: [0, 0.15, 0.7, 1], outputRange: [0, 0.5, 0.5, 0] }),
+              transform: [{ scale: v.interpolate({ inputRange: [0, 1], outputRange: [0.3, 1.5] }) }],
+            },
+          ]}
+        />
+      ))}
+    </View>
+  );
+}
+
+/* ─────────────────── Listener card ─────────────────── */
+interface ListenerCardProps {
+  host: (typeof MOCK_HOSTS)[0];
+  isLeft: boolean;
+  isSpecial: boolean; // index == 3 has avatar on left
+  delay: number;
+  onReplace: () => void;
+  onPress: () => void;
+}
+
+function ListenerCard({ host, isLeft, isSpecial, delay, onReplace, onPress }: ListenerCardProps) {
+  const opacity = useRef(new Animated.Value(0)).current;
+  const scale = useRef(new Animated.Value(0.98)).current;
+
+  useEffect(() => {
+    const cycle = () => {
+      Animated.sequence([
+        Animated.delay(delay),
+        Animated.parallel([
+          Animated.timing(opacity, { toValue: 1, duration: 800, useNativeDriver: false }),
+          Animated.timing(scale, { toValue: 1, duration: 600, useNativeDriver: false }),
+        ]),
+        Animated.delay(3500),
+        Animated.parallel([
+          Animated.timing(opacity, { toValue: 0, duration: 700, useNativeDriver: false }),
+          Animated.timing(scale, { toValue: 0.98, duration: 600, useNativeDriver: false }),
+        ]),
+      ]).start(({ finished }) => {
+        if (finished) { onReplace(); cycle(); }
+      });
+    };
+    cycle();
+  }, [host.id]);
+
+  const avatarSide = isSpecial ? { left: -31 } : { right: -31 };
+  const pillRadius = isSpecial
+    ? { borderBottomRightRadius: 42, borderTopRightRadius: 42 }
+    : { borderBottomLeftRadius: 42, borderTopLeftRadius: 42 };
+  const pillPad = isSpecial
+    ? { paddingLeft: 32, paddingRight: 14, paddingVertical: 8 }
+    : { paddingLeft: 20, paddingRight: 32, paddingVertical: 8 };
+
+  return (
+    <Animated.View style={{ opacity, transform: [{ scale }] }}>
+      <TouchableOpacity
+        onPress={onPress}
+        activeOpacity={0.85}
+        style={[styles.cardAligner, isLeft ? { alignSelf: "flex-start" } : { alignSelf: "flex-end" }]}
+      >
+        <View style={[styles.cardPill, pillRadius, pillPad]}>
+          <Text style={styles.cardName} numberOfLines={1}>{host.name}</Text>
+          <LinearGradient colors={GRAD} style={styles.topicTag} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+            <Text style={styles.topicText} numberOfLines={1}>{host.specialties[0]}</Text>
+          </LinearGradient>
+        </View>
+        <View style={[styles.cardAvatar, avatarSide]}>
+          <Image
+            source={require("@/assets/images/avatar_placeholder.png")}
+            style={styles.cardAvatarImg}
+          />
+        </View>
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}
+
+/* ─────────────────── Call type dialog ─────────────────── */
+function CallTypeDialog({
+  visible, selected, onSelect, onClose,
+}: { visible: boolean; selected: CallType; onSelect: (t: CallType) => void; onClose: () => void }) {
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <TouchableOpacity style={styles.dialogOverlay} activeOpacity={1} onPress={onClose}>
+        <View style={styles.dialogBox}>
+          <Text style={styles.dialogTitle}>Select Call Type</Text>
+
+          {(["audio", "video"] as CallType[]).map((type) => (
+            <TouchableOpacity
+              key={type}
+              onPress={() => { onSelect(type); onClose(); }}
+              style={styles.dialogRow}
+            >
+              <Image
+                source={type === "audio" ? require("@/assets/icons/ic_call_gradient.png") : require("@/assets/icons/ic_video_gradient.png")}
+                style={styles.dialogIcon}
+                resizeMode="contain"
+              />
+              <Text style={styles.dialogLabel}>{type === "audio" ? "Audio Call" : "Video Call"}</Text>
+              <View style={[styles.dialogRadio, selected === type && styles.dialogRadioActive]}>
+                {selected === type && <View style={styles.dialogRadioDot} />}
+              </View>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </TouchableOpacity>
+    </Modal>
+  );
+}
+
+/* ─────────────────── Match Found overlay ─────────────────── */
+function MatchFoundScreen({
+  host, callType, onAccept, onDecline,
+}: { host: (typeof MOCK_HOSTS)[0]; callType: CallType; onAccept: () => void; onDecline: () => void }) {
+  const scale = useRef(new Animated.Value(0.7)).current;
+
+  useEffect(() => {
+    Animated.spring(scale, { toValue: 1, tension: 55, friction: 8, useNativeDriver: false }).start();
+  }, []);
+
+  return (
+    <View style={StyleSheet.absoluteFillObject}>
+      <Image source={require("@/assets/images/random_match_bg.png")} style={styles.matchBg} resizeMode="cover" />
+      <View style={styles.matchOverlay}>
+        {/* Close */}
+        <TouchableOpacity onPress={onDecline} style={styles.matchClose}>
+          <Image source={require("@/assets/icons/ic_close.png")} style={styles.matchCloseIco} tintColor="#111329" resizeMode="contain" />
+        </TouchableOpacity>
+
+        <Animated.View style={[styles.matchContent, { transform: [{ scale }] }]}>
+          <Text style={styles.matchTitle}>It's a Match!</Text>
+
+          {/* Ripple + Avatar */}
+          <View style={styles.matchAvatarWrap}>
+            <MatchRipple />
+            <View style={styles.matchAvatarCircle}>
+              <Image source={require("@/assets/images/avatar_placeholder.png")} style={styles.matchAvatarImg} />
+            </View>
+          </View>
+
+          <Text style={styles.matchName}>{host.name}</Text>
+          <Text style={styles.matchId}>ID: {host.id.replace("host", "").padStart(8, "0")}</Text>
+
+          {/* Topics */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.matchTopicsRow}>
+            {host.specialties.map((t) => (
+              <LinearGradient key={t} colors={GRAD} style={styles.matchTopicTag} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+                <Text style={styles.matchTopicTxt}>{t}</Text>
+              </LinearGradient>
+            ))}
+          </ScrollView>
+
+          {/* Buttons */}
+          <View style={styles.matchBtns}>
+            <TouchableOpacity onPress={onDecline} style={styles.matchDecline} activeOpacity={0.8}>
+              <Image source={require("@/assets/icons/ic_call_end.png")} style={styles.matchBtnIco} tintColor="#fff" resizeMode="contain" />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={onAccept} activeOpacity={0.8}>
+              <LinearGradient colors={GRAD} style={styles.matchAccept} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+                <Image source={require("@/assets/icons/ic_call_gradient.png")} style={styles.matchBtnIco} tintColor="#fff" resizeMode="contain" />
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+        </Animated.View>
+      </View>
+    </View>
+  );
+}
+
+function MatchRipple() {
+  const rings = [useRef(new Animated.Value(0)).current, useRef(new Animated.Value(0)).current, useRef(new Animated.Value(0)).current];
+  useEffect(() => {
+    const anim = Animated.parallel(
+      rings.map((v, i) =>
         Animated.loop(
           Animated.sequence([
-            Animated.delay(delay),
-            Animated.timing(v, { toValue: 1, duration: 1600, useNativeDriver: true }),
-            Animated.timing(v, { toValue: 0, duration: 0, useNativeDriver: true }),
+            Animated.delay(i * 400),
+            Animated.timing(v, { toValue: 1, duration: 3000, useNativeDriver: false }),
+            Animated.timing(v, { toValue: 0, duration: 0, useNativeDriver: false }),
           ])
-        );
-      loop.current = Animated.parallel([makeRing(r1, 0), makeRing(r2, 530), makeRing(r3, 1060)]);
-      loop.current.start();
-    } else {
-      loop.current?.stop();
-      r1.setValue(0); r2.setValue(0); r3.setValue(0);
-    }
-    return () => loop.current?.stop();
-  }, [active]);
-
-  const ringStyle = (v: Animated.Value) => ({
-    opacity: v.interpolate({ inputRange: [0, 0.2, 1], outputRange: [0, 0.6, 0] }),
-    transform: [{ scale: v.interpolate({ inputRange: [0, 1], outputRange: [1, 2.8] }) }],
-  });
-
+        )
+      )
+    );
+    anim.start();
+    return () => anim.stop();
+  }, []);
   return (
-    <>
-      {[r1, r2, r3].map((v, i) => (
-        <Animated.View key={i} style={[styles.pulseRing, ringStyle(v)]} />
+    <View style={[styles.matchRippleWrap, { pointerEvents: "none" }]}>
+      {rings.map((v, i) => (
+        <Animated.View key={i} style={[styles.matchRippleRing, { opacity: v.interpolate({ inputRange: [0, 0.2, 0.8, 1], outputRange: [0, 0.4, 0.4, 0] }), transform: [{ scale: v.interpolate({ inputRange: [0, 1], outputRange: [0.4, 1.8] }) }] }]} />
       ))}
-    </>
+    </View>
   );
 }
 
-/* ---------- static decorative rings (always visible) ---------- */
-function DecorativeRings() {
-  const r1 = RINGS_SIZE * 0.62;
-  const r2 = RINGS_SIZE * 0.80;
-  const r3 = RINGS_SIZE * 0.97;
-  return (
-    <>
-      <View style={[styles.decoRing, { width: r1, height: r1, borderRadius: r1 / 2, opacity: 0.22 }]} />
-      <View style={[styles.decoRing, { width: r2, height: r2, borderRadius: r2 / 2, opacity: 0.14 }]} />
-      <View style={[styles.decoRing, { width: r3, height: r3, borderRadius: r3 / 2, opacity: 0.08 }]} />
-    </>
-  );
-}
-
-/* =========== MAIN SCREEN =========== */
+/* ═══════════════════ MAIN SCREEN ═══════════════════ */
 export default function RandomScreen() {
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
+
   const [phase, setPhase] = useState<Phase>("idle");
-  const [callType, setCallType] = useState<"audio" | "video">("audio");
+  const [callType, setCallType] = useState<CallType>("audio");
+  const [dialogVisible, setDialogVisible] = useState(false);
   const [matchedHost, setMatchedHost] = useState<(typeof MOCK_HOSTS)[0] | null>(null);
-  const scaleBtn = useRef(new Animated.Value(1)).current;
 
   const onlineHosts = MOCK_HOSTS.filter((h) => h.isOnline);
+  const displayHosts = useRef([...onlineHosts].sort(() => Math.random() - 0.5).slice(0, 4)).current;
+  const currentHosts = useRef([...displayHosts]);
+  const [cardKeys, setCardKeys] = useState([0, 1, 2, 3]);
+
+  const handleReplace = useCallback((index: number) => {
+    const used = new Set(currentHosts.current.map((h) => h.id));
+    const available = MOCK_HOSTS.filter((h) => !used.has(h.id));
+    if (available.length > 0) {
+      currentHosts.current[index] = available[Math.floor(Math.random() * available.length)];
+      setCardKeys((prev) => { const next = [...prev]; next[index] = prev[index] + 4; return next; });
+    }
+  }, []);
 
   const handleFindMatch = () => {
-    if (phase !== "idle") return;
     setPhase("searching");
-    Animated.sequence([
-      Animated.timing(scaleBtn, { toValue: 0.9, duration: 100, useNativeDriver: true }),
-      Animated.timing(scaleBtn, { toValue: 1, duration: 150, useNativeDriver: true }),
-    ]).start();
     setTimeout(() => {
       const host = onlineHosts[Math.floor(Math.random() * onlineHosts.length)];
-      setMatchedHost(host || null);
+      setMatchedHost(host);
       setPhase("found");
-    }, 3000);
+    }, 2500);
   };
-
-  const handleCancel = () => { setPhase("idle"); setMatchedHost(null); };
 
   const handleAccept = () => {
     if (!matchedHost) return;
-    setPhase("idle"); setMatchedHost(null);
+    setPhase("idle");
     router.push(
       callType === "video"
         ? `/call/video-call?hostId=${matchedHost.id}`
@@ -112,355 +293,326 @@ export default function RandomScreen() {
     );
   };
 
+  const handleDecline = () => { setPhase("idle"); setMatchedHost(null); };
+
   const topPad = insets.top;
-  const bottomPad = insets.bottom;
+  const dotTop = SH * 0.2;
+  const cardTop = SH * 0.18;
+  const cardBottom = SH * 0.17;
 
   return (
-    <ImageBackground
-      source={require("@/assets/images/match_bg.png")}
-      style={styles.bg}
-      resizeMode="cover"
-    >
-      {/* dark overlay so background doesn't bleach out UI */}
-      <View style={[styles.overlay, { backgroundColor: DARK_BG }]} />
+    <View style={styles.root}>
+      {/* ── Warm background ── */}
+      <View style={[styles.bg, { backgroundColor: BG }]} />
 
-      <View style={[styles.root, { paddingTop: topPad + 16 }]}>
-
-        {/* ── Header ── */}
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>Random Match</Text>
-          <Text style={styles.headerSub}>Instantly connect with a random listener</Text>
-        </View>
-
-        {/* ── Center zone ── */}
-        <View style={styles.centerZone}>
-          {phase === "found" && matchedHost ? (
-            <MatchFoundCard
-              host={matchedHost}
-              onAccept={handleAccept}
-              onDecline={handleCancel}
-            />
-          ) : (
-            <>
-              {/* rings container */}
-              <View style={styles.ringsContainer}>
-                <DecorativeRings />
-                <PulseRings active={phase === "searching"} />
-
-                {/* center button */}
-                <TouchableOpacity
-                  onPress={handleFindMatch}
-                  activeOpacity={0.85}
-                  disabled={phase === "searching"}
-                >
-                  <Animated.View style={[styles.centerBtn, { transform: [{ scale: scaleBtn }] }]}>
-                    <Image
-                      source={require("@/assets/icons/ic_shuffle.png")}
-                      style={styles.shuffleIcon}
-                      resizeMode="contain"
-                    />
-                    <Text style={styles.centerBtnText}>
-                      {phase === "searching" ? "Searching..." : "Tap to Find"}
-                    </Text>
-                  </Animated.View>
-                </TouchableOpacity>
-              </View>
-
-              {/* online pill */}
-              <View style={styles.onlinePill}>
-                <View style={styles.onlineDot} />
-                <Text style={styles.onlineTxt}>{onlineHosts.length} listeners online</Text>
-              </View>
-            </>
-          )}
-        </View>
-
-        {/* ── Bottom panel ── */}
-        {phase !== "found" && (
-          <ImageBackground
-            source={require("@/assets/images/match_bottom_bg.png")}
-            style={[styles.bottomPanel, { paddingBottom: bottomPad + 16 }]}
-            resizeMode="cover"
-            imageStyle={styles.bottomBgImg}
-          >
-            {/* call type */}
-            <Text style={styles.chooseLabel}>Choose call type</Text>
-            <View style={styles.callRow}>
-              {(["audio", "video"] as const).map((type) => (
-                <TouchableOpacity
-                  key={type}
-                  onPress={() => setCallType(type)}
-                  activeOpacity={0.8}
-                  style={[styles.callBtn, callType === type && styles.callBtnActive]}
-                >
-                  <Image
-                    source={
-                      type === "audio"
-                        ? require("@/assets/icons/ic_call.png")
-                        : require("@/assets/icons/ic_video.png")
-                    }
-                    style={[
-                      styles.callBtnIcon,
-                      { tintColor: callType === type ? "#fff" : PRIMARY },
-                    ]}
-                    resizeMode="contain"
-                  />
-                  <Text style={[styles.callBtnTxt, { color: callType === type ? "#fff" : PRIMARY }]}>
-                    {type === "audio" ? "Audio Call" : "Video Call"}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            {/* action button */}
-            <TouchableOpacity
-              onPress={phase === "searching" ? handleCancel : handleFindMatch}
-              activeOpacity={0.85}
-              style={[styles.actionBtn, phase === "searching" && styles.actionBtnCancel]}
-            >
-              <Text style={styles.actionBtnTxt}>
-                {phase === "searching" ? "Cancel Search" : "Start Random Match"}
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity onPress={() => router.push("/hosts/all")} style={styles.browseBtn}>
-              <Text style={styles.browseTxt}>Or browse all listeners</Text>
-            </TouchableOpacity>
-          </ImageBackground>
-        )}
+      {/* ── Ripple on right side ── */}
+      <View style={[styles.ripplePositioner, { top: dotTop }]}>
+        <RippleRings />
       </View>
-    </ImageBackground>
-  );
-}
 
-/* =========== MATCH FOUND CARD =========== */
-function MatchFoundCard({
-  host,
-  onAccept,
-  onDecline,
-}: {
-  host: (typeof MOCK_HOSTS)[0];
-  onAccept: () => void;
-  onDecline: () => void;
-}) {
-  const scale = useRef(new Animated.Value(0.6)).current;
-  useEffect(() => {
-    Animated.spring(scale, { toValue: 1, tension: 60, friction: 8, useNativeDriver: true }).start();
-  }, []);
+      {/* ── Dot pattern ── */}
+      <Image
+        source={require("@/assets/images/random_dot_bg.png")}
+        style={[styles.dotBg, { top: dotTop, pointerEvents: "none" } as any]}
+        resizeMode="cover"
+      />
 
-  return (
-    <ImageBackground
-      source={require("@/assets/images/match_found_bg.png")}
-      style={styles.foundCard}
-      resizeMode="cover"
-      imageStyle={{ borderRadius: 24 }}
-    >
-      <Animated.View style={[styles.foundInner, { transform: [{ scale }] }]}>
-        <Text style={styles.foundTitle}>Match Found!</Text>
+      {/* ── Circular person image (right side) ── */}
+      <View style={[styles.circleImgWrap, { top: dotTop }]}>
+        <Image
+          source={require("@/assets/images/random_bg.png")}
+          style={styles.circleImg}
+          resizeMode="cover"
+        />
+      </View>
 
-        {/* avatars row */}
-        <View style={styles.avatarRow}>
-          <View style={styles.avatarWrap}>
+      {/* ── Bottom background ── */}
+      <Image
+        source={require("@/assets/images/random_bottom_bg.png")}
+        style={[styles.bottomBgImg, { pointerEvents: "none" } as any]}
+        resizeMode="cover"
+      />
+
+      {/* ── Header ── */}
+      <View style={[styles.header, { paddingTop: topPad + 14 }]}>
+        {/* User avatar (dotted border) */}
+        <View style={styles.avatarDotBorder}>
+          <View style={styles.avatarCircle}>
             <Image
               source={require("@/assets/images/avatar_placeholder.png")}
-              style={styles.avatar}
+              style={styles.userAvatarImg}
             />
-            <Text style={styles.avatarLabel}>You</Text>
-          </View>
-          <View style={styles.vsChip}>
-            <Text style={styles.vsText}>VS</Text>
-          </View>
-          <View style={styles.avatarWrap}>
-            <Image
-              source={require("@/assets/images/avatar_placeholder.png")}
-              style={styles.avatar}
-            />
-            <Text style={styles.avatarLabel} numberOfLines={1}>
-              {host.name.split(" ")[0]}
-            </Text>
           </View>
         </View>
 
-        {/* host info */}
-        <Text style={styles.foundHostName}>{host.name}</Text>
-        <View style={styles.foundRatingRow}>
+        {/* Name + email */}
+        <View style={styles.headerText}>
+          <Text style={styles.headerName} numberOfLines={1}>{user?.name ?? "Guest"}</Text>
+          <Text style={styles.headerEmail} numberOfLines={1}>{user?.email ?? "guest@voxlink.com"}</Text>
+        </View>
+
+        {/* Coin balance */}
+        <TouchableOpacity onPress={() => router.push("/(tabs)/wallet")} style={styles.coinWidget} activeOpacity={0.85}>
+          <View style={styles.coinInfo}>
+            <Text style={styles.coinAmount}>{user?.coins ?? 0}</Text>
+            <Text style={styles.coinLabel}>My Balance</Text>
+          </View>
+          <Image source={require("@/assets/icons/ic_coin.png")} style={styles.coinIcon} resizeMode="contain" />
+        </TouchableOpacity>
+      </View>
+
+      {/* ── 4 Listener cards ── */}
+      <View
+        style={[
+          styles.cardsZone,
+          { top: cardTop, bottom: cardBottom + 90, pointerEvents: "box-none" },
+        ]}
+      >
+        {displayHosts.slice(0, 4).map((host, index) => {
+          const isLeft = index % 2 === 0;
+          const isSpecial = index === 3;
+          return (
+            <ListenerCard
+              key={`${cardKeys[index]}-${index}`}
+              host={currentHosts.current[index]}
+              isLeft={isLeft}
+              isSpecial={isSpecial}
+              delay={index * 400}
+              onReplace={() => handleReplace(index)}
+              onPress={() => router.push(`/hosts/${currentHosts.current[index].id}`)}
+            />
+          );
+        })}
+      </View>
+
+      {/* ── Bottom buttons ── */}
+      <View style={[styles.bottomBtns, { paddingBottom: insets.bottom + 16 }]}>
+        {/* Call type selector */}
+        <TouchableOpacity onPress={() => setDialogVisible(true)} style={styles.callTypeBtn} activeOpacity={0.85}>
           <Image
-            source={require("@/assets/icons/ic_star.png")}
-            style={styles.starIco}
+            source={callType === "audio" ? require("@/assets/icons/ic_call_gradient.png") : require("@/assets/icons/ic_video_gradient.png")}
+            style={styles.callTypeBtnIcon}
             resizeMode="contain"
           />
-          <Text style={styles.foundRatingTxt}>{host.rating}</Text>
-          <Text style={styles.foundTopics}>{host.topics.slice(0, 2).join(" • ")}</Text>
-        </View>
+          <Text style={styles.callTypeBtnTxt}>{callType === "audio" ? "Audio Call" : "Video Call"}</Text>
+          <Image source={require("@/assets/icons/ic_back.png")} style={styles.dropArrow} tintColor="#111329" resizeMode="contain" />
+        </TouchableOpacity>
 
-        {/* accept / decline */}
-        <View style={styles.matchBtns}>
-          <TouchableOpacity onPress={onDecline} style={styles.declineBtn} activeOpacity={0.8}>
-            <Image
-              source={require("@/assets/icons/ic_call_end.png")}
-              style={styles.matchBtnIco}
-              resizeMode="contain"
-            />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={onAccept} style={styles.acceptBtn} activeOpacity={0.8}>
-            <Image
-              source={require("@/assets/icons/ic_call_gradient.png")}
-              style={styles.matchBtnIco}
-              resizeMode="contain"
-            />
-          </TouchableOpacity>
-        </View>
-        <Text style={styles.foundHint}>Green = Connect  •  Red = Skip</Text>
-      </Animated.View>
-    </ImageBackground>
+        {/* Random Match gradient button */}
+        <TouchableOpacity onPress={handleFindMatch} disabled={phase === "searching"} activeOpacity={0.85} style={styles.randomBtnWrap}>
+          <LinearGradient colors={GRAD} style={styles.randomBtn} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+            <Text style={styles.randomBtnTxt}>
+              {phase === "searching" ? "Searching..." : "Random Match"}
+            </Text>
+          </LinearGradient>
+        </TouchableOpacity>
+      </View>
+
+      {/* ── Call type dialog ── */}
+      <CallTypeDialog
+        visible={dialogVisible}
+        selected={callType}
+        onSelect={setCallType}
+        onClose={() => setDialogVisible(false)}
+      />
+
+      {/* ── Match Found ── */}
+      {phase === "found" && matchedHost && (
+        <MatchFoundScreen
+          host={matchedHost}
+          callType={callType}
+          onAccept={handleAccept}
+          onDecline={handleDecline}
+        />
+      )}
+    </View>
   );
 }
 
-/* =========== STYLES =========== */
-const CIRCLE = 148;
+/* ═══════════════════ STYLES ═══════════════════ */
+const AVATAR_SIZE = SH * 0.065;
+const CIRCLE_IMG_SIZE = 270;
 
 const styles = StyleSheet.create({
-  bg: { flex: 1 },
-  overlay: { ...StyleSheet.absoluteFillObject },
-  root: { flex: 1 },
+  root: { flex: 1, backgroundColor: BG },
+  bg: { ...StyleSheet.absoluteFillObject },
 
-  header: { alignItems: "center", paddingBottom: 8 },
-  headerTitle: { fontSize: 22, fontFamily: "Poppins_700Bold", color: "#fff" },
-  headerSub: { fontSize: 12, fontFamily: "Poppins_400Regular", color: "rgba(255,255,255,0.65)", marginTop: 2 },
+  /* ripple */
+  ripplePositioner: { position: "absolute", right: -170, width: 370, height: 370, alignItems: "center", justifyContent: "center" },
+  rippleRing: { position: "absolute", width: 370, height: 370, borderRadius: 185, backgroundColor: RIPPLE_C },
 
-  centerZone: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 24,
-    paddingBottom: 24,
-  },
+  /* dot bg */
+  dotBg: { position: "absolute", left: 0, right: 0, width: SW, height: 300 },
 
-  ringsContainer: {
-    width: RINGS_SIZE,
-    height: RINGS_SIZE,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  /* static decorative rings */
-  decoRing: {
+  /* circle image */
+  circleImgWrap: {
     position: "absolute",
-    borderWidth: 1.5,
-    borderColor: ACCENT,
-    backgroundColor: "transparent",
+    right: -140,
+    width: CIRCLE_IMG_SIZE,
+    height: CIRCLE_IMG_SIZE,
+    borderRadius: CIRCLE_IMG_SIZE / 2,
+    overflow: "hidden",
+    opacity: 0.55,
+    backgroundColor: "#EFE2DE11",
   },
+  circleImg: { width: "100%", height: "100%" },
 
-  /* animated pulse ring */
-  pulseRing: {
+  /* bottom bg image */
+  bottomBgImg: {
     position: "absolute",
-    width: CIRCLE,
-    height: CIRCLE,
-    borderRadius: CIRCLE / 2,
-    backgroundColor: ACCENT,
-    borderWidth: 2,
-    borderColor: ACCENT,
+    bottom: -SH * 0.1,
+    left: 0,
+    right: 0,
+    width: SW,
+    height: 300,
   },
 
-  /* center circle button */
-  centerBtn: {
-    width: CIRCLE,
-    height: CIRCLE,
-    borderRadius: CIRCLE / 2,
-    backgroundColor: PRIMARY,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    borderWidth: 3,
-    borderColor: "rgba(255,255,255,0.4)",
-    // shadow
-    shadowColor: PRIMARY,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.9,
-    shadowRadius: 24,
-    elevation: 16,
-  },
-  shuffleIcon: { width: 42, height: 42, tintColor: "#fff" },
-  centerBtnText: { fontSize: 13, fontFamily: "Poppins_600SemiBold", color: "#fff" },
-
-  onlinePill: {
+  /* header */
+  header: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    backgroundColor: "rgba(255,255,255,0.12)",
     paddingHorizontal: 18,
-    paddingVertical: 9,
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.2)",
+    paddingBottom: 12,
+    gap: 10,
   },
-  onlineDot: { width: 9, height: 9, borderRadius: 5, backgroundColor: "#0BAF23" },
-  onlineTxt: { fontSize: 13, fontFamily: "Poppins_500Medium", color: "#fff" },
-
-  /* bottom */
-  bottomPanel: {
-    paddingHorizontal: 24,
-    paddingTop: 28,
-    gap: 14,
-    borderTopLeftRadius: 32,
-    borderTopRightRadius: 32,
+  avatarDotBorder: {
+    width: AVATAR_SIZE + 8,
+    height: AVATAR_SIZE + 8,
+    borderRadius: (AVATAR_SIZE + 8) / 2,
+    borderWidth: 1.5,
+    borderColor: "#111329",
+    borderStyle: "dashed",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarCircle: {
+    width: AVATAR_SIZE,
+    height: AVATAR_SIZE,
+    borderRadius: AVATAR_SIZE / 2,
+    backgroundColor: "#E5E5E5",
     overflow: "hidden",
   },
-  bottomBgImg: { borderTopLeftRadius: 32, borderTopRightRadius: 32 },
-
-  chooseLabel: { fontSize: 13, fontFamily: "Poppins_600SemiBold", color: "#333", textAlign: "center" },
-
-  callRow: { flexDirection: "row", gap: 12 },
-  callBtn: {
-    flex: 1,
+  userAvatarImg: { width: "100%", height: "100%" },
+  headerText: { flex: 1 },
+  headerName: { fontSize: 16, fontFamily: "Poppins_700Bold", color: "#111329" },
+  headerEmail: { fontSize: 13, fontFamily: "Poppins_600SemiBold", color: "#111329" },
+  coinWidget: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    paddingVertical: 12,
+    backgroundColor: COIN_BG,
     borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: PRIMARY,
-    backgroundColor: "transparent",
+    borderWidth: 1,
+    borderColor: COIN_BORDER,
+    paddingLeft: 10,
   },
-  callBtnActive: { backgroundColor: PRIMARY, borderColor: PRIMARY },
-  callBtnIcon: { width: 20, height: 20 },
-  callBtnTxt: { fontSize: 13, fontFamily: "Poppins_600SemiBold" },
+  coinInfo: { alignItems: "flex-end" },
+  coinAmount: { fontSize: 18, fontFamily: "Poppins_700Bold", color: COIN_BORDER },
+  coinLabel: { fontSize: 11, fontFamily: "Poppins_600SemiBold", color: COIN_BORDER },
+  coinIcon: { width: 32, height: 32, margin: 8 },
 
-  actionBtn: {
-    backgroundColor: PRIMARY,
-    paddingVertical: 16,
-    borderRadius: 14,
+  /* cards zone */
+  cardsZone: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    justifyContent: "space-evenly",
+    paddingHorizontal: 14,
+    gap: 12,
+  },
+
+  /* listener card */
+  cardAligner: { maxWidth: SW * 0.7 },
+  cardPill: {
+    backgroundColor: CARD_BG,
+    borderWidth: 2,
+    borderColor: "#fff",
+  },
+  cardName: { fontSize: 12, fontFamily: "Poppins_700Bold", color: "#111329", marginBottom: 3 },
+  topicTag: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 46, alignSelf: "flex-start" },
+  topicText: { fontSize: 10, fontFamily: "Poppins_600SemiBold", color: "#fff" },
+  cardAvatar: {
+    position: "absolute",
+    top: "50%",
+    marginTop: -31,
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    borderWidth: 4,
+    borderColor: AV_BORDER,
+    overflow: "hidden",
+    shadowColor: "#CF00FD",
+    shadowOffset: { width: 1, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 4,
+    backgroundColor: "#E5E5E5",
+  },
+  cardAvatarImg: { width: "100%", height: "100%" },
+
+  /* bottom buttons */
+  bottomBtns: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
     alignItems: "center",
-    justifyContent: "center",
+    gap: 0,
   },
-  actionBtnCancel: { backgroundColor: "#cc4444" },
-  actionBtnTxt: { color: "#fff", fontSize: 15, fontFamily: "Poppins_600SemiBold" },
+  callTypeBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fff",
+    borderRadius: 30,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    gap: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.1,
+    shadowRadius: 18,
+    elevation: 6,
+    marginBottom: 0,
+  },
+  callTypeBtnIcon: { width: 20, height: 20 },
+  callTypeBtnTxt: { fontSize: 15, fontFamily: "Poppins_600SemiBold", color: "#111329" },
+  dropArrow: { width: 14, height: 14, transform: [{ rotate: "-90deg" }] },
+  randomBtnWrap: { width: SW - 48, marginTop: 16 },
+  randomBtn: { paddingVertical: 14, borderRadius: 30, alignItems: "center" },
+  randomBtnTxt: { fontSize: 16, fontFamily: "Poppins_600SemiBold", color: "#fff" },
 
-  browseBtn: { alignItems: "center", paddingBottom: 4 },
-  browseTxt: { fontSize: 13, fontFamily: "Poppins_400Regular", color: "#888" },
+  /* call type dialog */
+  dialogOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "center", alignItems: "center" },
+  dialogBox: { width: SW - 64, backgroundColor: "#fff", borderRadius: 26, overflow: "hidden" },
+  dialogTitle: { fontSize: 16, fontFamily: "Poppins_600SemiBold", color: "#111329", textAlign: "center", paddingVertical: 13, backgroundColor: "rgba(0,0,0,0.02)" },
+  dialogRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingVertical: 18, gap: 12, borderTopWidth: StyleSheet.hairlineWidth, borderColor: "#eee" },
+  dialogIcon: { width: 32, height: 32 },
+  dialogLabel: { flex: 1, fontSize: 16, fontFamily: "Poppins_600SemiBold", color: "#111329" },
+  dialogRadio: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, borderColor: "#ccc", alignItems: "center", justifyContent: "center" },
+  dialogRadioActive: { borderColor: "#8400FF", backgroundColor: "#8400FF" },
+  dialogRadioDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#fff" },
 
-  /* match found card */
-  foundCard: { width: width - 48, borderRadius: 24, overflow: "hidden" },
-  foundInner: { alignItems: "center", paddingHorizontal: 24, paddingVertical: 28, gap: 10 },
-  foundTitle: { fontSize: 22, fontFamily: "Poppins_700Bold", color: "#fff" },
+  /* match found */
+  matchBg: { ...StyleSheet.absoluteFillObject, width: SW, height: SH },
+  matchOverlay: { flex: 1, alignItems: "center", paddingTop: SH * 0.08 },
+  matchClose: { alignSelf: "flex-end", marginRight: 33, marginBottom: 36 },
+  matchCloseIco: { width: 26, height: 26 },
+  matchContent: { alignItems: "center", gap: 8 },
+  matchTitle: { fontSize: 40, fontFamily: "Poppins_700Bold", color: "#111329", marginBottom: 22 },
 
-  avatarRow: { flexDirection: "row", alignItems: "center", gap: 16, marginVertical: 4 },
-  avatarWrap: { alignItems: "center", gap: 6 },
-  avatar: { width: 72, height: 72, borderRadius: 36, borderWidth: 3, borderColor: "#fff" },
-  avatarLabel: { fontSize: 13, fontFamily: "Poppins_600SemiBold", color: "#fff", maxWidth: 80, textAlign: "center" },
-  vsChip: { width: 40, height: 40, borderRadius: 20, backgroundColor: "rgba(255,255,255,0.25)", alignItems: "center", justifyContent: "center" },
-  vsText: { fontSize: 13, fontFamily: "Poppins_700Bold", color: "#fff" },
+  matchAvatarWrap: { width: 170, height: 170, alignItems: "center", justifyContent: "center" },
+  matchRippleWrap: { ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "center" },
+  matchRippleRing: { position: "absolute", width: 170, height: 170, borderRadius: 85, backgroundColor: "#84889F40" },
+  matchAvatarCircle: { width: 100, height: 100, borderRadius: 50, overflow: "hidden", borderWidth: 3, borderColor: "#fff" },
+  matchAvatarImg: { width: "100%", height: "100%" },
 
-  foundHostName: { fontSize: 16, fontFamily: "Poppins_600SemiBold", color: "#fff" },
-  foundRatingRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-  starIco: { width: 14, height: 14, tintColor: "#FFA100" },
-  foundRatingTxt: { fontSize: 13, fontFamily: "Poppins_600SemiBold", color: "#FFA100" },
-  foundTopics: { fontSize: 12, fontFamily: "Poppins_400Regular", color: "rgba(255,255,255,0.75)" },
+  matchName: { fontSize: 20, fontFamily: "Poppins_600SemiBold", color: "#111329", marginTop: 18 },
+  matchId: { fontSize: 14, fontFamily: "Poppins_500Medium", color: "#555", marginBottom: 8 },
+  matchTopicsRow: { maxHeight: 36 },
+  matchTopicTag: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 46, marginHorizontal: 4 },
+  matchTopicTxt: { fontSize: 12, fontFamily: "Poppins_600SemiBold", color: "#fff" },
 
-  matchBtns: { flexDirection: "row", gap: 40, marginTop: 8 },
-  declineBtn: { width: 60, height: 60, borderRadius: 30, backgroundColor: "#FF4444", alignItems: "center", justifyContent: "center" },
-  acceptBtn: { width: 60, height: 60, borderRadius: 30, backgroundColor: "#0BAF23", alignItems: "center", justifyContent: "center" },
-  matchBtnIco: { width: 28, height: 28, tintColor: "#fff" },
-  foundHint: { fontSize: 11, fontFamily: "Poppins_400Regular", color: "rgba(255,255,255,0.6)", textAlign: "center" },
+  matchBtns: { flexDirection: "row", gap: 48, marginTop: 32 },
+  matchDecline: { width: 60, height: 60, borderRadius: 30, backgroundColor: "#FF3B30", alignItems: "center", justifyContent: "center" },
+  matchAccept: { width: 60, height: 60, borderRadius: 30, alignItems: "center", justifyContent: "center" },
+  matchBtnIco: { width: 28, height: 28 },
 });
