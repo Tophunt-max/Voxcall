@@ -4,7 +4,7 @@ import { View, ActivityIndicator } from "react-native";
 import { useColors } from "@/hooks/useColors";
 
 export default function Index() {
-  const { isLoggedIn, isLoading } = useAuth();
+  const { isLoggedIn, isLoading, user } = useAuth();
   const colors = useColors();
 
   if (isLoading) {
@@ -16,6 +16,9 @@ export default function Index() {
   }
 
   if (isLoggedIn) {
+    if (user?.role === "host") {
+      return <Redirect href="/(host-tabs)" />;
+    }
     return <Redirect href="/(tabs)" />;
   }
 

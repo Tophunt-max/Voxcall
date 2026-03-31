@@ -26,28 +26,47 @@ artifacts/voxlink/
 │   ├── _layout.tsx           # Root layout with all providers (Auth, Call, Chat) + Poppins fonts
 │   ├── index.tsx             # Entry redirect (logged in → tabs, else → onboarding)
 │   ├── auth/
-│   │   ├── onboarding.tsx    # 3-slide onboarding with original onBoarding1/2/3.png images
-│   │   ├── login.tsx         # Email/password + guest login with app_logo.png
-│   │   └── register.tsx      # Registration with gender selection
-│   ├── (tabs)/
-│   │   ├── _layout.tsx       # Tab bar with original PNG icons (Home, Random, Chat, History, Profile)
-│   │   ├── index.tsx         # Home screen with dotted-border avatar, ID badge, Find More, Top Listeners
-│   │   ├── search.tsx        # Random Match screen with match animation
-│   │   ├── messages.tsx      # Chat list with no_chat_list.png empty state
-│   │   ├── wallet.tsx        # Wallet with wallet_bg.png, star_coin_big.png, buy coins + history
-│   │   └── profile.tsx       # Profile with dotted-border avatar, ID badge, copy ID
+│   │   ├── onboarding.tsx        # 3-slide onboarding
+│   │   ├── login.tsx             # Email/password + guest login; links to forgot-password
+│   │   ├── register.tsx          # Registration form
+│   │   ├── forgot-password.tsx   # Forgot password → sends OTP
+│   │   ├── verify-otp.tsx        # 6-digit OTP input with countdown resend
+│   │   ├── create-password.tsx   # Set new password after OTP verify
+│   │   ├── fill-profile.tsx      # Post-register profile: name, bio, languages
+│   │   └── select-gender.tsx     # Gender card selection screen
+│   ├── (tabs)/                   # User mode tab navigation (5 tabs)
+│   │   ├── _layout.tsx           # Tab bar with original PNG icons
+│   │   ├── index.tsx             # Home screen
+│   │   ├── search.tsx            # Random Match screen
+│   │   ├── messages.tsx          # Chat list
+│   │   ├── wallet.tsx            # Coin wallet (buy + history)
+│   │   └── profile.tsx           # Profile (links to settings/help/become-host)
+│   ├── (host-tabs)/              # Host mode tab navigation (5 tabs)
+│   │   ├── _layout.tsx           # Host tab bar (Home, Chat, Notify, Wallet, Profile)
+│   │   ├── index.tsx             # Host home: online toggle, stats, permissions, tips
+│   │   ├── chat.tsx              # Host chat list (conversations from users)
+│   │   ├── notifications.tsx     # Host notifications (calls, ratings, coins)
+│   │   ├── wallet.tsx            # Host wallet: earnings history + withdraw coins
+│   │   └── profile.tsx           # Host profile + switch to user mode
 │   ├── hosts/
-│   │   ├── [id].tsx          # Host detail page (call + chat CTAs)
-│   │   └── all.tsx           # All hosts list
-│   ├── chat/[id].tsx         # Chat screen with inverted FlatList
+│   │   ├── [id].tsx              # Host detail: reviews section, outgoing call nav
+│   │   ├── all.tsx               # All hosts list
+│   │   └── reviews.tsx           # All reviews for a host with rating bars
+│   ├── chat/[id].tsx             # Chat screen with inverted FlatList
 │   ├── call/
-│   │   ├── audio-call.tsx    # Audio call UI with controls
-│   │   ├── video-call.tsx    # Video call UI with camera preview
-│   │   ├── incoming.tsx      # Incoming call accept/decline
-│   │   └── summary.tsx       # Post-call summary + rating
-│   ├── notifications.tsx     # Notification center with no_notification_found.png
-│   ├── profile/edit.tsx      # Edit profile screen
-│   └── host/dashboard.tsx    # Host earnings/status dashboard
+│   │   ├── audio-call.tsx        # Audio call UI
+│   │   ├── video-call.tsx        # Video call UI
+│   │   ├── incoming.tsx          # Incoming call
+│   │   ├── outgoing.tsx          # Outgoing/connecting call with ripple animation
+│   │   └── summary.tsx           # Post-call summary + rating
+│   ├── settings.tsx              # Settings (notifications, language, sign out, delete)
+│   ├── help-center.tsx           # Help Center with expandable FAQ items
+│   ├── language.tsx              # App language selection list
+│   ├── become-host.tsx           # Become a host (benefits + requirements + apply)
+│   ├── become-host-success.tsx   # Host application sent confirmation
+│   ├── notifications.tsx         # Notification center
+│   ├── profile/edit.tsx          # Edit profile screen
+│   └── host/dashboard.tsx        # Host earnings/status dashboard
 ├── components/
 │   ├── HostCard.tsx          # Original TalkIn card: white card + shadow, square avatar, status badge, Talk Now button
 │   ├── CoinBalance.tsx       # Coin balance pill with star_coin.png

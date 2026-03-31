@@ -127,14 +127,7 @@ export default function ProfileScreen() {
   };
 
   const handleBecomeHost = () => {
-    Alert.alert(
-      "Become a Host",
-      "Start earning coins by helping others. Switch to Host mode to accept calls and messages.",
-      [
-        { text: "Cancel", style: "cancel" },
-        { text: "Switch to Host", onPress: () => switchRole("host") },
-      ]
-    );
+    router.push("/become-host");
   };
 
   const copyId = () => {
@@ -267,12 +260,12 @@ export default function ProfileScreen() {
           iconSource={require("@/assets/icons/ic_language.png")}
           label="Language"
           value="English"
-          onPress={() => {}}
+          onPress={() => router.push("/language")}
         />
         <MenuItem
-          iconName="shield"
-          label="Privacy"
-          onPress={() => {}}
+          iconName="settings"
+          label="Settings"
+          onPress={() => router.push("/settings")}
         />
       </View>
 
@@ -297,7 +290,7 @@ export default function ProfileScreen() {
         <MenuItem
           iconName="help-circle"
           label="Help & FAQ"
-          onPress={() => {}}
+          onPress={() => router.push("/help-center")}
         />
         <MenuItem
           iconName="star"

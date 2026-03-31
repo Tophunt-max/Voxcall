@@ -41,6 +41,7 @@ export default function HostDetailScreen() {
       return;
     }
     initiateCall({ id: host.id, name: host.name, avatar: host.avatar, role: "host" }, "audio", host.coinsPerMinute);
+    router.push({ pathname: "/call/outgoing", params: { hostId: host.id, callType: "audio" } });
   };
 
   const handleVideoCall = () => {
@@ -52,6 +53,7 @@ export default function HostDetailScreen() {
       return;
     }
     initiateCall({ id: host.id, name: host.name, avatar: host.avatar, role: "host" }, "video", host.coinsPerMinute);
+    router.push({ pathname: "/call/outgoing", params: { hostId: host.id, callType: "video" } });
   };
 
   const handleChat = () => {
@@ -82,10 +84,11 @@ export default function HostDetailScreen() {
             </View>
             <Text style={[styles.hostName, { color: colors.foreground }]}>{host.name}</Text>
             <Text style={[styles.hostCountry, { color: colors.mutedForeground }]}>{host.country}</Text>
-            <View style={styles.ratingRow}>
+            <TouchableOpacity style={styles.ratingRow} onPress={() => router.push({ pathname: "/hosts/reviews", params: { hostId: host.id } })} activeOpacity={0.8}>
               <StarRating rating={host.rating} size={18} />
               <Text style={[styles.ratingText, { color: colors.mutedForeground }]}>{host.rating} ({host.reviewCount} reviews)</Text>
-            </View>
+              <Feather name="chevron-right" size={14} color={colors.mutedForeground} />
+            </TouchableOpacity>
             {host.isTopRated && (
               <View style={[styles.topBadge, { backgroundColor: colors.coinGold + "20" }]}>
                 <MaterialIcons name="star" size={14} color={colors.coinGold} />
@@ -136,6 +139,31 @@ export default function HostDetailScreen() {
               </View>
             ))}
           </View>
+        </View>
+
+        {/* Reviews preview */}
+        <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Reviews</Text>
+            <TouchableOpacity onPress={() => router.push({ pathname: "/hosts/reviews", params: { hostId: host.id } })}>
+              <Text style={[{ fontSize: 13, fontFamily: "Poppins_600SemiBold", color: colors.accent }]}>See all</Text>
+            </TouchableOpacity>
+          </View>
+          {[
+            { user: "Sarah M.", avatar: "sarah", rating: 5, text: "Amazing listener! Very understanding and gave great advice." },
+            { user: "John D.", avatar: "john", rating: 5, text: "Really helped me through a tough time. Professional and empathetic." },
+          ].map((r, i) => (
+            <View key={i} style={{ gap: 8, marginBottom: i === 0 ? 14 : 0, paddingBottom: i === 0 ? 14 : 0, borderBottomWidth: i === 0 ? StyleSheet.hairlineWidth : 0, borderBottomColor: colors.border }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                <Image source={{ uri: `https://api.dicebear.com/7.x/avataaars/svg?seed=${r.avatar}` }} style={{ width: 36, height: 36, borderRadius: 18 }} />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 13, fontFamily: "Poppins_600SemiBold", color: colors.foreground }}>{r.user}</Text>
+                  <Text style={{ color: "#FFA100", fontSize: 11 }}>{"★".repeat(r.rating)}</Text>
+                </View>
+              </View>
+              <Text style={[styles.bio, { color: colors.mutedForeground, marginTop: 0 }]}>{r.text}</Text>
+            </View>
+          ))}
         </View>
       </ScrollView>
 

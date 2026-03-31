@@ -27,19 +27,32 @@ function RootLayoutNav() {
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="index" />
       <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="(host-tabs)" />
       <Stack.Screen name="auth/onboarding" />
       <Stack.Screen name="auth/login" />
       <Stack.Screen name="auth/register" />
+      <Stack.Screen name="auth/forgot-password" />
+      <Stack.Screen name="auth/verify-otp" />
+      <Stack.Screen name="auth/create-password" />
+      <Stack.Screen name="auth/fill-profile" />
+      <Stack.Screen name="auth/select-gender" />
       <Stack.Screen name="hosts/[id]" />
       <Stack.Screen name="hosts/all" />
+      <Stack.Screen name="hosts/reviews" />
       <Stack.Screen name="chat/[id]" />
       <Stack.Screen name="call/audio-call" options={{ presentation: "fullScreenModal" }} />
       <Stack.Screen name="call/video-call" options={{ presentation: "fullScreenModal" }} />
       <Stack.Screen name="call/incoming" options={{ presentation: "fullScreenModal" }} />
+      <Stack.Screen name="call/outgoing" options={{ presentation: "fullScreenModal" }} />
       <Stack.Screen name="call/summary" />
       <Stack.Screen name="notifications" />
       <Stack.Screen name="profile/edit" />
       <Stack.Screen name="host/dashboard" />
+      <Stack.Screen name="settings" />
+      <Stack.Screen name="help-center" />
+      <Stack.Screen name="language" />
+      <Stack.Screen name="become-host" />
+      <Stack.Screen name="become-host-success" />
     </Stack>
   );
 }
