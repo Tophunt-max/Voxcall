@@ -26,8 +26,12 @@ VoxLink is a production-grade social audio/video calling mobile app + admin pane
 ### Backend (artifacts/api-server)
 - **Framework**: Hono.js on Cloudflare Workers
 - **Database**: D1 (SQLite) — 13 tables (users, hosts, coin_plans, etc.)
-- **Storage**: R2 (avatars, media)
+- **Storage**: R2 bucket: `voxcall` (avatars, media)
 - **Real-time**: Durable Objects (ChatRoom, CallSignaling, NotificationHub)
+- **Production URL**: `https://voxlink-api.ssunilkumarmohanta3.workers.dev`
+- **Account ID**: `b592b3b2a5455323a76de721a92699cd`
+- **D1 Database ID**: `e591c16e-d6c0-447d-9a94-84d10aa4a705`
+- **CF Calls App ID**: `536d1e7e8d540b7ccfb238d32f734d1a`
 - **SFU**: Cloudflare Calls for WebRTC audio/video
 - **Auth**: JWT via `jose` (HS256), 7-day expiry
 - **Entry point**: `src/index.ts`

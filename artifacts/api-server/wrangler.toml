@@ -3,15 +3,17 @@ main = "src/index.ts"
 compatibility_date = "2024-12-18"
 compatibility_flags = ["nodejs_compat"]
 
+account_id = "b592b3b2a5455323a76de721a92699cd"
+
 [[d1_databases]]
 binding = "DB"
 database_name = "voxlink-db"
-database_id = "local-voxlink-db"
+database_id = "e591c16e-d6c0-447d-9a94-84d10aa4a705"
 migrations_dir = "migrations"
 
 [[r2_buckets]]
 binding = "STORAGE"
-bucket_name = "voxlink-storage"
+bucket_name = "voxcall"
 preview_bucket_name = "voxlink-storage-preview"
 
 [durable_objects]
@@ -23,13 +25,11 @@ bindings = [
 
 [[migrations]]
 tag = "v1"
-new_classes = ["ChatRoom", "CallSignaling", "NotificationHub"]
+new_sqlite_classes = ["ChatRoom", "CallSignaling", "NotificationHub"]
 
 [vars]
-JWT_SECRET = "voxlink-dev-jwt-secret-2026"
-CF_CALLS_APP_ID = ""
-CF_CALLS_APP_SECRET = ""
-CF_ACCOUNT_ID = ""
+CF_CALLS_APP_ID = "536d1e7e8d540b7ccfb238d32f734d1a"
+CF_ACCOUNT_ID = "b592b3b2a5455323a76de721a92699cd"
 
 [dev]
 port = 8080

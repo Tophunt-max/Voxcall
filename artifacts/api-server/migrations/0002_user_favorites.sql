@@ -1,10 +1,11 @@
--- Migration: Add user_favorites + improve talk_topics + faqs
--- Add missing columns to talk_topics
-ALTER TABLE talk_topics ADD COLUMN IF NOT EXISTS description TEXT;
-ALTER TABLE talk_topics ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0;
+-- Migration: Add user_favorites + extend talk_topics and faqs schemas
 
--- Add missing sort_order to faqs (already has order_index, add sort_order as alias)
-ALTER TABLE faqs ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0;
+-- Add columns to talk_topics
+ALTER TABLE talk_topics ADD COLUMN description TEXT;
+ALTER TABLE talk_topics ADD COLUMN sort_order INTEGER DEFAULT 0;
+
+-- Add sort_order to faqs
+ALTER TABLE faqs ADD COLUMN sort_order INTEGER DEFAULT 0;
 
 -- Add user_favorites table
 CREATE TABLE IF NOT EXISTS user_favorites (
