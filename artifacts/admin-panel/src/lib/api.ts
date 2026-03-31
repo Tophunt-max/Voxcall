@@ -35,4 +35,12 @@ export const api = {
   createFaq: (data: any) => req<any>('POST', '/admin/faqs', data),
   updateFaq: (id: string, data: any) => req('PATCH', `/admin/faqs/${id}`, data),
   deleteFaq: (id: string) => req('DELETE', `/admin/faqs/${id}`),
+  talkTopics: () => req<any[]>('GET', '/admin/talk-topics'),
+  createTalkTopic: (data: any) => req<any>('POST', '/admin/talk-topics', data),
+  updateTalkTopic: (id: string, data: any) => req('PATCH', `/admin/talk-topics/${id}`, data),
+  deleteTalkTopic: (id: string) => req('DELETE', `/admin/talk-topics/${id}`),
+  coinTransactions: () => req<any[]>('GET', '/admin/coin-transactions'),
+  ratings: () => req<any[]>('GET', '/admin/ratings'),
+  notifications: () => req<any[]>('GET', '/admin/notifications'),
+  sendNotification: (data: any) => req<any>('POST', '/admin/notifications/send', data),
 };

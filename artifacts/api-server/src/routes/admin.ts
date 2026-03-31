@@ -125,6 +125,88 @@ admin.patch('/settings', async (c) => {
   return c.json({ success: true });
 });
 
+// Talk Topics CRUD
+admin.get('/talk-topics', async (c) => {
+  const result = await db(c).prepare('SELECT * FROM talk_topics ORDER BY name ASC').all();
+  return c.json(result.results);
+});
+admin.post('/talk-topics', async (c) => {
+  const body = await c.req.json() as any;
+  const id = 'topic-' + Date.now();
+  await db(c).prepare('INSERT INTO talk_topics (id, name, icon, is_active) VALUES (?, ?, ?, 1)')
+    .bind(id, body.name, body.icon || '💬').run();
+  return c.json({ id, ...body });
+});
+admin.patch('/talk-topics/:id', async (c) => {
+  const { id } = c.req.param();
+  const body = await c.req.json() as any;
+  const fields = Object.entries(body).map(([k]) => `${k} = ?`).join(', ');
+  await db(c).prepare(`UPDATE talk_topics SET ${fields} WHERE id = ?`).bind(...Object.values(body), id).run();
+  return c.json({ success: true });
+});
+admin.delete('/talk-topics/:id', async (c) => {
+  const { id } = c.req.param();
+  await db(c).prepare('DELETE FROM talk_topics WHERE id = ?').bind(id).run();
+  return c.json({ success: true });
+});
+
+// Coin transactions
+admin.get('/coin-transactions', async (c) => {
+  const result = await db(c).prepare(`
+    SELECT ct.*, u.name as user_name, u.email as user_email
+    FROM coin_transactions ct
+    LEFT JOIN users u ON ct.user_id = u.id
+    ORDER BY ct.created_at DESC LIMIT 500
+  `).all();
+  return c.json(result.results);
+});
+
+// Ratings
+admin.get('/ratings', async (c) => {
+  const result = await db(c).prepare(`
+    SELECT r.*, u.name as user_name, h.display_name as host_display_name
+    FROM ratings r
+    LEFT JOIN users u ON r.user_id = u.id
+    LEFT JOIN hosts h ON r.host_id = h.id
+    ORDER BY r.created_at DESC LIMIT 500
+  `).all();
+  return c.json(result.results);
+});
+
+// Notifications: list + send
+admin.get('/notifications', async (c) => {
+  const result = await db(c).prepare(`
+    SELECT n.*, u.name as user_name, u.email as user_email
+    FROM notifications n
+    LEFT JOIN users u ON n.user_id = u.id
+    ORDER BY n.created_at DESC LIMIT 500
+  `).all();
+  return c.json(result.results);
+});
+admin.post('/notifications/send', async (c) => {
+  const body = await c.req.json() as any;
+  const { title, body: msgBody, type = 'system', target, userId } = body;
+  const now = Math.floor(Date.now() / 1000);
+  let targetUsers: any[] = [];
+  if (target === 'all') {
+    const r = await db(c).prepare('SELECT id FROM users').all();
+    targetUsers = r.results;
+  } else if (target === 'hosts') {
+    const r = await db(c).prepare('SELECT u.id FROM users u INNER JOIN hosts h ON h.user_id = u.id').all();
+    targetUsers = r.results;
+  } else if (target === 'user' && userId) {
+    targetUsers = [{ id: userId }];
+  }
+  if (targetUsers.length === 0) return c.json({ sent: 0 });
+  const stmts = targetUsers.map((u: any) => {
+    const id = 'notif-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+    return db(c).prepare('INSERT INTO notifications (id, user_id, type, title, body, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+      .bind(id, u.id, type, title, msgBody, now);
+  });
+  await db(c).batch(stmts);
+  return c.json({ sent: targetUsers.length });
+});
+
 // Call sessions
 admin.get('/calls', async (c) => {
   const result = await db(c).prepare(`

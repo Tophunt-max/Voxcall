@@ -1,5 +1,4 @@
 uploads = []
-outputs = []
 
 [[generated]]
 id = "tqgGpq2MJHKXaJ1v_Gv-O"
@@ -12,3 +11,9 @@ id = "--OEu1tPxisS_jGVHcHap"
 uri = "file://artifacts/voxlink/assets/images/splash-icon.png"
 type = "image"
 title = "generated_image"
+
+[[outputs]]
+id = "cNNz0LAHLUpd0Go27qAkE"
+uri = "file://voxlink-project.tar.gz"
+type = "unspecified"
+title = "VoxLink — Admin Panel + Backend Source Code"

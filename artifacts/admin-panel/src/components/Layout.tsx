@@ -3,7 +3,8 @@ import { Link, useLocation } from 'wouter';
 import { useAuth } from '@/lib/auth';
 import {
   LayoutDashboard, Users, Mic2, Wallet, Coins, Settings, LogOut,
-  Menu, X, ChevronRight, HelpCircle, Phone, Bell, TrendingUp
+  Menu, X, ChevronRight, HelpCircle, Phone, Bell, Star,
+  Hash, ArrowRightLeft
 } from 'lucide-react';
 
 const nav = [
@@ -11,8 +12,12 @@ const nav = [
   { href: '/users', label: 'Users', icon: Users, section: 'main' },
   { href: '/hosts', label: 'Hosts', icon: Mic2, section: 'main' },
   { href: '/calls', label: 'Call Sessions', icon: Phone, section: 'main' },
+  { href: '/ratings', label: 'Ratings', icon: Star, section: 'main' },
   { href: '/withdrawals', label: 'Withdrawals', icon: Wallet, section: 'finance' },
   { href: '/coin-plans', label: 'Coin Plans', icon: Coins, section: 'finance' },
+  { href: '/transactions', label: 'Transactions', icon: ArrowRightLeft, section: 'finance' },
+  { href: '/notifications', label: 'Notifications', icon: Bell, section: 'content' },
+  { href: '/talk-topics', label: 'Talk Topics', icon: Hash, section: 'content' },
   { href: '/faqs', label: 'FAQs', icon: HelpCircle, section: 'content' },
   { href: '/settings', label: 'Settings', icon: Settings, section: 'system' },
 ];
