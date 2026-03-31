@@ -125,4 +125,46 @@ admin.patch('/settings', async (c) => {
   return c.json({ success: true });
 });
 
+// Call sessions
+admin.get('/calls', async (c) => {
+  const result = await db(c).prepare(`
+    SELECT cs.*, 
+      u.name as caller_name, u.email as caller_email,
+      h.display_name as host_display_name
+    FROM call_sessions cs
+    LEFT JOIN users u ON cs.caller_id = u.id
+    LEFT JOIN hosts h ON cs.host_id = h.id
+    ORDER BY cs.created_at DESC LIMIT 200
+  `).all();
+  return c.json(result.results);
+});
+
+// FAQs CRUD
+admin.get('/faqs', async (c) => {
+  const result = await db(c).prepare('SELECT * FROM faqs ORDER BY order_index ASC, created_at ASC').all();
+  return c.json(result.results);
+});
+admin.post('/faqs', async (c) => {
+  const body = await c.req.json() as any;
+  const id = 'faq-' + Date.now();
+  await db(c).prepare(
+    'INSERT INTO faqs (id, question, answer, order_index, is_active) VALUES (?, ?, ?, ?, 1)'
+  ).bind(id, body.question, body.answer, body.order_index || 0).run();
+  return c.json({ id, ...body });
+});
+admin.patch('/faqs/:id', async (c) => {
+  const { id } = c.req.param();
+  const body = await c.req.json() as any;
+  const fields = Object.entries(body).map(([k]) => `${k} = ?`).join(', ');
+  const vals = [...Object.values(body), id];
+  await db(c).prepare(`UPDATE faqs SET ${fields}, updated_at = unixepoch() WHERE id = ?`).bind(...vals).run();
+  return c.json({ success: true });
+});
+admin.delete('/faqs/:id', async (c) => {
+  const { id } = c.req.param();
+  await db(c).prepare('DELETE FROM faqs WHERE id = ?').bind(id).run();
+  return c.json({ success: true });
+});
+
 export default admin;
+

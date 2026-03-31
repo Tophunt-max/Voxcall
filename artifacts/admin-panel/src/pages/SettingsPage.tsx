@@ -1,55 +1,129 @@
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
+import { Save, Info } from 'lucide-react';
 
-const DEFAULTS = {
+const settingGroups = [
+  {
+    group: 'General',
+    settings: [
+      { key: 'app_name', label: 'App Name', type: 'text', hint: 'Name displayed in the mobile app' },
+      { key: 'app_version', label: 'App Version', type: 'text', hint: 'Current version string (e.g. 1.0.0)' },
+    ]
+  },
+  {
+    group: 'Economy',
+    settings: [
+      { key: 'coin_to_usd_rate', label: 'Coin → USD Rate', type: 'number', hint: '0.01 means 100 coins = $1.00', step: '0.001' },
+      { key: 'host_revenue_share', label: 'Host Revenue Share', type: 'number', hint: '0.70 means hosts receive 70% of earned coins', step: '0.01' },
+      { key: 'min_withdrawal_coins', label: 'Minimum Withdrawal (Coins)', type: 'number', hint: 'Minimum coins a host must have to request a payout' },
+    ]
+  },
+];
+
+const DEFAULTS: Record<string, string> = {
   coin_to_usd_rate: '0.01',
   host_revenue_share: '0.70',
   min_withdrawal_coins: '100',
   app_name: 'VoxLink',
+  app_version: '1.0.0',
 };
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<Record<string, string>>(DEFAULTS);
   const [loading, setLoading] = useState(true);
-  const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
 
   useEffect(() => {
     api.settings().then(d => setSettings({ ...DEFAULTS, ...d })).finally(() => setLoading(false));
   }, []);
 
+  const showToast = (msg: string, ok = true) => { setToast({ msg, ok }); setTimeout(() => setToast(null), 2500); };
+
   const save = async () => {
-    await api.updateSettings(settings);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    setSaving(true);
+    try {
+      await api.updateSettings(settings);
+      showToast('Settings saved successfully', true);
+    } catch (e: any) {
+      showToast('Error: ' + e.message, false);
+    } finally { setSaving(false); }
   };
 
-  if (loading) return <div className="flex items-center gap-2 text-sm text-muted-foreground"><div className="animate-spin w-4 h-4 border-2 border-primary border-t-transparent rounded-full" />Loading...</div>;
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-xl font-bold">App Settings</h2>
-        <button onClick={save} className="bg-primary text-primary-foreground px-4 py-1.5 rounded-lg text-sm font-semibold hover:opacity-90">
-          {saved ? 'Saved!' : 'Save Changes'}
+    <div className="space-y-6 max-w-2xl">
+      {toast && (
+        <div className={`fixed bottom-5 right-5 z-50 text-white text-sm px-4 py-2.5 rounded-xl shadow-xl ${toast.ok ? 'bg-green-600' : 'bg-red-600'}`}>
+          {toast.msg}
+        </div>
+      )}
+
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="font-bold text-lg">App Settings</h2>
+          <p className="text-sm text-muted-foreground">Configure platform-wide settings</p>
+        </div>
+        <button
+          onClick={save} disabled={saving}
+          className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-xl text-sm font-semibold hover:opacity-90 disabled:opacity-50 shadow-sm"
+        >
+          <Save size={15} /> {saving ? 'Saving...' : 'Save Changes'}
         </button>
       </div>
 
-      <div className="bg-card border border-border rounded-xl p-6 max-w-lg space-y-5">
-        {[
-          { key: 'app_name', label: 'App Name', type: 'text' },
-          { key: 'coin_to_usd_rate', label: 'Coin → USD Rate', type: 'number', hint: 'e.g. 0.01 means 100 coins = $1' },
-          { key: 'host_revenue_share', label: 'Host Revenue Share', type: 'number', hint: 'e.g. 0.70 means hosts get 70%' },
-          { key: 'min_withdrawal_coins', label: 'Minimum Withdrawal (Coins)', type: 'number' },
-        ].map(({ key, label, type, hint }) => (
-          <div key={key}>
-            <label className="text-sm font-medium block mb-1.5">{label}</label>
-            {hint && <p className="text-xs text-muted-foreground mb-1.5">{hint}</p>}
-            <input
-              type={type} value={settings[key] || ''} onChange={e => setSettings(s => ({ ...s, [key]: e.target.value }))}
-              className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/50"
-            />
+      {settingGroups.map(group => (
+        <div key={group.group} className="bg-card border border-border rounded-2xl overflow-hidden">
+          <div className="px-5 py-4 border-b border-border bg-secondary/30">
+            <h3 className="font-bold text-sm">{group.group}</h3>
           </div>
-        ))}
+          <div className="divide-y divide-border">
+            {group.settings.map(s => (
+              <div key={s.key} className="px-5 py-4 flex flex-col sm:flex-row sm:items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-sm">{s.label}</p>
+                  {s.hint && (
+                    <div className="flex items-start gap-1 mt-0.5">
+                      <Info size={11} className="text-muted-foreground mt-0.5 flex-shrink-0" />
+                      <p className="text-xs text-muted-foreground">{s.hint}</p>
+                    </div>
+                  )}
+                </div>
+                <input
+                  type={s.type}
+                  step={(s as any).step}
+                  value={settings[s.key] || ''}
+                  onChange={e => setSettings(prev => ({ ...prev, [s.key]: e.target.value }))}
+                  className="w-full sm:w-48 border border-border rounded-xl px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+
+      {/* Computed values display */}
+      <div className="bg-card border border-border rounded-2xl p-5">
+        <h3 className="font-bold text-sm mb-4">Computed Values</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {[
+            { label: '100 coins =', value: `$${(100 * parseFloat(settings.coin_to_usd_rate || '0.01')).toFixed(2)}` },
+            { label: 'Host gets (per 100 coins)', value: `$${(100 * parseFloat(settings.coin_to_usd_rate || '0.01') * parseFloat(settings.host_revenue_share || '0.70')).toFixed(2)}` },
+            { label: 'Min withdrawal =', value: `$${(parseInt(settings.min_withdrawal_coins || '100') * parseFloat(settings.coin_to_usd_rate || '0.01') * parseFloat(settings.host_revenue_share || '0.70')).toFixed(2)}` },
+          ].map(c => (
+            <div key={c.label} className="bg-secondary/50 rounded-xl p-3">
+              <p className="text-xs text-muted-foreground">{c.label}</p>
+              <p className="font-bold text-lg mt-0.5">{c.value}</p>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

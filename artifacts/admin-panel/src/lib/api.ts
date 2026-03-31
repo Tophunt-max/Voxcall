@@ -1,9 +1,9 @@
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, '');
 const API = `${BASE}/api`;
 
-function getToken() { return localStorage.getItem('voxlink_admin_token') || ''; }
+export function getToken() { return localStorage.getItem('voxlink_admin_token') || ''; }
 
-async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
+export async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
   const r = await fetch(`${API}${path}`, {
     method,
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
@@ -26,8 +26,13 @@ export const api = {
   withdrawals: () => req<any[]>('GET', '/admin/withdrawals'),
   updateWithdrawal: (id: string, data: any) => req('PATCH', `/admin/withdrawals/${id}`, data),
   coinPlans: () => req<any[]>('GET', '/admin/coin-plans'),
-  createCoinPlan: (data: any) => req('POST', '/admin/coin-plans', data),
+  createCoinPlan: (data: any) => req<any>('POST', '/admin/coin-plans', data),
   updateCoinPlan: (id: string, data: any) => req('PATCH', `/admin/coin-plans/${id}`, data),
   settings: () => req<Record<string, string>>('GET', '/admin/settings'),
   updateSettings: (data: any) => req('PATCH', '/admin/settings', data),
+  callSessions: () => req<any[]>('GET', '/admin/calls'),
+  faqs: () => req<any[]>('GET', '/admin/faqs'),
+  createFaq: (data: any) => req<any>('POST', '/admin/faqs', data),
+  updateFaq: (id: string, data: any) => req('PATCH', `/admin/faqs/${id}`, data),
+  deleteFaq: (id: string) => req('DELETE', `/admin/faqs/${id}`),
 };

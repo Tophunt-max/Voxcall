@@ -8,6 +8,8 @@ import Users from '@/pages/Users';
 import Hosts from '@/pages/Hosts';
 import Withdrawals from '@/pages/Withdrawals';
 import CoinPlans from '@/pages/CoinPlans';
+import CallSessions from '@/pages/CallSessions';
+import FAQs from '@/pages/FAQs';
 import SettingsPage from '@/pages/SettingsPage';
 
 const queryClient = new QueryClient();
@@ -33,7 +35,9 @@ function ProtectedApp() {
         <Route path="/dashboard" component={Dashboard} />
         <Route path="/users" component={Users} />
         <Route path="/hosts" component={Hosts} />
+        <Route path="/calls" component={CallSessions} />
         <Route path="/withdrawals" component={Withdrawals} />
+        <Route path="/faqs" component={FAQs} />
         <Route path="/coin-plans" component={CoinPlans} />
         <Route path="/settings" component={SettingsPage} />
         <Route component={() => <Redirect to="/dashboard" />} />
