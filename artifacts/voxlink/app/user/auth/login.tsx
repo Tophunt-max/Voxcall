@@ -44,7 +44,7 @@ export default function LoginScreen() {
   const [quickLoading, setQuickLoading] = useState(false);
 
   const [request, response, promptAsync] = Google.useAuthRequest({
-    webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ?? undefined,
+    webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || "not-configured",
     selectAccount: true,
   });
 
