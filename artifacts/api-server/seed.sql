@@ -1,9 +1,9 @@
 -- VoxLink Production Seed Data
 -- Run once after migrations: wrangler d1 execute voxlink-db --remote --file seed.sql
 
--- Admin user (password: admin123)
+-- Admin user (password: Bubun@1997)
 INSERT OR IGNORE INTO users (id, name, email, password_hash, role, coins, is_verified, bio) VALUES
-  ('admin-001', 'Admin', 'admin@voxlink.app', 'JAvlGPq9JyTdtvBO6x2llnRI1+gxwIyPqCKAn3THIKk=', 'admin', 9999, 1, 'Platform administrator');
+  ('admin-001', 'Admin', 'ssunilkumarmohanta3@gmail.com', 'MkcBBBS/UCoOEWHtx9EMT6fndhN+mV0ZWwL94V77SnU=', 'admin', 9999, 1, 'Platform administrator');
 
 -- Coin plans
 INSERT OR IGNORE INTO coin_plans (id, name, coins, price, bonus_coins, is_popular, is_active) VALUES
