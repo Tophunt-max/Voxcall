@@ -4,27 +4,49 @@ import { useAuth } from '@/lib/auth';
 import {
   LayoutDashboard, Users, Mic2, Wallet, Coins, Settings, LogOut,
   Menu, X, ChevronRight, HelpCircle, Phone, Bell, Star,
-  Hash, ArrowRightLeft, Trophy, ShieldCheck
+  Hash, ArrowRightLeft, Trophy, ShieldCheck, TrendingUp, Tag,
+  IndianRupee, MessageSquare, Flag, ShieldOff, Megaphone,
+  ScrollText, Image, Gift, Radio, Sliders
 } from 'lucide-react';
 
 const nav = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, section: 'main' },
+  { href: '/analytics', label: 'Analytics', icon: TrendingUp, section: 'main' },
   { href: '/users', label: 'Users', icon: Users, section: 'main' },
   { href: '/hosts', label: 'Hosts', icon: Mic2, section: 'main' },
   { href: '/host-applications', label: 'KYC Applications', icon: ShieldCheck, section: 'main' },
-  { href: '/calls', label: 'Call Sessions', icon: Phone, section: 'main' },
-  { href: '/ratings', label: 'Ratings', icon: Star, section: 'main' },
+  { href: '/ban-management', label: 'Ban Management', icon: ShieldOff, section: 'main' },
+  { href: '/live-calls', label: 'Live Calls', icon: Radio, section: 'calls' },
+  { href: '/calls', label: 'Call Sessions', icon: Phone, section: 'calls' },
+  { href: '/ratings', label: 'Ratings', icon: Star, section: 'calls' },
   { href: '/withdrawals', label: 'Withdrawals', icon: Wallet, section: 'finance' },
+  { href: '/payout-management', label: 'Payout Management', icon: IndianRupee, section: 'finance' },
   { href: '/coin-plans', label: 'Coin Plans', icon: Coins, section: 'finance' },
   { href: '/transactions', label: 'Transactions', icon: ArrowRightLeft, section: 'finance' },
+  { href: '/promo-codes', label: 'Promo Codes', icon: Tag, section: 'finance' },
+  { href: '/referral-system', label: 'Referral System', icon: Gift, section: 'growth' },
+  { href: '/content-moderation', label: 'Moderation', icon: Flag, section: 'moderation' },
+  { href: '/support-tickets', label: 'Support Tickets', icon: MessageSquare, section: 'moderation' },
+  { href: '/bulk-notifications', label: 'Bulk Notifications', icon: Megaphone, section: 'content' },
+  { href: '/banners', label: 'Banners', icon: Image, section: 'content' },
   { href: '/notifications', label: 'Notifications', icon: Bell, section: 'content' },
   { href: '/talk-topics', label: 'Talk Topics', icon: Hash, section: 'content' },
   { href: '/faqs', label: 'FAQs', icon: HelpCircle, section: 'content' },
+  { href: '/audit-logs', label: 'Audit Logs', icon: ScrollText, section: 'system' },
   { href: '/level-config', label: 'Level System', icon: Trophy, section: 'system' },
+  { href: '/app-config', label: 'App Config', icon: Sliders, section: 'system' },
   { href: '/settings', label: 'Settings', icon: Settings, section: 'system' },
 ];
 
-const sections: Record<string, string> = { main: 'OVERVIEW', finance: 'FINANCE', content: 'CONTENT', system: 'SYSTEM' };
+const sections: Record<string, string> = {
+  main: 'OVERVIEW',
+  calls: 'CALLS',
+  finance: 'FINANCE',
+  growth: 'GROWTH',
+  moderation: 'MODERATION',
+  content: 'CONTENT',
+  system: 'SYSTEM',
+};
 
 function NavItem({ href, label, icon: Icon, active, onClick }: any) {
   return (

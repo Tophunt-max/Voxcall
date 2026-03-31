@@ -139,11 +139,28 @@ KYC verification applications. Fields: id, user_id, display_name, date_of_birth,
 - `GET /api/admin/host-applications/:id` — single application detail
 - `PATCH /api/admin/host-applications/:id/review` — approve or reject with reason
 
-### Admin Panel
-- New **KYC Applications** page (`HostApplications.tsx`) — list with status badges, review modal with document viewer, approve/reject with reason
-- Added to sidebar nav under OVERVIEW section
-- Image lightbox for Aadhar photo review
-- Video preview for verification video
+### Admin Panel Pages (Complete List)
+**OVERVIEW:** Dashboard, Analytics, Users, Hosts, KYC Applications, Ban Management  
+**CALLS:** Live Calls (real-time monitor), Call Sessions, Ratings  
+**FINANCE:** Withdrawals, Payout Management, Coin Plans, Transactions, Promo Codes  
+**GROWTH:** Referral System  
+**MODERATION:** Content Moderation (reports), Support Tickets  
+**CONTENT:** Bulk Notifications, Banners, Notifications, Talk Topics, FAQs  
+**SYSTEM:** Audit Logs, Level Config, App Config, Settings
+
+**12 New Pages added (Session 5):**
+- `Analytics.tsx` — DAU/MAU charts, retention rate, top hosts, platform split (pie), area charts
+- `PromoCodes.tsx` — Create/edit/delete promo codes (% discount or bonus coins), usage bar, expiry
+- `PayoutManagement.tsx` — Host payout approval/rejection, CSV export, ₹ amount breakdown
+- `SupportTickets.tsx` — Ticket inbox with chat-style reply UI, priority/status management
+- `ContentModeration.tsx` — User reports queue, category tagging, warn/ban/dismiss actions
+- `BanManagement.tsx` — Ban users by email+device_id, temporary/permanent bans, unban
+- `BulkNotifications.tsx` — Compose and send to segments (all/users/hosts/inactive), preview, history
+- `AuditLogs.tsx` — All admin actions logged with timestamp, target, IP, export CSV
+- `Banners.tsx` — In-app promotional banners with color picker, position selector, live preview
+- `ReferralSystem.tsx` — Top referrers leaderboard, recent activity, referral config modal
+- `LiveCalls.tsx` — Real-time call monitor with live duration counter, auto-refresh every 5s
+- `AppConfig.tsx` — Force update, maintenance mode, coin economy rates, call limits, sticky save bar
 
 ## New Features (Session 3)
 

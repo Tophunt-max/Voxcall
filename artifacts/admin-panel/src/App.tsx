@@ -18,6 +18,18 @@ import Notifications from '@/pages/Notifications';
 import SettingsPage from '@/pages/SettingsPage';
 import LevelConfig from '@/pages/LevelConfig';
 import HostApplications from '@/pages/HostApplications';
+import Analytics from '@/pages/Analytics';
+import PromoCodes from '@/pages/PromoCodes';
+import PayoutManagement from '@/pages/PayoutManagement';
+import SupportTickets from '@/pages/SupportTickets';
+import ContentModeration from '@/pages/ContentModeration';
+import BanManagement from '@/pages/BanManagement';
+import BulkNotifications from '@/pages/BulkNotifications';
+import AuditLogs from '@/pages/AuditLogs';
+import Banners from '@/pages/Banners';
+import ReferralSystem from '@/pages/ReferralSystem';
+import LiveCalls from '@/pages/LiveCalls';
+import AppConfig from '@/pages/AppConfig';
 
 const queryClient = new QueryClient();
 const base = import.meta.env.BASE_URL.replace(/\/$/, '');
@@ -52,6 +64,18 @@ function ProtectedApp() {
         <Route path="/faqs" component={FAQs} />
         <Route path="/level-config" component={LevelConfig} />
         <Route path="/host-applications" component={HostApplications} />
+        <Route path="/ban-management" component={BanManagement} />
+        <Route path="/live-calls" component={LiveCalls} />
+        <Route path="/payout-management" component={PayoutManagement} />
+        <Route path="/promo-codes" component={PromoCodes} />
+        <Route path="/analytics" component={Analytics} />
+        <Route path="/referral-system" component={ReferralSystem} />
+        <Route path="/content-moderation" component={ContentModeration} />
+        <Route path="/support-tickets" component={SupportTickets} />
+        <Route path="/bulk-notifications" component={BulkNotifications} />
+        <Route path="/banners" component={Banners} />
+        <Route path="/audit-logs" component={AuditLogs} />
+        <Route path="/app-config" component={AppConfig} />
         <Route path="/settings" component={SettingsPage} />
         <Route component={() => <Redirect to="/dashboard" />} />
       </Switch>
