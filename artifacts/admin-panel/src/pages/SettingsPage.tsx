@@ -18,6 +18,13 @@ const settingGroups = [
       { key: 'min_withdrawal_coins', label: 'Minimum Withdrawal (Coins)', type: 'number', hint: 'Minimum coins a host must have to request a payout' },
     ]
   },
+  {
+    group: 'Random Call Rates',
+    settings: [
+      { key: 'random_call_audio_rate', label: 'Audio Call Rate (Coins/min)', type: 'number', hint: 'Coins deducted per minute for random Voice calls — overrides individual host rates', step: '1' },
+      { key: 'random_call_video_rate', label: 'Video Call Rate (Coins/min)', type: 'number', hint: 'Coins deducted per minute for random Video calls — overrides individual host rates', step: '1' },
+    ]
+  },
 ];
 
 const DEFAULTS: Record<string, string> = {
@@ -26,6 +33,8 @@ const DEFAULTS: Record<string, string> = {
   min_withdrawal_coins: '100',
   app_name: 'VoxLink',
   app_version: '1.0.0',
+  random_call_audio_rate: '5',
+  random_call_video_rate: '8',
 };
 
 export default function SettingsPage() {
@@ -123,6 +132,25 @@ export default function SettingsPage() {
               <p className="font-bold text-lg mt-0.5">{c.value}</p>
             </div>
           ))}
+        </div>
+      </div>
+
+      {/* Random call rate preview */}
+      <div className="bg-card border border-border rounded-2xl p-5">
+        <h3 className="font-bold text-sm mb-1">Random Call — User Cost Preview</h3>
+        <p className="text-xs text-muted-foreground mb-4">Kitne coins katenge agar user itni der baat kare</p>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {[1, 5, 10, 30].map(mins => {
+            const audioCoins = parseInt(settings.random_call_audio_rate || '5') * mins;
+            const videoCoins = parseInt(settings.random_call_video_rate || '8') * mins;
+            return (
+              <div key={mins} className="bg-secondary/50 rounded-xl p-3 text-center">
+                <p className="text-xs text-muted-foreground font-medium">{mins} min</p>
+                <p className="font-bold text-base mt-1 text-primary">🎤 {audioCoins} coins</p>
+                <p className="font-bold text-base text-purple-600">🎥 {videoCoins} coins</p>
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>

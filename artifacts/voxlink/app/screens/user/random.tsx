@@ -177,8 +177,8 @@ function MatchRipple() {
 }
 
 /* ─── Match found screen overlay ─── */
-function MatchFoundScreen({ host, callType, onAccept, onDecline }: {
-  host: HostCard; callType: CallType; onAccept: () => void; onDecline: () => void;
+function MatchFoundScreen({ host, callType, adminCoinRate, onAccept, onDecline }: {
+  host: HostCard; callType: CallType; adminCoinRate: number; onAccept: () => void; onDecline: () => void;
 }) {
   const scale = useRef(new Animated.Value(0.7)).current;
   useEffect(() => {
@@ -189,9 +189,7 @@ function MatchFoundScreen({ host, callType, onAccept, onDecline }: {
     ? host.avatar_url
     : `https://api.dicebear.com/7.x/avataaars/svg?seed=${host.id}`;
 
-  const coinsPerMin = callType === "video"
-    ? (host as any).video_coins_per_minute ?? host.coins_per_minute + 3
-    : host.coins_per_minute;
+  const coinsPerMin = adminCoinRate;
 
   return (
     <View style={StyleSheet.absoluteFillObject}>
@@ -263,6 +261,7 @@ export default function RandomScreen() {
   const [callType, setCallType]   = useState<CallType>("audio");
   const [dialogVisible, setDialog] = useState(false);
   const [matchedHost, setMatchedHost] = useState<HostCard | null>(null);
+  const [adminCoinRate, setAdminCoinRate] = useState<number>(5);
   const [noHostMsg, setNoHostMsg]  = useState("");
 
   // Floating card hosts (real API)
@@ -312,6 +311,7 @@ export default function RandomScreen() {
         if (!isMounted.current) return;
         if (res.matched && res.host) {
           setMatchedHost(res.host);
+          setAdminCoinRate(res.coins_per_minute ?? 5);
           setPhase("found");
           if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
         } else {
@@ -335,23 +335,20 @@ export default function RandomScreen() {
 
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
 
-  // Accept match → proper call flow
+  // Accept match → proper call flow using admin-set coin rate
   const handleAccept = useCallback(() => {
     if (!matchedHost) return;
     setPhase("idle");
-
-    const coinsPerMin = callType === "video"
-      ? (matchedHost as any).video_coins_per_minute ?? matchedHost.coins_per_minute + 3
-      : matchedHost.coins_per_minute;
 
     const avatarUri = matchedHost.avatar_url && matchedHost.avatar_url.startsWith("http")
       ? matchedHost.avatar_url
       : `https://api.dicebear.com/7.x/avataaars/svg?seed=${matchedHost.id}`;
 
+    // adminCoinRate is set by admin in Settings → Random Call Rates
     initiateCall(
       { id: matchedHost.id, name: matchedHost.name, avatar: avatarUri, role: "host" },
       callType,
-      coinsPerMin
+      adminCoinRate
     );
     router.push({
       pathname: "/call/outgoing",
@@ -363,7 +360,7 @@ export default function RandomScreen() {
         specialty: matchedHost.specialties[0] ?? "",
       },
     });
-  }, [matchedHost, callType, initiateCall]);
+  }, [matchedHost, callType, initiateCall, adminCoinRate]);
 
   const handleDecline = useCallback(() => {
     setPhase("idle");
@@ -481,6 +478,7 @@ export default function RandomScreen() {
         <MatchFoundScreen
           host={matchedHost}
           callType={callType}
+          adminCoinRate={adminCoinRate}
           onAccept={handleAccept}
           onDecline={handleDecline}
         />

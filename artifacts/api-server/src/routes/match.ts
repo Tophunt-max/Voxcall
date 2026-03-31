@@ -32,6 +32,18 @@ match.post('/find', async (c) => {
   const callType = body.call_type ?? 'audio';
   const db = c.env.DB;
 
+  // Read admin-configured random call rates from app_settings
+  const audioRateRow = await db
+    .prepare("SELECT value FROM app_settings WHERE key = 'random_call_audio_rate'")
+    .first<{ value: string }>();
+  const videoRateRow = await db
+    .prepare("SELECT value FROM app_settings WHERE key = 'random_call_video_rate'")
+    .first<{ value: string }>();
+
+  const adminAudioRate = audioRateRow ? parseFloat(audioRateRow.value) : 5;
+  const adminVideoRate = videoRateRow ? parseFloat(videoRateRow.value) : 8;
+  const adminRate      = callType === 'video' ? adminVideoRate : adminAudioRate;
+
   // Pick a random online host (excluding the requester themselves if they are a host)
   const host = await db
     .prepare(
@@ -52,13 +64,12 @@ match.post('/find', async (c) => {
   }
 
   const enriched = enrichHost(host);
-  const coinsPerMinute =
-    callType === 'video'
-      ? enriched.video_coins_per_minute
-      : enriched.audio_coins_per_minute;
 
   return c.json({
     matched: true,
+    admin_audio_rate: adminAudioRate,
+    admin_video_rate: adminVideoRate,
+    coins_per_minute: adminRate,         // ← admin-set rate (used for deduction)
     host: {
       id: enriched.id,
       user_id: enriched.user_id,
@@ -71,9 +82,9 @@ match.post('/find', async (c) => {
       bio: enriched.bio,
       level: enriched.level ?? 1,
       level_info: enriched.level_info,
-      audio_coins_per_minute: enriched.audio_coins_per_minute,
-      video_coins_per_minute: enriched.video_coins_per_minute,
-      coins_per_minute: coinsPerMinute,
+      audio_coins_per_minute: adminAudioRate,
+      video_coins_per_minute: adminVideoRate,
+      coins_per_minute: adminRate,
     },
   });
 });
