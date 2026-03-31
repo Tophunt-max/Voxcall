@@ -51,7 +51,7 @@ export default function HomeScreen() {
         <View style={styles.headerLeft}>
           {/* Dotted-border profile circle */}
           <TouchableOpacity
-            onPress={() => router.push("/(tabs)/profile")}
+            onPress={() => router.push("/tabs/profile")}
             style={styles.avatarBorderWrapper}
           >
             <View style={[styles.avatarBorder, { borderColor: colors.primary }]}>
@@ -124,7 +124,7 @@ export default function HomeScreen() {
       >
         {/* Find More / Featured Banner */}
         <TouchableOpacity
-          onPress={() => router.push("/(tabs)/random")}
+          onPress={() => router.push("/tabs/random")}
           activeOpacity={0.9}
           style={[styles.findMoreBanner, { backgroundColor: "#A00EE7" }]}
         >

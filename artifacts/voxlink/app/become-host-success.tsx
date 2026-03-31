@@ -26,7 +26,7 @@ export default function BecomeHostSuccessScreen() {
 
       <TouchableOpacity
         style={[styles.btn, { backgroundColor: colors.primary }]}
-        onPress={() => router.replace("/(tabs)")}
+        onPress={() => router.replace("/tabs")}
         activeOpacity={0.85}
       >
         <Text style={styles.btnText}>Back to Home</Text>

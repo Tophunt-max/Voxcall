@@ -67,14 +67,14 @@ export default function PaymentSuccessScreen() {
       <Animated.View style={[styles.footer, { opacity: fadeAnim }]}>
         <TouchableOpacity
           style={[styles.primaryBtn, { backgroundColor: colors.accent }]}
-          onPress={() => router.replace("/(tabs)/")}
+          onPress={() => router.replace("/tabs/")}
           activeOpacity={0.88}
         >
           <Text style={styles.primaryBtnText}>Find a Host to Talk With</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.secondaryBtn, { borderColor: colors.border }]}
-          onPress={() => router.replace("/(tabs)/wallet")}
+          onPress={() => router.replace("/tabs/wallet")}
           activeOpacity={0.8}
         >
           <Text style={[styles.secondaryBtnText, { color: colors.text }]}>View Wallet</Text>

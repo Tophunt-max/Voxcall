@@ -35,7 +35,7 @@ export default function LoginScreen() {
       role: "user",
     });
     setLoading(false);
-    router.replace("/(tabs)");
+    router.replace("/tabs");
   };
 
   const handleGuestLogin = async () => {
@@ -49,7 +49,7 @@ export default function LoginScreen() {
       role: "user",
     });
     setLoading(false);
-    router.replace("/(tabs)");
+    router.replace("/tabs");
   };
 
   return (

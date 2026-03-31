@@ -30,8 +30,8 @@ function RootLayoutNav() {
     <>
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index" />
-        <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="(host-tabs)" />
+        <Stack.Screen name="tabs" />
+        <Stack.Screen name="host-tabs" />
         <Stack.Screen name="auth/onboarding" />
         <Stack.Screen name="auth/role-select" />
         <Stack.Screen name="auth/login" />

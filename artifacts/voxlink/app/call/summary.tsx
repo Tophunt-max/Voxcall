@@ -23,7 +23,7 @@ export default function CallSummaryScreen() {
   const topPad = insets.top;
 
   const handleDone = () => {
-    router.replace("/(tabs)");
+    router.replace("/tabs");
   };
 
   return (

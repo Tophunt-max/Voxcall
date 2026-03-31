@@ -45,7 +45,7 @@ export default function HostLoginScreen() {
       role: "host",
     });
     setLoading(false);
-    router.replace("/(host-tabs)");
+    router.replace("/host-tabs");
   };
 
   return (
