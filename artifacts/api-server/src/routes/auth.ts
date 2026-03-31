@@ -170,17 +170,50 @@ auth.post('/google-login', async (c) => {
   });
 });
 
-// POST /api/auth/guest-login — create a temporary guest account
+// POST /api/auth/guest-login — legacy alias for quick-login
 auth.post('/guest-login', async (c) => {
-  const db = c.env.DB;
-  const guestId = 'guest_' + generateId().slice(0, 8);
-  const guestEmail = `${guestId}@guest.voxlink.app`;
-  const guestName = 'Guest User';
-  await db.prepare(
-    `INSERT INTO users (id, name, email, password_hash, coins, is_verified, role) VALUES (?, ?, ?, '', 50, 0, 'user')`
-  ).bind(guestId, guestName, guestEmail).run();
-  const token = await signToken({ sub: guestId, role: 'user', name: guestName }, c.env.JWT_SECRET);
-  return c.json({ token, user: { id: guestId, name: guestName, email: guestEmail, coins: 50, role: 'user', is_guest: true } });
+  const body = await c.req.json().catch(() => ({}));
+  return quickLoginHandler(c, (body as any).device_id ?? null);
 });
+
+// POST /api/auth/quick-login — persistent device-based login (same device = same account)
+auth.post('/quick-login', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  return quickLoginHandler(c, (body as any).device_id ?? null);
+});
+
+async function quickLoginHandler(c: any, deviceId: string | null) {
+  const db = c.env.DB;
+
+  if (deviceId) {
+    const existing = await db.prepare(
+      'SELECT id, name, email, role, coins, avatar_url FROM users WHERE device_id = ? LIMIT 1'
+    ).bind(deviceId).first<any>();
+
+    if (existing) {
+      const token = await signToken({ sub: existing.id, role: existing.role, name: existing.name }, c.env.JWT_SECRET);
+      return c.json({
+        token,
+        user: { id: existing.id, name: existing.name, email: existing.email, role: existing.role, coins: existing.coins, avatar_url: existing.avatar_url, is_guest: true },
+        is_returning: true,
+      });
+    }
+  }
+
+  const quickId = 'q_' + generateId().slice(0, 12);
+  const quickEmail = `${quickId}@quick.voxlink.app`;
+  const quickName = 'VoxLink User';
+
+  await db.prepare(
+    `INSERT INTO users (id, name, email, password_hash, coins, is_verified, role, device_id) VALUES (?, ?, ?, '', 50, 0, 'user', ?)`
+  ).bind(quickId, quickName, quickEmail, deviceId ?? null).run();
+
+  const token = await signToken({ sub: quickId, role: 'user', name: quickName }, c.env.JWT_SECRET);
+  return c.json({
+    token,
+    user: { id: quickId, name: quickName, email: quickEmail, coins: 50, role: 'user', is_guest: true },
+    is_returning: false,
+  });
+}
 
 export default auth;

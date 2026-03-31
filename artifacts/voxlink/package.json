@@ -60,6 +60,8 @@
     "@react-native-firebase/app": "^23.8.8",
     "@react-native-firebase/auth": "^23.8.8",
     "@react-native-google-signin/google-signin": "^16.1.2",
+    "expo-application": "^7.0.8",
+    "expo-auth-session": "^7.0.10",
     "expo-av": "^16.0.8",
     "expo-camera": "^17.0.10",
     "expo-notifications": "~0.32.16",

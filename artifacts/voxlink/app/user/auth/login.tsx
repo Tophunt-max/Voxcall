@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity,
   Image, ActivityIndicator, Platform,
@@ -7,84 +7,96 @@ import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
+import * as WebBrowser from "expo-web-browser";
+import * as Google from "expo-auth-session/providers/google";
+import * as Application from "expo-application";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAuth } from "@/context/AuthContext";
 import { API } from "@/services/api";
 import { saveFirestoreUser } from "@/services/firestoreUser";
 import { getRandomAvatarKey } from "@/utils/randomAvatar";
 import { showErrorToast, showSuccessToast } from "@/components/Toast";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+
+WebBrowser.maybeCompleteAuthSession();
 
 const ACCENT = "#A00EE7";
-const GOOGLE_WEB_CLIENT_ID = "128169786412-web-client-placeholder";
+const DEVICE_ID_KEY = "@voxlink_device_id";
+
+async function getDeviceId(): Promise<string> {
+  if (Platform.OS === "android") {
+    const androidId = Application.getAndroidId();
+    if (androidId) return `android_${androidId}`;
+  } else if (Platform.OS === "ios") {
+    const vendorId = await Application.getIosIdForVendorAsync();
+    if (vendorId) return `ios_${vendorId}`;
+  }
+  const stored = await AsyncStorage.getItem(DEVICE_ID_KEY);
+  if (stored) return stored;
+  const generated = `dev_${Math.random().toString(36).slice(2)}_${Date.now()}`;
+  await AsyncStorage.setItem(DEVICE_ID_KEY, generated);
+  return generated;
+}
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
   const { loginWithToken } = useAuth();
   const [googleLoading, setGoogleLoading] = useState(false);
-  const [guestLoading, setGuestLoading] = useState(false);
+  const [quickLoading, setQuickLoading] = useState(false);
+
+  const [request, response, promptAsync] = Google.useAuthRequest({
+    webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ?? undefined,
+    selectAccount: true,
+  });
+
+  useEffect(() => {
+    if (response?.type === "success") {
+      const accessToken = response.authentication?.accessToken;
+      if (accessToken) {
+        handleGoogleToken(accessToken);
+      } else {
+        setGoogleLoading(false);
+        showErrorToast("Google sign-in failed. Please try again.");
+      }
+    } else if (response?.type === "error") {
+      setGoogleLoading(false);
+      const msg = response.error?.message || "Google sign-in failed";
+      if (!msg.toLowerCase().includes("cancel")) {
+        showErrorToast(msg, "Sign In Failed");
+      }
+    } else if (response?.type === "dismiss") {
+      setGoogleLoading(false);
+    }
+  }, [response]);
 
   const handleGoogleLogin = async () => {
+    const clientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
+    if (!clientId) {
+      showErrorToast("Google Sign-In is not configured yet. Use Quick Login.", "Not Available");
+      return;
+    }
     setGoogleLoading(true);
     try {
-      let googleUser: { name: string; email: string; photo?: string | null; id: string } | null = null;
+      await promptAsync();
+    } catch {
+      setGoogleLoading(false);
+    }
+  };
 
-      if (Platform.OS === "web") {
-        const { GoogleAuthProvider, signInWithPopup } = await import("firebase/auth");
-        const { auth } = await import("@/services/firebase");
-        const provider = new GoogleAuthProvider();
-        const result = await signInWithPopup(auth, provider);
-        const u = result.user;
-        googleUser = {
-          id: u.uid,
-          name: u.displayName || "User",
-          email: u.email || "",
-          photo: u.photoURL,
-        };
-      } else {
-        try {
-          const { GoogleSignin, statusCodes } = await import(
-            "@react-native-google-signin/google-signin"
-          );
-          GoogleSignin.configure({
-            webClientId: GOOGLE_WEB_CLIENT_ID,
-            offlineAccess: true,
-          });
-          await GoogleSignin.hasPlayServices();
-          const userInfo = await GoogleSignin.signIn();
-          const u = userInfo.data?.user;
-          if (!u) throw new Error("Google sign in cancelled");
-          googleUser = {
-            id: u.id,
-            name: u.name || "User",
-            email: u.email,
-            photo: u.photo,
-          };
-        } catch (err: any) {
-          if (err.code === "SIGN_IN_CANCELLED" || err.message?.includes("cancel")) {
-            setGoogleLoading(false);
-            return;
-          }
-          throw err;
-        }
-      }
+  const handleGoogleToken = async (accessToken: string) => {
+    try {
+      const res = await fetch("https://www.googleapis.com/userinfo/v2/me", {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!res.ok) throw new Error("Failed to get Google profile");
+      const gUser = await res.json() as { id: string; name: string; email: string; picture?: string };
 
-      if (!googleUser) throw new Error("Could not get Google user");
-
-      const avatarKey = getRandomAvatarKey();
-      const avatarUrl = googleUser.photo || null;
-
-      const data = await API.googleLogin(
-        googleUser.email,
-        googleUser.name,
-        googleUser.id,
-        avatarUrl
-      );
+      const data = await API.googleLogin(gUser.email, gUser.name, gUser.id, gUser.picture ?? null);
 
       const profile = {
-        id: data.user.id || googleUser.id,
-        name: data.user.name || googleUser.name,
-        email: data.user.email || googleUser.email,
-        avatar: avatarUrl || data.user.avatar_url,
+        id: data.user.id || gUser.id,
+        name: data.user.name || gUser.name,
+        email: data.user.email || gUser.email,
+        avatar: gUser.picture || data.user.avatar_url || null,
         coins: data.user.coins ?? 50,
         role: "user" as const,
       };
@@ -105,23 +117,22 @@ export default function LoginScreen() {
       router.replace("/user/screens/user");
     } catch (err: any) {
       const msg = err?.message || "Google sign-in failed";
-      if (!msg.includes("cancel") && !msg.includes("Cancel")) {
-        showErrorToast(msg, "Sign In Failed");
-      }
+      showErrorToast(msg, "Sign In Failed");
     } finally {
       setGoogleLoading(false);
     }
   };
 
-  const handleGuestLogin = async () => {
-    setGuestLoading(true);
+  const handleQuickLogin = async () => {
+    setQuickLoading(true);
     try {
-      const data = await API.guestLogin();
-      const avatarKey = getRandomAvatarKey();
+      const deviceId = await getDeviceId();
+      const data = await API.quickLogin(deviceId);
 
+      const avatarKey = data.user.avatar_url || getRandomAvatarKey();
       const profile = {
         id: data.user.id,
-        name: data.user.name || "Guest User",
+        name: data.user.name || "VoxLink User",
         email: data.user.email || "",
         avatar: avatarKey,
         coins: data.user.coins ?? 50,
@@ -137,19 +148,23 @@ export default function LoginScreen() {
         coins: profile.coins,
         role: "user",
         is_guest: true,
-        loginMethod: "guest",
+        loginMethod: "quick",
       });
 
       await loginWithToken(data.token, profile);
+
+      if (data.is_returning) {
+        showSuccessToast("Welcome back!", "Quick Login");
+      }
       router.replace("/user/screens/user");
     } catch (err: any) {
-      showErrorToast("Could not start guest session. Please try again.");
+      showErrorToast("Quick Login failed. Please try again.");
     } finally {
-      setGuestLoading(false);
+      setQuickLoading(false);
     }
   };
 
-  const isLoading = googleLoading || guestLoading;
+  const isLoading = googleLoading || quickLoading;
 
   return (
     <View style={{ flex: 1, backgroundColor: "#F9F5FF" }}>
@@ -203,25 +218,27 @@ export default function LoginScreen() {
         </View>
 
         <TouchableOpacity
-          style={[s.guestBtn, isLoading && s.btnDisabled]}
-          onPress={handleGuestLogin}
+          style={[s.quickBtn, isLoading && s.btnDisabled]}
+          onPress={handleQuickLogin}
           activeOpacity={0.75}
           disabled={isLoading}
         >
-          {guestLoading ? (
-            <ActivityIndicator color="#84889F" size="small" />
+          {quickLoading ? (
+            <ActivityIndicator color="#fff" size="small" />
           ) : (
-            <View style={s.guestIcoBg}>
-              <Feather name="user" size={18} color="#84889F" />
-            </View>
+            <Image
+              source={require("@/assets/icons/ic_quick_login.png")}
+              style={s.quickIco}
+              resizeMode="contain"
+            />
           )}
-          <Text style={s.guestTxt}>
-            {guestLoading ? "Please wait..." : "Continue as Guest"}
+          <Text style={s.quickTxt}>
+            {quickLoading ? "Please wait..." : "Quick Login"}
           </Text>
         </TouchableOpacity>
 
         <Text style={s.noteText}>
-          Guest accounts get 50 free coins to try calls
+          Quick Login saves your account to this device — reinstall and it's still yours
         </Text>
 
         <View style={s.bottomLinks}>
@@ -323,29 +340,24 @@ const s = StyleSheet.create({
     fontFamily: "Poppins_400Regular",
     color: "#84889F",
   },
-  guestBtn: {
+  quickBtn: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 12,
     paddingVertical: 15,
     borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "#E8EAF0",
-    backgroundColor: "#FAFAFA",
+    backgroundColor: ACCENT,
   },
-  guestIcoBg: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: "#F0F0F5",
-    alignItems: "center",
-    justifyContent: "center",
+  quickIco: {
+    width: 22,
+    height: 22,
+    tintColor: "#fff",
   },
-  guestTxt: {
+  quickTxt: {
     fontSize: 15,
-    fontFamily: "Poppins_500Medium",
-    color: "#555770",
+    fontFamily: "Poppins_600SemiBold",
+    color: "#fff",
   },
   btnDisabled: { opacity: 0.65 },
   noteText: {
@@ -354,6 +366,7 @@ const s = StyleSheet.create({
     color: "#84889F",
     textAlign: "center",
     marginTop: -4,
+    lineHeight: 18,
   },
   bottomLinks: {
     alignItems: "center",
