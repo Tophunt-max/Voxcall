@@ -48,11 +48,18 @@ function RootLayoutNav() {
       <Stack.Screen name="notifications" />
       <Stack.Screen name="profile/edit" />
       <Stack.Screen name="host/dashboard" />
+      <Stack.Screen name="host/settings" />
+      <Stack.Screen name="host/withdraw" />
       <Stack.Screen name="settings" />
       <Stack.Screen name="help-center" />
       <Stack.Screen name="language" />
       <Stack.Screen name="become-host" />
       <Stack.Screen name="become-host-success" />
+      <Stack.Screen name="search-hosts" />
+      <Stack.Screen name="coin-history" />
+      <Stack.Screen name="call/history" />
+      <Stack.Screen name="privacy" />
+      <Stack.Screen name="about" />
     </Stack>
   );
 }

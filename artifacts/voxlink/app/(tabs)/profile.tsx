@@ -10,6 +10,7 @@ import {
   Alert,
   Switch,
   Clipboard,
+  Share,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
@@ -288,19 +289,34 @@ export default function ProfileScreen() {
           />
         )}
         <MenuItem
+          iconName="clock"
+          label="Call History"
+          onPress={() => router.push("/call/history")}
+        />
+        <MenuItem
           iconName="help-circle"
           label="Help & FAQ"
           onPress={() => router.push("/help-center")}
         />
         <MenuItem
+          iconName="shield"
+          label="Privacy Policy"
+          onPress={() => router.push("/privacy")}
+        />
+        <MenuItem
+          iconName="info"
+          label="About VoxLink"
+          onPress={() => router.push("/about")}
+        />
+        <MenuItem
           iconName="star"
           label="Rate the App"
-          onPress={() => {}}
+          onPress={() => Alert.alert("Rate VoxLink", "Thank you for using VoxLink! Please rate us on the App Store.", [{ text: "Rate Now", style: "default" }, { text: "Later", style: "cancel" }])}
         />
         <MenuItem
           iconSource={require("@/assets/images/icon_share.png")}
           label="Share App"
-          onPress={() => {}}
+          onPress={() => Share.share({ message: "Join VoxLink - Connect with amazing hosts for audio & video calls! Download now: https://voxlink.app", title: "VoxLink" })}
         />
       </View>
 

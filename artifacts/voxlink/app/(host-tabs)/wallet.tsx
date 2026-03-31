@@ -4,6 +4,7 @@ import {
   ScrollView, FlatList, Platform, ImageBackground, Alert, TextInput
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { router } from "expo-router";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 
@@ -149,6 +150,11 @@ export default function HostWalletScreen() {
             <Text style={[styles.noteTitle, { color: "#FFA100" }]}>Note</Text>
             <Text style={[styles.noteText, { color: colors.mutedForeground }]}>Minimum withdrawal is 100 coins. Processing takes 2-3 business days.</Text>
           </View>
+
+          <TouchableOpacity style={[styles.fullWithdrawBtn, { backgroundColor: colors.surface, borderColor: colors.primary }]} onPress={() => router.push("/host/withdraw")}>
+            <Image source={require("@/assets/icons/ic_withdraw.png")} style={[styles.withdrawIcon, { tintColor: colors.primary }]} resizeMode="contain" />
+            <Text style={[styles.fullWithdrawText, { color: colors.primary }]}>Full Withdrawal Options</Text>
+          </TouchableOpacity>
         </ScrollView>
       )}
     </View>
@@ -198,4 +204,6 @@ const styles = StyleSheet.create({
   noteCard: { borderRadius: 14, padding: 14, gap: 4 },
   noteTitle: { fontSize: 14, fontFamily: "Poppins_700Bold" },
   noteText: { fontSize: 13, fontFamily: "Poppins_400Regular", lineHeight: 18 },
+  fullWithdrawBtn: { height: 50, borderRadius: 14, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 8, borderWidth: 1.5 },
+  fullWithdrawText: { fontSize: 14, fontFamily: "Poppins_600SemiBold" },
 });

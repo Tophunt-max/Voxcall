@@ -96,6 +96,14 @@ export default function HomeScreen() {
             </Text>
           </TouchableOpacity>
 
+          {/* Search icon */}
+          <TouchableOpacity
+            onPress={() => router.push("/search-hosts")}
+            style={[styles.bellBtn, { backgroundColor: colors.muted }]}
+          >
+            <Image source={require("@/assets/icons/ic_search.png")} style={{ width: 18, height: 18, tintColor: colors.text }} resizeMode="contain" />
+          </TouchableOpacity>
+
           {/* Notification bell */}
           <TouchableOpacity
             onPress={() => router.push("/notifications")}

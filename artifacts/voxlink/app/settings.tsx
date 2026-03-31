@@ -87,6 +87,39 @@ export default function SettingsScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* Info */}
+        <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Information</Text>
+        <View style={[styles.card, { backgroundColor: colors.card }]}>
+          <TouchableOpacity style={styles.menuRow} onPress={() => router.push("/help-center")}>
+            <View style={[styles.menuIconWrap, { backgroundColor: colors.surface }]}>
+              <Image source={require("@/assets/icons/ic_guaranteed.png")} style={styles.menuIcon} resizeMode="contain" />
+            </View>
+            <Text style={[styles.menuLabel, { color: colors.text }]}>Help & FAQ</Text>
+            <Image source={require("@/assets/icons/ic_back.png")} style={[styles.chevron, { tintColor: colors.mutedForeground, transform: [{ rotate: "180deg" }] }]} resizeMode="contain" />
+          </TouchableOpacity>
+
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+
+          <TouchableOpacity style={styles.menuRow} onPress={() => router.push("/privacy")}>
+            <View style={[styles.menuIconWrap, { backgroundColor: colors.surface }]}>
+              <Image source={require("@/assets/icons/ic_secure.png")} style={styles.menuIcon} resizeMode="contain" />
+            </View>
+            <Text style={[styles.menuLabel, { color: colors.text }]}>Privacy Policy</Text>
+            <Image source={require("@/assets/icons/ic_back.png")} style={[styles.chevron, { tintColor: colors.mutedForeground, transform: [{ rotate: "180deg" }] }]} resizeMode="contain" />
+          </TouchableOpacity>
+
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+
+          <TouchableOpacity style={styles.menuRow} onPress={() => router.push("/about")}>
+            <View style={[styles.menuIconWrap, { backgroundColor: colors.surface }]}>
+              <Image source={require("@/assets/icons/ic_flag.png")} style={styles.menuIcon} resizeMode="contain" />
+            </View>
+            <Text style={[styles.menuLabel, { color: colors.text }]}>About VoxLink</Text>
+            <Text style={[styles.menuValue, { color: colors.mutedForeground }]}>v1.0.0</Text>
+            <Image source={require("@/assets/icons/ic_back.png")} style={[styles.chevron, { tintColor: colors.mutedForeground, transform: [{ rotate: "180deg" }] }]} resizeMode="contain" />
+          </TouchableOpacity>
+        </View>
+
         {/* Account */}
         <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Account</Text>
         <View style={[styles.card, { backgroundColor: colors.card }]}>

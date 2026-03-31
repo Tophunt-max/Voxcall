@@ -83,7 +83,7 @@ export default function HostProfileScreen() {
         <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Account</Text>
         {[
           { icon: require("@/assets/icons/ic_edit.png"), label: "Edit Profile", onPress: () => router.push("/profile/edit") },
-          { icon: require("@/assets/icons/ic_settings.png"), label: "Settings", onPress: () => router.push("/settings") },
+          { icon: require("@/assets/icons/ic_settings.png"), label: "Settings", onPress: () => router.push("/host/settings") },
           { icon: require("@/assets/icons/ic_language.png"), label: "Language", value: "English", onPress: () => router.push("/language") },
         ].map((m, i) => (
           <TouchableOpacity key={i} style={[styles.menuItem, { borderBottomColor: colors.border }]} onPress={m.onPress} activeOpacity={0.75}>

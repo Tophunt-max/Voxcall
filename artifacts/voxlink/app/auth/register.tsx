@@ -35,7 +35,7 @@ export default function RegisterScreen() {
       role: "user",
     });
     setLoading(false);
-    router.replace("/(tabs)");
+    router.replace("/auth/fill-profile");
   };
 
   return (

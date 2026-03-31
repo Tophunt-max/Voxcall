@@ -98,6 +98,22 @@ export default function WalletScreen() {
         </ImageBackground>
       </View>
 
+      {/* Quick actions row */}
+      <View style={[styles.quickActionsRow, { paddingHorizontal: 16, marginBottom: 4 }]}>
+        <TouchableOpacity style={[styles.quickAction, { backgroundColor: colors.surface }]} onPress={() => router.push("/coin-history")}>
+          <Image source={require("@/assets/icons/ic_transaction.png")} style={[styles.quickActionIcon, { tintColor: colors.primary }]} resizeMode="contain" />
+          <Text style={[styles.quickActionText, { color: colors.text }]}>Coin History</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.quickAction, { backgroundColor: colors.surface }]} onPress={() => router.push("/call/history")}>
+          <Image source={require("@/assets/icons/ic_calling.png")} style={[styles.quickActionIcon, { tintColor: colors.primary }]} resizeMode="contain" />
+          <Text style={[styles.quickActionText, { color: colors.text }]}>Call History</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.quickAction, { backgroundColor: colors.surface }]} onPress={() => router.push("/notifications")}>
+          <Image source={require("@/assets/icons/ic_notify.png")} style={[styles.quickActionIcon, { tintColor: colors.primary }]} resizeMode="contain" />
+          <Text style={[styles.quickActionText, { color: colors.text }]}>Alerts</Text>
+        </TouchableOpacity>
+      </View>
+
       {/* Tabs */}
       <View style={[styles.tabRow, { borderBottomColor: colors.border }]}>
         {(["buy", "history"] as const).map((t) => (
@@ -406,4 +422,9 @@ const styles = StyleSheet.create({
   empty: { alignItems: "center", gap: 12, paddingTop: 60 },
   emptyImage: { width: 180, height: 140 },
   emptyText: { fontSize: 14, fontFamily: "Poppins_400Regular" },
+
+  quickActionsRow: { flexDirection: "row", gap: 10, marginTop: 4, marginBottom: 8 },
+  quickAction: { flex: 1, alignItems: "center", paddingVertical: 12, borderRadius: 12, gap: 6 },
+  quickActionIcon: { width: 22, height: 22 },
+  quickActionText: { fontSize: 11, fontFamily: "Poppins_500Medium" },
 });
