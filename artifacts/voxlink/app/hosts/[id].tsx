@@ -131,7 +131,7 @@ export default function HostDetailScreen() {
         "Insufficient Coins",
         `You need at least ${rate * 2} coins to start a call.`,
         [
-          { text: "Buy Coins", onPress: () => router.push("/tabs/wallet") },
+          { text: "Buy Coins", onPress: () => router.push("/screens/user/wallet") },
           { text: "Cancel", style: "cancel" },
         ]
       );
