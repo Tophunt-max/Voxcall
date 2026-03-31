@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, useRef } from "react";
 import { router } from "expo-router";
 import { API } from "@/services/api";
+import { useAuth } from "@/context/AuthContext";
 
 export type CallType = "audio" | "video";
 export type CallStatus = "idle" | "outgoing" | "incoming" | "active" | "ended";
@@ -41,6 +42,7 @@ interface CallContextValue {
 const CallContext = createContext<CallContextValue | null>(null);
 
 export function CallProvider({ children }: { children: React.ReactNode }) {
+  const { updateCoins } = useAuth();
   const [activeCall, setActiveCall] = useState<ActiveCall | null>(null);
   const activeCallRef = useRef<ActiveCall | null>(null);
 
@@ -65,13 +67,19 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
     try {
       const res = await API.initiateCall(participant.id, type);
+      const sessionId = res.session_id;
       const updated: ActiveCall = {
         ...call,
-        sessionId: res.session_id,
+        sessionId,
         coinsPerMinute: res.host_coins_per_minute ?? coinsPerMinute,
         maxSeconds: res.max_seconds,
       };
       updateCall(updated);
+      // Auto-accept on backend (simulates host answering in demo mode)
+      // This marks the session as 'active' so coins are charged correctly
+      if (sessionId) {
+        try { await API.answerCall(sessionId, true); } catch {}
+      }
     } catch (e) {
       console.warn("initiateCall API error (demo mode):", e);
     }
@@ -83,11 +91,15 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     router.push("/shared/call/incoming");
   }, []);
 
-  const acceptCall = useCallback(() => {
+  const acceptCall = useCallback(async () => {
     const curr = activeCallRef.current;
     if (!curr) return;
     const updated = { ...curr, status: "active" as CallStatus, startTime: Date.now() };
     updateCall(updated);
+    // Mark session as active on backend so coins are charged
+    if (curr.sessionId) {
+      try { await API.answerCall(curr.sessionId, true); } catch {}
+    }
     router.replace(curr.type === "audio" ? "/shared/call/audio-call" : "/shared/call/video-call");
   }, []);
 
@@ -106,7 +118,14 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     if (call?.sessionId) {
       try {
         const res = await API.endCall(call.sessionId, duration);
-        if (res?.coins_charged != null) coinsSpent = res.coins_charged;
+        if (res?.coins_charged != null) {
+          coinsSpent = res.coins_charged;
+          // Fetch fresh balance from backend and update AuthContext
+          try {
+            const bal = await API.getBalance();
+            if (bal?.coins != null) updateCoins(bal.coins);
+          } catch {}
+        }
       } catch (e) { console.warn("endCall API error:", e); }
     }
 

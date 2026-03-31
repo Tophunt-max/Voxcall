@@ -78,7 +78,10 @@ call.post('/end', async (c) => {
     ?? (session.type === 'video'
         ? (hostRow?.video_coins_per_minute ?? hostRow?.coins_per_minute ?? 5)
         : (hostRow?.audio_coins_per_minute ?? hostRow?.coins_per_minute ?? 5));
-  const coinsCharged = session.status === 'active' ? durationMin * effectiveRate : 0;
+  // Charge if call was active OR if it was pending but had actual duration (auto-accepted in demo)
+  const coinsCharged = (session.status === 'active' || (session.status === 'pending' && durationSec > 0))
+    ? durationMin * effectiveRate
+    : 0;
   const hostShare = Math.floor(coinsCharged * 0.7);
 
   const txs: any[] = [

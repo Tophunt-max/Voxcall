@@ -99,6 +99,8 @@ export const API = {
   // Calls
   initiateCall: (host_id: string, call_type: 'audio' | 'video') =>
     apiRequest<any>('POST', '/api/calls/initiate', { host_id, call_type }),
+  answerCall: (session_id: string, accepted: boolean) =>
+    apiRequest('POST', `/api/calls/${session_id}/answer`, { accepted }),
   endCall: (session_id: string, duration_seconds: number) =>
     apiRequest('POST', '/api/calls/end', { session_id, duration_seconds }),
   rateCall: (session_id: string, rating: number, comment?: string) =>
