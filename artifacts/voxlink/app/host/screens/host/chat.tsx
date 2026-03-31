@@ -91,7 +91,7 @@ const styles = StyleSheet.create({
   header: { paddingHorizontal: 16, paddingBottom: 12 },
   title: { fontSize: 20, fontFamily: "Poppins_700Bold" },
   searchWrap: { flexDirection: "row", alignItems: "center", gap: 10, marginHorizontal: 16, borderRadius: 14, borderWidth: 1.5, paddingHorizontal: 14, height: 46, marginBottom: 8 },
-  searchInput: { flex: 1, fontSize: 14, fontFamily: "Poppins_400Regular", backgroundColor: "transparent" },
+  searchInput: { flex: 1, fontSize: 14, fontFamily: "Poppins_400Regular", backgroundColor: "transparent", borderWidth: 0 },
   chatRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 14, borderBottomWidth: StyleSheet.hairlineWidth },
   avatar: { width: 48, height: 48, borderRadius: 24 },
   onlineDot: { position: "absolute", bottom: 2, right: 2, width: 12, height: 12, borderRadius: 6, backgroundColor: "#0BAF23", borderWidth: 2, borderColor: "#fff" },

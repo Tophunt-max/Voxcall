@@ -136,6 +136,10 @@ const styles = StyleSheet.create({
     padding: 0,
     margin: 0,
     backgroundColor: "transparent",
+    borderWidth: 0,
+    ...Platform.select({
+      web: { outlineStyle: "none" as any },
+    }),
   },
   rightWrap: { justifyContent: "center" },
 });
