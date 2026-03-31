@@ -17,9 +17,9 @@ export default function HostDashboardScreen() {
   const bottomPad = insets.bottom;
 
   const stats = [
-    { label: "Total Earnings", value: "2,450 🪙", icon: "trending-up" },
+    { label: "Total Earnings", value: "2,450 Coins", icon: "trending-up" },
     { label: "Total Calls", value: "48", icon: "phone" },
-    { label: "Avg Rating", value: "4.8 ⭐", icon: "star" },
+    { label: "Avg Rating", value: "4.8 / 5.0", icon: "star" },
     { label: "Active Minutes", value: "1,240", icon: "clock" },
   ];
 

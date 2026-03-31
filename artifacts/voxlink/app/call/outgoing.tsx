@@ -70,7 +70,7 @@ export default function OutgoingCallScreen() {
 
         <View style={{ alignItems: "center", gap: 8 }}>
           <Text style={styles.hostName}>{host.name}</Text>
-          <Text style={styles.hostMeta}>{host.topics[0]}</Text>
+          <Text style={styles.hostMeta}>{host.specialties[0]}</Text>
           <Text style={styles.statusText}>
             {status === "connecting" ? "Connecting..." : "Ringing..."}
           </Text>

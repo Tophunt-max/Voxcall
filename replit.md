@@ -81,19 +81,20 @@ artifacts/voxlink/
 │   │   ├── create-password.tsx   # Set new password after OTP verify
 │   │   ├── fill-profile.tsx      # Post-register profile: name, bio, languages
 │   │   └── select-gender.tsx     # Gender card selection screen
-│   ├── (tabs)/                   # User mode tab navigation (5 tabs)
-│   │   ├── _layout.tsx           # Tab bar with original PNG icons
-│   │   ├── index.tsx             # Home screen
-│   │   ├── search.tsx            # Random Match screen
-│   │   ├── messages.tsx          # Chat list
-│   │   ├── wallet.tsx            # Coin wallet (buy + history)
-│   │   └── profile.tsx           # Profile (links to settings/help/become-host)
-│   ├── (host-tabs)/              # Host mode tab navigation (5 tabs)
-│   │   ├── _layout.tsx           # Host tab bar (Home, Chat, Notify, Wallet, Profile)
-│   │   ├── index.tsx             # Host home: online toggle, stats, permissions, tips
+│   ├── (tabs)/                   # User mode tab navigation (5 tabs — matches Flutter)
+│   │   ├── _layout.tsx           # Tab bar: Home, Listener, Random, Chat, Calling (acc purple active #A00EE7)
+│   │   ├── index.tsx             # Home: header, Find More banner → random, Top Listeners, Browse by Topic
+│   │   ├── search.tsx            # Listener tab: Language/TalkAbout filter buttons, listener cards with Talk Now
+│   │   ├── random.tsx            # Random Call tab: ripple animation, listener cards cycling, audio/video modal
+│   │   ├── messages.tsx          # Chat tab: light purple header (#F3E4FF), search icon, conversation list
+│   │   ├── wallet.tsx            # Calling History tab: All/Audio/Video filter underline tabs, call records
+│   │   └── profile.tsx           # Profile: dotted avatar, My Wallet → checkout, Edit, Settings, etc.
+│   ├── (host-tabs)/              # Host mode tab navigation (4 tabs — matches Flutter)
+│   │   ├── _layout.tsx           # Host tab bar: Home, Chat, Calls, Profile (accent purple #A00EE7 active)
+│   │   ├── index.tsx             # Host home: online toggle, stats, dashboard quick-access
 │   │   ├── chat.tsx              # Host chat list (conversations from users)
-│   │   ├── notifications.tsx     # Host notifications (calls, ratings, coins)
-│   │   ├── wallet.tsx            # Host wallet: earnings history + withdraw coins
+│   │   ├── notifications.tsx     # Host Calls tab: call history with All/Audio/Video filter + coins earned
+│   │   ├── wallet.tsx            # Host wallet (hidden from tab bar via href: null)
 │   │   └── profile.tsx           # Host profile + switch to user mode
 │   ├── hosts/
 │   │   ├── [id].tsx              # Host detail: reviews section, outgoing call nav

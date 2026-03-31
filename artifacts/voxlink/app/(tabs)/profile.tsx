@@ -246,6 +246,11 @@ export default function ProfileScreen() {
           onPress={() => router.push("/profile/edit")}
         />
         <MenuItem
+          iconSource={require("@/assets/icons/ic_wallet.png")}
+          label="My Wallet"
+          onPress={() => router.push("/payment/checkout")}
+        />
+        <MenuItem
           iconName="bell"
           label="Notifications"
           isSwitch

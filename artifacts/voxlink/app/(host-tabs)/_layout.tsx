@@ -22,20 +22,22 @@ export default function HostTabLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.mutedForeground,
+        tabBarActiveTintColor: "#A00EE7",
+        tabBarInactiveTintColor: "#AAAACC",
         tabBarStyle: {
-          backgroundColor: colors.card,
+          backgroundColor: "#FFFFFF",
           borderTopWidth: 0.5,
-          borderTopColor: colors.border,
+          borderTopColor: "#E9E9E9",
           height: (Platform.OS === "web" ? 60 : 60 + insets.bottom),
           paddingBottom: Platform.OS === "web" ? 8 : insets.bottom,
           paddingTop: 8,
-          ...(Platform.OS === "web"
-            ? { boxShadow: "0 -1px 10px rgba(0,0,0,0.08)" }
-            : { elevation: 8, shadowColor: "#000", shadowOpacity: 0.1, shadowRadius: 8, shadowOffset: { width: 0, height: -2 } }),
+          elevation: 12,
+          shadowColor: "#000",
+          shadowOpacity: 0.08,
+          shadowRadius: 8,
+          shadowOffset: { width: 0, height: -2 },
         },
-        tabBarLabelStyle: { fontSize: 10, fontFamily: "Poppins_500Medium", marginTop: -2 },
+        tabBarLabelStyle: { fontSize: 11, fontFamily: "Poppins_500Medium", marginTop: 2 },
         tabBarShowLabel: true,
       }}
     >
@@ -56,16 +58,13 @@ export default function HostTabLayout() {
       <Tabs.Screen
         name="notifications"
         options={{
-          title: "Notify",
-          tabBarIcon: ({ color, focused }) => <TabIcon source={require("@/assets/icons/ic_notify.png")} focused={focused} color={color} />,
+          title: "Calls",
+          tabBarIcon: ({ color, focused }) => <TabIcon source={require("@/assets/icons/ic_calling.png")} focused={focused} color={color} />,
         }}
       />
       <Tabs.Screen
         name="wallet"
-        options={{
-          title: "Wallet",
-          tabBarIcon: ({ color, focused }) => <TabIcon source={require("@/assets/icons/ic_wallet.png")} focused={focused} color={color} />,
-        }}
+        options={{ href: null }}
       />
       <Tabs.Screen
         name="profile"

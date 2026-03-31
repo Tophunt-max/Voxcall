@@ -1,86 +1,166 @@
-import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, Image, TouchableOpacity, Platform } from "react-native";
+import React, { useEffect, useRef, useState } from "react";
+import { View, Text, StyleSheet, Image, TouchableOpacity, Animated, Easing } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
-import { useColors } from "@/hooks/useColors";
 import { useCall } from "@/context/CallContext";
 import * as Haptics from "expo-haptics";
 
 export default function AudioCallScreen() {
-  const colors = useColors();
   const insets = useSafeAreaInsets();
   const { activeCall, endCall, toggleMute, toggleSpeaker } = useCall();
   const [elapsed, setElapsed] = useState(0);
   const [status, setStatus] = useState<"connecting" | "ringing" | "active">("connecting");
 
-  const topPad = insets.top;
-  const bottomPad = insets.bottom;
+  const pulse = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    const connectTimer = setTimeout(() => setStatus("ringing"), 1000);
-    const ringTimer = setTimeout(() => setStatus("active"), 3000);
-    return () => { clearTimeout(connectTimer); clearTimeout(ringTimer); };
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1.08, duration: 900, easing: Easing.inOut(Easing.ease), useNativeDriver: false }),
+        Animated.timing(pulse, { toValue: 1, duration: 900, easing: Easing.inOut(Easing.ease), useNativeDriver: false }),
+      ])
+    ).start();
+    const t1 = setTimeout(() => setStatus("ringing"), 1000);
+    const t2 = setTimeout(() => setStatus("active"), 3000);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
   }, []);
 
   useEffect(() => {
     if (status !== "active") return;
-    const t = setInterval(() => setElapsed((e) => e + 1), 1000);
+    const t = setInterval(() => setElapsed(e => e + 1), 1000);
     return () => clearInterval(t);
   }, [status]);
 
-  const formatTime = (s: number) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+  const fmt = (s: number) =>
+    `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 
-  const statusLabels = { connecting: "Connecting...", ringing: "Ringing...", active: formatTime(elapsed) };
+  const statusLabel = status === "active" ? fmt(elapsed) : status === "ringing" ? "Ringing..." : "Connecting...";
 
   return (
-    <View style={[styles.screen, { backgroundColor: colors.primary, paddingTop: topPad, paddingBottom: bottomPad }]}>
-      <View style={styles.callerInfo}>
-        <View style={styles.avatarRing}>
-          <Image source={{ uri: activeCall?.participant.avatar ?? `https://api.dicebear.com/7.x/avataaars/svg?seed=${activeCall?.participant.id}` }} style={styles.avatar} />
-        </View>
-        <Text style={styles.callerName}>{activeCall?.participant.name ?? "Unknown"}</Text>
-        <Text style={styles.callStatus}>{statusLabels[status]}</Text>
-        {activeCall?.coinsPerMinute && (
-          <View style={styles.costBadge}>
-            <Text style={styles.costText}>🪙 {activeCall.coinsPerMinute} coins/min</Text>
+    <LinearGradient
+      colors={["#200060", "#4B0082", "#1A0040"]}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={[styles.screen, { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 20 }]}
+    >
+      {/* Caller Info */}
+      <View style={styles.callerSection}>
+        <Text style={styles.callTypeLabel}>Voice Call</Text>
+        <Animated.View style={[styles.avatarRing, { transform: [{ scale: pulse }] }]}>
+          <View style={styles.avatarInner}>
+            <Image
+              source={{ uri: activeCall?.participant.avatar ?? `https://api.dicebear.com/7.x/avataaars/svg?seed=${activeCall?.participant.id}` }}
+              style={styles.avatar}
+            />
           </View>
-        )}
+        </Animated.View>
+        <Text style={styles.callerName}>{activeCall?.participant.name ?? "Unknown"}</Text>
+        <Text style={styles.statusLabel}>{statusLabel}</Text>
+        {activeCall?.coinsPerMinute ? (
+          <View style={styles.costBadge}>
+            <Image source={require("@/assets/icons/ic_coin.png")} style={styles.coinIcon} resizeMode="contain" />
+            <Text style={styles.costText}>{activeCall.coinsPerMinute} coins / min</Text>
+          </View>
+        ) : null}
       </View>
 
-      <View style={styles.controls}>
+      {/* Controls */}
+      <View style={styles.controlsSection}>
         <View style={styles.controlRow}>
+          <View style={styles.ctrlItem}>
+            <TouchableOpacity
+              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); toggleMute(); }}
+              style={[styles.ctrlBtn, activeCall?.isMuted && styles.ctrlBtnActive]}
+            >
+              <Feather name={activeCall?.isMuted ? "mic-off" : "mic"} size={26} color="#fff" />
+            </TouchableOpacity>
+            <Text style={styles.ctrlLabel}>{activeCall?.isMuted ? "Unmute" : "Mute"}</Text>
+          </View>
+
           <TouchableOpacity
-            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); toggleMute(); }}
-            style={[styles.ctrlBtn, { backgroundColor: activeCall?.isMuted ? "#fff" : "rgba(255,255,255,0.2)" }]}
+            onPress={() => { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning); endCall(); }}
+            style={styles.endBtn}
           >
-            <Feather name={activeCall?.isMuted ? "mic-off" : "mic"} size={24} color={activeCall?.isMuted ? colors.primary : "#fff"} />
+            <Feather name="phone-off" size={30} color="#fff" />
           </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); toggleSpeaker(); }}
-            style={[styles.ctrlBtn, { backgroundColor: activeCall?.isSpeakerOn ? "#fff" : "rgba(255,255,255,0.2)" }]}
-          >
-            <Feather name="volume-2" size={24} color={activeCall?.isSpeakerOn ? colors.primary : "#fff"} />
-          </TouchableOpacity>
+
+          <View style={styles.ctrlItem}>
+            <TouchableOpacity
+              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); toggleSpeaker(); }}
+              style={[styles.ctrlBtn, activeCall?.isSpeakerOn && styles.ctrlBtnActive]}
+            >
+              <Feather name="volume-2" size={26} color="#fff" />
+            </TouchableOpacity>
+            <Text style={styles.ctrlLabel}>{activeCall?.isSpeakerOn ? "Speaker On" : "Speaker"}</Text>
+          </View>
         </View>
-        <TouchableOpacity onPress={() => { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning); endCall(); }} style={styles.endBtn}>
-          <Feather name="phone-off" size={28} color="#fff" />
-        </TouchableOpacity>
       </View>
-    </View>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, alignItems: "center", justifyContent: "space-between", paddingHorizontal: 32 },
-  callerInfo: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 },
-  avatarRing: { width: 130, height: 130, borderRadius: 65, borderWidth: 4, borderColor: "rgba(255,255,255,0.3)", alignItems: "center", justifyContent: "center" },
-  avatar: { width: 110, height: 110, borderRadius: 55 },
-  callerName: { fontSize: 28, fontFamily: "Poppins_700Bold", color: "#fff", marginTop: 20 },
-  callStatus: { fontSize: 16, fontFamily: "Poppins_400Regular", color: "rgba(255,255,255,0.8)" },
-  costBadge: { backgroundColor: "rgba(255,255,255,0.15)", paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, marginTop: 4 },
-  costText: { color: "#fff", fontSize: 13, fontFamily: "Poppins_500Medium" },
-  controls: { gap: 32, alignItems: "center", paddingBottom: 20 },
-  controlRow: { flexDirection: "row", gap: 24 },
-  ctrlBtn: { width: 60, height: 60, borderRadius: 30, alignItems: "center", justifyContent: "center" },
-  endBtn: { width: 72, height: 72, borderRadius: 36, backgroundColor: "#E84855", alignItems: "center", justifyContent: "center" },
+  screen: { flex: 1, alignItems: "center", justifyContent: "space-between" },
+  callerSection: { flex: 1, alignItems: "center", justifyContent: "center", gap: 16 },
+  callTypeLabel: { color: "rgba(255,255,255,0.6)", fontSize: 14, fontFamily: "Poppins_400Regular", letterSpacing: 1, textTransform: "uppercase" },
+  avatarRing: {
+    width: 148,
+    height: 148,
+    borderRadius: 74,
+    borderWidth: 2.5,
+    borderColor: "rgba(255,255,255,0.25)",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.06)",
+  },
+  avatarInner: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    overflow: "hidden",
+    borderWidth: 2,
+    borderColor: "rgba(255,255,255,0.4)",
+  },
+  avatar: { width: "100%", height: "100%" },
+  callerName: { fontSize: 28, fontFamily: "Poppins_700Bold", color: "#fff", marginTop: 8 },
+  statusLabel: { fontSize: 16, fontFamily: "Poppins_400Regular", color: "rgba(255,255,255,0.75)" },
+  costBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(255,255,255,0.12)",
+    paddingHorizontal: 16,
+    paddingVertical: 7,
+    borderRadius: 20,
+  },
+  coinIcon: { width: 16, height: 16 },
+  costText: { color: "#FFD166", fontSize: 13, fontFamily: "Poppins_600SemiBold" },
+
+  controlsSection: { paddingHorizontal: 32, paddingBottom: 16, width: "100%" },
+  controlRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  ctrlItem: { alignItems: "center", gap: 8 },
+  ctrlBtn: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: "rgba(255,255,255,0.15)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  ctrlBtnActive: { backgroundColor: "rgba(255,255,255,0.35)" },
+  ctrlLabel: { color: "rgba(255,255,255,0.7)", fontSize: 12, fontFamily: "Poppins_400Regular" },
+  endBtn: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    backgroundColor: "#E84855",
+    alignItems: "center",
+    justifyContent: "center",
+    elevation: 4,
+    shadowColor: "#E84855",
+    shadowOpacity: 0.5,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+  },
 });

@@ -8,10 +8,10 @@ import { NotificationBadge } from "@/components/NotificationBadge";
 
 const TAB_ICONS = {
   home: require("@/assets/icons/ic_home.png"),
+  listener: require("@/assets/icons/ic_listener.png"),
   random: require("@/assets/icons/ic_shuffle.png"),
   chat: require("@/assets/icons/ic_chat.png"),
-  wallet: require("@/assets/icons/ic_wallet.png"),
-  profile: require("@/assets/icons/ic_profile.png"),
+  calling: require("@/assets/icons/ic_calling.png"),
 };
 
 interface TabIconProps {
@@ -46,13 +46,13 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.mutedForeground,
+        tabBarActiveTintColor: "#A00EE7",
+        tabBarInactiveTintColor: "#AAAACC",
         tabBarStyle: {
-          backgroundColor: colors.card,
+          backgroundColor: "#FFFFFF",
           borderTopWidth: StyleSheet.hairlineWidth,
-          borderTopColor: colors.border,
-          elevation: 8,
+          borderTopColor: "#E9E9E9",
+          elevation: 12,
           shadowColor: "#000",
           shadowOffset: { width: 0, height: -2 },
           shadowOpacity: 0.06,
@@ -81,6 +81,15 @@ export default function TabLayout() {
       <Tabs.Screen
         name="search"
         options={{
+          title: "Listener",
+          tabBarIcon: ({ color, focused }) => (
+            <TabIcon source={TAB_ICONS.listener} color={color} focused={focused} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="random"
+        options={{
           title: "Random",
           tabBarIcon: ({ color, focused }) => (
             <TabIcon source={TAB_ICONS.random} color={color} focused={focused} />
@@ -99,21 +108,13 @@ export default function TabLayout() {
       <Tabs.Screen
         name="wallet"
         options={{
-          title: "Wallet",
+          title: "Calling",
           tabBarIcon: ({ color, focused }) => (
-            <TabIcon source={TAB_ICONS.wallet} color={color} focused={focused} />
+            <TabIcon source={TAB_ICONS.calling} color={color} focused={focused} />
           ),
         }}
       />
-      <Tabs.Screen
-        name="profile"
-        options={{
-          title: "Profile",
-          tabBarIcon: ({ color, focused }) => (
-            <TabIcon source={TAB_ICONS.profile} color={color} focused={focused} />
-          ),
-        }}
-      />
+      <Tabs.Screen name="profile" options={{ href: null }} />
     </Tabs>
   );
 }

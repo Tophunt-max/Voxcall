@@ -42,7 +42,7 @@ export default function CallSummaryScreen() {
           </View>
           <View style={[styles.statDiv, { backgroundColor: colors.border }]} />
           <View style={styles.stat}>
-            <Text style={[styles.statValue, { color: colors.coinGold }]}>🪙 {coinsSpent}</Text>
+            <Text style={[styles.statValue, { color: colors.coinGold }]}>{coinsSpent} Coins</Text>
             <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>Coins spent</Text>
           </View>
           <View style={[styles.statDiv, { backgroundColor: colors.border }]} />

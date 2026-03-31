@@ -83,7 +83,7 @@ export default function HomeScreen() {
         <View style={styles.headerRight}>
           {/* Coin balance */}
           <TouchableOpacity
-            onPress={() => router.push("/(tabs)/wallet")}
+            onPress={() => router.push("/payment/checkout")}
             style={[styles.coinBadge, { backgroundColor: "#FFF2D9" }]}
           >
             <Image
@@ -123,9 +123,9 @@ export default function HomeScreen() {
       >
         {/* Find More / Featured Banner */}
         <TouchableOpacity
-          onPress={() => router.push("/(tabs)/search")}
+          onPress={() => router.push("/(tabs)/random")}
           activeOpacity={0.9}
-          style={[styles.findMoreBanner, { backgroundColor: colors.primary }]}
+          style={[styles.findMoreBanner, { backgroundColor: "#A00EE7" }]}
         >
           <View style={styles.findMoreLeft}>
             <Text style={styles.findMoreTitle}>Find More</Text>
