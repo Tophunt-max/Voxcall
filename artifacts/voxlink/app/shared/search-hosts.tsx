@@ -112,6 +112,8 @@ export default function SearchHostsScreen() {
             value={query}
             onChangeText={setQuery}
             autoFocus
+            selectionColor="#A00EE7"
+            underlineColorAndroid="transparent"
           />
           {query.length > 0 && (
             <TouchableOpacity onPress={() => setQuery("")}>

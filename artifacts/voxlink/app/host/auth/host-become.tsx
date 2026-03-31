@@ -2,8 +2,10 @@
 import React, { useState } from "react";
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity,
-  ScrollView, Alert,
+  ScrollView,
 } from "react-native";
+import { showErrorToast } from "@/components/Toast";
+import AppInput from "@/components/AppInput";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -39,11 +41,11 @@ export default function HostBecomeScreen() {
 
   const handleNext = () => {
     if (specialties.length === 0) {
-      Alert.alert("Select Specialty", "Choose at least one specialty.");
+      showErrorToast("Choose at least one specialty.", "Select Specialty");
       return;
     }
     if (!bio.trim() || bio.trim().length < 20) {
-      Alert.alert("Bio Too Short", "Please write a bio of at least 20 characters.");
+      showErrorToast("Please write a bio of at least 20 characters.", "Bio Too Short");
       return;
     }
     // Pass data via router params to KYC step
@@ -122,29 +124,23 @@ export default function HostBecomeScreen() {
         </View>
 
         <Text style={s.fieldLabel}>Bio</Text>
-        <View style={[s.inputWrap, s.textareaWrap]}>
-          <TextInput
-            value={bio}
-            onChangeText={setBio}
-            placeholder="Tell users about yourself — your expertise, personality, and what makes your calls special..."
-            placeholderTextColor="#84889F"
-            style={[s.input, s.textarea]}
-            multiline
-            numberOfLines={4}
-          />
-        </View>
+        <AppInput
+          placeholder="Tell users about yourself — your expertise, personality, and what makes your calls special..."
+          value={bio}
+          onChangeText={setBio}
+          multiline
+          numberOfLines={4}
+          textAlignVertical="top"
+          wrapStyle={{ minHeight: 100, paddingVertical: 12 }}
+        />
 
         <Text style={s.fieldLabel}>Experience (optional)</Text>
-        <View style={s.inputWrap}>
-          <Feather name="briefcase" size={18} color="#84889F" />
-          <TextInput
-            value={experience}
-            onChangeText={setExperience}
-            placeholder="e.g. 3 years as life coach"
-            placeholderTextColor="#84889F"
-            style={s.input}
-          />
-        </View>
+        <AppInput
+          icon={<Feather name="briefcase" size={18} color="#84889F" />}
+          placeholder="e.g. 3 years as life coach"
+          value={experience}
+          onChangeText={setExperience}
+        />
 
         <Text style={s.fieldLabel}>Your Call Rates (coins/min)</Text>
         <View style={s.ratesRow}>
@@ -157,6 +153,8 @@ export default function HostBecomeScreen() {
                 onChangeText={setAudioRate}
                 style={s.rateInput}
                 keyboardType="numeric"
+                selectionColor="#A00EE7"
+                underlineColorAndroid="transparent"
               />
               <Text style={s.rateSuffix}>coins/min</Text>
             </View>
@@ -170,6 +168,8 @@ export default function HostBecomeScreen() {
                 onChangeText={setVideoRate}
                 style={s.rateInput}
                 keyboardType="numeric"
+                selectionColor="#A00EE7"
+                underlineColorAndroid="transparent"
               />
               <Text style={s.rateSuffix}>coins/min</Text>
             </View>

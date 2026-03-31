@@ -1,9 +1,11 @@
 // Host Registration — Step 2: Profile Info
 import React, { useState } from "react";
 import {
-  View, Text, StyleSheet, TextInput, TouchableOpacity,
-  ScrollView, Alert, Platform,
+  View, Text, StyleSheet, TouchableOpacity,
+  ScrollView, Platform,
 } from "react-native";
+import { showErrorToast } from "@/components/Toast";
+import AppInput from "@/components/AppInput";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -31,11 +33,11 @@ export default function HostProfileSetupScreen() {
 
   const handleNext = async () => {
     if (!displayName.trim() || !dob.trim() || !gender || !phone.trim()) {
-      Alert.alert("Missing Fields", "Please fill in all required fields.");
+      showErrorToast("Please fill in all required fields.", "Missing Fields");
       return;
     }
     if (!/^\d{10,15}$/.test(phone.replace(/[\s\-\+]/g, ""))) {
-      Alert.alert("Invalid Phone", "Please enter a valid mobile number.");
+      showErrorToast("Please enter a valid mobile number.", "Invalid Phone");
       return;
     }
     setLoading(true);
@@ -77,41 +79,29 @@ export default function HostProfileSetupScreen() {
         <Text style={s.sectionTitle}>Your Profile Info</Text>
         <Text style={s.sectionSub}>This will be visible to users calling you</Text>
 
-        <View style={s.inputWrap}>
-          <Feather name="user" size={18} color="#84889F" />
-          <TextInput
-            value={displayName}
-            onChangeText={setDisplayName}
-            placeholder="Display name"
-            placeholderTextColor="#84889F"
-            style={s.input}
-            autoCapitalize="words"
-          />
-        </View>
+        <AppInput
+          icon={<Feather name="user" size={18} color="#84889F" />}
+          value={displayName}
+          onChangeText={setDisplayName}
+          placeholder="Display name"
+          autoCapitalize="words"
+        />
 
-        <View style={s.inputWrap}>
-          <Feather name="calendar" size={18} color="#84889F" />
-          <TextInput
-            value={dob}
-            onChangeText={setDob}
-            placeholder="Date of birth (DD/MM/YYYY)"
-            placeholderTextColor="#84889F"
-            style={s.input}
-            keyboardType="numeric"
-          />
-        </View>
+        <AppInput
+          icon={<Feather name="calendar" size={18} color="#84889F" />}
+          value={dob}
+          onChangeText={setDob}
+          placeholder="Date of birth (DD/MM/YYYY)"
+          keyboardType="numeric"
+        />
 
-        <View style={s.inputWrap}>
-          <Feather name="phone" size={18} color="#84889F" />
-          <TextInput
-            value={phone}
-            onChangeText={setPhone}
-            placeholder="Mobile number"
-            placeholderTextColor="#84889F"
-            style={s.input}
-            keyboardType="phone-pad"
-          />
-        </View>
+        <AppInput
+          icon={<Feather name="phone" size={18} color="#84889F" />}
+          value={phone}
+          onChangeText={setPhone}
+          placeholder="Mobile number"
+          keyboardType="phone-pad"
+        />
 
         <Text style={s.fieldLabel}>Gender</Text>
         <View style={s.genderRow}>

@@ -1,8 +1,9 @@
 import React, { useState } from "react";
 import {
-  View, Text, StyleSheet, TextInput, TouchableOpacity,
+  View, Text, StyleSheet, TouchableOpacity,
   ScrollView, Image,
 } from "react-native";
+import AppInput from "@/components/AppInput";
 import { showErrorToast, showInfoToast } from "@/components/Toast";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
@@ -95,45 +96,35 @@ export default function RegisterScreen() {
           <View style={s.divLine} />
         </View>
 
-        <View style={s.inputWrap}>
-          <Feather name="user" size={18} color="#84889F" />
-          <TextInput
-            value={name}
-            onChangeText={setName}
-            placeholder="Full name"
-            placeholderTextColor="#84889F"
-            style={s.input}
-            autoCapitalize="words"
-          />
-        </View>
+        <AppInput
+          icon={<Feather name="user" size={18} color="#84889F" />}
+          value={name}
+          onChangeText={setName}
+          placeholder="Full name"
+          autoCapitalize="words"
+        />
 
-        <View style={s.inputWrap}>
-          <Feather name="mail" size={18} color="#84889F" />
-          <TextInput
-            value={email}
-            onChangeText={setEmail}
-            placeholder="Email address"
-            placeholderTextColor="#84889F"
-            style={s.input}
-            keyboardType="email-address"
-            autoCapitalize="none"
-          />
-        </View>
+        <AppInput
+          icon={<Feather name="mail" size={18} color="#84889F" />}
+          value={email}
+          onChangeText={setEmail}
+          placeholder="Email address"
+          keyboardType="email-address"
+          autoCapitalize="none"
+        />
 
-        <View style={s.inputWrap}>
-          <Feather name="lock" size={18} color="#84889F" />
-          <TextInput
-            value={password}
-            onChangeText={setPassword}
-            placeholder="Password (min 6 chars)"
-            placeholderTextColor="#84889F"
-            style={s.input}
-            secureTextEntry={!showPw}
-          />
-          <TouchableOpacity onPress={() => setShowPw(!showPw)}>
-            <Feather name={showPw ? "eye-off" : "eye"} size={18} color="#84889F" />
-          </TouchableOpacity>
-        </View>
+        <AppInput
+          icon={<Feather name="lock" size={18} color="#84889F" />}
+          right={
+            <TouchableOpacity onPress={() => setShowPw(!showPw)}>
+              <Feather name={showPw ? "eye-off" : "eye"} size={18} color="#84889F" />
+            </TouchableOpacity>
+          }
+          value={password}
+          onChangeText={setPassword}
+          placeholder="Password (min 6 chars)"
+          secureTextEntry={!showPw}
+        />
 
         <Text style={s.label}>Gender</Text>
         <View style={s.genderRow}>

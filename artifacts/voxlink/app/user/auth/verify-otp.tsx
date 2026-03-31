@@ -98,6 +98,8 @@ export default function VerifyOtpScreen() {
               keyboardType="numeric"
               maxLength={1}
               textAlign="center"
+              selectionColor="#A00EE7"
+              underlineColorAndroid="transparent"
             />
           ))}
         </View>

@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { View, Text, StyleSheet, TextInput, ScrollView, TouchableOpacity, Platform, Image } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform, Image } from "react-native";
+import AppInput from "@/components/AppInput";
 import { showSuccessToast } from "@/components/Toast";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -48,21 +49,45 @@ export default function EditProfileScreen() {
         <View style={styles.form}>
           <View>
             <Text style={[styles.label, { color: colors.mutedForeground }]}>Display Name</Text>
-            <View style={[styles.inputWrap, { borderColor: colors.border, backgroundColor: colors.card }]}>
-              <TextInput value={name} onChangeText={setName} placeholder="Your name" placeholderTextColor={colors.mutedForeground} style={[styles.input, { color: colors.foreground }]} />
-            </View>
+            <AppInput
+              variant="custom"
+              inactiveBorder={colors.border}
+              bgColor={colors.card}
+              textColor={colors.foreground}
+              value={name}
+              onChangeText={setName}
+              placeholder="Your name"
+              placeholderTextColor={colors.mutedForeground}
+            />
           </View>
           <View>
             <Text style={[styles.label, { color: colors.mutedForeground }]}>Bio</Text>
-            <View style={[styles.inputWrap, styles.textAreaWrap, { borderColor: colors.border, backgroundColor: colors.card }]}>
-              <TextInput value={bio} onChangeText={setBio} placeholder="Tell others about yourself..." placeholderTextColor={colors.mutedForeground} style={[styles.input, { color: colors.foreground }]} multiline numberOfLines={4} textAlignVertical="top" />
-            </View>
+            <AppInput
+              variant="custom"
+              inactiveBorder={colors.border}
+              bgColor={colors.card}
+              textColor={colors.foreground}
+              value={bio}
+              onChangeText={setBio}
+              placeholder="Tell others about yourself..."
+              placeholderTextColor={colors.mutedForeground}
+              multiline
+              numberOfLines={4}
+              textAlignVertical="top"
+              wrapStyle={{ minHeight: 100, paddingVertical: 12 }}
+            />
           </View>
           <View>
             <Text style={[styles.label, { color: colors.mutedForeground }]}>Email</Text>
-            <View style={[styles.inputWrap, { borderColor: colors.border, backgroundColor: colors.card, opacity: 0.6 }]}>
-              <TextInput value={user?.email ?? ""} editable={false} style={[styles.input, { color: colors.mutedForeground }]} />
-            </View>
+            <AppInput
+              variant="custom"
+              inactiveBorder={colors.border}
+              bgColor={colors.card}
+              textColor={colors.mutedForeground}
+              value={user?.email ?? ""}
+              editable={false}
+              wrapStyle={{ opacity: 0.6 }}
+            />
           </View>
         </View>
 

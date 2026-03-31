@@ -1,8 +1,9 @@
 import React, { useState } from "react";
 import {
-  View, Text, StyleSheet, TextInput, TouchableOpacity,
+  View, Text, StyleSheet, TouchableOpacity,
   ScrollView, Image,
 } from "react-native";
+import AppInput from "@/components/AppInput";
 import { showErrorToast, showInfoToast } from "@/components/Toast";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
@@ -26,7 +27,7 @@ export default function HostLoginScreen() {
 
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
-      Alert.alert("Missing Fields", "Please enter both email and password.");
+      showErrorToast("Please enter both email and password.", "Missing Fields");
       return;
     }
     setLoading(true);
@@ -85,33 +86,27 @@ export default function HostLoginScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <View style={s.inputWrap}>
-          <Feather name="mail" size={18} color="#84889F" />
-          <TextInput
-            value={email}
-            onChangeText={setEmail}
-            placeholder="Email address"
-            placeholderTextColor="#84889F"
-            style={s.input}
-            keyboardType="email-address"
-            autoCapitalize="none"
-          />
-        </View>
+        <AppInput
+          icon={<Feather name="mail" size={18} color="#84889F" />}
+          value={email}
+          onChangeText={setEmail}
+          placeholder="Email address"
+          keyboardType="email-address"
+          autoCapitalize="none"
+        />
 
-        <View style={s.inputWrap}>
-          <Feather name="lock" size={18} color="#84889F" />
-          <TextInput
-            value={password}
-            onChangeText={setPassword}
-            placeholder="Password"
-            placeholderTextColor="#84889F"
-            style={s.input}
-            secureTextEntry={!showPw}
-          />
-          <TouchableOpacity onPress={() => setShowPw(!showPw)}>
-            <Feather name={showPw ? "eye-off" : "eye"} size={18} color="#84889F" />
-          </TouchableOpacity>
-        </View>
+        <AppInput
+          icon={<Feather name="lock" size={18} color="#84889F" />}
+          right={
+            <TouchableOpacity onPress={() => setShowPw(!showPw)}>
+              <Feather name={showPw ? "eye-off" : "eye"} size={18} color="#84889F" />
+            </TouchableOpacity>
+          }
+          value={password}
+          onChangeText={setPassword}
+          placeholder="Password"
+          secureTextEntry={!showPw}
+        />
 
         <PrimaryButton title="Sign In as Host" onPress={handleLogin} loading={loading} />
 

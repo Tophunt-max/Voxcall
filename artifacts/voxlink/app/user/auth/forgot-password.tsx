@@ -1,8 +1,9 @@
 import React, { useState } from "react";
 import {
-  View, Text, StyleSheet, TouchableOpacity, TextInput,
+  View, Text, StyleSheet, TouchableOpacity,
   Image, KeyboardAvoidingView, Platform, ScrollView
 } from "react-native";
+import AppInput from "@/components/AppInput";
 import { showErrorToast } from "@/components/Toast";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -47,18 +48,20 @@ export default function ForgotPasswordScreen() {
           Enter your registered email address. We'll send you a verification code to reset your password.
         </Text>
 
-        <View style={[styles.inputWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <Image source={require("@/assets/icons/ic_mail.png")} style={styles.inputIcon} tintColor={colors.mutedForeground} resizeMode="contain" />
-          <TextInput
-            style={[styles.input, { color: colors.text }]}
-            placeholder="Email Address"
-            placeholderTextColor={colors.mutedForeground}
-            value={email}
-            onChangeText={setEmail}
-            keyboardType="email-address"
-            autoCapitalize="none"
-          />
-        </View>
+        <AppInput
+          variant="custom"
+          inactiveBorder={colors.border}
+          bgColor={colors.surface}
+          textColor={colors.text}
+          icon={<Image source={require("@/assets/icons/ic_mail.png")} style={styles.inputIcon} tintColor={colors.mutedForeground} resizeMode="contain" />}
+          placeholder="Email Address"
+          placeholderTextColor={colors.mutedForeground}
+          value={email}
+          onChangeText={setEmail}
+          keyboardType="email-address"
+          autoCapitalize="none"
+          wrapStyle={{ width: "100%", marginBottom: 20 }}
+        />
 
         <TouchableOpacity
           style={[styles.btn, { backgroundColor: colors.primary, opacity: loading ? 0.7 : 1 }]}

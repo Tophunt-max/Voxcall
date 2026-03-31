@@ -46,6 +46,8 @@ export default function MessagesScreen() {
               placeholder="Search conversations..."
               placeholderTextColor={colors.mutedForeground}
               autoFocus
+              selectionColor="#A00EE7"
+              underlineColorAndroid="transparent"
             />
             <TouchableOpacity onPress={() => { setShowSearch(false); setSearch(""); }}>
               <Feather name="x" size={18} color={colors.mutedForeground} />

@@ -251,6 +251,8 @@ export default function HostWalletScreen() {
               value={withdrawAmt}
               onChangeText={setWithdrawAmt}
               keyboardType="numeric"
+              selectionColor="#A00EE7"
+              underlineColorAndroid="transparent"
             />
           </View>
 

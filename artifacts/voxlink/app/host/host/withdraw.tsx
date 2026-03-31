@@ -94,6 +94,8 @@ export default function HostWithdrawScreen() {
               onChangeText={(t) => setAmount(t.replace(/[^0-9]/g, ""))}
               keyboardType="numeric"
               maxLength={6}
+              selectionColor="#A00EE7"
+              underlineColorAndroid="transparent"
             />
             <TouchableOpacity onPress={() => setAmount(String(balance))}>
               <Text style={[styles.maxBtn, { color: colors.primary }]}>MAX</Text>
@@ -162,6 +164,8 @@ export default function HostWithdrawScreen() {
               value={accountInfo}
               onChangeText={setAccountInfo}
               autoCapitalize="none"
+              selectionColor="#A00EE7"
+              underlineColorAndroid="transparent"
             />
           </View>
         </View>

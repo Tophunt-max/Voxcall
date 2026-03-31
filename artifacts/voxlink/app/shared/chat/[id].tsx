@@ -139,6 +139,8 @@ export default function ChatScreen() {
               multiline
               returnKeyType="send"
               onSubmitEditing={handleSend}
+              selectionColor="#A00EE7"
+              underlineColorAndroid="transparent"
             />
           </View>
           <TouchableOpacity

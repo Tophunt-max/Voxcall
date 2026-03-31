@@ -1,8 +1,10 @@
 import React, { useState } from "react";
 import {
-  View, Text, StyleSheet, TouchableOpacity, TextInput,
-  Image, ScrollView, Platform, Alert
+  View, Text, StyleSheet, TouchableOpacity,
+  Image, ScrollView, Platform,
 } from "react-native";
+import { showErrorToast } from "@/components/Toast";
+import AppInput from "@/components/AppInput";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
@@ -27,7 +29,7 @@ export default function FillProfileScreen() {
 
   const handleContinue = async () => {
     if (!name.trim()) {
-      Alert.alert("Error", "Please enter your name");
+      showErrorToast("Please enter your name.", "Missing Name");
       return;
     }
     setLoading(true);
@@ -57,29 +59,33 @@ export default function FillProfileScreen() {
       </TouchableOpacity>
 
       <Text style={[styles.label, { color: colors.text }]}>Full Name</Text>
-      <View style={[styles.inputWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-        <TextInput
-          style={[styles.input, { color: colors.text }]}
-          placeholder="Enter your name"
-          placeholderTextColor={colors.mutedForeground}
-          value={name}
-          onChangeText={setName}
-        />
-      </View>
+      <AppInput
+        variant="custom"
+        inactiveBorder={colors.border}
+        bgColor={colors.surface}
+        textColor={colors.text}
+        placeholder="Enter your name"
+        placeholderTextColor={colors.mutedForeground}
+        value={name}
+        onChangeText={setName}
+        wrapStyle={{ width: "100%" }}
+      />
 
       <Text style={[styles.label, { color: colors.text }]}>Bio <Text style={{ color: colors.mutedForeground }}>(Optional)</Text></Text>
-      <View style={[styles.textareaWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-        <TextInput
-          style={[styles.textarea, { color: colors.text }]}
-          placeholder="Tell us about yourself..."
-          placeholderTextColor={colors.mutedForeground}
-          value={bio}
-          onChangeText={setBio}
-          multiline
-          numberOfLines={3}
-          textAlignVertical="top"
-        />
-      </View>
+      <AppInput
+        variant="custom"
+        inactiveBorder={colors.border}
+        bgColor={colors.surface}
+        textColor={colors.text}
+        placeholder="Tell us about yourself..."
+        placeholderTextColor={colors.mutedForeground}
+        value={bio}
+        onChangeText={setBio}
+        multiline
+        numberOfLines={3}
+        textAlignVertical="top"
+        wrapStyle={{ width: "100%", minHeight: 90, paddingVertical: 12 }}
+      />
 
       <Text style={[styles.label, { color: colors.text }]}>Language</Text>
       <View style={styles.langGrid}>

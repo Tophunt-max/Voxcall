@@ -1,8 +1,10 @@
 import React, { useState } from "react";
 import {
-  View, Text, StyleSheet, TouchableOpacity, TextInput,
-  Image, KeyboardAvoidingView, Platform, Alert, ScrollView
+  View, Text, StyleSheet, TouchableOpacity,
+  Image, KeyboardAvoidingView, Platform, ScrollView
 } from "react-native";
+import { showErrorToast, showSuccessToast } from "@/components/Toast";
+import AppInput from "@/components/AppInput";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
@@ -18,19 +20,18 @@ export default function CreatePasswordScreen() {
 
   const handleUpdate = async () => {
     if (!password || password.length < 6) {
-      Alert.alert("Error", "Password must be at least 6 characters");
+      showErrorToast("Password must be at least 6 characters.", "Weak Password");
       return;
     }
     if (password !== confirm) {
-      Alert.alert("Error", "Passwords don't match");
+      showErrorToast("Passwords don't match.", "Mismatch");
       return;
     }
     setLoading(true);
     await new Promise(r => setTimeout(r, 1000));
     setLoading(false);
-    Alert.alert("Success", "Password updated successfully!", [
-      { text: "Sign In", onPress: () => router.replace("/user/auth/login") }
-    ]);
+    showSuccessToast("Password updated successfully! Please sign in.", "Success");
+    router.replace("/user/auth/login");
   };
 
   return (
@@ -57,33 +58,41 @@ export default function CreatePasswordScreen() {
           Your new password must be different from previously used passwords.
         </Text>
 
-        <View style={[styles.inputWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <TextInput
-            style={[styles.input, { color: colors.text }]}
-            placeholder="New Password"
-            placeholderTextColor={colors.mutedForeground}
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry={!showPass}
-          />
-          <TouchableOpacity onPress={() => setShowPass(v => !v)}>
-            <Image source={showPass ? require("@/assets/icons/ic_eye.png") : require("@/assets/icons/ic_eye_off.png")} style={styles.eyeIcon} tintColor={colors.mutedForeground} resizeMode="contain" />
-          </TouchableOpacity>
-        </View>
+        <AppInput
+          variant="custom"
+          inactiveBorder={colors.border}
+          bgColor={colors.surface}
+          textColor={colors.text}
+          placeholder="New Password"
+          placeholderTextColor={colors.mutedForeground}
+          value={password}
+          onChangeText={setPassword}
+          secureTextEntry={!showPass}
+          right={
+            <TouchableOpacity onPress={() => setShowPass(v => !v)}>
+              <Image source={showPass ? require("@/assets/icons/ic_eye.png") : require("@/assets/icons/ic_eye_off.png")} style={styles.eyeIcon} tintColor={colors.mutedForeground} resizeMode="contain" />
+            </TouchableOpacity>
+          }
+          wrapStyle={{ width: "100%", marginBottom: 16 }}
+        />
 
-        <View style={[styles.inputWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <TextInput
-            style={[styles.input, { color: colors.text }]}
-            placeholder="Confirm Password"
-            placeholderTextColor={colors.mutedForeground}
-            value={confirm}
-            onChangeText={setConfirm}
-            secureTextEntry={!showConfirm}
-          />
-          <TouchableOpacity onPress={() => setShowConfirm(v => !v)}>
-            <Image source={showConfirm ? require("@/assets/icons/ic_eye.png") : require("@/assets/icons/ic_eye_off.png")} style={styles.eyeIcon} tintColor={colors.mutedForeground} resizeMode="contain" />
-          </TouchableOpacity>
-        </View>
+        <AppInput
+          variant="custom"
+          inactiveBorder={colors.border}
+          bgColor={colors.surface}
+          textColor={colors.text}
+          placeholder="Confirm Password"
+          placeholderTextColor={colors.mutedForeground}
+          value={confirm}
+          onChangeText={setConfirm}
+          secureTextEntry={!showConfirm}
+          right={
+            <TouchableOpacity onPress={() => setShowConfirm(v => !v)}>
+              <Image source={showConfirm ? require("@/assets/icons/ic_eye.png") : require("@/assets/icons/ic_eye_off.png")} style={styles.eyeIcon} tintColor={colors.mutedForeground} resizeMode="contain" />
+            </TouchableOpacity>
+          }
+          wrapStyle={{ width: "100%", marginBottom: 16 }}
+        />
 
         <TouchableOpacity
           style={[styles.btn, { backgroundColor: colors.primary, opacity: loading ? 0.7 : 1 }]}

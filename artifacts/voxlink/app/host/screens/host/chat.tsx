@@ -38,6 +38,8 @@ export default function HostChatScreen() {
           placeholderTextColor={colors.mutedForeground}
           value={search}
           onChangeText={setSearch}
+          selectionColor="#A00EE7"
+          underlineColorAndroid="transparent"
         />
       </View>
 

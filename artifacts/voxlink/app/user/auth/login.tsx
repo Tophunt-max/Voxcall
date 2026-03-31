@@ -1,8 +1,9 @@
 import React, { useState } from "react";
 import {
-  View, Text, StyleSheet, TextInput, TouchableOpacity,
+  View, Text, StyleSheet, TouchableOpacity,
   ScrollView, Image,
 } from "react-native";
+import AppInput from "@/components/AppInput";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -97,35 +98,29 @@ export default function LoginScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <View style={s.inputWrap}>
-          <Feather name="mail" size={18} color="#84889F" />
-          <TextInput
-            value={email}
-            onChangeText={setEmail}
-            placeholder="Email address"
-            placeholderTextColor="#84889F"
-            style={s.input}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoComplete="email"
-          />
-        </View>
+        <AppInput
+          icon={<Feather name="mail" size={18} color="#84889F" />}
+          value={email}
+          onChangeText={setEmail}
+          placeholder="Email address"
+          keyboardType="email-address"
+          autoCapitalize="none"
+          autoComplete="email"
+        />
 
-        <View style={s.inputWrap}>
-          <Feather name="lock" size={18} color="#84889F" />
-          <TextInput
-            value={password}
-            onChangeText={setPassword}
-            placeholder="Password"
-            placeholderTextColor="#84889F"
-            style={s.input}
-            secureTextEntry={!showPw}
-            autoComplete="password"
-          />
-          <TouchableOpacity onPress={() => setShowPw(!showPw)}>
-            <Feather name={showPw ? "eye-off" : "eye"} size={18} color="#84889F" />
-          </TouchableOpacity>
-        </View>
+        <AppInput
+          icon={<Feather name="lock" size={18} color="#84889F" />}
+          right={
+            <TouchableOpacity onPress={() => setShowPw(!showPw)}>
+              <Feather name={showPw ? "eye-off" : "eye"} size={18} color="#84889F" />
+            </TouchableOpacity>
+          }
+          value={password}
+          onChangeText={setPassword}
+          placeholder="Password"
+          secureTextEntry={!showPw}
+          autoComplete="password"
+        />
 
         <TouchableOpacity style={s.forgotRow} onPress={() => router.push("/user/auth/forgot-password")}>
           <Text style={s.forgotTxt}>Forgot password?</Text>
