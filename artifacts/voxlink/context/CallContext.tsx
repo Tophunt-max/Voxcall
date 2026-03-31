@@ -101,14 +101,27 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     const duration = call?.startTime ? Math.floor((Date.now() - call.startTime) / 1000) : 0;
     updateCall(null);
 
+    let coinsSpent = Math.ceil(duration / 60) * (call?.coinsPerMinute ?? 5);
+
     if (call?.sessionId) {
-      try { await API.endCall(call.sessionId, duration); } catch (e) { console.warn("endCall API error:", e); }
+      try {
+        const res = await API.endCall(call.sessionId, duration);
+        if (res?.coins_charged != null) coinsSpent = res.coins_charged;
+      } catch (e) { console.warn("endCall API error:", e); }
     }
 
     if (call) {
       router.replace({
         pathname: "/call/summary",
-        params: { duration, type: call.type, participantName: call.participant.name, autoEnded: autoEnded ? "1" : "0" },
+        params: {
+          duration: String(duration),
+          type: call.type,
+          participantName: call.participant.name,
+          participantId: call.participant.id,
+          sessionId: call.sessionId ?? "",
+          coinsSpent: String(coinsSpent),
+          autoEnded: autoEnded ? "1" : "0",
+        },
       });
     } else {
       router.back();
