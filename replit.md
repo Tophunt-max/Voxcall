@@ -7,10 +7,57 @@ VoxLink is a React Native Expo mobile app (iOS/Android/Web) — a marketplace wh
 ## Architecture
 
 - **Frontend**: React Native Expo (Expo 54, expo-router 6)
-- **Backend**: None (first build, AsyncStorage for persistence)
-- **Auth**: Mock auth (planned: Firebase Auth)
-- **Payments**: Coin system with AsyncStorage (planned: RevenueCat)
+- **Backend**: None (AsyncStorage for persistence)
+- **Auth**: Mock auth via `services/AuthService.ts` (planned: Firebase Auth)
+- **Payments**: Full checkout flow via `services/PaymentService.ts` + `app/payment/checkout.tsx`
+- **Real-time**: Mock WebSocket via `services/SocketService.ts` + `context/SocketContext.tsx`
+- **Localization**: 5 languages (EN/HI/ZH/AR/ES) via `localization/` + `context/LanguageContext.tsx`
 - **Font**: Poppins (via @expo-google-fonts/poppins)
+
+## New Infrastructure (Session 3)
+
+### Utils (`utils/`)
+- `formatters.ts` — date, time, duration, coin, currency formatters
+- `validators.ts` — form validation (email, password, phone, OTP, amount, UPI/IFSC)
+- `storage.ts` — typed AsyncStorage wrapper with prefix, append, update helpers
+- `haptics.ts` — haptic feedback (light/medium/heavy/success/error/warning)
+- `permissions.ts` — camera/mic/notification permissions with alert flow
+
+### Services (`services/`)
+- `AuthService.ts` — login, register, OTP, password reset, token refresh
+- `CallService.ts` — call lifecycle: initiate, accept, reject, end, rate
+- `ChatService.ts` — send/receive messages, conversations, mock replies
+- `PaymentService.ts` — coin purchase, spend, bonus, withdrawal + transaction history
+- `NotificationService.ts` — local push notifications + in-app notification store
+- `SocketService.ts` — mock WebSocket with full event emit/subscribe system
+
+### Constants (`constants/`)
+- `routes.ts` — all route paths as typed constants
+- `events.ts` — all socket event names as typed constants
+
+### Localization (`localization/`)
+- `en.ts` — English strings (auth, nav, home, hosts, calls, chat, wallet, payment, host, errors)
+- `hi.ts` — Hindi strings (complete)
+- `zh.ts` — Chinese Simplified strings (complete)
+- `ar.ts` — Arabic strings (complete, RTL-aware)
+- `es.ts` — Spanish strings (complete)
+- `index.ts` — i18n loader with typed `t()` helper
+
+### Contexts (`context/`)
+- `SocketContext.tsx` — connects socket on login, provides `onEvent()` + simulation helpers
+- `LanguageContext.tsx` — language switching with RTL support + AsyncStorage persistence
+
+### New Components (`components/`)
+- `Avatar.tsx` — reusable avatar: 6 sizes, status ring (online/busy/offline)
+- `EmptyState.tsx` — empty list placeholder with image, text, optional CTA
+- `LoadingOverlay.tsx` — full-screen or inline loading spinner
+- `Toast.tsx` — slide-in toast notifications with auto-dismiss (success/error/warning/info)
+- `Skeleton.tsx` — shimmer loading placeholders (+ HostCardSkeleton, MessageSkeleton, ProfileSkeleton)
+- `BottomSheet.tsx` — slide-up sheet with backdrop + `ActionSheet` variant
+
+### New Screens (`app/payment/`)
+- `checkout.tsx` — full payment checkout: package grid, payment method, order summary
+- `success.tsx` — animated payment success screen with balance display
 
 ## Artifact: voxlink
 

@@ -26,22 +26,14 @@ import {
 export default function WalletScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { user, updateCoins } = useAuth();
-  const [purchasing, setPurchasing] = useState<string | null>(null);
+  const { user } = useAuth();
   const [tab, setTab] = useState<"buy" | "history">("buy");
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
 
-  const handlePurchase = async (planId: string, coins: number, bonus = 0) => {
-    setPurchasing(planId);
-    await new Promise((r) => setTimeout(r, 1200));
-    updateCoins((user?.coins ?? 0) + coins + bonus);
-    setPurchasing(null);
-    Alert.alert(
-      "Purchase Successful!",
-      `${coins + bonus} coins added to your wallet.`
-    );
+  const handlePurchase = (planId: string) => {
+    router.push("/payment/checkout");
   };
 
   return (
@@ -148,8 +140,7 @@ export default function WalletScreen() {
           {COIN_PLANS.map((plan) => (
             <TouchableOpacity
               key={plan.id}
-              onPress={() => handlePurchase(plan.id, plan.coins, plan.bonus ?? 0)}
-              disabled={purchasing === plan.id}
+              onPress={() => handlePurchase(plan.id)}
               style={[
                 styles.planCard,
                 {
