@@ -9,8 +9,6 @@ import {
   Alert,
   Modal,
   Dimensions,
-  Clipboard,
-  ToastAndroid,
   Platform,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
@@ -23,7 +21,7 @@ import { MOCK_HOSTS } from "@/data/mockData";
 
 const { width: SW, height: SH } = Dimensions.get("window");
 
-/* ─── Exact Flutter colors ─── */
+/* ─── Colors (exact Flutter source) ─── */
 const INFO_BG       = "#F3E6FF";
 const CARD_BG       = "#F6F8FF";
 const PROFILE_TEXT  = "#616263";
@@ -38,10 +36,10 @@ const ID_TXT        = "#9A74BD";
 const STAR_COLOR    = "#FEA622";
 const GREEN         = "#0BAF23";
 const APP_COLOR     = "#111329";
-const ACCENT        = "#A00EE7";
+const COVER_GRAD: [string, string] = ["#2A1A4E", "#111329"];
 
-/* ─── Star rating component ─── */
-function StarRating({ rating, size = 22 }: { rating: number; size?: number }) {
+/* ─── Star rating ─── */
+function StarRating({ rating, size = 18 }: { rating: number; size?: number }) {
   return (
     <View style={{ flexDirection: "row", gap: 2 }}>
       {[1, 2, 3, 4, 5].map((i) => (
@@ -49,7 +47,7 @@ function StarRating({ rating, size = 22 }: { rating: number; size?: number }) {
           key={i}
           source={require("@/assets/icons/ic_star.png")}
           style={{ width: size, height: size }}
-          tintColor={i <= Math.round(rating) ? STAR_COLOR : "#E0E0E0"}
+          tintColor={i <= Math.round(rating) ? STAR_COLOR : "#D0D0D0"}
           resizeMode="contain"
         />
       ))}
@@ -69,30 +67,28 @@ function TalkNowSheet({
 }) {
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <TouchableOpacity style={styles.sheetOverlay} activeOpacity={1} onPress={onClose}>
-        <View style={styles.sheetBox}>
-          <View style={styles.sheetHandle} />
-          <Text style={styles.sheetTitle}>Select Call Type</Text>
+      <TouchableOpacity style={sht.overlay} activeOpacity={1} onPress={onClose}>
+        <View style={sht.box}>
+          <View style={sht.handle} />
+          <Text style={sht.title}>Select Call Type</Text>
 
-          {/* Audio Call */}
-          <TouchableOpacity onPress={onAudio} style={styles.sheetRow} activeOpacity={0.8}>
-            <Image source={require("@/assets/icons/ic_call_gradient.png")} style={styles.sheetIco} resizeMode="contain" />
-            <Text style={styles.sheetLabel}>Audio Call</Text>
-            <View style={styles.coinChip}>
-              <Image source={require("@/assets/icons/ic_coin.png")} style={styles.sheetCoinIco} resizeMode="contain" />
-              <Text style={styles.sheetCoinTxt}>{host.coinsPerMinute} Coin/min</Text>
+          <TouchableOpacity onPress={onAudio} style={sht.row} activeOpacity={0.8}>
+            <Image source={require("@/assets/icons/ic_call_gradient.png")} style={sht.ico} resizeMode="contain" />
+            <Text style={sht.label}>Audio Call</Text>
+            <View style={sht.chip}>
+              <Image source={require("@/assets/icons/ic_coin.png")} style={sht.chipIco} resizeMode="contain" />
+              <Text style={sht.chipTxt}>{host.coinsPerMinute} Coin/min</Text>
             </View>
           </TouchableOpacity>
 
-          <View style={styles.sheetDivider} />
+          <View style={sht.divider} />
 
-          {/* Video Call */}
-          <TouchableOpacity onPress={onVideo} style={styles.sheetRow} activeOpacity={0.8}>
-            <Image source={require("@/assets/icons/ic_video_gradient.png")} style={styles.sheetIco} resizeMode="contain" />
-            <Text style={styles.sheetLabel}>Video Call</Text>
-            <View style={styles.coinChip}>
-              <Image source={require("@/assets/icons/ic_coin.png")} style={styles.sheetCoinIco} resizeMode="contain" />
-              <Text style={styles.sheetCoinTxt}>{host.coinsPerMinute + 5} Coin/min</Text>
+          <TouchableOpacity onPress={onVideo} style={sht.row} activeOpacity={0.8}>
+            <Image source={require("@/assets/icons/ic_video_gradient.png")} style={sht.ico} resizeMode="contain" />
+            <Text style={sht.label}>Video Call</Text>
+            <View style={sht.chip}>
+              <Image source={require("@/assets/icons/ic_coin.png")} style={sht.chipIco} resizeMode="contain" />
+              <Text style={sht.chipTxt}>{host.coinsPerMinute + 5} Coin/min</Text>
             </View>
           </TouchableOpacity>
         </View>
@@ -115,26 +111,30 @@ export default function HostDetailScreen() {
   if (!host) {
     return (
       <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#fff" }}>
-        <Text style={{ color: APP_COLOR }}>Host not found</Text>
+        <Text style={{ color: APP_COLOR, fontFamily: "Poppins_500Medium" }}>Host not found</Text>
       </View>
     );
   }
 
   /* ─── Derived fields ─── */
-  const age = 24 + (parseInt(host.id.replace("host", "")) * 3 % 10);
-  const uniqueId = `VX${host.id.replace("host", "").padStart(6, "0")}`;
+  const num = parseInt(host.id.replace("host", "")) || 1;
+  const age = 24 + (num * 3 % 10);
+  const uniqueId = `VX${String(num).padStart(6, "0")}`;
   const callCount = host.reviewCount * 2;
   const experience = `${Math.max(1, Math.floor(host.totalMinutes / 5000))}+`;
-  const statusLabel = host.isOnline ? "Online" : "Offline";
+  const rateVideo = host.coinsPerMinute + 5;
 
   /* ─── Handlers ─── */
-  const checkCoins = (type: "audio" | "video") => {
-    const rate = type === "audio" ? host.coinsPerMinute : host.coinsPerMinute + 5;
+  const checkCoins = (rate: number) => {
     if ((user?.coins ?? 0) < rate * 2) {
-      Alert.alert("Insufficient Coins", `You need at least ${rate * 2} coins.`, [
-        { text: "Buy Coins", onPress: () => router.push("/(tabs)/wallet") },
-        { text: "Cancel", style: "cancel" },
-      ]);
+      Alert.alert(
+        "Insufficient Coins",
+        `You need at least ${rate * 2} coins to start a call.`,
+        [
+          { text: "Buy Coins", onPress: () => router.push("/(tabs)/wallet") },
+          { text: "Cancel", style: "cancel" },
+        ]
+      );
       return false;
     }
     return true;
@@ -142,15 +142,15 @@ export default function HostDetailScreen() {
 
   const handleAudio = () => {
     setTalkSheet(false);
-    if (!checkCoins("audio")) return;
+    if (!checkCoins(host.coinsPerMinute)) return;
     initiateCall({ id: host.id, name: host.name, avatar: host.avatar, role: "host" }, "audio", host.coinsPerMinute);
     router.push({ pathname: "/call/outgoing", params: { hostId: host.id, callType: "audio" } });
   };
 
   const handleVideo = () => {
     setTalkSheet(false);
-    if (!checkCoins("video")) return;
-    initiateCall({ id: host.id, name: host.name, avatar: host.avatar, role: "host" }, "video", host.coinsPerMinute + 5);
+    if (!checkCoins(rateVideo)) return;
+    initiateCall({ id: host.id, name: host.name, avatar: host.avatar, role: "host" }, "video", rateVideo);
     router.push({ pathname: "/call/outgoing", params: { hostId: host.id, callType: "video" } });
   };
 
@@ -159,16 +159,18 @@ export default function HostDetailScreen() {
     router.push(`/chat/${host.id}`);
   };
 
-  const handleCopyId = () => {
-    Clipboard.setString(uniqueId);
-    if (Platform.OS === "android") ToastAndroid.show("Copied!", ToastAndroid.SHORT);
+  const copyId = () => {
+    if (Platform.OS === "android") {
+      // Android clipboard
+      try { require("react-native").Clipboard?.setString(uniqueId); } catch (_) {}
+    }
   };
 
   /* ─── Mock reviews ─── */
   const reviews = [
-    { name: "Sarah M.", avatar: "sarah", rating: 5, text: "Amazing listener! Very understanding and gave great advice.", time: "2d ago" },
-    { name: "John D.", avatar: "john", rating: 5, text: "Really helped me through a tough time. Professional and empathetic.", time: "5d ago" },
-    { name: "Emma W.", avatar: "emma", rating: 4, text: "Insightful conversation. Would definitely recommend!", time: "1w ago" },
+    { name: "Sarah M.", seed: "sarah", rating: 5, text: "Amazing listener! Very understanding and gave great advice.", time: "2d ago" },
+    { name: "John D.", seed: "john", rating: 5, text: "Really helped me through a tough time. Professional and empathetic.", time: "5d ago" },
+    { name: "Emma W.", seed: "emma", rating: 4, text: "Insightful conversation. Would definitely recommend!", time: "1w ago" },
   ];
 
   const statsList = [
@@ -177,171 +179,162 @@ export default function HostDetailScreen() {
     { image: require("@/assets/icons/ic_experience.png"), title: "Experience", count: experience },
   ];
 
+  const BOTTOM_H = insets.bottom + 70;
+
   return (
-    <View style={styles.root}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
+    <View style={s.root}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: BOTTOM_H + 16 }}
+      >
+        {/* ══════ TopImageView — gradient hero + centered avatar ══════ */}
+        <LinearGradient colors={COVER_GRAD} style={[s.hero, { paddingTop: insets.top + 8 }]}>
+          {/* Back button */}
+          <TouchableOpacity onPress={() => router.back()} style={s.backBtn} activeOpacity={0.85}>
+            <Image
+              source={require("@/assets/icons/ic_back.png")}
+              style={s.backIco}
+              tintColor="#fff"
+              resizeMode="contain"
+            />
+          </TouchableOpacity>
 
-        {/* ── TopImageView (38% height) ── */}
-        <View style={styles.coverWrap}>
-          <Image source={{ uri: host.avatar }} style={styles.coverImg} resizeMode="cover" />
-          <LinearGradient
-            colors={["transparent", "rgba(0,0,0,0.30)"]}
-            style={StyleSheet.absoluteFillObject}
-          />
-        </View>
+          {/* Centered avatar */}
+          <View style={s.heroCenterCol}>
+            <View style={s.heroDotBorder}>
+              <Image source={{ uri: host.avatar }} style={s.heroAvatar} resizeMode="cover" />
+            </View>
+            <Text style={s.heroName}>{host.name}</Text>
+            <View style={s.heroRatingRow}>
+              <Image source={require("@/assets/icons/ic_star.png")} style={{ width: 16, height: 16 }} tintColor={STAR_COLOR} resizeMode="contain" />
+              <Text style={s.heroRatingTxt}>{host.rating} ({host.reviewCount} reviews)</Text>
+            </View>
+          </View>
+        </LinearGradient>
 
-        {/* ── UserProfileInfoView ── */}
-        <View style={styles.infoCard}>
-          <View style={styles.infoTopRow}>
-            {/* Avatar dotted border */}
-            <View style={styles.avatarDotBorder}>
-              <View style={styles.avatarCircle}>
-                <Image source={{ uri: host.avatar }} style={styles.avatarImg} resizeMode="cover" />
+        {/* ══════ UserProfileInfoView ══════ */}
+        <View style={s.infoCard}>
+          <View style={s.infoTopRow}>
+            {/* Avatar dotted (small, 50x50) */}
+            <View style={s.infoDotBorder}>
+              <View style={s.infoAvatarCircle}>
+                <Image source={{ uri: host.avatar }} style={s.infoAvatarImg} resizeMode="cover" />
               </View>
             </View>
 
             {/* Name + status + ID */}
-            <View style={styles.infoMid}>
-              <Text style={styles.infoName} numberOfLines={1}>
-                {host.name}, {age}
-              </Text>
-              <View style={styles.statusRow}>
-                {/* Status badge */}
-                <View style={[
-                  styles.statusBadge,
-                  { backgroundColor: host.isOnline ? GREEN : "#EDEDEF" },
-                ]}>
-                  <View style={[
-                    styles.statusDotOuter,
-                    { backgroundColor: host.isOnline ? "rgba(255,255,255,0.5)" : "rgba(0,0,0,0.08)" },
-                  ]}>
-                    <View style={[
-                      styles.statusDotInner,
-                      { backgroundColor: host.isOnline ? "#fff" : PROFILE_LANG },
-                    ]} />
+            <View style={s.infoMid}>
+              <Text style={s.infoName} numberOfLines={1}>{host.name}, {age}</Text>
+              <View style={s.statusRow}>
+                {/* Status pill */}
+                <View style={[s.statusPill, { backgroundColor: host.isOnline ? GREEN : "#EDEDEF" }]}>
+                  <View style={[s.dotOuter, { backgroundColor: host.isOnline ? "rgba(255,255,255,0.5)" : "rgba(0,0,0,0.08)" }]}>
+                    <View style={[s.dotInner, { backgroundColor: host.isOnline ? "#fff" : PROFILE_LANG }]} />
                   </View>
-                  <Text style={[styles.statusTxt, { color: host.isOnline ? "#fff" : PROFILE_LANG }]}>
-                    {statusLabel}
+                  <Text style={[s.statusTxt, { color: host.isOnline ? "#fff" : PROFILE_LANG }]}>
+                    {host.isOnline ? "Online" : "Offline"}
                   </Text>
                 </View>
-
                 {/* ID chip */}
-                <TouchableOpacity onPress={handleCopyId} style={styles.idChip} activeOpacity={0.7}>
-                  <Text style={styles.idTxt} numberOfLines={1}>ID: {uniqueId}</Text>
-                  <Image source={require("@/assets/icons/ic_copy.png")} style={styles.copyIco} tintColor={ID_TXT} resizeMode="contain" />
+                <TouchableOpacity onPress={copyId} style={s.idChip} activeOpacity={0.7}>
+                  <Text style={s.idTxt} numberOfLines={1}>ID: {uniqueId}</Text>
+                  <Image source={require("@/assets/icons/ic_copy.png")} style={s.copyIco} tintColor={ID_TXT} resizeMode="contain" />
                 </TouchableOpacity>
               </View>
             </View>
 
             {/* Coin rate chip */}
-            <View style={styles.coinRateChip}>
-              <Image source={require("@/assets/icons/ic_coin.png")} style={styles.coinRateIco} resizeMode="contain" />
-              <Text style={styles.coinRateTxt}>{host.coinsPerMinute} Coin</Text>
+            <View style={s.coinChip}>
+              <Image source={require("@/assets/icons/ic_coin.png")} style={s.coinChipIco} resizeMode="contain" />
+              <Text style={s.coinChipTxt}>{host.coinsPerMinute} Coin</Text>
             </View>
           </View>
 
-          {/* Bio / self intro */}
-          <Text style={styles.bioTxt}>{host.bio}</Text>
+          {/* Bio */}
+          <Text style={s.bioTxt}>{host.bio}</Text>
 
-          {/* Language row */}
-          <View style={styles.langRow}>
-            <Image source={require("@/assets/icons/ic_language.png")} style={styles.langIco} resizeMode="contain" />
-            <Text style={styles.langLabel}>Language : </Text>
-            <Text style={styles.langValue} numberOfLines={1}>{host.languages.join(", ")}</Text>
+          {/* Language */}
+          <View style={s.langRow}>
+            <Image source={require("@/assets/icons/ic_language.png")} style={s.langIco} resizeMode="contain" />
+            <Text style={s.langLabel}>Language : </Text>
+            <Text style={s.langVal} numberOfLines={2}>{host.languages.join(", ")}</Text>
           </View>
 
-          {/* Topics tags */}
+          {/* Topics */}
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
-            style={styles.topicsScroll}
-            contentContainerStyle={{ gap: 6, paddingRight: 12 }}
+            contentContainerStyle={s.topicsContent}
+            style={s.topicsScroll}
           >
-            {host.specialties.map((s) => (
-              <View key={s} style={styles.topicTag}>
-                <Text style={styles.topicTxt}>{s}</Text>
+            {host.specialties.map((sp) => (
+              <View key={sp} style={s.topicTag}>
+                <Text style={s.topicTxt}>{sp}</Text>
               </View>
             ))}
           </ScrollView>
         </View>
 
-        {/* ── StatusView (3 stat boxes) ── */}
-        <View style={styles.statsRow}>
+        {/* ══════ StatusView — 3 stat boxes ══════ */}
+        <View style={s.statsRow}>
           {statsList.map((item, i) => (
-            <View key={i} style={styles.statBox}>
-              <Image source={item.image} style={styles.statIco} resizeMode="contain" />
-              <Text style={styles.statLabel}>{item.title}</Text>
-              <Text style={styles.statCount}>{item.count}</Text>
+            <View key={i} style={s.statBox}>
+              <Image source={item.image} style={s.statIco} resizeMode="contain" />
+              <Text style={s.statLbl}>{item.title}</Text>
+              <Text style={s.statVal}>{item.count}</Text>
             </View>
           ))}
         </View>
 
-        {/* ── ReviewShow ── */}
-        {reviews.length > 0 && (
-          <View style={styles.reviewSection}>
-            <View style={styles.reviewHeader}>
-              <Text style={styles.reviewHeaderTxt}>Reviews</Text>
-              <TouchableOpacity
-                onPress={() => router.push({ pathname: "/hosts/reviews", params: { hostId: host.id } })}
-              >
-                <Text style={styles.viewAllTxt}>View All</Text>
-              </TouchableOpacity>
-            </View>
+        {/* ══════ ReviewShow ══════ */}
+        <View style={s.reviewSec}>
+          <View style={s.reviewHeader}>
+            <Text style={s.reviewHeaderTxt}>Reviews</Text>
+            <TouchableOpacity onPress={() => router.push({ pathname: "/hosts/reviews", params: { hostId: host.id } })}>
+              <Text style={s.viewAllTxt}>View All</Text>
+            </TouchableOpacity>
+          </View>
 
-            {reviews.slice(0, 4).map((r, i) => (
-              <View key={i} style={styles.reviewCard}>
-                <View style={styles.reviewTop}>
-                  <View style={styles.reviewAvatarDot}>
-                    <View style={styles.reviewAvatarCircle}>
-                      <Image
-                        source={{ uri: `https://api.dicebear.com/7.x/avataaars/svg?seed=${r.avatar}` }}
-                        style={styles.reviewAvatarImg}
-                      />
-                    </View>
-                  </View>
-                  <View style={styles.reviewUserInfo}>
-                    <Text style={styles.reviewUsername}>{r.name}</Text>
-                    <StarRating rating={r.rating} size={18} />
-                  </View>
-                  <View style={styles.reviewTimeBadge}>
-                    <Text style={styles.reviewTimeTxt}>{r.time}</Text>
+          {reviews.map((r, i) => (
+            <View key={i} style={s.reviewCard}>
+              <View style={s.reviewTop}>
+                {/* Reviewer avatar */}
+                <View style={s.reviewDot}>
+                  <View style={s.reviewAvatarCircle}>
+                    <Image
+                      source={{ uri: `https://api.dicebear.com/7.x/avataaars/svg?seed=${r.seed}` }}
+                      style={s.reviewAvatarImg}
+                    />
                   </View>
                 </View>
-                <Text style={styles.reviewTxt}>{r.text}</Text>
+                <View style={s.reviewInfo}>
+                  <Text style={s.reviewName}>{r.name}</Text>
+                  <StarRating rating={r.rating} size={16} />
+                </View>
+                <View style={s.timeBadge}>
+                  <Text style={s.timeTxt}>{r.time}</Text>
+                </View>
               </View>
-            ))}
-          </View>
-        )}
+              <Text style={s.reviewTxt}>{r.text}</Text>
+            </View>
+          ))}
+        </View>
       </ScrollView>
 
-      {/* ── Back button (positioned over cover) ── */}
-      <View style={[styles.backBtnWrap, { top: insets.top + 8, pointerEvents: "box-none" }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} activeOpacity={0.85}>
-          <Image source={require("@/assets/icons/ic_back.png")} style={styles.backIco} tintColor="#fff" resizeMode="contain" />
-        </TouchableOpacity>
-      </View>
-
-      {/* ── ProfileBottomButtonView ── */}
-      <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 10 }]}>
-        {/* Chat Now */}
-        <TouchableOpacity onPress={handleChat} style={[styles.bottomBtn, { backgroundColor: GREEN }]} activeOpacity={0.85}>
-          <Text style={styles.bottomBtnTxt}>Chat Now</Text>
+      {/* ══════ ProfileBottomButtonView ══════ */}
+      <View style={[s.bottomBar, { paddingBottom: insets.bottom + 10 }]}>
+        <TouchableOpacity onPress={handleChat} style={[s.bottomBtn, { backgroundColor: GREEN }]} activeOpacity={0.85}>
+          <Text style={s.bottomBtnTxt}>Chat Now</Text>
         </TouchableOpacity>
 
-        {/* Talk Now */}
         {host.isOnline && (
-          <TouchableOpacity
-            onPress={() => setTalkSheet(true)}
-            style={[styles.bottomBtn, { backgroundColor: APP_COLOR }]}
-            activeOpacity={0.85}
-          >
-            <Image source={require("@/assets/icons/ic_call_gradient.png")} style={styles.talkIco} tintColor="#fff" resizeMode="contain" />
-            <Text style={styles.bottomBtnTxt}>Talk Now</Text>
+          <TouchableOpacity onPress={() => setTalkSheet(true)} style={[s.bottomBtn, { backgroundColor: APP_COLOR }]} activeOpacity={0.85}>
+            <Image source={require("@/assets/icons/ic_call_gradient.png")} style={s.talkIco} tintColor="#fff" resizeMode="contain" />
+            <Text style={s.bottomBtnTxt}>Talk Now</Text>
           </TouchableOpacity>
         )}
       </View>
 
-      {/* ── Talk Now sheet ── */}
       <TalkNowSheet
         visible={talkSheet}
         host={host}
@@ -354,97 +347,124 @@ export default function HostDetailScreen() {
 }
 
 /* ═══════════════════ STYLES ═══════════════════ */
-const styles = StyleSheet.create({
+const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#fff" },
 
-  /* cover image */
-  coverWrap: { width: SW, height: SH * 0.38, overflow: "hidden" },
-  coverImg: { width: "100%", height: "100%" },
+  /* ── Hero / cover ── */
+  hero: {
+    width: SW,
+    minHeight: SH * 0.36,
+    paddingHorizontal: 20,
+    paddingBottom: 24,
+  },
+  backBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 20,
+    backgroundColor: "rgba(255,255,255,0.15)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
+  },
+  backIco: { width: 18, height: 18 },
+  heroCenterCol: { alignItems: "center", gap: 8 },
+  heroDotBorder: {
+    width: 106,
+    height: 106,
+    borderRadius: 53,
+    borderWidth: 2,
+    borderColor: "rgba(255,255,255,0.6)",
+    borderStyle: "dashed",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  heroAvatar: { width: 96, height: 96, borderRadius: 48 },
+  heroName: { fontSize: 20, fontFamily: "Poppins_700Bold", color: "#fff", marginTop: 4 },
+  heroRatingRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  heroRatingTxt: { fontSize: 13, fontFamily: "Poppins_400Regular", color: "rgba(255,255,255,0.8)" },
 
-  /* info card */
+  /* ── Info card ── */
   infoCard: {
     backgroundColor: INFO_BG,
     paddingHorizontal: 12,
     paddingTop: 14,
     paddingBottom: 8,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.18,
     shadowRadius: 4,
     elevation: 4,
   },
-  infoTopRow: { flexDirection: "row", alignItems: "flex-start", gap: 12, marginBottom: 8 },
-
-  /* avatar dotted */
-  avatarDotBorder: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
+  infoTopRow: { flexDirection: "row", alignItems: "flex-start", gap: 10, marginBottom: 6 },
+  infoDotBorder: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     borderWidth: 1.5,
     borderColor: "#111329",
     borderStyle: "dashed",
     alignItems: "center",
     justifyContent: "center",
+    flexShrink: 0,
   },
-  avatarCircle: { width: 50, height: 50, borderRadius: 25, overflow: "hidden", backgroundColor: "#eee" },
-  avatarImg: { width: "100%", height: "100%" },
-
-  /* name + status */
+  infoAvatarCircle: { width: 48, height: 48, borderRadius: 24, overflow: "hidden", backgroundColor: "#eee" },
+  infoAvatarImg: { width: "100%", height: "100%" },
   infoMid: { flex: 1 },
-  infoName: { fontSize: 16, fontFamily: "Poppins_700Bold", color: "#111329", marginBottom: 6 },
-  statusRow: { flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" },
+  infoName: { fontSize: 16, fontFamily: "Poppins_700Bold", color: "#111329", marginBottom: 5 },
+  statusRow: { flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" },
 
   /* status badge */
-  statusBadge: { flexDirection: "row", alignItems: "center", paddingHorizontal: 6, paddingVertical: 4, borderRadius: 20, gap: 4 },
-  statusDotOuter: { width: 11, height: 11, borderRadius: 6, alignItems: "center", justifyContent: "center" },
-  statusDotInner: { width: 7, height: 7, borderRadius: 4 },
+  statusPill: { flexDirection: "row", alignItems: "center", paddingHorizontal: 6, paddingVertical: 4, borderRadius: 20, gap: 4 },
+  dotOuter: { width: 11, height: 11, borderRadius: 6, alignItems: "center", justifyContent: "center" },
+  dotInner: { width: 7, height: 7, borderRadius: 4 },
   statusTxt: { fontSize: 10, fontFamily: "Poppins_500Medium" },
 
   /* ID chip */
-  idChip: { flexDirection: "row", alignItems: "center", backgroundColor: ID_BG, paddingHorizontal: 6, paddingVertical: 4, borderRadius: 60, gap: 3 },
+  idChip: { flexDirection: "row", alignItems: "center", backgroundColor: ID_BG, paddingHorizontal: 6, paddingVertical: 3, borderRadius: 60, gap: 3 },
   idTxt: { fontSize: 10, fontFamily: "Poppins_600SemiBold", color: ID_TXT },
-  copyIco: { width: 12, height: 12 },
+  copyIco: { width: 11, height: 11 },
 
-  /* coin rate chip */
-  coinRateChip: { flexDirection: "row", alignItems: "center", backgroundColor: LIGHT_YELLOW, paddingHorizontal: 6, paddingVertical: 4, borderRadius: 30, gap: 4 },
-  coinRateIco: { width: 18, height: 18 },
-  coinRateTxt: { fontSize: 12, fontFamily: "Poppins_700Bold", color: ORANGE },
+  /* coin chip */
+  coinChip: { flexDirection: "row", alignItems: "center", backgroundColor: LIGHT_YELLOW, paddingHorizontal: 6, paddingVertical: 4, borderRadius: 30, gap: 4, flexShrink: 0 },
+  coinChipIco: { width: 18, height: 18 },
+  coinChipTxt: { fontSize: 12, fontFamily: "Poppins_700Bold", color: ORANGE },
 
   /* bio */
-  bioTxt: { fontSize: 12, fontFamily: "Poppins_500Medium", color: PROFILE_TEXT, lineHeight: 21, paddingVertical: 10 },
+  bioTxt: { fontSize: 12, fontFamily: "Poppins_500Medium", color: PROFILE_TEXT, lineHeight: 22, paddingVertical: 8 },
 
-  /* language row */
-  langRow: { flexDirection: "row", alignItems: "center", paddingTop: 8, paddingHorizontal: 0 },
-  langIco: { width: 20, height: 20 },
+  /* language */
+  langRow: { flexDirection: "row", alignItems: "flex-start", paddingTop: 4, paddingBottom: 0 },
+  langIco: { width: 20, height: 20, marginTop: 1 },
   langLabel: { fontSize: 14, fontFamily: "Poppins_500Medium", color: PROFILE_LANG, marginLeft: 8 },
-  langValue: { flex: 1, fontSize: 14, fontFamily: "Poppins_600SemiBold", color: "#111329" },
+  langVal: { flex: 1, fontSize: 14, fontFamily: "Poppins_600SemiBold", color: "#111329" },
 
   /* topics */
-  topicsScroll: { marginTop: 20, marginBottom: 20, maxHeight: 34 },
-  topicTag: { paddingHorizontal: 12, paddingVertical: 6, backgroundColor: CARD_BG, borderRadius: 30 },
+  topicsScroll: { marginTop: 16, marginBottom: 12, maxHeight: 36 },
+  topicsContent: { gap: 6, paddingRight: 12 },
+  topicTag: { paddingHorizontal: 14, paddingVertical: 7, backgroundColor: CARD_BG, borderRadius: 30 },
   topicTxt: { fontSize: 12, fontFamily: "Poppins_500Medium", color: PROFILE_LANG },
 
-  /* stats */
-  statsRow: { flexDirection: "row", paddingHorizontal: 8, paddingBottom: 10, gap: 0 },
+  /* ── Stats ── */
+  statsRow: { flexDirection: "row", paddingHorizontal: 8, paddingTop: 12, paddingBottom: 12, gap: 0 },
   statBox: {
     flex: 1,
-    marginHorizontal: 8,
-    paddingHorizontal: 7,
-    paddingVertical: 22,
+    marginHorizontal: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 18,
     backgroundColor: CARD_BG,
     borderWidth: 1,
     borderColor: BORDER,
     borderRadius: 18,
     alignItems: "center",
-    gap: 5,
+    gap: 4,
   },
-  statIco: { width: 34, height: 34, marginBottom: 4 },
-  statLabel: { fontSize: 11, fontFamily: "Poppins_500Medium", color: PROFILE_LANG },
-  statCount: { fontSize: 16, fontFamily: "Poppins_600SemiBold", color: "#111329" },
+  statIco: { width: 34, height: 34, marginBottom: 6 },
+  statLbl: { fontSize: 11, fontFamily: "Poppins_500Medium", color: PROFILE_LANG, textAlign: "center" },
+  statVal: { fontSize: 16, fontFamily: "Poppins_600SemiBold", color: "#111329" },
 
-  /* reviews */
-  reviewSection: { paddingHorizontal: 16, paddingBottom: 16 },
-  reviewHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingTop: 26, paddingBottom: 18 },
+  /* ── Reviews ── */
+  reviewSec: { paddingHorizontal: 16, paddingBottom: 12 },
+  reviewHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingTop: 18, paddingBottom: 14 },
   reviewHeaderTxt: { fontSize: 18, fontFamily: "Poppins_600SemiBold", color: "#111329" },
   viewAllTxt: { fontSize: 13, fontFamily: "Poppins_500Medium", color: PROFILE_LANG, textDecorationLine: "underline" },
   reviewCard: {
@@ -452,76 +472,67 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: REVIEW_BORDER,
     borderRadius: 18,
-    padding: 10,
-    marginBottom: 14,
+    padding: 12,
+    marginBottom: 12,
   },
-  reviewTop: { flexDirection: "row", alignItems: "flex-start", marginBottom: 6, paddingTop: 5, paddingBottom: 6 },
-  reviewAvatarDot: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
+  reviewTop: { flexDirection: "row", alignItems: "flex-start", marginBottom: 8 },
+  reviewDot: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     borderWidth: 1.5,
     borderColor: "#111329",
     borderStyle: "dashed",
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 13,
+    marginRight: 12,
+    flexShrink: 0,
   },
-  reviewAvatarCircle: { width: 48, height: 48, borderRadius: 24, overflow: "hidden", backgroundColor: "#eee" },
+  reviewAvatarCircle: { width: 44, height: 44, borderRadius: 22, overflow: "hidden", backgroundColor: "#eee" },
   reviewAvatarImg: { width: "100%", height: "100%" },
-  reviewUserInfo: { flex: 1 },
-  reviewUsername: { fontSize: 15, fontFamily: "Poppins_600SemiBold", color: "#111329", marginBottom: 2 },
-  reviewTimeBadge: { backgroundColor: "#E7EBF7", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 34 },
-  reviewTimeTxt: { fontSize: 10, fontFamily: "Poppins_600SemiBold", color: PROFILE_LANG },
-  reviewTxt: { fontSize: 12, fontFamily: "Poppins_500Medium", color: PROFILE_LANG, lineHeight: 21 },
+  reviewInfo: { flex: 1, gap: 3 },
+  reviewName: { fontSize: 14, fontFamily: "Poppins_600SemiBold", color: "#111329" },
+  timeBadge: { backgroundColor: "#E7EBF7", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 34, marginLeft: 8 },
+  timeTxt: { fontSize: 10, fontFamily: "Poppins_600SemiBold", color: PROFILE_LANG },
+  reviewTxt: { fontSize: 12, fontFamily: "Poppins_500Medium", color: PROFILE_LANG, lineHeight: 20 },
 
-  /* back button */
-  backBtnWrap: { position: "absolute", left: 17, right: 0 },
-  backBtn: {
-    width: 35,
-    height: 35,
-    borderRadius: 30,
-    backgroundColor: "rgba(0,0,0,0.18)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  backIco: { width: 17, height: 17 },
-
-  /* bottom bar */
+  /* ── Bottom bar ── */
   bottomBar: {
     flexDirection: "row",
     gap: 12,
     paddingHorizontal: 20,
-    paddingTop: 10,
+    paddingTop: 12,
     backgroundColor: "#fff",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.1,
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.08,
     shadowRadius: 8,
-    elevation: 8,
+    elevation: 10,
   },
   bottomBtn: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: SH * 0.03,
+    paddingVertical: 14,
     borderRadius: 12,
     gap: 8,
   },
-  bottomBtnTxt: { fontSize: 16, fontFamily: "Poppins_600SemiBold", color: "#fff", marginBottom: 10 },
-  talkIco: { width: 22, height: 22, marginBottom: 10 },
+  bottomBtnTxt: { fontSize: 16, fontFamily: "Poppins_600SemiBold", color: "#fff" },
+  talkIco: { width: 22, height: 22 },
+});
 
-  /* Talk Now sheet */
-  sheetOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
-  sheetBox: { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingBottom: 30 },
-  sheetHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: "#E0E0E0", alignSelf: "center", marginTop: 12, marginBottom: 16 },
-  sheetTitle: { fontSize: 16, fontFamily: "Poppins_600SemiBold", color: "#111329", textAlign: "center", paddingBottom: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: "#eee" },
-  sheetRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingVertical: 18, gap: 12 },
-  sheetIco: { width: 32, height: 32 },
-  sheetLabel: { flex: 1, fontSize: 16, fontFamily: "Poppins_600SemiBold", color: "#111329" },
-  sheetDivider: { height: StyleSheet.hairlineWidth, backgroundColor: "#eee", marginHorizontal: 20 },
-  coinChip: { flexDirection: "row", alignItems: "center", backgroundColor: "#FFF8E7", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 16, gap: 4 },
-  sheetCoinIco: { width: 16, height: 16 },
-  sheetCoinTxt: { fontSize: 12, fontFamily: "Poppins_600SemiBold", color: ORANGE },
+/* ─── Talk Now sheet styles ─── */
+const sht = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
+  box: { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingBottom: 32 },
+  handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: "#E0E0E0", alignSelf: "center", marginTop: 12, marginBottom: 16 },
+  title: { fontSize: 16, fontFamily: "Poppins_600SemiBold", color: "#111329", textAlign: "center", paddingBottom: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: "#eee" },
+  row: { flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingVertical: 18, gap: 12 },
+  ico: { width: 32, height: 32 },
+  label: { flex: 1, fontSize: 16, fontFamily: "Poppins_600SemiBold", color: "#111329" },
+  divider: { height: StyleSheet.hairlineWidth, backgroundColor: "#eee", marginHorizontal: 20 },
+  chip: { flexDirection: "row", alignItems: "center", backgroundColor: "#FFF8E7", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 16, gap: 4 },
+  chipIco: { width: 16, height: 16 },
+  chipTxt: { fontSize: 12, fontFamily: "Poppins_600SemiBold", color: ORANGE },
 });
