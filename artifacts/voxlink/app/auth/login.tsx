@@ -9,16 +9,18 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { useAuth } from "@/context/AuthContext";
 import { PrimaryButton } from "@/components/PrimaryButton";
+import { API } from "@/services/api";
 
 const ACCENT = "#A00EE7";
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
-  const { login } = useAuth();
+  const { loginWithToken } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [guestLoading, setGuestLoading] = useState(false);
 
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
@@ -26,35 +28,53 @@ export default function LoginScreen() {
       return;
     }
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 1000));
-    await login({
-      id: "user_" + Date.now(),
-      name: email.split("@")[0].replace(/[^a-z]/gi, " ").trim() || "User",
-      email: email.trim(),
-      coins: 150,
-      role: "user",
-    });
-    setLoading(false);
-    router.replace("/screens/user");
+    try {
+      const data = await API.login(email.trim(), password);
+      await loginWithToken(data.token, {
+        id: data.user.id,
+        name: data.user.name,
+        email: data.user.email,
+        avatar: data.user.avatar_url,
+        coins: data.user.coins ?? 0,
+        role: data.user.role ?? "user",
+        gender: data.user.gender,
+        phone: data.user.phone,
+        bio: data.user.bio,
+      });
+      router.replace("/screens/user");
+    } catch (err: any) {
+      Alert.alert("Login Failed", err?.message || "Invalid email or password.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleGuestLogin = async () => {
-    setLoading(true);
-    await new Promise((r) => setTimeout(r, 600));
-    await login({
-      id: "guest_" + Date.now(),
-      name: "Guest User",
-      email: "guest@voxlink.app",
-      coins: 50,
-      role: "user",
-    });
-    setLoading(false);
-    router.replace("/screens/user");
+    setGuestLoading(true);
+    try {
+      const data = await API.guestLogin();
+      await loginWithToken(data.token, {
+        id: data.user.id,
+        name: data.user.name,
+        email: data.user.email,
+        coins: data.user.coins ?? 50,
+        role: "user",
+        is_guest: true,
+      });
+      router.replace("/screens/user");
+    } catch (err: any) {
+      Alert.alert("Error", "Could not start guest session. Please try again.");
+    } finally {
+      setGuestLoading(false);
+    }
+  };
+
+  const handleGoogleLogin = () => {
+    Alert.alert("Coming Soon", "Google Sign-In will be available in the next update.");
   };
 
   return (
     <View style={{ flex: 1, backgroundColor: "#fff" }}>
-      {/* Purple gradient header */}
       <LinearGradient colors={["#A00EE7", "#6A00B8"]} style={[s.header, { paddingTop: insets.top + 10 }]}>
         <TouchableOpacity onPress={() => router.back()} style={s.backBtn} activeOpacity={0.8}>
           <Feather name="arrow-left" size={22} color="#fff" />
@@ -104,7 +124,7 @@ export default function LoginScreen() {
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity style={s.forgotRow} onPress={() => router.push("/auth/forgot-password")}>
+        <TouchableOpacity style={s.forgotRow}>
           <Text style={s.forgotTxt}>Forgot password?</Text>
         </TouchableOpacity>
 
@@ -112,13 +132,25 @@ export default function LoginScreen() {
 
         <View style={s.divRow}>
           <View style={s.divLine} />
-          <Text style={s.divTxt}>or</Text>
+          <Text style={s.divTxt}>or continue with</Text>
           <View style={s.divLine} />
         </View>
 
-        <TouchableOpacity onPress={handleGuestLogin} style={s.guestBtn} activeOpacity={0.75}>
+        {/* Google Login */}
+        <TouchableOpacity onPress={handleGoogleLogin} style={s.googleBtn} activeOpacity={0.8}>
+          <Image source={{ uri: "https://www.svgrepo.com/show/475656/google-color.svg" }} style={s.googleIco} />
+          <Text style={s.googleTxt}>Continue with Google</Text>
+        </TouchableOpacity>
+
+        {/* Guest Login */}
+        <TouchableOpacity
+          onPress={handleGuestLogin}
+          style={s.guestBtn}
+          activeOpacity={0.75}
+          disabled={guestLoading}
+        >
           <Feather name="user" size={18} color="#84889F" />
-          <Text style={s.guestTxt}>Continue as Guest</Text>
+          <Text style={s.guestTxt}>{guestLoading ? "Please wait..." : "Continue as Guest"}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity onPress={() => router.push("/auth/register")} style={s.signupRow}>
@@ -126,7 +158,7 @@ export default function LoginScreen() {
           <Text style={s.signupLink}>Sign Up</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity onPress={() => router.back()} style={s.switchRow}>
+        <TouchableOpacity onPress={() => router.push("/auth/host-login")} style={s.switchRow}>
           <Text style={s.switchTxt}>Are you a host? </Text>
           <Text style={s.switchLink}>Host Login</Text>
         </TouchableOpacity>
@@ -150,7 +182,10 @@ const s = StyleSheet.create({
   forgotTxt: { fontSize: 13, fontFamily: "Poppins_500Medium", color: ACCENT },
   divRow: { flexDirection: "row", alignItems: "center", gap: 12 },
   divLine: { flex: 1, height: 1, backgroundColor: "#E8EAF0" },
-  divTxt: { fontSize: 13, fontFamily: "Poppins_400Regular", color: "#84889F" },
+  divTxt: { fontSize: 12, fontFamily: "Poppins_400Regular", color: "#84889F" },
+  googleBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, paddingVertical: 14, borderRadius: 14, borderWidth: 1.5, borderColor: "#E8EAF0", backgroundColor: "#fff" },
+  googleIco: { width: 22, height: 22 },
+  googleTxt: { fontSize: 15, fontFamily: "Poppins_500Medium", color: "#111329" },
   guestBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 14, borderRadius: 14, borderWidth: 1, borderColor: "#E8EAF0" },
   guestTxt: { fontSize: 15, fontFamily: "Poppins_500Medium", color: "#84889F" },
   signupRow: { flexDirection: "row", justifyContent: "center" },

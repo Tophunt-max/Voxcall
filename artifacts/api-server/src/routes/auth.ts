@@ -126,4 +126,17 @@ auth.post('/logout', async (c) => {
   return c.json({ success: true });
 });
 
+// POST /api/auth/guest-login — create a temporary guest account
+auth.post('/guest-login', async (c) => {
+  const db = c.env.DB;
+  const guestId = 'guest_' + generateId().slice(0, 8);
+  const guestEmail = `${guestId}@guest.voxlink.app`;
+  const guestName = 'Guest User';
+  await db.prepare(
+    `INSERT INTO users (id, name, email, password_hash, coins, is_verified, role) VALUES (?, ?, ?, '', 50, 0, 'user')`
+  ).bind(guestId, guestName, guestEmail).run();
+  const token = await signToken({ sub: guestId, role: 'user', name: guestName }, c.env.JWT_SECRET);
+  return c.json({ token, user: { id: guestId, name: guestName, email: guestEmail, coins: 50, role: 'user', is_guest: true } });
+});
+
 export default auth;

@@ -384,5 +384,82 @@ admin.delete('/faqs/:id', async (c) => {
   return c.json({ success: true });
 });
 
+// ─── Host KYC Applications ───────────────────────────────────────────────────
+
+// GET /api/admin/host-applications — list all applications
+admin.get('/host-applications', async (c) => {
+  const { status } = c.req.query();
+  let q = `SELECT ha.*, u.email, u.avatar_url FROM host_applications ha
+            JOIN users u ON u.id = ha.user_id`;
+  const params: any[] = [];
+  if (status) { q += ' WHERE ha.status = ?'; params.push(status); }
+  q += ' ORDER BY ha.submitted_at DESC';
+  const result = await db(c).prepare(q).bind(...params).all<any>();
+  return c.json(result.results.map(r => ({
+    ...r,
+    specialties: JSON.parse(r.specialties || '[]'),
+    languages: JSON.parse(r.languages || '[]'),
+  })));
+});
+
+// GET /api/admin/host-applications/:id — single application detail
+admin.get('/host-applications/:id', async (c) => {
+  const { id } = c.req.param();
+  const app = await db(c)
+    .prepare(`SELECT ha.*, u.email, u.name as user_name, u.avatar_url
+              FROM host_applications ha JOIN users u ON u.id = ha.user_id
+              WHERE ha.id = ?`)
+    .bind(id).first<any>();
+  if (!app) return c.json({ error: 'Not found' }, 404);
+  return c.json({
+    ...app,
+    specialties: JSON.parse(app.specialties || '[]'),
+    languages: JSON.parse(app.languages || '[]'),
+  });
+});
+
+// PATCH /api/admin/host-applications/:id/review — approve or reject
+admin.patch('/host-applications/:id/review', async (c) => {
+  const { id } = c.req.param();
+  const { action, rejection_reason } = await c.req.json<{ action: 'approve' | 'reject'; rejection_reason?: string }>();
+  const { sub } = c.get('user');
+  const d = db(c);
+
+  if (!['approve', 'reject'].includes(action)) {
+    return c.json({ error: 'action must be approve or reject' }, 400);
+  }
+
+  const app = await d.prepare('SELECT * FROM host_applications WHERE id = ?').bind(id).first<any>();
+  if (!app) return c.json({ error: 'Application not found' }, 404);
+
+  const newStatus = action === 'approve' ? 'approved' : 'rejected';
+  await d.prepare(
+    `UPDATE host_applications SET status=?, rejection_reason=?, reviewed_by=?, reviewed_at=unixepoch(), updated_at=unixepoch() WHERE id=?`
+  ).bind(newStatus, rejection_reason ?? null, sub, id).run();
+
+  if (action === 'approve') {
+    // Create host record + update user role
+    const hostId = `host_${app.user_id}`;
+    const existing = await d.prepare('SELECT id FROM hosts WHERE user_id = ?').bind(app.user_id).first();
+    if (!existing) {
+      await d.batch([
+        d.prepare(
+          `INSERT INTO hosts (id, user_id, display_name, specialties, languages, audio_coins_per_minute, video_coins_per_minute, is_active)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 1)`
+        ).bind(hostId, app.user_id, app.display_name, app.specialties, app.languages, app.audio_rate ?? 5, app.video_rate ?? 8),
+        d.prepare(`UPDATE users SET role='host', phone=COALESCE(phone,?), updated_at=unixepoch() WHERE id=?`)
+          .bind(app.phone ?? null, app.user_id),
+      ]);
+    } else {
+      await d.prepare(`UPDATE hosts SET display_name=?, specialties=?, is_active=1 WHERE user_id=?`)
+        .bind(app.display_name, app.specialties, app.user_id).run();
+      await d.prepare(`UPDATE users SET role='host', updated_at=unixepoch() WHERE id=?`).bind(app.user_id).run();
+    }
+  }
+
+  return c.json({ success: true, status: newStatus });
+});
+
 export default admin;
+
 

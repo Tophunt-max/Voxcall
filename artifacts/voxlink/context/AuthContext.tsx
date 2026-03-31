@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { setItem, getItem, removeItem, StorageKeys } from "@/utils/storage";
 
 export type UserRole = "user" | "host";
 
@@ -19,6 +19,7 @@ export interface UserProfile {
   rating?: number;
   totalCalls?: number;
   earnings?: number;
+  is_guest?: boolean;
 }
 
 interface AuthState {
@@ -29,6 +30,7 @@ interface AuthState {
 
 interface AuthContextValue extends AuthState {
   login: (user: UserProfile) => Promise<void>;
+  loginWithToken: (token: string, user: UserProfile) => Promise<void>;
   logout: () => Promise<void>;
   updateProfile: (updates: Partial<UserProfile>) => Promise<void>;
   updateCoins: (newBalance: number) => void;
@@ -36,8 +38,6 @@ interface AuthContextValue extends AuthState {
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
-
-const STORAGE_KEY = "@voxlink_user";
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<AuthState>({
@@ -49,9 +49,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     (async () => {
       try {
-        const raw = await AsyncStorage.getItem(STORAGE_KEY);
-        if (raw) {
-          const user: UserProfile = JSON.parse(raw);
+        const user = await getItem<UserProfile>(StorageKeys.USER);
+        if (user) {
           setState({ user, isLoggedIn: true, isLoading: false });
         } else {
           setState((s) => ({ ...s, isLoading: false }));
@@ -62,13 +61,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     })();
   }, []);
 
+  const loginWithToken = useCallback(async (token: string, user: UserProfile) => {
+    await Promise.all([
+      setItem(StorageKeys.AUTH_TOKEN, token),
+      setItem(StorageKeys.USER, user),
+    ]);
+    setState({ user, isLoggedIn: true, isLoading: false });
+  }, []);
+
   const login = useCallback(async (user: UserProfile) => {
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(user));
+    await setItem(StorageKeys.USER, user);
     setState({ user, isLoggedIn: true, isLoading: false });
   }, []);
 
   const logout = useCallback(async () => {
-    await AsyncStorage.removeItem(STORAGE_KEY);
+    await Promise.all([
+      removeItem(StorageKeys.AUTH_TOKEN),
+      removeItem(StorageKeys.USER),
+    ]);
     setState({ user: null, isLoggedIn: false, isLoading: false });
   }, []);
 
@@ -76,7 +86,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setState((prev) => {
       if (!prev.user) return prev;
       const updated = { ...prev.user, ...updates };
-      AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      setItem(StorageKeys.USER, updated);
       return { ...prev, user: updated };
     });
   }, []);
@@ -85,7 +95,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setState((prev) => {
       if (!prev.user) return prev;
       const updated = { ...prev.user, coins: newBalance };
-      AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      setItem(StorageKeys.USER, updated);
       return { ...prev, user: updated };
     });
   }, []);
@@ -94,13 +104,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setState((prev) => {
       if (!prev.user) return prev;
       const updated = { ...prev.user, role };
-      AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      setItem(StorageKeys.USER, updated);
       return { ...prev, user: updated };
     });
   }, []);
 
   return (
-    <AuthContext.Provider value={{ ...state, login, logout, updateProfile, updateCoins, switchRole }}>
+    <AuthContext.Provider value={{ ...state, login, loginWithToken, logout, updateProfile, updateCoins, switchRole }}>
       {children}
     </AuthContext.Provider>
   );

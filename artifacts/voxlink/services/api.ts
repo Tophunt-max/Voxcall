@@ -38,8 +38,14 @@ export const API = {
   // Auth
   login: (email: string, password: string) =>
     apiRequest<{ token: string; user: any }>('POST', '/api/auth/login', { email, password }, false),
-  register: (name: string, email: string, password: string, phone?: string) =>
-    apiRequest<{ token: string; user: any }>('POST', '/api/auth/register', { name, email, password, phone }, false),
+  register: (name: string, email: string, password: string, gender?: string, phone?: string) =>
+    apiRequest<{ token: string; user: any }>('POST', '/api/auth/register', { name, email, password, gender, phone }, false),
+  guestLogin: () =>
+    apiRequest<{ token: string; user: any }>('POST', '/api/auth/guest-login', {}, false),
+
+  // Host KYC Application
+  getHostAppStatus: () => apiRequest<any>('GET', '/api/host-app/status'),
+  submitHostApp: (data: any) => apiRequest<any>('POST', '/api/host-app/submit', data),
   me: () => apiRequest<any>('GET', '/api/user/me'),
   updateProfile: (data: any) => apiRequest('PATCH', '/api/user/me', data),
   updateAvatar: async (formData: FormData) => {
@@ -49,6 +55,19 @@ export const API = {
       headers: { Authorization: `Bearer ${token}` },
       body: formData,
     });
+    return res.json();
+  },
+  uploadFile: async (formData: FormData): Promise<{ url: string; key: string }> => {
+    const token = await getToken();
+    const res = await fetch(`${BASE_URL}/api/upload/media`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error((err as any).error || 'Upload failed');
+    }
     return res.json();
   },
 

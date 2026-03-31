@@ -74,7 +74,39 @@ VoxLink is a production-grade social audio/video calling mobile app + admin pane
 
 ## D1 Database Schema
 
-Tables: `users`, `hosts`, `coin_plans`, `coin_transactions`, `call_sessions`, `chat_rooms`, `messages`, `ratings`, `withdrawal_requests`, `notifications`, `faqs`, `talk_topics`, `app_settings`
+Tables: `users`, `hosts`, `coin_plans`, `coin_transactions`, `call_sessions`, `chat_rooms`, `messages`, `ratings`, `withdrawal_requests`, `notifications`, `faqs`, `talk_topics`, `app_settings`, `host_applications`
+
+### host_applications table
+KYC verification applications. Fields: id, user_id, display_name, date_of_birth, gender, phone, bio, specialties, languages, experience, audio_rate, video_rate, aadhar_front_url, aadhar_back_url, verification_video_url, status (pending|under_review|approved|rejected), rejection_reason, reviewed_by, reviewed_at, submitted_at
+
+## Auth System (Session 4)
+
+### User Auth
+- `login.tsx` — Real API login (email/password) + Google button UI (coming soon) + Guest login (creates temp account via `/api/auth/guest-login`)
+- `register.tsx` — Real API registration with gender field
+- `AuthContext.tsx` — Now uses `StorageKeys.AUTH_TOKEN` + `StorageKeys.USER`, adds `loginWithToken(token, user)` method
+
+### Host Multi-Step KYC Registration
+1. `host-login.tsx` — Real API login; if role!=host → redirects to host-register
+2. `host-register.tsx` — Step 1: Create account (email+password) → calls `/api/auth/register`
+3. `host-profile-setup.tsx` — Step 2: DOB, gender, phone, display name
+4. `host-become.tsx` — Step 3: Specialties, languages, bio, audio/video rates
+5. `host-kyc.tsx` — Step 4: Upload Aadhar front+back photos + verification video via `/api/upload/media`
+6. `host-status.tsx` — Shows application status: pending/under_review/approved/rejected with timeline and rejection reason
+
+### API Routes Added
+- `POST /api/auth/guest-login` — creates temp guest account (50 coins)
+- `GET /api/host-app/status` — check own KYC application status
+- `POST /api/host-app/submit` — submit/update KYC application
+- `GET /api/admin/host-applications` — list all applications (filterable by status)
+- `GET /api/admin/host-applications/:id` — single application detail
+- `PATCH /api/admin/host-applications/:id/review` — approve or reject with reason
+
+### Admin Panel
+- New **KYC Applications** page (`HostApplications.tsx`) — list with status badges, review modal with document viewer, approve/reject with reason
+- Added to sidebar nav under OVERVIEW section
+- Image lightbox for Aadhar photo review
+- Video preview for verification video
 
 ## New Features (Session 3)
 

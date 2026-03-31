@@ -16,6 +16,7 @@ import Ratings from '@/pages/Ratings';
 import Notifications from '@/pages/Notifications';
 import SettingsPage from '@/pages/SettingsPage';
 import LevelConfig from '@/pages/LevelConfig';
+import HostApplications from '@/pages/HostApplications';
 
 const queryClient = new QueryClient();
 const base = import.meta.env.BASE_URL.replace(/\/$/, '');
@@ -49,6 +50,7 @@ function ProtectedApp() {
         <Route path="/talk-topics" component={TalkTopics} />
         <Route path="/faqs" component={FAQs} />
         <Route path="/level-config" component={LevelConfig} />
+        <Route path="/host-applications" component={HostApplications} />
         <Route path="/settings" component={SettingsPage} />
         <Route component={() => <Redirect to="/dashboard" />} />
       </Switch>

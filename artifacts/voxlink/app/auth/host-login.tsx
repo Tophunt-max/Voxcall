@@ -9,48 +9,58 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { useAuth } from "@/context/AuthContext";
 import { PrimaryButton } from "@/components/PrimaryButton";
+import { API } from "@/services/api";
 
 const DARK = "#111329";
 const ACCENT = "#A00EE7";
 
 export default function HostLoginScreen() {
   const insets = useSafeAreaInsets();
-  const { login } = useAuth();
+  const { loginWithToken } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [isRegister, setIsRegister] = useState(false);
-  const [name, setName] = useState("");
 
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
       Alert.alert("Missing Fields", "Please enter both email and password.");
       return;
     }
-    if (isRegister && !name.trim()) {
-      Alert.alert("Missing Name", "Please enter your display name.");
-      return;
-    }
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 1000));
-    const displayName = isRegister
-      ? name.trim()
-      : email.split("@")[0].replace(/[^a-z]/gi, " ").trim() || "Host";
-    await login({
-      id: "host_" + Date.now(),
-      name: displayName,
-      email: email.trim(),
-      coins: 0,
-      role: "host",
-    });
-    setLoading(false);
-    router.replace("/screens/host");
+    try {
+      const data = await API.login(email.trim(), password);
+      const userData = data.user;
+      await loginWithToken(data.token, {
+        id: userData.id,
+        name: userData.name,
+        email: userData.email,
+        avatar: userData.avatar_url,
+        coins: userData.coins ?? 0,
+        role: userData.role ?? "user",
+        gender: userData.gender,
+        phone: userData.phone,
+        bio: userData.bio,
+      });
+      // If not yet a host — redirect to KYC flow
+      if (userData.role !== "host") {
+        router.replace("/auth/host-register");
+      } else {
+        router.replace("/screens/host");
+      }
+    } catch (err: any) {
+      Alert.alert("Login Failed", err?.message || "Invalid email or password.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGoogleLogin = () => {
+    Alert.alert("Coming Soon", "Google Sign-In will be available in the next update.");
   };
 
   return (
     <View style={{ flex: 1, backgroundColor: "#fff" }}>
-      {/* Dark header */}
       <LinearGradient colors={["#111329", "#2D3057"]} style={[s.header, { paddingTop: insets.top + 10 }]}>
         <TouchableOpacity onPress={() => router.back()} style={s.backBtn} activeOpacity={0.8}>
           <Feather name="arrow-left" size={22} color="#fff" />
@@ -70,38 +80,6 @@ export default function HostLoginScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* Toggle tabs */}
-        <View style={s.tabs}>
-          <TouchableOpacity
-            onPress={() => setIsRegister(false)}
-            style={[s.tab, !isRegister && s.tabActive]}
-            activeOpacity={0.8}
-          >
-            <Text style={[s.tabTxt, !isRegister && s.tabTxtActive]}>Sign In</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => setIsRegister(true)}
-            style={[s.tab, isRegister && s.tabActive]}
-            activeOpacity={0.8}
-          >
-            <Text style={[s.tabTxt, isRegister && s.tabTxtActive]}>Register</Text>
-          </TouchableOpacity>
-        </View>
-
-        {isRegister && (
-          <View style={s.inputWrap}>
-            <Feather name="user" size={18} color="#84889F" />
-            <TextInput
-              value={name}
-              onChangeText={setName}
-              placeholder="Your display name"
-              placeholderTextColor="#84889F"
-              style={s.input}
-              autoCapitalize="words"
-            />
-          </View>
-        )}
-
         <View style={s.inputWrap}>
           <Feather name="mail" size={18} color="#84889F" />
           <TextInput
@@ -112,7 +90,6 @@ export default function HostLoginScreen() {
             style={s.input}
             keyboardType="email-address"
             autoCapitalize="none"
-            autoComplete="email"
           />
         </View>
 
@@ -125,38 +102,42 @@ export default function HostLoginScreen() {
             placeholderTextColor="#84889F"
             style={s.input}
             secureTextEntry={!showPw}
-            autoComplete="password"
           />
           <TouchableOpacity onPress={() => setShowPw(!showPw)}>
             <Feather name={showPw ? "eye-off" : "eye"} size={18} color="#84889F" />
           </TouchableOpacity>
         </View>
 
-        {!isRegister && (
-          <TouchableOpacity style={s.forgotRow} onPress={() => router.push("/auth/forgot-password")}>
-            <Text style={s.forgotTxt}>Forgot password?</Text>
-          </TouchableOpacity>
-        )}
+        <PrimaryButton title="Sign In as Host" onPress={handleLogin} loading={loading} />
 
-        <View style={s.btnWrap}>
-          <PrimaryButton
-            title={isRegister ? "Create Host Account" : "Sign In as Host"}
-            onPress={handleLogin}
-            loading={loading}
-          />
+        <View style={s.divRow}>
+          <View style={s.divLine} />
+          <Text style={s.divTxt}>or</Text>
+          <View style={s.divLine} />
         </View>
 
-        {/* Info banner */}
+        <TouchableOpacity onPress={handleGoogleLogin} style={s.googleBtn} activeOpacity={0.8}>
+          <View style={s.googleIco}>
+            <Text style={{ fontSize: 16, fontFamily: "Poppins_700Bold" }}>G</Text>
+          </View>
+          <Text style={s.googleTxt}>Continue with Google</Text>
+        </TouchableOpacity>
+
         <View style={s.infoBanner}>
           <Feather name="info" size={16} color={DARK} />
           <Text style={s.infoTxt}>
-            As a host, you will earn coins per minute from calls. Your host dashboard will track all earnings and session history.
+            New to hosting? Register below — you'll go through a quick KYC verification to start earning.
           </Text>
         </View>
 
-        <TouchableOpacity onPress={() => router.back()} style={s.switchRow}>
+        <TouchableOpacity onPress={() => router.push("/auth/host-register")} style={s.registerBtn} activeOpacity={0.8}>
+          <Text style={s.registerBtnTxt}>New Host? Apply to Become a Host</Text>
+          <Feather name="arrow-right" size={16} color={DARK} />
+        </TouchableOpacity>
+
+        <TouchableOpacity onPress={() => router.push("/auth/login")} style={s.switchRow}>
           <Text style={s.switchTxt}>Not a host? </Text>
-          <Text style={s.switchLink}>Login as User</Text>
+          <Text style={s.switchLink}>User Login</Text>
         </TouchableOpacity>
       </ScrollView>
     </View>
@@ -172,18 +153,18 @@ const s = StyleSheet.create({
   headerTitle: { fontSize: 24, fontFamily: "Poppins_700Bold", color: "#fff" },
   headerSub: { fontSize: 13, fontFamily: "Poppins_400Regular", color: "rgba(255,255,255,0.7)", textAlign: "center" },
   form: { paddingHorizontal: 24, paddingTop: 28, gap: 14 },
-  tabs: { flexDirection: "row", backgroundColor: "#F5F5F7", borderRadius: 12, padding: 4, marginBottom: 4 },
-  tab: { flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: "center" },
-  tabActive: { backgroundColor: "#fff", shadowColor: "#000", shadowOpacity: 0.08, shadowRadius: 4, elevation: 2 },
-  tabTxt: { fontSize: 14, fontFamily: "Poppins_500Medium", color: "#84889F" },
-  tabTxtActive: { color: "#111329", fontFamily: "Poppins_600SemiBold" },
   inputWrap: { flexDirection: "row", alignItems: "center", borderRadius: 14, borderWidth: 1, borderColor: "#E8EAF0", backgroundColor: "#F8F9FC", paddingHorizontal: 16, paddingVertical: 14, gap: 12 },
   input: { flex: 1, fontSize: 15, fontFamily: "Poppins_400Regular", padding: 0, color: "#111329" },
-  forgotRow: { alignSelf: "flex-end", marginTop: -4 },
-  forgotTxt: { fontSize: 13, fontFamily: "Poppins_500Medium", color: ACCENT },
-  btnWrap: { marginTop: 4 },
-  infoBanner: { flexDirection: "row", alignItems: "flex-start", gap: 10, backgroundColor: "#F0E4F8", borderRadius: 12, padding: 14, marginTop: 4 },
+  divRow: { flexDirection: "row", alignItems: "center", gap: 12 },
+  divLine: { flex: 1, height: 1, backgroundColor: "#E8EAF0" },
+  divTxt: { fontSize: 13, fontFamily: "Poppins_400Regular", color: "#84889F" },
+  googleBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, paddingVertical: 14, borderRadius: 14, borderWidth: 1.5, borderColor: "#E8EAF0" },
+  googleIco: { width: 22, height: 22, borderRadius: 11, backgroundColor: "#F0F0F0", alignItems: "center", justifyContent: "center" },
+  googleTxt: { fontSize: 15, fontFamily: "Poppins_500Medium", color: "#111329" },
+  infoBanner: { flexDirection: "row", alignItems: "flex-start", gap: 10, backgroundColor: "#F0E4F8", borderRadius: 12, padding: 14 },
   infoTxt: { flex: 1, fontSize: 12, fontFamily: "Poppins_400Regular", color: "#111329", lineHeight: 18 },
+  registerBtn: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 16, paddingHorizontal: 18, borderRadius: 14, backgroundColor: "#111329" },
+  registerBtnTxt: { fontSize: 14, fontFamily: "Poppins_600SemiBold", color: "#fff" },
   switchRow: { flexDirection: "row", justifyContent: "center", marginTop: 8 },
   switchTxt: { fontSize: 14, fontFamily: "Poppins_400Regular", color: "#84889F" },
   switchLink: { fontSize: 14, fontFamily: "Poppins_600SemiBold", color: ACCENT },
