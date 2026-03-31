@@ -36,6 +36,11 @@ function RootLayoutNav() {
         <Stack.Screen name="auth/role-select" />
         <Stack.Screen name="auth/login" />
         <Stack.Screen name="auth/host-login" />
+        <Stack.Screen name="auth/host-register" />
+        <Stack.Screen name="auth/host-profile-setup" />
+        <Stack.Screen name="auth/host-become" />
+        <Stack.Screen name="auth/host-kyc" />
+        <Stack.Screen name="auth/host-status" />
         <Stack.Screen name="auth/register" />
         <Stack.Screen name="auth/forgot-password" />
         <Stack.Screen name="auth/verify-otp" />

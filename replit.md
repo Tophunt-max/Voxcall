@@ -19,9 +19,46 @@ VoxLink is a production-grade social audio/video calling mobile app + admin pane
 - **Framework**: React Native Expo 54, expo-router 6
 - **Font**: Poppins (via @expo-google-fonts/poppins)
 - **Colors**: primary `#757396`, accent `#A00EE7`, bg `#FAFEFF`, coinGold `#FFA100`, online `#0BAF23`
-- **Navigation**: Two tab groups — `app/screens/user/` (users) and `app/screens/host/` (hosts)
-- **Auth**: Real API via `services/AuthService.ts` → `services/api.ts` → Cloudflare Workers
-- **API Client**: `services/api.ts` with `EXPO_PUBLIC_API_URL` env var (default: localhost:8080)
+- **Auth**: Real API via `services/api.ts` → Cloudflare Workers
+- **API Client**: `services/api.ts` with `EXPO_PUBLIC_API_URL` env var
+
+#### Folder Structure (Route Groups)
+```
+app/
+  _layout.tsx         ← Root layout (shared providers, Stack config)
+  index.tsx           ← Splash screen + auth redirect
+  +not-found.tsx
+  
+  (shared)/           ← Code shared between user & host (transparent URL prefix)
+    auth/
+      onboarding.tsx  → /auth/onboarding
+      role-select.tsx → /auth/role-select
+    call/             → /call/* (audio/video call screens, both use)
+    chat/             → /chat/* (chat detail, both use)
+    about.tsx, settings.tsx, notifications.tsx, ... (utility screens)
+  
+  (user)/             ← All USER-specific code (transparent URL prefix)
+    auth/
+      login.tsx       → /auth/login
+      register.tsx    → /auth/register
+      fill-profile.tsx, select-gender.tsx, forgot-password.tsx, etc.
+    screens/user/     → /screens/user (user tab navigator)
+    payment/          → /payment/*
+    profile/          → /profile/*
+    hosts/            → /hosts/* (browse & view host profiles)
+  
+  (host)/             ← All HOST-specific code (transparent URL prefix)
+    auth/
+      host-login.tsx        → /auth/host-login
+      host-register.tsx     → /auth/host-register  (Step 1)
+      host-profile-setup.tsx→ /auth/host-profile-setup (Step 2)
+      host-become.tsx       → /auth/host-become (Step 3)
+      host-kyc.tsx          → /auth/host-kyc (Step 4)
+      host-status.tsx       → /auth/host-status
+    screens/host/     → /screens/host (host tab navigator)
+    host/             → /host/* (dashboard, settings, withdraw)
+```
+**Key insight**: Route groups `()` don't change URLs. `/auth/login` works the same whether the file is at `auth/login.tsx` or `(user)/auth/login.tsx`. This makes future app splitting easy — just copy `(user)/` folder to a new Expo app.
 
 ### Backend (artifacts/api-server)
 - **Framework**: Hono.js on Cloudflare Workers
