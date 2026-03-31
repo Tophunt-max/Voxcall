@@ -1,10 +1,11 @@
-import React, { useEffect } from "react";
-import { View, Text, StyleSheet, Image, TouchableOpacity, Platform } from "react-native";
+import React, { useEffect, useCallback } from "react";
+import { View, Text, StyleSheet, Image, TouchableOpacity } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
 import { useCall } from "@/context/CallContext";
 import * as Haptics from "expo-haptics";
+import { useRingtone } from "@/hooks/useRingtone";
 
 export default function IncomingCallScreen() {
   const colors = useColors();
@@ -13,9 +14,24 @@ export default function IncomingCallScreen() {
   const topPad = insets.top;
   const bottomPad = insets.bottom;
 
+  const { stop: stopRing } = useRingtone("incoming", true);
+
+  const handleAccept = useCallback(async () => {
+    await stopRing();
+    acceptCall();
+  }, [acceptCall, stopRing]);
+
+  const handleDecline = useCallback(async () => {
+    await stopRing();
+    declineCall();
+  }, [declineCall, stopRing]);
+
   useEffect(() => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    const timeout = setTimeout(() => declineCall(), 30000);
+    const timeout = setTimeout(async () => {
+      await stopRing();
+      declineCall();
+    }, 30000);
     return () => clearTimeout(timeout);
   }, []);
 
@@ -33,13 +49,13 @@ export default function IncomingCallScreen() {
       <View style={styles.actions}>
         <View style={styles.actionRow}>
           <View style={styles.actionItem}>
-            <TouchableOpacity onPress={declineCall} style={styles.declineBtn}>
+            <TouchableOpacity onPress={handleDecline} style={styles.declineBtn}>
               <Feather name="phone-off" size={28} color="#fff" />
             </TouchableOpacity>
             <Text style={styles.actionLabel}>Decline</Text>
           </View>
           <View style={styles.actionItem}>
-            <TouchableOpacity onPress={acceptCall} style={styles.acceptBtn}>
+            <TouchableOpacity onPress={handleAccept} style={styles.acceptBtn}>
               <Feather name="phone" size={28} color="#fff" />
             </TouchableOpacity>
             <Text style={styles.actionLabel}>Accept</Text>

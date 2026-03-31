@@ -5,6 +5,7 @@ import {
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useRingtone } from "@/hooks/useRingtone";
 
 export default function OutgoingCallScreen() {
   const insets = useSafeAreaInsets();
@@ -26,6 +27,8 @@ export default function OutgoingCallScreen() {
 
   const [status, setStatus] = useState<"connecting" | "ringing">("connecting");
 
+  const { stop: stopRing } = useRingtone("outgoing", true);
+
   const ripple1 = useRef(new Animated.Value(0)).current;
   const ripple2 = useRef(new Animated.Value(0)).current;
   const ripple3 = useRef(new Animated.Value(0)).current;
@@ -44,7 +47,8 @@ export default function OutgoingCallScreen() {
     animateRipple(ripple3, 1200);
 
     const t1 = setTimeout(() => setStatus("ringing"), 1500);
-    const t2 = setTimeout(() => {
+    const t2 = setTimeout(async () => {
+      await stopRing();
       router.replace(callType === "video" ? "/call/video-call" : "/call/audio-call");
     }, 5000);
     return () => { clearTimeout(t1); clearTimeout(t2); };
@@ -84,7 +88,7 @@ export default function OutgoingCallScreen() {
       <View style={[s.bottomControls, { paddingBottom: insets.bottom + 40 }]}>
         <TouchableOpacity
           style={s.endBtn}
-          onPress={() => router.back()}
+          onPress={async () => { await stopRing(); router.back(); }}
           activeOpacity={0.85}
         >
           <Image source={require("@/assets/icons/ic_call_end.png")} style={s.endIcon} resizeMode="contain" />
