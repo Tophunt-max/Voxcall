@@ -9,16 +9,25 @@ import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useCall } from "@/context/CallContext";
 import { useCallTimer } from "@/hooks/useCallTimer";
+import { usePermissions } from "@/hooks/usePermissions";
+import { PermissionDialog, PERMISSION_CONFIGS } from "@/components/PermissionDialog";
 import * as Haptics from "expo-haptics";
 
 type Facing = "front" | "back";
+
+type PermStep = "camera" | "microphone" | "done";
 
 export default function VideoCallScreen() {
   const insets = useSafeAreaInsets();
   const { activeCall, endCall, toggleMute, toggleCamera, toggleSpeaker, markCallActive } = useCall();
   const [status, setStatus] = useState<"connecting" | "ringing" | "active">("connecting");
   const [facing, setFacing] = useState<Facing>("front");
-  const [permission, requestPermission] = useCameraPermissions();
+
+  // Permission flow: camera first, then microphone
+  const [permStep, setPermStep] = useState<PermStep | null>(null);
+  const [permChecked, setPermChecked] = useState(false);
+
+  const { permissions, requestCamera, requestMicrophone, openSettings, refresh } = usePermissions();
 
   // Pulse animation for remote avatar
   const pulse = useRef(new Animated.Value(1)).current;
@@ -33,10 +42,27 @@ export default function VideoCallScreen() {
     return () => anim.stop();
   }, []);
 
+  // Check all permissions on mount, show dialog for first missing one
   useEffect(() => {
-    if (!permission?.granted) requestPermission();
+    const check = async () => {
+      await refresh();
+      setPermChecked(true);
+    };
+    check();
   }, []);
 
+  useEffect(() => {
+    if (!permChecked) return;
+    if (permissions.camera.status !== "granted") {
+      setPermStep("camera");
+    } else if (permissions.microphone.status !== "granted") {
+      setPermStep("microphone");
+    } else {
+      setPermStep("done");
+    }
+  }, [permChecked]);
+
+  // Call timer setup
   useEffect(() => {
     const t1 = setTimeout(() => setStatus("ringing"), 1000);
     const t2 = setTimeout(() => {
@@ -69,8 +95,79 @@ export default function VideoCallScreen() {
     setFacing(f => f === "front" ? "back" : "front");
   };
 
+  // Camera permission handlers
+  const isCameraBlocked = permissions.camera.status === "blocked" ||
+    (permissions.camera.status === "denied" && !permissions.camera.canAskAgain);
+
+  const handleCameraAllow = async () => {
+    if (isCameraBlocked) {
+      openSettings();
+      setPermStep("done");
+    } else {
+      await requestCamera();
+      // Move to microphone step regardless of result
+      if (permissions.microphone.status !== "granted") {
+        setPermStep("microphone");
+      } else {
+        setPermStep("done");
+      }
+    }
+  };
+
+  const handleCameraDeny = () => {
+    // Skip camera, check microphone
+    if (permissions.microphone.status !== "granted") {
+      setPermStep("microphone");
+    } else {
+      setPermStep("done");
+    }
+  };
+
+  // Microphone permission handlers
+  const isMicBlocked = permissions.microphone.status === "blocked" ||
+    (permissions.microphone.status === "denied" && !permissions.microphone.canAskAgain);
+
+  const handleMicAllow = async () => {
+    if (isMicBlocked) {
+      openSettings();
+      setPermStep("done");
+    } else {
+      const granted = await requestMicrophone();
+      setPermStep("done");
+      if (!granted) {
+        // Mic denied — end call
+        endCall();
+        router.back();
+      }
+    }
+  };
+
+  const handleMicDeny = () => {
+    setPermStep("done");
+    endCall();
+    router.back();
+  };
+
+  const cameraGranted = permissions.camera.status === "granted";
+  const micGranted = permissions.microphone.status === "granted";
+
   return (
     <View style={styles.screen}>
+      {/* ── Camera Permission Dialog ── */}
+      <PermissionDialog
+        visible={permStep === "camera"}
+        config={{ ...PERMISSION_CONFIGS.camera, isBlocked: isCameraBlocked }}
+        onAllow={handleCameraAllow}
+        onDeny={handleCameraDeny}
+      />
+
+      {/* ── Microphone Permission Dialog ── */}
+      <PermissionDialog
+        visible={permStep === "microphone"}
+        config={{ ...PERMISSION_CONFIGS.microphone, isBlocked: isMicBlocked }}
+        onAllow={handleMicAllow}
+        onDeny={handleMicDeny}
+      />
 
       {/* ── REMOTE VIDEO (full-screen background) ── */}
       <View style={styles.remoteArea}>
@@ -90,24 +187,45 @@ export default function VideoCallScreen() {
 
       {/* ── LOCAL CAMERA (self preview, corner PiP) ── */}
       <View style={[styles.selfPreview, { top: insets.top + 12, right: 16 }]}>
-        {activeCall?.isCameraOn && permission?.granted ? (
+        {activeCall?.isCameraOn && cameraGranted ? (
           <CameraView
             style={styles.selfCameraView}
             facing={facing}
           />
         ) : (
           <View style={styles.selfCameraOff}>
-            <Feather name={permission?.granted ? "camera-off" : "slash"} size={22} color="rgba(255,255,255,0.6)" />
+            <Feather
+              name={!cameraGranted ? "slash" : "camera-off"}
+              size={22}
+              color="rgba(255,255,255,0.6)"
+            />
             <Text style={styles.selfCameraOffText}>
-              {permission?.granted ? "Camera Off" : "No Permission"}
+              {!cameraGranted ? "No Permission" : "Camera Off"}
             </Text>
           </View>
         )}
-        {/* Self label */}
         <View style={styles.selfLabel}>
           <Text style={styles.selfLabelText}>You</Text>
         </View>
       </View>
+
+      {/* ── Permission missing banners ── */}
+      {permStep === "done" && (!cameraGranted || !micGranted) && (
+        <View style={[styles.permMissingBar, { top: insets.top + 8 }]}>
+          {!cameraGranted && (
+            <TouchableOpacity onPress={() => setPermStep("camera")} style={styles.permChip}>
+              <Feather name="camera-off" size={12} color="#FFD166" />
+              <Text style={styles.permChipText}>Camera off</Text>
+            </TouchableOpacity>
+          )}
+          {!micGranted && (
+            <TouchableOpacity onPress={() => setPermStep("microphone")} style={styles.permChip}>
+              <Feather name="mic-off" size={12} color="#FFD166" />
+              <Text style={styles.permChipText}>No mic</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
 
       {/* ── OVERLAY UI ── */}
       <View
@@ -122,7 +240,6 @@ export default function VideoCallScreen() {
           </View>
         )}
 
-        {/* Top info (spacer when no warning) */}
         {!showLowCoinWarning && <View />}
 
         {/* Remote participant name + timer */}
@@ -154,7 +271,6 @@ export default function VideoCallScreen() {
 
         {/* Bottom Controls */}
         <View style={styles.bottomControls}>
-          {/* Camera toggle */}
           <View style={styles.ctrlItem}>
             <TouchableOpacity
               onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); toggleCamera(); }}
@@ -162,10 +278,9 @@ export default function VideoCallScreen() {
             >
               <Feather name={activeCall?.isCameraOn ? "camera" : "camera-off"} size={22} color="#fff" />
             </TouchableOpacity>
-            <Text style={styles.ctrlLabel}>{activeCall?.isCameraOn ? "Camera" : "Camera Off"}</Text>
+            <Text style={styles.ctrlLabel}>{activeCall?.isCameraOn ? "Camera" : "Cam Off"}</Text>
           </View>
 
-          {/* Mute */}
           <View style={styles.ctrlItem}>
             <TouchableOpacity
               onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); toggleMute(); }}
@@ -176,7 +291,6 @@ export default function VideoCallScreen() {
             <Text style={styles.ctrlLabel}>{activeCall?.isMuted ? "Unmute" : "Mute"}</Text>
           </View>
 
-          {/* End Call */}
           <View style={styles.ctrlItem}>
             <TouchableOpacity
               onPress={() => { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning); endCall(); }}
@@ -187,7 +301,6 @@ export default function VideoCallScreen() {
             <Text style={styles.ctrlLabel}>End</Text>
           </View>
 
-          {/* Flip Camera */}
           <View style={styles.ctrlItem}>
             <TouchableOpacity onPress={handleFlip} style={styles.ctrlBtn}>
               <Feather name="refresh-cw" size={22} color="#fff" />
@@ -195,7 +308,6 @@ export default function VideoCallScreen() {
             <Text style={styles.ctrlLabel}>Flip</Text>
           </View>
 
-          {/* Speaker */}
           <View style={styles.ctrlItem}>
             <TouchableOpacity
               onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); toggleSpeaker(); }}
@@ -237,7 +349,6 @@ export default function VideoCallScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: "#0a0a14" },
 
-  // Remote video area (full screen bg)
   remoteArea: {
     ...StyleSheet.absoluteFillObject,
     alignItems: "center",
@@ -245,70 +356,55 @@ const styles = StyleSheet.create({
     backgroundColor: "#12102a",
   },
   remoteAvatar: {
-    width: 180,
-    height: 180,
-    borderRadius: 90,
-    borderWidth: 3,
-    borderColor: "rgba(160, 14, 231, 0.5)",
+    width: 180, height: 180, borderRadius: 90,
+    borderWidth: 3, borderColor: "rgba(160, 14, 231, 0.5)",
   },
   remoteGrad: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(10, 10, 20, 0.35)",
   },
   connectingBadge: {
-    position: "absolute",
-    bottom: 110,
-    alignSelf: "center",
-    backgroundColor: "rgba(0,0,0,0.55)",
-    borderRadius: 20,
-    paddingHorizontal: 20,
-    paddingVertical: 8,
+    position: "absolute", bottom: 110, alignSelf: "center",
+    backgroundColor: "rgba(0,0,0,0.55)", borderRadius: 20,
+    paddingHorizontal: 20, paddingVertical: 8,
   },
   connectingText: { color: "#fff", fontSize: 15, fontFamily: "Poppins_500Medium" },
 
-  // Self preview (PiP)
   selfPreview: {
-    position: "absolute",
-    width: 110,
-    height: 160,
-    borderRadius: 16,
-    overflow: "hidden",
-    borderWidth: 2,
-    borderColor: "rgba(255,255,255,0.25)",
-    backgroundColor: "#1a1a2e",
-    zIndex: 10,
+    position: "absolute", width: 110, height: 160,
+    borderRadius: 16, overflow: "hidden",
+    borderWidth: 2, borderColor: "rgba(255,255,255,0.25)",
+    backgroundColor: "#1a1a2e", zIndex: 10,
   },
   selfCameraView: { flex: 1 },
   selfCameraOff: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    backgroundColor: "#1a1a2e",
+    flex: 1, alignItems: "center", justifyContent: "center",
+    gap: 8, backgroundColor: "#1a1a2e",
   },
   selfCameraOffText: {
-    color: "rgba(255,255,255,0.5)",
-    fontSize: 10,
-    fontFamily: "Poppins_400Regular",
-    textAlign: "center",
+    color: "rgba(255,255,255,0.5)", fontSize: 10,
+    fontFamily: "Poppins_400Regular", textAlign: "center",
   },
   selfLabel: {
-    position: "absolute",
-    bottom: 6,
-    left: 0,
-    right: 0,
-    alignItems: "center",
+    position: "absolute", bottom: 6, left: 0, right: 0, alignItems: "center",
   },
   selfLabelText: {
-    color: "#fff",
-    fontSize: 11,
-    fontFamily: "Poppins_600SemiBold",
-    textShadowColor: "rgba(0,0,0,0.8)",
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
+    color: "#fff", fontSize: 11, fontFamily: "Poppins_600SemiBold",
+    textShadowColor: "rgba(0,0,0,0.8)", textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4,
   },
 
-  // Overlay
+  permMissingBar: {
+    position: "absolute", left: 0, right: 0,
+    flexDirection: "row", justifyContent: "center", gap: 8, zIndex: 20,
+  },
+  permChip: {
+    flexDirection: "row", alignItems: "center", gap: 5,
+    backgroundColor: "rgba(255,165,0,0.25)", borderWidth: 1,
+    borderColor: "rgba(255,165,0,0.4)", paddingHorizontal: 10,
+    paddingVertical: 5, borderRadius: 20,
+  },
+  permChipText: { color: "#FFD166", fontSize: 11, fontFamily: "Poppins_500Medium" },
+
   overlay: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: "space-between",
@@ -323,7 +419,6 @@ const styles = StyleSheet.create({
   },
   warningText: { color: "#FFD166", fontSize: 12, fontFamily: "Poppins_600SemiBold" },
 
-  // Remote info (bottom of main area, above controls)
   remoteInfo: { alignItems: "center", gap: 6, paddingBottom: 8 },
   remoteName: { color: "#fff", fontSize: 24, fontFamily: "Poppins_700Bold", textShadowColor: "rgba(0,0,0,0.8)", textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 6 },
   timerRow: { flexDirection: "row", alignItems: "center", gap: 8 },
@@ -336,7 +431,6 @@ const styles = StyleSheet.create({
   remainingText: { color: "rgba(255,255,255,0.8)", fontSize: 10, fontFamily: "Poppins_600SemiBold" },
   statusSubText: { color: "rgba(255,255,255,0.55)", fontSize: 13, fontFamily: "Poppins_400Regular" },
 
-  // Controls
   bottomControls: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", paddingHorizontal: 4 },
   ctrlItem: { alignItems: "center", gap: 6, flex: 1 },
   ctrlBtn: { width: 52, height: 52, borderRadius: 26, backgroundColor: "rgba(255,255,255,0.2)", alignItems: "center", justifyContent: "center" },
@@ -345,7 +439,6 @@ const styles = StyleSheet.create({
   ctrlLabel: { color: "rgba(255,255,255,0.7)", fontSize: 10, fontFamily: "Poppins_400Regular", textAlign: "center" },
   endBtn: { width: 64, height: 64, borderRadius: 32, backgroundColor: "#E84855", alignItems: "center", justifyContent: "center", elevation: 4, shadowColor: "#E84855", shadowOpacity: 0.5, shadowRadius: 12, shadowOffset: { width: 0, height: 4 } },
 
-  // Modal
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.75)", alignItems: "center", justifyContent: "flex-end", paddingBottom: 40, paddingHorizontal: 20 },
   rechargeCard: { backgroundColor: "#fff", borderRadius: 24, padding: 28, width: "100%", alignItems: "center", gap: 12, shadowColor: "#000", shadowOpacity: 0.3, shadowRadius: 20, elevation: 10 },
   rechargeEmoji: { fontSize: 48 },

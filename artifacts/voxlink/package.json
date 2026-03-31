@@ -58,6 +58,7 @@
   "dependencies": {
     "@expo-google-fonts/poppins": "^0.4.1",
     "expo-av": "^16.0.8",
-    "expo-camera": "^17.0.10"
+    "expo-camera": "^17.0.10",
+    "expo-notifications": "~0.32.16"
   }
 }

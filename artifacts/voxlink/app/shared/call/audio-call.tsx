@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import {
   View, Text, StyleSheet, Image, TouchableOpacity,
-  Animated, Easing, Modal, Pressable,
+  Animated, Easing, Modal,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -9,14 +9,35 @@ import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useCall } from "@/context/CallContext";
 import { useCallTimer } from "@/hooks/useCallTimer";
+import { usePermissions } from "@/hooks/usePermissions";
+import { PermissionDialog, PERMISSION_CONFIGS } from "@/components/PermissionDialog";
 import * as Haptics from "expo-haptics";
 
 export default function AudioCallScreen() {
   const insets = useSafeAreaInsets();
   const { activeCall, endCall, toggleMute, toggleSpeaker, markCallActive } = useCall();
   const [status, setStatus] = useState<"connecting" | "ringing" | "active">("connecting");
+  const [showMicDialog, setShowMicDialog] = useState(false);
+  const [micChecked, setMicChecked] = useState(false);
 
+  const { permissions, requestMicrophone, openSettings, refresh } = usePermissions();
   const pulse = useRef(new Animated.Value(1)).current;
+
+  // Check microphone permission on mount
+  useEffect(() => {
+    const checkMic = async () => {
+      await refresh();
+      setMicChecked(true);
+    };
+    checkMic();
+  }, []);
+
+  // Show dialog after permission state is loaded
+  useEffect(() => {
+    if (micChecked && permissions.microphone.status !== "granted") {
+      setShowMicDialog(true);
+    }
+  }, [micChecked, permissions.microphone.status]);
 
   useEffect(() => {
     Animated.loop(
@@ -28,7 +49,7 @@ export default function AudioCallScreen() {
     const t1 = setTimeout(() => setStatus("ringing"), 1000);
     const t2 = setTimeout(() => {
       setStatus("active");
-      markCallActive(); // sets startTime for outgoing calls (incoming calls use acceptCall)
+      markCallActive();
     }, 3000);
     return () => { clearTimeout(t1); clearTimeout(t2); };
   }, []);
@@ -52,6 +73,30 @@ export default function AudioCallScreen() {
       : `${Math.ceil(remaining / 60)} min left`
     : null;
 
+  const isBlocked = permissions.microphone.status === "blocked" ||
+    (permissions.microphone.status === "denied" && !permissions.microphone.canAskAgain);
+
+  const handleMicAllow = async () => {
+    if (isBlocked) {
+      openSettings();
+      setShowMicDialog(false);
+    } else {
+      const granted = await requestMicrophone();
+      setShowMicDialog(false);
+      if (!granted) {
+        // Still not granted — end call
+        endCall();
+        router.back();
+      }
+    }
+  };
+
+  const handleMicDeny = () => {
+    setShowMicDialog(false);
+    endCall();
+    router.back();
+  };
+
   return (
     <LinearGradient
       colors={["#200060", "#4B0082", "#1A0040"]}
@@ -59,6 +104,22 @@ export default function AudioCallScreen() {
       end={{ x: 1, y: 1 }}
       style={[styles.screen, { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 20 }]}
     >
+      {/* Microphone Permission Dialog */}
+      <PermissionDialog
+        visible={showMicDialog}
+        config={{ ...PERMISSION_CONFIGS.microphone, isBlocked }}
+        onAllow={handleMicAllow}
+        onDeny={handleMicDeny}
+      />
+
+      {/* Microphone Denied Banner */}
+      {micChecked && permissions.microphone.status !== "granted" && !showMicDialog && (
+        <TouchableOpacity onPress={() => setShowMicDialog(true)} style={styles.permBanner}>
+          <Feather name="mic-off" size={14} color="#FFD166" />
+          <Text style={styles.permBannerText}>Microphone access needed — Tap to fix</Text>
+        </TouchableOpacity>
+      )}
+
       {/* Low Coin Warning Banner */}
       {showLowCoinWarning && (
         <View style={styles.warningBanner}>
@@ -83,7 +144,6 @@ export default function AudioCallScreen() {
         <Text style={styles.callerName}>{activeCall?.participant.name ?? "Unknown"}</Text>
         <Text style={styles.statusLabel}>{statusLabel}</Text>
 
-        {/* Coin Rate + Remaining */}
         <View style={styles.badgeRow}>
           {activeCall?.coinsPerMinute ? (
             <View style={styles.costBadge}>
@@ -134,7 +194,7 @@ export default function AudioCallScreen() {
         </View>
       </View>
 
-      {/* Recharge Popup — Last 5 Seconds */}
+      {/* Recharge Popup */}
       <Modal visible={showRechargePopup} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.rechargeCard}>
@@ -166,6 +226,20 @@ export default function AudioCallScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, alignItems: "center", justifyContent: "space-between" },
+
+  permBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "rgba(255, 165, 0, 0.25)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 165, 0, 0.5)",
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 24,
+    marginHorizontal: 20,
+  },
+  permBannerText: { color: "#FFD166", fontSize: 12, fontFamily: "Poppins_500Medium", flex: 1 },
 
   warningBanner: {
     flexDirection: "row",

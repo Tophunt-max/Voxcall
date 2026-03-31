@@ -16,12 +16,24 @@
     "ios": {
       "supportsTablet": false,
       "infoPlist": {
-        "NSCameraUsageDescription": "VoxLink needs camera access for video calls.",
-        "NSMicrophoneUsageDescription": "VoxLink needs microphone access for calls."
+        "NSCameraUsageDescription": "VoxLink needs camera access for video calls so the other person can see you.",
+        "NSMicrophoneUsageDescription": "VoxLink needs microphone access for audio and video calls.",
+        "NSPhotoLibraryUsageDescription": "VoxLink needs access to your photos to upload profile pictures and KYC documents.",
+        "NSPhotoLibraryAddUsageDescription": "VoxLink needs permission to save photos to your library."
       }
     },
     "android": {
-      "permissions": ["android.permission.CAMERA", "android.permission.RECORD_AUDIO"]
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.VIBRATE"
+      ]
     },
     "web": {
       "favicon": "./assets/images/icon.png"
@@ -38,9 +50,24 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "VoxLink needs camera access for video calls.",
-          "microphonePermission": "VoxLink needs microphone access for calls.",
+          "cameraPermission": "VoxLink needs camera access for video calls so the other person can see you.",
+          "microphonePermission": "VoxLink needs microphone access for audio and video calls.",
           "recordAudioAndroid": true
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "VoxLink needs access to your photos to upload profile pictures and KYC documents.",
+          "cameraPermission": "VoxLink needs camera access to take profile photos."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#A00EE7",
+          "sounds": []
         }
       ]
     ],

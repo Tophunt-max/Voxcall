@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, Image,
   ScrollView, Switch, Alert, Platform
@@ -7,14 +7,44 @@ import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
+import { usePermissions } from "@/hooks/usePermissions";
+import { PermissionDialog, PERMISSION_CONFIGS } from "@/components/PermissionDialog";
 
 export default function SettingsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { logout } = useAuth();
-  const [notificationsOn, setNotificationsOn] = useState(true);
+  const { permissions, requestNotifications, openSettings, refresh } = usePermissions();
+
+  const [showNotifDialog, setShowNotifDialog] = useState(false);
 
   const topPad = insets.top;
+
+  const notificationsGranted = permissions.notifications.status === "granted";
+  const notifBlocked = permissions.notifications.status === "blocked" ||
+    (permissions.notifications.status === "denied" && !permissions.notifications.canAskAgain);
+
+  const handleNotifToggle = async (value: boolean) => {
+    if (value) {
+      // Turning ON — request permission
+      if (notifBlocked) {
+        setShowNotifDialog(true);
+      } else if (!notificationsGranted) {
+        setShowNotifDialog(true);
+      }
+      // If already granted, nothing to do — toggle is already on
+    } else {
+      // Turning OFF — can't programmatically revoke, guide user to Settings
+      Alert.alert(
+        "Turn Off Notifications",
+        "To disable notifications, go to your phone's Settings and turn off notifications for VoxLink.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Open Settings", onPress: openSettings },
+        ]
+      );
+    }
+  };
 
   const handleLogout = () => {
     Alert.alert("Sign Out", "Are you sure you want to sign out?", [
@@ -36,6 +66,21 @@ export default function SettingsScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
+      {/* Notification Permission Dialog */}
+      <PermissionDialog
+        visible={showNotifDialog}
+        config={{ ...PERMISSION_CONFIGS.notifications, isBlocked: notifBlocked }}
+        onAllow={async () => {
+          if (notifBlocked) {
+            openSettings();
+          } else {
+            await requestNotifications();
+          }
+          setShowNotifDialog(false);
+        }}
+        onDeny={() => setShowNotifDialog(false)}
+      />
+
       {/* Header */}
       <View style={[styles.header, { paddingTop: topPad + 8 }]}>
         <TouchableOpacity onPress={() => router.back()} style={[styles.backBtn, { backgroundColor: colors.surface }]}>
@@ -61,14 +106,22 @@ export default function SettingsScreen() {
         {/* General */}
         <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>General</Text>
         <View style={[styles.card, { backgroundColor: colors.card }]}>
+          {/* Notifications Row */}
           <View style={styles.menuRow}>
-            <View style={[styles.menuIconWrap, { backgroundColor: colors.surface }]}>
+            <View style={[styles.menuIconWrap, { backgroundColor: notificationsGranted ? "#E6F9EA" : colors.surface }]}>
               <Image source={require("@/assets/images/notification_graphic.png")} style={styles.menuIcon} resizeMode="contain" />
             </View>
-            <Text style={[styles.menuLabel, { color: colors.text }]}>Notifications</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.menuLabel, { color: colors.text }]}>Notifications</Text>
+              {!notificationsGranted && (
+                <Text style={[styles.menuSubLabel, { color: colors.mutedForeground }]}>
+                  {notifBlocked ? "Blocked in Settings" : "Tap to enable"}
+                </Text>
+              )}
+            </View>
             <Switch
-              value={notificationsOn}
-              onValueChange={setNotificationsOn}
+              value={notificationsGranted}
+              onValueChange={handleNotifToggle}
               trackColor={{ false: colors.border, true: "#0BAF23" }}
               thumbColor="#fff"
               style={styles.switch}
@@ -160,7 +213,8 @@ const styles = StyleSheet.create({
   menuRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 14 },
   menuIconWrap: { width: 38, height: 38, borderRadius: 10, alignItems: "center", justifyContent: "center" },
   menuIcon: { width: 22, height: 22 },
-  menuLabel: { flex: 1, fontSize: 14, fontFamily: "Poppins_400Regular" },
+  menuLabel: { fontSize: 14, fontFamily: "Poppins_400Regular" },
+  menuSubLabel: { fontSize: 11, fontFamily: "Poppins_400Regular", marginTop: 1 },
   menuValue: { fontSize: 12, fontFamily: "Poppins_400Regular" },
   chevron: { width: 14, height: 14 },
   switch: {},

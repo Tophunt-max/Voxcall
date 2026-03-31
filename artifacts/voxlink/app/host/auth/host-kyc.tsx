@@ -10,6 +10,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { useAuth } from "@/context/AuthContext";
+import { usePermissions } from "@/hooks/usePermissions";
+import { PermissionDialog, PERMISSION_CONFIGS } from "@/components/PermissionDialog";
 import { PrimaryButton } from "@/components/PrimaryButton";
 import { API } from "@/services/api";
 
@@ -34,6 +36,7 @@ const DOCS: DocItem[] = [
 export default function HostKYCScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
+  const { permissions, requestMediaLibrary, openSettings } = usePermissions();
   const params = useLocalSearchParams<{
     specialties: string; languages: string; bio: string;
     audioRate: string; videoRate: string; experience: string;
@@ -42,16 +45,25 @@ export default function HostKYCScreen() {
   const [files, setFiles] = useState<Record<string, { uri: string; uploaded?: string }>>({});
   const [uploading, setUploading] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [pendingDoc, setPendingDoc] = useState<DocItem | null>(null);
+  const [showMediaDialog, setShowMediaDialog] = useState(false);
+
+  const mediaBlocked =
+    permissions.mediaLibrary.status === "blocked" ||
+    (permissions.mediaLibrary.status === "denied" && !permissions.mediaLibrary.canAskAgain);
 
   const pickMedia = async (doc: DocItem) => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== "granted") {
-      Alert.alert("Permission Required", "Please allow media library access in Settings.");
+    if (permissions.mediaLibrary.status !== "granted") {
+      setPendingDoc(doc);
+      setShowMediaDialog(true);
       return;
     }
+    await launchPicker(doc);
+  };
 
+  const launchPicker = async (doc: DocItem) => {
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: doc.accept === "image" ? ImagePicker.MediaTypeOptions.Images : ImagePicker.MediaTypeOptions.Videos,
+      mediaTypes: doc.accept === "image" ? ["images"] : ["videos"],
       quality: 0.8,
       allowsEditing: doc.accept === "image",
     });
@@ -111,6 +123,26 @@ export default function HostKYCScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: "#fff" }}>
+      {/* Media Library Permission Dialog */}
+      <PermissionDialog
+        visible={showMediaDialog}
+        config={{ ...PERMISSION_CONFIGS.mediaLibrary, isBlocked: mediaBlocked }}
+        onAllow={async () => {
+          if (mediaBlocked) {
+            openSettings();
+            setShowMediaDialog(false);
+          } else {
+            const granted = await requestMediaLibrary();
+            setShowMediaDialog(false);
+            if (granted && pendingDoc) {
+              await launchPicker(pendingDoc);
+              setPendingDoc(null);
+            }
+          }
+        }}
+        onDeny={() => { setShowMediaDialog(false); setPendingDoc(null); }}
+      />
+
       <LinearGradient colors={[DARK, "#2D3057"]} style={[s.header, { paddingTop: insets.top + 10 }]}>
         <TouchableOpacity onPress={() => router.back()} style={s.backBtn} activeOpacity={0.8}>
           <Feather name="arrow-left" size={22} color="#fff" />
