@@ -1,3 +1,90 @@
+# VoxLink - Social Audio/Video Calling Platform
+
+## Project Overview
+
+VoxLink is a React Native Expo mobile app (iOS/Android/Web) — a marketplace where users connect with professional hosts/listeners via audio/video calls and chat, with a coin-based payment system.
+
+## Architecture
+
+- **Frontend**: React Native Expo (Expo 54, expo-router 6)
+- **Backend**: None (first build, AsyncStorage for persistence)
+- **Auth**: Mock auth (planned: Firebase Auth)
+- **Payments**: Coin system with AsyncStorage (planned: RevenueCat)
+
+## Artifact: voxlink
+
+- **Path**: `artifacts/voxlink/`
+- **Preview path**: `/`
+- **Port**: `$PORT` (20426)
+
+## App Structure
+
+```text
+artifacts/voxlink/
+├── app/
+│   ├── _layout.tsx           # Root layout with all providers (Auth, Call, Chat)
+│   ├── index.tsx             # Entry redirect (logged in → tabs, else → onboarding)
+│   ├── auth/
+│   │   ├── onboarding.tsx    # 4-slide onboarding carousel
+│   │   ├── login.tsx         # Email/password + guest login
+│   │   └── register.tsx      # Registration with gender selection
+│   ├── (tabs)/
+│   │   ├── _layout.tsx       # Tab bar (Discover, Search, Messages, Wallet, Profile)
+│   │   ├── index.tsx         # Discover / home feed
+│   │   ├── search.tsx        # Search + language filter
+│   │   ├── messages.tsx      # Conversations list
+│   │   ├── wallet.tsx        # Buy coins + call history
+│   │   └── profile.tsx       # User profile + settings
+│   ├── hosts/
+│   │   ├── [id].tsx          # Host detail page (call + chat CTAs)
+│   │   └── all.tsx           # All hosts list
+│   ├── chat/[id].tsx         # Chat screen with inverted FlatList
+│   ├── call/
+│   │   ├── audio-call.tsx    # Audio call UI with controls
+│   │   ├── video-call.tsx    # Video call UI with camera preview
+│   │   ├── incoming.tsx      # Incoming call accept/decline
+│   │   └── summary.tsx       # Post-call summary + rating
+│   ├── notifications.tsx     # Notification center
+│   ├── profile/edit.tsx      # Edit profile screen
+│   └── host/dashboard.tsx    # Host earnings/status dashboard
+├── components/
+│   ├── HostCard.tsx          # Host card (full + compact variants)
+│   ├── CoinBalance.tsx       # Coin balance pill
+│   ├── StarRating.tsx        # Interactive/display star rating
+│   ├── PrimaryButton.tsx     # Branded button with haptics
+│   ├── SearchBar.tsx         # Search input
+│   ├── GradientHeader.tsx    # Page header component
+│   └── NotificationBadge.tsx # Unread count badge
+├── context/
+│   ├── AuthContext.tsx       # User auth + profile state
+│   ├── CallContext.tsx       # Active call state + controls
+│   └── ChatContext.tsx       # Conversations + messages
+├── data/mockData.ts          # 8 mock hosts, coin plans, call history, notifications
+├── constants/colors.ts       # Purple (#7C3AED) / coral (#E84855) theme, dark mode
+└── hooks/useColors.ts        # Color scheme hook (auto dark mode)
+```
+
+## Key Features
+
+- Dual user/host roles
+- 8 host profiles with specialties, languages, ratings
+- Audio + video call flows with timer and controls
+- Real-time chat (AsyncStorage)
+- Coin wallet with purchase plans
+- Call history and ratings
+- Notifications center
+- Host dashboard with online/offline toggle
+- Dark mode support
+
+## Color Theme
+
+- Primary: `#7C3AED` (purple)
+- Accent: `#E84855` (coral/red)
+- Gold: `#F59E0B` (coins)
+- Dark mode: auto via `useColorScheme()`
+
+---
+
 # Workspace
 
 ## Overview
