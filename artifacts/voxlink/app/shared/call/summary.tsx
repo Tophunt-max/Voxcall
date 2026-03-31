@@ -1,15 +1,16 @@
 import React, { useState } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  ActivityIndicator, Alert,
+  ActivityIndicator,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
-import { formatDuration } from "@/data/mockData";
+import { formatDuration } from "@/utils/format";
 import { StarRating } from "@/components/StarRating";
 import { API } from "@/services/api";
+import { showErrorToast } from "@/components/Toast";
 
 export default function CallSummaryScreen() {
   const colors = useColors();
@@ -53,7 +54,7 @@ export default function CallSummaryScreen() {
       }
       setRated(true);
     } catch (e: any) {
-      Alert.alert("Error", e?.message ?? "Rating submit nahi hua, dobara try karo");
+      showErrorToast(e?.message ?? "Rating submit nahi hua, dobara try karo", "Error");
     } finally {
       setSubmitting(false);
     }

@@ -1,25 +1,37 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, Image,
-  ScrollView, Platform, Switch
+  ScrollView, Switch
 } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
-
-const HOST_STATS = [
-  { label: "Total Calls", value: "0" },
-  { label: "Total Hours", value: "0h" },
-  { label: "Earnings", value: "0" },
-];
+import { API } from "@/services/api";
 
 export default function HostHomeScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { user, switchRole } = useAuth();
   const [isOnline, setIsOnline] = useState(false);
+  const [stats, setStats] = useState({ calls: "…", hours: "…h", earnings: "…" });
   const topPad = insets.top;
+
+  useEffect(() => {
+    API.getEarnings()
+      .then((data: any) => {
+        const h = data.host ?? {};
+        const minutes = Number(h.total_minutes) || 0;
+        const sessions = (data.transactions || []).length;
+        const earnings = Number(h.total_earnings) || 0;
+        setStats({
+          calls: String(sessions),
+          hours: `${Math.floor(minutes / 60)}h ${minutes % 60}m`,
+          earnings: earnings.toLocaleString(),
+        });
+      })
+      .catch(() => setStats({ calls: "0", hours: "0h", earnings: "0" }));
+  }, []);
 
   return (
     <ScrollView
@@ -74,7 +86,11 @@ export default function HostHomeScreen() {
 
       {/* Stats */}
       <View style={[styles.statsCard, { backgroundColor: colors.card, marginHorizontal: 16 }]}>
-        {HOST_STATS.map((s, i) => (
+        {[
+          { label: "Total Calls", value: stats.calls },
+          { label: "Total Hours", value: stats.hours },
+          { label: "Earnings", value: stats.earnings },
+        ].map((s, i) => (
           <React.Fragment key={s.label}>
             {i > 0 && <View style={[styles.statDiv, { backgroundColor: colors.border }]} />}
             <View style={styles.stat}>
