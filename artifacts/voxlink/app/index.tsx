@@ -97,11 +97,11 @@ export default function Index() {
   /* ─── Route after splash ─── */
   if (splashDone && !isLoading && seenOnboarding !== null) {
     if (isLoggedIn && user) {
-      if (user.role === "host") return <Redirect href="/screens/host" />;
-      return <Redirect href="/screens/user" />;
+      if (user.role === "host") return <Redirect href="/host/screens/host" />;
+      return <Redirect href="/user/screens/user" />;
     }
-    if (seenOnboarding) return <Redirect href="/auth/role-select" />;
-    return <Redirect href="/auth/onboarding" />;
+    if (seenOnboarding) return <Redirect href="/shared/auth/role-select" />;
+    return <Redirect href="/shared/auth/onboarding" />;
   }
 
   /* ─── Splash UI ─── */

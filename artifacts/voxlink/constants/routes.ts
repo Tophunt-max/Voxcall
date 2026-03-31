@@ -3,14 +3,14 @@
 
 const Routes = {
   // Auth
-  ONBOARDING: "/auth/onboarding",
-  LOGIN: "/auth/login",
-  REGISTER: "/auth/register",
-  VERIFY_OTP: "/auth/verify-otp",
-  FILL_PROFILE: "/auth/fill-profile",
-  SELECT_GENDER: "/auth/select-gender",
-  FORGOT_PASSWORD: "/auth/forgot-password",
-  CREATE_PASSWORD: "/auth/create-password",
+  ONBOARDING: "/shared/auth/onboarding",
+  LOGIN: "/user/auth/login",
+  REGISTER: "/user/auth/register",
+  VERIFY_OTP: "/user/auth/verify-otp",
+  FILL_PROFILE: "/user/auth/fill-profile",
+  SELECT_GENDER: "/user/auth/select-gender",
+  FORGOT_PASSWORD: "/user/auth/forgot-password",
+  CREATE_PASSWORD: "/user/auth/create-password",
 
   // User Tabs
   HOME: "/(tabs)/",
@@ -27,44 +27,44 @@ const Routes = {
   HOST_PROFILE: "/(host-tabs)/profile",
 
   // Call
-  OUTGOING_CALL: "/call/outgoing",
-  INCOMING_CALL: "/call/incoming",
-  AUDIO_CALL: "/call/audio-call",
-  VIDEO_CALL: "/call/video-call",
-  CALL_SUMMARY: "/call/summary",
-  CALL_HISTORY: "/call/history",
+  OUTGOING_CALL: "/shared/call/outgoing",
+  INCOMING_CALL: "/shared/call/incoming",
+  AUDIO_CALL: "/shared/call/audio-call",
+  VIDEO_CALL: "/shared/call/video-call",
+  CALL_SUMMARY: "/shared/call/summary",
+  CALL_HISTORY: "/shared/call/history",
 
   // Chat
-  CHAT_ROOM: (id: string) => `/chat/${id}`,
+  CHAT_ROOM: (id: string) => `/shared/chat/${id}`,
 
   // Hosts
   HOST_PROFILE_PAGE: (id: string) => `/hosts/${id}`,
-  ALL_HOSTS: "/hosts/all",
-  HOST_REVIEWS: "/hosts/reviews",
+  ALL_HOSTS: "/user/hosts/all",
+  HOST_REVIEWS: "/user/hosts/reviews",
 
   // Host Management
-  HOST_DASHBOARD: "/host/dashboard",
-  HOST_SETTINGS: "/host/settings",
-  HOST_WITHDRAW: "/host/withdraw",
+  HOST_DASHBOARD: "/host/host/dashboard",
+  HOST_SETTINGS: "/host/host/settings",
+  HOST_WITHDRAW: "/host/host/withdraw",
 
   // Payments
-  PAYMENT_CHECKOUT: "/payment/checkout",
-  PAYMENT_SUCCESS: "/payment/success",
+  PAYMENT_CHECKOUT: "/user/payment/checkout",
+  PAYMENT_SUCCESS: "/user/payment/success",
 
   // Profile
-  EDIT_PROFILE: "/profile/edit",
+  EDIT_PROFILE: "/user/profile/edit",
 
   // Info
-  SEARCH_HOSTS: "/search-hosts",
-  COIN_HISTORY: "/coin-history",
-  NOTIFICATIONS: "/notifications",
-  SETTINGS: "/settings",
-  HELP_CENTER: "/help-center",
-  LANGUAGE: "/language",
-  PRIVACY: "/privacy",
-  ABOUT: "/about",
-  BECOME_HOST: "/become-host",
-  BECOME_HOST_SUCCESS: "/become-host-success",
+  SEARCH_HOSTS: "/shared/search-hosts",
+  COIN_HISTORY: "/shared/coin-history",
+  NOTIFICATIONS: "/shared/notifications",
+  SETTINGS: "/shared/settings",
+  HELP_CENTER: "/shared/help-center",
+  LANGUAGE: "/shared/language",
+  PRIVACY: "/shared/privacy",
+  ABOUT: "/shared/about",
+  BECOME_HOST: "/shared/become-host",
+  BECOME_HOST_SUCCESS: "/shared/become-host-success",
 } as const;
 
 export default Routes;

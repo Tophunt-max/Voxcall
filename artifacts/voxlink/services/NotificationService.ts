@@ -156,7 +156,7 @@ export function notifyNewMessage(senderName: string, message: string, chatId: st
     type: "message",
     title: senderName,
     body: message,
-    actionUrl: `/chat/${chatId}`,
+    actionUrl: `/shared/chat/${chatId}`,
   });
 }
 
@@ -165,7 +165,7 @@ export function notifyLowCoins(balance: number) {
     type: "system",
     title: "Low Coin Balance",
     body: `You have ${balance} coins left. Recharge to keep calling!`,
-    actionUrl: "/payment/checkout",
+    actionUrl: "/user/payment/checkout",
   });
 }
 
@@ -174,6 +174,6 @@ export function notifyPurchaseSuccess(coins: number) {
     type: "payment",
     title: "Purchase Successful",
     body: `${coins.toLocaleString()} coins added to your wallet!`,
-    actionUrl: "/coin-history",
+    actionUrl: "/shared/coin-history",
   });
 }

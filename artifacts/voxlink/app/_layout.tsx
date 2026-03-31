@@ -30,49 +30,55 @@ function RootLayoutNav() {
     <>
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index" />
-        <Stack.Screen name="screens/user" />
-        <Stack.Screen name="screens/host" />
-        <Stack.Screen name="auth/onboarding" />
-        <Stack.Screen name="auth/role-select" />
-        <Stack.Screen name="auth/login" />
-        <Stack.Screen name="auth/host-login" />
-        <Stack.Screen name="auth/host-register" />
-        <Stack.Screen name="auth/host-profile-setup" />
-        <Stack.Screen name="auth/host-become" />
-        <Stack.Screen name="auth/host-kyc" />
-        <Stack.Screen name="auth/host-status" />
-        <Stack.Screen name="auth/register" />
-        <Stack.Screen name="auth/forgot-password" />
-        <Stack.Screen name="auth/verify-otp" />
-        <Stack.Screen name="auth/create-password" />
-        <Stack.Screen name="auth/fill-profile" />
-        <Stack.Screen name="auth/select-gender" />
-        <Stack.Screen name="hosts/[id]" />
-        <Stack.Screen name="hosts/all" />
-        <Stack.Screen name="hosts/reviews" />
-        <Stack.Screen name="chat/[id]" />
-        <Stack.Screen name="call/audio-call" options={{ presentation: "fullScreenModal" }} />
-        <Stack.Screen name="call/video-call" options={{ presentation: "fullScreenModal" }} />
-        <Stack.Screen name="call/incoming" options={{ presentation: "fullScreenModal" }} />
-        <Stack.Screen name="call/outgoing" options={{ presentation: "fullScreenModal" }} />
-        <Stack.Screen name="call/summary" />
-        <Stack.Screen name="call/history" />
-        <Stack.Screen name="notifications" />
-        <Stack.Screen name="profile/edit" />
-        <Stack.Screen name="host/dashboard" />
-        <Stack.Screen name="host/settings" />
-        <Stack.Screen name="host/withdraw" />
-        <Stack.Screen name="payment/checkout" />
-        <Stack.Screen name="payment/success" options={{ gestureEnabled: false }} />
-        <Stack.Screen name="settings" />
-        <Stack.Screen name="help-center" />
-        <Stack.Screen name="language" />
-        <Stack.Screen name="become-host" />
-        <Stack.Screen name="become-host-success" />
-        <Stack.Screen name="search-hosts" />
-        <Stack.Screen name="coin-history" />
-        <Stack.Screen name="privacy" />
-        <Stack.Screen name="about" />
+
+        {/* User screens */}
+        <Stack.Screen name="user/screens/user" />
+        <Stack.Screen name="user/auth/login" />
+        <Stack.Screen name="user/auth/register" />
+        <Stack.Screen name="user/auth/forgot-password" />
+        <Stack.Screen name="user/auth/verify-otp" />
+        <Stack.Screen name="user/auth/create-password" />
+        <Stack.Screen name="user/auth/fill-profile" />
+        <Stack.Screen name="user/auth/select-gender" />
+        <Stack.Screen name="user/hosts/[id]" />
+        <Stack.Screen name="user/hosts/all" />
+        <Stack.Screen name="user/hosts/reviews" />
+        <Stack.Screen name="user/payment/checkout" />
+        <Stack.Screen name="user/payment/success" options={{ gestureEnabled: false }} />
+        <Stack.Screen name="user/profile/edit" />
+
+        {/* Host screens */}
+        <Stack.Screen name="host/screens/host" />
+        <Stack.Screen name="host/auth/host-login" />
+        <Stack.Screen name="host/auth/host-register" />
+        <Stack.Screen name="host/auth/host-profile-setup" />
+        <Stack.Screen name="host/auth/host-become" />
+        <Stack.Screen name="host/auth/host-kyc" />
+        <Stack.Screen name="host/auth/host-status" />
+        <Stack.Screen name="host/host/dashboard" />
+        <Stack.Screen name="host/host/settings" />
+        <Stack.Screen name="host/host/withdraw" />
+
+        {/* Shared screens */}
+        <Stack.Screen name="shared/auth/onboarding" />
+        <Stack.Screen name="shared/auth/role-select" />
+        <Stack.Screen name="shared/chat/[id]" />
+        <Stack.Screen name="shared/call/audio-call" options={{ presentation: "fullScreenModal" }} />
+        <Stack.Screen name="shared/call/video-call" options={{ presentation: "fullScreenModal" }} />
+        <Stack.Screen name="shared/call/incoming" options={{ presentation: "fullScreenModal" }} />
+        <Stack.Screen name="shared/call/outgoing" options={{ presentation: "fullScreenModal" }} />
+        <Stack.Screen name="shared/call/summary" />
+        <Stack.Screen name="shared/call/history" />
+        <Stack.Screen name="shared/notifications" />
+        <Stack.Screen name="shared/settings" />
+        <Stack.Screen name="shared/help-center" />
+        <Stack.Screen name="shared/language" />
+        <Stack.Screen name="shared/become-host" />
+        <Stack.Screen name="shared/become-host-success" />
+        <Stack.Screen name="shared/search-hosts" />
+        <Stack.Screen name="shared/coin-history" />
+        <Stack.Screen name="shared/privacy" />
+        <Stack.Screen name="shared/about" />
       </Stack>
       <ToastContainer />
     </>

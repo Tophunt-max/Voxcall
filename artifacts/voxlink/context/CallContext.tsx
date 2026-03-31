@@ -80,7 +80,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const receiveCall = useCallback((participant: CallParticipant, type: CallType, callId: string) => {
     const call: ActiveCall = { callId, type, status: "incoming", participant, isMuted: false, isCameraOn: false, isSpeakerOn: false };
     updateCall(call);
-    router.push("/call/incoming");
+    router.push("/shared/call/incoming");
   }, []);
 
   const acceptCall = useCallback(() => {
@@ -88,7 +88,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     if (!curr) return;
     const updated = { ...curr, status: "active" as CallStatus, startTime: Date.now() };
     updateCall(updated);
-    router.replace(curr.type === "audio" ? "/call/audio-call" : "/call/video-call");
+    router.replace(curr.type === "audio" ? "/shared/call/audio-call" : "/shared/call/video-call");
   }, []);
 
   const declineCall = useCallback(() => {
@@ -112,7 +112,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
     if (call) {
       router.replace({
-        pathname: "/call/summary",
+        pathname: "/shared/call/summary",
         params: {
           duration: String(duration),
           type: call.type,

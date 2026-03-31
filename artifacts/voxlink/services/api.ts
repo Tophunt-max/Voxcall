@@ -37,9 +37,9 @@ export async function apiRequest<T>(
 export const API = {
   // Auth
   login: (email: string, password: string) =>
-    apiRequest<{ token: string; user: any }>('POST', '/api/auth/login', { email, password }, false),
+    apiRequest<{ token: string; user: any }>('POST', '/api/user/auth/login', { email, password }, false),
   register: (name: string, email: string, password: string, gender?: string, phone?: string) =>
-    apiRequest<{ token: string; user: any }>('POST', '/api/auth/register', { name, email, password, gender, phone }, false),
+    apiRequest<{ token: string; user: any }>('POST', '/api/user/auth/register', { name, email, password, gender, phone }, false),
   guestLogin: () =>
     apiRequest<{ token: string; user: any }>('POST', '/api/auth/guest-login', {}, false),
 
@@ -106,12 +106,12 @@ export const API = {
   getCallHistory: () => apiRequest<any[]>('GET', '/api/calls/history'),
 
   // Chat
-  getChatRooms: () => apiRequest<any[]>('GET', '/api/chat/rooms'),
-  createChatRoom: (host_id: string) => apiRequest<any>('POST', '/api/chat/rooms', { host_id }),
+  getChatRooms: () => apiRequest<any[]>('GET', '/api/shared/chat/rooms'),
+  createChatRoom: (host_id: string) => apiRequest<any>('POST', '/api/shared/chat/rooms', { host_id }),
   getMessages: (room_id: string, before?: number) =>
-    apiRequest<any[]>('GET', `/api/chat/rooms/${room_id}/messages${before ? `?before=${before}` : ''}`),
+    apiRequest<any[]>('GET', `/api/shared/chat/rooms/${room_id}/messages${before ? `?before=${before}` : ''}`),
   sendMessage: (room_id: string, content: string, media_url?: string, media_type?: string) =>
-    apiRequest('POST', `/api/chat/rooms/${room_id}/messages`, { content, media_url, media_type }),
+    apiRequest('POST', `/api/shared/chat/rooms/${room_id}/messages`, { content, media_url, media_type }),
   getChatStatus: (host_id: string) =>
     apiRequest<{ unlocked: boolean; reason: string }>('GET', `/api/hosts/${host_id}/chat-status`),
 
