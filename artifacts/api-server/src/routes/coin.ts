@@ -51,21 +51,35 @@ coin.post('/withdraw', async (c) => {
   const { sub } = c.get('user');
   const { coins_requested, method, account_info } = await c.req.json();
   const db = c.env.DB;
+
+  // Check host
+  const h = await db.prepare('SELECT id FROM hosts WHERE user_id = ?').bind(sub).first<any>();
+  if (!h) return c.json({ error: 'Not a host account' }, 403);
+
+  // Get settings
   const settings = await db.prepare("SELECT value FROM app_settings WHERE key = 'min_withdrawal_coins'").first<any>();
   const minCoins = parseInt(settings?.value ?? '100');
   if (!coins_requested || coins_requested < minCoins) return c.json({ error: `Minimum withdrawal is ${minCoins} coins` }, 400);
-  const h = await db.prepare('SELECT id FROM hosts WHERE user_id = ?').bind(sub).first<any>();
-  if (!h) return c.json({ error: 'Not a host account' }, 403);
+
+  // Check user has enough coins
+  const userRow = await db.prepare('SELECT coins FROM users WHERE id = ?').bind(sub).first<any>();
+  if (!userRow || userRow.coins < coins_requested) return c.json({ error: 'Insufficient coin balance' }, 400);
+
   const rateRow = await db.prepare("SELECT value FROM app_settings WHERE key = 'coin_to_usd_rate'").first<any>();
-  const shareRow = await db.prepare("SELECT value FROM app_settings WHERE key = 'host_revenue_share'").first<any>();
   const rate = parseFloat(rateRow?.value ?? '0.01');
-  const share = parseFloat(shareRow?.value ?? '0.70');
-  const usdAmount = coins_requested * rate * share;
+  const usdAmount = coins_requested * rate;
+  const withdrawId = crypto.randomUUID();
+
   await db.batch([
     db.prepare('INSERT INTO withdrawal_requests (id, host_id, coins, amount, payment_method, account_details) VALUES (?, ?, ?, ?, ?, ?)')
-      .bind(crypto.randomUUID(), h.id, coins_requested, usdAmount, method ?? 'bank', account_info ?? ''),
+      .bind(withdrawId, h.id, coins_requested, usdAmount, method ?? 'bank', account_info ?? ''),
+    db.prepare('UPDATE users SET coins = coins - ?, updated_at = unixepoch() WHERE id = ?').bind(coins_requested, sub),
+    db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
+      .bind(crypto.randomUUID(), sub, 'withdrawal', -coins_requested, `Withdrawal request — ${coins_requested} coins`, withdrawId),
   ]);
-  return c.json({ success: true, amount_usd: usdAmount.toFixed(2), coins_requested });
+
+  const updated = await db.prepare('SELECT coins FROM users WHERE id = ?').bind(sub).first<any>();
+  return c.json({ success: true, amount_usd: usdAmount.toFixed(2), coins_requested, new_balance: updated?.coins });
 });
 
 export default coin;

@@ -4,6 +4,21 @@ import type { Env, JWTPayload } from '../types';
 
 const host = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
 
+// GET /api/hosts/featured — top-rated/featured hosts (must be before /:id)
+host.get('/featured', async (c) => {
+  const result = await c.env.DB.prepare(
+    `SELECT h.*, u.name, u.avatar_url, u.gender, u.bio FROM hosts h
+     JOIN users u ON u.id = h.user_id
+     WHERE h.is_active = 1 AND h.rating >= 4.0
+     ORDER BY h.is_top_rated DESC, h.rating DESC, h.total_minutes DESC LIMIT 10`
+  ).all();
+  return c.json(result.results.map((h: any) => ({
+    ...h,
+    specialties: JSON.parse(h.specialties || '[]'),
+    languages: JSON.parse(h.languages || '[]'),
+  })));
+});
+
 // GET /api/hosts — public list
 host.get('/', async (c) => {
   const { search, topic, online, page = '1', limit = '20' } = c.req.query();
@@ -75,11 +90,32 @@ hostProtected.patch('/status', async (c) => {
 // GET /api/host/earnings
 hostProtected.get('/earnings', async (c) => {
   const { sub } = c.get('user');
-  const h = await c.env.DB.prepare('SELECT total_earnings, total_minutes FROM hosts WHERE user_id = ?').bind(sub).first<any>();
+  const h = await c.env.DB.prepare(
+    'SELECT id, total_earnings, total_minutes, rating, review_count FROM hosts WHERE user_id = ?'
+  ).bind(sub).first<any>();
+  if (!h) return c.json({ error: 'Not a host' }, 403);
   const txs = await c.env.DB.prepare(
-    'SELECT * FROM coin_transactions WHERE user_id = ? AND type = "spend" ORDER BY created_at DESC LIMIT 50'
-  ).bind(sub).all();
-  return c.json({ host: h, transactions: txs.results });
+    `SELECT ct.* FROM coin_transactions ct
+     JOIN call_sessions cs ON cs.id = ct.ref_id
+     WHERE cs.host_id = ? AND ct.type = 'earn'
+     ORDER BY ct.created_at DESC LIMIT 50`
+  ).bind(h.id).all();
+  // Withdrawal requests
+  const withdrawals = await c.env.DB.prepare(
+    'SELECT * FROM withdrawal_requests WHERE host_id = ? ORDER BY created_at DESC LIMIT 20'
+  ).bind(h.id).all();
+  return c.json({ host: h, transactions: txs.results, withdrawals: withdrawals.results });
+});
+
+// GET /api/host/me — host profile for current user
+hostProtected.get('/me', async (c) => {
+  const { sub } = c.get('user');
+  const h = await c.env.DB.prepare(
+    `SELECT h.*, u.name, u.avatar_url, u.bio, u.email FROM hosts h
+     JOIN users u ON u.id = h.user_id WHERE h.user_id = ?`
+  ).bind(sub).first<any>();
+  if (!h) return c.json({ error: 'Not a host' }, 403);
+  return c.json({ ...h, specialties: JSON.parse(h.specialties || '[]'), languages: JSON.parse(h.languages || '[]') });
 });
 
 export { host as hostsRouter, hostProtected as hostRouter };

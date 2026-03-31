@@ -113,6 +113,20 @@ call.post('/:id/end', async (c) => {
   return c.json({ success: true, duration_seconds: durationSec, coins_charged: coinsCharged, host_earnings: hostShare });
 });
 
+// GET /api/calls/active — current active/pending call for user
+call.get('/active', async (c) => {
+  const { sub } = c.get('user');
+  const session = await c.env.DB.prepare(
+    `SELECT cs.*, h.display_name as host_name, u.avatar_url as host_avatar, h.coins_per_minute
+     FROM call_sessions cs
+     JOIN hosts h ON h.id = cs.host_id
+     JOIN users u ON u.id = h.user_id
+     WHERE cs.caller_id = ? AND cs.status IN ('pending', 'active')
+     ORDER BY cs.created_at DESC LIMIT 1`
+  ).bind(sub).first<any>();
+  return c.json(session ?? null);
+});
+
 // GET /api/calls/history
 call.get('/history', async (c) => {
   const { sub } = c.get('user');
@@ -138,6 +152,21 @@ call.post('/:id/rate', async (c) => {
   const avg = await db.prepare('SELECT AVG(stars) as avg, COUNT(*) as cnt FROM ratings WHERE host_id = ?').bind(session.host_id).first<any>();
   await db.prepare('UPDATE hosts SET rating = ?, review_count = ? WHERE id = ?').bind(avg?.avg ?? stars, avg?.cnt ?? 1, session.host_id).run();
   return c.json({ success: true });
+});
+
+// GET /api/calls/:id — single call session detail
+call.get('/:id', async (c) => {
+  const { sub } = c.get('user');
+  const sessionId = c.req.param('id');
+  const session = await c.env.DB.prepare(
+    `SELECT cs.*, h.display_name as host_name, u.avatar_url as host_avatar, h.coins_per_minute
+     FROM call_sessions cs
+     JOIN hosts h ON h.id = cs.host_id
+     JOIN users u ON u.id = h.user_id
+     WHERE cs.id = ? AND (cs.caller_id = ? OR h.user_id = ?)`
+  ).bind(sessionId, sub, sub).first<any>();
+  if (!session) return c.json({ error: 'Session not found' }, 404);
+  return c.json(session);
 });
 
 // GET /api/calls/:id/cf-token — Cloudflare Calls TURN credentials

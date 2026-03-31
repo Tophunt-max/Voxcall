@@ -57,6 +57,52 @@ user.get('/coin-history', async (c) => {
   return c.json(result.results);
 });
 
+// GET /api/user/favorites — get favorite hosts
+user.get('/favorites', async (c) => {
+  const { sub } = c.get('user');
+  const result = await c.env.DB.prepare(
+    `SELECT uf.*, h.id as host_id, h.display_name, h.rating, h.coins_per_minute, h.is_online, h.specialties, h.languages,
+            u.name, u.avatar_url, u.gender
+     FROM user_favorites uf
+     JOIN hosts h ON h.id = uf.host_id
+     JOIN users u ON u.id = h.user_id
+     WHERE uf.user_id = ? ORDER BY uf.created_at DESC`
+  ).bind(sub).all();
+  return c.json(result.results.map((r: any) => ({
+    ...r,
+    specialties: JSON.parse(r.specialties || '[]'),
+    languages: JSON.parse(r.languages || '[]'),
+  })));
+});
+
+// POST /api/user/favorites/:hostId — add favorite
+user.post('/favorites/:hostId', async (c) => {
+  const { sub } = c.get('user');
+  const { hostId } = c.req.param();
+  const db = c.env.DB;
+  const host = await db.prepare('SELECT id FROM hosts WHERE id = ?').bind(hostId).first();
+  if (!host) return c.json({ error: 'Host not found' }, 404);
+  await db.prepare('INSERT OR IGNORE INTO user_favorites (id, user_id, host_id) VALUES (?, ?, ?)')
+    .bind(crypto.randomUUID(), sub, hostId).run();
+  return c.json({ success: true });
+});
+
+// DELETE /api/user/favorites/:hostId — remove favorite
+user.delete('/favorites/:hostId', async (c) => {
+  const { sub } = c.get('user');
+  const { hostId } = c.req.param();
+  await c.env.DB.prepare('DELETE FROM user_favorites WHERE user_id = ? AND host_id = ?').bind(sub, hostId).run();
+  return c.json({ success: true });
+});
+
+// PATCH /api/user/notifications/:id/read — mark single notification read
+user.patch('/notifications/:id/read', async (c) => {
+  const { sub } = c.get('user');
+  const { id } = c.req.param();
+  await c.env.DB.prepare('UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?').bind(id, sub).run();
+  return c.json({ success: true });
+});
+
 // POST /api/user/become-host
 user.post('/become-host', async (c) => {
   const { sub, name } = c.get('user');

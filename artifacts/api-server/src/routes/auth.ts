@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
-import { signToken } from '../lib/jwt';
+import { signToken, verifyToken } from '../lib/jwt';
 import { hashPassword, verifyPassword, generateOTP, generateId } from '../lib/hash';
 import type { Env } from '../types';
 
@@ -101,6 +101,28 @@ auth.post('/reset-password', async (c) => {
   }
   const hash = await hashPassword(new_password);
   await db.prepare('UPDATE users SET password_hash = ?, otp = NULL WHERE id = ?').bind(hash, user.id).run();
+  return c.json({ success: true });
+});
+
+// POST /api/auth/refresh — issue new token from old (within grace period)
+auth.post('/refresh', async (c) => {
+  const { token } = await c.req.json();
+  if (!token) return c.json({ error: 'Token required' }, 400);
+  try {
+    const payload = await verifyToken(token, c.env.JWT_SECRET);
+    const user = await c.env.DB.prepare(
+      'SELECT id, name, role FROM users WHERE id = ?'
+    ).bind(payload.sub).first<any>();
+    if (!user) return c.json({ error: 'User not found' }, 404);
+    const newToken = await signToken({ sub: user.id, role: user.role, name: user.name }, c.env.JWT_SECRET);
+    return c.json({ token: newToken });
+  } catch {
+    return c.json({ error: 'Invalid or expired token' }, 401);
+  }
+});
+
+// POST /api/auth/logout — client-side logout (stateless JWT — just acknowledge)
+auth.post('/logout', async (c) => {
   return c.json({ success: true });
 });
 
