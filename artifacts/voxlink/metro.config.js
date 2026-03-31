@@ -9,10 +9,12 @@ const config = getDefaultConfig(projectRoot);
 // Allow monorepo packages
 config.watchFolders = [workspaceRoot];
 
-// Exclude workerd and other non-JS binaries from Metro watcher
+// Exclude workerd and firebase tmp test dirs from Metro watcher
 config.resolver.blockList = [
   /node_modules\/.pnpm\/workerd@.*/,
   /node_modules\/workerd\/.*/,
+  /.*app_tmp_.*/,
+  /.*_tmp_[0-9]+.*/,
 ];
 
 config.resolver.nodeModulesPaths = [

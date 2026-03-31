@@ -42,6 +42,8 @@ export const API = {
     apiRequest<{ token: string; user: any }>('POST', '/api/user/auth/register', { name, email, password, gender, phone }, false),
   guestLogin: () =>
     apiRequest<{ token: string; user: any }>('POST', '/api/auth/guest-login', {}, false),
+  googleLogin: (email: string, name: string, google_id: string, avatar_url?: string | null) =>
+    apiRequest<{ token: string; user: any }>('POST', '/api/auth/google-login', { email, name, google_id, avatar_url }, false),
 
   // Host KYC Application
   getHostAppStatus: () => apiRequest<any>('GET', '/api/host-app/status'),

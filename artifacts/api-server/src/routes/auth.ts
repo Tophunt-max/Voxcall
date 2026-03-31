@@ -126,6 +126,50 @@ auth.post('/logout', async (c) => {
   return c.json({ success: true });
 });
 
+// POST /api/auth/google-login — sign in or register via Google OAuth
+auth.post('/google-login', async (c) => {
+  const body = await c.req.json();
+  const { email, name, google_id, avatar_url } = body as {
+    email: string; name: string; google_id: string; avatar_url?: string | null;
+  };
+  if (!email || !google_id) return c.json({ error: 'Missing required fields' }, 400);
+  const db = c.env.DB;
+
+  let user = await db.prepare(
+    'SELECT id, name, email, role, coins, avatar_url, gender, bio FROM users WHERE email = ?'
+  ).bind(email).first<any>();
+
+  if (!user) {
+    const id = 'g_' + generateId().slice(0, 12);
+    const av = avatar_url || null;
+    await db.prepare(
+      `INSERT INTO users (id, name, email, password_hash, role, coins, is_verified, avatar_url, google_id)
+       VALUES (?, ?, ?, '', 'user', 50, 1, ?, ?)`
+    ).bind(id, name, email, av, google_id).run();
+    user = { id, name, email, role: 'user', coins: 50, avatar_url: av };
+  } else {
+    if (avatar_url && !user.avatar_url) {
+      await db.prepare('UPDATE users SET avatar_url = ?, google_id = ? WHERE id = ?')
+        .bind(avatar_url, google_id, user.id).run();
+      user.avatar_url = avatar_url;
+    }
+  }
+
+  const token = await signToken({ sub: user.id, role: user.role, name: user.name }, c.env.JWT_SECRET);
+  return c.json({
+    token,
+    user: {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      coins: user.coins,
+      avatar_url: user.avatar_url,
+      bio: user.bio,
+    }
+  });
+});
+
 // POST /api/auth/guest-login — create a temporary guest account
 auth.post('/guest-login', async (c) => {
   const db = c.env.DB;
