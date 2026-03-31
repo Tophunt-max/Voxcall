@@ -23,8 +23,8 @@ export default function ChatScreen() {
   const participantName = convo?.participantName ?? host?.name ?? "Unknown";
   const participantAvatar = `https://api.dicebear.com/7.x/avataaars/svg?seed=${id}`;
 
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
-  const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
+  const topPad = insets.top;
+  const bottomPad = insets.bottom;
 
   const handleSend = () => {
     if (!text.trim()) return;

@@ -108,8 +108,8 @@ export default function ProfileScreen() {
   const { user, logout, switchRole } = useAuth();
   const [notificationsOn, setNotificationsOn] = useState(true);
 
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
-  const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
+  const topPad = insets.top;
+  const bottomPad = insets.bottom;
 
   const uniqueId = user?.id?.slice(0, 8).toUpperCase() ?? "00000000";
 

@@ -13,8 +13,8 @@ export default function HostDashboardScreen() {
   const [isAcceptingCalls, setIsAcceptingCalls] = useState(true);
   const [isAcceptingRandom, setIsAcceptingRandom] = useState(false);
 
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
-  const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
+  const topPad = insets.top;
+  const bottomPad = insets.bottom;
 
   const stats = [
     { label: "Total Earnings", value: "2,450 🪙", icon: "trending-up" },

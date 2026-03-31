@@ -19,7 +19,7 @@ export default function HostChatScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const [search, setSearch] = useState("");
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const topPad = insets.top;
 
   const filtered = MOCK_USER_CHATS.filter(c => c.name.toLowerCase().includes(search.toLowerCase()));
 

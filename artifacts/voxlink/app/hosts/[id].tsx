@@ -22,7 +22,7 @@ export default function HostDetailScreen() {
 
   const host = MOCK_HOSTS.find((h) => h.id === id);
 
-  const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
+  const bottomPad = insets.bottom;
 
   if (!host) {
     return (
@@ -64,7 +64,7 @@ export default function HostDetailScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: bottomPad + 100 }}>
-        <View style={[styles.heroSection, { paddingTop: (Platform.OS === "web" ? 67 : insets.top) + 8 }]}>
+        <View style={[styles.heroSection, { paddingTop: (insets.top) + 8 }]}>
           <View style={styles.heroNav}>
             <TouchableOpacity onPress={() => router.back()} style={[styles.navBtn, { backgroundColor: colors.card }]}>
               <Image source={require("@/assets/icons/ic_back.png")} style={{ width: 20, height: 20, tintColor: colors.foreground }} resizeMode="contain" />

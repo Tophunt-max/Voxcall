@@ -22,8 +22,8 @@ export default function RandomScreen() {
   const [finding, setFinding] = useState(false);
   const [callType, setCallType] = useState<"audio" | "video">("audio");
 
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
-  const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
+  const topPad = insets.top;
+  const bottomPad = insets.bottom;
 
   const onlineHosts = MOCK_HOSTS.filter((h) => h.isOnline);
 

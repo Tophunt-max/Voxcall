@@ -17,7 +17,7 @@ export default function RegisterScreen() {
   const [gender, setGender] = useState<"male" | "female" | "other" | "">("");
   const [loading, setLoading] = useState(false);
 
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const topPad = insets.top;
 
   const handleRegister = async () => {
     if (!name.trim() || !email.trim() || !password.trim() || !gender) {

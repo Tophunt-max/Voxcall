@@ -56,7 +56,7 @@ export default function CoinHistoryScreen() {
   const { user } = useAuth();
   const [tab, setTab] = useState<Tab>("All");
 
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const topPad = insets.top;
   const filtered = filterByTab(ALL_TRANSACTIONS, tab);
 
   const totalIn  = ALL_TRANSACTIONS.filter(t => t.coins > 0).reduce((s, t) => s + t.coins, 0);

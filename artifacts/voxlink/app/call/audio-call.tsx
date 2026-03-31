@@ -13,8 +13,8 @@ export default function AudioCallScreen() {
   const [elapsed, setElapsed] = useState(0);
   const [status, setStatus] = useState<"connecting" | "ringing" | "active">("connecting");
 
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
-  const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
+  const topPad = insets.top;
+  const bottomPad = insets.bottom;
 
   useEffect(() => {
     const connectTimer = setTimeout(() => setStatus("ringing"), 1000);

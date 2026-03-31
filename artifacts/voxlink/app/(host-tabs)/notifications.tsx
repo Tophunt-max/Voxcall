@@ -36,7 +36,7 @@ const ICON_COLOR_MAP: Record<string, string> = {
 export default function HostNotificationsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const topPad = insets.top;
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>

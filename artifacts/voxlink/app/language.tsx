@@ -30,7 +30,7 @@ export default function LanguageScreen() {
   const insets = useSafeAreaInsets();
   const { language, setLanguage } = useLanguage();
   const [selected, setSelected] = useState<string>(language);
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const topPad = insets.top;
 
   async function handleSelect(code: string | null, name: string) {
     if (!code) {

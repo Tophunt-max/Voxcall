@@ -13,8 +13,8 @@ export default function VideoCallScreen() {
   const [elapsed, setElapsed] = useState(0);
   const [status, setStatus] = useState<"connecting" | "ringing" | "active">("connecting");
 
-  const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const bottomPad = insets.bottom;
+  const topPad = insets.top;
 
   useEffect(() => {
     const t1 = setTimeout(() => setStatus("ringing"), 1000);

@@ -15,7 +15,7 @@ export default function EditProfileScreen() {
   const [bio, setBio] = useState(user?.bio ?? "");
   const [loading, setLoading] = useState(false);
 
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const topPad = insets.top;
 
   const handleSave = async () => {
     setLoading(true);

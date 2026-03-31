@@ -55,7 +55,7 @@ export default function PrivacyScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const [expanded, setExpanded] = useState<number | null>(0);
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const topPad = insets.top;
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>

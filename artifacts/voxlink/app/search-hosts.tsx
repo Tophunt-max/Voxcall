@@ -21,7 +21,7 @@ export default function SearchHostsScreen() {
   const [selectedStatus, setSelectedStatus] = useState("All");
   const [showFilters, setShowFilters] = useState(false);
 
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const topPad = insets.top;
 
   const filtered = useMemo(() => {
     return MOCK_HOSTS.filter((h) => {

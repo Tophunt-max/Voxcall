@@ -10,8 +10,8 @@ export default function IncomingCallScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { activeCall, acceptCall, declineCall } = useCall();
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
-  const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
+  const topPad = insets.top;
+  const bottomPad = insets.bottom;
 
   useEffect(() => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);

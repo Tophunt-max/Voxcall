@@ -13,8 +13,8 @@ export default function NotificationsScreen() {
   const insets = useSafeAreaInsets();
   const [notifications, setNotifications] = useState<Notification[]>(MOCK_NOTIFICATIONS);
 
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
-  const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
+  const topPad = insets.top;
+  const bottomPad = insets.bottom;
 
   const markAllRead = () => setNotifications((n) => n.map((x) => ({ ...x, isRead: true })));
 

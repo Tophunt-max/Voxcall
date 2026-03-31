@@ -29,8 +29,8 @@ export default function WalletScreen() {
   const { user } = useAuth();
   const [tab, setTab] = useState<"buy" | "history">("buy");
 
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
-  const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
+  const topPad = insets.top;
+  const bottomPad = insets.bottom;
 
   const handlePurchase = (planId: string) => {
     router.push("/payment/checkout");

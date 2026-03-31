@@ -41,7 +41,7 @@ export default function HostSettingsScreen() {
   const [coinNotif, setCoinNotif] = useState(true);
   const [autoOnline, setAutoOnline] = useState(false);
 
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const topPad = insets.top;
 
   const handleSwitchToUser = () => {
     Alert.alert("Switch to User", "Switch back to regular user mode?", [

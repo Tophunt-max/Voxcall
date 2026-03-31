@@ -40,7 +40,7 @@ function FAQItem({ q, a }: { q: string; a: string }) {
 export default function HelpCenterScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const topPad = insets.top;
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>

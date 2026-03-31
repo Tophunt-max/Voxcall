@@ -14,7 +14,7 @@ export default function SettingsScreen() {
   const { logout } = useAuth();
   const [notificationsOn, setNotificationsOn] = useState(true);
 
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const topPad = insets.top;
 
   const handleLogout = () => {
     Alert.alert("Sign Out", "Are you sure you want to sign out?", [

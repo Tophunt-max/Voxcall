@@ -25,8 +25,8 @@ export default function HomeScreen() {
   const [selectedSpecialty, setSelectedSpecialty] = useState("All");
   const [refreshing, setRefreshing] = useState(false);
 
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
-  const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
+  const topPad = insets.top;
+  const bottomPad = insets.bottom;
 
   const topHosts = MOCK_HOSTS.filter((h) => h.isTopRated && h.isOnline);
   const filteredHosts =

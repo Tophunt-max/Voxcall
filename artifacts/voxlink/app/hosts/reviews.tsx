@@ -34,7 +34,7 @@ export default function AllReviewsScreen() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ hostId: string }>();
   const host = MOCK_HOSTS.find(h => h.id === params.hostId) ?? MOCK_HOSTS[0];
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const topPad = insets.top;
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>

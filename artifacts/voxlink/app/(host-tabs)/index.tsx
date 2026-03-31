@@ -19,7 +19,7 @@ export default function HostHomeScreen() {
   const insets = useSafeAreaInsets();
   const { user, switchRole } = useAuth();
   const [isOnline, setIsOnline] = useState(false);
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const topPad = insets.top;
 
   return (
     <ScrollView

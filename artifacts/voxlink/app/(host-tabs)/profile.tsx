@@ -14,8 +14,8 @@ export default function HostProfileScreen() {
   const { user, logout, switchRole } = useAuth();
   const [notificationsOn, setNotificationsOn] = useState(true);
   const [isOnline, setIsOnline] = useState(false);
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
-  const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
+  const topPad = insets.top;
+  const bottomPad = insets.bottom;
   const uniqueId = user?.id?.slice(0, 8).toUpperCase() ?? "00000000";
 
   const handleLogout = () => {

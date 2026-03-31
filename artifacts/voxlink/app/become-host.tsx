@@ -18,7 +18,7 @@ export default function BecomeHostScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(false);
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const topPad = insets.top;
 
   const handleApply = async () => {
     setLoading(true);

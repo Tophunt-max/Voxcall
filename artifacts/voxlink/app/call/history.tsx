@@ -48,7 +48,7 @@ export default function CallHistoryScreen() {
   const insets = useSafeAreaInsets();
   const [filter, setFilter] = useState<"all" | "audio" | "video">("all");
 
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const topPad = insets.top;
 
   const filtered = filter === "all" ? CALL_HISTORY : CALL_HISTORY.filter(c => c.type === filter);
 

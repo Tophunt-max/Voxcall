@@ -19,8 +19,8 @@ export default function CallSummaryScreen() {
   const durationSec = parseInt(duration ?? "0", 10);
   const coinsSpent = Math.ceil(durationSec / 60) * 8;
 
-  const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const bottomPad = insets.bottom;
+  const topPad = insets.top;
 
   const handleDone = () => {
     router.replace("/(tabs)");

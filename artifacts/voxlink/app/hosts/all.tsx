@@ -14,8 +14,8 @@ export default function AllHostsScreen() {
   const insets = useSafeAreaInsets();
   const [query, setQuery] = useState("");
 
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
-  const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
+  const topPad = insets.top;
+  const bottomPad = insets.bottom;
 
   const hosts = MOCK_HOSTS.filter((h) => !query || h.name.toLowerCase().includes(query.toLowerCase()));
 

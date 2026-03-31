@@ -20,7 +20,7 @@ export default function HostWithdrawScreen() {
   const [method, setMethod] = useState<"bank" | "upi" | "paypal">("bank");
   const [loading, setLoading] = useState(false);
 
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const topPad = insets.top;
   const balance = user?.coins ?? 850;
   const parsedAmt = parseInt(amount) || 0;
   const isValid = parsedAmt >= MIN_WITHDRAW && parsedAmt <= balance;

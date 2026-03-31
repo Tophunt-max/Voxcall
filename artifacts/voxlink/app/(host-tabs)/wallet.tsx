@@ -23,7 +23,7 @@ export default function HostWalletScreen() {
   const { user } = useAuth();
   const [tab, setTab] = useState<"history" | "withdraw">("history");
   const [withdrawAmt, setWithdrawAmt] = useState("");
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const topPad = insets.top;
 
   const totalEarned = EARNING_HISTORY.reduce((s, e) => s + e.coins, 0);
 
