@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   Image, Platform
@@ -7,7 +7,8 @@ import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
-import { MOCK_HOSTS } from "@/data/mockData";
+import { API } from "@/services/api";
+import { formatDuration, formatTimestamp } from "@/utils/format";
 
 interface CallHistoryItem {
   id: string;
@@ -16,21 +17,10 @@ interface CallHistoryItem {
   hostAvatar: string;
   type: "audio" | "video";
   status: "completed" | "missed" | "cancelled";
-  duration: string;
+  durationSecs: number;
   coins: number;
-  date: string;
+  createdAt: number;
 }
-
-const CALL_HISTORY: CallHistoryItem[] = [
-  { id: "c1", hostId: "1", hostName: "Priya Sharma", hostAvatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=priya", type: "audio", status: "completed", duration: "14:32", coins: 58, date: "Today, 10:22 AM" },
-  { id: "c2", hostId: "2", hostName: "Aisha Khan", hostAvatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=aisha", type: "video", status: "completed", duration: "08:15", coins: 33, date: "Today, 08:45 AM" },
-  { id: "c3", hostId: "3", hostName: "Ravi Patel", hostAvatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=ravi", type: "audio", status: "missed", duration: "—", coins: 0, date: "Yesterday, 9:30 PM" },
-  { id: "c4", hostId: "4", hostName: "Mei Lin", hostAvatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=mei", type: "video", status: "completed", duration: "22:01", coins: 88, date: "Yesterday, 6:15 PM" },
-  { id: "c5", hostId: "5", hostName: "Carlos Mendez", hostAvatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=carlos", type: "audio", status: "cancelled", duration: "—", coins: 0, date: "Mar 28, 3:40 PM" },
-  { id: "c6", hostId: "6", hostName: "Fatima Al-Sayed", hostAvatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=fatima", type: "audio", status: "completed", duration: "31:50", coins: 127, date: "Mar 27, 11:00 AM" },
-  { id: "c7", hostId: "1", hostName: "Priya Sharma", hostAvatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=priya", type: "video", status: "completed", duration: "07:44", coins: 31, date: "Mar 26, 2:00 PM" },
-  { id: "c8", hostId: "7", hostName: "James Okafor", hostAvatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=james", type: "audio", status: "missed", duration: "—", coins: 0, date: "Mar 25, 5:10 PM" },
-];
 
 const STATUS_COLORS: Record<string, string> = {
   completed: "#0BAF23",
@@ -43,14 +33,39 @@ const STATUS_LABELS: Record<string, string> = {
   cancelled: "Cancelled",
 };
 
+function mapStatus(s: string): "completed" | "missed" | "cancelled" {
+  if (s === "ended") return "completed";
+  if (s === "rejected") return "cancelled";
+  return "missed";
+}
+
 export default function CallHistoryScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const [filter, setFilter] = useState<"all" | "audio" | "video">("all");
+  const [callHistory, setCallHistory] = useState<CallHistoryItem[]>([]);
 
   const topPad = insets.top;
 
-  const filtered = filter === "all" ? CALL_HISTORY : CALL_HISTORY.filter(c => c.type === filter);
+  useEffect(() => {
+    API.getCallHistory()
+      .then((data: any[]) => {
+        setCallHistory(data.map((c: any) => ({
+          id: c.id,
+          hostId: c.host_id || "",
+          hostName: c.host_display_name || "Host",
+          hostAvatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${c.host_id || c.id}`,
+          type: (c.type || "audio") as "audio" | "video",
+          status: mapStatus(c.status || ""),
+          durationSecs: c.duration_seconds || 0,
+          coins: c.coins_charged || 0,
+          createdAt: c.created_at || 0,
+        })));
+      })
+      .catch(() => setCallHistory([]));
+  }, []);
+
+  const filtered = filter === "all" ? callHistory : callHistory.filter(c => c.type === filter);
 
   const renderItem = ({ item }: { item: CallHistoryItem }) => (
     <TouchableOpacity
@@ -62,7 +77,7 @@ export default function CallHistoryScreen() {
       <View style={styles.info}>
         <View style={styles.nameRow}>
           <Text style={[styles.name, { color: colors.text }]}>{item.hostName}</Text>
-          <Text style={[styles.date, { color: colors.mutedForeground }]}>{item.date}</Text>
+          <Text style={[styles.date, { color: colors.mutedForeground }]}>{item.createdAt ? formatTimestamp(item.createdAt) : "—"}</Text>
         </View>
         <View style={styles.detailRow}>
           <View style={[styles.typeBadge, { backgroundColor: item.type === "video" ? "#E8D5FF" : "#D5F0FF" }]}>
@@ -76,7 +91,7 @@ export default function CallHistoryScreen() {
           {item.status === "completed" && (
             <>
               <View style={[styles.dot, { backgroundColor: colors.border }]} />
-              <Text style={[styles.duration, { color: colors.mutedForeground }]}>{item.duration}</Text>
+              <Text style={[styles.duration, { color: colors.mutedForeground }]}>{formatDuration(item.durationSecs)}</Text>
             </>
           )}
         </View>

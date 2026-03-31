@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -13,7 +13,26 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
-import { MOCK_HOSTS } from "@/data/mockData";
+import { API } from "@/services/api";
+
+function mapApiHost(h: any) {
+  return {
+    id: h.id,
+    name: h.display_name || h.name || "Host",
+    avatar: h.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${h.id}`,
+    bio: h.bio || "",
+    rating: Number(h.rating) || 0,
+    reviewCount: Number(h.review_count) || 0,
+    languages: Array.isArray(h.languages) ? h.languages : (() => { try { return JSON.parse(h.languages || "[]"); } catch { return []; } })(),
+    specialties: Array.isArray(h.specialties) ? h.specialties : (() => { try { return JSON.parse(h.specialties || "[]"); } catch { return []; } })(),
+    coinsPerMinute: Number(h.coins_per_minute) || 1,
+    totalMinutes: Number(h.total_minutes) || 0,
+    isOnline: !!h.is_online,
+    isTopRated: !!h.is_top_rated,
+    gender: h.gender || "male",
+    country: h.country || "",
+  };
+}
 
 const LIGHT_PURPLE = "#F3E4FF";
 const ACCENT = "#A00EE7";
@@ -34,7 +53,7 @@ function StatusBadge({ isOnline }: { isOnline: boolean }) {
   );
 }
 
-function ListenerCard({ host, onPress }: { host: typeof MOCK_HOSTS[0]; onPress: () => void }) {
+function ListenerCard({ host, onPress }: { host: ReturnType<typeof mapApiHost>; onPress: () => void }) {
   return (
     <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.88}>
       <View style={styles.cardContent}>
@@ -111,17 +130,30 @@ export default function ListenerScreen() {
   const [showLangModal, setShowLangModal] = useState(false);
   const [showTopicModal, setShowTopicModal] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [hosts, setHosts] = useState<ReturnType<typeof mapApiHost>[]>([]);
 
-  const filtered = MOCK_HOSTS.filter((h) => {
-    const langOk = selectedLang === "All" || h.languages.includes(selectedLang);
-    const topicOk = selectedTopic === "All" || h.specialties.some((s) => s.includes(selectedTopic));
-    return langOk && topicOk;
+  const loadHosts = useCallback(async () => {
+    try {
+      const params: any = {};
+      if (selectedTopic !== "All") params.topic = selectedTopic;
+      const data = await API.getHosts(params);
+      setHosts(data.map(mapApiHost));
+    } catch {
+      setHosts([]);
+    }
+  }, [selectedTopic]);
+
+  useEffect(() => { loadHosts(); }, [selectedTopic]);
+
+  const filtered = hosts.filter((h) => {
+    return selectedLang === "All" || h.languages.includes(selectedLang);
   });
 
-  const onRefresh = () => {
+  const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 1000);
-  };
+    await loadHosts();
+    setRefreshing(false);
+  }, [loadHosts]);
 
   return (
     <View style={styles.container}>

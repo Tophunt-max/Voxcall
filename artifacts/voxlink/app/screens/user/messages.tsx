@@ -15,7 +15,7 @@ import { Feather } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { useChat } from "@/context/ChatContext";
-import { formatRelativeTime } from "@/data/mockData";
+import { formatRelativeTime } from "@/utils/format";
 
 export default function MessagesScreen() {
   const colors = useColors();

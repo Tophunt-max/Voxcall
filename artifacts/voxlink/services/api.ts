@@ -94,6 +94,11 @@ export const API = {
   sendMessage: (room_id: string, content: string, media_url?: string, media_type?: string) =>
     apiRequest('POST', `/api/chat/rooms/${room_id}/messages`, { content, media_url, media_type }),
 
-  // Talk topics
-  getTalkTopics: () => apiRequest<any[]>('GET', '/api/user/talk-topics'),
+  // Talk topics (public)
+  getTalkTopics: () => apiRequest<any[]>('GET', '/api/talk-topics', undefined, false),
+
+  // Notifications
+  getNotifications: () => apiRequest<any[]>('GET', '/api/user/notifications'),
+  markNotificationsRead: () => apiRequest('PATCH', '/api/user/notifications/read', {}),
+  markOneNotificationRead: (id: string) => apiRequest('PATCH', `/api/user/notifications/${id}/read`, {}),
 };

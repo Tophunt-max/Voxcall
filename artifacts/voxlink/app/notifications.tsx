@@ -1,49 +1,85 @@
-import React, { useState } from "react";
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, Platform } from "react-native";
+import React, { useState, useEffect, useCallback } from "react";
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, Platform, RefreshControl } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
-import { MOCK_NOTIFICATIONS, Notification, formatRelativeTime } from "@/data/mockData";
+import { formatRelativeTime } from "@/utils/format";
+import { API } from "@/services/api";
+
+interface Notification {
+  id: string;
+  type: "call" | "message" | "promo" | "system";
+  title: string;
+  body: string;
+  created_at: number;
+  is_read: boolean;
+  avatar_url?: string;
+}
 
 const ICONS: Record<string, string> = { call: "phone", message: "message-circle", promo: "gift", system: "info" };
 
 export default function NotificationsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const [notifications, setNotifications] = useState<Notification[]>(MOCK_NOTIFICATIONS);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const topPad = insets.top;
-  const bottomPad = insets.bottom;
+  const load = useCallback(async () => {
+    try {
+      const data = await API.getNotifications();
+      setNotifications(data);
+    } catch {
+      setNotifications([]);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
 
-  const markAllRead = () => setNotifications((n) => n.map((x) => ({ ...x, isRead: true })));
+  useEffect(() => { load(); }, []);
+
+  const markAllRead = async () => {
+    try {
+      await API.markNotificationsRead();
+      setNotifications(n => n.map(x => ({ ...x, is_read: true })));
+    } catch {}
+  };
+
+  const markOneRead = async (id: string) => {
+    try {
+      await API.markOneNotificationRead(id);
+      setNotifications(n => n.map(x => x.id === id ? { ...x, is_read: true } : x));
+    } catch {}
+  };
 
   const renderItem = ({ item }: { item: Notification }) => (
     <TouchableOpacity
-      style={[styles.item, { backgroundColor: item.isRead ? colors.background : colors.primary + "08", borderBottomColor: colors.border }]}
-      onPress={() => setNotifications((n) => n.map((x) => x.id === item.id ? { ...x, isRead: true } : x))}
+      style={[styles.item, { backgroundColor: item.is_read ? colors.background : colors.primary + "08", borderBottomColor: colors.border }]}
+      onPress={() => markOneRead(item.id)}
       activeOpacity={0.75}
     >
       <View style={[styles.iconCircle, { backgroundColor: colors.secondary }]}>
-        {item.avatar
-          ? <Image source={{ uri: item.avatar }} style={styles.notifAvatar} />
-          : <Feather name={ICONS[item.type] as any} size={18} color={colors.primary} />
+        {item.avatar_url
+          ? <Image source={{ uri: item.avatar_url }} style={styles.notifAvatar} />
+          : <Feather name={ICONS[item.type] as any ?? "bell"} size={18} color={colors.primary} />
         }
       </View>
       <View style={styles.textArea}>
         <View style={styles.titleRow}>
           <Text style={[styles.notifTitle, { color: colors.foreground }]}>{item.title}</Text>
-          {!item.isRead && <View style={[styles.unreadDot, { backgroundColor: colors.primary }]} />}
+          {!item.is_read && <View style={[styles.unreadDot, { backgroundColor: colors.primary }]} />}
         </View>
         <Text style={[styles.notifBody, { color: colors.mutedForeground }]} numberOfLines={2}>{item.body}</Text>
-        <Text style={[styles.notifTime, { color: colors.mutedForeground }]}>{formatRelativeTime(item.timestamp)}</Text>
+        <Text style={[styles.notifTime, { color: colors.mutedForeground }]}>{formatRelativeTime(item.created_at * 1000)}</Text>
       </View>
     </TouchableOpacity>
   );
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={[styles.header, { paddingTop: topPad + 16, borderBottomColor: colors.border }]}>
+      <View style={[styles.header, { paddingTop: insets.top + 16, borderBottomColor: colors.border }]}>
         <TouchableOpacity onPress={() => router.back()}>
           <Image source={require("@/assets/icons/ic_back.png")} style={{ width: 22, height: 22, tintColor: colors.foreground }} resizeMode="contain" />
         </TouchableOpacity>
@@ -56,12 +92,15 @@ export default function NotificationsScreen() {
         data={notifications}
         keyExtractor={(n) => n.id}
         renderItem={renderItem}
-        contentContainerStyle={{ paddingBottom: bottomPad + 20 }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
         ListEmptyComponent={
-          <View style={styles.empty}>
-            <Feather name="bell-off" size={40} color={colors.mutedForeground} />
-            <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>No notifications</Text>
-          </View>
+          !loading ? (
+            <View style={styles.empty}>
+              <Feather name="bell-off" size={40} color={colors.mutedForeground} />
+              <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>No notifications yet</Text>
+            </View>
+          ) : null
         }
       />
     </View>

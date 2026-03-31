@@ -17,6 +17,65 @@ admin.get('/dashboard', async (c) => {
   return c.json({ total_users: users?.count, total_hosts: hosts?.count, calls_today: calls?.count, total_revenue_coins: revenue?.total });
 });
 
+// GET /api/admin/analytics — last 7 days chart data
+admin.get('/analytics', async (c) => {
+  const dbA = c.env.DB;
+  // Last 7 days daily revenue + calls
+  const callRows = await dbA.prepare(`
+    SELECT DATE(created_at,'unixepoch') as day,
+           COUNT(*) as calls,
+           COALESCE(SUM(coins_charged),0) as revenue
+    FROM call_sessions
+    WHERE created_at > unixepoch('now','-7 days')
+    GROUP BY day ORDER BY day ASC
+  `).all<any>();
+  // Last 7 days new users per day
+  const userRows = await dbA.prepare(`
+    SELECT DATE(created_at,'unixepoch') as day, COUNT(*) as users
+    FROM users
+    WHERE created_at > unixepoch('now','-7 days')
+    GROUP BY day ORDER BY day ASC
+  `).all<any>();
+  // Role distribution
+  const roles = await dbA.prepare(`
+    SELECT role, COUNT(*) as cnt FROM users GROUP BY role
+  `).all<any>();
+  // Avg call duration
+  const avg = await dbA.prepare(`
+    SELECT COALESCE(AVG(duration_seconds),0) as avg_duration FROM call_sessions WHERE status='ended'
+  `).first<any>();
+
+  // Build a 7-day map
+  const days: string[] = [];
+  for (let i = 6; i >= 0; i--) {
+    const dt = new Date(Date.now() - i * 86400000);
+    days.push(dt.toISOString().slice(0, 10));
+  }
+  const callMap: Record<string, { calls: number; revenue: number }> = {};
+  (callRows.results || []).forEach((r: any) => { callMap[r.day] = { calls: r.calls, revenue: r.revenue }; });
+  const userMap: Record<string, number> = {};
+  (userRows.results || []).forEach((r: any) => { userMap[r.day] = r.users; });
+
+  const DAY_LABELS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const weekly = days.map(day => {
+    const label = DAY_LABELS[new Date(day).getDay()];
+    return { day: label, date: day, revenue: callMap[day]?.revenue ?? 0, calls: callMap[day]?.calls ?? 0, users: userMap[day] ?? 0 };
+  });
+
+  const roleMap: Record<string, number> = {};
+  (roles.results || []).forEach((r: any) => { roleMap[r.role] = r.cnt; });
+
+  return c.json({
+    weekly,
+    role_distribution: [
+      { name: 'Users', value: roleMap['user'] ?? 0 },
+      { name: 'Hosts', value: roleMap['host'] ?? 0 },
+      { name: 'Admins', value: roleMap['admin'] ?? 0 },
+    ],
+    avg_call_duration: Math.round(avg?.avg_duration ?? 0),
+  });
+});
+
 // GET /api/admin/users
 admin.get('/users', async (c) => {
   const { page = '1', limit = '20', search } = c.req.query();

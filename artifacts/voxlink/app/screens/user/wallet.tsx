@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -11,7 +11,8 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { useColors } from "@/hooks/useColors";
-import { MOCK_CALL_HISTORY, formatDuration, formatRelativeTime } from "@/data/mockData";
+import { formatDuration, formatRelativeTime } from "@/utils/format";
+import { API } from "@/services/api";
 
 type CallFilter = "All" | "Audio" | "Video";
 
@@ -19,8 +20,29 @@ export default function CallingHistoryScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const [filter, setFilter] = useState<CallFilter>("All");
+  const [callHistory, setCallHistory] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const filtered = MOCK_CALL_HISTORY.filter((c) => {
+  useEffect(() => {
+    API.getCallHistory()
+      .then((data: any[]) => {
+        setCallHistory(data.map((c: any) => ({
+          id: c.id,
+          hostId: c.host_id,
+          hostName: c.host_display_name || "Host",
+          hostAvatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${c.host_id}`,
+          type: c.type || "audio",
+          duration: c.duration_seconds || 0,
+          coinsSpent: c.coins_charged || 0,
+          timestamp: (c.created_at || 0) * 1000,
+          rating: c.rating,
+        })));
+      })
+      .catch(() => setCallHistory([]))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const filtered = callHistory.filter((c) => {
     if (filter === "All") return true;
     if (filter === "Audio") return c.type === "audio";
     if (filter === "Video") return c.type === "video";

@@ -44,6 +44,7 @@ export const api = {
   deleteTalkTopic: (id: string) => req('DELETE', `/admin/talk-topics/${id}`),
   coinTransactions: () => req<any[]>('GET', '/admin/coin-transactions'),
   ratings: () => req<any[]>('GET', '/admin/ratings'),
+  analytics: () => req<any>('GET', '/admin/analytics'),
   notifications: () => req<any[]>('GET', '/admin/notifications'),
   sendNotification: (data: any) => req<any>('POST', '/admin/notifications/send', data),
 };

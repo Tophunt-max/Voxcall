@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -16,7 +16,27 @@ import { Feather } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { HostCard } from "@/components/HostCard";
-import { MOCK_HOSTS, SPECIALTIES } from "@/data/mockData";
+import { Host } from "@/data/mockData";
+import { API } from "@/services/api";
+
+function mapApiHost(h: any): Host {
+  return {
+    id: h.id,
+    name: h.display_name || h.name || "Host",
+    avatar: h.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${h.id}`,
+    bio: h.bio || "",
+    rating: Number(h.rating) || 0,
+    reviewCount: Number(h.review_count) || 0,
+    languages: Array.isArray(h.languages) ? h.languages : (() => { try { return JSON.parse(h.languages || "[]"); } catch { return []; } })(),
+    specialties: Array.isArray(h.specialties) ? h.specialties : (() => { try { return JSON.parse(h.specialties || "[]"); } catch { return []; } })(),
+    coinsPerMinute: Number(h.coins_per_minute) || 1,
+    totalMinutes: Number(h.total_minutes) || 0,
+    isOnline: !!h.is_online,
+    isTopRated: !!h.is_top_rated,
+    gender: h.gender || "male",
+    country: h.country || "",
+  };
+}
 
 export default function HomeScreen() {
   const colors = useColors();
@@ -24,25 +44,54 @@ export default function HomeScreen() {
   const { user } = useAuth();
   const [selectedSpecialty, setSelectedSpecialty] = useState("All");
   const [refreshing, setRefreshing] = useState(false);
+  const [hosts, setHosts] = useState<Host[]>([]);
+  const [specialties, setSpecialties] = useState<string[]>(["All"]);
+  const [loading, setLoading] = useState(true);
 
   const topPad = insets.top;
   const bottomPad = insets.bottom;
 
-  const topHosts = MOCK_HOSTS.filter((h) => h.isTopRated && h.isOnline);
+  const loadHosts = useCallback(async () => {
+    try {
+      const data = await API.getHosts();
+      setHosts(data.map(mapApiHost));
+    } catch {
+      setHosts([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const loadTopics = useCallback(async () => {
+    try {
+      const topics = await API.getTalkTopics();
+      setSpecialties(["All", ...topics.map((t: any) => t.name)]);
+    } catch {
+      setSpecialties(["All", "Life Coaching", "Relationships", "Career", "Wellness", "Mental Health", "Music", "Travel"]);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadHosts();
+    loadTopics();
+  }, []);
+
+  const topHosts = hosts.filter((h) => h.isTopRated && h.isOnline);
   const filteredHosts =
     selectedSpecialty === "All"
-      ? MOCK_HOSTS
-      : MOCK_HOSTS.filter((h) =>
+      ? hosts
+      : hosts.filter((h) =>
           h.specialties.some((s) =>
             s.toLowerCase().includes(selectedSpecialty.toLowerCase())
           )
         );
   const onlineHosts = filteredHosts.filter((h) => h.isOnline);
 
-  const onRefresh = () => {
+  const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 1000);
-  };
+    await loadHosts();
+    setRefreshing(false);
+  }, [loadHosts]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -172,7 +221,7 @@ export default function HomeScreen() {
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.text }]}>Browse by Topic</Text>
           <FlatList
-            data={SPECIALTIES}
+            data={specialties}
             horizontal
             showsHorizontalScrollIndicator={false}
             keyExtractor={(s) => s}
