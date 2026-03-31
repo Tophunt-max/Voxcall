@@ -1,0 +1,33 @@
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, '');
+const API = `${BASE}/api`;
+
+function getToken() { return localStorage.getItem('voxlink_admin_token') || ''; }
+
+async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const r = await fetch(`${API}${path}`, {
+    method,
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ error: r.statusText }));
+    throw new Error((err as any).error || r.statusText);
+  }
+  return r.json();
+}
+
+export const api = {
+  login: (email: string, password: string) => req<{ token: string; user: any }>('POST', '/auth/login', { email, password }),
+  dashboard: () => req<any>('GET', '/admin/dashboard'),
+  users: (p?: string, s?: string) => req<any[]>('GET', `/admin/users?page=${p||1}${s ? '&search='+encodeURIComponent(s) : ''}`),
+  updateUser: (id: string, data: any) => req('PATCH', `/admin/users/${id}`, data),
+  hosts: () => req<any[]>('GET', '/admin/hosts'),
+  updateHost: (id: string, data: any) => req('PATCH', `/admin/hosts/${id}`, data),
+  withdrawals: () => req<any[]>('GET', '/admin/withdrawals'),
+  updateWithdrawal: (id: string, data: any) => req('PATCH', `/admin/withdrawals/${id}`, data),
+  coinPlans: () => req<any[]>('GET', '/admin/coin-plans'),
+  createCoinPlan: (data: any) => req('POST', '/admin/coin-plans', data),
+  updateCoinPlan: (id: string, data: any) => req('PATCH', `/admin/coin-plans/${id}`, data),
+  settings: () => req<Record<string, string>>('GET', '/admin/settings'),
+  updateSettings: (data: any) => req('PATCH', '/admin/settings', data),
+};

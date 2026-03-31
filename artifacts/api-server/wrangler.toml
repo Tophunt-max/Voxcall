@@ -1,0 +1,37 @@
+name = "voxlink-api"
+main = "src/index.ts"
+compatibility_date = "2024-12-18"
+compatibility_flags = ["nodejs_compat"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "voxlink-db"
+database_id = "local-voxlink-db"
+migrations_dir = "migrations"
+
+[[r2_buckets]]
+binding = "STORAGE"
+bucket_name = "voxlink-storage"
+preview_bucket_name = "voxlink-storage-preview"
+
+[durable_objects]
+bindings = [
+  { name = "CHAT_ROOM", class_name = "ChatRoom" },
+  { name = "CALL_SIGNALING", class_name = "CallSignaling" },
+  { name = "NOTIFICATION_HUB", class_name = "NotificationHub" }
+]
+
+[[migrations]]
+tag = "v1"
+new_classes = ["ChatRoom", "CallSignaling", "NotificationHub"]
+
+[vars]
+JWT_SECRET = "voxlink-dev-jwt-secret-2026"
+CF_CALLS_APP_ID = ""
+CF_CALLS_APP_SECRET = ""
+CF_ACCOUNT_ID = ""
+
+[dev]
+port = 8080
+local_protocol = "http"
+ip = "0.0.0.0"
