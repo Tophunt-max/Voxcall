@@ -19,7 +19,7 @@ export default function BecomeHostSuccessScreen() {
         </Text>
 
         <View style={[styles.infoCard, { backgroundColor: "#F0E4F8" }]}>
-          <Image source={require("@/assets/icons/ic_notify.png")} style={[styles.infoIcon, { tintColor: colors.accent }]} resizeMode="contain" />
+          <Image source={require("@/assets/icons/ic_notify.png")} style={styles.infoIcon} tintColor={colors.accent} resizeMode="contain" />
           <Text style={[styles.infoText, { color: colors.text }]}>You'll receive an email notification once your application is reviewed.</Text>
         </View>
       </View>

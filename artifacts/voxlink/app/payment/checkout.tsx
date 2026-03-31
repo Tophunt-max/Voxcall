@@ -67,7 +67,8 @@ export default function CheckoutScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Image
             source={require("@/assets/icons/ic_back.png")}
-            style={[styles.backIcon, { tintColor: colors.text }]}
+            style={styles.backIcon}
+            tintColor={colors.text}
           />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Buy Coins</Text>
@@ -152,7 +153,7 @@ export default function CheckoutScreen() {
                 onPress={() => setPayMethod(method.id)}
                 activeOpacity={0.8}
               >
-                <Image source={method.icon} style={[styles.methodIcon, { tintColor: colors.accent }]} />
+                <Image source={method.icon} style={styles.methodIcon} tintColor={colors.accent} />
                 <Text style={[styles.methodLabel, { color: colors.text }]}>{method.label}</Text>
                 <View style={[styles.radio, { borderColor: selected ? colors.accent : colors.border }]}>
                   {selected && (
@@ -200,7 +201,8 @@ export default function CheckoutScreen() {
         <View style={styles.secureRow}>
           <Image
             source={require("@/assets/icons/ic_secure.png")}
-            style={[styles.secureIcon, { tintColor: colors.online }]}
+            style={styles.secureIcon}
+            tintColor={colors.online}
           />
           <Text style={[styles.secureText, { color: colors.mutedForeground }]}>
             All payments are secured and encrypted

@@ -147,7 +147,8 @@ export default function ProfileScreen() {
         >
           <Image
             source={require("@/assets/icons/ic_edit.png")}
-            style={[styles.editIcon, { tintColor: colors.primary }]}
+            style={styles.editIcon}
+            tintColor={colors.primary}
             resizeMode="contain"
           />
         </TouchableOpacity>
@@ -196,13 +197,15 @@ export default function ProfileScreen() {
         >
           <Image
             source={require("@/assets/icons/ic_id_badge.png")}
-            style={[styles.idIcon, { tintColor: "#9D82B6" }]}
+            style={styles.idIcon}
+            tintColor="#9D82B6"
             resizeMode="contain"
           />
           <Text style={[styles.idText, { color: "#9D82B6" }]}>ID: {uniqueId}</Text>
           <Image
             source={require("@/assets/icons/ic_copy.png")}
-            style={[styles.idIcon, { tintColor: "#9D82B6" }]}
+            style={styles.idIcon}
+            tintColor="#9D82B6"
             resizeMode="contain"
           />
         </TouchableOpacity>

@@ -34,7 +34,7 @@ export default function ForgotPasswordScreen() {
         keyboardShouldPersistTaps="handled"
       >
         <TouchableOpacity onPress={() => router.back()} style={[styles.backBtn, { backgroundColor: colors.surface }]}>
-          <Image source={require("@/assets/icons/ic_back.png")} style={[styles.backIcon, { tintColor: colors.text }]} resizeMode="contain" />
+          <Image source={require("@/assets/icons/ic_back.png")} style={styles.backIcon} tintColor={colors.text} resizeMode="contain" />
         </TouchableOpacity>
 
         <View style={styles.logoWrap}>
@@ -47,7 +47,7 @@ export default function ForgotPasswordScreen() {
         </Text>
 
         <View style={[styles.inputWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <Image source={require("@/assets/icons/ic_mail.png")} style={[styles.inputIcon, { tintColor: colors.mutedForeground }]} resizeMode="contain" />
+          <Image source={require("@/assets/icons/ic_mail.png")} style={styles.inputIcon} tintColor={colors.mutedForeground} resizeMode="contain" />
           <TextInput
             style={[styles.input, { color: colors.text }]}
             placeholder="Email Address"

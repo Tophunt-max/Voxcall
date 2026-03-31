@@ -39,7 +39,7 @@ export default function HostHomeScreen() {
           <View style={{ gap: 2 }}>
             <Text style={[styles.headerName, { color: colors.text }]}>{user?.name ?? "Host"}</Text>
             <View style={[styles.idBadge, { backgroundColor: "#F0E4F8" }]}>
-              <Image source={require("@/assets/icons/ic_id_badge.png")} style={[styles.idIcon, { tintColor: "#9D82B6" }]} resizeMode="contain" />
+              <Image source={require("@/assets/icons/ic_id_badge.png")} style={styles.idIcon} tintColor="#9D82B6" resizeMode="contain" />
               <Text style={[styles.idText, { color: "#9D82B6" }]}>ID: {(user?.id ?? "00000000").slice(0,8).toUpperCase()}</Text>
             </View>
           </View>
@@ -50,7 +50,7 @@ export default function HostHomeScreen() {
             <Text style={styles.coinText}>{user?.coins ?? 0}</Text>
           </View>
           <TouchableOpacity onPress={() => router.push("/notifications")} style={[styles.bellBtn, { backgroundColor: colors.surface }]}>
-            <Image source={require("@/assets/icons/ic_notify.png")} style={[styles.bellIcon, { tintColor: colors.text }]} resizeMode="contain" />
+            <Image source={require("@/assets/icons/ic_notify.png")} style={styles.bellIcon} tintColor={colors.text} resizeMode="contain" />
           </TouchableOpacity>
         </View>
       </View>
@@ -102,7 +102,7 @@ export default function HostHomeScreen() {
         ].map((p, i) => (
           <View key={i} style={[styles.permRow, { backgroundColor: colors.card }]}>
             <View style={[styles.permIconWrap, { backgroundColor: p.granted ? "#E8F5E9" : "#FFF3F3" }]}>
-              <Image source={p.icon} style={[styles.permIcon, { tintColor: p.granted ? "#0BAF23" : "#E84855" }]} resizeMode="contain" />
+              <Image source={p.icon} style={styles.permIcon} tintColor={p.granted ? "#0BAF23" : "#E84855"} resizeMode="contain" />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[styles.permLabel, { color: colors.text }]}>{p.label}</Text>
@@ -137,7 +137,7 @@ export default function HostHomeScreen() {
         onPress={() => { switchRole("user"); router.replace("/(tabs)"); }}
         activeOpacity={0.8}
       >
-        <Image source={require("@/assets/icons/ic_users.png")} style={[styles.switchIcon, { tintColor: colors.mutedForeground }]} resizeMode="contain" />
+        <Image source={require("@/assets/icons/ic_users.png")} style={styles.switchIcon} tintColor={colors.mutedForeground} resizeMode="contain" />
         <Text style={[styles.switchText, { color: colors.mutedForeground }]}>Switch to User Mode</Text>
       </TouchableOpacity>
     </ScrollView>

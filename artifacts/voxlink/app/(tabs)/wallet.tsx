@@ -70,7 +70,8 @@ export default function CallingHistoryScreen() {
               <View style={[styles.callTypeBadge, { backgroundColor: item.type === "video" ? "#F1F0FF" : "#E8CFFF" }]}>
                 <Image
                   source={item.type === "video" ? require("@/assets/icons/ic_video.png") : require("@/assets/icons/ic_call.png")}
-                  style={[styles.callTypeIco, { tintColor: "#A00EE7" }]}
+                  style={styles.callTypeIco}
+                  tintColor="#A00EE7"
                   resizeMode="contain"
                 />
               </View>

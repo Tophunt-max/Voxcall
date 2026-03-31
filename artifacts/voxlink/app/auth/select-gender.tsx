@@ -26,7 +26,7 @@ export default function SelectGenderScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top + 16, paddingBottom: insets.bottom + 30 }]}>
       <TouchableOpacity onPress={() => router.back()} style={[styles.backBtn, { backgroundColor: colors.surface }]}>
-        <Image source={require("@/assets/icons/ic_back.png")} style={[styles.backIcon, { tintColor: colors.text }]} resizeMode="contain" />
+        <Image source={require("@/assets/icons/ic_back.png")} style={styles.backIcon} tintColor={colors.text} resizeMode="contain" />
       </TouchableOpacity>
 
       <Text style={[styles.title, { color: colors.text }]}>Select Your Gender</Text>
@@ -55,7 +55,7 @@ export default function SelectGenderScreen() {
           <Text style={[styles.genderLabel, { color: selected === "male" ? colors.accent : colors.text }]}>Male</Text>
           {selected === "male" && (
             <View style={[styles.checkCircle, { backgroundColor: colors.accent }]}>
-              <Image source={require("@/assets/icons/ic_check.png")} style={[styles.checkIcon, { tintColor: "#fff" }]} resizeMode="contain" />
+              <Image source={require("@/assets/icons/ic_check.png")} style={styles.checkIcon} tintColor="#fff" resizeMode="contain" />
             </View>
           )}
         </TouchableOpacity>
@@ -80,7 +80,7 @@ export default function SelectGenderScreen() {
           <Text style={[styles.genderLabel, { color: selected === "female" ? colors.accent : colors.text }]}>Female</Text>
           {selected === "female" && (
             <View style={[styles.checkCircle, { backgroundColor: colors.accent }]}>
-              <Image source={require("@/assets/icons/ic_check.png")} style={[styles.checkIcon, { tintColor: "#fff" }]} resizeMode="contain" />
+              <Image source={require("@/assets/icons/ic_check.png")} style={styles.checkIcon} tintColor="#fff" resizeMode="contain" />
             </View>
           )}
         </TouchableOpacity>

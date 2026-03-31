@@ -70,7 +70,8 @@ export default function HomeScreen() {
             <View style={[styles.uniqueIdBadge, { backgroundColor: "#F0E4F8" }]}>
               <Image
                 source={require("@/assets/icons/ic_id_badge.png")}
-                style={[styles.uniqueIdIcon, { tintColor: "#9D82B6" }]}
+                style={styles.uniqueIdIcon}
+                tintColor="#9D82B6"
                 resizeMode="contain"
               />
               <Text style={[styles.uniqueIdText, { color: "#9D82B6" }]}>
@@ -101,7 +102,7 @@ export default function HomeScreen() {
             onPress={() => router.push("/search-hosts")}
             style={[styles.bellBtn, { backgroundColor: colors.muted }]}
           >
-            <Image source={require("@/assets/icons/ic_search.png")} style={{ width: 18, height: 18, tintColor: colors.text }} resizeMode="contain" />
+            <Image source={require("@/assets/icons/ic_search.png")} style={{ width: 18, height: 18 }} tintColor={colors.text} resizeMode="contain" />
           </TouchableOpacity>
 
           {/* Notification bell */}

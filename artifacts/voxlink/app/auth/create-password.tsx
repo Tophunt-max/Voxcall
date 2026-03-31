@@ -43,12 +43,12 @@ export default function CreatePasswordScreen() {
         keyboardShouldPersistTaps="handled"
       >
         <TouchableOpacity onPress={() => router.back()} style={[styles.backBtn, { backgroundColor: colors.surface }]}>
-          <Image source={require("@/assets/icons/ic_back.png")} style={[styles.backIcon, { tintColor: colors.text }]} resizeMode="contain" />
+          <Image source={require("@/assets/icons/ic_back.png")} style={styles.backIcon} tintColor={colors.text} resizeMode="contain" />
         </TouchableOpacity>
 
         <View style={styles.iconWrap}>
           <View style={[styles.iconBg, { backgroundColor: "#F0E4F8" }]}>
-            <Image source={require("@/assets/images/icon_lock.png")} style={[styles.icon, { tintColor: colors.accent }]} resizeMode="contain" />
+            <Image source={require("@/assets/images/icon_lock.png")} style={styles.icon} tintColor={colors.accent} resizeMode="contain" />
           </View>
         </View>
 
@@ -67,7 +67,7 @@ export default function CreatePasswordScreen() {
             secureTextEntry={!showPass}
           />
           <TouchableOpacity onPress={() => setShowPass(v => !v)}>
-            <Image source={showPass ? require("@/assets/icons/ic_eye.png") : require("@/assets/icons/ic_eye_off.png")} style={[styles.eyeIcon, { tintColor: colors.mutedForeground }]} resizeMode="contain" />
+            <Image source={showPass ? require("@/assets/icons/ic_eye.png") : require("@/assets/icons/ic_eye_off.png")} style={styles.eyeIcon} tintColor={colors.mutedForeground} resizeMode="contain" />
           </TouchableOpacity>
         </View>
 
@@ -81,7 +81,7 @@ export default function CreatePasswordScreen() {
             secureTextEntry={!showConfirm}
           />
           <TouchableOpacity onPress={() => setShowConfirm(v => !v)}>
-            <Image source={showConfirm ? require("@/assets/icons/ic_eye.png") : require("@/assets/icons/ic_eye_off.png")} style={[styles.eyeIcon, { tintColor: colors.mutedForeground }]} resizeMode="contain" />
+            <Image source={showConfirm ? require("@/assets/icons/ic_eye.png") : require("@/assets/icons/ic_eye_off.png")} style={styles.eyeIcon} tintColor={colors.mutedForeground} resizeMode="contain" />
           </TouchableOpacity>
         </View>
 

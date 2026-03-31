@@ -64,12 +64,12 @@ export default function VerifyOtpScreen() {
     >
       <View style={[styles.container, { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 40 }]}>
         <TouchableOpacity onPress={() => router.back()} style={[styles.backBtn, { backgroundColor: colors.surface }]}>
-          <Image source={require("@/assets/icons/ic_back.png")} style={[styles.backIcon, { tintColor: colors.text }]} resizeMode="contain" />
+          <Image source={require("@/assets/icons/ic_back.png")} style={styles.backIcon} tintColor={colors.text} resizeMode="contain" />
         </TouchableOpacity>
 
         <View style={styles.iconWrap}>
           <View style={[styles.iconBg, { backgroundColor: "#F0E4F8" }]}>
-            <Image source={require("@/assets/icons/ic_mail.png")} style={[styles.icon, { tintColor: colors.accent }]} resizeMode="contain" />
+            <Image source={require("@/assets/icons/ic_mail.png")} style={styles.icon} tintColor={colors.accent} resizeMode="contain" />
           </View>
         </View>
 

@@ -100,7 +100,7 @@ export default function HostWalletScreen() {
           renderItem={({ item }) => (
             <View style={[styles.historyCard, { backgroundColor: colors.card }]}>
               <View style={[styles.callIconWrap, { backgroundColor: item.type === "video" ? "#F1F0FF" : "#E8CFFF" }]}>
-                <Image source={item.type === "video" ? require("@/assets/icons/ic_video.png") : require("@/assets/icons/ic_call.png")} style={[styles.callIcon, { tintColor: colors.accent }]} resizeMode="contain" />
+                <Image source={item.type === "video" ? require("@/assets/icons/ic_video.png") : require("@/assets/icons/ic_call.png")} style={styles.callIcon} tintColor={colors.accent} resizeMode="contain" />
               </View>
               <View style={{ flex: 1, gap: 3 }}>
                 <Text style={[styles.histName, { color: colors.text }]}>{item.user}</Text>
@@ -122,7 +122,7 @@ export default function HostWalletScreen() {
                 backgroundColor: withdrawAmt === String(amt) ? colors.accent : colors.card,
                 borderColor: withdrawAmt === String(amt) ? colors.accent : colors.border,
               }]}>
-                <Image source={require("@/assets/icons/ic_coin.png")} style={[styles.chipCoin, { tintColor: withdrawAmt === String(amt) ? "#fff" : "#FFA100" }]} resizeMode="contain" />
+                <Image source={require("@/assets/icons/ic_coin.png")} style={styles.chipCoin} tintColor={withdrawAmt === String(amt) ? "#fff" : "#FFA100"} resizeMode="contain" />
                 <Text style={[styles.chipAmt, { color: withdrawAmt === String(amt) ? "#fff" : colors.text }]}>{amt}</Text>
               </TouchableOpacity>
             ))}
@@ -130,7 +130,7 @@ export default function HostWalletScreen() {
 
           <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Or Enter Amount</Text>
           <View style={[styles.inputWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Image source={require("@/assets/icons/ic_coin.png")} style={[styles.inputIcon, { tintColor: "#FFA100" }]} resizeMode="contain" />
+            <Image source={require("@/assets/icons/ic_coin.png")} style={styles.inputIcon} tintColor="#FFA100" resizeMode="contain" />
             <TextInput
               style={[styles.input, { color: colors.text }]}
               placeholder="Enter coin amount"
@@ -142,7 +142,7 @@ export default function HostWalletScreen() {
           </View>
 
           <TouchableOpacity style={[styles.withdrawBtn, { backgroundColor: colors.primary }]} onPress={handleWithdraw} activeOpacity={0.85}>
-            <Image source={require("@/assets/icons/ic_withdraw.png")} style={[styles.withdrawIcon, { tintColor: "#fff" }]} resizeMode="contain" />
+            <Image source={require("@/assets/icons/ic_withdraw.png")} style={styles.withdrawIcon} tintColor="#fff" resizeMode="contain" />
             <Text style={styles.withdrawBtnText}>Request Withdrawal</Text>
           </TouchableOpacity>
 
@@ -152,7 +152,7 @@ export default function HostWalletScreen() {
           </View>
 
           <TouchableOpacity style={[styles.fullWithdrawBtn, { backgroundColor: colors.surface, borderColor: colors.primary }]} onPress={() => router.push("/host/withdraw")}>
-            <Image source={require("@/assets/icons/ic_withdraw.png")} style={[styles.withdrawIcon, { tintColor: colors.primary }]} resizeMode="contain" />
+            <Image source={require("@/assets/icons/ic_withdraw.png")} style={styles.withdrawIcon} tintColor={colors.primary} resizeMode="contain" />
             <Text style={[styles.fullWithdrawText, { color: colors.primary }]}>Full Withdrawal Options</Text>
           </TouchableOpacity>
         </ScrollView>

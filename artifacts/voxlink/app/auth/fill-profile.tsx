@@ -43,7 +43,7 @@ export default function FillProfileScreen() {
       keyboardShouldPersistTaps="handled"
     >
       <TouchableOpacity onPress={() => router.back()} style={[styles.backBtn, { backgroundColor: colors.surface }]}>
-        <Image source={require("@/assets/icons/ic_back.png")} style={[styles.backIcon, { tintColor: colors.text }]} resizeMode="contain" />
+        <Image source={require("@/assets/icons/ic_back.png")} style={styles.backIcon} tintColor={colors.text} resizeMode="contain" />
       </TouchableOpacity>
 
       <Text style={[styles.title, { color: colors.text }]}>Fill Your Profile</Text>
@@ -96,7 +96,7 @@ export default function FillProfileScreen() {
             ]}
           >
             {selectedLang.includes(lang) && (
-              <Image source={require("@/assets/icons/ic_check.png")} style={[styles.checkIcon, { tintColor: "#fff" }]} resizeMode="contain" />
+              <Image source={require("@/assets/icons/ic_check.png")} style={styles.checkIcon} tintColor="#fff" resizeMode="contain" />
             )}
             <Text style={[styles.langText, { color: selectedLang.includes(lang) ? "#fff" : colors.text }]}>{lang}</Text>
           </TouchableOpacity>

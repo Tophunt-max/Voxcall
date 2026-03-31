@@ -48,7 +48,7 @@ export default function LanguageScreen() {
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <View style={[styles.header, { paddingTop: topPad + 8 }]}>
         <TouchableOpacity onPress={() => router.back()} style={[styles.backBtn, { backgroundColor: colors.surface }]}>
-          <Image source={require("@/assets/icons/ic_back.png")} style={[styles.backIcon, { tintColor: colors.text }]} resizeMode="contain" />
+          <Image source={require("@/assets/icons/ic_back.png")} style={styles.backIcon} tintColor={colors.text} resizeMode="contain" />
         </TouchableOpacity>
         <Text style={[styles.title, { color: colors.text }]}>App Language</Text>
         <View style={{ width: 40 }} />
@@ -89,7 +89,7 @@ export default function LanguageScreen() {
               </View>
               {isSelected && (
                 <View style={[styles.checkCircle, { backgroundColor: colors.accent }]}>
-                  <Image source={require("@/assets/icons/ic_check.png")} style={[styles.checkIcon, { tintColor: "#fff" }]} resizeMode="contain" />
+                  <Image source={require("@/assets/icons/ic_check.png")} style={styles.checkIcon} tintColor="#fff" resizeMode="contain" />
                 </View>
               )}
             </TouchableOpacity>

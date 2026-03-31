@@ -11,8 +11,7 @@ import { useAuth } from "@/context/AuthContext";
 export default function HostProfileScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { user, logout } = useAuth();
-  const [notificationsOn, setNotificationsOn] = useState(true);
+  const { user, logout, switchRole } = useAuth();
   const [isOnline, setIsOnline] = useState(false);
   const topPad = insets.top;
   const bottomPad = insets.bottom;
@@ -25,6 +24,8 @@ export default function HostProfileScreen() {
     ]);
   };
 
+  const CHEVRON_ROTATE = { transform: [{ rotate: "180deg" }] } as const;
+
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: colors.background }}
@@ -34,26 +35,25 @@ export default function HostProfileScreen() {
       <View style={[styles.header, { paddingTop: topPad + 12 }]}>
         <Text style={[styles.title, { color: colors.text }]}>My Profile</Text>
         <TouchableOpacity onPress={() => router.push("/profile/edit")} style={[styles.editBtn, { backgroundColor: colors.surface }]}>
-          <Image source={require("@/assets/icons/ic_edit.png")} style={[styles.editIcon, { tintColor: colors.primary }]} resizeMode="contain" />
+          <Image source={require("@/assets/icons/ic_edit.png")} style={styles.editIcon} tintColor={colors.primary} resizeMode="contain" />
         </TouchableOpacity>
       </View>
 
-      {/* Profile card */}
       <View style={[styles.profileCard, { backgroundColor: colors.card, ...Platform.select({ web: { boxShadow: "0 2px 12px rgba(0,0,0,0.07)" } as any, ios: { shadowColor: "#000", shadowOpacity: 0.07, shadowRadius: 12, shadowOffset: { width: 0, height: 2 } }, android: { elevation: 3 } }) }]}>
         <View style={styles.avatarOuter}>
           <View style={[styles.dottedBorder, { borderColor: colors.primary }]}>
             <Image source={{ uri: `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.id ?? "host"}` }} style={styles.avatar} />
           </View>
           <View style={[styles.hostBadge, { backgroundColor: colors.primary }]}>
-            <Image source={require("@/assets/icons/ic_listener.png")} style={styles.hostBadgeIcon} resizeMode="contain" />
+            <Image source={require("@/assets/icons/ic_listener.png")} style={styles.hostBadgeIcon} tintColor="#fff" resizeMode="contain" />
           </View>
         </View>
-        <Text style={[styles.name, { color: colors.text }]}>{user?.name}</Text>
+        <Text style={[styles.name, { color: colors.text }]}>{user?.name ?? "Host"}</Text>
         <Text style={[styles.role, { color: colors.accent }]}>Professional Host</Text>
-        <TouchableOpacity style={[styles.idBadge, { backgroundColor: "#F0E4F8" }]}>
-          <Image source={require("@/assets/icons/ic_id_badge.png")} style={[styles.idIcon, { tintColor: "#9D82B6" }]} resizeMode="contain" />
+        <View style={[styles.idBadge, { backgroundColor: "#F0E4F8" }]}>
+          <Image source={require("@/assets/icons/ic_id_badge.png")} style={styles.idIcon} tintColor="#9D82B6" resizeMode="contain" />
           <Text style={[styles.idText, { color: "#9D82B6" }]}>ID: {uniqueId}</Text>
-        </TouchableOpacity>
+        </View>
         <View style={[styles.statsRow, { borderTopColor: colors.border }]}>
           {[{ label: "Calls", val: "0" }, { label: "Rating", val: "—" }, { label: "Coins", val: String(user?.coins ?? 0) }].map((s, i) => (
             <React.Fragment key={s.label}>
@@ -67,18 +67,16 @@ export default function HostProfileScreen() {
         </View>
       </View>
 
-      {/* Online toggle */}
       <View style={[styles.section, { backgroundColor: colors.card }]}>
         <View style={[styles.menuItem, { borderBottomColor: colors.border }]}>
           <View style={[styles.menuIcon, { backgroundColor: isOnline ? "#E8F5E9" : colors.surface }]}>
-            <Image source={require("@/assets/icons/ic_available.png")} style={[styles.menuIconImg, { tintColor: isOnline ? "#0BAF23" : colors.text }]} resizeMode="contain" />
+            <Image source={require("@/assets/icons/ic_available.png")} style={styles.menuIconImg} tintColor={isOnline ? "#0BAF23" : colors.text} resizeMode="contain" />
           </View>
           <Text style={[styles.menuLabel, { color: colors.text }]}>Online Status</Text>
           <Switch value={isOnline} onValueChange={setIsOnline} trackColor={{ false: colors.border, true: "#0BAF23" }} thumbColor="#fff" />
         </View>
       </View>
 
-      {/* Account section */}
       <View style={[styles.section, { backgroundColor: colors.card }]}>
         <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Account</Text>
         {[
@@ -88,11 +86,11 @@ export default function HostProfileScreen() {
         ].map((m, i) => (
           <TouchableOpacity key={i} style={[styles.menuItem, { borderBottomColor: colors.border }]} onPress={m.onPress} activeOpacity={0.75}>
             <View style={[styles.menuIcon, { backgroundColor: colors.surface }]}>
-              <Image source={m.icon} style={[styles.menuIconImg, { tintColor: colors.text }]} resizeMode="contain" />
+              <Image source={m.icon} style={styles.menuIconImg} tintColor={colors.text} resizeMode="contain" />
             </View>
             <Text style={[styles.menuLabel, { color: colors.text }]}>{m.label}</Text>
-            {'value' in m && <Text style={[{ color: colors.mutedForeground, fontSize: 12, fontFamily: "Poppins_400Regular" }]}>{m.value}</Text>}
-            <Image source={require("@/assets/icons/ic_back.png")} style={[styles.chevron, { tintColor: colors.mutedForeground, transform: [{ rotate: "180deg" }] }]} resizeMode="contain" />
+            {"value" in m && <Text style={{ color: colors.mutedForeground, fontSize: 12, fontFamily: "Poppins_400Regular" }}>{m.value}</Text>}
+            <Image source={require("@/assets/icons/ic_back.png")} style={[styles.chevron, CHEVRON_ROTATE]} tintColor={colors.mutedForeground} resizeMode="contain" />
           </TouchableOpacity>
         ))}
       </View>
@@ -104,24 +102,24 @@ export default function HostProfileScreen() {
             <Image source={require("@/assets/images/help_graphic.png")} style={styles.menuIconImg} resizeMode="contain" />
           </View>
           <Text style={[styles.menuLabel, { color: colors.text }]}>Help Center</Text>
-          <Image source={require("@/assets/icons/ic_back.png")} style={[styles.chevron, { tintColor: colors.mutedForeground, transform: [{ rotate: "180deg" }] }]} resizeMode="contain" />
+          <Image source={require("@/assets/icons/ic_back.png")} style={[styles.chevron, CHEVRON_ROTATE]} tintColor={colors.mutedForeground} resizeMode="contain" />
         </TouchableOpacity>
         <TouchableOpacity style={[styles.menuItem, { borderBottomColor: colors.border }]} onPress={() => { switchRole("user"); router.replace("/(tabs)"); }} activeOpacity={0.75}>
           <View style={[styles.menuIcon, { backgroundColor: colors.surface }]}>
-            <Image source={require("@/assets/icons/ic_users.png")} style={[styles.menuIconImg, { tintColor: colors.text }]} resizeMode="contain" />
+            <Image source={require("@/assets/icons/ic_users.png")} style={styles.menuIconImg} tintColor={colors.text} resizeMode="contain" />
           </View>
           <Text style={[styles.menuLabel, { color: colors.text }]}>Switch to User Mode</Text>
-          <Image source={require("@/assets/icons/ic_back.png")} style={[styles.chevron, { tintColor: colors.mutedForeground, transform: [{ rotate: "180deg" }] }]} resizeMode="contain" />
+          <Image source={require("@/assets/icons/ic_back.png")} style={[styles.chevron, CHEVRON_ROTATE]} tintColor={colors.mutedForeground} resizeMode="contain" />
         </TouchableOpacity>
       </View>
 
       <View style={[styles.section, { backgroundColor: colors.card }]}>
         <TouchableOpacity style={[styles.menuItem, { borderBottomColor: colors.border }]} onPress={handleLogout} activeOpacity={0.75}>
           <View style={[styles.menuIcon, { backgroundColor: "#FFF3F3" }]}>
-            <Image source={require("@/assets/images/icon_logout.png")} style={[styles.menuIconImg, { tintColor: "#E84855" }]} resizeMode="contain" />
+            <Image source={require("@/assets/images/icon_logout.png")} style={styles.menuIconImg} tintColor="#E84855" resizeMode="contain" />
           </View>
           <Text style={[styles.menuLabel, { color: "#E84855" }]}>Sign Out</Text>
-          <Image source={require("@/assets/icons/ic_back.png")} style={[styles.chevron, { tintColor: "#E84855", transform: [{ rotate: "180deg" }] }]} resizeMode="contain" />
+          <Image source={require("@/assets/icons/ic_back.png")} style={[styles.chevron, CHEVRON_ROTATE]} tintColor="#E84855" resizeMode="contain" />
         </TouchableOpacity>
       </View>
     </ScrollView>
@@ -138,7 +136,7 @@ const styles = StyleSheet.create({
   dottedBorder: { borderWidth: 1.5, borderRadius: 50, borderStyle: "dashed" as any, padding: 3 },
   avatar: { width: 80, height: 80, borderRadius: 40 },
   hostBadge: { position: "absolute", right: 2, bottom: 2, width: 24, height: 24, borderRadius: 12, alignItems: "center", justifyContent: "center" },
-  hostBadgeIcon: { width: 14, height: 14, tintColor: "#fff" },
+  hostBadgeIcon: { width: 14, height: 14 },
   name: { fontSize: 18, fontFamily: "Poppins_700Bold", marginTop: 4 },
   role: { fontSize: 12, fontFamily: "Poppins_500Medium" },
   idBadge: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20, marginTop: 4 },

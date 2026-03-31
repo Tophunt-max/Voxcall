@@ -40,7 +40,7 @@ function ListenerCard({ host, onPress }: { host: typeof MOCK_HOSTS[0]; onPress: 
       <View style={styles.cardContent}>
         <View style={styles.avatarWrap}>
           <Image
-            source={require("@/assets/images/avatar_placeholder.png")}
+            source={{ uri: host.avatar }}
             style={styles.avatar}
             resizeMode="cover"
           />
@@ -51,7 +51,7 @@ function ListenerCard({ host, onPress }: { host: typeof MOCK_HOSTS[0]; onPress: 
             <StatusBadge isOnline={host.isOnline} />
           </View>
           <View style={styles.langRow}>
-            <Image source={require("@/assets/icons/ic_language.png")} style={[styles.smallIcon, { tintColor: GREY }]} resizeMode="contain" />
+            <Image source={require("@/assets/icons/ic_language.png")} style={styles.smallIcon} tintColor={GREY} resizeMode="contain" />
             <Text style={styles.langText}>{host.languages.join(", ")}</Text>
           </View>
           <View style={styles.topicsRow}>
@@ -65,7 +65,7 @@ function ListenerCard({ host, onPress }: { host: typeof MOCK_HOSTS[0]; onPress: 
             <Image source={require("@/assets/icons/ic_coin.png")} style={styles.coinIcon} resizeMode="contain" />
             <Text style={styles.coinText}>{host.coinsPerMinute}/min</Text>
             <View style={styles.callCountWrap}>
-              <Image source={require("@/assets/icons/ic_call.png")} style={[styles.smallIcon, { tintColor: GREY }]} resizeMode="contain" />
+              <Image source={require("@/assets/icons/ic_call.png")} style={styles.smallIcon} tintColor={GREY} resizeMode="contain" />
               <Text style={styles.callCountText}>{(host.totalMinutes / 60).toFixed(0)} hrs</Text>
             </View>
           </View>
@@ -131,12 +131,12 @@ export default function ListenerScreen() {
 
       <View style={styles.filterRow}>
         <TouchableOpacity style={styles.filterBtn} onPress={() => setShowLangModal(true)} activeOpacity={0.8}>
-          <Image source={require("@/assets/icons/ic_language.png")} style={[styles.filterIcon, { tintColor: "#FF8C00" }]} resizeMode="contain" />
+          <Image source={require("@/assets/icons/ic_language.png")} style={styles.filterIcon} tintColor="#FF8C00" resizeMode="contain" />
           <Text style={styles.filterBtnText}>{selectedLang === "All" ? "Language" : selectedLang}</Text>
           <Image source={require("@/assets/icons/ic_back.png")} style={styles.filterArrow} tintColor="#999" resizeMode="contain" />
         </TouchableOpacity>
         <TouchableOpacity style={styles.filterBtn} onPress={() => setShowTopicModal(true)} activeOpacity={0.8}>
-          <Image source={require("@/assets/icons/ic_chat.png")} style={[styles.filterIcon, { tintColor: "#1499F1" }]} resizeMode="contain" />
+          <Image source={require("@/assets/icons/ic_chat.png")} style={styles.filterIcon} tintColor="#1499F1" resizeMode="contain" />
           <Text style={styles.filterBtnText}>{selectedTopic === "All" ? "Talk About" : selectedTopic}</Text>
           <Image source={require("@/assets/icons/ic_back.png")} style={styles.filterArrow} tintColor="#999" resizeMode="contain" />
         </TouchableOpacity>

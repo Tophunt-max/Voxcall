@@ -93,7 +93,8 @@ export function HostCard({ host, onPress, compact = false, onTalkNow }: Props) {
           <View style={styles.langRow}>
             <Image
               source={require("@/assets/icons/ic_language.png")}
-              style={[styles.langIcon, { tintColor: colors.mutedForeground }]}
+              style={styles.langIcon}
+              tintColor={colors.mutedForeground}
               resizeMode="contain"
             />
             <Text style={[styles.langText, { color: colors.mutedForeground }]}>
@@ -123,12 +124,14 @@ export function HostCard({ host, onPress, compact = false, onTalkNow }: Props) {
                 <>
                   <Image
                     source={require("@/assets/icons/ic_call.png")}
-                    style={[styles.callIcon, { tintColor: colors.primary }]}
+                    style={styles.callIcon}
+                    tintColor={colors.primary}
                     resizeMode="contain"
                   />
                   <Image
                     source={require("@/assets/icons/ic_video.png")}
-                    style={[styles.callIcon, { tintColor: colors.primary }]}
+                    style={styles.callIcon}
+                    tintColor={colors.primary}
                     resizeMode="contain"
                   />
                 </>

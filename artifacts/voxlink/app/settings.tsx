@@ -39,7 +39,7 @@ export default function SettingsScreen() {
       {/* Header */}
       <View style={[styles.header, { paddingTop: topPad + 8 }]}>
         <TouchableOpacity onPress={() => router.back()} style={[styles.backBtn, { backgroundColor: colors.surface }]}>
-          <Image source={require("@/assets/icons/ic_back.png")} style={[styles.backIcon, { tintColor: colors.text }]} resizeMode="contain" />
+          <Image source={require("@/assets/icons/ic_back.png")} style={styles.backIcon} tintColor={colors.text} resizeMode="contain" />
         </TouchableOpacity>
         <Text style={[styles.title, { color: colors.text }]}>Settings</Text>
         <View style={{ width: 40 }} />
@@ -83,7 +83,7 @@ export default function SettingsScreen() {
             </View>
             <Text style={[styles.menuLabel, { color: colors.text }]}>App Language</Text>
             <Text style={[styles.menuValue, { color: colors.mutedForeground }]}>English</Text>
-            <Image source={require("@/assets/icons/ic_back.png")} style={[styles.chevron, { tintColor: colors.mutedForeground, transform: [{ rotate: "180deg" }] }]} resizeMode="contain" />
+            <Image source={require("@/assets/icons/ic_back.png")} style={[styles.chevron, { transform: [{ rotate: "180deg" }] }]} tintColor={colors.mutedForeground} resizeMode="contain" />
           </TouchableOpacity>
         </View>
 
@@ -95,7 +95,7 @@ export default function SettingsScreen() {
               <Image source={require("@/assets/icons/ic_guaranteed.png")} style={styles.menuIcon} resizeMode="contain" />
             </View>
             <Text style={[styles.menuLabel, { color: colors.text }]}>Help & FAQ</Text>
-            <Image source={require("@/assets/icons/ic_back.png")} style={[styles.chevron, { tintColor: colors.mutedForeground, transform: [{ rotate: "180deg" }] }]} resizeMode="contain" />
+            <Image source={require("@/assets/icons/ic_back.png")} style={[styles.chevron, { transform: [{ rotate: "180deg" }] }]} tintColor={colors.mutedForeground} resizeMode="contain" />
           </TouchableOpacity>
 
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
@@ -105,7 +105,7 @@ export default function SettingsScreen() {
               <Image source={require("@/assets/icons/ic_secure.png")} style={styles.menuIcon} resizeMode="contain" />
             </View>
             <Text style={[styles.menuLabel, { color: colors.text }]}>Privacy Policy</Text>
-            <Image source={require("@/assets/icons/ic_back.png")} style={[styles.chevron, { tintColor: colors.mutedForeground, transform: [{ rotate: "180deg" }] }]} resizeMode="contain" />
+            <Image source={require("@/assets/icons/ic_back.png")} style={[styles.chevron, { transform: [{ rotate: "180deg" }] }]} tintColor={colors.mutedForeground} resizeMode="contain" />
           </TouchableOpacity>
 
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
@@ -116,7 +116,7 @@ export default function SettingsScreen() {
             </View>
             <Text style={[styles.menuLabel, { color: colors.text }]}>About VoxLink</Text>
             <Text style={[styles.menuValue, { color: colors.mutedForeground }]}>v1.0.0</Text>
-            <Image source={require("@/assets/icons/ic_back.png")} style={[styles.chevron, { tintColor: colors.mutedForeground, transform: [{ rotate: "180deg" }] }]} resizeMode="contain" />
+            <Image source={require("@/assets/icons/ic_back.png")} style={[styles.chevron, { transform: [{ rotate: "180deg" }] }]} tintColor={colors.mutedForeground} resizeMode="contain" />
           </TouchableOpacity>
         </View>
 
@@ -128,7 +128,7 @@ export default function SettingsScreen() {
               <Image source={require("@/assets/images/icon_logout.png")} style={styles.menuIcon} resizeMode="contain" />
             </View>
             <Text style={[styles.menuLabel, { color: "#E84855" }]}>Sign Out</Text>
-            <Image source={require("@/assets/icons/ic_back.png")} style={[styles.chevron, { tintColor: "#E84855", transform: [{ rotate: "180deg" }] }]} resizeMode="contain" />
+            <Image source={require("@/assets/icons/ic_back.png")} style={[styles.chevron, { transform: [{ rotate: "180deg" }] }]} tintColor="#E84855" resizeMode="contain" />
           </TouchableOpacity>
 
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
@@ -138,7 +138,7 @@ export default function SettingsScreen() {
               <Image source={require("@/assets/images/icon_delete.png")} style={styles.menuIcon} resizeMode="contain" />
             </View>
             <Text style={[styles.menuLabel, { color: "#E84855" }]}>Delete Account</Text>
-            <Image source={require("@/assets/icons/ic_back.png")} style={[styles.chevron, { tintColor: "#E84855", transform: [{ rotate: "180deg" }] }]} resizeMode="contain" />
+            <Image source={require("@/assets/icons/ic_back.png")} style={[styles.chevron, { transform: [{ rotate: "180deg" }] }]} tintColor="#E84855" resizeMode="contain" />
           </TouchableOpacity>
         </View>
       </ScrollView>

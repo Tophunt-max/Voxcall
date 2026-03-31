@@ -26,7 +26,8 @@ function TabIcon({ source, color, focused, badge }: TabIconProps) {
     <View style={{ alignItems: "center", justifyContent: "center" }}>
       <Image
         source={source}
-        style={[styles.tabIcon, { tintColor: color }]}
+        style={styles.tabIcon}
+        tintColor={color}
         resizeMode="contain"
       />
       {badge ? <NotificationBadge count={badge} /> : null}

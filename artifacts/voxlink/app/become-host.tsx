@@ -31,7 +31,7 @@ export default function BecomeHostScreen() {
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <View style={[styles.header, { paddingTop: topPad + 8 }]}>
         <TouchableOpacity onPress={() => router.back()} style={[styles.backBtn, { backgroundColor: colors.surface }]}>
-          <Image source={require("@/assets/icons/ic_back.png")} style={[styles.backIcon, { tintColor: colors.text }]} resizeMode="contain" />
+          <Image source={require("@/assets/icons/ic_back.png")} style={styles.backIcon} tintColor={colors.text} resizeMode="contain" />
         </TouchableOpacity>
         <Text style={[styles.title, { color: colors.text }]}>Become a Host</Text>
         <View style={{ width: 40 }} />
@@ -50,7 +50,7 @@ export default function BecomeHostScreen() {
         {BENEFITS.map((b, i) => (
           <View key={i} style={[styles.benefitCard, { backgroundColor: colors.card }]}>
             <View style={[styles.benefitIconWrap, { backgroundColor: "#F0E4F8" }]}>
-              <Image source={b.icon} style={[styles.benefitIcon, { tintColor: colors.accent }]} resizeMode="contain" />
+              <Image source={b.icon} style={styles.benefitIcon} tintColor={colors.accent} resizeMode="contain" />
             </View>
             <View style={{ flex: 1, gap: 3 }}>
               <Text style={[styles.benefitTitle, { color: colors.text }]}>{b.title}</Text>

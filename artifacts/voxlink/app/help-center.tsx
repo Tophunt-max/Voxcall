@@ -46,7 +46,7 @@ export default function HelpCenterScreen() {
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <View style={[styles.header, { paddingTop: topPad + 8 }]}>
         <TouchableOpacity onPress={() => router.back()} style={[styles.backBtn, { backgroundColor: colors.surface }]}>
-          <Image source={require("@/assets/icons/ic_back.png")} style={[styles.backIcon, { tintColor: colors.text }]} resizeMode="contain" />
+          <Image source={require("@/assets/icons/ic_back.png")} style={styles.backIcon} tintColor={colors.text} resizeMode="contain" />
         </TouchableOpacity>
         <Text style={[styles.title, { color: colors.text }]}>Help Center</Text>
         <View style={{ width: 40 }} />
@@ -69,7 +69,7 @@ export default function HelpCenterScreen() {
             <Text style={[styles.contactTitle, { color: colors.text }]}>Have an Issue?</Text>
             <Text style={[styles.contactSub, { color: colors.mutedForeground }]}>Contact our support team via email</Text>
           </View>
-          <Image source={require("@/assets/icons/ic_back.png")} style={[styles.chevron, { tintColor: colors.mutedForeground, transform: [{ rotate: "180deg" }] }]} resizeMode="contain" />
+          <Image source={require("@/assets/icons/ic_back.png")} style={[styles.chevron, { transform: [{ rotate: "180deg" }] }]} tintColor={colors.mutedForeground} resizeMode="contain" />
         </TouchableOpacity>
 
         {/* FAQ */}

@@ -24,17 +24,17 @@ export function PrimaryButton({ title, onPress, loading, disabled, variant = "pr
   };
 
   const bgColor = {
-    primary: disabled ? colors.muted : colors.primary,
+    primary: disabled ? colors.muted : colors.accent,
     secondary: colors.secondary,
     danger: disabled ? colors.muted : colors.destructive,
     ghost: "transparent",
   }[variant];
 
   const textColor = {
-    primary: disabled ? colors.mutedForeground : colors.primaryForeground,
+    primary: disabled ? colors.mutedForeground : colors.accentForeground,
     secondary: colors.secondaryForeground,
     danger: disabled ? colors.mutedForeground : colors.destructiveForeground,
-    ghost: colors.primary,
+    ghost: colors.accent,
   }[variant];
 
   const paddingV = { sm: 8, md: 14, lg: 18 }[size];
