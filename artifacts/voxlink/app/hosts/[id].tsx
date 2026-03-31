@@ -183,15 +183,17 @@ export default function HostDetailScreen() {
   const handleAudio = () => {
     setTalkSheet(false);
     if (!checkCoins(audioRate)) return;
+    const topics = Array.isArray(host.topics) ? host.topics : (host.topics ? String(host.topics).split(",") : []);
     initiateCall({ id: host.id, name: hostName, avatar: hostAvatar, role: "host" }, "audio", audioRate);
-    router.push({ pathname: "/call/outgoing", params: { hostId: host.id, callType: "audio" } });
+    router.push({ pathname: "/call/outgoing", params: { hostId: host.id, callType: "audio", hostName, hostAvatar, specialty: topics[0] ?? "" } });
   };
 
   const handleVideo = () => {
     setTalkSheet(false);
     if (!checkCoins(videoRate)) return;
+    const topics = Array.isArray(host.topics) ? host.topics : (host.topics ? String(host.topics).split(",") : []);
     initiateCall({ id: host.id, name: hostName, avatar: hostAvatar, role: "host" }, "video", videoRate);
-    router.push({ pathname: "/call/outgoing", params: { hostId: host.id, callType: "video" } });
+    router.push({ pathname: "/call/outgoing", params: { hostId: host.id, callType: "video", hostName, hostAvatar, specialty: topics[0] ?? "" } });
   };
 
   const handleChat = async () => {

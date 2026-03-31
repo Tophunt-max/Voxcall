@@ -1,27 +1,30 @@
-import React, { useState } from "react";
-import { View, Text, StyleSheet, FlatList, Platform, Image } from "react-native";
+import React, { useState, useEffect } from "react";
+import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, ActivityIndicator } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
-import { Feather } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
 import { HostCard } from "@/components/HostCard";
 import { SearchBar } from "@/components/SearchBar";
-import { MOCK_HOSTS } from "@/data/mockData";
-import { TouchableOpacity } from "react-native";
+import { API } from "@/services/api";
 
 export default function AllHostsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const [query, setQuery] = useState("");
+  const [hosts, setHosts] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const topPad = insets.top;
-  const bottomPad = insets.bottom;
+  useEffect(() => {
+    API.getHosts().then(setHosts).catch(() => setHosts([])).finally(() => setLoading(false));
+  }, []);
 
-  const hosts = MOCK_HOSTS.filter((h) => !query || h.name.toLowerCase().includes(query.toLowerCase()));
+  const filtered = hosts.filter((h) =>
+    !query || (h.display_name ?? h.name ?? "").toLowerCase().includes(query.toLowerCase())
+  );
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
-      <View style={[styles.header, { paddingTop: topPad + 16 }]}>
+      <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
         <TouchableOpacity onPress={() => router.back()}>
           <Image source={require("@/assets/icons/ic_back.png")} style={{ width: 22, height: 22 }} tintColor={colors.foreground} resizeMode="contain" />
         </TouchableOpacity>
@@ -31,13 +34,24 @@ export default function AllHostsScreen() {
       <View style={{ paddingHorizontal: 20, paddingBottom: 12 }}>
         <SearchBar value={query} onChange={setQuery} />
       </View>
-      <FlatList
-        data={hosts}
-        keyExtractor={(h) => h.id}
-        renderItem={({ item }) => <HostCard host={item} onPress={() => router.push(`/hosts/${item.id}`)} />}
-        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: bottomPad + 20 }}
-        showsVerticalScrollIndicator={false}
-      />
+      {loading ? (
+        <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      ) : (
+        <FlatList
+          data={filtered}
+          keyExtractor={(h) => h.id}
+          renderItem={({ item }) => <HostCard host={item} onPress={() => router.push(`/hosts/${item.id}`)} />}
+          contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: insets.bottom + 20 }}
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={
+            <View style={{ alignItems: "center", paddingTop: 60 }}>
+              <Text style={{ color: colors.mutedForeground, fontFamily: "Poppins_400Regular" }}>No hosts found</Text>
+            </View>
+          }
+        />
+      )}
     </View>
   );
 }

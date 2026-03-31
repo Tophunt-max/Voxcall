@@ -62,7 +62,6 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       isSpeakerOn: type === "video",
     };
     updateCall(call);
-    router.push(type === "audio" ? "/call/audio-call" : "/call/video-call");
 
     try {
       const res = await API.initiateCall(participant.id, type);

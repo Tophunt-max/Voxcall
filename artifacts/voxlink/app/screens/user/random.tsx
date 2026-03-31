@@ -14,7 +14,16 @@ import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/context/AuthContext";
-import { MOCK_HOSTS } from "@/data/mockData";
+
+const MOCK_HOSTS = [
+  { id: "m1", name: "Ananya M.", avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=ananya`, isOnline: true, rating: 4.9, coinsPerMinute: 8, specialties: ["Psychology", "Wellness"] },
+  { id: "m2", name: "Rohan M.", avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=rohan`, isOnline: true, rating: 4.7, coinsPerMinute: 10, specialties: ["Career", "Finance"] },
+  { id: "m3", name: "Divya N.", avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=divya`, isOnline: false, rating: 4.8, coinsPerMinute: 7, specialties: ["Relationships", "Lifestyle"] },
+  { id: "m4", name: "Karan J.", avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=karan`, isOnline: true, rating: 4.6, coinsPerMinute: 5, specialties: ["Fitness", "Travel"] },
+  { id: "m5", name: "Shreya I.", avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=shreya`, isOnline: true, rating: 4.9, coinsPerMinute: 9, specialties: ["Language", "Culture"] },
+  { id: "m6", name: "Arjun P.", avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=arjun`, isOnline: true, rating: 4.5, coinsPerMinute: 6, specialties: ["Music", "Art"] },
+  { id: "m7", name: "Meera S.", avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=meera`, isOnline: false, rating: 4.7, coinsPerMinute: 8, specialties: ["Wellness", "Yoga"] },
+];
 
 const { width: SW, height: SH } = Dimensions.get("window");
 

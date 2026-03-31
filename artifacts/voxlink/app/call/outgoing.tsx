@@ -1,20 +1,30 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, Image,
-  Animated, Easing, Platform
+  Animated, Easing,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useColors } from "@/hooks/useColors";
-import { MOCK_HOSTS } from "@/data/mockData";
 
 export default function OutgoingCallScreen() {
-  const colors = useColors();
   const insets = useSafeAreaInsets();
-  const params = useLocalSearchParams<{ hostId: string; callType: string }>();
-  const host = MOCK_HOSTS.find(h => h.id === params.hostId) ?? MOCK_HOSTS[0];
-  const callType = params.callType ?? "audio";
-  const [status, setStatus] = useState<"connecting" | "ringing" | "connected">("connecting");
+  const params = useLocalSearchParams<{
+    hostId: string;
+    callType: string;
+    hostName: string;
+    hostAvatar: string;
+    specialty: string;
+  }>();
+
+  const hostId    = params.hostId   ?? "host";
+  const callType  = params.callType ?? "audio";
+  const hostName  = params.hostName ?? "Host";
+  const hostAvatar = params.hostAvatar && params.hostAvatar.startsWith("http")
+    ? params.hostAvatar
+    : `https://api.dicebear.com/7.x/avataaars/svg?seed=${hostId}`;
+  const specialty = params.specialty ?? "";
+
+  const [status, setStatus] = useState<"connecting" | "ringing">("connecting");
 
   const ripple1 = useRef(new Animated.Value(0)).current;
   const ripple2 = useRef(new Animated.Value(0)).current;
@@ -35,10 +45,7 @@ export default function OutgoingCallScreen() {
 
     const t1 = setTimeout(() => setStatus("ringing"), 1500);
     const t2 = setTimeout(() => {
-      router.replace({
-        pathname: callType === "video" ? "/call/video-call" : "/call/audio-call",
-        params: { hostId: host.id },
-      });
+      router.replace(callType === "video" ? "/call/video-call" : "/call/audio-call");
     }, 5000);
     return () => { clearTimeout(t1); clearTimeout(t2); };
   }, []);
@@ -49,60 +56,50 @@ export default function OutgoingCallScreen() {
   });
 
   return (
-    <View style={[styles.container, { backgroundColor: "#1A1040" }]}>
+    <View style={[s.container, { backgroundColor: "#1A1040" }]}>
       <View style={{ alignItems: "center", flex: 1, justifyContent: "center", gap: 24 }}>
-        <Text style={styles.callTypeLabel}>
+        <Text style={s.callTypeLabel}>
           {callType === "video" ? "Video Call" : "Voice Call"}
         </Text>
 
-        <View style={styles.avatarWrap}>
+        <View style={s.avatarWrap}>
           {[ripple3, ripple2, ripple1].map((r, i) => (
-            <Animated.View
-              key={i}
-              style={[styles.rippleCircle, makeRipple(r, 1.5 + i * 0.5)]}
-            />
+            <Animated.View key={i} style={[s.rippleCircle, makeRipple(r, 1.5 + i * 0.5)]} />
           ))}
           <Image
-            source={{ uri: `https://api.dicebear.com/7.x/avataaars/svg?seed=${host.id}` }}
-            style={styles.avatar}
+            source={{ uri: hostAvatar }}
+            style={s.avatar}
           />
         </View>
 
         <View style={{ alignItems: "center", gap: 8 }}>
-          <Text style={styles.hostName}>{host.name}</Text>
-          <Text style={styles.hostMeta}>{host.specialties[0]}</Text>
-          <Text style={styles.statusText}>
+          <Text style={s.hostName}>{hostName}</Text>
+          {!!specialty && <Text style={s.hostMeta}>{specialty}</Text>}
+          <Text style={s.statusText}>
             {status === "connecting" ? "Connecting..." : "Ringing..."}
           </Text>
         </View>
       </View>
 
-      {/* End call button */}
-      <View style={[styles.bottomControls, { paddingBottom: insets.bottom + 40 }]}>
+      <View style={[s.bottomControls, { paddingBottom: insets.bottom + 40 }]}>
         <TouchableOpacity
-          style={styles.endBtn}
+          style={s.endBtn}
           onPress={() => router.back()}
           activeOpacity={0.85}
         >
-          <Image source={require("@/assets/icons/ic_call_end.png")} style={styles.endIcon} resizeMode="contain" />
+          <Image source={require("@/assets/icons/ic_call_end.png")} style={s.endIcon} resizeMode="contain" />
         </TouchableOpacity>
-        <Text style={styles.endLabel}>Cancel</Text>
+        <Text style={s.endLabel}>Cancel</Text>
       </View>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+const s = StyleSheet.create({
   container: { flex: 1 },
   callTypeLabel: { color: "rgba(255,255,255,0.7)", fontSize: 14, fontFamily: "Poppins_500Medium", letterSpacing: 1, textTransform: "uppercase" },
   avatarWrap: { alignItems: "center", justifyContent: "center", width: 180, height: 180 },
-  rippleCircle: {
-    position: "absolute",
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: "rgba(160, 14, 231, 0.3)",
-  },
+  rippleCircle: { position: "absolute", width: 120, height: 120, borderRadius: 60, backgroundColor: "rgba(160, 14, 231, 0.3)" },
   avatar: { width: 120, height: 120, borderRadius: 60, borderWidth: 3, borderColor: "rgba(255,255,255,0.3)" },
   hostName: { color: "#fff", fontSize: 24, fontFamily: "Poppins_700Bold" },
   hostMeta: { color: "rgba(255,255,255,0.6)", fontSize: 14, fontFamily: "Poppins_400Regular" },

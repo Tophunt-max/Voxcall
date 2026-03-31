@@ -1,16 +1,17 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   View, Text, StyleSheet, TextInput, FlatList,
-  TouchableOpacity, Image, Platform
+  TouchableOpacity, Image, ActivityIndicator,
 } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
-import { MOCK_HOSTS, SPECIALTIES } from "@/data/mockData";
+import { API } from "@/services/api";
 
 const LANGUAGES = ["All", "English", "Hindi", "Chinese", "Arabic", "Spanish"];
-const STATUS_FILTERS = ["All", "Online", "On Call", "Offline"];
+const STATUS_FILTERS = ["All", "Online", "Offline"];
+const TOPICS = ["All", "Psychology", "Career", "Relationships", "Wellness", "Finance", "Fitness", "Travel", "Language"];
 
 export default function SearchHostsScreen() {
   const colors = useColors();
@@ -20,71 +21,85 @@ export default function SearchHostsScreen() {
   const [selectedLang, setSelectedLang] = useState("All");
   const [selectedStatus, setSelectedStatus] = useState("All");
   const [showFilters, setShowFilters] = useState(false);
+  const [hosts, setHosts] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const topPad = insets.top;
+  useEffect(() => {
+    API.getHosts().then(setHosts).catch(() => setHosts([])).finally(() => setLoading(false));
+  }, []);
 
   const filtered = useMemo(() => {
-    return MOCK_HOSTS.filter((h) => {
+    return hosts.filter((h) => {
+      const name = (h.display_name ?? h.name ?? "").toLowerCase();
       const q = query.toLowerCase();
-      const matchName = h.name.toLowerCase().includes(q);
-      const matchTopic = selectedTopic === "All" || h.specialties.some(s => s.toLowerCase().includes(selectedTopic.toLowerCase()));
-      const matchLang = selectedLang === "All" || h.languages.some(l => l.toLowerCase().includes(selectedLang.toLowerCase()));
+      const topicStr = Array.isArray(h.topics) ? h.topics.join(" ") : String(h.topics ?? "");
+      const matchName = !q || name.includes(q);
+      const matchTopic = selectedTopic === "All" || topicStr.toLowerCase().includes(selectedTopic.toLowerCase());
+      const matchLang = selectedLang === "All";
       const matchStatus = selectedStatus === "All" ||
-        (selectedStatus === "Online" && h.isOnline && !h.isOnCall) ||
-        (selectedStatus === "On Call" && h.isOnCall) ||
-        (selectedStatus === "Offline" && !h.isOnline);
+        (selectedStatus === "Online" && h.is_online) ||
+        (selectedStatus === "Offline" && !h.is_online);
       return matchName && matchTopic && matchLang && matchStatus;
     });
-  }, [query, selectedTopic, selectedLang, selectedStatus]);
+  }, [hosts, query, selectedTopic, selectedLang, selectedStatus]);
 
-  const statusLabel = (h: any) => h.isOnCall ? "On Call" : h.isOnline ? "Online" : "Offline";
-  const statusColor = (h: any) => h.isOnCall ? "#FF9800" : h.isOnline ? "#0BAF23" : "#9E9E9E";
+  const statusLabel = (h: any) => h.is_online ? "Online" : "Offline";
+  const statusColor = (h: any) => h.is_online ? "#0BAF23" : "#9E9E9E";
 
-  const renderHost = ({ item }: { item: any }) => (
-    <TouchableOpacity
-      style={[styles.hostItem, { backgroundColor: colors.card, borderBottomColor: colors.border }]}
-      onPress={() => router.push(`/hosts/${item.id}`)}
-      activeOpacity={0.8}
-    >
-      <View style={styles.avatarWrap}>
-        <Image source={{ uri: item.avatar }} style={styles.avatar} />
-        <View style={[styles.onlineDot, { backgroundColor: statusColor(item), borderColor: colors.card }]} />
-      </View>
-      <View style={styles.info}>
-        <View style={styles.nameRow}>
-          <Text style={[styles.name, { color: colors.text }]}>{item.name}</Text>
-          <View style={styles.ratingRow}>
-            <Feather name="star" size={11} color="#FFA100" />
-            <Text style={[styles.rating, { color: colors.mutedForeground }]}>{item.rating.toFixed(1)}</Text>
-          </View>
-        </View>
-        <Text style={[styles.topics, { color: colors.mutedForeground }]} numberOfLines={1}>
-          {item.specialties.slice(0, 3).join(" • ")}
-        </Text>
-        <View style={styles.metaRow}>
-          <View style={[styles.statusBadge, { backgroundColor: statusColor(item) + "20" }]}>
-            <View style={[styles.statusDot, { backgroundColor: statusColor(item) }]} />
-            <Text style={[styles.statusText, { color: statusColor(item) }]}>{statusLabel(item)}</Text>
-          </View>
-          <View style={[styles.dot, { backgroundColor: colors.border }]} />
-          <Image source={require("@/assets/icons/ic_coin.png")} style={styles.coinIcon} resizeMode="contain" />
-          <Text style={[styles.coinRate, { color: colors.coinGoldText }]}>{item.coinsPerMinute}/min</Text>
-        </View>
-      </View>
+  const renderHost = ({ item }: { item: any }) => {
+    const name = item.display_name ?? item.name ?? "Host";
+    const avatar = item.avatar_url ?? `https://api.dicebear.com/7.x/avataaars/svg?seed=${item.id}`;
+    const rating = (item.rating ?? 4.5).toFixed(1);
+    const rate = item.audio_coins_per_minute ?? item.coinsPerMinute ?? 5;
+    const topicsArr = Array.isArray(item.topics) ? item.topics : (item.topics ? String(item.topics).split(",") : []);
+
+    return (
       <TouchableOpacity
-        style={[styles.talkBtn, { backgroundColor: colors.primary }]}
-        onPress={() => router.push(`/call/outgoing?hostId=${item.id}`)}
+        style={[styles.hostItem, { backgroundColor: colors.card, borderBottomColor: colors.border }]}
+        onPress={() => router.push(`/hosts/${item.id}`)}
+        activeOpacity={0.8}
       >
-        <Feather name="phone" size={13} color="#fff" />
-        <Text style={styles.talkTxt}>Talk</Text>
+        <View style={styles.avatarWrap}>
+          <Image source={{ uri: avatar }} style={styles.avatar} />
+          <View style={[styles.onlineDot, { backgroundColor: statusColor(item), borderColor: colors.card }]} />
+        </View>
+        <View style={styles.info}>
+          <View style={styles.nameRow}>
+            <Text style={[styles.name, { color: colors.text }]}>{name}</Text>
+            <View style={styles.ratingRow}>
+              <Feather name="star" size={11} color="#FFA100" />
+              <Text style={[styles.rating, { color: colors.mutedForeground }]}>{rating}</Text>
+            </View>
+          </View>
+          {topicsArr.length > 0 && (
+            <Text style={[styles.topics, { color: colors.mutedForeground }]} numberOfLines={1}>
+              {topicsArr.slice(0, 3).join(" • ")}
+            </Text>
+          )}
+          <View style={styles.metaRow}>
+            <View style={[styles.statusBadge, { backgroundColor: statusColor(item) + "20" }]}>
+              <View style={[styles.statusDot, { backgroundColor: statusColor(item) }]} />
+              <Text style={[styles.statusText, { color: statusColor(item) }]}>{statusLabel(item)}</Text>
+            </View>
+            <View style={[styles.dot, { backgroundColor: colors.border }]} />
+            <Image source={require("@/assets/icons/ic_coin.png")} style={styles.coinIcon} resizeMode="contain" />
+            <Text style={[styles.coinRate, { color: colors.coinGoldText ?? "#FFA100" }]}>{rate}/min</Text>
+          </View>
+        </View>
+        <TouchableOpacity
+          style={[styles.talkBtn, { backgroundColor: colors.primary }]}
+          onPress={() => router.push(`/hosts/${item.id}`)}
+        >
+          <Feather name="phone" size={13} color="#fff" />
+          <Text style={styles.talkTxt}>Talk</Text>
+        </TouchableOpacity>
       </TouchableOpacity>
-    </TouchableOpacity>
-  );
+    );
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
-      {/* Search header */}
-      <View style={[styles.header, { paddingTop: topPad + 8, backgroundColor: colors.background, borderBottomColor: colors.border }]}>
+      <View style={[styles.header, { paddingTop: insets.top + 8, backgroundColor: colors.background, borderBottomColor: colors.border }]}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Image source={require("@/assets/icons/ic_back.png")} style={{ width: 22, height: 22, tintColor: colors.text }} resizeMode="contain" />
         </TouchableOpacity>
@@ -112,30 +127,17 @@ export default function SearchHostsScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Filters panel */}
       {showFilters && (
         <View style={[styles.filtersPanel, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
           <Text style={[styles.filterGroupLabel, { color: colors.mutedForeground }]}>Topic</Text>
           <View style={styles.chipRow}>
-            {["All", ...SPECIALTIES].map((t) => (
+            {TOPICS.map((t) => (
               <TouchableOpacity
                 key={t}
                 style={[styles.chip, { backgroundColor: selectedTopic === t ? colors.primary : colors.surface, borderColor: selectedTopic === t ? colors.primary : colors.border }]}
                 onPress={() => setSelectedTopic(t)}
               >
                 <Text style={[styles.chipText, { color: selectedTopic === t ? "#fff" : colors.text }]}>{t}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-          <Text style={[styles.filterGroupLabel, { color: colors.mutedForeground }]}>Language</Text>
-          <View style={styles.chipRow}>
-            {LANGUAGES.map((l) => (
-              <TouchableOpacity
-                key={l}
-                style={[styles.chip, { backgroundColor: selectedLang === l ? colors.primary : colors.surface, borderColor: selectedLang === l ? colors.primary : colors.border }]}
-                onPress={() => setSelectedLang(l)}
-              >
-                <Text style={[styles.chipText, { color: selectedLang === l ? "#fff" : colors.text }]}>{l}</Text>
               </TouchableOpacity>
             ))}
           </View>
@@ -154,16 +156,19 @@ export default function SearchHostsScreen() {
         </View>
       )}
 
-      {/* Results count */}
       <View style={[styles.resultsBar, { backgroundColor: colors.background }]}>
         <Text style={[styles.resultsText, { color: colors.mutedForeground }]}>
-          {filtered.length} host{filtered.length !== 1 ? "s" : ""} found
+          {loading ? "Loading..." : `${filtered.length} host${filtered.length !== 1 ? "s" : ""} found`}
         </Text>
       </View>
 
-      {filtered.length === 0 ? (
+      {loading ? (
+        <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      ) : filtered.length === 0 ? (
         <View style={styles.empty}>
-          <Image source={require("@/assets/images/empty_hosts.png")} style={styles.emptyImg} resizeMode="contain" />
+          <Feather name="users" size={64} color={colors.border} />
           <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>No hosts found matching your search</Text>
         </View>
       ) : (
@@ -172,7 +177,7 @@ export default function SearchHostsScreen() {
           keyExtractor={(h) => h.id}
           renderItem={renderHost}
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: 30 }}
+          contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
         />
       )}
     </View>
@@ -212,6 +217,5 @@ const styles = StyleSheet.create({
   talkBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 },
   talkTxt: { color: "#fff", fontSize: 12, fontFamily: "Poppins_600SemiBold" },
   empty: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12, padding: 40 },
-  emptyImg: { width: 180, height: 180 },
   emptyText: { fontSize: 14, fontFamily: "Poppins_400Regular", textAlign: "center" },
 });

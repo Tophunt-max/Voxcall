@@ -1,12 +1,11 @@
 import React from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, Image,
-  FlatList, Platform
+  FlatList,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
-import { MOCK_HOSTS } from "@/data/mockData";
 
 const REVIEWS = [
   { id: "r1", user: "Sarah M.", avatar: "sarah", rating: 5, text: "Amazing listener! Very understanding and gave great advice. Will definitely call again.", date: "2 days ago" },
@@ -32,13 +31,14 @@ function Stars({ count }: { count: number }) {
 export default function AllReviewsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const params = useLocalSearchParams<{ hostId: string }>();
-  const host = MOCK_HOSTS.find(h => h.id === params.hostId) ?? MOCK_HOSTS[0];
-  const topPad = insets.top;
+  const params = useLocalSearchParams<{ hostId: string; hostRating: string; hostReviewCount: string }>();
+
+  const rating = parseFloat(params.hostRating ?? "4.8");
+  const reviewCount = parseInt(params.hostReviewCount ?? "0", 10);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
-      <View style={[styles.header, { paddingTop: topPad + 8 }]}>
+      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
         <TouchableOpacity onPress={() => router.back()} style={[styles.backBtn, { backgroundColor: colors.surface }]}>
           <Image source={require("@/assets/icons/ic_back.png")} style={styles.backIcon} tintColor={colors.text} resizeMode="contain" />
         </TouchableOpacity>
@@ -46,12 +46,11 @@ export default function AllReviewsScreen() {
         <View style={{ width: 40 }} />
       </View>
 
-      {/* Rating summary */}
       <View style={[styles.summaryCard, { backgroundColor: colors.card, marginHorizontal: 16 }]}>
         <View style={styles.ratingBig}>
-          <Text style={[styles.ratingNum, { color: colors.text }]}>{host.rating.toFixed(1)}</Text>
-          <Stars count={Math.round(host.rating)} />
-          <Text style={[styles.ratingTotal, { color: colors.mutedForeground }]}>{host.reviewCount} reviews</Text>
+          <Text style={[styles.ratingNum, { color: colors.text }]}>{rating.toFixed(1)}</Text>
+          <Stars count={Math.round(rating)} />
+          <Text style={[styles.ratingTotal, { color: colors.mutedForeground }]}>{reviewCount} reviews</Text>
         </View>
         <View style={styles.ratingBars}>
           {[5,4,3,2,1].map(star => {
