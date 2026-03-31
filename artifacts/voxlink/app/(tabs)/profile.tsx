@@ -105,7 +105,7 @@ function MenuItem({
 export default function ProfileScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { user, logout, switchRole } = useAuth();
+  const { user, logout } = useAuth();
   const [notificationsOn, setNotificationsOn] = useState(true);
 
   const topPad = insets.top;
@@ -121,14 +121,10 @@ export default function ProfileScreen() {
         style: "destructive",
         onPress: async () => {
           await logout();
-          router.replace("/auth/login");
+          router.replace("/auth/role-select");
         },
       },
     ]);
-  };
-
-  const handleBecomeHost = () => {
-    router.push("/become-host");
   };
 
   const copyId = () => {
@@ -273,21 +269,6 @@ export default function ProfileScreen() {
       {/* More section */}
       <View style={[styles.section, { backgroundColor: colors.card }]}>
         <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>More</Text>
-        {user?.role !== "host" && (
-          <MenuItem
-            iconSource={require("@/assets/icons/ic_listener.png")}
-            label="Become a Host"
-            onPress={handleBecomeHost}
-            value="Earn coins"
-          />
-        )}
-        {user?.role === "host" && (
-          <MenuItem
-            iconName="trending-up"
-            label="Host Dashboard"
-            onPress={() => router.push("/host/dashboard")}
-          />
-        )}
         <MenuItem
           iconName="clock"
           label="Call History"

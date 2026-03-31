@@ -11,7 +11,7 @@ import { useAuth } from "@/context/AuthContext";
 export default function HostProfileScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { user, logout, switchRole } = useAuth();
+  const { user, logout } = useAuth();
   const [notificationsOn, setNotificationsOn] = useState(true);
   const [isOnline, setIsOnline] = useState(false);
   const topPad = insets.top;
@@ -21,7 +21,7 @@ export default function HostProfileScreen() {
   const handleLogout = () => {
     Alert.alert("Sign Out", "Are you sure you want to sign out?", [
       { text: "Cancel", style: "cancel" },
-      { text: "Sign Out", style: "destructive", onPress: async () => { await logout(); router.replace("/auth/login"); } }
+      { text: "Sign Out", style: "destructive", onPress: async () => { await logout(); router.replace("/auth/role-select"); } }
     ]);
   };
 

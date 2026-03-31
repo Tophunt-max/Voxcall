@@ -53,11 +53,11 @@ export default function OnboardingScreen() {
       listRef.current?.scrollToIndex({ index: current + 1 });
       setCurrent(current + 1);
     } else {
-      router.replace("/auth/login");
+      router.replace("/auth/role-select");
     }
   };
 
-  const skip = () => router.replace("/auth/login");
+  const skip = () => router.replace("/auth/role-select");
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
