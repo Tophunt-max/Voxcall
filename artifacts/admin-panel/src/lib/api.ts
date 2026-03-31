@@ -1,5 +1,8 @@
-const BASE = import.meta.env.BASE_URL.replace(/\/$/, '');
-const API = `${BASE}/api`;
+// Use VITE_API_URL env var for direct connection to production API,
+// or fall back to Vite proxy (localhost:8080) for local dev
+const API = import.meta.env.VITE_API_URL
+  ? `${import.meta.env.VITE_API_URL}/api`
+  : `${import.meta.env.BASE_URL.replace(/\/$/, '')}/api`;
 
 export function getToken() { return localStorage.getItem('voxlink_admin_token') || ''; }
 
