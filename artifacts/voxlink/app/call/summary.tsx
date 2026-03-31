@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, Platform } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
@@ -11,7 +11,7 @@ import { StarRating } from "@/components/StarRating";
 export default function CallSummaryScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { duration, type, participantName } = useLocalSearchParams<{ duration: string; type: string; participantName: string }>();
+  const { duration, type, participantName, autoEnded } = useLocalSearchParams<{ duration: string; type: string; participantName: string; autoEnded: string }>();
   const { user, updateCoins } = useAuth();
   const [rating, setRating] = useState(0);
   const [rated, setRated] = useState(false);
@@ -29,10 +29,16 @@ export default function CallSummaryScreen() {
   return (
     <View style={[styles.screen, { backgroundColor: colors.background, paddingTop: topPad + 20, paddingBottom: bottomPad + 20 }]}>
       <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        {autoEnded === "1" && (
+          <View style={styles.autoEndedBanner}>
+            <Feather name="alert-circle" size={14} color="#FF6B6B" />
+            <Text style={styles.autoEndedText}>Coins khatam ho gaye — call auto-disconnect hua</Text>
+          </View>
+        )}
         <View style={[styles.iconCircle, { backgroundColor: colors.primary + "18" }]}>
           <Feather name={type === "video" ? "video" : "phone"} size={36} color={colors.primary} />
         </View>
-        <Text style={[styles.title, { color: colors.foreground }]}>Call Ended</Text>
+        <Text style={[styles.title, { color: colors.foreground }]}>{autoEnded === "1" ? "Call Auto-Ended" : "Call Ended"}</Text>
         <Text style={[styles.hostName, { color: colors.mutedForeground }]}>with {participantName}</Text>
 
         <View style={[styles.statsRow, { borderColor: colors.border }]}>
@@ -72,8 +78,16 @@ export default function CallSummaryScreen() {
         )}
       </View>
 
-      <TouchableOpacity onPress={handleDone} style={[styles.doneBtn, { backgroundColor: colors.primary }]}>
-        <Text style={styles.doneBtnText}>Back to Home</Text>
+      {autoEnded === "1" && (
+        <TouchableOpacity
+          onPress={() => router.replace("/screens/user/wallet")}
+          style={[styles.doneBtn, { backgroundColor: "#A00EE7" }]}
+        >
+          <Text style={styles.doneBtnText}>💰 Recharge Karo</Text>
+        </TouchableOpacity>
+      )}
+      <TouchableOpacity onPress={handleDone} style={[styles.doneBtn, { backgroundColor: autoEnded === "1" ? colors.muted : colors.primary }]}>
+        <Text style={[styles.doneBtnText, autoEnded === "1" && { color: colors.mutedForeground }]}>Back to Home</Text>
       </TouchableOpacity>
     </View>
   );
@@ -96,6 +110,14 @@ const styles = StyleSheet.create({
   rateBtnText: { fontSize: 15, fontFamily: "Poppins_600SemiBold" },
   thankYou: { alignItems: "center", gap: 8 },
   thankYouText: { fontSize: 15, fontFamily: "Poppins_500Medium" },
+  autoEndedBanner: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    backgroundColor: "rgba(255,107,107,0.1)",
+    borderWidth: 1, borderColor: "rgba(255,107,107,0.3)",
+    borderRadius: 12, paddingHorizontal: 14, paddingVertical: 8,
+    width: "100%",
+  },
+  autoEndedText: { color: "#FF6B6B", fontSize: 12, fontFamily: "Poppins_500Medium", flex: 1 },
   doneBtn: { width: "100%", paddingVertical: 16, borderRadius: 14, alignItems: "center" },
   doneBtnText: { color: "#fff", fontSize: 16, fontFamily: "Poppins_600SemiBold" },
 });

@@ -46,7 +46,8 @@ call.post('/initiate', async (c) => {
     });
   } catch {}
 
-  return c.json({ session_id: sessionId, cf_session_id: cfSessionId, host_coins_per_minute: host.coins_per_minute });
+  const maxSeconds = Math.floor((caller.coins / host.coins_per_minute) * 60);
+  return c.json({ session_id: sessionId, cf_session_id: cfSessionId, host_coins_per_minute: host.coins_per_minute, max_seconds: maxSeconds });
 });
 
 // POST /api/calls/end — flat route (mobile sends session_id in body)
