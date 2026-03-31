@@ -1,22 +1,21 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, Image,
-  FlatList,
+  FlatList, ActivityIndicator,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
+import { API } from "@/services/api";
 
-const REVIEWS = [
-  { id: "r1", user: "Sarah M.", avatar: "sarah", rating: 5, text: "Amazing listener! Very understanding and gave great advice. Will definitely call again.", date: "2 days ago" },
-  { id: "r2", user: "John D.", avatar: "john", rating: 5, text: "Really helped me through a tough time. Professional and empathetic.", date: "1 week ago" },
-  { id: "r3", user: "Priya K.", avatar: "priya", rating: 4, text: "Good session, very knowledgeable about the topic. Slightly rushed at the end.", date: "1 week ago" },
-  { id: "r4", user: "Marcus L.", avatar: "marcus", rating: 5, text: "Best listener on the platform! Always available and incredibly supportive.", date: "2 weeks ago" },
-  { id: "r5", user: "Emma T.", avatar: "emma", rating: 5, text: "I felt heard and understood. Thank you for the wonderful session.", date: "3 weeks ago" },
-  { id: "r6", user: "Alex R.", avatar: "alex", rating: 4, text: "Very good overall. Knowledgeable and easy to talk to.", date: "1 month ago" },
-  { id: "r7", user: "Nina P.", avatar: "nina", rating: 5, text: "Life-changing conversation! Helped me see things from a new perspective.", date: "1 month ago" },
-  { id: "r8", user: "Raj S.", avatar: "raj", rating: 4, text: "Great experience. Would recommend to anyone looking for genuine support.", date: "2 months ago" },
-];
+interface Review {
+  id: string;
+  user_name?: string;
+  user_id?: string;
+  rating: number;
+  comment?: string;
+  created_at?: number;
+}
 
 function Stars({ count }: { count: number }) {
   return (
@@ -28,13 +27,44 @@ function Stars({ count }: { count: number }) {
   );
 }
 
+function formatDate(ts?: number): string {
+  if (!ts) return "";
+  const d = new Date(ts * 1000);
+  const now = Date.now();
+  const diff = now - ts * 1000;
+  const day = 86400000;
+  if (diff < day) return "Today";
+  if (diff < 2 * day) return "Yesterday";
+  if (diff < 7 * day) return `${Math.floor(diff / day)} days ago`;
+  if (diff < 30 * day) return `${Math.floor(diff / (7 * day))} week${Math.floor(diff / (7 * day)) > 1 ? "s" : ""} ago`;
+  if (diff < 365 * day) return `${Math.floor(diff / (30 * day))} month${Math.floor(diff / (30 * day)) > 1 ? "s" : ""} ago`;
+  return d.toLocaleDateString();
+}
+
 export default function AllReviewsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ hostId: string; hostRating: string; hostReviewCount: string }>();
 
-  const rating = parseFloat(params.hostRating ?? "4.8");
+  const rating = parseFloat(params.hostRating ?? "0");
   const reviewCount = parseInt(params.hostReviewCount ?? "0", 10);
+
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!params.hostId) { setLoading(false); return; }
+    API.getHostReviews(params.hostId)
+      .then((data) => setReviews(data ?? []))
+      .catch(() => setReviews([]))
+      .finally(() => setLoading(false));
+  }, [params.hostId]);
+
+  const displayRating = rating || (reviews.length > 0
+    ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length
+    : 0);
+
+  const totalCount = reviewCount || reviews.length;
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
@@ -46,47 +76,70 @@ export default function AllReviewsScreen() {
         <View style={{ width: 40 }} />
       </View>
 
-      <View style={[styles.summaryCard, { backgroundColor: colors.card, marginHorizontal: 16 }]}>
-        <View style={styles.ratingBig}>
-          <Text style={[styles.ratingNum, { color: colors.text }]}>{rating.toFixed(1)}</Text>
-          <Stars count={Math.round(rating)} />
-          <Text style={[styles.ratingTotal, { color: colors.mutedForeground }]}>{reviewCount} reviews</Text>
-        </View>
-        <View style={styles.ratingBars}>
-          {[5,4,3,2,1].map(star => {
-            const pct = star === 5 ? 0.7 : star === 4 ? 0.2 : star === 3 ? 0.06 : star === 2 ? 0.03 : 0.01;
-            return (
-              <View key={star} style={styles.barRow}>
-                <Text style={[styles.barLabel, { color: colors.mutedForeground }]}>{star}</Text>
-                <Text style={{ color: "#FFA100", fontSize: 11 }}>★</Text>
-                <View style={[styles.barBg, { backgroundColor: colors.border }]}>
-                  <View style={[styles.barFill, { width: `${pct * 100}%` as any, backgroundColor: "#FFA100" }]} />
-                </View>
-              </View>
-            );
-          })}
-        </View>
-      </View>
-
-      <FlatList
-        data={REVIEWS}
-        keyExtractor={r => r.id}
-        contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 12, gap: 10 }}
-        showsVerticalScrollIndicator={false}
-        renderItem={({ item }) => (
-          <View style={[styles.reviewCard, { backgroundColor: colors.card }]}>
-            <View style={styles.reviewTop}>
-              <Image source={{ uri: `https://api.dicebear.com/7.x/avataaars/svg?seed=${item.avatar}` }} style={styles.reviewAvatar} />
-              <View style={{ flex: 1, gap: 2 }}>
-                <Text style={[styles.reviewUser, { color: colors.text }]}>{item.user}</Text>
-                <Stars count={item.rating} />
-              </View>
-              <Text style={[styles.reviewDate, { color: colors.mutedForeground }]}>{item.date}</Text>
-            </View>
-            <Text style={[styles.reviewText, { color: colors.mutedForeground }]}>{item.text}</Text>
+      {displayRating > 0 && (
+        <View style={[styles.summaryCard, { backgroundColor: colors.card, marginHorizontal: 16 }]}>
+          <View style={styles.ratingBig}>
+            <Text style={[styles.ratingNum, { color: colors.text }]}>{displayRating.toFixed(1)}</Text>
+            <Stars count={Math.round(displayRating)} />
+            <Text style={[styles.ratingTotal, { color: colors.mutedForeground }]}>{totalCount} reviews</Text>
           </View>
-        )}
-      />
+          <View style={styles.ratingBars}>
+            {[5,4,3,2,1].map(star => {
+              const count = reviews.filter(r => Math.round(r.rating) === star).length;
+              const pct = reviews.length > 0 ? count / reviews.length : 0;
+              return (
+                <View key={star} style={styles.barRow}>
+                  <Text style={[styles.barLabel, { color: colors.mutedForeground }]}>{star}</Text>
+                  <Text style={{ color: "#FFA100", fontSize: 11 }}>★</Text>
+                  <View style={[styles.barBg, { backgroundColor: colors.border }]}>
+                    <View style={[styles.barFill, { width: `${pct * 100}%` as any, backgroundColor: "#FFA100" }]} />
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        </View>
+      )}
+
+      {loading ? (
+        <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+          <ActivityIndicator size="large" color="#A00EE7" />
+        </View>
+      ) : (
+        <FlatList
+          data={reviews}
+          keyExtractor={r => r.id}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 12, gap: 10, paddingBottom: insets.bottom + 20 }}
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={
+            <View style={{ alignItems: "center", paddingTop: 60, gap: 8 }}>
+              <Text style={{ fontSize: 40 }}>💬</Text>
+              <Text style={[styles.emptyText, { color: colors.text }]}>No reviews yet</Text>
+              <Text style={{ color: colors.mutedForeground, fontSize: 13, fontFamily: "Poppins_400Regular" }}>
+                Be the first to leave a review!
+              </Text>
+            </View>
+          }
+          renderItem={({ item }) => (
+            <View style={[styles.reviewCard, { backgroundColor: colors.card }]}>
+              <View style={styles.reviewTop}>
+                <Image
+                  source={{ uri: `https://api.dicebear.com/7.x/avataaars/svg?seed=${item.user_id ?? item.id}` }}
+                  style={styles.reviewAvatar}
+                />
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Text style={[styles.reviewUser, { color: colors.text }]}>{item.user_name ?? "User"}</Text>
+                  <Stars count={Math.round(item.rating)} />
+                </View>
+                <Text style={[styles.reviewDate, { color: colors.mutedForeground }]}>{formatDate(item.created_at)}</Text>
+              </View>
+              {!!item.comment && (
+                <Text style={[styles.reviewText, { color: colors.mutedForeground }]}>{item.comment}</Text>
+              )}
+            </View>
+          )}
+        />
+      )}
     </View>
   );
 }
@@ -111,4 +164,5 @@ const styles = StyleSheet.create({
   reviewUser: { fontSize: 14, fontFamily: "Poppins_600SemiBold" },
   reviewDate: { fontSize: 11, fontFamily: "Poppins_400Regular", marginTop: 2 },
   reviewText: { fontSize: 13, fontFamily: "Poppins_400Regular", lineHeight: 20 },
+  emptyText: { fontSize: 16, fontFamily: "Poppins_600SemiBold" },
 });

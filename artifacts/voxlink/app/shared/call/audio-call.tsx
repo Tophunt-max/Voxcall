@@ -13,7 +13,7 @@ import * as Haptics from "expo-haptics";
 
 export default function AudioCallScreen() {
   const insets = useSafeAreaInsets();
-  const { activeCall, endCall, toggleMute, toggleSpeaker } = useCall();
+  const { activeCall, endCall, toggleMute, toggleSpeaker, markCallActive } = useCall();
   const [status, setStatus] = useState<"connecting" | "ringing" | "active">("connecting");
 
   const pulse = useRef(new Animated.Value(1)).current;
@@ -26,7 +26,10 @@ export default function AudioCallScreen() {
       ])
     ).start();
     const t1 = setTimeout(() => setStatus("ringing"), 1000);
-    const t2 = setTimeout(() => setStatus("active"), 3000);
+    const t2 = setTimeout(() => {
+      setStatus("active");
+      markCallActive(); // sets startTime for outgoing calls (incoming calls use acceptCall)
+    }, 3000);
     return () => { clearTimeout(t1); clearTimeout(t2); };
   }, []);
 

@@ -82,7 +82,18 @@ export default function CallingHistoryScreen() {
             activeOpacity={0.85}
             style={[styles.card, { backgroundColor: colors.card,
               ...Platform.select({ ios: { shadowColor: "#000", shadowOpacity: 0.07, shadowRadius: 10, shadowOffset: { width: 0, height: 2 } }, android: { elevation: 2 }, web: { boxShadow: "0 2px 10px rgba(0,0,0,0.07)" } as any }) }]}
-            onPress={() => router.push(`/shared/call/summary?callId=${item.id}`)}
+            onPress={() => router.push({
+              pathname: "/shared/call/summary",
+              params: {
+                duration: String(item.duration),
+                type: item.type,
+                participantName: item.hostName,
+                participantId: item.hostId,
+                sessionId: item.id,
+                coinsSpent: String(item.coinsSpent),
+                autoEnded: "0",
+              },
+            })}
           >
             <View style={styles.avatarWrap}>
               <Image

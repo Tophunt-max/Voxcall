@@ -12,12 +12,15 @@ import * as Haptics from "expo-haptics";
 
 export default function VideoCallScreen() {
   const insets = useSafeAreaInsets();
-  const { activeCall, endCall, toggleMute, toggleCamera, toggleSpeaker } = useCall();
+  const { activeCall, endCall, toggleMute, toggleCamera, toggleSpeaker, markCallActive } = useCall();
   const [status, setStatus] = useState<"connecting" | "ringing" | "active">("connecting");
 
   useEffect(() => {
     const t1 = setTimeout(() => setStatus("ringing"), 1000);
-    const t2 = setTimeout(() => setStatus("active"), 3000);
+    const t2 = setTimeout(() => {
+      setStatus("active");
+      markCallActive(); // sets startTime for outgoing calls
+    }, 3000);
     return () => { clearTimeout(t1); clearTimeout(t2); };
   }, []);
 

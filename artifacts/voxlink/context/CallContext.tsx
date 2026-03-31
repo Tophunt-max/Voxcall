@@ -32,6 +32,7 @@ interface CallContextValue {
   initiateCall: (participant: CallParticipant, type: CallType, coinsPerMinute?: number) => void;
   receiveCall: (participant: CallParticipant, type: CallType, callId: string) => void;
   acceptCall: () => void;
+  markCallActive: () => void;
   declineCall: () => void;
   endCall: (autoEnded?: boolean) => void;
   toggleMute: () => void;
@@ -103,6 +104,14 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     router.replace(curr.type === "audio" ? "/shared/call/audio-call" : "/shared/call/video-call");
   }, []);
 
+  // Called from audio-call / video-call when call becomes "active" for outgoing calls
+  // (acceptCall is only triggered for incoming calls — outgoing calls never call it)
+  const markCallActive = useCallback(() => {
+    const curr = activeCallRef.current;
+    if (!curr || curr.startTime) return; // already set, don't overwrite
+    updateCall({ ...curr, status: "active" as CallStatus, startTime: Date.now() });
+  }, []);
+
   const declineCall = useCallback(() => {
     updateCall(null);
     router.back();
@@ -152,7 +161,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const toggleSpeaker = useCallback(() => setActiveCall((p) => p ? { ...p, isSpeakerOn: !p.isSpeakerOn } : null), []);
 
   return (
-    <CallContext.Provider value={{ activeCall, initiateCall, receiveCall, acceptCall, declineCall, endCall, toggleMute, toggleCamera, toggleSpeaker }}>
+    <CallContext.Provider value={{ activeCall, initiateCall, receiveCall, acceptCall, markCallActive, declineCall, endCall, toggleMute, toggleCamera, toggleSpeaker }}>
       {children}
     </CallContext.Provider>
   );

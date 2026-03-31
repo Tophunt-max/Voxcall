@@ -35,7 +35,12 @@ interface HostCard {
 
 /* ─── Ripple rings (background) ─── */
 function RippleRings() {
-  const rings = Array.from({ length: 5 }, () => useRef(new Animated.Value(0)).current);
+  const r0 = useRef(new Animated.Value(0)).current;
+  const r1 = useRef(new Animated.Value(0)).current;
+  const r2 = useRef(new Animated.Value(0)).current;
+  const r3 = useRef(new Animated.Value(0)).current;
+  const r4 = useRef(new Animated.Value(0)).current;
+  const rings = [r0, r1, r2, r3, r4];
   useEffect(() => {
     const makeRing = (v: Animated.Value, delay: number) =>
       Animated.loop(Animated.sequence([
@@ -154,7 +159,10 @@ function CallTypeDialog({ visible, selected, onSelect, onClose }: {
 
 /* ─── Match found ripple ─── */
 function MatchRipple() {
-  const rings = Array.from({ length: 3 }, () => useRef(new Animated.Value(0)).current);
+  const m0 = useRef(new Animated.Value(0)).current;
+  const m1 = useRef(new Animated.Value(0)).current;
+  const m2 = useRef(new Animated.Value(0)).current;
+  const rings = [m0, m1, m2];
   useEffect(() => {
     const anim = Animated.parallel(rings.map((v, i) => Animated.loop(Animated.sequence([
       Animated.delay(i * 400),
@@ -311,7 +319,7 @@ export default function RandomScreen() {
         if (!isMounted.current) return;
         if (res.matched && res.host) {
           setMatchedHost(res.host);
-          setAdminCoinRate(res.coins_per_minute ?? 5);
+          setAdminCoinRate(res.host?.coins_per_minute ?? res.coins_per_minute ?? 5);
           setPhase("found");
           if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
         } else {
@@ -389,8 +397,8 @@ export default function RandomScreen() {
       <View style={[styles.header, { paddingTop: insets.top + 14 }]}>
         <View style={styles.avatarDotBorder}>
           <View style={styles.avatarCircle}>
-            {user?.avatar_url ? (
-              <Image source={{ uri: user.avatar_url }} style={styles.userAvatarImg} />
+            {user?.avatar ? (
+              <Image source={{ uri: user.avatar }} style={styles.userAvatarImg} />
             ) : (
               <Image source={require("@/assets/images/avatar_placeholder.png")} style={styles.userAvatarImg} />
             )}
