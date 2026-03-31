@@ -69,7 +69,7 @@ export default function HomeScreen() {
             </Text>
             <View style={[styles.uniqueIdBadge, { backgroundColor: "#F0E4F8" }]}>
               <Image
-                source={require("@/assets/icons/unique_id_icon.png")}
+                source={require("@/assets/icons/ic_id_badge.png")}
                 style={[styles.uniqueIdIcon, { tintColor: "#9D82B6" }]}
                 resizeMode="contain"
               />
@@ -87,7 +87,7 @@ export default function HomeScreen() {
             style={[styles.coinBadge, { backgroundColor: "#FFF2D9" }]}
           >
             <Image
-              source={require("@/assets/icons/star_coin.png")}
+              source={require("@/assets/icons/ic_coin.png")}
               style={styles.coinIconHeader}
               resizeMode="contain"
             />
@@ -127,7 +127,7 @@ export default function HomeScreen() {
             </View>
           </View>
           <Image
-            source={require("@/assets/images/person_image.png")}
+            source={require("@/assets/images/hero_person.png")}
             style={styles.findMoreImage}
             resizeMode="contain"
           />
@@ -219,7 +219,7 @@ export default function HomeScreen() {
           ) : (
             <View style={styles.emptyState}>
               <Image
-                source={require("@/assets/images/no_listener_found.png")}
+                source={require("@/assets/images/empty_hosts.png")}
                 style={styles.emptyImage}
                 resizeMode="contain"
               />

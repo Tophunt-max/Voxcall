@@ -30,7 +30,7 @@ export default function MessagesScreen() {
       {conversations.length === 0 ? (
         <View style={styles.empty}>
           <Image
-            source={require("@/assets/images/no_chat_list.png")}
+            source={require("@/assets/images/empty_chat.png")}
             style={styles.emptyImage}
             resizeMode="contain"
           />

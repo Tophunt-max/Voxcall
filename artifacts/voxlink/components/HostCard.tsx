@@ -59,7 +59,7 @@ export function HostCard({ host, onPress, compact = false, onTalkNow }: Props) {
           {host.languages[0]}
         </Text>
         <View style={styles.compactCoinRow}>
-          <Image source={require("@/assets/icons/star_coin.png")} style={styles.compactCoinIcon} resizeMode="contain" />
+          <Image source={require("@/assets/icons/ic_coin.png")} style={styles.compactCoinIcon} resizeMode="contain" />
           <Text style={[styles.compactCoinText, { color: colors.coinGold }]}>{host.coinsPerMinute}/min</Text>
         </View>
       </TouchableOpacity>
@@ -92,7 +92,7 @@ export function HostCard({ host, onPress, compact = false, onTalkNow }: Props) {
           {/* Language */}
           <View style={styles.langRow}>
             <Image
-              source={require("@/assets/icons/language_icon.png")}
+              source={require("@/assets/icons/ic_language.png")}
               style={[styles.langIcon, { tintColor: colors.mutedForeground }]}
               resizeMode="contain"
             />
@@ -113,7 +113,7 @@ export function HostCard({ host, onPress, compact = false, onTalkNow }: Props) {
           {/* Call rate + Talk Now button */}
           <View style={styles.bottomRow}>
             <View style={styles.rateRow}>
-              <Image source={require("@/assets/icons/star_coin.png")} style={styles.coinIcon} resizeMode="contain" />
+              <Image source={require("@/assets/icons/ic_coin.png")} style={styles.coinIcon} resizeMode="contain" />
               <Text style={[styles.rateText, { color: colors.coinGoldText }]}>
                 {host.coinsPerMinute} coins/min
               </Text>
@@ -122,12 +122,12 @@ export function HostCard({ host, onPress, compact = false, onTalkNow }: Props) {
               {host.isOnline && (
                 <>
                   <Image
-                    source={require("@/assets/icons/call_icon.png")}
+                    source={require("@/assets/icons/ic_call.png")}
                     style={[styles.callIcon, { tintColor: colors.primary }]}
                     resizeMode="contain"
                   />
                   <Image
-                    source={require("@/assets/icons/video_call_icon.png")}
+                    source={require("@/assets/icons/ic_video.png")}
                     style={[styles.callIcon, { tintColor: colors.primary }]}
                     resizeMode="contain"
                   />

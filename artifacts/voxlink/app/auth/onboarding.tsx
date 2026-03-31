@@ -18,21 +18,21 @@ const { width, height } = Dimensions.get("window");
 const SLIDES = [
   {
     id: "1",
-    image: require("@/assets/images/onBoarding1.png"),
+    image: require("@/assets/images/onboard_1.png"),
     title: "Connect with Listeners",
     description:
       "Find caring, professional listeners ready to hear you out. Browse by specialty, language, and availability.",
   },
   {
     id: "2",
-    image: require("@/assets/images/onBoarding2.png"),
+    image: require("@/assets/images/onboard_2.png"),
     title: "Audio & Video Calls",
     description:
       "Talk your way. Choose crystal-clear audio or face-to-face video calls with our verified listeners.",
   },
   {
     id: "3",
-    image: require("@/assets/images/onBoarding3.png"),
+    image: require("@/assets/images/onboard_3.png"),
     title: "Your Privacy Matters",
     description:
       "All conversations are private and secure. Connect anonymously and speak freely without judgment.",
@@ -107,7 +107,7 @@ export default function OnboardingScreen() {
                 <Text style={[styles.skipText, { color: colors.mutedForeground }]}>Skip</Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={next} style={[styles.nextBtn, { backgroundColor: colors.primary }]} activeOpacity={0.85}>
-                <Image source={require("@/assets/images/on_boarding_arrow.png")} style={styles.arrowIcon} resizeMode="contain" />
+                <Image source={require("@/assets/images/onboard_next.png")} style={styles.arrowIcon} resizeMode="contain" />
               </TouchableOpacity>
             </>
           ) : (

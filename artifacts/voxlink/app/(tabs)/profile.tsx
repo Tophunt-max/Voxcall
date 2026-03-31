@@ -156,7 +156,7 @@ export default function ProfileScreen() {
           style={[styles.editBtn, { backgroundColor: colors.surface }]}
         >
           <Image
-            source={require("@/assets/icons/edit_profile_icon.png")}
+            source={require("@/assets/icons/ic_edit.png")}
             style={[styles.editIcon, { tintColor: colors.primary }]}
             resizeMode="contain"
           />
@@ -188,7 +188,7 @@ export default function ProfileScreen() {
           {user?.role === "host" && (
             <View style={[styles.hostBadge, { backgroundColor: colors.primary }]}>
               <Image
-                source={require("@/assets/icons/aAvailable_icon.png")}
+                source={require("@/assets/icons/ic_available.png")}
                 style={styles.hostBadgeIcon}
                 resizeMode="contain"
               />
@@ -205,13 +205,13 @@ export default function ProfileScreen() {
           style={[styles.idBadge, { backgroundColor: "#F0E4F8" }]}
         >
           <Image
-            source={require("@/assets/icons/unique_id_icon.png")}
+            source={require("@/assets/icons/ic_id_badge.png")}
             style={[styles.idIcon, { tintColor: "#9D82B6" }]}
             resizeMode="contain"
           />
           <Text style={[styles.idText, { color: "#9D82B6" }]}>ID: {uniqueId}</Text>
           <Image
-            source={require("@/assets/icons/copy_icon.png")}
+            source={require("@/assets/icons/ic_copy.png")}
             style={[styles.idIcon, { tintColor: "#9D82B6" }]}
             resizeMode="contain"
           />
@@ -222,7 +222,7 @@ export default function ProfileScreen() {
           <View style={styles.stat}>
             <View style={styles.statValueRow}>
               <Image
-                source={require("@/assets/icons/star_coin.png")}
+                source={require("@/assets/icons/ic_coin.png")}
                 style={styles.statCoinIcon}
                 resizeMode="contain"
               />
@@ -251,7 +251,7 @@ export default function ProfileScreen() {
       <View style={[styles.section, { backgroundColor: colors.card }]}>
         <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Account</Text>
         <MenuItem
-          iconSource={require("@/assets/icons/edit_profile_icon.png")}
+          iconSource={require("@/assets/icons/ic_edit.png")}
           label="Edit Profile"
           onPress={() => router.push("/profile/edit")}
         />
@@ -264,7 +264,7 @@ export default function ProfileScreen() {
           onPress={() => {}}
         />
         <MenuItem
-          iconSource={require("@/assets/icons/language_icon.png")}
+          iconSource={require("@/assets/icons/ic_language.png")}
           label="Language"
           value="English"
           onPress={() => {}}
@@ -281,7 +281,7 @@ export default function ProfileScreen() {
         <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>More</Text>
         {user?.role !== "host" && (
           <MenuItem
-            iconSource={require("@/assets/icons/listener.png")}
+            iconSource={require("@/assets/icons/ic_listener.png")}
             label="Become a Host"
             onPress={handleBecomeHost}
             value="Earn coins"
@@ -305,7 +305,7 @@ export default function ProfileScreen() {
           onPress={() => {}}
         />
         <MenuItem
-          iconSource={require("@/assets/images/share_app.png")}
+          iconSource={require("@/assets/images/icon_share.png")}
           label="Share App"
           onPress={() => {}}
         />
@@ -314,7 +314,7 @@ export default function ProfileScreen() {
       {/* Sign out */}
       <View style={[styles.section, { backgroundColor: colors.card }]}>
         <MenuItem
-          iconSource={require("@/assets/images/log_out.png")}
+          iconSource={require("@/assets/images/icon_logout.png")}
           label="Sign Out"
           onPress={handleLogout}
           danger

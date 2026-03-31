@@ -7,11 +7,11 @@ import { useChat } from "@/context/ChatContext";
 import { NotificationBadge } from "@/components/NotificationBadge";
 
 const TAB_ICONS = {
-  home: require("@/assets/icons/home_filled.png"),
-  random: require("@/assets/icons/random_call.png"),
-  chat: require("@/assets/icons/chat.png"),
-  wallet: require("@/assets/icons/wallet_icon.png"),
-  profile: require("@/assets/icons/profile_icon.png"),
+  home: require("@/assets/icons/ic_home.png"),
+  random: require("@/assets/icons/ic_shuffle.png"),
+  chat: require("@/assets/icons/ic_chat.png"),
+  wallet: require("@/assets/icons/ic_wallet.png"),
+  profile: require("@/assets/icons/ic_profile.png"),
 };
 
 interface TabIconProps {

@@ -60,7 +60,7 @@ export default function WalletScreen() {
       {/* Balance card with wallet_bg */}
       <View style={[styles.balanceCardOuter, { marginHorizontal: 16, marginBottom: 16 }]}>
         <ImageBackground
-          source={require("@/assets/images/wallet_bg.png")}
+          source={require("@/assets/images/wallet_card_bg.png")}
           style={styles.balanceCardBg}
           imageStyle={{ borderRadius: 20 }}
           resizeMode="cover"
@@ -71,7 +71,7 @@ export default function WalletScreen() {
                 <Text style={styles.balanceLabel}>Total Balance</Text>
                 <View style={styles.balanceRow}>
                   <Image
-                    source={require("@/assets/images/star_coin_big.png")}
+                    source={require("@/assets/images/coin_large.png")}
                     style={styles.coinBig}
                     resizeMode="contain"
                   />
@@ -82,7 +82,7 @@ export default function WalletScreen() {
                 </View>
               </View>
               <Image
-                source={require("@/assets/images/wallet.png")}
+                source={require("@/assets/images/wallet_graphic.png")}
                 style={styles.walletIcon}
                 resizeMode="contain"
               />
@@ -161,7 +161,7 @@ export default function WalletScreen() {
               )}
               <View style={styles.planLeft}>
                 <Image
-                  source={require("@/assets/images/star_coin_big.png")}
+                  source={require("@/assets/images/coin_large.png")}
                   style={styles.planCoinIcon}
                   resizeMode="contain"
                 />
@@ -219,7 +219,7 @@ export default function WalletScreen() {
           ListEmptyComponent={
             <View style={styles.empty}>
               <Image
-                source={require("@/assets/images/no_history_found.png")}
+                source={require("@/assets/images/empty_history.png")}
                 style={styles.emptyImage}
                 resizeMode="contain"
               />
@@ -261,8 +261,8 @@ export default function WalletScreen() {
                 <Image
                   source={
                     item.type === "video"
-                      ? require("@/assets/icons/video_call_icon.png")
-                      : require("@/assets/icons/call_icon.png")
+                      ? require("@/assets/icons/ic_video.png")
+                      : require("@/assets/icons/ic_call.png")
                   }
                   style={[styles.historyCallIcon, { tintColor: colors.accent }]}
                   resizeMode="contain"
@@ -279,7 +279,7 @@ export default function WalletScreen() {
               <View style={styles.historyRight}>
                 <View style={styles.historyCostRow}>
                   <Image
-                    source={require("@/assets/icons/star_coin.png")}
+                    source={require("@/assets/icons/ic_coin.png")}
                     style={styles.historyCoinIcon}
                     resizeMode="contain"
                   />

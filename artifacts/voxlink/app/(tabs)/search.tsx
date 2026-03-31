@@ -46,7 +46,7 @@ export default function RandomScreen() {
       <View style={[styles.content, { paddingBottom: bottomPad + 90 }]}>
         {/* Background dots pattern */}
         <Image
-          source={require("@/assets/images/random_dot_bg.png")}
+          source={require("@/assets/images/dot_bg.png")}
           style={styles.dotsBg}
           resizeMode="cover"
         />
@@ -54,7 +54,7 @@ export default function RandomScreen() {
         {/* Center animation area */}
         <View style={styles.matchArea}>
           <Image
-            source={require("@/assets/images/random_bg.png")}
+            source={require("@/assets/images/match_bg.png")}
             style={styles.randomBg}
             resizeMode="contain"
           />
@@ -67,7 +67,7 @@ export default function RandomScreen() {
             ) : (
               <View style={[styles.matchCircle, { backgroundColor: colors.accentLight }]}>
                 <Image
-                  source={require("@/assets/icons/random_call.png")}
+                  source={require("@/assets/icons/ic_shuffle.png")}
                   style={[styles.randomIcon, { tintColor: colors.accent }]}
                   resizeMode="contain"
                 />
@@ -90,7 +90,7 @@ export default function RandomScreen() {
             style={[styles.callTypeBtn, callType === "audio" && { backgroundColor: colors.card }]}
           >
             <Image
-              source={require("@/assets/icons/call_icon.png")}
+              source={require("@/assets/icons/ic_call.png")}
               style={[styles.callTypeIcon, { tintColor: callType === "audio" ? colors.primary : colors.mutedForeground }]}
               resizeMode="contain"
             />
@@ -108,7 +108,7 @@ export default function RandomScreen() {
             style={[styles.callTypeBtn, callType === "video" && { backgroundColor: colors.card }]}
           >
             <Image
-              source={require("@/assets/icons/video_call_icon.png")}
+              source={require("@/assets/icons/ic_video.png")}
               style={[styles.callTypeIcon, { tintColor: callType === "video" ? colors.primary : colors.mutedForeground }]}
               resizeMode="contain"
             />
@@ -126,7 +126,7 @@ export default function RandomScreen() {
         {/* Online count info */}
         <View style={[styles.infoRow, { backgroundColor: "#F0E4F8" }]}>
           <Image
-            source={require("@/assets/icons/users.png")}
+            source={require("@/assets/icons/ic_users.png")}
             style={[styles.infoIcon, { tintColor: colors.accent }]}
             resizeMode="contain"
           />
