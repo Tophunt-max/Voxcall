@@ -125,9 +125,9 @@ export default function PayoutManagement() {
       {toast && <div className="fixed bottom-5 right-5 z-50 bg-foreground text-background text-sm px-4 py-2.5 rounded-xl shadow-xl">{toast}</div>}
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <StatCard icon={Clock} label="Pending Payouts" value={`$${totalPending.toFixed(2)}`} gradient="gradient-orange" />
-        <StatCard icon={CheckCircle} label="Approved" value={`$${totalApproved.toFixed(2)}`} gradient="gradient-blue" />
-        <StatCard icon={Wallet} label="Total Paid" value={`$${totalPaid.toFixed(2)}`} gradient="gradient-green" />
+        <StatCard icon={Clock} label="Pending Payouts" value={`₹${totalPending.toFixed(2)}`} gradient="gradient-orange" />
+        <StatCard icon={CheckCircle} label="Approved" value={`₹${totalApproved.toFixed(2)}`} gradient="gradient-blue" />
+        <StatCard icon={Wallet} label="Total Paid" value={`₹${totalPaid.toFixed(2)}`} gradient="gradient-green" />
         <StatCard icon={IndianRupee} label="Total Requests" value={rows.length} gradient="gradient-purple" />
       </div>
 
@@ -180,7 +180,7 @@ export default function PayoutManagement() {
               </div>
               <div className="p-3 bg-green-50 rounded-xl">
                 <p className="text-xs text-muted-foreground">Amount</p>
-                <p className="font-bold text-green-600 mt-0.5">${(selected.inr_amount || 0).toFixed(2)}</p>
+                <p className="font-bold text-green-600 mt-0.5">₹{(selected.inr_amount || 0).toFixed(2)}</p>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3 text-sm">

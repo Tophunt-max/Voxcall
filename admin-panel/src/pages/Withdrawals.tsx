@@ -49,7 +49,7 @@ export default function Withdrawals() {
           <div className="flex items-center gap-1 font-semibold text-amber-600 text-sm">
             <Coins size={13} />{(w.coins || 0).toLocaleString()}
           </div>
-          <p className="text-xs text-muted-foreground">${(w.amount || 0).toFixed(2)} USD</p>
+          <p className="text-xs text-muted-foreground">₹{(w.amount || 0).toFixed(2)} INR</p>
         </div>
       )
     },
@@ -103,7 +103,7 @@ export default function Withdrawals() {
                 <span className="text-muted-foreground">Amount</span>
                 <div className="text-right">
                   <p className="font-bold text-amber-600">{(selected.coins || 0).toLocaleString()} coins</p>
-                  <p className="text-xs text-muted-foreground">${(selected.amount || 0).toFixed(2)} USD</p>
+                  <p className="text-xs text-muted-foreground">₹{(selected.amount || 0).toFixed(2)} INR</p>
                 </div>
               </div>
               <div className="flex justify-between text-sm">

@@ -31,7 +31,7 @@ const settingGroups = [
   {
     group: 'Economy',
     settings: [
-      { key: 'coin_to_usd_rate', label: 'Coin → USD Rate', type: 'number', hint: '0.01 means 100 coins = $1.00', step: '0.001' },
+      { key: 'coin_to_usd_rate', label: 'Coin → INR Rate', type: 'number', hint: '1 means 100 coins = ₹100', step: '0.001' },
       { key: 'host_revenue_share', label: 'Host Revenue Share', type: 'number', hint: '0.70 means hosts receive 70% of earned coins', step: '0.01' },
       { key: 'min_withdrawal_coins', label: 'Minimum Withdrawal (Coins)', type: 'number', hint: 'Minimum coins a host must have to request a payout' },
     ],
@@ -63,11 +63,11 @@ function evalFormula(formula: ComputedRow['formula'], expr: string | undefined, 
 
   switch (formula) {
     case 'coins_to_usd':
-      return { primary: `$${(100 * rate).toFixed(2)}`, label2: '100 coins in USD' };
+      return { primary: `₹${(100 * rate).toFixed(2)}`, label2: '100 coins in INR' };
     case 'host_payout':
-      return { primary: `$${(100 * rate * share).toFixed(3)}`, label2: 'Host earns per 100 coins' };
+      return { primary: `₹${(100 * rate * share).toFixed(3)}`, label2: 'Host earns per 100 coins' };
     case 'min_withdrawal_usd':
-      return { primary: `$${(minW * rate * share).toFixed(2)}`, label2: `${minW} coins → USD (host share)` };
+      return { primary: `₹${(minW * rate * share).toFixed(2)}`, label2: `${minW} coins → INR (host share)` };
     case 'custom': {
       try {
         // safe-ish eval: only expose number variables
@@ -85,9 +85,9 @@ function evalFormula(formula: ComputedRow['formula'], expr: string | undefined, 
 }
 
 const FORMULA_OPTIONS: { value: ComputedRow['formula']; label: string }[] = [
-  { value: 'coins_to_usd', label: '100 Coins → USD' },
+  { value: 'coins_to_usd', label: '100 Coins → INR' },
   { value: 'host_payout', label: 'Host Payout per 100 Coins' },
-  { value: 'min_withdrawal_usd', label: 'Min Withdrawal in USD' },
+  { value: 'min_withdrawal_usd', label: 'Min Withdrawal in INR' },
   { value: 'custom', label: 'Custom Expression' },
 ];
 
@@ -100,7 +100,7 @@ export default function SettingsPage() {
 
   // Computed values rows
   const [computedRows, setComputedRows] = useState<ComputedRow[]>([
-    { id: 'cr1', label: '100 Coins in USD', formula: 'coins_to_usd' },
+    { id: 'cr1', label: '100 Coins in INR', formula: 'coins_to_usd' },
     { id: 'cr2', label: 'Host Payout (per 100 coins)', formula: 'host_payout' },
     { id: 'cr3', label: 'Min Withdrawal Value', formula: 'min_withdrawal_usd' },
   ]);
@@ -297,7 +297,7 @@ export default function SettingsPage() {
                           placeholder="JS expression: e.g. rate * 1000"
                           className="w-full px-3 py-2 border border-border rounded-xl text-sm font-mono bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
                         />
-                        <p className="text-[10px] text-muted-foreground mt-1">Variables: <code>rate</code> (coin→USD), <code>share</code> (host%), <code>minW</code> (min withdrawal coins)</p>
+                        <p className="text-[10px] text-muted-foreground mt-1">Variables: <code>rate</code> (coin→INR), <code>share</code> (host%), <code>minW</code> (min withdrawal coins)</p>
                       </div>
                     )}
                     <div className="flex gap-2">
@@ -390,8 +390,8 @@ export default function SettingsPage() {
               const audioCoins = audioRate * d.minutes;
               const videoCoins = videoRate * d.minutes;
               const hostEarns = Math.round(audioCoins * share);
-              const audioUsd = (audioCoins * coinRate).toFixed(2);
-              const videoUsd = (videoCoins * coinRate).toFixed(2);
+              const audioInr = (audioCoins * coinRate).toFixed(2);
+              const videoInr = (videoCoins * coinRate).toFixed(2);
               const isEditingThis = editingDur === d.id;
 
               return (
@@ -457,7 +457,7 @@ export default function SettingsPage() {
                       </div>
                       <div className="text-right">
                         <p className="font-bold text-sm text-green-600">{audioCoins} coins</p>
-                        <p className="text-[10px] text-muted-foreground">${audioUsd}</p>
+                        <p className="text-[10px] text-muted-foreground">₹{audioInr}</p>
                       </div>
                     </div>
                     <div className="flex items-center justify-between px-3 py-2.5">
@@ -467,7 +467,7 @@ export default function SettingsPage() {
                       </div>
                       <div className="text-right">
                         <p className="font-bold text-sm text-violet-600">{videoCoins} coins</p>
-                        <p className="text-[10px] text-muted-foreground">${videoUsd}</p>
+                        <p className="text-[10px] text-muted-foreground">₹{videoInr}</p>
                       </div>
                     </div>
                     <div className="flex items-center justify-between px-3 py-2.5 bg-amber-50/40">

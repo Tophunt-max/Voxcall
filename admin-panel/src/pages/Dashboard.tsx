@@ -146,7 +146,7 @@ export default function Dashboard() {
         {[
           { label: 'Avg. Call Duration', value: avgDurationMin, icon: Clock, color: 'text-violet-600 bg-violet-50' },
           { label: 'Host Payout Rate', value: '70%', icon: Coins, color: 'text-green-600 bg-green-50' },
-          { label: 'Coin → USD', value: '$0.01', icon: TrendingUp, color: 'text-blue-600 bg-blue-50' },
+          { label: 'Coin → INR', value: '₹1', icon: TrendingUp, color: 'text-blue-600 bg-blue-50' },
           { label: 'Active Hosts', value: `${data?.total_hosts ?? 0}`, icon: Mic2, color: 'text-orange-600 bg-orange-50' },
         ].map(s => (
           <div key={s.label} className="bg-card border border-border rounded-xl p-4 flex items-center gap-3">

@@ -82,7 +82,7 @@ export default function Deposits() {
   const exportCSV = () => {
     const csv = ['ID,User,Email,Phone,Plan,Coins,Bonus,Amount,Currency,Gateway,Payment Method,Payment Ref,UTR ID,Promo Code,Status,Date',
       ...rows.map(r =>
-        `"${r.id}","${r.user_name || ''}","${r.user_email || ''}","${r.user_phone || ''}","${r.plan_name || ''}",${r.coins || 0},${r.bonus_coins || 0},${r.amount || 0},"${r.currency || 'USD'}","${r.gateway_name || ''}","${r.payment_method || ''}","${r.payment_ref || ''}","${r.utr_id || ''}","${r.promo_code || ''}",${r.status},"${r.created_at ? new Date(r.created_at * 1000).toLocaleString() : ''}"`
+        `"${r.id}","${r.user_name || ''}","${r.user_email || ''}","${r.user_phone || ''}","${r.plan_name || ''}",${r.coins || 0},${r.bonus_coins || 0},${r.amount || 0},"${r.currency || 'INR'}","${r.gateway_name || ''}","${r.payment_method || ''}","${r.payment_ref || ''}","${r.utr_id || ''}","${r.promo_code || ''}",${r.status},"${r.created_at ? new Date(r.created_at * 1000).toLocaleString() : ''}"`
       )
     ].join('\n');
     const a = document.createElement('a');
@@ -118,7 +118,7 @@ export default function Deposits() {
       key: 'amount', header: 'Amount',
       render: (r: any) => (
         <span className="font-bold text-sm text-green-600">
-          ${(r.amount || 0).toFixed(2)} <span className="text-xs font-normal text-muted-foreground">{r.currency || 'USD'}</span>
+          ₹{(r.amount || 0).toFixed(2)} <span className="text-xs font-normal text-muted-foreground">{r.currency || 'INR'}</span>
         </span>
       )
     },
@@ -167,7 +167,7 @@ export default function Deposits() {
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <StatCard icon={DollarSign} label="Total Revenue" value={`$${totalRevenue.toFixed(2)}`} gradient="gradient-green" />
+        <StatCard icon={DollarSign} label="Total Revenue" value={`₹${totalRevenue.toFixed(2)}`} gradient="gradient-green" />
         <StatCard icon={Coins} label="Coins Sold" value={totalCoins.toLocaleString()} gradient="gradient-purple" />
         <StatCard icon={CheckCircle} label="Successful" value={successCount} gradient="gradient-blue" />
         <StatCard icon={Clock} label="Pending" value={pendingCount} gradient="gradient-orange" />
@@ -220,7 +220,7 @@ export default function Deposits() {
             <div className="grid grid-cols-2 gap-3 text-sm">
               <div className="p-3 bg-green-50 rounded-xl">
                 <p className="text-xs text-muted-foreground">Amount Paid</p>
-                <p className="font-bold text-green-600 mt-0.5">${(selected.amount || 0).toFixed(2)} {selected.currency || 'USD'}</p>
+                <p className="font-bold text-green-600 mt-0.5">₹{(selected.amount || 0).toFixed(2)} {selected.currency || 'INR'}</p>
               </div>
               <div className="p-3 bg-violet-50 rounded-xl">
                 <p className="text-xs text-muted-foreground">Coins Received</p>

@@ -20,6 +20,7 @@ import { API } from "@/services/api";
 import { notifyPurchaseSuccess } from "@/services/NotificationService";
 import LoadingOverlay from "@/components/LoadingOverlay";
 import { showSuccessToast, showErrorToast } from "@/components/Toast";
+import { formatPrice, detectCurrency, getCurrencyCode } from "@/utils/currency";
 
 const SCREEN_W = Dimensions.get("window").width;
 const WALLET_BANNER_W = SCREEN_W - 40;
@@ -168,7 +169,7 @@ async function tryProcessPayment(
           plan_id: plan.id,
           coins: String(totalCoins),
           amount: finalPrice.toFixed(2),
-          currency: plan.currency || "USD",
+          currency: userCurrency,
           gateway: gw.type,
           source: "voxlink",
         });
@@ -201,6 +202,7 @@ async function tryProcessPayment(
 export default function CheckoutScreen() {
   const colors = useColors();
   const { user, updateCoins } = useAuth();
+  const userCurrency = getCurrencyCode();
   const [plans, setPlans] = useState<CoinPlan[]>([]);
   const [plansLoading, setPlansLoading] = useState(true);
   const [selectedPlan, setSelectedPlan] = useState<CoinPlan | null>(null);
@@ -324,7 +326,7 @@ export default function CheckoutScreen() {
                   </Text>
                   <Text style={[styles.planLabel, { color: selected ? "rgba(255,255,255,0.8)" : colors.mutedForeground }]}>Coins</Text>
                   <Text style={[styles.planPrice, { color: selected ? "#fff" : colors.accent }]}>
-                    ${plan.price.toFixed(2)}
+                    {formatPrice(plan.price, userCurrency)}
                   </Text>
                 </TouchableOpacity>
               );
@@ -359,7 +361,7 @@ export default function CheckoutScreen() {
           <View style={[styles.promoBadge, { backgroundColor: colors.online + "18" }]}>
             <Text style={[styles.promoBadgeText, { color: colors.online }]}>
               {promoApplied.type === "percent"
-                ? `🎉 ${promoApplied.discount_pct}% off — Save $${promoApplied.discount.toFixed(2)}`
+                ? `🎉 ${promoApplied.discount_pct}% off — Save ${formatPrice(promoApplied.discount, userCurrency)}`
                 : `🎁 +${promoApplied.bonus_coins} Bonus Coins added!`}
             </Text>
           </View>
@@ -394,12 +396,12 @@ export default function CheckoutScreen() {
               {(promoApplied?.discount ?? 0) > 0 && (
                 <View style={styles.summaryRow}>
                   <Text style={[styles.summaryLabel, { color: colors.mutedForeground }]}>Promo Discount</Text>
-                  <Text style={[styles.summaryValue, { color: colors.online }]}>-${promoApplied!.discount.toFixed(2)}</Text>
+                  <Text style={[styles.summaryValue, { color: colors.online }]}>-{formatPrice(promoApplied!.discount, userCurrency)}</Text>
                 </View>
               )}
               <View style={styles.summaryRow}>
                 <Text style={[styles.totalLabel, { color: colors.text }]}>Total</Text>
-                <Text style={[styles.totalValue, { color: colors.accent }]}>${finalPrice.toFixed(2)} {selectedPlan.currency}</Text>
+                <Text style={[styles.totalValue, { color: colors.accent }]}>{formatPrice(finalPrice, userCurrency)}</Text>
               </View>
             </View>
           </>
@@ -421,7 +423,7 @@ export default function CheckoutScreen() {
         >
           <Text style={styles.buyBtnText}>
             {selectedPlan
-              ? `Continue — $${finalPrice.toFixed(2)} for ${totalCoins.toLocaleString()} Coins`
+              ? `Continue — ${formatPrice(finalPrice, userCurrency)} for ${totalCoins.toLocaleString()} Coins`
               : "Select a Package"}
           </Text>
         </TouchableOpacity>

@@ -28,8 +28,8 @@ function PlanCard({ plan, onEdit, onDelete }: PlanCardProps) {
         )}
       </div>
       <div className="p-4">
-        <p className="text-2xl font-black text-foreground">${plan.price}</p>
-        <p className="text-xs text-muted-foreground mb-4">{plan.currency || 'USD'}</p>
+        <p className="text-2xl font-black text-foreground">₹{plan.price}</p>
+        <p className="text-xs text-muted-foreground mb-4">{plan.currency || 'INR'}</p>
         <div className="flex items-center justify-between">
           <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${plan.is_active ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
             {plan.is_active ? 'Active' : 'Inactive'}
@@ -100,7 +100,7 @@ export default function CoinPlans() {
   const fields = [
     { key: 'name', label: 'Plan Name', type: 'text', placeholder: 'e.g. Starter' },
     { key: 'coins', label: 'Coins', type: 'number', placeholder: '100' },
-    { key: 'price', label: 'Price (USD)', type: 'number', placeholder: '0.99' },
+    { key: 'price', label: 'Price (INR ₹)', type: 'number', placeholder: '99' },
     { key: 'bonus_coins', label: 'Bonus Coins', type: 'number', placeholder: '0' },
   ];
 
