@@ -47,12 +47,12 @@ name = "VoxLink Mobile App"
 author = "agent"
 
 [workflows.workflow.metadata]
-outputType = "console"
+outputType = "webview"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "PORT=20426 BASE_PATH=/ pnpm --filter @workspace/voxlink run dev"
-waitForPort = 20426
+args = "PORT=8080 BASE_PATH=/ pnpm --filter @workspace/voxlink run dev"
+waitForPort = 8080
 
 [agent]
 stack = "PNPM_WORKSPACE"
