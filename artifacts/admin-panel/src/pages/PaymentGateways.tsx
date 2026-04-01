@@ -13,7 +13,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { Plus, Pencil, Trash2, CreditCard, GripVertical, Globe, Smartphone } from 'lucide-react';
+import { Plus, Pencil, Trash2, CreditCard, ArrowUp, ArrowDown, Star, AlertTriangle } from 'lucide-react';
 
 const GATEWAY_TYPES = [
   { value: 'googlepay',  label: 'Google Pay',   emoji: '🟢' },
@@ -28,18 +28,10 @@ const GATEWAY_TYPES = [
   { value: 'custom',     label: 'Custom',       emoji: '⚙️' },
 ];
 
-const PLATFORM_OPTIONS = [
-  { value: 'android', label: 'Android', icon: Smartphone },
-  { value: 'ios',     label: 'iOS',     icon: Smartphone },
-  { value: 'web',     label: 'Web',     icon: Globe },
-  { value: 'all',     label: 'All Platforms', icon: Globe },
-];
-
 const EMPTY_FORM = {
   name: '',
-  type: 'manual',
-  icon_emoji: '💳',
-  platforms: ['all'] as string[],
+  type: 'razorpay',
+  icon_emoji: '🔵',
   instruction: '',
   redirect_url: '',
   is_active: true,
@@ -48,7 +40,10 @@ const EMPTY_FORM = {
 
 export default function PaymentGateways() {
   const qc = useQueryClient();
-  const { data: gateways = [], isLoading } = useQuery({ queryKey: ['payment-gateways'], queryFn: api.paymentGateways });
+  const { data: gateways = [], isLoading } = useQuery({
+    queryKey: ['payment-gateways'],
+    queryFn: api.paymentGateways,
+  });
 
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<any>(null);
@@ -57,7 +52,7 @@ export default function PaymentGateways() {
 
   const create = useMutation({
     mutationFn: api.createPaymentGateway,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['payment-gateways'] }); setOpen(false); toast.success('Gateway created!'); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['payment-gateways'] }); setOpen(false); toast.success('Gateway added!'); },
     onError: (e: any) => toast.error(e.message),
   });
   const update = useMutation({
@@ -74,22 +69,24 @@ export default function PaymentGateways() {
     mutationFn: ({ id, is_active }: any) => api.updatePaymentGateway(id, { is_active }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['payment-gateways'] }),
   });
+  const moveUp = useMutation({
+    mutationFn: ({ id, pos }: any) => api.updatePaymentGateway(id, { position: pos }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['payment-gateways'] }),
+  });
 
   function openCreate() {
     setEditing(null);
-    setForm({ ...EMPTY_FORM });
+    const nextPos = (gateways as any[]).length;
+    setForm({ ...EMPTY_FORM, position: nextPos });
     setOpen(true);
   }
 
   function openEdit(gw: any) {
     setEditing(gw);
-    let platforms = ['all'];
-    try { platforms = JSON.parse(gw.platforms || '["all"]'); } catch {}
     setForm({
       name: gw.name || '',
       type: gw.type || 'manual',
       icon_emoji: gw.icon_emoji || '💳',
-      platforms,
       instruction: gw.instruction || '',
       redirect_url: gw.redirect_url || '',
       is_active: !!gw.is_active,
@@ -100,29 +97,24 @@ export default function PaymentGateways() {
 
   function handleSave() {
     if (!form.name.trim()) { toast.error('Name is required'); return; }
-    const payload = { ...form };
-    if (editing) update.mutate({ id: editing.id, data: payload });
-    else create.mutate(payload);
+    if (editing) update.mutate({ id: editing.id, data: form });
+    else create.mutate(form);
   }
 
-  function togglePlatform(p: string) {
-    setForm(f => {
-      const cur = f.platforms;
-      if (p === 'all') return { ...f, platforms: ['all'] };
-      const without = cur.filter(x => x !== 'all' && x !== p);
-      const newList = cur.includes(p) ? without : [...without, p];
-      return { ...f, platforms: newList.length === 0 ? ['all'] : newList };
-    });
+  function swapPositions(indexA: number, indexB: number) {
+    const sorted = [...(gateways as any[])].sort((a, b) => a.position - b.position);
+    const a = sorted[indexA];
+    const b = sorted[indexB];
+    if (!a || !b) return;
+    moveUp.mutate({ id: a.id, pos: b.position });
+    moveUp.mutate({ id: b.id, pos: a.position });
   }
 
   const typeInfo = (type: string) => GATEWAY_TYPES.find(t => t.value === type) || { emoji: '💳', label: type };
 
-  const platformColor: Record<string, string> = {
-    android: 'bg-green-100 text-green-700',
-    ios: 'bg-gray-100 text-gray-700',
-    web: 'bg-blue-100 text-blue-700',
-    all: 'bg-purple-100 text-purple-700',
-  };
+  // Sort by position
+  const sorted = [...(gateways as any[])].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+  const activeCount = sorted.filter(g => g.is_active).length;
 
   return (
     <div className="space-y-6">
@@ -130,7 +122,7 @@ export default function PaymentGateways() {
         <div>
           <h1 className="text-2xl font-bold">Payment Gateways</h1>
           <p className="text-muted-foreground text-sm mt-1">
-            Manage payment methods shown to users in the app — auto-detected by platform.
+            Manage payment methods for the app. Only the first active gateway is used — others are automatic fallbacks.
           </p>
         </div>
         <Button onClick={openCreate} className="gap-2">
@@ -138,59 +130,116 @@ export default function PaymentGateways() {
         </Button>
       </div>
 
-      {/* Info Banner */}
-      <div className="rounded-xl border bg-violet-50 dark:bg-violet-950/20 p-4 flex gap-3 items-start">
-        <CreditCard className="text-violet-600 mt-0.5 shrink-0" size={18} />
-        <div className="text-sm text-violet-800 dark:text-violet-300">
-          <p className="font-semibold mb-1">Platform Auto-Detection</p>
-          <ul className="list-disc list-inside space-y-0.5 text-violet-700 dark:text-violet-400">
-            <li>🤖 <strong>Android</strong> — Google Pay is auto-shown natively + Android gateways</li>
-            <li>🍎 <strong>iOS</strong> — Apple Pay is auto-shown natively + iOS gateways</li>
-            <li>🌐 <strong>Web</strong> — Shows only web-compatible gateways from this list</li>
-          </ul>
+      {/* How it works */}
+      <div className="rounded-xl border bg-violet-50 dark:bg-violet-950/20 p-4 space-y-2">
+        <div className="flex items-center gap-2 font-semibold text-violet-800 dark:text-violet-300 text-sm">
+          <CreditCard size={16} />
+          How Gateway Auto-Selection Works
         </div>
+        <ul className="text-xs text-violet-700 dark:text-violet-400 space-y-1 list-disc list-inside">
+          <li>The gateway with the <strong>lowest position (top of list)</strong> is used as the <strong>Primary</strong> gateway.</li>
+          <li>If Primary fails or is disabled, the next gateway is tried automatically (Fallback chain).</li>
+          <li>On <strong>Android</strong> — Google Pay is used natively. On <strong>iOS</strong> — Apple Pay is used natively.</li>
+          <li>On <strong>Web</strong> — the Primary active gateway's redirect URL is opened directly.</li>
+          <li>Users <strong>never see</strong> gateway selection — it's fully automatic and transparent.</li>
+        </ul>
       </div>
+
+      {activeCount === 0 && !isLoading && (
+        <div className="flex items-center gap-3 rounded-xl border border-yellow-300 bg-yellow-50 dark:bg-yellow-900/20 p-4 text-sm text-yellow-800 dark:text-yellow-300">
+          <AlertTriangle size={16} className="shrink-0" />
+          No active gateways! Users cannot complete payments on web until at least one gateway is active.
+        </div>
+      )}
 
       {isLoading ? (
         <div className="flex items-center justify-center h-40">
           <div className="animate-spin w-6 h-6 border-2 border-primary border-t-transparent rounded-full" />
         </div>
-      ) : gateways.length === 0 ? (
+      ) : sorted.length === 0 ? (
         <div className="text-center py-16 text-muted-foreground border rounded-xl">
           <CreditCard size={40} className="mx-auto mb-3 opacity-30" />
           <p className="font-medium">No payment gateways configured</p>
-          <p className="text-sm mt-1">Add your first gateway to enable payments in the app</p>
+          <p className="text-sm mt-1">Add your first gateway to enable web payments</p>
           <Button onClick={openCreate} className="mt-4 gap-2" variant="outline">
             <Plus size={14} /> Add Gateway
           </Button>
         </div>
       ) : (
-        <div className="space-y-3">
-          {gateways.map((gw: any) => {
+        <div className="space-y-2.5">
+          {sorted.map((gw: any, idx: number) => {
             const info = typeInfo(gw.type);
-            let platforms: string[] = ['all'];
-            try { platforms = JSON.parse(gw.platforms || '["all"]'); } catch {}
+            const isFirst = idx === 0;
+            const isPrimary = isFirst && !!gw.is_active;
+            const fallbackNum = gw.is_active ? sorted.filter((g: any, i: number) => i < idx && g.is_active).length : null;
+
             return (
-              <div key={gw.id} className="flex items-center gap-4 rounded-xl border bg-card p-4 shadow-sm hover:shadow transition-shadow">
-                <GripVertical size={16} className="text-muted-foreground/40 shrink-0" />
+              <div
+                key={gw.id}
+                className={`flex items-center gap-4 rounded-xl border p-4 shadow-sm transition-shadow hover:shadow ${
+                  isPrimary ? 'border-violet-400 bg-violet-50/50 dark:bg-violet-950/20' : 'bg-card'
+                }`}
+              >
+                {/* Move Up/Down */}
+                <div className="flex flex-col gap-0.5 shrink-0">
+                  <button
+                    onClick={() => swapPositions(idx, idx - 1)}
+                    disabled={idx === 0}
+                    className="p-1 rounded hover:bg-muted disabled:opacity-20"
+                  >
+                    <ArrowUp size={12} />
+                  </button>
+                  <button
+                    onClick={() => swapPositions(idx, idx + 1)}
+                    disabled={idx === sorted.length - 1}
+                    className="p-1 rounded hover:bg-muted disabled:opacity-20"
+                  >
+                    <ArrowDown size={12} />
+                  </button>
+                </div>
+
+                {/* Position number */}
+                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                  isPrimary ? 'bg-violet-600 text-white' : 'bg-muted text-muted-foreground'
+                }`}>
+                  {idx + 1}
+                </div>
+
+                {/* Emoji */}
                 <div className="text-2xl shrink-0">{gw.icon_emoji || info.emoji}</div>
+
+                {/* Info */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-semibold text-sm truncate">{gw.name}</span>
                     <Badge variant="secondary" className="text-xs">{info.label}</Badge>
-                    {platforms.map(p => (
-                      <span key={p} className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${platformColor[p] || 'bg-gray-100 text-gray-600'}`}>
-                        {p}
+                    {isPrimary && (
+                      <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-bold bg-violet-600 text-white">
+                        <Star size={9} /> PRIMARY
                       </span>
-                    ))}
+                    )}
+                    {!isPrimary && gw.is_active && fallbackNum !== null && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                        FALLBACK {fallbackNum + 1}
+                      </span>
+                    )}
+                    {!gw.is_active && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-gray-100 text-gray-500">
+                        DISABLED
+                      </span>
+                    )}
                   </div>
                   {gw.instruction && (
                     <p className="text-xs text-muted-foreground mt-0.5 truncate">{gw.instruction}</p>
                   )}
-                  {gw.redirect_url && (
+                  {gw.redirect_url ? (
                     <p className="text-xs text-blue-500 mt-0.5 truncate">{gw.redirect_url}</p>
+                  ) : (
+                    <p className="text-xs text-orange-500 mt-0.5">⚠ No redirect URL set — direct API processing only</p>
                   )}
                 </div>
+
+                {/* Controls */}
                 <div className="flex items-center gap-2 shrink-0">
                   <Switch
                     checked={!!gw.is_active}
@@ -219,7 +268,7 @@ export default function PaymentGateways() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Gateway Name *</Label>
-                <Input placeholder="e.g. Google Pay" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
+                <Input placeholder="e.g. Razorpay" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
               </div>
               <div className="space-y-1.5">
                 <Label>Icon Emoji</Label>
@@ -233,62 +282,44 @@ export default function PaymentGateways() {
                 const info = GATEWAY_TYPES.find(t => t.value === v);
                 setForm(f => ({ ...f, type: v, icon_emoji: info?.emoji || f.icon_emoji }));
               }}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
+                <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {GATEWAY_TYPES.map(t => (
-                    <SelectItem key={t.value} value={t.value}>
-                      {t.emoji} {t.label}
-                    </SelectItem>
+                    <SelectItem key={t.value} value={t.value}>{t.emoji} {t.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
 
             <div className="space-y-1.5">
-              <Label>Supported Platforms</Label>
-              <div className="flex flex-wrap gap-2">
-                {PLATFORM_OPTIONS.map(p => {
-                  const active = form.platforms.includes(p.value);
-                  return (
-                    <button
-                      key={p.value}
-                      type="button"
-                      onClick={() => togglePlatform(p.value)}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
-                        active
-                          ? 'bg-primary text-primary-foreground border-primary'
-                          : 'bg-background text-muted-foreground border-border hover:border-primary/50'
-                      }`}
-                    >
-                      {p.label}
-                    </button>
-                  );
-                })}
-              </div>
+              <Label>Payment Redirect URL</Label>
+              <Input
+                placeholder="https://pay.example.com/checkout"
+                value={form.redirect_url}
+                onChange={e => setForm(f => ({ ...f, redirect_url: e.target.value }))}
+              />
+              <p className="text-xs text-muted-foreground">
+                On web, users are redirected here with <code className="bg-muted px-1 rounded text-[10px]">?plan_id&amount&coins</code> appended automatically.
+              </p>
             </div>
 
             <div className="space-y-1.5">
-              <Label>User Instruction / Description</Label>
-              <Input placeholder="e.g. Pay securely via UPI / QR code" value={form.instruction} onChange={e => setForm(f => ({ ...f, instruction: e.target.value }))} />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label>Payment / Redirect URL (optional)</Label>
-              <Input placeholder="https://pay.example.com/voxlink" value={form.redirect_url} onChange={e => setForm(f => ({ ...f, redirect_url: e.target.value }))} />
+              <Label>User-facing Description (optional)</Label>
+              <Input placeholder="e.g. UPI, Card, Net Banking & more" value={form.instruction} onChange={e => setForm(f => ({ ...f, instruction: e.target.value }))} />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label>Display Order</Label>
-                <Input type="number" min={0} value={form.position} onChange={e => setForm(f => ({ ...f, position: parseInt(e.target.value) || 0 }))} />
-              </div>
-              <div className="flex items-end gap-2 pb-0.5">
-                <Switch
-                  checked={form.is_active}
-                  onCheckedChange={v => setForm(f => ({ ...f, is_active: v }))}
+                <Label>Priority Order</Label>
+                <Input
+                  type="number" min={0}
+                  value={form.position}
+                  onChange={e => setForm(f => ({ ...f, position: parseInt(e.target.value) || 0 }))}
                 />
+                <p className="text-xs text-muted-foreground">Lower = higher priority. 0 = Primary.</p>
+              </div>
+              <div className="flex items-end gap-2 pb-5">
+                <Switch checked={form.is_active} onCheckedChange={v => setForm(f => ({ ...f, is_active: v }))} />
                 <Label>{form.is_active ? 'Active' : 'Inactive'}</Label>
               </div>
             </div>
@@ -296,7 +327,7 @@ export default function PaymentGateways() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
             <Button onClick={handleSave} disabled={create.isPending || update.isPending}>
-              {editing ? 'Save Changes' : 'Create Gateway'}
+              {editing ? 'Save Changes' : 'Add Gateway'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -308,7 +339,9 @@ export default function PaymentGateways() {
           <DialogHeader>
             <DialogTitle>Delete Gateway?</DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground">This will remove the payment gateway from the app. This cannot be undone.</p>
+          <p className="text-sm text-muted-foreground">
+            This removes the gateway permanently. If it is the Primary, the next gateway in the list will automatically become Primary.
+          </p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleting(null)}>Cancel</Button>
             <Button variant="destructive" onClick={() => deleting && remove.mutate(deleting)} disabled={remove.isPending}>

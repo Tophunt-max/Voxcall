@@ -3,19 +3,13 @@ import type { Env } from '../types';
 
 const pub = new Hono<{ Bindings: Env }>();
 
-// GET /api/payment-gateways?platform=android|ios|web — active payment gateways filtered by platform
+// GET /api/payment-gateways — active payment gateways ordered by priority (position ASC)
+// Primary = first in list, others are automatic fallbacks
 pub.get('/payment-gateways', async (c) => {
-  const platform = c.req.query('platform') || 'web';
   const result = await c.env.DB.prepare(
-    'SELECT id, name, type, icon_emoji, platforms, instruction, redirect_url, position FROM payment_gateways WHERE is_active = 1 ORDER BY position ASC, created_at DESC'
+    'SELECT id, name, type, icon_emoji, instruction, redirect_url, position FROM payment_gateways WHERE is_active = 1 ORDER BY position ASC, created_at ASC'
   ).all();
-  const gateways = (result.results as any[]).filter((gw) => {
-    try {
-      const platforms = JSON.parse(gw.platforms || '["all"]');
-      return platforms.includes('all') || platforms.includes(platform);
-    } catch { return true; }
-  });
-  return c.json(gateways);
+  return c.json(result.results);
 });
 
 // GET /api/banners?position=home|wallet — active promotional banners, optionally filtered by position

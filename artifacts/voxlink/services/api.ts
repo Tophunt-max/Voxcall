@@ -144,9 +144,9 @@ export const API = {
   getBanners: (position?: 'home' | 'wallet') =>
     apiRequest<any[]>('GET', position ? `/api/banners?position=${position}` : '/api/banners', undefined, false),
 
-  // Payment Gateways (public) — platform: 'android' | 'ios' | 'web'
-  getPaymentGateways: (platform: string) =>
-    apiRequest<any[]>('GET', `/api/payment-gateways?platform=${platform}`, undefined, false),
+  // Payment Gateways (public) — returns all active gateways ordered by priority (position ASC)
+  getPaymentGateways: () =>
+    apiRequest<any[]>('GET', '/api/payment-gateways', undefined, false),
 
   // Talk topics (public)
   getTalkTopics: () => apiRequest<any[]>('GET', '/api/talk-topics', undefined, false),

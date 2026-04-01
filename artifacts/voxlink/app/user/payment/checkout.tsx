@@ -11,6 +11,7 @@ import {
   TextInput,
   Dimensions,
   Platform,
+  Linking,
 } from "react-native";
 import { router } from "expo-router";
 import { useColors } from "@/hooks/useColors";
@@ -42,26 +43,7 @@ interface Gateway {
   icon_emoji: string;
   instruction?: string;
   redirect_url?: string;
-  native?: boolean;
 }
-
-// ─── Native platform gateways (always injected) ──────────────────────────────
-const NATIVE_ANDROID: Gateway = {
-  id: "__native_gpay",
-  name: "Google Pay",
-  type: "googlepay",
-  icon_emoji: "🟢",
-  instruction: "Pay instantly with your Google account",
-  native: true,
-};
-const NATIVE_IOS: Gateway = {
-  id: "__native_applepay",
-  name: "Apple Pay",
-  type: "applepay",
-  icon_emoji: "🍎",
-  instruction: "Pay with Face ID or Touch ID",
-  native: true,
-};
 
 // ─── WalletBannerSlider ───────────────────────────────────────────────────────
 function WalletBannerSlider({ banners }: { banners: any[] }) {
@@ -99,35 +81,26 @@ function WalletBannerSlider({ banners }: { banners: any[] }) {
   }, [banners.length, goTo]);
 
   if (banners.length === 0) return null;
-
   return (
     <View style={wStyles.wrap}>
       <FlatList
         ref={flatRef}
         data={banners}
-        horizontal
-        pagingEnabled
-        showsHorizontalScrollIndicator={false}
+        horizontal pagingEnabled showsHorizontalScrollIndicator={false}
         keyExtractor={(b) => b.id}
-        snapToInterval={WALLET_BANNER_W}
-        decelerationRate="fast"
+        snapToInterval={WALLET_BANNER_W} decelerationRate="fast"
         getItemLayout={(_, index) => ({ length: WALLET_BANNER_W, offset: WALLET_BANNER_W * index, index })}
         onMomentumScrollEnd={onMomentumScrollEnd}
         style={{ width: WALLET_BANNER_W }}
         renderItem={({ item }) => (
-          <TouchableOpacity
-            activeOpacity={0.9}
+          <TouchableOpacity activeOpacity={0.9}
             onPress={() => { if (item.cta_link) router.push(item.cta_link as any); }}
             style={[wStyles.slide, { backgroundColor: item.bg_color || "#A00EE7" }]}
           >
             <View style={wStyles.textCol}>
               <Text style={wStyles.title}>{item.title}</Text>
               {item.subtitle ? <Text style={wStyles.sub}>{item.subtitle}</Text> : null}
-              {item.cta_text ? (
-                <View style={wStyles.ctaBtn}>
-                  <Text style={wStyles.ctaText}>{item.cta_text}</Text>
-                </View>
-              ) : null}
+              {item.cta_text ? <View style={wStyles.ctaBtn}><Text style={wStyles.ctaText}>{item.cta_text}</Text></View> : null}
             </View>
           </TouchableOpacity>
         )}
@@ -158,125 +131,71 @@ const wStyles = StyleSheet.create({
   dotActive: { width: 20, backgroundColor: "#A00EE7", borderRadius: 3 },
 });
 
-// ─── SmartPaymentSection ──────────────────────────────────────────────────────
-function SmartPaymentSection({
-  gateways,
-  loading,
-  selected,
-  onSelect,
-  colors,
-}: {
-  gateways: Gateway[];
-  loading: boolean;
-  selected: Gateway | null;
-  onSelect: (gw: Gateway) => void;
-  colors: any;
-}) {
-  const platform = Platform.OS; // 'android' | 'ios' | 'web'
+// ─── Gateway auto-selection logic (hidden from user) ─────────────────────────
+async function tryProcessPayment(
+  gateways: Gateway[],
+  plan: CoinPlan,
+  totalCoins: number,
+  finalPrice: number,
+  updateCoins: (n: number) => void,
+  setLoading: (v: boolean) => void
+): Promise<void> {
+  const platform = Platform.OS;
 
-  const platformLabel =
-    platform === "android" ? "Android" :
-    platform === "ios"     ? "iOS"     : "Web";
-
-  const platformEmoji =
-    platform === "android" ? "🤖" :
-    platform === "ios"     ? "🍎" : "🌐";
-
-  const platformBg =
-    platform === "android" ? "#34A85320" :
-    platform === "ios"     ? "#1C1C1E20" : "#2563EB20";
-
-  const platformColor =
-    platform === "android" ? "#34A853" :
-    platform === "ios"     ? "#555" : "#2563EB";
-
-  if (loading) {
-    return (
-      <View style={{ alignItems: "center", paddingVertical: 20 }}>
-        <ActivityIndicator color="#A00EE7" />
-      </View>
-    );
+  // On mobile, use native payment flow (Google Pay / Apple Pay) — no redirect
+  if (platform === "android" || platform === "ios") {
+    // Native mobile payment: call API directly (real Google/Apple Pay SDK would go here)
+    const result = await API.purchaseCoins(plan.id, platform === "android" ? "googlepay" : "applepay") as any;
+    if (result?.new_balance != null) {
+      updateCoins(result.new_balance);
+      await notifyPurchaseSuccess(totalCoins);
+      showSuccessToast(`${totalCoins.toLocaleString()} coins added!`, "Purchase Successful");
+      router.replace("/user/payment/success");
+    } else {
+      throw new Error("Payment failed");
+    }
+    return;
   }
 
-  return (
-    <View>
-      {/* Platform Detection Badge */}
-      <View style={[pmStyles.detectedBadge, { backgroundColor: platformBg }]}>
-        <Text style={[pmStyles.detectedText, { color: platformColor }]}>
-          {platformEmoji} {platformLabel} detected — showing compatible payment methods
-        </Text>
-      </View>
+  // On web: try gateways in order (primary first, then fallbacks)
+  for (let i = 0; i < gateways.length; i++) {
+    const gw = gateways[i];
+    try {
+      if (gw.redirect_url && gw.redirect_url.startsWith("http")) {
+        // Build redirect URL with purchase params
+        const params = new URLSearchParams({
+          plan_id: plan.id,
+          coins: String(totalCoins),
+          amount: finalPrice.toFixed(2),
+          currency: plan.currency || "USD",
+          gateway: gw.type,
+          source: "voxlink",
+        });
+        const url = `${gw.redirect_url}?${params.toString()}`;
+        setLoading(false);
+        await Linking.openURL(url);
+        return; // redirect happened — stop
+      } else {
+        // No redirect URL — simulate direct API purchase via this gateway
+        const result = await API.purchaseCoins(plan.id, gw.type) as any;
+        if (result?.new_balance != null) {
+          updateCoins(result.new_balance);
+          await notifyPurchaseSuccess(totalCoins);
+          showSuccessToast(`${totalCoins.toLocaleString()} coins added!`, "Purchase Successful");
+          router.replace("/user/payment/success");
+          return;
+        }
+        throw new Error("Gateway did not process payment");
+      }
+    } catch (err) {
+      // This gateway failed — try next one
+      if (i === gateways.length - 1) throw err; // no more gateways
+      // else continue to next gateway silently
+    }
+  }
 
-      {/* Gateways List */}
-      <View style={[pmStyles.card, { backgroundColor: colors.card }]}>
-        {gateways.length === 0 ? (
-          <View style={pmStyles.emptyWrap}>
-            <Text style={[pmStyles.emptyText, { color: colors.mutedForeground }]}>
-              No payment methods configured yet.{"\n"}Please contact support.
-            </Text>
-          </View>
-        ) : (
-          gateways.map((gw, idx) => {
-            const isSelected = selected?.id === gw.id;
-            return (
-              <TouchableOpacity
-                key={gw.id}
-                style={[
-                  pmStyles.gwRow,
-                  idx < gateways.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.borderLight },
-                  isSelected && { backgroundColor: colors.accent + "10" },
-                ]}
-                onPress={() => onSelect(gw)}
-                activeOpacity={0.8}
-              >
-                {/* Emoji icon */}
-                <View style={[pmStyles.emojiBox, { backgroundColor: isSelected ? colors.accent + "20" : colors.accentLight }]}>
-                  <Text style={pmStyles.emojiText}>{gw.icon_emoji || "💳"}</Text>
-                </View>
-
-                <View style={{ flex: 1 }}>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                    <Text style={[pmStyles.gwName, { color: colors.text }]}>{gw.name}</Text>
-                    {gw.native && (
-                      <View style={[pmStyles.nativeBadge, { backgroundColor: colors.online + "20" }]}>
-                        <Text style={[pmStyles.nativeBadgeText, { color: colors.online }]}>Native</Text>
-                      </View>
-                    )}
-                  </View>
-                  {gw.instruction ? (
-                    <Text style={[pmStyles.gwInstruction, { color: colors.mutedForeground }]}>{gw.instruction}</Text>
-                  ) : null}
-                </View>
-
-                {/* Radio */}
-                <View style={[pmStyles.radio, { borderColor: isSelected ? colors.accent : colors.border }]}>
-                  {isSelected && <View style={[pmStyles.radioDot, { backgroundColor: colors.accent }]} />}
-                </View>
-              </TouchableOpacity>
-            );
-          })
-        )}
-      </View>
-    </View>
-  );
+  throw new Error("All payment gateways failed. Please try again later.");
 }
-
-const pmStyles = StyleSheet.create({
-  detectedBadge: { borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 12, alignItems: "center" },
-  detectedText: { fontSize: 12, fontFamily: "Poppins_500Medium", textAlign: "center" },
-  card: { borderRadius: 14, overflow: "hidden", marginBottom: 24, elevation: 2 },
-  gwRow: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14 },
-  emojiBox: { width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center" },
-  emojiText: { fontSize: 20 },
-  gwName: { fontSize: 14, fontFamily: "Poppins_600SemiBold" },
-  gwInstruction: { fontSize: 11, fontFamily: "Poppins_400Regular", marginTop: 2 },
-  nativeBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
-  nativeBadgeText: { fontSize: 9, fontFamily: "Poppins_700Bold" },
-  radio: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, alignItems: "center", justifyContent: "center" },
-  radioDot: { width: 10, height: 10, borderRadius: 5 },
-  emptyWrap: { padding: 24, alignItems: "center" },
-  emptyText: { fontSize: 13, fontFamily: "Poppins_400Regular", textAlign: "center", lineHeight: 20 },
-});
 
 // ─── Main CheckoutScreen ──────────────────────────────────────────────────────
 export default function CheckoutScreen() {
@@ -285,9 +204,7 @@ export default function CheckoutScreen() {
   const [plans, setPlans] = useState<CoinPlan[]>([]);
   const [plansLoading, setPlansLoading] = useState(true);
   const [selectedPlan, setSelectedPlan] = useState<CoinPlan | null>(null);
-  const [selectedGateway, setSelectedGateway] = useState<Gateway | null>(null);
   const [gateways, setGateways] = useState<Gateway[]>([]);
-  const [gatewaysLoading, setGatewaysLoading] = useState(true);
   const [loading, setLoading] = useState(false);
   const [promoCode, setPromoCode] = useState("");
   const [promoApplied, setPromoApplied] = useState<null | { type: string; discount: number; bonus_coins: number; discount_pct: number; code: string }>(null);
@@ -296,7 +213,6 @@ export default function CheckoutScreen() {
   const [walletBanners, setWalletBanners] = useState<any[]>([]);
 
   useEffect(() => {
-    // Load coin plans
     API.getCoinPlans()
       .then((data: any[]) => {
         const active = data.filter((p) => p.is_active !== 0);
@@ -307,52 +223,17 @@ export default function CheckoutScreen() {
       .catch(() => setPlans([]))
       .finally(() => setPlansLoading(false));
 
-    // Load wallet banners
     API.getBanners("wallet").then(setWalletBanners).catch(() => {});
 
-    // Load payment gateways with platform auto-detection
-    const platform = Platform.OS; // android | ios | web
-    API.getPaymentGateways(platform)
-      .then((data: any[]) => {
-        const adminGateways: Gateway[] = data.map((gw) => ({
-          id: gw.id,
-          name: gw.name,
-          type: gw.type,
-          icon_emoji: gw.icon_emoji || "💳",
-          instruction: gw.instruction,
-          redirect_url: gw.redirect_url,
-          native: false,
-        }));
-
-        // Inject native payment method at top for mobile platforms
-        let allGateways: Gateway[] = [];
-        if (platform === "android") {
-          allGateways = [NATIVE_ANDROID, ...adminGateways];
-        } else if (platform === "ios") {
-          allGateways = [NATIVE_IOS, ...adminGateways];
-        } else {
-          allGateways = adminGateways;
-        }
-
-        setGateways(allGateways);
-        // Auto-select the first (native) gateway
-        if (allGateways.length > 0) setSelectedGateway(allGateways[0]);
-      })
-      .catch(() => {
-        // Fallback: inject native method only
-        const fallback =
-          platform === "android" ? [NATIVE_ANDROID] :
-          platform === "ios"     ? [NATIVE_IOS]     : [];
-        setGateways(fallback);
-        if (fallback.length > 0) setSelectedGateway(fallback[0]);
-      })
-      .finally(() => setGatewaysLoading(false));
+    // Load gateways silently (no UI shown to user) — ordered by priority from backend
+    API.getPaymentGateways()
+      .then(setGateways)
+      .catch(() => setGateways([]));
   }, []);
 
   const handleApplyPromo = useCallback(async () => {
     if (!promoCode.trim()) return;
-    setPromoLoading(true);
-    setPromoError("");
+    setPromoLoading(true); setPromoError("");
     try {
       const result = await API.applyPromoCode(promoCode.trim(), selectedPlan?.id) as any;
       setPromoApplied(result);
@@ -373,27 +254,15 @@ export default function CheckoutScreen() {
 
   const handlePurchase = useCallback(async () => {
     if (!user || !selectedPlan) return;
-    if (!selectedGateway) {
-      showErrorToast("Please select a payment method.", "No Payment Method");
-      return;
-    }
     setLoading(true);
     try {
-      const result = await API.purchaseCoins(selectedPlan.id, selectedGateway.type) as any;
-      if (result?.new_balance != null) {
-        updateCoins(result.new_balance);
-        await notifyPurchaseSuccess(totalCoins);
-        showSuccessToast(`${totalCoins.toLocaleString()} coins added!`, "Purchase Successful");
-        router.replace("/user/payment/success");
-      } else {
-        showErrorToast("Payment failed. Please try again.", "Payment Failed");
-      }
+      await tryProcessPayment(gateways, selectedPlan, totalCoins, finalPrice, updateCoins, setLoading);
     } catch (err: any) {
-      showErrorToast(err?.message || "Could not process payment. Please try again.", "Payment Failed");
+      showErrorToast(err?.message || "Payment failed. Please try again.", "Payment Failed");
     } finally {
       setLoading(false);
     }
-  }, [selectedPlan, selectedGateway, user, totalCoins]);
+  }, [selectedPlan, gateways, user, totalCoins, finalPrice, updateCoins]);
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
@@ -489,20 +358,12 @@ export default function CheckoutScreen() {
         {promoApplied ? (
           <View style={[styles.promoBadge, { backgroundColor: colors.online + "18" }]}>
             <Text style={[styles.promoBadgeText, { color: colors.online }]}>
-              {promoApplied.type === "percent" ? `🎉 ${promoApplied.discount_pct}% off — Save $${promoApplied.discount.toFixed(2)}` : `🎁 +${promoApplied.bonus_coins} Bonus Coins added!`}
+              {promoApplied.type === "percent"
+                ? `🎉 ${promoApplied.discount_pct}% off — Save $${promoApplied.discount.toFixed(2)}`
+                : `🎁 +${promoApplied.bonus_coins} Bonus Coins added!`}
             </Text>
           </View>
         ) : null}
-
-        {/* Smart Payment Methods */}
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>Payment Method</Text>
-        <SmartPaymentSection
-          gateways={gateways}
-          loading={gatewaysLoading}
-          selected={selectedGateway}
-          onSelect={setSelectedGateway}
-          colors={colors}
-        />
 
         {/* Order Summary */}
         {selectedPlan && (
@@ -519,16 +380,16 @@ export default function CheckoutScreen() {
                   <Text style={[styles.summaryValue, { color: colors.online }]}>+{selectedPlan.bonus_coins!.toLocaleString()}</Text>
                 </View>
               )}
-              <View style={styles.summaryRow}>
-                <Text style={[styles.summaryLabel, { color: colors.mutedForeground }]}>Total Coins</Text>
-                <Text style={[styles.summaryValue, { color: colors.coinGold, fontFamily: "Poppins_700Bold" }]}>{totalCoins.toLocaleString()}</Text>
-              </View>
               {(promoApplied?.bonus_coins ?? 0) > 0 && (
                 <View style={styles.summaryRow}>
                   <Text style={[styles.summaryLabel, { color: colors.mutedForeground }]}>Promo Bonus</Text>
                   <Text style={[styles.summaryValue, { color: colors.online }]}>+{promoApplied!.bonus_coins.toLocaleString()} Coins</Text>
                 </View>
               )}
+              <View style={styles.summaryRow}>
+                <Text style={[styles.summaryLabel, { color: colors.mutedForeground }]}>You Get</Text>
+                <Text style={[styles.summaryValue, { color: colors.coinGold, fontFamily: "Poppins_700Bold" }]}>{totalCoins.toLocaleString()} Coins</Text>
+              </View>
               <View style={[styles.divider, { backgroundColor: colors.border }]} />
               {(promoApplied?.discount ?? 0) > 0 && (
                 <View style={styles.summaryRow}>
@@ -537,42 +398,36 @@ export default function CheckoutScreen() {
                 </View>
               )}
               <View style={styles.summaryRow}>
-                <Text style={[styles.totalLabel, { color: colors.text }]}>Total Price</Text>
+                <Text style={[styles.totalLabel, { color: colors.text }]}>Total</Text>
                 <Text style={[styles.totalValue, { color: colors.accent }]}>${finalPrice.toFixed(2)} {selectedPlan.currency}</Text>
               </View>
-              {selectedGateway && (
-                <View style={[styles.gwSummaryRow, { backgroundColor: colors.accentLight }]}>
-                  <Text style={[styles.gwSummaryEmoji]}>{selectedGateway.icon_emoji}</Text>
-                  <Text style={[styles.gwSummaryText, { color: colors.accent }]}>via {selectedGateway.name}</Text>
-                </View>
-              )}
             </View>
           </>
         )}
 
         <View style={styles.secureRow}>
           <Image source={require("@/assets/icons/ic_secure.png")} style={styles.secureIcon} tintColor={colors.online} />
-          <Text style={[styles.secureText, { color: colors.mutedForeground }]}>All payments are secured and encrypted</Text>
+          <Text style={[styles.secureText, { color: colors.mutedForeground }]}>Payments are 100% secured & encrypted</Text>
         </View>
       </ScrollView>
 
-      {/* Pay Button */}
+      {/* Continue / Pay Button */}
       <View style={[styles.footer, { backgroundColor: colors.background, borderTopColor: colors.border }]}>
         <TouchableOpacity
-          style={[styles.buyBtn, { backgroundColor: selectedPlan && selectedGateway ? colors.accent : colors.border }]}
+          style={[styles.buyBtn, { backgroundColor: selectedPlan ? colors.accent : colors.border }]}
           onPress={handlePurchase}
           activeOpacity={0.88}
-          disabled={!selectedPlan || !selectedGateway || loading}
+          disabled={!selectedPlan || loading}
         >
           <Text style={styles.buyBtnText}>
-            {selectedGateway && selectedPlan
-              ? `${selectedGateway.icon_emoji} Pay $${finalPrice.toFixed(2)} via ${selectedGateway.name}`
+            {selectedPlan
+              ? `Continue — $${finalPrice.toFixed(2)} for ${totalCoins.toLocaleString()} Coins`
               : "Select a Package"}
           </Text>
         </TouchableOpacity>
       </View>
 
-      <LoadingOverlay visible={loading} message="Processing payment..." />
+      <LoadingOverlay visible={loading} message="Redirecting to payment..." />
     </View>
   );
 }
@@ -614,9 +469,6 @@ const styles = StyleSheet.create({
   divider: { height: 1, marginVertical: 4 },
   totalLabel: { fontSize: 15, fontFamily: "Poppins_600SemiBold" },
   totalValue: { fontSize: 17, fontFamily: "Poppins_700Bold" },
-  gwSummaryRow: { flexDirection: "row", alignItems: "center", gap: 8, borderRadius: 10, padding: 10, marginTop: 4 },
-  gwSummaryEmoji: { fontSize: 18 },
-  gwSummaryText: { fontSize: 13, fontFamily: "Poppins_600SemiBold" },
   secureRow: { flexDirection: "row", alignItems: "center", gap: 8, justifyContent: "center", marginTop: 8 },
   secureIcon: { width: 14, height: 14, resizeMode: "contain" },
   secureText: { fontSize: 11, fontFamily: "Poppins_400Regular" },
