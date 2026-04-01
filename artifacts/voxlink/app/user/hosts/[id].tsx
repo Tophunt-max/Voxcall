@@ -21,6 +21,7 @@ import { useCall } from "@/context/CallContext";
 import { useChat } from "@/context/ChatContext";
 import { API } from "@/services/api";
 import { showErrorToast } from "@/components/Toast";
+import { InsufficientCoinsPopup } from "@/components/InsufficientCoinsPopup";
 
 const { width: SW, height: SH } = Dimensions.get("window");
 
@@ -123,6 +124,8 @@ export default function HostDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [chatUnlocked, setChatUnlocked] = useState(false);
   const [reviews, setReviews] = useState<any[]>([]);
+  const [coinPopup, setCoinPopup] = useState(false);
+  const [coinPopupRequired, setCoinPopupRequired] = useState(0);
 
   useEffect(() => {
     if (!id) return;
@@ -169,14 +172,8 @@ export default function HostDetailScreen() {
   /* ─── Handlers ─── */
   const checkCoins = (rate: number) => {
     if ((user?.coins ?? 0) < rate * 2) {
-      Alert.alert(
-        "Insufficient Coins",
-        `You need at least ${rate * 2} coins to start a call.`,
-        [
-          { text: "Buy Coins", onPress: () => router.push("/user/screens/user/wallet") },
-          { text: "Cancel", style: "cancel" },
-        ]
-      );
+      setCoinPopupRequired(rate * 2);
+      setCoinPopup(true);
       return false;
     }
     return true;
@@ -426,12 +423,18 @@ export default function HostDetailScreen() {
         </TouchableOpacity>
 
         {host.is_online ? (
-          <TouchableOpacity onPress={() => setTalkSheet(true)} style={[s.bottomBtn, { backgroundColor: APP_COLOR }]} activeOpacity={0.85}>
-            <Image source={require("@/assets/icons/ic_call_gradient.png")} style={s.talkIco} tintColor="#fff" resizeMode="contain" />
-            <Text style={s.bottomBtnTxt}>Talk Now</Text>
-          </TouchableOpacity>
+          <>
+            <TouchableOpacity onPress={handleAudio} style={[s.bottomBtn, { backgroundColor: APP_COLOR }]} activeOpacity={0.85}>
+              <Image source={require("@/assets/icons/ic_call.png")} style={s.talkIco} tintColor="#fff" resizeMode="contain" />
+              <Text style={s.bottomBtnTxt}>Audio Call</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={handleVideo} style={[s.bottomBtn, { backgroundColor: "#A00EE7" }]} activeOpacity={0.85}>
+              <Image source={require("@/assets/icons/ic_video.png")} style={s.talkIco} tintColor="#fff" resizeMode="contain" />
+              <Text style={s.bottomBtnTxt}>Video Call</Text>
+            </TouchableOpacity>
+          </>
         ) : (
-          <View style={[s.bottomBtn, { backgroundColor: "#D1D5DB" }]}>
+          <View style={[s.bottomBtn, { backgroundColor: "#D1D5DB", flex: 2 }]}>
             <Text style={[s.bottomBtnTxt, { color: "#6B7280" }]}>Offline</Text>
           </View>
         )}
@@ -443,6 +446,13 @@ export default function HostDetailScreen() {
         onClose={() => setTalkSheet(false)}
         onAudio={handleAudio}
         onVideo={handleVideo}
+      />
+
+      <InsufficientCoinsPopup
+        visible={coinPopup}
+        onClose={() => setCoinPopup(false)}
+        requiredCoins={coinPopupRequired}
+        currentCoins={user?.coins ?? 0}
       />
     </View>
   );

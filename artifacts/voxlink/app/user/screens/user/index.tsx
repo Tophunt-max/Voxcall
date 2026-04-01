@@ -15,7 +15,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
+import { useCall } from "@/context/CallContext";
 import { HostCard } from "@/components/HostCard";
+import { InsufficientCoinsPopup } from "@/components/InsufficientCoinsPopup";
 import { Host } from "@/data/mockData";
 import { API } from "@/services/api";
 import { showErrorToast } from "@/components/Toast";
@@ -161,12 +163,28 @@ export default function HomeScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
+  const { initiateCall } = useCall();
   const [selectedSpecialty, setSelectedSpecialty] = useState("All");
   const [refreshing, setRefreshing] = useState(false);
   const [hosts, setHosts] = useState<Host[]>([]);
   const [specialties, setSpecialties] = useState<string[]>(["All"]);
   const [loading, setLoading] = useState(true);
   const [banners, setBanners] = useState<any[]>([]);
+  const [coinPopup, setCoinPopup] = useState(false);
+  const [coinPopupRequired, setCoinPopupRequired] = useState(0);
+
+  const startCall = useCallback((host: Host, type: "audio" | "video") => {
+    const rate = host.coinsPerMinute || 1;
+    const required = rate * 2;
+    if ((user?.coins ?? 0) < required) {
+      setCoinPopupRequired(required);
+      setCoinPopup(true);
+      return;
+    }
+    const avatar = host.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${host.id}`;
+    initiateCall({ id: host.id, name: host.name, avatar, role: "host" }, type, rate);
+    router.push({ pathname: "/shared/call/outgoing", params: { hostId: host.id, callType: type, hostName: host.name, hostAvatar: avatar, specialty: host.specialties?.[0] ?? "" } });
+  }, [user?.coins, initiateCall]);
 
   const topPad = insets.top;
   const bottomPad = insets.bottom;
@@ -386,7 +404,8 @@ export default function HomeScreen() {
                 key={host.id}
                 host={host}
                 onPress={() => router.push(`/user/hosts/${host.id}`)}
-                onTalkNow={() => router.push(`/user/hosts/${host.id}`)}
+                onAudioCall={() => startCall(host, "audio")}
+                onVideoCall={() => startCall(host, "video")}
               />
             ))
           ) : (
@@ -420,6 +439,13 @@ export default function HomeScreen() {
           )}
         </View>
       </ScrollView>
+
+      <InsufficientCoinsPopup
+        visible={coinPopup}
+        onClose={() => setCoinPopup(false)}
+        requiredCoins={coinPopupRequired}
+        currentCoins={user?.coins ?? 0}
+      />
     </View>
   );
 }

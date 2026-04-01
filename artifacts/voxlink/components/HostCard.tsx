@@ -15,6 +15,8 @@ interface Props {
   onPress: () => void;
   compact?: boolean;
   onTalkNow?: () => void;
+  onAudioCall?: () => void;
+  onVideoCall?: () => void;
 }
 
 function StatusBadge({ isOnline, isBusy }: { isOnline: boolean; isBusy?: boolean }) {
@@ -32,7 +34,7 @@ function StatusBadge({ isOnline, isBusy }: { isOnline: boolean; isBusy?: boolean
   );
 }
 
-export function HostCard({ host, onPress, compact = false, onTalkNow }: Props) {
+export function HostCard({ host, onPress, compact = false, onTalkNow, onAudioCall, onVideoCall }: Props) {
   const colors = useColors();
 
   if (compact) {
@@ -141,15 +143,35 @@ export function HostCard({ host, onPress, compact = false, onTalkNow }: Props) {
         </View>
       </View>
 
-      {/* Talk Now Button */}
       {host.isOnline && (
-        <TouchableOpacity
-          onPress={onTalkNow ?? onPress}
-          style={[styles.talkNowBtn, { backgroundColor: colors.primary }]}
-          activeOpacity={0.85}
-        >
-          <Text style={styles.talkNowText}>Talk Now</Text>
-        </TouchableOpacity>
+        <View style={styles.callBtnsRow}>
+          <TouchableOpacity
+            onPress={onAudioCall ?? onTalkNow ?? onPress}
+            style={[styles.callBtn, { backgroundColor: colors.primary }]}
+            activeOpacity={0.85}
+          >
+            <Image
+              source={require("@/assets/icons/ic_call.png")}
+              style={styles.callBtnIcon}
+              tintColor="#fff"
+              resizeMode="contain"
+            />
+            <Text style={styles.callBtnText}>Audio Call</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={onVideoCall ?? onTalkNow ?? onPress}
+            style={[styles.callBtn, { backgroundColor: "#111329" }]}
+            activeOpacity={0.85}
+          >
+            <Image
+              source={require("@/assets/icons/ic_video.png")}
+              style={styles.callBtnIcon}
+              tintColor="#fff"
+              resizeMode="contain"
+            />
+            <Text style={styles.callBtnText}>Video Call</Text>
+          </TouchableOpacity>
+        </View>
       )}
     </TouchableOpacity>
   );
@@ -205,15 +227,23 @@ const styles = StyleSheet.create({
   rateText: { fontSize: 11, fontFamily: "Poppins_500Medium" },
   callIcons: { flexDirection: "row", gap: 8 },
   callIcon: { width: 18, height: 18 },
-  talkNowBtn: {
+  callBtnsRow: {
+    flexDirection: "row",
     marginHorizontal: 12,
     marginBottom: 12,
-    paddingVertical: 10,
-    borderRadius: 10,
+    gap: 8,
+  },
+  callBtn: {
+    flex: 1,
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
+    paddingVertical: 10,
+    borderRadius: 10,
+    gap: 6,
   },
-  talkNowText: { color: "#fff", fontSize: 13, fontFamily: "Poppins_600SemiBold" },
+  callBtnIcon: { width: 16, height: 16 },
+  callBtnText: { color: "#fff", fontSize: 12, fontFamily: "Poppins_600SemiBold" },
 
   // Compact card (horizontal scroll)
   compactCard: {

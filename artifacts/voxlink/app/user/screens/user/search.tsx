@@ -13,8 +13,11 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
+import { useAuth } from "@/context/AuthContext";
+import { useCall } from "@/context/CallContext";
 import { API } from "@/services/api";
 import { showErrorToast } from "@/components/Toast";
+import { InsufficientCoinsPopup } from "@/components/InsufficientCoinsPopup";
 
 function mapApiHost(h: any) {
   return {
@@ -54,7 +57,7 @@ function StatusBadge({ isOnline }: { isOnline: boolean }) {
   );
 }
 
-function ListenerCard({ host, onPress }: { host: ReturnType<typeof mapApiHost>; onPress: () => void }) {
+function ListenerCard({ host, onPress, onAudioCall, onVideoCall }: { host: ReturnType<typeof mapApiHost>; onPress: () => void; onAudioCall?: () => void; onVideoCall?: () => void }) {
   return (
     <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.88}>
       <View style={styles.cardContent}>
@@ -96,10 +99,16 @@ function ListenerCard({ host, onPress }: { host: ReturnType<typeof mapApiHost>; 
           <Text style={styles.viewProfileText}>View Profile</Text>
         </TouchableOpacity>
         {host.isOnline && (
-          <TouchableOpacity onPress={() => router.push(`/shared/call/outgoing?hostId=${host.id}`)} style={styles.talkNowBtn}>
-            <Image source={require("@/assets/icons/ic_call_gradient.png")} style={styles.talkNowIcon} resizeMode="contain" />
-            <Text style={styles.talkNowText}>Talk Now</Text>
-          </TouchableOpacity>
+          <View style={styles.callBtnsRow}>
+            <TouchableOpacity onPress={onAudioCall} style={styles.audioCallBtn}>
+              <Image source={require("@/assets/icons/ic_call.png")} style={styles.talkNowIcon} tintColor="#fff" resizeMode="contain" />
+              <Text style={styles.callBtnTxt}>Audio</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={onVideoCall} style={styles.videoCallBtn}>
+              <Image source={require("@/assets/icons/ic_video.png")} style={styles.talkNowIcon} tintColor="#fff" resizeMode="contain" />
+              <Text style={styles.callBtnTxt}>Video</Text>
+            </TouchableOpacity>
+          </View>
         )}
       </View>
     </TouchableOpacity>
@@ -126,12 +135,28 @@ function FilterModal({ title, options, selected, onSelect, onClose, visible }: {
 
 export default function ListenerScreen() {
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
+  const { initiateCall } = useCall();
   const [selectedLang, setSelectedLang] = useState("All");
   const [selectedTopic, setSelectedTopic] = useState("All");
   const [showLangModal, setShowLangModal] = useState(false);
   const [showTopicModal, setShowTopicModal] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [hosts, setHosts] = useState<ReturnType<typeof mapApiHost>[]>([]);
+  const [coinPopup, setCoinPopup] = useState(false);
+  const [coinPopupRequired, setCoinPopupRequired] = useState(0);
+
+  const startCall = useCallback((host: ReturnType<typeof mapApiHost>, type: "audio" | "video") => {
+    const rate = host.coinsPerMinute || 1;
+    const required = rate * 2;
+    if ((user?.coins ?? 0) < required) {
+      setCoinPopupRequired(required);
+      setCoinPopup(true);
+      return;
+    }
+    initiateCall({ id: host.id, name: host.name, avatar: host.avatar, role: "host" }, type, rate);
+    router.push({ pathname: "/shared/call/outgoing", params: { hostId: host.id, callType: type, hostName: host.name, hostAvatar: host.avatar, specialty: host.specialties?.[0] ?? "" } });
+  }, [user?.coins, initiateCall]);
 
   const loadHosts = useCallback(async () => {
     try {
@@ -188,7 +213,7 @@ export default function ListenerScreen() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={ACCENT} />}
         >
           {filtered.map((host) => (
-            <ListenerCard key={host.id} host={host} onPress={() => router.push(`/user/hosts/${host.id}`)} />
+            <ListenerCard key={host.id} host={host} onPress={() => router.push(`/user/hosts/${host.id}`)} onAudioCall={() => startCall(host, "audio")} onVideoCall={() => startCall(host, "video")} />
           ))}
           <View style={{ height: insets.bottom + 100 }} />
         </ScrollView>
@@ -196,6 +221,13 @@ export default function ListenerScreen() {
 
       <FilterModal title="Select Language" options={LANGUAGES} selected={selectedLang} onSelect={setSelectedLang} onClose={() => setShowLangModal(false)} visible={showLangModal} />
       <FilterModal title="Talk About" options={TOPICS} selected={selectedTopic} onSelect={setSelectedTopic} onClose={() => setShowTopicModal(false)} visible={showTopicModal} />
+
+      <InsufficientCoinsPopup
+        visible={coinPopup}
+        onClose={() => setCoinPopup(false)}
+        requiredCoins={coinPopupRequired}
+        currentCoins={user?.coins ?? 0}
+      />
     </View>
   );
 }
@@ -257,13 +289,23 @@ const styles = StyleSheet.create({
   cardActions: { flexDirection: "row", borderTopWidth: 1, borderTopColor: "#F0F0F0" },
   viewProfileBtn: { flex: 1, paddingVertical: 12, alignItems: "center" },
   viewProfileText: { fontSize: 13, fontFamily: "Poppins_600SemiBold", color: GREY },
-  talkNowBtn: {
-    flex: 1, paddingVertical: 12, alignItems: "center", justifyContent: "center",
-    flexDirection: "row", gap: 6, backgroundColor: "#F8F0FF",
-    borderLeftWidth: 1, borderLeftColor: "#F0F0F0",
+  callBtnsRow: {
+    flexDirection: "row",
+    flex: 1,
+    borderLeftWidth: 1,
+    borderLeftColor: "#F0F0F0",
   },
-  talkNowIcon: { width: 16, height: 16 },
-  talkNowText: { fontSize: 13, fontFamily: "Poppins_700Bold", color: ACCENT },
+  audioCallBtn: {
+    flex: 1, paddingVertical: 10, alignItems: "center", justifyContent: "center",
+    flexDirection: "row", gap: 4, backgroundColor: ACCENT,
+  },
+  videoCallBtn: {
+    flex: 1, paddingVertical: 10, alignItems: "center", justifyContent: "center",
+    flexDirection: "row", gap: 4, backgroundColor: "#111329",
+    borderBottomRightRadius: 16,
+  },
+  talkNowIcon: { width: 14, height: 14 },
+  callBtnTxt: { fontSize: 12, fontFamily: "Poppins_600SemiBold", color: "#fff" },
 
   emptyWrap: { flex: 1, alignItems: "center", justifyContent: "center" },
   emptyImg: { width: 180, height: 140 },
