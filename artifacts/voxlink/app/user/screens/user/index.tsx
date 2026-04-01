@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -7,8 +7,8 @@ import {
   FlatList,
   TouchableOpacity,
   Image,
-  Platform,
-  RefreshControl,
+  Dimensions,
+  Animated,
 } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -18,6 +18,11 @@ import { useAuth } from "@/context/AuthContext";
 import { HostCard } from "@/components/HostCard";
 import { Host } from "@/data/mockData";
 import { API } from "@/services/api";
+import { RefreshControl } from "react-native";
+
+const SCREEN_W = Dimensions.get("window").width;
+const BANNER_W = SCREEN_W - 32;
+const AUTO_SLIDE_INTERVAL = 3500;
 
 function mapApiHost(h: any): Host {
   return {
@@ -36,6 +41,119 @@ function mapApiHost(h: any): Host {
     gender: h.gender || "male",
     country: h.country || "",
   };
+}
+
+type SlideItem =
+  | { type: "find_more" }
+  | { type: "admin"; id: string; title: string; subtitle?: string; cta_text?: string; cta_link?: string; bg_color?: string };
+
+function BannerSlider({ slides }: { slides: SlideItem[] }) {
+  const [activeIdx, setActiveIdx] = useState(0);
+  const flatRef = useRef<FlatList<SlideItem>>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const currentIdx = useRef(0);
+
+  const goTo = useCallback((idx: number) => {
+    if (!flatRef.current || slides.length === 0) return;
+    const safe = Math.max(0, Math.min(idx, slides.length - 1));
+    flatRef.current.scrollToIndex({ index: safe, animated: true });
+    currentIdx.current = safe;
+    setActiveIdx(safe);
+  }, [slides.length]);
+
+  useEffect(() => {
+    if (slides.length <= 1) return;
+    timerRef.current = setInterval(() => {
+      const next = (currentIdx.current + 1) % slides.length;
+      goTo(next);
+    }, AUTO_SLIDE_INTERVAL);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [slides.length, goTo]);
+
+  const onMomentumScrollEnd = useCallback((e: any) => {
+    const idx = Math.round(e.nativeEvent.contentOffset.x / BANNER_W);
+    currentIdx.current = idx;
+    setActiveIdx(idx);
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => {
+      const next = (currentIdx.current + 1) % slides.length;
+      goTo(next);
+    }, AUTO_SLIDE_INTERVAL);
+  }, [slides.length, goTo]);
+
+  const renderSlide = ({ item }: { item: SlideItem }) => {
+    if (item.type === "find_more") {
+      return (
+        <TouchableOpacity
+          onPress={() => router.push("/user/screens/user/random")}
+          activeOpacity={0.9}
+          style={[styles.slide, { backgroundColor: "#A00EE7" }]}
+        >
+          <View style={styles.findMoreLeft}>
+            <Text style={styles.findMoreTitle}>Find More</Text>
+            <Text style={styles.findMoreSub}>Connect with a random listener now</Text>
+            <View style={styles.findMoreBtn}>
+              <Text style={styles.findMoreBtnText}>Start Random Call</Text>
+            </View>
+          </View>
+          <Image
+            source={require("@/assets/images/home_call_person.png")}
+            style={styles.findMoreImage}
+            resizeMode="contain"
+          />
+        </TouchableOpacity>
+      );
+    }
+    return (
+      <TouchableOpacity
+        activeOpacity={0.9}
+        onPress={() => {
+          if (item.cta_link) router.push(item.cta_link as any);
+        }}
+        style={[styles.slide, { backgroundColor: item.bg_color || "#A00EE7" }]}
+      >
+        <View style={styles.adminBannerContent}>
+          <Text style={styles.adminBannerTitle}>{item.title}</Text>
+          {item.subtitle ? <Text style={styles.adminBannerSub}>{item.subtitle}</Text> : null}
+          {item.cta_text ? (
+            <View style={styles.adminBannerBtn}>
+              <Text style={styles.adminBannerBtnText}>{item.cta_text}</Text>
+            </View>
+          ) : null}
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
+  if (slides.length === 0) return null;
+
+  return (
+    <View style={styles.sliderWrap}>
+      <FlatList
+        ref={flatRef}
+        data={slides}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        keyExtractor={(item, i) => item.type === "find_more" ? "find_more" : (item as any).id || String(i)}
+        renderItem={renderSlide}
+        onMomentumScrollEnd={onMomentumScrollEnd}
+        snapToInterval={BANNER_W}
+        decelerationRate="fast"
+        getItemLayout={(_, index) => ({ length: BANNER_W, offset: BANNER_W * index, index })}
+        style={{ width: BANNER_W }}
+      />
+      {slides.length > 1 && (
+        <View style={styles.dotsRow}>
+          {slides.map((_, i) => (
+            <TouchableOpacity key={i} onPress={() => goTo(i)} activeOpacity={0.7}>
+              <View style={[styles.dot, activeIdx === i && styles.dotActive]} />
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+    </View>
+  );
 }
 
 export default function HomeScreen() {
@@ -78,6 +196,19 @@ export default function HomeScreen() {
     API.getBanners().then(setBanners).catch(() => {});
   }, []);
 
+  const slides: SlideItem[] = [
+    ...banners.map((b): SlideItem => ({
+      type: "admin",
+      id: b.id,
+      title: b.title,
+      subtitle: b.subtitle,
+      cta_text: b.cta_text,
+      cta_link: b.cta_link,
+      bg_color: b.bg_color,
+    })),
+    { type: "find_more" },
+  ];
+
   const topHosts = hosts.filter((h) => h.isTopRated && h.isOnline);
   const filteredHosts =
     selectedSpecialty === "All"
@@ -100,7 +231,6 @@ export default function HomeScreen() {
       {/* Header bar */}
       <View style={[styles.header, { paddingTop: topPad + 12, backgroundColor: colors.background }]}>
         <View style={styles.headerLeft}>
-          {/* Dotted-border profile circle */}
           <TouchableOpacity
             onPress={() => router.push("/user/screens/user/profile")}
             style={styles.avatarBorderWrapper}
@@ -113,7 +243,6 @@ export default function HomeScreen() {
             </View>
           </TouchableOpacity>
 
-          {/* Name + unique ID */}
           <View style={styles.headerNameCol}>
             <Text style={[styles.headerName, { color: colors.text }]} numberOfLines={1}>
               {user?.name?.split(" ")[0] ?? "Welcome"}
@@ -133,7 +262,6 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.headerRight}>
-          {/* Coin balance */}
           <TouchableOpacity
             onPress={() => router.push("/user/payment/checkout")}
             style={[styles.coinBadge, { backgroundColor: "#FFF2D9" }]}
@@ -148,7 +276,6 @@ export default function HomeScreen() {
             </Text>
           </TouchableOpacity>
 
-          {/* Search icon */}
           <TouchableOpacity
             onPress={() => router.push("/shared/search-hosts")}
             style={[styles.bellBtn, { backgroundColor: colors.muted }]}
@@ -156,7 +283,6 @@ export default function HomeScreen() {
             <Image source={require("@/assets/icons/ic_search.png")} style={{ width: 18, height: 18 }} tintColor={colors.text} resizeMode="contain" />
           </TouchableOpacity>
 
-          {/* Notification bell */}
           <TouchableOpacity
             onPress={() => router.push("/shared/notifications")}
             style={[styles.bellBtn, { backgroundColor: colors.muted }]}
@@ -173,50 +299,8 @@ export default function HomeScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
         }
       >
-        {/* Promotional Banners from Admin */}
-        {banners.length > 0 && (
-          <FlatList
-            data={banners}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            keyExtractor={(b) => b.id}
-            contentContainerStyle={{ paddingBottom: 8 }}
-            renderItem={({ item: banner }) => (
-              <TouchableOpacity
-                activeOpacity={0.9}
-                style={[styles.promoBanner, { backgroundColor: banner.bg_color || "#A00EE7" }]}
-              >
-                <Text style={styles.promoBannerTitle}>{banner.title}</Text>
-                {banner.subtitle ? <Text style={styles.promoBannerSub}>{banner.subtitle}</Text> : null}
-                {banner.cta_text ? (
-                  <View style={styles.promoBannerBtn}>
-                    <Text style={styles.promoBannerBtnText}>{banner.cta_text}</Text>
-                  </View>
-                ) : null}
-              </TouchableOpacity>
-            )}
-          />
-        )}
-
-        {/* Find More / Featured Banner */}
-        <TouchableOpacity
-          onPress={() => router.push("/user/screens/user/random")}
-          activeOpacity={0.9}
-          style={[styles.findMoreBanner, { backgroundColor: "#A00EE7" }]}
-        >
-          <View style={styles.findMoreLeft}>
-            <Text style={styles.findMoreTitle}>Find More</Text>
-            <Text style={styles.findMoreSub}>Connect with a random listener now</Text>
-            <View style={[styles.findMoreBtn, { backgroundColor: "rgba(255,255,255,0.25)" }]}>
-              <Text style={styles.findMoreBtnText}>Start Random Call</Text>
-            </View>
-          </View>
-          <Image
-            source={require("@/assets/images/home_call_person.png")}
-            style={styles.findMoreImage}
-            resizeMode="contain"
-          />
-        </TouchableOpacity>
+        {/* Unified Auto/Manual Banner Slider */}
+        <BannerSlider slides={slides} />
 
         {/* Top Listeners section */}
         {topHosts.length > 0 && (
@@ -381,29 +465,28 @@ const styles = StyleSheet.create({
   bellBtn: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
 
   content: { paddingHorizontal: 16, paddingTop: 8 },
-  promoBanner: {
-    borderRadius: 14, padding: 16, marginRight: 12,
-    width: 280, justifyContent: "center", gap: 6,
-  },
-  promoBannerTitle: { fontSize: 15, fontFamily: "Poppins_700Bold", color: "#fff" },
-  promoBannerSub: { fontSize: 12, fontFamily: "Poppins_400Regular", color: "rgba(255,255,255,0.85)" },
-  promoBannerBtn: { alignSelf: "flex-start", backgroundColor: "rgba(255,255,255,0.25)", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, marginTop: 4 },
-  promoBannerBtnText: { fontSize: 12, fontFamily: "Poppins_600SemiBold", color: "#fff" },
 
-  findMoreBanner: {
+  sliderWrap: {
+    marginBottom: 20,
+    alignItems: "center",
+  },
+  slide: {
+    width: BANNER_W,
     borderRadius: 16,
     padding: 18,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 20,
     overflow: "hidden",
+    minHeight: 130,
   },
+
   findMoreLeft: { flex: 1, gap: 6 },
   findMoreTitle: { fontSize: 20, fontFamily: "Poppins_700Bold", color: "#fff" },
   findMoreSub: { fontSize: 12, fontFamily: "Poppins_400Regular", color: "rgba(255,255,255,0.8)" },
   findMoreBtn: {
     alignSelf: "flex-start",
+    backgroundColor: "rgba(255,255,255,0.25)",
     paddingHorizontal: 14,
     paddingVertical: 7,
     borderRadius: 20,
@@ -411,6 +494,37 @@ const styles = StyleSheet.create({
   },
   findMoreBtnText: { fontSize: 12, fontFamily: "Poppins_600SemiBold", color: "#fff" },
   findMoreImage: { width: 90, height: 90, marginLeft: 12 },
+
+  adminBannerContent: { flex: 1, gap: 6 },
+  adminBannerTitle: { fontSize: 18, fontFamily: "Poppins_700Bold", color: "#fff" },
+  adminBannerSub: { fontSize: 12, fontFamily: "Poppins_400Regular", color: "rgba(255,255,255,0.85)" },
+  adminBannerBtn: {
+    alignSelf: "flex-start",
+    backgroundColor: "rgba(255,255,255,0.25)",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    marginTop: 4,
+  },
+  adminBannerBtnText: { fontSize: 12, fontFamily: "Poppins_600SemiBold", color: "#fff" },
+
+  dotsRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 6,
+    marginTop: 10,
+  },
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#D0C0E0",
+  },
+  dotActive: {
+    width: 20,
+    backgroundColor: "#A00EE7",
+    borderRadius: 3,
+  },
 
   section: { marginBottom: 20, gap: 12 },
   sectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
