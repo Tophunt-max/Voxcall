@@ -49,7 +49,7 @@ export function InsufficientCoinsPopup({ visible, onClose, requiredCoins, curren
 
   const handleGoToWallet = () => {
     onClose();
-    router.push("/user/screens/user/wallet");
+    router.push("/user/payment/checkout");
   };
 
   const shortage = Math.max(0, requiredCoins - currentCoins);
