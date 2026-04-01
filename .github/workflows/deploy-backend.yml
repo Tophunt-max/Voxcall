@@ -16,6 +16,7 @@ jobs:
     timeout-minutes: 15
     env:
       CF_CALLS_SECRET: ${{ secrets.CF_CALLS_APP_SECRET }}
+      JWT_SECRET_VALUE: ${{ secrets.JWT_SECRET }}
 
     steps:
       - name: Checkout code
@@ -42,11 +43,11 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
       - name: Set JWT_SECRET on Worker
+        if: ${{ env.JWT_SECRET_VALUE != '' }}
         working-directory: api-server
         run: printf '%s' "$JWT_SECRET_VALUE" | pnpm exec wrangler secret put JWT_SECRET
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          JWT_SECRET_VALUE: ${{ secrets.JWT_SECRET }}
 
       - name: Set CF_CALLS_APP_SECRET on Worker
         if: ${{ env.CF_CALLS_SECRET != '' }}

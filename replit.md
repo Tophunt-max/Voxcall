@@ -262,3 +262,43 @@ KYC verification applications. Fields: id, user_id, display_name, date_of_birth,
 
 ## tintColor Rule
 IMPORTANT: Always use `tintColor={color}` as direct Image prop, NOT inside `style={}`. Example: `<Image source={...} tintColor={colors.primary} />`
+
+## Local Development Setup
+
+### api-server/.dev.vars (not committed — in .gitignore)
+```
+JWT_SECRET=local-dev-secret-voxlink-2024-minimum-32-chars
+CF_CALLS_APP_ID=536d1e7e8d540b7ccfb238d32f734d1a
+CF_ACCOUNT_ID=b592b3b2a5455323a76de721a92699cd
+```
+Note: `CF_CALLS_APP_SECRET` is a production-only secret, not in .dev.vars.
+
+### admin-panel/.env.local (not committed)
+```
+VITE_API_URL=https://voxlink-api.ssunilkumarmohanta3.workers.dev
+```
+This makes the local admin panel connect directly to the production API.
+
+## GitHub Actions CI/CD
+
+**Repo**: `Tophunt-max/Voxcall` (private)
+
+**Secrets set in GitHub Actions**:
+- `CLOUDFLARE_API_TOKEN` ✅
+- `CF_CALLS_APP_SECRET` ✅
+- `JWT_SECRET` — must be added manually to GitHub secrets if auto-deploy of JWT_SECRET is needed
+
+**Workflow**: `.github/workflows/deploy-backend.yml`
+- Triggers on push to `main` (paths: `api-server/**`)
+- Deploys Worker → optionally sets JWT_SECRET (if GitHub secret exists) → sets CF_CALLS_APP_SECRET (if secret exists)
+- Both secret steps have `if: ${{ env.SECRET != '' }}` guards to avoid failures
+
+## Production Verification (Tested 2026-04-01)
+- API health: ✅ 
+- Admin login: ✅ (admin@voxlink.app / admin123)
+- Hosts listing: ✅ (5 hosts, all online)
+- Call initiation: ✅ (CF Calls sessions created — cf_session_id + cf_host_session_id)
+- SDP push/pull routes: ✅ (correct paths `/api/calls/:id/sdp/push`, `/api/calls/:id/sdp/pull`)
+- End call: ✅ (coins charged correctly)
+- Admin dashboard: ✅ (21 users, 5 hosts, 12 calls today, 117 coins revenue)
+- WebRTC service: ✅ (correctly calls API routes with real SDP)
