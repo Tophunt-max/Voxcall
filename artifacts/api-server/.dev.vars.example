@@ -1,0 +1,5 @@
+# Copy this file to .dev.vars for local Wrangler dev only
+# In production, secrets are set via: wrangler secret put <NAME>
+
+JWT_SECRET=your-strong-random-secret-min-32-chars
+CF_CALLS_APP_SECRET=your-cloudflare-calls-app-secret

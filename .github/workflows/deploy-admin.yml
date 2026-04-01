@@ -40,14 +40,14 @@ jobs:
         env:
           PORT: '4173'
           BASE_PATH: '/'
-          VITE_API_URL: ${{ secrets.VITE_API_URL || 'https://voxlink-api.ssunilkumarmohanta3.workers.dev' }}
           NODE_ENV: production
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
 
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/pages-action@v1
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: b592b3b2a5455323a76de721a92699cd
+          accountId: ${{ vars.CF_ACCOUNT_ID }}
           projectName: voxlink-admin
           directory: artifacts/admin-panel/dist/public
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
