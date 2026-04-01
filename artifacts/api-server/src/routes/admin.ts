@@ -244,6 +244,17 @@ admin.patch('/coin-plans/:id', async (c) => {
   await db(c).prepare(`UPDATE coin_plans SET ${sets.join(', ')} WHERE id = ?`).bind(...vals).run();
   return c.json({ success: true });
 });
+admin.delete('/coin-plans/:id', async (c) => {
+  const { id } = c.req.param();
+  const existing = await db(c).prepare('SELECT id, is_active FROM coin_plans WHERE id = ?').bind(id).first();
+  if (!existing) return c.json({ error: 'Plan not found' }, 404);
+  if (existing.is_active) {
+    const activeCount = await db(c).prepare('SELECT COUNT(*) as cnt FROM coin_plans WHERE is_active = 1').first<{cnt: number}>();
+    if (activeCount && activeCount.cnt <= 1) return c.json({ error: 'Cannot delete the last active plan' }, 409);
+  }
+  await db(c).prepare('DELETE FROM coin_plans WHERE id = ?').bind(id).run();
+  return c.json({ success: true });
+});
 
 // GET/PATCH app settings
 admin.get('/settings', async (c) => {

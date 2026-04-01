@@ -77,7 +77,7 @@ app/
 ### Admin Panel (artifacts/admin-panel)
 - **Framework**: React + Vite + Tailwind CSS
 - **Proxy**: `/admin-panel/api` → `localhost:8080/api`
-- **Pages**: Dashboard, Users, Hosts, Withdrawals, Coin Plans, Settings
+- **Pages**: Dashboard, Users, Hosts, Withdrawals, Coin Plans, Payment Gateways, Settings
 - **Auth**: JWT token stored in localStorage, admin role required
 
 ## API Routes
@@ -111,7 +111,7 @@ app/
 
 ## D1 Database Schema
 
-Tables: `users`, `hosts`, `coin_plans`, `coin_transactions`, `call_sessions`, `chat_rooms`, `messages`, `ratings`, `withdrawal_requests`, `notifications`, `faqs`, `talk_topics`, `app_settings`, `host_applications`
+Tables: `users`, `hosts`, `coin_plans`, `coin_transactions`, `call_sessions`, `chat_rooms`, `messages`, `ratings`, `withdrawal_requests`, `notifications`, `faqs`, `talk_topics`, `app_settings`, `host_applications`, `payment_gateways`, `banners`
 
 ### host_applications table
 KYC verification applications. Fields: id, user_id, display_name, date_of_birth, gender, phone, bio, specialties, languages, experience, audio_rate, video_rate, aadhar_front_url, aadhar_back_url, verification_video_url, status (pending|under_review|approved|rejected), rejection_reason, reviewed_by, reviewed_at, submitted_at

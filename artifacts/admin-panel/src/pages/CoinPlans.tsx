@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { Modal } from '@/components/ui/Modal';
-import { Plus, Edit2, Zap, Star } from 'lucide-react';
+import { Plus, Edit2, Trash2, Zap, Star } from 'lucide-react';
 
 const empty = { name: '', coins: '', price: '', bonus_coins: '0', is_popular: false, is_active: true };
 
-interface PlanCardProps { plan: any; onEdit: () => void }
+interface PlanCardProps { plan: any; onEdit: () => void; onDelete: () => void }
 
-function PlanCard({ plan, onEdit }: PlanCardProps) {
+function PlanCard({ plan, onEdit, onDelete }: PlanCardProps) {
   const gradients = ['gradient-purple', 'gradient-blue', 'gradient-green', 'gradient-orange', 'gradient-red', 'gradient-cyan'];
   const g = gradients[plan.coins % gradients.length];
   return (
@@ -34,12 +34,20 @@ function PlanCard({ plan, onEdit }: PlanCardProps) {
           <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${plan.is_active ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
             {plan.is_active ? 'Active' : 'Inactive'}
           </span>
-          <button
-            onClick={onEdit}
-            className="flex items-center gap-1.5 text-xs font-semibold text-primary hover:bg-primary/10 px-2.5 py-1.5 rounded-lg transition-colors"
-          >
-            <Edit2 size={12} /> Edit
-          </button>
+          <div className="flex gap-1">
+            <button
+              onClick={onEdit}
+              className="flex items-center gap-1.5 text-xs font-semibold text-primary hover:bg-primary/10 px-2.5 py-1.5 rounded-lg transition-colors"
+            >
+              <Edit2 size={12} /> Edit
+            </button>
+            <button
+              onClick={onDelete}
+              className="flex items-center gap-1.5 text-xs font-semibold text-red-500 hover:bg-red-50 px-2.5 py-1.5 rounded-lg transition-colors"
+            >
+              <Trash2 size={12} />
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -52,6 +60,7 @@ export default function CoinPlans() {
   const [form, setForm] = useState(empty);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [toast, setToast] = useState('');
 
   const load = () => { setLoading(true); api.coinPlans().then(setPlans).finally(() => setLoading(false)); };
@@ -74,6 +83,18 @@ export default function CoinPlans() {
       setEditing(null); setForm(empty); load();
     } catch (e: any) { showToast('Error: ' + e.message); }
     finally { setSaving(false); }
+  };
+
+  const deletePlan = async (id: string, name: string) => {
+    if (deletingId) return;
+    if (!confirm(`Delete "${name}" plan? This cannot be undone.`)) return;
+    setDeletingId(id);
+    try {
+      await api.deleteCoinPlan(id);
+      showToast('Plan deleted');
+      load();
+    } catch (e: any) { showToast('Error: ' + e.message); }
+    finally { setDeletingId(null); }
   };
 
   const fields = [
@@ -104,7 +125,7 @@ export default function CoinPlans() {
         <div className="flex items-center justify-center py-20"><div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" /></div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {plans.map(p => <PlanCard key={p.id} plan={p} onEdit={() => openEdit(p)} />)}
+          {plans.map(p => <PlanCard key={p.id} plan={p} onEdit={() => openEdit(p)} onDelete={() => deletePlan(p.id, p.name)} />)}
         </div>
       )}
 
