@@ -1,19 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
-import { Send, Users, Mic2, Clock, CheckCircle, Bell, ChevronDown } from 'lucide-react';
-
-const HISTORY = [
-  { id: '1', title: 'New Feature Alert!', body: 'Check out our new voice quality improvements.', segment: 'all', sent_to: 4821, sent_at: '2026-03-28 10:00', status: 'sent' },
-  { id: '2', title: 'Weekend Bonus Coins', body: 'Get 20% extra coins on all purchases this weekend!', segment: 'users', sent_to: 3240, sent_at: '2026-03-22 09:00', status: 'sent' },
-  { id: '3', title: 'Host Payout Processed', body: 'Your March payout has been processed.', segment: 'hosts', sent_to: 182, sent_at: '2026-03-20 11:30', status: 'sent' },
-  { id: '4', title: 'We Miss You!', body: 'Come back and get 100 free coins.', segment: 'inactive', sent_to: 890, sent_at: '2026-03-15 15:00', status: 'sent' },
-];
+import { Send, Users, Mic2, Clock, CheckCircle, Bell } from 'lucide-react';
 
 const SEGMENTS = [
-  { id: 'all', label: 'All Users', icon: Users, desc: 'Send to everyone on the platform', count: '4,821' },
-  { id: 'users', label: 'Users Only', icon: Users, desc: 'Regular users (non-hosts)', count: '4,639' },
-  { id: 'hosts', label: 'Hosts Only', icon: Mic2, desc: 'All active hosts', count: '182' },
-  { id: 'inactive', label: 'Inactive Users', icon: Clock, desc: 'Users inactive for 7+ days', count: '1,203' },
+  { id: 'all', label: 'All Users', icon: Users, desc: 'Send to everyone on the platform' },
+  { id: 'users', label: 'Users Only', icon: Users, desc: 'Regular users (non-hosts)' },
+  { id: 'hosts', label: 'Hosts Only', icon: Mic2, desc: 'All active hosts' },
 ];
 
 export default function BulkNotifications() {
@@ -25,7 +17,15 @@ export default function BulkNotifications() {
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
   const [toast, setToast] = useState('');
-  const [history, setHistory] = useState(HISTORY);
+  const [history, setHistory] = useState<any[]>([]);
+  const [histLoading, setHistLoading] = useState(true);
+
+  useEffect(() => {
+    api.notifications().then((data: any[]) => {
+      const bulk = data.filter((n: any) => n.type === 'bulk' || n.type === 'system').slice(0, 20);
+      setHistory(bulk);
+    }).catch(() => {}).finally(() => setHistLoading(false));
+  }, []);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 2500); };
 
@@ -33,22 +33,25 @@ export default function BulkNotifications() {
     if (!title.trim() || !body.trim()) return;
     setSending(true);
     try {
-      await api.sendNotification({ title, body, segment, scheduled: scheduled ? scheduleTime : null });
-      const seg = SEGMENTS.find(s => s.id === segment);
-      const newEntry = { id: Date.now().toString(), title, body, segment, sent_to: parseInt(seg?.count.replace(',', '') || '0'), sent_at: new Date().toLocaleString(), status: scheduled ? 'scheduled' : 'sent' };
-      setHistory([newEntry, ...history]);
+      const res = await api.sendNotification({ title, body: body, type: 'bulk', target: segment });
+      const newEntry = {
+        id: Date.now().toString(),
+        title,
+        body,
+        type: 'bulk',
+        sent_to: res.sent || 0,
+        created_at: Math.floor(Date.now() / 1000),
+        status: scheduled ? 'scheduled' : 'sent',
+      };
+      setHistory(prev => [newEntry, ...prev]);
       setSent(true);
       setTitle(''); setBody(''); setSegment('all'); setScheduled(false); setScheduleTime('');
-      showToast(scheduled ? 'Notification scheduled!' : 'Notification sent successfully!');
+      showToast(scheduled ? 'Notification scheduled!' : `Notification sent to ${res.sent || 0} users!`);
       setTimeout(() => setSent(false), 3000);
     } catch {
-      showToast('Sent (demo mode)');
-      setSent(true);
-      setTimeout(() => setSent(false), 3000);
+      showToast('Failed to send notification');
     } finally { setSending(false); }
   };
-
-  const selectedSeg = SEGMENTS.find(s => s.id === segment);
 
   return (
     <div className="space-y-6">
@@ -78,7 +81,7 @@ export default function BulkNotifications() {
 
             <div>
               <label className="text-sm font-semibold block mb-2">Target Segment</label>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 {SEGMENTS.map(s => (
                   <button key={s.id} onClick={() => setSegment(s.id)}
                     className={`p-3 rounded-xl border text-left transition-all ${segment === s.id ? 'border-primary bg-primary/5' : 'border-border hover:bg-secondary'}`}>
@@ -87,7 +90,6 @@ export default function BulkNotifications() {
                       <span className={`text-xs font-semibold ${segment === s.id ? 'text-primary' : ''}`}>{s.label}</span>
                     </div>
                     <p className="text-[10px] text-muted-foreground">{s.desc}</p>
-                    <p className="text-xs font-bold mt-1">{s.count} recipients</p>
                   </button>
                 ))}
               </div>
@@ -109,7 +111,7 @@ export default function BulkNotifications() {
 
             <button onClick={send} disabled={!title.trim() || !body.trim() || sending}
               className="w-full flex items-center justify-center gap-2 bg-primary text-primary-foreground rounded-xl py-3 text-sm font-semibold hover:opacity-90 disabled:opacity-50 transition-all">
-              {sent ? <><CheckCircle size={16} /> Sent!</> : sending ? 'Sending...' : <><Send size={16} /> {scheduled ? 'Schedule Notification' : `Send to ${selectedSeg?.count} users`}</>}
+              {sent ? <><CheckCircle size={16} /> Sent!</> : sending ? 'Sending...' : <><Send size={16} /> {scheduled ? 'Schedule Notification' : 'Send Notification'}</>}
             </button>
           </div>
         </div>
@@ -130,23 +132,31 @@ export default function BulkNotifications() {
 
       <div className="bg-card border border-border rounded-2xl p-5">
         <h3 className="font-bold text-base mb-4">Send History</h3>
-        <div className="space-y-3">
-          {history.map(h => (
-            <div key={h.id} className="flex items-center gap-4 p-3 border border-border rounded-xl hover:bg-secondary/50 transition-colors">
-              <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${h.status === 'sent' ? 'bg-green-100' : 'bg-amber-100'}`}>
-                {h.status === 'sent' ? <CheckCircle size={15} className="text-green-600" /> : <Clock size={15} className="text-amber-600" />}
+        {histLoading ? (
+          <div className="flex items-center justify-center py-6">
+            <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : history.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-4">No notifications sent yet</p>
+        ) : (
+          <div className="space-y-3">
+            {history.map(h => (
+              <div key={h.id} className="flex items-center gap-4 p-3 border border-border rounded-xl hover:bg-secondary/50 transition-colors">
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${h.status === 'scheduled' ? 'bg-amber-100' : 'bg-green-100'}`}>
+                  {h.status === 'scheduled' ? <Clock size={15} className="text-amber-600" /> : <CheckCircle size={15} className="text-green-600" />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-sm truncate">{h.title}</p>
+                  <p className="text-xs text-muted-foreground truncate">{h.body}</p>
+                </div>
+                <div className="text-right flex-shrink-0">
+                  {h.sent_to !== undefined && <p className="text-xs font-semibold">{h.sent_to} sent</p>}
+                  <p className="text-[10px] text-muted-foreground">{h.created_at ? new Date(h.created_at * 1000).toLocaleDateString() : '—'}</p>
+                </div>
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="font-semibold text-sm truncate">{h.title}</p>
-                <p className="text-xs text-muted-foreground truncate">{h.body}</p>
-              </div>
-              <div className="text-right flex-shrink-0">
-                <p className="text-xs font-semibold">{h.sent_to.toLocaleString()} sent</p>
-                <p className="text-[10px] text-muted-foreground">{h.sent_at}</p>
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

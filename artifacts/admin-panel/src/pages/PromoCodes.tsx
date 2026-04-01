@@ -5,19 +5,14 @@ import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
 import { Search, Plus, Trash2, Tag, Copy, CheckCircle } from 'lucide-react';
 
-const MOCK: any[] = [
-  { id: '1', code: 'WELCOME50', discount_pct: 50, max_uses: 100, used_count: 34, expires_at: '2026-06-30', active: true, type: 'percent' },
-  { id: '2', code: 'VOXLINK20', discount_pct: 20, max_uses: 500, used_count: 210, expires_at: '2026-05-15', active: true, type: 'percent' },
-  { id: '3', code: 'NEWUSER10', discount_pct: 10, max_uses: 1000, used_count: 889, expires_at: '2026-04-01', active: false, type: 'percent' },
-  { id: '4', code: 'COINS100', discount_pct: 0, bonus_coins: 100, max_uses: 200, used_count: 55, expires_at: '2026-07-31', active: true, type: 'bonus' },
-];
 
 function blank() {
   return { code: '', discount_pct: 10, bonus_coins: 0, max_uses: 100, expires_at: '', active: true, type: 'percent' };
 }
 
 export default function PromoCodes() {
-  const [rows, setRows] = useState<any[]>(MOCK);
+  const [rows, setRows] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [editing, setEditing] = useState<any>(null);
   const [creating, setCreating] = useState(false);
@@ -27,7 +22,7 @@ export default function PromoCodes() {
   const [copied, setCopied] = useState('');
 
   useEffect(() => {
-    api.promoCodes?.().then(setRows).catch(() => {});
+    api.promoCodes().then(setRows).catch(() => {}).finally(() => setLoading(false));
   }, []);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 2500); };
@@ -46,28 +41,35 @@ export default function PromoCodes() {
     setSaving(true);
     try {
       if (editing) {
-        await api.updatePromoCode?.(editing.id, form);
+        await api.updatePromoCode(editing.id, form);
         setRows(rows.map(r => r.id === editing.id ? { ...r, ...form } : r));
         showToast('Promo code updated');
         setEditing(null);
       } else {
-        const newCode = { ...form, id: Date.now().toString(), used_count: 0 };
-        await api.createPromoCode?.(form);
-        setRows([newCode, ...rows]);
+        const res = await api.createPromoCode(form);
+        setRows([{ ...form, id: res.id, used_count: 0 }, ...rows]);
         showToast('Promo code created');
         setCreating(false);
       }
-    } catch { showToast('Saved locally'); if (editing) setEditing(null); else setCreating(false); }
+    } catch { showToast('Failed to save promo code'); }
     finally { setSaving(false); setForm(blank()); }
   };
 
-  const deleteCode = (id: string) => {
-    setRows(rows.filter(r => r.id !== id));
-    showToast('Promo code deleted');
+  const deleteCode = async (id: string) => {
+    try {
+      await api.deletePromoCode(id);
+      setRows(rows.filter(r => r.id !== id));
+      showToast('Promo code deleted');
+    } catch { showToast('Failed to delete'); }
   };
 
-  const toggle = (id: string) => {
-    setRows(rows.map(r => r.id === id ? { ...r, active: !r.active } : r));
+  const toggle = async (id: string) => {
+    const row = rows.find(r => r.id === id);
+    if (!row) return;
+    try {
+      await api.updatePromoCode(id, { active: !row.active });
+      setRows(rows.map(r => r.id === id ? { ...r, active: !r.active } : r));
+    } catch { showToast('Failed to update'); }
   };
 
   const cols = [
@@ -214,7 +216,7 @@ export default function PromoCodes() {
           </button>
         </div>
       </div>
-      <Table columns={cols} data={filtered} loading={false} empty="No promo codes found" keyFn={r => r.id} />
+      <Table columns={cols} data={filtered} loading={loading} empty="No promo codes found" keyFn={r => r.id} />
       <Modal open={creating || !!editing} onClose={() => { setCreating(false); setEditing(null); setForm(blank()); }}
         title={editing ? 'Edit Promo Code' : 'Create Promo Code'}>
         <PromoForm />

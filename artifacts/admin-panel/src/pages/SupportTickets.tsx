@@ -1,28 +1,22 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { api } from '@/lib/api';
 import { Table } from '@/components/ui/Table';
 import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
-import { Search, MessageSquare, Clock, CheckCircle, AlertCircle, Send, ChevronDown } from 'lucide-react';
-
-const MOCK: any[] = [
-  { id: 'T001', user: 'Rahul Verma', email: 'rahul@ex.com', subject: 'Coins not credited after payment', category: 'billing', priority: 'high', status: 'open', created_at: '2026-03-30', messages: [{ from: 'user', text: 'I purchased 500 coins but they were not added to my account.', time: '10:30 AM' }, { from: 'admin', text: 'We are investigating this. Could you share your transaction ID?', time: '11:00 AM' }] },
-  { id: 'T002', user: 'Sunita Rao', email: 'sunita@ex.com', subject: 'Host was rude during call', category: 'conduct', priority: 'medium', status: 'in_progress', created_at: '2026-03-29', messages: [{ from: 'user', text: 'The host was very rude and disconnected without reason.', time: '3:15 PM' }] },
-  { id: 'T003', user: 'Arun Patel', email: 'arun@ex.com', subject: 'Cannot login to account', category: 'technical', priority: 'high', status: 'open', created_at: '2026-03-29', messages: [{ from: 'user', text: 'App shows error when I try to login.', time: '9:45 AM' }] },
-  { id: 'T004', user: 'Kavya Nair', email: 'kavya@ex.com', subject: 'Refund request for failed call', category: 'billing', priority: 'medium', status: 'resolved', created_at: '2026-03-28', messages: [{ from: 'user', text: 'Call disconnected within 2 mins, coins were deducted.', time: '2:00 PM' }, { from: 'admin', text: 'Refund of 50 coins has been processed.', time: '4:30 PM' }] },
-  { id: 'T005', user: 'Raj Singh', email: 'raj@ex.com', subject: 'App crashing on Android 14', category: 'technical', priority: 'low', status: 'resolved', created_at: '2026-03-27', messages: [{ from: 'user', text: 'App crashes when I open voice call screen.', time: '11:00 AM' }, { from: 'admin', text: 'Fixed in v2.1.3. Please update your app.', time: '5:00 PM' }] },
-];
+import { Search, MessageSquare, Clock, CheckCircle, AlertCircle, Send } from 'lucide-react';
 
 const priorityColor: Record<string, string> = { high: 'text-red-600 bg-red-50', medium: 'text-amber-600 bg-amber-50', low: 'text-green-600 bg-green-50' };
 const statusIcon: Record<string, any> = { open: AlertCircle, in_progress: Clock, resolved: CheckCircle };
 
 function UserAvatar({ name }: { name: string }) {
   const colors = ['bg-violet-500', 'bg-blue-500', 'bg-green-500', 'bg-amber-500', 'bg-pink-500'];
-  const c = colors[name.charCodeAt(0) % colors.length];
-  return <div className={`w-8 h-8 rounded-full ${c} flex items-center justify-center text-white font-bold text-xs flex-shrink-0`}>{name[0]}</div>;
+  const c = colors[(name || 'U').charCodeAt(0) % colors.length];
+  return <div className={`w-8 h-8 rounded-full ${c} flex items-center justify-center text-white font-bold text-xs flex-shrink-0`}>{(name || 'U')[0]}</div>;
 }
 
 export default function SupportTickets() {
-  const [rows, setRows] = useState<any[]>(MOCK);
+  const [rows, setRows] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
   const [selected, setSelected] = useState<any>(null);
@@ -30,10 +24,15 @@ export default function SupportTickets() {
   const [sending, setSending] = useState(false);
   const [toast, setToast] = useState('');
 
+  useEffect(() => {
+    api.supportTickets().then(setRows).catch(() => {}).finally(() => setLoading(false));
+  }, []);
+
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 2500); };
 
   const filtered = rows.filter(r => {
-    const matchSearch = r.user.toLowerCase().includes(search.toLowerCase()) || r.subject.toLowerCase().includes(search.toLowerCase());
+    const name = r.user_name || r.user || '';
+    const matchSearch = name.toLowerCase().includes(search.toLowerCase()) || (r.subject || '').toLowerCase().includes(search.toLowerCase());
     const matchFilter = filter === 'all' || r.status === filter;
     return matchSearch && matchFilter;
   });
@@ -41,19 +40,26 @@ export default function SupportTickets() {
   const sendReply = async () => {
     if (!reply.trim() || !selected) return;
     setSending(true);
-    const newMsg = { from: 'admin', text: reply, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) };
-    const updatedTicket = { ...selected, messages: [...selected.messages, newMsg], status: 'in_progress' };
-    setRows(rows.map(r => r.id === selected.id ? updatedTicket : r));
-    setSelected(updatedTicket);
-    setReply('');
-    setSending(false);
-    showToast('Reply sent');
+    try {
+      const res = await api.replySupportTicket(selected.id, { text: reply }) as any;
+      const updatedMessages = res?.messages || [...(selected.messages || []), { from: 'admin', text: reply, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }];
+      const updatedTicket = { ...selected, messages: updatedMessages, status: 'in_progress' };
+      setRows(rows.map(r => r.id === selected.id ? updatedTicket : r));
+      setSelected(updatedTicket);
+      setReply('');
+      showToast('Reply sent');
+    } catch {
+      showToast('Failed to send reply');
+    } finally { setSending(false); }
   };
 
-  const updateStatus = (id: string, status: string) => {
-    setRows(rows.map(r => r.id === id ? { ...r, status } : r));
-    if (selected?.id === id) setSelected({ ...selected, status });
-    showToast('Status updated');
+  const updateStatus = async (id: string, status: string) => {
+    try {
+      await api.updateSupportTicket(id, { status });
+      setRows(rows.map(r => r.id === id ? { ...r, status } : r));
+      if (selected?.id === id) setSelected((p: any) => ({ ...p, status }));
+      showToast('Status updated');
+    } catch { showToast('Failed to update status'); }
   };
 
   const cols = [
@@ -61,10 +67,10 @@ export default function SupportTickets() {
       key: 'ticket', header: 'Ticket',
       render: (r: any) => (
         <div className="flex items-center gap-3">
-          <UserAvatar name={r.user} />
+          <UserAvatar name={r.user_name || r.user || 'U'} />
           <div className="min-w-0">
             <p className="font-semibold text-sm truncate">{r.subject}</p>
-            <p className="text-xs text-muted-foreground">{r.user} · #{r.id}</p>
+            <p className="text-xs text-muted-foreground">{r.user_name || r.user || '—'} · #{r.id.slice(0, 8)}</p>
           </div>
         </div>
       )
@@ -75,7 +81,7 @@ export default function SupportTickets() {
     },
     {
       key: 'priority', header: 'Priority',
-      render: (r: any) => <span className={`text-xs font-semibold px-2 py-0.5 rounded-lg capitalize ${priorityColor[r.priority]}`}>{r.priority}</span>
+      render: (r: any) => <span className={`text-xs font-semibold px-2 py-0.5 rounded-lg capitalize ${priorityColor[r.priority] || 'bg-secondary'}`}>{r.priority}</span>
     },
     {
       key: 'status', header: 'Status',
@@ -84,12 +90,15 @@ export default function SupportTickets() {
         return (
           <div className="flex items-center gap-1.5">
             <Icon size={14} className={r.status === 'resolved' ? 'text-green-500' : r.status === 'in_progress' ? 'text-blue-500' : 'text-amber-500'} />
-            <Badge variant={r.status}>{r.status.replace('_', ' ')}</Badge>
+            <Badge variant={r.status}>{(r.status || '').replace('_', ' ')}</Badge>
           </div>
         );
       }
     },
-    { key: 'date', header: 'Date', className: 'hidden lg:table-cell', render: (r: any) => <span className="text-xs text-muted-foreground">{r.created_at}</span> },
+    {
+      key: 'date', header: 'Date', className: 'hidden lg:table-cell',
+      render: (r: any) => <span className="text-xs text-muted-foreground">{r.created_at ? new Date(r.created_at * 1000).toLocaleDateString() : '—'}</span>
+    },
     {
       key: 'actions', header: '',
       render: (r: any) => (
@@ -141,16 +150,16 @@ export default function SupportTickets() {
         </div>
       </div>
 
-      <Table columns={cols} data={filtered} loading={false} empty="No tickets found" keyFn={r => r.id} />
+      <Table columns={cols} data={filtered} loading={loading} empty="No tickets found" keyFn={r => r.id} />
 
-      <Modal open={!!selected} onClose={() => setSelected(null)} title={`Ticket #${selected?.id}`}>
+      <Modal open={!!selected} onClose={() => setSelected(null)} title={`Ticket #${(selected?.id || '').slice(0, 8)}`}>
         {selected && (
           <div className="space-y-4">
             <div className="flex items-start gap-3 p-3 bg-secondary rounded-xl">
-              <UserAvatar name={selected.user} />
+              <UserAvatar name={selected.user_name || selected.user || 'U'} />
               <div className="flex-1 min-w-0">
                 <p className="font-semibold text-sm">{selected.subject}</p>
-                <p className="text-xs text-muted-foreground">{selected.user} · {selected.created_at}</p>
+                <p className="text-xs text-muted-foreground">{selected.user_name || selected.user} · {selected.created_at ? new Date(selected.created_at * 1000).toLocaleDateString() : '—'}</p>
               </div>
               <select className="text-xs border border-border rounded-lg px-2 py-1 bg-background"
                 value={selected.status} onChange={e => updateStatus(selected.id, e.target.value)}>
@@ -160,7 +169,7 @@ export default function SupportTickets() {
               </select>
             </div>
             <div className="space-y-3 max-h-56 overflow-y-auto">
-              {selected.messages.map((m: any, i: number) => (
+              {(selected.messages || []).map((m: any, i: number) => (
                 <div key={i} className={`flex ${m.from === 'admin' ? 'justify-end' : 'justify-start'}`}>
                   <div className={`max-w-[80%] rounded-xl px-3 py-2 text-sm ${m.from === 'admin' ? 'bg-primary text-primary-foreground' : 'bg-secondary'}`}>
                     <p>{m.text}</p>
@@ -168,6 +177,9 @@ export default function SupportTickets() {
                   </div>
                 </div>
               ))}
+              {(!selected.messages || selected.messages.length === 0) && (
+                <p className="text-center text-sm text-muted-foreground py-4">No messages yet</p>
+              )}
             </div>
             <div className="flex gap-2">
               <input className="flex-1 px-3 py-2.5 border border-border rounded-xl text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"

@@ -1,46 +1,74 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { api } from '@/lib/api';
 import { Table } from '@/components/ui/Table';
 import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
 import { Search, UserX, RotateCcw, Plus, ShieldOff } from 'lucide-react';
 
-const MOCK: any[] = [
-  { id: 'B001', user: 'User_Harsh99', email: 'harsh@ex.com', type: 'user', reason: 'Spam messages + multiple reports', banned_by: 'Admin', ban_type: 'permanent', banned_at: '2026-03-28', expires_at: null, device_id: 'android_abc123' },
-  { id: 'B002', user: 'Host_Fake22', email: 'fake@ex.com', type: 'host', reason: 'Fraudulent activity - fake profile', banned_by: 'System', ban_type: 'permanent', banned_at: '2026-03-27', expires_at: null, device_id: null },
-  { id: 'B003', user: 'User_Rude01', email: 'rude@ex.com', type: 'user', reason: 'Harassment reported by 3 hosts', banned_by: 'Admin', ban_type: 'temporary', banned_at: '2026-03-25', expires_at: '2026-04-25', device_id: 'android_xyz789' },
-  { id: 'B004', user: 'User_Spam44', email: 'spam@ex.com', type: 'user', reason: 'Sending unsolicited promotional messages', banned_by: 'Admin', ban_type: 'temporary', banned_at: '2026-03-20', expires_at: '2026-04-05', device_id: 'ios_qwe456' },
-];
-
-function UserAvatar({ name }: { name: string }) {
+function UserAvatar() {
   return <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0"><UserX size={14} className="text-red-500" /></div>;
 }
 
+const blankForm = () => ({ email: '', reason: '', ban_type: 'temporary', expires_at: '', device_id: '' });
+
 export default function BanManagement() {
-  const [rows, setRows] = useState<any[]>(MOCK);
+  const [rows, setRows] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [creating, setCreating] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState('');
-  const [form, setForm] = useState({ user_id: '', email: '', reason: '', ban_type: 'temporary', expires_at: '', device_id: '' });
+  const [form, setForm] = useState(blankForm());
+
+  useEffect(() => {
+    api.bannedUsers().then(setRows).catch(() => {}).finally(() => setLoading(false));
+  }, []);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 2500); };
 
   const filtered = rows.filter(r =>
-    r.user.toLowerCase().includes(search.toLowerCase()) ||
-    r.email.toLowerCase().includes(search.toLowerCase()) ||
-    r.reason.toLowerCase().includes(search.toLowerCase())
+    (r.user_name || r.user || '').toLowerCase().includes(search.toLowerCase()) ||
+    (r.user_email || r.email || '').toLowerCase().includes(search.toLowerCase()) ||
+    (r.reason || '').toLowerCase().includes(search.toLowerCase())
   );
 
-  const unban = (id: string) => {
-    setRows(rows.filter(r => r.id !== id));
-    showToast('User unbanned successfully');
+  const unban = async (id: string) => {
+    try {
+      await api.unbanUser(id);
+      setRows(rows.filter(r => r.id !== id));
+      showToast('User unbanned successfully');
+    } catch { showToast('Failed to unban user'); }
   };
 
-  const addBan = () => {
-    const newBan = { ...form, id: `B${Date.now()}`, user: form.email.split('@')[0], type: 'user', banned_by: 'Admin', banned_at: new Date().toISOString().slice(0, 10) };
-    setRows([newBan, ...rows]);
-    setCreating(false);
-    setForm({ user_id: '', email: '', reason: '', ban_type: 'temporary', expires_at: '', device_id: '' });
-    showToast('User banned');
+  const addBan = async () => {
+    if (!form.email || !form.reason) return;
+    setSaving(true);
+    try {
+      const res = await api.banUser({
+        email: form.email,
+        reason: form.reason,
+        ban_type: form.ban_type,
+        expires_at: form.ban_type === 'temporary' ? form.expires_at : null,
+        device_id: form.device_id || null,
+      });
+      const newBan = {
+        id: res.id,
+        user_name: form.email.split('@')[0],
+        user_email: form.email,
+        type: 'user',
+        reason: form.reason,
+        ban_type: form.ban_type,
+        device_id: form.device_id || null,
+        banned_by: 'Admin',
+        banned_at: Math.floor(Date.now() / 1000),
+        expires_at: form.ban_type === 'temporary' ? form.expires_at : null,
+      };
+      setRows([newBan, ...rows]);
+      setCreating(false);
+      setForm(blankForm());
+      showToast('User banned');
+    } catch { showToast('Failed to ban user'); }
+    finally { setSaving(false); }
   };
 
   const cols = [
@@ -48,10 +76,10 @@ export default function BanManagement() {
       key: 'user', header: 'User',
       render: (r: any) => (
         <div className="flex items-center gap-3">
-          <UserAvatar name={r.user} />
+          <UserAvatar />
           <div>
-            <p className="font-semibold text-sm">{r.user}</p>
-            <p className="text-xs text-muted-foreground">{r.email}</p>
+            <p className="font-semibold text-sm">{r.user_name || r.user || '—'}</p>
+            <p className="text-xs text-muted-foreground">{r.user_email || r.email || '—'}</p>
           </div>
         </div>
       )
@@ -118,9 +146,9 @@ export default function BanManagement() {
         </div>
       </div>
 
-      <Table columns={cols} data={filtered} loading={false} empty="No banned users" keyFn={r => r.id} />
+      <Table columns={cols} data={filtered} loading={loading} empty="No banned users" keyFn={r => r.id} />
 
-      <Modal open={creating} onClose={() => setCreating(false)} title="Ban User">
+      <Modal open={creating} onClose={() => { setCreating(false); setForm(blankForm()); }} title="Ban User">
         <div className="space-y-4">
           <div className="p-3 bg-red-50 border border-red-100 rounded-xl flex items-center gap-2">
             <ShieldOff size={15} className="text-red-500 flex-shrink-0" />
@@ -159,11 +187,11 @@ export default function BanManagement() {
             )}
           </div>
           <div className="flex gap-2 pt-2">
-            <button onClick={addBan} disabled={!form.email || !form.reason}
+            <button onClick={addBan} disabled={!form.email || !form.reason || saving}
               className="flex-1 bg-red-500 text-white rounded-xl py-2.5 text-sm font-semibold hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2">
-              <UserX size={15} /> Confirm Ban
+              <UserX size={15} /> {saving ? 'Banning...' : 'Confirm Ban'}
             </button>
-            <button onClick={() => setCreating(false)} className="flex-1 border border-border rounded-xl py-2.5 text-sm font-medium hover:bg-secondary">Cancel</button>
+            <button onClick={() => { setCreating(false); setForm(blankForm()); }} className="flex-1 border border-border rounded-xl py-2.5 text-sm font-medium hover:bg-secondary">Cancel</button>
           </div>
         </div>
       </Modal>

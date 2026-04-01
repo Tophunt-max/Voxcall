@@ -460,6 +460,275 @@ admin.patch('/host-applications/:id/review', async (c) => {
   return c.json({ success: true, status: newStatus });
 });
 
+
+// ─── Helper: log admin action ─────────────────────────────────────────────────
+async function auditLog(d: D1Database, adminId: string, adminName: string, adminEmail: string, action: string, targetType: string, target: string, detail: string, ip = '') {
+  const id = crypto.randomUUID();
+  await d.prepare(
+    'INSERT INTO audit_logs (id, admin_id, admin_name, admin_email, action, target_type, target, detail, ip) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  ).bind(id, adminId, adminName, adminEmail, action, targetType, target, detail, ip).run().catch(() => {});
+}
+
+// ─── Payouts (alias for withdrawals with enriched field names) ────────────────
+admin.get('/payouts', async (c) => {
+  const result = await db(c).prepare(`
+    SELECT wr.id, wr.coins as coins_earned, wr.amount as inr_amount, wr.status,
+      wr.payment_method as bank, wr.admin_note, wr.created_at as requested_at,
+      strftime('%B %Y', datetime(wr.created_at, 'unixepoch')) as period,
+      h.display_name as host_name, u.name, u.email as host_email
+    FROM withdrawal_requests wr
+    JOIN hosts h ON h.id = wr.host_id JOIN users u ON u.id = h.user_id
+    ORDER BY wr.created_at DESC
+  `).all();
+  return c.json(result.results);
+});
+
+// ─── Promo Codes CRUD ─────────────────────────────────────────────────────────
+admin.get('/promo-codes', async (c) => {
+  const result = await db(c).prepare('SELECT * FROM promo_codes ORDER BY created_at DESC').all();
+  return c.json(result.results);
+});
+admin.post('/promo-codes', async (c) => {
+  const body = await c.req.json() as any;
+  const id = crypto.randomUUID();
+  await db(c).prepare(
+    'INSERT INTO promo_codes (id, code, type, discount_pct, bonus_coins, max_uses, expires_at, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+  ).bind(id, String(body.code).toUpperCase(), body.type || 'percent', body.discount_pct || 0, body.bonus_coins || 0, body.max_uses || 100, body.expires_at || null, body.active !== false ? 1 : 0).run();
+  const u = c.get('user');
+  await auditLog(db(c), u.sub, u.email || 'Admin', u.email || '', 'create', 'promo_code', body.code, `Promo code created: ${body.code}`);
+  return c.json({ id, success: true }, 201);
+});
+admin.patch('/promo-codes/:id', async (c) => {
+  const { id } = c.req.param();
+  const body = await c.req.json() as any;
+  const fields = ['code', 'type', 'discount_pct', 'bonus_coins', 'max_uses', 'expires_at', 'active'];
+  const sets: string[] = []; const vals: any[] = [];
+  for (const f of fields) {
+    if (body[f] !== undefined) { sets.push(`${f} = ?`); vals.push(f === 'code' ? String(body[f]).toUpperCase() : body[f]); }
+  }
+  if (!sets.length) return c.json({ error: 'Nothing to update' }, 400);
+  sets.push('updated_at = unixepoch()'); vals.push(id);
+  await db(c).prepare(`UPDATE promo_codes SET ${sets.join(', ')} WHERE id = ?`).bind(...vals).run();
+  return c.json({ success: true });
+});
+admin.delete('/promo-codes/:id', async (c) => {
+  const { id } = c.req.param();
+  const row = await db(c).prepare('SELECT code FROM promo_codes WHERE id = ?').bind(id).first<any>();
+  await db(c).prepare('DELETE FROM promo_codes WHERE id = ?').bind(id).run();
+  const u = c.get('user');
+  await auditLog(db(c), u.sub, u.email || 'Admin', u.email || '', 'delete', 'promo_code', row?.code || id, `Promo code deleted`);
+  return c.json({ success: true });
+});
+
+// ─── Support Tickets ──────────────────────────────────────────────────────────
+admin.get('/support-tickets', async (c) => {
+  const result = await db(c).prepare('SELECT * FROM support_tickets ORDER BY created_at DESC').all();
+  return c.json((result.results || []).map((t: any) => ({ ...t, messages: JSON.parse(t.messages || '[]') })));
+});
+admin.patch('/support-tickets/:id', async (c) => {
+  const { id } = c.req.param();
+  const { status, priority } = await c.req.json() as any;
+  const sets: string[] = []; const vals: any[] = [];
+  if (status !== undefined) { sets.push('status = ?'); vals.push(status); }
+  if (priority !== undefined) { sets.push('priority = ?'); vals.push(priority); }
+  if (!sets.length) return c.json({ error: 'Nothing to update' }, 400);
+  sets.push('updated_at = unixepoch()'); vals.push(id);
+  await db(c).prepare(`UPDATE support_tickets SET ${sets.join(', ')} WHERE id = ?`).bind(...vals).run();
+  return c.json({ success: true });
+});
+admin.post('/support-tickets/:id/reply', async (c) => {
+  const { id } = c.req.param();
+  const { text } = await c.req.json() as any;
+  const ticket = await db(c).prepare('SELECT messages FROM support_tickets WHERE id = ?').bind(id).first<any>();
+  if (!ticket) return c.json({ error: 'Not found' }, 404);
+  const messages = JSON.parse(ticket.messages || '[]');
+  messages.push({ from: 'admin', text, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) });
+  await db(c).prepare('UPDATE support_tickets SET messages = ?, status = ?, updated_at = unixepoch() WHERE id = ?')
+    .bind(JSON.stringify(messages), 'in_progress', id).run();
+  return c.json({ success: true, messages });
+});
+
+// ─── Content Reports ──────────────────────────────────────────────────────────
+admin.get('/content-reports', async (c) => {
+  const result = await db(c).prepare('SELECT * FROM content_reports ORDER BY created_at DESC').all();
+  return c.json(result.results);
+});
+admin.patch('/content-reports/:id', async (c) => {
+  const { id } = c.req.param();
+  const { status, action_taken } = await c.req.json() as any;
+  await db(c).prepare('UPDATE content_reports SET status = ?, action_taken = ?, updated_at = unixepoch() WHERE id = ?')
+    .bind(status, action_taken ?? null, id).run();
+  const u = c.get('user');
+  await auditLog(db(c), u.sub, u.email || 'Admin', u.email || '', action_taken || status, 'content_report', id, `Report ${status}: ${action_taken || ''}`);
+  return c.json({ success: true });
+});
+
+// ─── User Bans ────────────────────────────────────────────────────────────────
+admin.get('/bans', async (c) => {
+  const result = await db(c).prepare('SELECT * FROM user_bans ORDER BY banned_at DESC').all();
+  return c.json(result.results);
+});
+admin.post('/bans', async (c) => {
+  const body = await c.req.json() as any;
+  const id = crypto.randomUUID();
+  let userId = body.user_id ?? null;
+  let userName = body.user_name || body.email?.split('@')[0] || 'Unknown';
+  if (!userId && body.email) {
+    const u2 = await db(c).prepare('SELECT id, name FROM users WHERE email = ?').bind(body.email).first<any>();
+    if (u2) { userId = u2.id; userName = u2.name; }
+  }
+  await db(c).prepare(
+    'INSERT INTO user_bans (id, user_id, user_name, user_email, type, reason, ban_type, device_id, banned_by, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  ).bind(id, userId, userName, body.email ?? '', body.type || 'user', body.reason, body.ban_type || 'permanent', body.device_id ?? null, 'Admin', body.expires_at || null).run();
+  const u = c.get('user');
+  await auditLog(db(c), u.sub, u.email || 'Admin', u.email || '', 'ban', 'user', userName, `${body.ban_type || 'permanent'} ban: ${body.reason}`);
+  return c.json({ id, success: true }, 201);
+});
+admin.delete('/bans/:id', async (c) => {
+  const { id } = c.req.param();
+  const ban = await db(c).prepare('SELECT user_name, user_id FROM user_bans WHERE id = ?').bind(id).first<any>();
+  await db(c).prepare('DELETE FROM user_bans WHERE id = ?').bind(id).run();
+  const u = c.get('user');
+  await auditLog(db(c), u.sub, u.email || 'Admin', u.email || '', 'unban', 'user', ban?.user_name || id, 'Ban removed');
+  return c.json({ success: true });
+});
+
+// ─── Audit Logs ───────────────────────────────────────────────────────────────
+admin.get('/audit-logs', async (c) => {
+  const result = await db(c).prepare('SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 500').all();
+  return c.json((result.results || []).map((l: any) => ({
+    ...l,
+    admin: l.admin_name || 'Admin',
+    admin_email: l.admin_email || '',
+    ts: new Date(l.created_at * 1000).toISOString().replace('T', ' ').slice(0, 19),
+  })));
+});
+
+// ─── Banners CRUD ─────────────────────────────────────────────────────────────
+admin.get('/banners', async (c) => {
+  const result = await db(c).prepare('SELECT * FROM banners ORDER BY created_at DESC').all();
+  return c.json(result.results);
+});
+admin.post('/banners', async (c) => {
+  const body = await c.req.json() as any;
+  const id = crypto.randomUUID();
+  await db(c).prepare(
+    'INSERT INTO banners (id, title, subtitle, image_url, bg_color, cta_text, cta_link, position, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  ).bind(id, body.title, body.subtitle || '', body.image_url || '', body.bg_color || '#7C3AED', body.cta_text || 'Learn More', body.cta_link || '', body.position || 'home_top', body.active !== false ? 1 : 0).run();
+  return c.json({ id, success: true }, 201);
+});
+admin.patch('/banners/:id', async (c) => {
+  const { id } = c.req.param();
+  const body = await c.req.json() as any;
+  const fields = ['title', 'subtitle', 'image_url', 'bg_color', 'cta_text', 'cta_link', 'position', 'active'];
+  const sets: string[] = []; const vals: any[] = [];
+  for (const f of fields) { if (body[f] !== undefined) { sets.push(`${f} = ?`); vals.push(body[f]); } }
+  if (!sets.length) return c.json({ error: 'Nothing to update' }, 400);
+  sets.push('updated_at = unixepoch()'); vals.push(id);
+  await db(c).prepare(`UPDATE banners SET ${sets.join(', ')} WHERE id = ?`).bind(...vals).run();
+  return c.json({ success: true });
+});
+admin.delete('/banners/:id', async (c) => {
+  const { id } = c.req.param();
+  await db(c).prepare('DELETE FROM banners WHERE id = ?').bind(id).run();
+  return c.json({ success: true });
+});
+
+// ─── Referrals ────────────────────────────────────────────────────────────────
+admin.get('/referrals', async (c) => {
+  const topRows = await db(c).prepare(`
+    SELECT rc.user_id, u.name as referrer, u.email as referrer_email,
+      COUNT(ru.id) as referred_count,
+      COALESCE(SUM(ru.coins_given), 0) as coins_earned,
+      SUM(CASE WHEN ru.created_at > unixepoch('now','-30 days') THEN 1 ELSE 0 END) as this_month
+    FROM referral_codes rc
+    JOIN users u ON u.id = rc.user_id
+    LEFT JOIN referral_uses ru ON ru.referrer_id = rc.user_id
+    GROUP BY rc.user_id
+    ORDER BY referred_count DESC
+    LIMIT 50
+  `).all<any>();
+  const recentRows = await db(c).prepare(`
+    SELECT ru.id, ru.coins_given, ru.status,
+      ref.name as referrer,
+      rfd.name as new_user,
+      datetime(ru.created_at,'unixepoch') as joined_at
+    FROM referral_uses ru
+    JOIN users ref ON ref.id = ru.referrer_id
+    JOIN users rfd ON rfd.id = ru.referred_id
+    ORDER BY ru.created_at DESC
+    LIMIT 20
+  `).all<any>();
+  const stats = await db(c).prepare(`
+    SELECT COUNT(*) as total,
+      SUM(CASE WHEN created_at > unixepoch('now','-30 days') THEN 1 ELSE 0 END) as this_month,
+      COALESCE(SUM(coins_given), 0) as coins_distributed
+    FROM referral_uses
+  `).first<any>();
+  return c.json({
+    top: (topRows.results || []).map((r: any, i: number) => ({ ...r, id: String(i + 1), status: 'active' })),
+    recent: (recentRows.results || []).map((r: any) => ({ ...r, joined_at: (r.joined_at || '').slice(0, 10) })),
+    stats: { total: stats?.total || 0, this_month: stats?.this_month || 0, coins_distributed: stats?.coins_distributed || 0 },
+  });
+});
+admin.get('/referral-config', async (c) => {
+  const keys = ['referrer_reward', 'new_user_reward', 'min_calls_to_unlock', 'referral_active'];
+  const result = await db(c).prepare(`SELECT key, value FROM app_settings WHERE key IN (${keys.map(() => '?').join(',')})`)
+    .bind(...keys).all<any>();
+  const obj: any = { referrer_reward: 100, new_user_reward: 50, min_calls_to_unlock: 1, active: true };
+  (result.results || []).forEach((r: any) => {
+    if (r.key === 'referral_active') obj.active = r.value === '1';
+    else if (['referrer_reward', 'new_user_reward', 'min_calls_to_unlock'].includes(r.key)) obj[r.key] = parseInt(r.value);
+  });
+  return c.json(obj);
+});
+admin.put('/referral-config', async (c) => {
+  const body = await c.req.json() as any;
+  const stmts = [
+    db(c).prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('referrer_reward', ?, unixepoch())").bind(String(body.referrer_reward || 100)),
+    db(c).prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('new_user_reward', ?, unixepoch())").bind(String(body.new_user_reward || 50)),
+    db(c).prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('min_calls_to_unlock', ?, unixepoch())").bind(String(body.min_calls_to_unlock || 1)),
+    db(c).prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('referral_active', ?, unixepoch())").bind(body.active ? '1' : '0'),
+  ];
+  await db(c).batch(stmts);
+  return c.json({ success: true });
+});
+
+// ─── Live Calls ───────────────────────────────────────────────────────────────
+admin.get('/calls/live', async (c) => {
+  const result = await db(c).prepare(`
+    SELECT cs.id, cs.type, cs.status, cs.started_at, cs.coins_charged,
+      u.name as user, u.email as caller_email,
+      h.display_name as host,
+      COALESCE(h.audio_coins_per_minute, h.coins_per_minute, 5) as coins_per_min
+    FROM call_sessions cs
+    LEFT JOIN users u ON cs.caller_id = u.id
+    LEFT JOIN hosts h ON cs.host_id = h.id
+    WHERE cs.status = 'active'
+    ORDER BY cs.started_at ASC
+  `).all<any>();
+  return c.json((result.results || []).map((r: any) => ({
+    ...r,
+    started_at: r.started_at ? r.started_at * 1000 : Date.now(),
+  })));
+});
+
+// ─── App Config (alias for settings) ─────────────────────────────────────────
+admin.get('/app-config', async (c) => {
+  const result = await db(c).prepare('SELECT key, value FROM app_settings').all<any>();
+  const obj: any = {};
+  (result.results || []).forEach((r: any) => { obj[r.key] = r.value; });
+  return c.json(obj);
+});
+admin.put('/app-config', async (c) => {
+  const body = await c.req.json() as any;
+  const stmts = Object.entries(body).map(([k, v]) =>
+    db(c).prepare('INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES (?, ?, unixepoch())').bind(k, String(v))
+  );
+  if (stmts.length) await db(c).batch(stmts);
+  const u = c.get('user');
+  await auditLog(db(c), u.sub, u.email || 'Admin', u.email || '', 'update', 'settings', 'App Config', `${stmts.length} settings updated`);
+  return c.json({ success: true });
+});
+
 export default admin;
-
-
