@@ -41,13 +41,15 @@ jobs:
 
       - name: Set JWT_SECRET on Worker
         working-directory: artifacts/api-server
-        run: echo "${{ secrets.JWT_SECRET }}" | pnpm exec wrangler secret put JWT_SECRET
+        run: printf '%s' "$JWT_SECRET_VALUE" | pnpm exec wrangler secret put JWT_SECRET
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          JWT_SECRET_VALUE: ${{ secrets.JWT_SECRET }}
 
       - name: Set CF_CALLS_APP_SECRET on Worker
         if: ${{ secrets.CF_CALLS_APP_SECRET != '' }}
         working-directory: artifacts/api-server
-        run: echo "${{ secrets.CF_CALLS_APP_SECRET }}" | pnpm exec wrangler secret put CF_CALLS_APP_SECRET
+        run: printf '%s' "$CF_CALLS_SECRET_VALUE" | pnpm exec wrangler secret put CF_CALLS_APP_SECRET
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_CALLS_SECRET_VALUE: ${{ secrets.CF_CALLS_APP_SECRET }}
