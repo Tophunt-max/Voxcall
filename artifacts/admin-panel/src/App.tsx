@@ -31,6 +31,7 @@ import ReferralSystem from '@/pages/ReferralSystem';
 import LiveCalls from '@/pages/LiveCalls';
 import AppConfig from '@/pages/AppConfig';
 import PaymentGateways from '@/pages/PaymentGateways';
+import Deposits from '@/pages/Deposits';
 
 const queryClient = new QueryClient();
 const base = import.meta.env.BASE_URL.replace(/\/$/, '');
@@ -77,6 +78,7 @@ function ProtectedApp() {
         <Route path="/banners" component={Banners} />
         <Route path="/audit-logs" component={AuditLogs} />
         <Route path="/app-config" component={AppConfig} />
+        <Route path="/deposits" component={Deposits} />
         <Route path="/payment-gateways" component={PaymentGateways} />
         <Route path="/settings" component={SettingsPage} />
         <Route component={() => <Redirect to="/dashboard" />} />

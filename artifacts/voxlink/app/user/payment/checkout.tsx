@@ -138,14 +138,15 @@ async function tryProcessPayment(
   totalCoins: number,
   finalPrice: number,
   updateCoins: (n: number) => void,
-  setLoading: (v: boolean) => void
+  setLoading: (v: boolean) => void,
+  promoCode?: string
 ): Promise<void> {
   const platform = Platform.OS;
+  const promo = promoCode?.trim() || undefined;
 
   // On mobile, use native payment flow (Google Pay / Apple Pay) — no redirect
   if (platform === "android" || platform === "ios") {
-    // Native mobile payment: call API directly (real Google/Apple Pay SDK would go here)
-    const result = await API.purchaseCoins(plan.id, platform === "android" ? "googlepay" : "applepay") as any;
+    const result = await API.purchaseCoins(plan.id, platform === "android" ? "googlepay" : "applepay", undefined, undefined, undefined, promo) as any;
     if (result?.new_balance != null) {
       updateCoins(result.new_balance);
       await notifyPurchaseSuccess(totalCoins);
@@ -176,8 +177,7 @@ async function tryProcessPayment(
         await Linking.openURL(url);
         return; // redirect happened — stop
       } else {
-        // No redirect URL — simulate direct API purchase via this gateway
-        const result = await API.purchaseCoins(plan.id, gw.type) as any;
+        const result = await API.purchaseCoins(plan.id, gw.type, undefined, undefined, (gw as any).id, promo) as any;
         if (result?.new_balance != null) {
           updateCoins(result.new_balance);
           await notifyPurchaseSuccess(totalCoins);
@@ -256,7 +256,7 @@ export default function CheckoutScreen() {
     if (!user || !selectedPlan) return;
     setLoading(true);
     try {
-      await tryProcessPayment(gateways, selectedPlan, totalCoins, finalPrice, updateCoins, setLoading);
+      await tryProcessPayment(gateways, selectedPlan, totalCoins, finalPrice, updateCoins, setLoading, promoCode);
     } catch (err: any) {
       showErrorToast(err?.message || "Payment failed. Please try again.", "Payment Failed");
     } finally {

@@ -50,21 +50,32 @@ coin.get('/history', async (c) => {
   return c.json(result.results);
 });
 
-// POST /api/coins/purchase — simulate coin purchase
+// POST /api/coins/purchase — coin purchase with deposit tracking
 coin.post('/purchase', async (c) => {
   const { sub } = c.get('user');
-  const { plan_id, payment_method } = await c.req.json();
+  const { plan_id, payment_method, payment_ref, utr_id, gateway_id, promo_code } = await c.req.json();
   const db = c.env.DB;
   const plan = await db.prepare('SELECT * FROM coin_plans WHERE id = ? AND is_active = 1').bind(plan_id).first<any>();
   if (!plan) return c.json({ error: 'Plan not found' }, 404);
   const total = plan.coins + (plan.bonus_coins || 0);
+  const purchaseId = crypto.randomUUID();
+  let gatewayName = payment_method || 'unknown';
+  if (gateway_id) {
+    try {
+      const gw = await db.prepare('SELECT name FROM payment_gateways WHERE id = ?').bind(gateway_id).first<any>();
+      if (gw?.name) gatewayName = gw.name;
+    } catch {}
+  }
   await db.batch([
     db.prepare('UPDATE users SET coins = coins + ?, updated_at = unixepoch() WHERE id = ?').bind(total, sub),
     db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
       .bind(crypto.randomUUID(), sub, 'purchase', total, `Purchased ${plan.name} — ${total} coins`, plan_id),
+    db.prepare(`INSERT INTO coin_purchases (id, user_id, plan_id, plan_name, coins, bonus_coins, amount, currency, payment_method, gateway_id, gateway_name, payment_ref, utr_id, promo_code, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'success')`)
+      .bind(purchaseId, sub, plan_id, plan.name, plan.coins, plan.bonus_coins || 0, plan.price, plan.currency || 'USD', payment_method || 'unknown', gateway_id || null, gatewayName, payment_ref || null, utr_id || null, promo_code || null),
   ]);
   const user = await db.prepare('SELECT coins FROM users WHERE id = ?').bind(sub).first<any>();
-  return c.json({ success: true, coins_added: total, new_balance: user?.coins });
+  return c.json({ success: true, coins_added: total, new_balance: user?.coins, purchase_id: purchaseId });
 });
 
 // POST /api/coins/withdraw — host withdrawal request

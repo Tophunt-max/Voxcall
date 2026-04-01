@@ -494,6 +494,45 @@ admin.get('/payouts', async (c) => {
   return c.json(result.results);
 });
 
+// ─── Deposits (Coin Purchases) ────────────────────────────────────────────────
+admin.get('/deposits', async (c) => {
+  const result = await db(c).prepare(`
+    SELECT cp.*, u.name as user_name, u.email as user_email, u.phone as user_phone
+    FROM coin_purchases cp
+    LEFT JOIN users u ON u.id = cp.user_id
+    ORDER BY cp.created_at DESC LIMIT 500
+  `).all();
+  return c.json(result.results);
+});
+
+admin.patch('/deposits/:id', async (c) => {
+  const { id } = c.req.param();
+  const body = await c.req.json() as any;
+  const sets: string[] = [];
+  const vals: any[] = [];
+  if (body.status !== undefined) { sets.push('status = ?'); vals.push(body.status); }
+  if (body.admin_note !== undefined) { sets.push('admin_note = ?'); vals.push(body.admin_note); }
+  if (sets.length === 0) return c.json({ error: 'Nothing to update' }, 400);
+  sets.push('updated_at = unixepoch()');
+  vals.push(id);
+  await db(c).prepare(`UPDATE coin_purchases SET ${sets.join(', ')} WHERE id = ?`).bind(...vals).run();
+  if (body.status === 'refunded') {
+    const purchase = await db(c).prepare('SELECT user_id, coins, bonus_coins FROM coin_purchases WHERE id = ?').bind(id).first<any>();
+    if (purchase) {
+      const totalRefund = (purchase.coins || 0) + (purchase.bonus_coins || 0);
+      await db(c).batch([
+        db(c).prepare('UPDATE users SET coins = coins - ?, updated_at = unixepoch() WHERE id = ?').bind(totalRefund, purchase.user_id),
+        db(c).prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)').bind(
+          crypto.randomUUID(), purchase.user_id, 'refund', -totalRefund, `Deposit refunded by admin`, id
+        ),
+      ]);
+    }
+  }
+  const u = c.get('user');
+  await auditLog(db(c), u.sub, u.email || 'Admin', u.email || '', 'update', 'deposit', id, `Deposit ${id} updated: ${JSON.stringify(body)}`);
+  return c.json({ success: true });
+});
+
 // ─── Promo Codes CRUD ─────────────────────────────────────────────────────────
 admin.get('/promo-codes', async (c) => {
   const result = await db(c).prepare('SELECT * FROM promo_codes ORDER BY created_at DESC').all();
@@ -964,6 +1003,29 @@ admin.post('/run-migrations', async (c) => {
       ('t6','Music','🎵',1,6),
       ('t7','Travel','✈️',1,7),
       ('t8','Casual Talk','☕',1,8)`,
+    // Coin Purchases (deposit tracking)
+    `CREATE TABLE IF NOT EXISTS coin_purchases (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+      user_id TEXT NOT NULL,
+      plan_id TEXT,
+      plan_name TEXT,
+      coins INTEGER NOT NULL DEFAULT 0,
+      bonus_coins INTEGER DEFAULT 0,
+      amount REAL NOT NULL DEFAULT 0,
+      currency TEXT DEFAULT 'USD',
+      payment_method TEXT DEFAULT 'unknown',
+      gateway_id TEXT,
+      gateway_name TEXT,
+      payment_ref TEXT,
+      utr_id TEXT,
+      promo_code TEXT,
+      status TEXT DEFAULT 'success' CHECK(status IN ('pending','success','failed','refunded')),
+      admin_note TEXT,
+      created_at INTEGER DEFAULT (unixepoch()),
+      updated_at INTEGER DEFAULT (unixepoch())
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_coin_purchases_user ON coin_purchases(user_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_coin_purchases_status ON coin_purchases(status)`,
     // Seed coin plans
     `INSERT OR IGNORE INTO coin_plans (id, name, coins, bonus_coins, price, currency, is_popular, is_active) VALUES
       ('cp1', 'Starter', 50, 0, 0.99, 'USD', 0, 1),

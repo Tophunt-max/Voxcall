@@ -94,8 +94,8 @@ export const API = {
   // Coins
   getCoinPlans: () => apiRequest<any[]>('GET', '/api/coins/plans'),
   getBalance: () => apiRequest<{ coins: number }>('GET', '/api/coins/balance'),
-  purchaseCoins: (plan_id: string, payment_method: string, payment_ref?: string) =>
-    apiRequest('POST', '/api/coins/purchase', { plan_id, payment_method, payment_ref }),
+  purchaseCoins: (plan_id: string, payment_method: string, payment_ref?: string, utr_id?: string, gateway_id?: string, promo_code?: string) =>
+    apiRequest('POST', '/api/coins/purchase', { plan_id, payment_method, payment_ref, utr_id, gateway_id, promo_code }),
   getCoinHistory: () => apiRequest<any[]>('GET', '/api/coins/history'),
   requestWithdrawal: (coins_requested: number, method: string, account_info: string) =>
     apiRequest('POST', '/api/coins/withdraw', { coins_requested, method, account_info }),
