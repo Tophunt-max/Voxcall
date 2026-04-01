@@ -423,18 +423,12 @@ export default function HostDetailScreen() {
         </TouchableOpacity>
 
         {host.is_online ? (
-          <>
-            <TouchableOpacity onPress={handleAudio} style={[s.bottomBtn, { backgroundColor: APP_COLOR }]} activeOpacity={0.85}>
-              <Image source={require("@/assets/icons/ic_call.png")} style={s.talkIco} tintColor="#fff" resizeMode="contain" />
-              <Text style={s.bottomBtnTxt}>Audio Call</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={handleVideo} style={[s.bottomBtn, { backgroundColor: "#A00EE7" }]} activeOpacity={0.85}>
-              <Image source={require("@/assets/icons/ic_video.png")} style={s.talkIco} tintColor="#fff" resizeMode="contain" />
-              <Text style={s.bottomBtnTxt}>Video Call</Text>
-            </TouchableOpacity>
-          </>
+          <TouchableOpacity onPress={() => setTalkSheet(true)} style={[s.bottomBtn, { backgroundColor: APP_COLOR }]} activeOpacity={0.85}>
+            <Image source={require("@/assets/icons/ic_call_gradient.png")} style={s.talkIco} tintColor="#fff" resizeMode="contain" />
+            <Text style={s.bottomBtnTxt}>Talk Now</Text>
+          </TouchableOpacity>
         ) : (
-          <View style={[s.bottomBtn, { backgroundColor: "#D1D5DB", flex: 2 }]}>
+          <View style={[s.bottomBtn, { backgroundColor: "#D1D5DB" }]}>
             <Text style={[s.bottomBtnTxt, { color: "#6B7280" }]}>Offline</Text>
           </View>
         )}
