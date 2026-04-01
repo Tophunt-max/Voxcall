@@ -603,12 +603,33 @@ admin.post('/support-tickets/:id/reply', async (c) => {
 
 // ─── Content Reports ──────────────────────────────────────────────────────────
 admin.get('/content-reports', async (c) => {
-  const result = await db(c).prepare('SELECT * FROM content_reports ORDER BY created_at DESC').all();
+  const result = await db(c).prepare(
+    `SELECT cr.*, 
+      ru.name as reported_user_name, ru.phone as reported_user_phone, ru.email as reported_user_email, ru.avatar_url as reported_user_avatar,
+      rp.name as reporter_display_name, rp.phone as reporter_phone, rp.email as reporter_email
+     FROM content_reports cr
+     LEFT JOIN users ru ON cr.reported_user_id = ru.id
+     LEFT JOIN users rp ON cr.reporter_id = rp.id
+     ORDER BY cr.created_at DESC`
+  ).all();
   return c.json(result.results);
+});
+admin.get('/content-reports/stats', async (c) => {
+  const stats = await db(c).prepare(
+    `SELECT 
+      COUNT(*) as total,
+      SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
+      SUM(CASE WHEN status = 'reviewed' THEN 1 ELSE 0 END) as reviewed,
+      SUM(CASE WHEN status = 'actioned' THEN 1 ELSE 0 END) as actioned,
+      SUM(CASE WHEN status = 'dismissed' THEN 1 ELSE 0 END) as dismissed,
+      SUM(CASE WHEN created_at > unixepoch() - 86400 THEN 1 ELSE 0 END) as last_24h
+     FROM content_reports`
+  ).first<any>();
+  return c.json(stats);
 });
 admin.patch('/content-reports/:id', async (c) => {
   const { id } = c.req.param();
-  const { status, action_taken } = await c.req.json() as any;
+  const { status, action_taken, admin_note } = await c.req.json() as any;
   await db(c).prepare('UPDATE content_reports SET status = ?, action_taken = ?, updated_at = unixepoch() WHERE id = ?')
     .bind(status, action_taken ?? null, id).run();
   const u = c.get('user');

@@ -124,23 +124,19 @@ user.get('/referral', async (c) => {
 user.post('/report', async (c) => {
   const { sub } = c.get('user');
   const db = c.env.DB;
-  const { reported_user_id, reported_user, reason, category } = await c.req.json();
+  const { reported_user_id, reported_user, reason, category, reported_type } = await c.req.json();
   if (!reason) return c.json({ error: 'reason is required' }, 400);
-  const reporter = await db.prepare('SELECT name FROM users WHERE id = ?').bind(sub).first<any>();
+  if (!reported_user_id) return c.json({ error: 'reported_user_id is required' }, 400);
+  const reporter = await db.prepare('SELECT name, phone, email FROM users WHERE id = ?').bind(sub).first<any>();
+  const existing = await db.prepare(
+    'SELECT id FROM content_reports WHERE reporter_id = ? AND reported_user_id = ? AND status = ? AND created_at > unixepoch() - 86400'
+  ).bind(sub, reported_user_id, 'pending').first<any>();
+  if (existing) return c.json({ error: 'You have already reported this user. Please wait for review.' }, 429);
   const id = crypto.randomUUID();
-  try {
-    await db.prepare(
-      `INSERT INTO content_reports (id, reporter_id, reporter_name, reported_user_id, reported_user, reason, category, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')`
-    ).bind(id, sub, reporter?.name ?? '', reported_user_id ?? null, reported_user ?? '', reason, category ?? 'harassment').run();
-  } catch (e: any) {
-    if (e?.message?.includes('FOREIGN KEY')) {
-      await db.prepare(
-        `INSERT INTO content_reports (id, reporter_name, reported_user, reason, category, status)
-         VALUES (?, ?, ?, ?, ?, 'pending')`
-      ).bind(id, reporter?.name ?? '', reported_user ?? '', reason, category ?? 'harassment').run();
-    } else throw e;
-  }
+  await db.prepare(
+    `INSERT INTO content_reports (id, reporter_id, reporter_name, reported_user_id, reported_user, reported_type, reason, category, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')`
+  ).bind(id, sub, reporter?.name ?? '', reported_user_id, reported_user ?? '', reported_type ?? 'user', reason, category ?? 'other').run();
   return c.json({ success: true, id });
 });
 

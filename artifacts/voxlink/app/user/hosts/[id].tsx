@@ -20,7 +20,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useCall } from "@/context/CallContext";
 import { useChat } from "@/context/ChatContext";
 import { API } from "@/services/api";
-import { showErrorToast } from "@/components/Toast";
+import { showErrorToast, showSuccessToast } from "@/components/Toast";
 import { InsufficientCoinsPopup } from "@/components/InsufficientCoinsPopup";
 
 const { width: SW, height: SH } = Dimensions.get("window");
@@ -234,10 +234,10 @@ export default function HostDetailScreen() {
 
   const handleReport = async (reason: string, category: string) => {
     try {
-      await API.submitReport({ reported_user_id: host.user_id || host.id, reported_user: hostName, reason, category });
-      Alert.alert("Report Submitted", "Thank you for your report. Our team will review it shortly.");
+      await API.submitReport({ reported_user_id: host.user_id || host.id, reported_user: hostName, reason, category, reported_type: "host" });
+      showSuccessToast("Thank you for your report. Our team will review it shortly.", "Report Submitted");
     } catch {
-      Alert.alert("Error", "Could not submit report. Please try again.");
+      showErrorToast("Could not submit report. Please try again.", "Error");
     }
   };
 
@@ -445,13 +445,14 @@ export default function HostDetailScreen() {
             <Text style={s.reportTitle}>Report {hostName}</Text>
             <Text style={s.reportSubtitle}>Why are you reporting this host?</Text>
             {[
-              { label: "Inappropriate Content", reason: "Inappropriate Content", category: "inappropriate" },
-              { label: "Harassment", reason: "Harassment", category: "harassment" },
-              { label: "Fake Profile", reason: "Fake Profile", category: "spam" },
-              { label: "Scam / Fraud", reason: "Scam or Fraud", category: "scam" },
+              { label: "Inappropriate Content", reason: "Inappropriate Content", category: "inappropriate_content" },
+              { label: "Harassment", reason: "Harassment or Bullying", category: "harassment" },
+              { label: "Fake Profile", reason: "Fake or Misleading Profile", category: "fake_profile" },
+              { label: "Scam / Fraud", reason: "Scam or Fraudulent Activity", category: "fraud" },
+              { label: "Spam", reason: "Spamming or Unsolicited Messages", category: "spam" },
             ].map((opt) => (
               <TouchableOpacity
-                key={opt.category}
+                key={opt.label}
                 onPress={() => { setReportModal(false); handleReport(opt.reason, opt.category); }}
                 style={s.reportOption}
                 activeOpacity={0.7}

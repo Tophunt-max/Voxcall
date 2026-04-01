@@ -137,7 +137,7 @@ export const API = {
   getReferral: () => apiRequest<{ code: string; referred: number; coins_earned: number }>('GET', '/api/user/referral'),
 
   // Reports
-  submitReport: (data: { reported_user_id: string; reported_user?: string; reason: string; category?: string }) =>
+  submitReport: (data: { reported_user_id: string; reported_user?: string; reason: string; category?: string; reported_type?: string }) =>
     apiRequest<{ success: boolean; id: string }>('POST', '/api/user/report', data),
 
   // Banners (public) — position: 'home' | 'wallet' | undefined (all)
