@@ -1,13 +1,15 @@
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import {
   View,
   Text,
   ScrollView,
+  FlatList,
   TouchableOpacity,
   StyleSheet,
   Image,
   ActivityIndicator,
   TextInput,
+  Dimensions,
 } from "react-native";
 import { router } from "expo-router";
 import { useColors } from "@/hooks/useColors";
@@ -16,6 +18,10 @@ import { API } from "@/services/api";
 import { notifyPurchaseSuccess } from "@/services/NotificationService";
 import LoadingOverlay from "@/components/LoadingOverlay";
 import { showSuccessToast, showErrorToast } from "@/components/Toast";
+
+const SCREEN_W = Dimensions.get("window").width;
+const WALLET_BANNER_W = SCREEN_W - 40;
+const AUTO_SLIDE_MS = 3500;
 
 type PayMethod = "card" | "paypal" | "gpay" | "applepay";
 
@@ -29,6 +35,113 @@ interface CoinPlan {
   is_popular?: number | boolean;
   is_active?: number | boolean;
 }
+
+function WalletBannerSlider({ banners }: { banners: any[] }) {
+  const [activeIdx, setActiveIdx] = useState(0);
+  const flatRef = useRef<FlatList<any>>(null);
+  const currentIdx = useRef(0);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const goTo = useCallback((idx: number) => {
+    if (!flatRef.current || banners.length === 0) return;
+    const safe = Math.max(0, Math.min(idx, banners.length - 1));
+    flatRef.current.scrollToIndex({ index: safe, animated: true });
+    currentIdx.current = safe;
+    setActiveIdx(safe);
+  }, [banners.length]);
+
+  useEffect(() => {
+    if (banners.length <= 1) return;
+    timerRef.current = setInterval(() => {
+      const next = (currentIdx.current + 1) % banners.length;
+      goTo(next);
+    }, AUTO_SLIDE_MS);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [banners.length, goTo]);
+
+  const onMomentumScrollEnd = useCallback((e: any) => {
+    const idx = Math.round(e.nativeEvent.contentOffset.x / WALLET_BANNER_W);
+    currentIdx.current = idx;
+    setActiveIdx(idx);
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => {
+      const next = (currentIdx.current + 1) % banners.length;
+      goTo(next);
+    }, AUTO_SLIDE_MS);
+  }, [banners.length, goTo]);
+
+  if (banners.length === 0) return null;
+
+  return (
+    <View style={wStyles.wrap}>
+      <FlatList
+        ref={flatRef}
+        data={banners}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        keyExtractor={(b) => b.id}
+        snapToInterval={WALLET_BANNER_W}
+        decelerationRate="fast"
+        getItemLayout={(_, index) => ({ length: WALLET_BANNER_W, offset: WALLET_BANNER_W * index, index })}
+        onMomentumScrollEnd={onMomentumScrollEnd}
+        style={{ width: WALLET_BANNER_W }}
+        renderItem={({ item }) => (
+          <TouchableOpacity
+            activeOpacity={0.9}
+            onPress={() => { if (item.cta_link) router.push(item.cta_link as any); }}
+            style={[wStyles.slide, { backgroundColor: item.bg_color || "#A00EE7" }]}
+          >
+            <View style={wStyles.textCol}>
+              <Text style={wStyles.title}>{item.title}</Text>
+              {item.subtitle ? <Text style={wStyles.sub}>{item.subtitle}</Text> : null}
+              {item.cta_text ? (
+                <View style={wStyles.ctaBtn}>
+                  <Text style={wStyles.ctaText}>{item.cta_text}</Text>
+                </View>
+              ) : null}
+            </View>
+          </TouchableOpacity>
+        )}
+      />
+      {banners.length > 1 && (
+        <View style={wStyles.dots}>
+          {banners.map((_, i) => (
+            <TouchableOpacity key={i} onPress={() => goTo(i)} activeOpacity={0.7}>
+              <View style={[wStyles.dot, activeIdx === i && wStyles.dotActive]} />
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
+const wStyles = StyleSheet.create({
+  wrap: { alignItems: "center", marginBottom: 24 },
+  slide: {
+    width: WALLET_BANNER_W,
+    borderRadius: 16,
+    padding: 18,
+    minHeight: 100,
+    justifyContent: "center",
+  },
+  textCol: { gap: 4 },
+  title: { fontSize: 17, fontFamily: "Poppins_700Bold", color: "#fff" },
+  sub: { fontSize: 12, fontFamily: "Poppins_400Regular", color: "rgba(255,255,255,0.85)" },
+  ctaBtn: {
+    alignSelf: "flex-start",
+    backgroundColor: "rgba(255,255,255,0.25)",
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 20,
+    marginTop: 4,
+  },
+  ctaText: { fontSize: 12, fontFamily: "Poppins_600SemiBold", color: "#fff" },
+  dots: { flexDirection: "row", gap: 6, marginTop: 8 },
+  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#D0C0E0" },
+  dotActive: { width: 20, backgroundColor: "#A00EE7", borderRadius: 3 },
+});
 
 const PAYMENT_METHODS: Array<{ id: PayMethod; label: string; icon: any }> = [
   { id: "card",     label: "Credit / Debit Card", icon: require("@/assets/icons/ic_secure.png") },
@@ -49,6 +162,7 @@ export default function CheckoutScreen() {
   const [promoApplied, setPromoApplied] = useState<null | { type: string; discount: number; bonus_coins: number; discount_pct: number; code: string }>(null);
   const [promoLoading, setPromoLoading] = useState(false);
   const [promoError, setPromoError] = useState("");
+  const [walletBanners, setWalletBanners] = useState<any[]>([]);
 
   useEffect(() => {
     API.getCoinPlans()
@@ -60,6 +174,7 @@ export default function CheckoutScreen() {
       })
       .catch(() => setPlans([]))
       .finally(() => setPlansLoading(false));
+    API.getBanners('wallet').then(setWalletBanners).catch(() => {});
   }, []);
 
   const handleApplyPromo = useCallback(async () => {
@@ -126,6 +241,9 @@ export default function CheckoutScreen() {
             </Text>
           </View>
         </View>
+
+        {/* Wallet Banners (admin-set, position=wallet) */}
+        <WalletBannerSlider banners={walletBanners} />
 
         {/* Choose Package */}
         <Text style={[styles.sectionTitle, { color: colors.text }]}>Choose a Package</Text>

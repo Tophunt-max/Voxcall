@@ -3,11 +3,18 @@ import type { Env } from '../types';
 
 const pub = new Hono<{ Bindings: Env }>();
 
-// GET /api/banners — active promotional banners for mobile home screen
+// GET /api/banners?position=home|wallet — active promotional banners, optionally filtered by position
 pub.get('/banners', async (c) => {
-  const result = await c.env.DB.prepare(
-    'SELECT * FROM banners WHERE active = 1 ORDER BY created_at DESC LIMIT 10'
-  ).all();
+  const position = c.req.query('position');
+  let query: string;
+  if (position === 'home') {
+    query = "SELECT * FROM banners WHERE active = 1 AND (position LIKE 'home_%' OR position IS NULL OR position = '') ORDER BY created_at DESC LIMIT 10";
+  } else if (position === 'wallet') {
+    query = "SELECT * FROM banners WHERE active = 1 AND position = 'wallet' ORDER BY created_at DESC LIMIT 10";
+  } else {
+    query = 'SELECT * FROM banners WHERE active = 1 ORDER BY created_at DESC LIMIT 10';
+  }
+  const result = await c.env.DB.prepare(query).all();
   return c.json(result.results);
 });
 

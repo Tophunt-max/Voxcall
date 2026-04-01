@@ -193,7 +193,7 @@ export default function HomeScreen() {
   useEffect(() => {
     loadHosts();
     loadTopics();
-    API.getBanners().then(setBanners).catch(() => {});
+    API.getBanners('home').then(setBanners).catch(() => {});
   }, []);
 
   const slides: SlideItem[] = [

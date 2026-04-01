@@ -140,8 +140,9 @@ export const API = {
   submitReport: (data: { reported_user_id: string; reported_user?: string; reason: string; category?: string }) =>
     apiRequest<{ success: boolean; id: string }>('POST', '/api/user/report', data),
 
-  // Banners (public)
-  getBanners: () => apiRequest<any[]>('GET', '/api/banners', undefined, false),
+  // Banners (public) — position: 'home' | 'wallet' | undefined (all)
+  getBanners: (position?: 'home' | 'wallet') =>
+    apiRequest<any[]>('GET', position ? `/api/banners?position=${position}` : '/api/banners', undefined, false),
 
   // Talk topics (public)
   getTalkTopics: () => apiRequest<any[]>('GET', '/api/talk-topics', undefined, false),
