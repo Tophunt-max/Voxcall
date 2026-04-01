@@ -169,7 +169,7 @@ async function tryProcessPayment(
           plan_id: plan.id,
           coins: String(totalCoins),
           amount: finalPrice.toFixed(2),
-          currency: userCurrency,
+          currency: getCurrencyCode(),
           gateway: gw.type,
           source: "voxlink",
         });
