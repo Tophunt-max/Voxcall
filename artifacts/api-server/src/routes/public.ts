@@ -3,6 +3,14 @@ import type { Env } from '../types';
 
 const pub = new Hono<{ Bindings: Env }>();
 
+// GET /api/banners — active promotional banners for mobile home screen
+pub.get('/banners', async (c) => {
+  const result = await c.env.DB.prepare(
+    'SELECT * FROM banners WHERE active = 1 ORDER BY created_at DESC LIMIT 10'
+  ).all();
+  return c.json(result.results);
+});
+
 // GET /api/talk-topics — public list for mobile app
 pub.get('/talk-topics', async (c) => {
   const result = await c.env.DB.prepare(

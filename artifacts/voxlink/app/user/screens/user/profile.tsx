@@ -426,6 +426,12 @@ export default function ProfileScreen() {
       <View style={[styles.section, { backgroundColor: colors.card }]}>
         <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>More</Text>
         <MenuItem
+          iconName="gift"
+          label="Refer Friends & Earn"
+          subLabel="Share your code, earn free coins"
+          onPress={() => router.push("/shared/referral")}
+        />
+        <MenuItem
           iconName="clock"
           label="Call History"
           onPress={() => router.push("/shared/call/history")}

@@ -38,8 +38,8 @@ export const API = {
   // Auth
   login: (email: string, password: string) =>
     apiRequest<{ token: string; user: any }>('POST', '/api/user/auth/login', { email, password }, false),
-  register: (name: string, email: string, password: string, gender?: string, phone?: string) =>
-    apiRequest<{ token: string; user: any }>('POST', '/api/user/auth/register', { name, email, password, gender, phone }, false),
+  register: (name: string, email: string, password: string, gender?: string, phone?: string, referral_code?: string) =>
+    apiRequest<{ token: string; user: any }>('POST', '/api/user/auth/register', { name, email, password, gender, phone, referral_code }, false),
   guestLogin: (device_id?: string | null) =>
     apiRequest<{ token: string; user: any; is_returning?: boolean }>('POST', '/api/auth/guest-login', { device_id: device_id ?? null }, false),
   quickLogin: (device_id?: string | null) =>
@@ -126,6 +126,22 @@ export const API = {
     apiRequest<{ matched: boolean; host?: any; message?: string }>('POST', '/api/match/find', { call_type }),
   matchOnlineHosts: () =>
     apiRequest<any[]>('GET', '/api/match/online-hosts'),
+
+  // Promo codes
+  applyPromoCode: (code: string, plan_id?: string) =>
+    apiRequest<{ valid: boolean; type: string; discount: number; bonus_coins: number; discount_pct: number; code: string }>(
+      'POST', '/api/coins/apply-promo', { code, plan_id }, false
+    ),
+
+  // Referral
+  getReferral: () => apiRequest<{ code: string; referred: number; coins_earned: number }>('GET', '/api/user/referral'),
+
+  // Reports
+  submitReport: (data: { reported_user_id: string; reported_user?: string; reason: string; category?: string }) =>
+    apiRequest<{ success: boolean; id: string }>('POST', '/api/user/report', data),
+
+  // Banners (public)
+  getBanners: () => apiRequest<any[]>('GET', '/api/banners', undefined, false),
 
   // Talk topics (public)
   getTalkTopics: () => apiRequest<any[]>('GET', '/api/talk-topics', undefined, false),

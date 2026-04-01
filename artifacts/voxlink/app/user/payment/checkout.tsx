@@ -7,6 +7,7 @@ import {
   StyleSheet,
   Image,
   ActivityIndicator,
+  TextInput,
 } from "react-native";
 import { router } from "expo-router";
 import { useColors } from "@/hooks/useColors";
@@ -44,6 +45,10 @@ export default function CheckoutScreen() {
   const [selectedPlan, setSelectedPlan] = useState<CoinPlan | null>(null);
   const [payMethod, setPayMethod] = useState<PayMethod>("card");
   const [loading, setLoading] = useState(false);
+  const [promoCode, setPromoCode] = useState("");
+  const [promoApplied, setPromoApplied] = useState<null | { type: string; discount: number; bonus_coins: number; discount_pct: number; code: string }>(null);
+  const [promoLoading, setPromoLoading] = useState(false);
+  const [promoError, setPromoError] = useState("");
 
   useEffect(() => {
     API.getCoinPlans()
@@ -57,8 +62,26 @@ export default function CheckoutScreen() {
       .finally(() => setPlansLoading(false));
   }, []);
 
+  const handleApplyPromo = useCallback(async () => {
+    if (!promoCode.trim()) return;
+    setPromoLoading(true);
+    setPromoError("");
+    try {
+      const result = await API.applyPromoCode(promoCode.trim(), selectedPlan?.id) as any;
+      setPromoApplied(result);
+    } catch (err: any) {
+      setPromoError(err?.message || "Invalid promo code");
+      setPromoApplied(null);
+    } finally {
+      setPromoLoading(false);
+    }
+  }, [promoCode, selectedPlan?.id]);
+
   const totalCoins = selectedPlan
-    ? selectedPlan.coins + (selectedPlan.bonus_coins ?? 0)
+    ? selectedPlan.coins + (selectedPlan.bonus_coins ?? 0) + (promoApplied?.bonus_coins ?? 0)
+    : 0;
+  const finalPrice = selectedPlan
+    ? Math.max(0, selectedPlan.price - (promoApplied?.discount ?? 0))
     : 0;
 
   const handlePurchase = useCallback(async () => {
@@ -146,6 +169,37 @@ export default function CheckoutScreen() {
           </View>
         )}
 
+        {/* Promo Code */}
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>Promo Code</Text>
+        <View style={[styles.promoRow, { backgroundColor: colors.card, borderColor: promoApplied ? colors.online : colors.border }]}>
+          <TextInput
+            style={[styles.promoInput, { color: colors.text }]}
+            placeholder="Enter promo code"
+            placeholderTextColor={colors.mutedForeground}
+            value={promoCode}
+            onChangeText={(t) => { setPromoCode(t); setPromoApplied(null); setPromoError(""); }}
+            autoCapitalize="characters"
+            editable={!promoApplied}
+          />
+          {promoApplied ? (
+            <TouchableOpacity onPress={() => { setPromoApplied(null); setPromoCode(""); }} style={[styles.promoBtn, { backgroundColor: colors.destructive }]}>
+              <Text style={styles.promoBtnText}>Remove</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity onPress={handleApplyPromo} disabled={promoLoading || !promoCode.trim()} style={[styles.promoBtn, { backgroundColor: promoCode.trim() ? colors.accent : colors.border }]}>
+              {promoLoading ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.promoBtnText}>Apply</Text>}
+            </TouchableOpacity>
+          )}
+        </View>
+        {promoError ? <Text style={[styles.promoError, { color: colors.destructive }]}>{promoError}</Text> : null}
+        {promoApplied ? (
+          <View style={[styles.promoBadge, { backgroundColor: colors.online + "18" }]}>
+            <Text style={[styles.promoBadgeText, { color: colors.online }]}>
+              {promoApplied.type === "percent" ? `🎉 ${promoApplied.discount_pct}% off — Save $${promoApplied.discount.toFixed(2)}` : `🎁 +${promoApplied.bonus_coins} Bonus Coins added!`}
+            </Text>
+          </View>
+        ) : null}
+
         {/* Payment Method */}
         <Text style={[styles.sectionTitle, { color: colors.text }]}>Payment Method</Text>
         <View style={[styles.methodsCard, { backgroundColor: colors.card }]}>
@@ -188,9 +242,21 @@ export default function CheckoutScreen() {
                 <Text style={[styles.summaryValue, { color: colors.coinGold, fontFamily: "Poppins_700Bold" }]}>{totalCoins.toLocaleString()}</Text>
               </View>
               <View style={[styles.divider, { backgroundColor: colors.border }]} />
+              {(promoApplied?.bonus_coins ?? 0) > 0 && (
+                <View style={styles.summaryRow}>
+                  <Text style={[styles.summaryLabel, { color: colors.mutedForeground }]}>Promo Bonus</Text>
+                  <Text style={[styles.summaryValue, { color: colors.online }]}>+{promoApplied!.bonus_coins.toLocaleString()} Coins</Text>
+                </View>
+              )}
+              {(promoApplied?.discount ?? 0) > 0 && (
+                <View style={styles.summaryRow}>
+                  <Text style={[styles.summaryLabel, { color: colors.mutedForeground }]}>Promo Discount</Text>
+                  <Text style={[styles.summaryValue, { color: colors.online }]}>-${promoApplied!.discount.toFixed(2)}</Text>
+                </View>
+              )}
               <View style={styles.summaryRow}>
                 <Text style={[styles.totalLabel, { color: colors.text }]}>Total Price</Text>
-                <Text style={[styles.totalValue, { color: colors.accent }]}>${selectedPlan.price.toFixed(2)} {selectedPlan.currency}</Text>
+                <Text style={[styles.totalValue, { color: colors.accent }]}>${finalPrice.toFixed(2)} {selectedPlan.currency}</Text>
               </View>
             </View>
           </>
@@ -211,7 +277,7 @@ export default function CheckoutScreen() {
           disabled={!selectedPlan || loading}
         >
           <Text style={styles.buyBtnText}>
-            {selectedPlan ? `Pay $${selectedPlan.price.toFixed(2)} — Get ${totalCoins.toLocaleString()} Coins` : "Select a Package"}
+            {selectedPlan ? `Pay $${finalPrice.toFixed(2)} — Get ${totalCoins.toLocaleString()} Coins` : "Select a Package"}
           </Text>
         </TouchableOpacity>
       </View>
@@ -257,6 +323,13 @@ const styles = StyleSheet.create({
   divider: { height: 1, marginVertical: 4 },
   totalLabel: { fontSize: 15, fontFamily: "Poppins_600SemiBold" },
   totalValue: { fontSize: 17, fontFamily: "Poppins_700Bold" },
+  promoRow: { flexDirection: "row", alignItems: "center", borderRadius: 14, borderWidth: 1.5, marginBottom: 8, overflow: "hidden" },
+  promoInput: { flex: 1, paddingHorizontal: 14, paddingVertical: 14, fontSize: 14, fontFamily: "Poppins_500Medium", letterSpacing: 1 },
+  promoBtn: { paddingHorizontal: 18, paddingVertical: 14, alignItems: "center", justifyContent: "center" },
+  promoBtnText: { color: "#fff", fontSize: 13, fontFamily: "Poppins_600SemiBold" },
+  promoError: { fontSize: 12, fontFamily: "Poppins_400Regular", marginBottom: 8 },
+  promoBadge: { borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 8, alignItems: "center" },
+  promoBadgeText: { fontSize: 13, fontFamily: "Poppins_600SemiBold" },
   secureRow: { flexDirection: "row", alignItems: "center", gap: 8, justifyContent: "center", marginTop: 8 },
   secureIcon: { width: 14, height: 14, resizeMode: "contain" },
   secureText: { fontSize: 11, fontFamily: "Poppins_400Regular" },

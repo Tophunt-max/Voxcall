@@ -10,6 +10,27 @@ coin.get('/plans', async (c) => {
   return c.json(plans.results);
 });
 
+// POST /api/coins/apply-promo — validate a promo code (public, no auth needed)
+coin.post('/apply-promo', async (c) => {
+  const { code, plan_id } = await c.req.json();
+  if (!code) return c.json({ error: 'code is required' }, 400);
+  const db = c.env.DB;
+  const promo = await db.prepare(
+    'SELECT * FROM promo_codes WHERE UPPER(code) = UPPER(?) AND active = 1'
+  ).bind(code.trim()).first<any>();
+  if (!promo) return c.json({ error: 'Invalid or expired promo code' }, 404);
+  if (promo.expires_at && new Date(promo.expires_at * 1000) < new Date()) return c.json({ error: 'Promo code has expired' }, 400);
+  if (promo.max_uses && promo.used_count >= promo.max_uses) return c.json({ error: 'Promo code has reached its usage limit' }, 400);
+  let discount = 0;
+  let bonus_coins = 0;
+  if (plan_id) {
+    const plan = await db.prepare('SELECT * FROM coin_plans WHERE id = ?').bind(plan_id).first<any>();
+    if (plan && promo.type === 'percent') discount = Math.round((plan.price * promo.discount_pct) / 100 * 100) / 100;
+  }
+  if (promo.type === 'bonus') bonus_coins = promo.bonus_coins ?? 0;
+  return c.json({ valid: true, type: promo.type, discount, bonus_coins, discount_pct: promo.discount_pct ?? 0, code: promo.code });
+});
+
 // All routes below require auth
 coin.use('*', authMiddleware);
 

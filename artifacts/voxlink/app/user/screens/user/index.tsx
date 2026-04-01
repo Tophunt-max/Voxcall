@@ -47,6 +47,7 @@ export default function HomeScreen() {
   const [hosts, setHosts] = useState<Host[]>([]);
   const [specialties, setSpecialties] = useState<string[]>(["All"]);
   const [loading, setLoading] = useState(true);
+  const [banners, setBanners] = useState<any[]>([]);
 
   const topPad = insets.top;
   const bottomPad = insets.bottom;
@@ -74,6 +75,7 @@ export default function HomeScreen() {
   useEffect(() => {
     loadHosts();
     loadTopics();
+    API.getBanners().then(setBanners).catch(() => {});
   }, []);
 
   const topHosts = hosts.filter((h) => h.isTopRated && h.isOnline);
@@ -171,6 +173,31 @@ export default function HomeScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
         }
       >
+        {/* Promotional Banners from Admin */}
+        {banners.length > 0 && (
+          <FlatList
+            data={banners}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            keyExtractor={(b) => b.id}
+            contentContainerStyle={{ paddingBottom: 8 }}
+            renderItem={({ item: banner }) => (
+              <TouchableOpacity
+                activeOpacity={0.9}
+                style={[styles.promoBanner, { backgroundColor: banner.bg_color || "#A00EE7" }]}
+              >
+                <Text style={styles.promoBannerTitle}>{banner.title}</Text>
+                {banner.subtitle ? <Text style={styles.promoBannerSub}>{banner.subtitle}</Text> : null}
+                {banner.cta_text ? (
+                  <View style={styles.promoBannerBtn}>
+                    <Text style={styles.promoBannerBtnText}>{banner.cta_text}</Text>
+                  </View>
+                ) : null}
+              </TouchableOpacity>
+            )}
+          />
+        )}
+
         {/* Find More / Featured Banner */}
         <TouchableOpacity
           onPress={() => router.push("/user/screens/user/random")}
@@ -354,6 +381,15 @@ const styles = StyleSheet.create({
   bellBtn: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
 
   content: { paddingHorizontal: 16, paddingTop: 8 },
+  promoBanner: {
+    borderRadius: 14, padding: 16, marginRight: 12,
+    width: 280, justifyContent: "center", gap: 6,
+  },
+  promoBannerTitle: { fontSize: 15, fontFamily: "Poppins_700Bold", color: "#fff" },
+  promoBannerSub: { fontSize: 12, fontFamily: "Poppins_400Regular", color: "rgba(255,255,255,0.85)" },
+  promoBannerBtn: { alignSelf: "flex-start", backgroundColor: "rgba(255,255,255,0.25)", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, marginTop: 4 },
+  promoBannerBtnText: { fontSize: 12, fontFamily: "Poppins_600SemiBold", color: "#fff" },
+
   findMoreBanner: {
     borderRadius: 16,
     padding: 18,

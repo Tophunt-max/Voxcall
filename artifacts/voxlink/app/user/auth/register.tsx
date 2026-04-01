@@ -28,6 +28,7 @@ export default function RegisterScreen() {
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [gender, setGender] = useState<"male" | "female" | "other" | "">("");
+  const [referralCode, setReferralCode] = useState("");
   const [loading, setLoading] = useState(false);
 
   const handleRegister = async () => {
@@ -41,7 +42,7 @@ export default function RegisterScreen() {
     }
     setLoading(true);
     try {
-      const data = await API.register(name.trim(), email.trim(), password, gender);
+      const data = await API.register(name.trim(), email.trim(), password, gender, undefined, referralCode.trim() || undefined);
       await loginWithToken(data.token, {
         id: data.user.id,
         name: data.user.name,
@@ -139,6 +140,14 @@ export default function RegisterScreen() {
             </TouchableOpacity>
           ))}
         </View>
+
+        <AppInput
+          icon={<Feather name="gift" size={18} color="#84889F" />}
+          value={referralCode}
+          onChangeText={setReferralCode}
+          placeholder="Referral code (optional)"
+          autoCapitalize="characters"
+        />
 
         <PrimaryButton title="Create Account" onPress={handleRegister} loading={loading} />
 

@@ -13,6 +13,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
+import { Feather } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/context/AuthContext";
@@ -233,6 +234,15 @@ export default function HostDetailScreen() {
     try { require("react-native").Clipboard?.setString(uniqueId); } catch (_) {}
   };
 
+  const handleReport = async (reason: string, category: string) => {
+    try {
+      await API.submitReport({ reported_user_id: host.user_id || host.id, reported_user: hostName, reason, category });
+      Alert.alert("Report Submitted", "Thank you for your report. Our team will review it shortly.");
+    } catch {
+      Alert.alert("Error", "Could not submit report. Please try again.");
+    }
+  };
+
   const statsList = [
     { image: require("@/assets/icons/ic_call_gradient.png"), title: "Total Call", count: String(callCount) },
     { image: require("@/assets/icons/ic_star.png"), title: "Rating", count: (host.rating ?? 0).toFixed(1) },
@@ -249,15 +259,36 @@ export default function HostDetailScreen() {
       >
         {/* ══════ TopImageView — gradient hero + centered avatar ══════ */}
         <LinearGradient colors={COVER_GRAD} style={[s.hero, { paddingTop: insets.top + 8 }]}>
-          {/* Back button */}
-          <TouchableOpacity onPress={() => router.back()} style={s.backBtn} activeOpacity={0.85}>
-            <Image
-              source={require("@/assets/icons/ic_back.png")}
-              style={s.backIco}
-              tintColor="#fff"
-              resizeMode="contain"
-            />
-          </TouchableOpacity>
+          {/* Back button + Report */}
+          <View style={s.heroTopRow}>
+            <TouchableOpacity onPress={() => router.back()} style={s.backBtn} activeOpacity={0.85}>
+              <Image
+                source={require("@/assets/icons/ic_back.png")}
+                style={s.backIco}
+                tintColor="#fff"
+                resizeMode="contain"
+              />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() =>
+                Alert.alert(
+                  "Report Host",
+                  `Why are you reporting ${hostName}?`,
+                  [
+                    { text: "Inappropriate Content", onPress: () => handleReport("Inappropriate Content", "inappropriate") },
+                    { text: "Harassment", onPress: () => handleReport("Harassment", "harassment") },
+                    { text: "Fake Profile", onPress: () => handleReport("Fake Profile", "spam") },
+                    { text: "Scam / Fraud", onPress: () => handleReport("Scam or Fraud", "scam") },
+                    { text: "Cancel", style: "cancel" },
+                  ]
+                )
+              }
+              style={s.reportBtn}
+              activeOpacity={0.85}
+            >
+              <Feather name="flag" size={18} color="#fff" />
+            </TouchableOpacity>
+          </View>
 
           {/* Centered avatar */}
           <View style={s.heroCenterCol}>
@@ -428,6 +459,10 @@ const s = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 24,
   },
+  heroTopRow: {
+    flexDirection: "row", justifyContent: "space-between",
+    alignItems: "center", marginBottom: 12,
+  },
   backBtn: {
     width: 36,
     height: 36,
@@ -435,7 +470,11 @@ const s = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.15)",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 16,
+  },
+  reportBtn: {
+    width: 36, height: 36, borderRadius: 20,
+    backgroundColor: "rgba(255,255,255,0.15)",
+    alignItems: "center", justifyContent: "center",
   },
   backIco: { width: 18, height: 18 },
   heroCenterCol: { alignItems: "center", gap: 8 },

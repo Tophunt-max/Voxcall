@@ -103,6 +103,47 @@ user.patch('/notifications/:id/read', async (c) => {
   return c.json({ success: true });
 });
 
+// GET /api/user/referral — get (or auto-generate) user's referral code + stats
+user.get('/referral', async (c) => {
+  const { sub } = c.get('user');
+  const db = c.env.DB;
+  let ref = await db.prepare('SELECT * FROM referral_codes WHERE user_id = ?').bind(sub).first<any>();
+  if (!ref) {
+    const code = sub.slice(0, 4).toUpperCase() + Math.random().toString(36).slice(2, 6).toUpperCase();
+    const id = crypto.randomUUID();
+    await db.prepare('INSERT INTO referral_codes (id, user_id, code) VALUES (?, ?, ?)').bind(id, sub, code).run();
+    ref = { id, user_id: sub, code, created_at: Date.now() };
+  }
+  const stats = await db.prepare(
+    'SELECT COUNT(*) as referred, COALESCE(SUM(coins_given),0) as coins_earned FROM referral_uses WHERE referrer_id = ?'
+  ).bind(sub).first<any>();
+  return c.json({ code: ref.code, referred: Number(stats?.referred ?? 0), coins_earned: Number(stats?.coins_earned ?? 0) });
+});
+
+// POST /api/user/report — submit a content/user report
+user.post('/report', async (c) => {
+  const { sub } = c.get('user');
+  const db = c.env.DB;
+  const { reported_user_id, reported_user, reason, category } = await c.req.json();
+  if (!reason) return c.json({ error: 'reason is required' }, 400);
+  const reporter = await db.prepare('SELECT name FROM users WHERE id = ?').bind(sub).first<any>();
+  const id = crypto.randomUUID();
+  try {
+    await db.prepare(
+      `INSERT INTO content_reports (id, reporter_id, reporter_name, reported_user_id, reported_user, reason, category, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')`
+    ).bind(id, sub, reporter?.name ?? '', reported_user_id ?? null, reported_user ?? '', reason, category ?? 'harassment').run();
+  } catch (e: any) {
+    if (e?.message?.includes('FOREIGN KEY')) {
+      await db.prepare(
+        `INSERT INTO content_reports (id, reporter_name, reported_user, reason, category, status)
+         VALUES (?, ?, ?, ?, ?, 'pending')`
+      ).bind(id, reporter?.name ?? '', reported_user ?? '', reason, category ?? 'harassment').run();
+    } else throw e;
+  }
+  return c.json({ success: true, id });
+});
+
 // POST /api/user/become-host
 user.post('/become-host', async (c) => {
   const { sub, name } = c.get('user');
