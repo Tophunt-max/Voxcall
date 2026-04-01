@@ -236,8 +236,9 @@ export default function HostDetailScreen() {
     try {
       await API.submitReport({ reported_user_id: host.user_id || host.id, reported_user: hostName, reason, category, reported_type: "host" });
       showSuccessToast("Thank you for your report. Our team will review it shortly.", "Report Submitted");
-    } catch {
-      showErrorToast("Could not submit report. Please try again.", "Error");
+    } catch (err: any) {
+      const msg = err?.message || "Could not submit report. Please try again.";
+      showErrorToast(msg, "Report Failed");
     }
   };
 

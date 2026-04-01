@@ -1037,6 +1037,8 @@ admin.post('/run-migrations', async (c) => {
     `ALTER TABLE users ADD COLUMN referral_code TEXT`,
     `ALTER TABLE users ADD COLUMN google_id TEXT`,
     `ALTER TABLE users ADD COLUMN device_id TEXT`,
+    `ALTER TABLE users ADD COLUMN status TEXT DEFAULT 'active'`,
+    `ALTER TABLE content_reports ADD COLUMN reported_type TEXT DEFAULT 'user'`,
     // Index for device_id
     `CREATE INDEX IF NOT EXISTS idx_users_device_id ON users(device_id) WHERE device_id IS NOT NULL`,
     // Seed promo codes

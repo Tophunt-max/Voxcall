@@ -133,10 +133,19 @@ user.post('/report', async (c) => {
   ).bind(sub, reported_user_id, 'pending').first<any>();
   if (existing) return c.json({ error: 'You have already reported this user. Please wait for review.' }, 429);
   const id = crypto.randomUUID();
-  await db.prepare(
-    `INSERT INTO content_reports (id, reporter_id, reporter_name, reported_user_id, reported_user, reported_type, reason, category, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')`
-  ).bind(id, sub, reporter?.name ?? '', reported_user_id, reported_user ?? '', reported_type ?? 'user', reason, category ?? 'other').run();
+  try {
+    await db.prepare(
+      `INSERT INTO content_reports (id, reporter_id, reporter_name, reported_user_id, reported_user, reported_type, reason, category, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')`
+    ).bind(id, sub, reporter?.name ?? '', reported_user_id, reported_user ?? '', reported_type ?? 'user', reason, category ?? 'other').run();
+  } catch (e: any) {
+    if (e?.message?.includes('reported_type')) {
+      await db.prepare(
+        `INSERT INTO content_reports (id, reporter_id, reporter_name, reported_user_id, reported_user, reason, category, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')`
+      ).bind(id, sub, reporter?.name ?? '', reported_user_id, reported_user ?? '', reason, category ?? 'other').run();
+    } else throw e;
+  }
   return c.json({ success: true, id });
 });
 
