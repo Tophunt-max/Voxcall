@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { api } from '@/lib/api';
-import { Phone, PhoneOff, RefreshCw, Clock, Mic2, Users, Activity } from 'lucide-react';
+import { Phone, PhoneOff, RefreshCw, Clock, Mic2, Users, Activity, AlertTriangle, Trash2 } from 'lucide-react';
 import { StatCard } from '@/components/ui/StatCard';
 
 function useTicker() {
@@ -14,9 +14,11 @@ function useTicker() {
 function Duration({ startedAt }: { startedAt: number }) {
   useTicker();
   const secs = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
-  const m = Math.floor(secs / 60).toString().padStart(2, '0');
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60).toString().padStart(2, '0');
   const s = (secs % 60).toString().padStart(2, '0');
-  return <span className="font-mono text-sm font-bold text-violet-600">{m}:{s}</span>;
+  const display = h > 0 ? `${h}:${m}:${s}` : `${m}:${s}`;
+  return <span className="font-mono text-sm font-bold text-violet-600">{display}</span>;
 }
 
 function UserAvatar({ name, color }: { name: string; color?: string }) {
@@ -25,11 +27,17 @@ function UserAvatar({ name, color }: { name: string; color?: string }) {
   return <div className={`w-7 h-7 rounded-full ${c} flex items-center justify-center text-white font-bold text-[10px] flex-shrink-0`}>{(name || 'U')[0]}</div>;
 }
 
+function isStale(startedAt: number, hours = 1) {
+  return Date.now() - startedAt > hours * 3600 * 1000;
+}
+
 export default function LiveCalls() {
   const [calls, setCalls] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [lastRefresh, setLastRefresh] = useState(new Date());
+  const [endingId, setEndingId] = useState<string | null>(null);
+  const [cleaningUp, setCleaningUp] = useState(false);
   const intervalRef = useRef<any>(null);
 
   const refresh = () => {
@@ -41,9 +49,7 @@ export default function LiveCalls() {
     });
   };
 
-  useEffect(() => {
-    refresh();
-  }, []);
+  useEffect(() => { refresh(); }, []);
 
   useEffect(() => {
     if (autoRefresh) {
@@ -54,9 +60,37 @@ export default function LiveCalls() {
     return () => clearInterval(intervalRef.current);
   }, [autoRefresh]);
 
+  const handleForceEnd = async (callId: string) => {
+    if (!confirm('Is call ko force-end karna chahte hain?')) return;
+    setEndingId(callId);
+    try {
+      await api.forceEndCall(callId);
+      refresh();
+    } catch {
+      alert('Call end karne mein error aaya');
+    } finally {
+      setEndingId(null);
+    }
+  };
+
+  const handleStaleCleanup = async () => {
+    if (!confirm('Sabhi 1+ ghante purane stuck calls ko end kar dein?')) return;
+    setCleaningUp(true);
+    try {
+      const res = await api.cleanupStaleCalls(1);
+      alert(`${res.ended ?? 0} stale calls clean up ho gayi`);
+      refresh();
+    } catch {
+      alert('Cleanup mein error aaya');
+    } finally {
+      setCleaningUp(false);
+    }
+  };
+
   const totalCoinsPerMin = calls.reduce((a, c) => a + (c.coins_per_min || 0), 0);
   const voiceCalls = calls.filter(c => c.type === 'audio');
   const videoCalls = calls.filter(c => c.type === 'video');
+  const staleCalls = calls.filter(c => isStale(c.started_at || Date.now(), 1));
 
   return (
     <div className="space-y-5">
@@ -68,6 +102,16 @@ export default function LiveCalls() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {staleCalls.length > 0 && (
+            <button
+              onClick={handleStaleCleanup}
+              disabled={cleaningUp}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-50 border border-red-200 text-red-600 text-xs font-semibold hover:bg-red-100 transition-colors disabled:opacity-50"
+            >
+              <Trash2 size={13} />
+              {cleaningUp ? 'Cleaning...' : `Clean ${staleCalls.length} stale`}
+            </button>
+          )}
           <div className="flex items-center gap-2 text-sm">
             <button onClick={() => setAutoRefresh(!autoRefresh)}
               className={`relative w-10 h-5 rounded-full transition-colors ${autoRefresh ? 'bg-primary' : 'bg-border'}`}>
@@ -105,14 +149,23 @@ export default function LiveCalls() {
           <div className="px-5 py-3 border-b border-border bg-secondary/30 flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
             <span className="text-sm font-semibold">{calls.length} call{calls.length !== 1 ? 's' : ''} in progress</span>
+            {staleCalls.length > 0 && (
+              <span className="ml-auto flex items-center gap-1 text-xs text-red-500 font-semibold">
+                <AlertTriangle size={12} />
+                {staleCalls.length} stuck/stale
+              </span>
+            )}
           </div>
           <div className="divide-y divide-border">
             {calls.map(call => {
               const coinsSoFar = Math.floor((Date.now() - (call.started_at || Date.now())) / 60000) * (call.coins_per_min || 0);
+              const stale = isStale(call.started_at || Date.now(), 1);
+              const isEnding = endingId === call.id;
               return (
-                <div key={call.id} className="flex items-center gap-4 p-4 hover:bg-secondary/20 transition-colors">
+                <div key={call.id} className={`flex items-center gap-4 p-4 transition-colors ${stale ? 'bg-red-50/50 hover:bg-red-50' : 'hover:bg-secondary/20'}`}>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
+                      {stale && <AlertTriangle size={13} className="text-red-500 flex-shrink-0" />}
                       <div className="flex items-center gap-1">
                         <UserAvatar name={call.user || 'U'} />
                         <span className="text-sm font-semibold">{call.user || 'User'}</span>
@@ -131,14 +184,29 @@ export default function LiveCalls() {
                       </span>
                       <span className="text-xs text-muted-foreground">ID: {(call.id || '').slice(0, 8)}</span>
                       <span className="text-xs text-amber-600 font-semibold">{call.coins_per_min} coins/min</span>
+                      {stale && <span className="text-[10px] bg-red-100 text-red-600 font-semibold px-1.5 py-0.5 rounded">STUCK</span>}
                     </div>
                   </div>
-                  <div className="text-right flex-shrink-0 space-y-1">
-                    <div className="flex items-center gap-1 justify-end">
-                      <Clock size={12} className="text-muted-foreground" />
-                      <Duration startedAt={call.started_at || Date.now()} />
+                  <div className="flex items-center gap-3 flex-shrink-0">
+                    <div className="text-right space-y-1">
+                      <div className="flex items-center gap-1 justify-end">
+                        <Clock size={12} className="text-muted-foreground" />
+                        <Duration startedAt={call.started_at || Date.now()} />
+                      </div>
+                      <p className="text-xs text-amber-600">~{coinsSoFar} coins used</p>
                     </div>
-                    <p className="text-xs text-amber-600">~{coinsSoFar} coins used</p>
+                    <button
+                      onClick={() => handleForceEnd(call.id)}
+                      disabled={isEnding}
+                      title="Force end this call"
+                      className="p-2 rounded-xl bg-red-50 border border-red-200 text-red-500 hover:bg-red-100 transition-colors disabled:opacity-50"
+                    >
+                      {isEnding ? (
+                        <div className="w-4 h-4 border-2 border-red-400 border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        <PhoneOff size={14} />
+                      )}
+                    </button>
                   </div>
                 </div>
               );

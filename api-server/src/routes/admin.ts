@@ -837,6 +837,15 @@ admin.put('/referral-config', async (c) => {
 
 // ─── Live Calls ───────────────────────────────────────────────────────────────
 admin.get('/calls/live', async (c) => {
+  const STALE_HOURS = 4;
+  const staleThreshold = Math.floor(Date.now() / 1000) - (STALE_HOURS * 3600);
+  await db(c).prepare(`
+    UPDATE call_sessions
+    SET status = 'ended', ended_at = unixepoch(),
+        duration_seconds = unixepoch() - started_at
+    WHERE status = 'active' AND started_at IS NOT NULL AND started_at < ?
+  `).bind(staleThreshold).run();
+
   const result = await db(c).prepare(`
     SELECT cs.id, cs.type, cs.status, cs.started_at, cs.coins_charged,
       u.name as user, u.email as caller_email,
@@ -852,6 +861,40 @@ admin.get('/calls/live', async (c) => {
     ...r,
     started_at: r.started_at ? r.started_at * 1000 : Date.now(),
   })));
+});
+
+admin.post('/calls/stale-cleanup', async (c) => {
+  const body = await c.req.json().catch(() => ({})) as any;
+  const maxHours = Math.max(1, Math.min(24, parseInt(body.max_hours) || 4));
+  const staleThreshold = Math.floor(Date.now() / 1000) - (maxHours * 3600);
+  const result = await db(c).prepare(`
+    UPDATE call_sessions
+    SET status = 'ended', ended_at = unixepoch(),
+        duration_seconds = unixepoch() - COALESCE(started_at, unixepoch())
+    WHERE status = 'active'
+      AND (started_at IS NULL OR started_at < ?)
+  `).bind(staleThreshold).run();
+  const u = c.get('user');
+  await auditLog(db(c), u.sub, u.email || 'Admin', u.email || '', 'update', 'calls', 'Stale Cleanup', `Ended ${result.meta?.changes ?? 0} stale calls (>${maxHours}h)`);
+  return c.json({ success: true, ended: result.meta?.changes ?? 0 });
+});
+
+admin.post('/calls/:id/force-end', async (c) => {
+  const { id } = c.req.param();
+  const session = await db(c).prepare('SELECT * FROM call_sessions WHERE id = ?').bind(id).first<any>();
+  if (!session) return c.json({ error: 'Call not found' }, 404);
+  if (session.status === 'ended') return c.json({ error: 'Call already ended' }, 400);
+  const now = Math.floor(Date.now() / 1000);
+  const durationSec = session.started_at ? now - session.started_at : 0;
+  const coinsCharged = Math.floor(durationSec / 60) * (session.coins_per_min ?? 0);
+  await db(c).prepare(`
+    UPDATE call_sessions
+    SET status = 'ended', ended_at = ?, duration_seconds = ?, coins_charged = ?
+    WHERE id = ?
+  `).bind(now, durationSec, coinsCharged, id).run();
+  const u = c.get('user');
+  await auditLog(db(c), u.sub, u.email || 'Admin', u.email || '', 'update', 'calls', id, `Force-ended call (was ${session.status})`);
+  return c.json({ success: true, id, duration_seconds: durationSec });
 });
 
 // ─── App Config (alias for settings) ─────────────────────────────────────────
