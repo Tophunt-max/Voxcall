@@ -629,11 +629,42 @@ admin.get('/content-reports/stats', async (c) => {
 });
 admin.patch('/content-reports/:id', async (c) => {
   const { id } = c.req.param();
-  const { status, action_taken, admin_note } = await c.req.json() as any;
-  await db(c).prepare('UPDATE content_reports SET status = ?, action_taken = ?, updated_at = unixepoch() WHERE id = ?')
+  const { status, action_taken } = await c.req.json() as any;
+  const d = db(c);
+  const report = await d.prepare('SELECT * FROM content_reports WHERE id = ?').bind(id).first<any>();
+  if (!report) return c.json({ error: 'Report not found' }, 404);
+  await d.prepare('UPDATE content_reports SET status = ?, action_taken = ?, updated_at = unixepoch() WHERE id = ?')
     .bind(status, action_taken ?? null, id).run();
   const u = c.get('user');
-  await auditLog(db(c), u.sub, u.email || 'Admin', u.email || '', action_taken || status, 'content_report', id, `Report ${status}: ${action_taken || ''}`);
+  if (report.reported_user_id && action_taken && action_taken !== 'dismiss') {
+    const target = await d.prepare('SELECT id, name, email FROM users WHERE id = ?').bind(report.reported_user_id).first<any>();
+    if (target) {
+      if (action_taken === 'banned') {
+        const banId = crypto.randomUUID();
+        await d.prepare(
+          'INSERT OR IGNORE INTO user_bans (id, user_id, user_name, user_email, type, reason, ban_type, banned_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+        ).bind(banId, target.id, target.name || '', target.email || '', report.reported_type || 'user', `Report: ${report.reason}`, 'permanent', u.email || 'Admin').run();
+        await d.prepare('UPDATE users SET status = ? WHERE id = ?').bind('banned', target.id).run();
+        await auditLog(d, u.sub, u.email || 'Admin', u.email || '', 'ban', 'user', target.name || target.id, `Banned via report: ${report.reason}`);
+      } else if (action_taken === 'suspended_7d') {
+        const banId = crypto.randomUUID();
+        const expiresAt = new Date(Date.now() + 7 * 86400 * 1000).toISOString();
+        await d.prepare(
+          'INSERT OR IGNORE INTO user_bans (id, user_id, user_name, user_email, type, reason, ban_type, banned_by, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        ).bind(banId, target.id, target.name || '', target.email || '', report.reported_type || 'user', `Report: ${report.reason}`, 'temporary', u.email || 'Admin', expiresAt).run();
+        await d.prepare('UPDATE users SET status = ? WHERE id = ?').bind('suspended', target.id).run();
+        await auditLog(d, u.sub, u.email || 'Admin', u.email || '', 'suspend', 'user', target.name || target.id, `Suspended 7 days via report: ${report.reason}`);
+      } else if (action_taken === 'warned') {
+        await auditLog(d, u.sub, u.email || 'Admin', u.email || '', 'warn', 'user', target.name || target.id, `Warning via report: ${report.reason}`);
+      } else if (action_taken === 'content_removed') {
+        if (report.reported_type === 'host') {
+          await d.prepare('UPDATE hosts SET is_active = 0 WHERE user_id = ?').bind(target.id).run();
+        }
+        await auditLog(d, u.sub, u.email || 'Admin', u.email || '', 'content_removed', 'user', target.name || target.id, `Content removed via report: ${report.reason}`);
+      }
+    }
+  }
+  await auditLog(d, u.sub, u.email || 'Admin', u.email || '', action_taken || status, 'content_report', id, `Report ${status}: ${action_taken || ''}`);
   return c.json({ success: true });
 });
 
