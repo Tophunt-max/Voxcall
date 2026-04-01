@@ -13,6 +13,7 @@ import { router } from "expo-router";
 import { useColors } from "@/hooks/useColors";
 import { formatDuration, formatRelativeTime } from "@/utils/format";
 import { API } from "@/services/api";
+import { showErrorToast } from "@/components/Toast";
 
 type CallFilter = "All" | "Audio" | "Video";
 
@@ -38,7 +39,7 @@ export default function CallingHistoryScreen() {
           rating: c.rating,
         })));
       })
-      .catch(() => setCallHistory([]))
+      .catch(() => { setCallHistory([]); showErrorToast("Failed to load call history."); })
       .finally(() => setLoading(false));
   }, []);
 

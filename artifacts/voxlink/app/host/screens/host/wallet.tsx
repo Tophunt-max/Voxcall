@@ -89,6 +89,7 @@ export default function HostWalletScreen() {
       await refreshBalance();
     } catch {
       setEarnings([]);
+      showErrorToast("Failed to load earnings data.");
     } finally {
       setLoading(false);
       setRefreshing(false);

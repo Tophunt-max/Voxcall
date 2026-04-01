@@ -213,22 +213,22 @@ export default function CheckoutScreen() {
   const [walletBanners, setWalletBanners] = useState<any[]>([]);
 
   useEffect(() => {
-    API.getCoinPlans()
-      .then((data: any[]) => {
-        const active = data.filter((p) => p.is_active !== 0);
-        setPlans(active);
-        const popular = active.find((p) => p.is_popular) ?? active[1] ?? active[0];
-        if (popular) setSelectedPlan(popular);
-      })
-      .catch(() => setPlans([]))
-      .finally(() => setPlansLoading(false));
-
-    API.getBanners("wallet").then(setWalletBanners).catch(() => {});
-
-    // Load gateways silently (no UI shown to user) — ordered by priority from backend
-    API.getPaymentGateways()
-      .then(setGateways)
-      .catch(() => setGateways([]));
+    const errors: string[] = [];
+    Promise.allSettled([
+      API.getCoinPlans()
+        .then((data: any[]) => {
+          const active = data.filter((p) => p.is_active !== 0);
+          setPlans(active);
+          const popular = active.find((p) => p.is_popular) ?? active[1] ?? active[0];
+          if (popular) setSelectedPlan(popular);
+        })
+        .catch(() => { setPlans([]); errors.push("coin plans"); }),
+      API.getBanners("wallet").then(setWalletBanners).catch(() => { errors.push("banners"); }),
+      API.getPaymentGateways().then(setGateways).catch(() => { setGateways([]); errors.push("payment options"); }),
+    ]).then(() => {
+      if (errors.length > 0) showErrorToast(`Failed to load ${errors.join(", ")}.`);
+      setPlansLoading(false);
+    });
   }, []);
 
   const handleApplyPromo = useCallback(async () => {

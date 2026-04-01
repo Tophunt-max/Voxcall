@@ -6,6 +6,7 @@ import { Feather } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
 import { formatRelativeTime } from "@/utils/format";
 import { API } from "@/services/api";
+import { showErrorToast } from "@/components/Toast";
 
 interface Notification {
   id: string;
@@ -32,6 +33,7 @@ export default function NotificationsScreen() {
       setNotifications(data);
     } catch {
       setNotifications([]);
+      showErrorToast("Failed to load notifications.");
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -44,14 +46,18 @@ export default function NotificationsScreen() {
     try {
       await API.markNotificationsRead();
       setNotifications(n => n.map(x => ({ ...x, is_read: true })));
-    } catch {}
+    } catch {
+      showErrorToast("Failed to mark notifications as read.");
+    }
   };
 
   const markOneRead = async (id: string) => {
     try {
       await API.markOneNotificationRead(id);
       setNotifications(n => n.map(x => x.id === id ? { ...x, is_read: true } : x));
-    } catch {}
+    } catch {
+      showErrorToast("Failed to update notification.");
+    }
   };
 
   const renderItem = ({ item }: { item: Notification }) => (

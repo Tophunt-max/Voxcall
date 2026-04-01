@@ -6,6 +6,7 @@ import { useColors } from "@/hooks/useColors";
 import { HostCard } from "@/components/HostCard";
 import { SearchBar } from "@/components/SearchBar";
 import { API } from "@/services/api";
+import { showErrorToast } from "@/components/Toast";
 
 export default function AllHostsScreen() {
   const colors = useColors();
@@ -15,7 +16,7 @@ export default function AllHostsScreen() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    API.getHosts().then(setHosts).catch(() => setHosts([])).finally(() => setLoading(false));
+    API.getHosts().then(setHosts).catch(() => { setHosts([]); showErrorToast("Failed to load hosts."); }).finally(() => setLoading(false));
   }, []);
 
   const filtered = hosts.filter((h) =>

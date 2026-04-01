@@ -20,6 +20,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useCall } from "@/context/CallContext";
 import { useChat } from "@/context/ChatContext";
 import { API } from "@/services/api";
+import { showErrorToast } from "@/components/Toast";
 
 const { width: SW, height: SH } = Dimensions.get("window");
 
@@ -133,7 +134,7 @@ export default function HostDetailScreen() {
       setHost(h);
       setReviews(revs ?? []);
       setChatUnlocked((chatStatus as any)?.unlocked ?? false);
-    }).catch(() => {}).finally(() => setLoading(false));
+    }).catch(() => { showErrorToast("Failed to load host details."); }).finally(() => setLoading(false));
   }, [id]);
 
   if (loading) {

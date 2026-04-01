@@ -17,7 +17,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { API } from "@/services/api";
-import { showSuccessToast } from "@/components/Toast";
+import { showSuccessToast, showErrorToast } from "@/components/Toast";
 
 export default function ReferralScreen() {
   const colors = useColors();
@@ -31,7 +31,7 @@ export default function ReferralScreen() {
   useEffect(() => {
     API.getReferral()
       .then(setReferral)
-      .catch(() => {})
+      .catch(() => { showErrorToast("Failed to load referral info."); })
       .finally(() => setLoading(false));
   }, []);
 

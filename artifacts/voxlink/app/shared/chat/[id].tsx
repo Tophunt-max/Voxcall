@@ -7,6 +7,7 @@ import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { useChat, Message } from "@/context/ChatContext";
 import { API } from "@/services/api";
+import { showErrorToast } from "@/components/Toast";
 import * as Haptics from "expo-haptics";
 
 function formatTime(ts: number) {
@@ -52,7 +53,7 @@ export default function ChatScreen() {
           timestamp: (m.created_at ?? 0) * 1000,
           isRead: true,
         }));
-      }).catch(() => {}).finally(() => setLoading(false));
+      }).catch(() => { showErrorToast("Failed to load messages."); }).finally(() => setLoading(false));
     }
   }, [id]);
 

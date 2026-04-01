@@ -35,7 +35,7 @@ async function getDeviceId(): Promise<string> {
       const vendorId = await Application.getIosIdForVendorAsync();
       if (vendorId) return `ios_${vendorId}`;
     }
-  } catch {}
+  } catch { /* Intentional: platform API may not be available, fallback to generated ID below */ }
   const stored = await AsyncStorage.getItem(DEVICE_ID_KEY);
   if (stored) return stored;
   const generated = `dev_${Math.random().toString(36).slice(2)}_${Date.now()}`;

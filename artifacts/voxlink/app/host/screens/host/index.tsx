@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { API } from "@/services/api";
+import { showErrorToast } from "@/components/Toast";
 
 export default function HostHomeScreen() {
   const colors = useColors();
@@ -30,7 +31,7 @@ export default function HostHomeScreen() {
           earnings: earnings.toLocaleString(),
         });
       })
-      .catch(() => setStats({ calls: "0", hours: "0h", earnings: "0" }));
+      .catch(() => { setStats({ calls: "0", hours: "0h", earnings: "0" }); showErrorToast("Failed to load dashboard data."); });
   }, []);
 
   return (

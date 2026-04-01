@@ -14,6 +14,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { API } from "@/services/api";
+import { showErrorToast } from "@/components/Toast";
 
 function mapApiHost(h: any) {
   return {
@@ -140,6 +141,7 @@ export default function ListenerScreen() {
       setHosts(data.map(mapApiHost));
     } catch {
       setHosts([]);
+      showErrorToast("Failed to load listeners.");
     }
   }, [selectedTopic]);
 

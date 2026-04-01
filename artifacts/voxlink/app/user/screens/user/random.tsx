@@ -9,6 +9,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/context/AuthContext";
 import { useCall } from "@/context/CallContext";
 import { API } from "@/services/api";
+import { showErrorToast } from "@/components/Toast";
 
 const { width: SW, height: SH } = Dimensions.get("window");
 const BG        = "#FBF1EA";
@@ -293,7 +294,7 @@ export default function RandomScreen() {
           currentHosts.current = shuffled.slice(0, 4);
         }
       } catch {
-        // fallback: show empty cards (no MOCK_HOSTS)
+        showErrorToast("Failed to load available hosts.");
       }
     };
     load();

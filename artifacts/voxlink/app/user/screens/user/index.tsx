@@ -18,6 +18,7 @@ import { useAuth } from "@/context/AuthContext";
 import { HostCard } from "@/components/HostCard";
 import { Host } from "@/data/mockData";
 import { API } from "@/services/api";
+import { showErrorToast } from "@/components/Toast";
 import { RefreshControl } from "react-native";
 
 const SCREEN_W = Dimensions.get("window").width;
@@ -176,6 +177,7 @@ export default function HomeScreen() {
       setHosts(data.map(mapApiHost));
     } catch {
       setHosts([]);
+      showErrorToast("Failed to load hosts. Pull down to retry.");
     } finally {
       setLoading(false);
     }
@@ -188,6 +190,7 @@ export default function HomeScreen() {
       setSpecialties(["All", ...unique]);
     } catch {
       setSpecialties(["All", "Life Coaching", "Relationships", "Career", "Wellness", "Mental Health", "Music", "Travel"]);
+      showErrorToast("Failed to load topics. Using defaults.");
     }
   }, []);
 

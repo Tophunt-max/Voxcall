@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
 import { API } from "@/services/api";
+import { showErrorToast } from "@/components/Toast";
 
 const LANGUAGES = ["All", "English", "Hindi", "Chinese", "Arabic", "Spanish"];
 const STATUS_FILTERS = ["All", "Online", "Offline"];
@@ -27,7 +28,7 @@ export default function SearchHostsScreen() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    API.getHosts().then(setHosts).catch(() => setHosts([])).finally(() => setLoading(false));
+    API.getHosts().then(setHosts).catch(() => { setHosts([]); showErrorToast("Failed to load hosts."); }).finally(() => setLoading(false));
   }, []);
 
   const filtered = useMemo(() => {

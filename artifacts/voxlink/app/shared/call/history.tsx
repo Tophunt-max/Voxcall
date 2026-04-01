@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
 import { API } from "@/services/api";
+import { showErrorToast } from "@/components/Toast";
 import { formatDuration, formatTimestamp } from "@/utils/format";
 
 interface CallHistoryItem {
@@ -62,7 +63,7 @@ export default function CallHistoryScreen() {
           createdAt: c.created_at || 0,
         })));
       })
-      .catch(() => setCallHistory([]));
+      .catch(() => { setCallHistory([]); showErrorToast("Failed to load call history."); });
   }, []);
 
   const filtered = filter === "all" ? callHistory : callHistory.filter(c => c.type === filter);

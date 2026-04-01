@@ -9,6 +9,7 @@ import { Feather } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { API } from "@/services/api";
+import { showErrorToast } from "@/components/Toast";
 
 type TxType = "purchase" | "spend" | "bonus" | "refund" | "withdrawal" | "earn";
 
@@ -81,6 +82,7 @@ export default function CoinHistoryScreen() {
       await refreshBalance();
     } catch {
       setTransactions([]);
+      showErrorToast("Failed to load coin history.");
     } finally {
       setLoading(false);
       setRefreshing(false);

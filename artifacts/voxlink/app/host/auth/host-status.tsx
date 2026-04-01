@@ -10,6 +10,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { useAuth } from "@/context/AuthContext";
 import { API } from "@/services/api";
+import { showErrorToast } from "@/components/Toast";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const DARK = "#111329";
@@ -74,6 +75,7 @@ export default function HostStatusScreen() {
       }
     } catch {
       setData(null);
+      showErrorToast("Failed to load application status.");
     } finally {
       setLoading(false);
       setRefreshing(false);

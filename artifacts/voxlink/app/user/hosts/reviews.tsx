@@ -7,6 +7,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { API } from "@/services/api";
+import { showErrorToast } from "@/components/Toast";
 
 interface Review {
   id: string;
@@ -56,7 +57,7 @@ export default function AllReviewsScreen() {
     if (!params.hostId) { setLoading(false); return; }
     API.getHostReviews(params.hostId)
       .then((data) => setReviews(data ?? []))
-      .catch(() => setReviews([]))
+      .catch(() => { setReviews([]); showErrorToast("Failed to load reviews."); })
       .finally(() => setLoading(false));
   }, [params.hostId]);
 
