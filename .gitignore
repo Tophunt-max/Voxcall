@@ -14,6 +14,7 @@ node_modules/
 !.env.example
 .dev.vars
 *.vars
+!*.vars.example
 
 # ─── Expo / React Native ────────────────────────────────────────
 .expo/
@@ -21,6 +22,22 @@ node_modules/
 
 # ─── Cloudflare Wrangler ────────────────────────────────────────
 .wrangler/
+
+# ─── Archives & binaries ────────────────────────────────────────
+*.tar.gz
+*.zip
+*.tar
+
+# ─── Replit internal (do not commit) ────────────────────────────
+.cache/
+.local/
+.cursor/
+.agents/
+attached_assets/
+scripts/
+.replit
+.replitignore
+replit.md
 
 # ─── IDE & Editor ───────────────────────────────────────────────
 .idea/
@@ -41,8 +58,3 @@ yarn-error.log*
 
 # ─── Test / Coverage ────────────────────────────────────────────
 coverage/
-
-# ─── Replit internal ────────────────────────────────────────────
-.cache/
-.local/
-.cursor/
