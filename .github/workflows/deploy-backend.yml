@@ -14,6 +14,8 @@ jobs:
     name: Deploy to Cloudflare Workers
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      CF_CALLS_SECRET: ${{ secrets.CF_CALLS_APP_SECRET }}
 
     steps:
       - name: Checkout code
@@ -47,9 +49,8 @@ jobs:
           JWT_SECRET_VALUE: ${{ secrets.JWT_SECRET }}
 
       - name: Set CF_CALLS_APP_SECRET on Worker
-        if: ${{ secrets.CF_CALLS_APP_SECRET != '' }}
+        if: ${{ env.CF_CALLS_SECRET != '' }}
         working-directory: api-server
-        run: printf '%s' "$CF_CALLS_SECRET_VALUE" | pnpm exec wrangler secret put CF_CALLS_APP_SECRET
+        run: printf '%s' "$CF_CALLS_SECRET" | pnpm exec wrangler secret put CF_CALLS_APP_SECRET
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CF_CALLS_SECRET_VALUE: ${{ secrets.CF_CALLS_APP_SECRET }}
