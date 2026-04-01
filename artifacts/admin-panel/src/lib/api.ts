@@ -6,12 +6,29 @@ const API = import.meta.env.VITE_API_URL
 
 export function getToken() { return localStorage.getItem('voxlink_admin_token') || ''; }
 
+function handleSessionExpired() {
+  localStorage.removeItem('voxlink_admin_token');
+  localStorage.removeItem('voxlink_admin_user');
+  if (!window.location.pathname.endsWith('/login')) {
+    window.location.href = import.meta.env.BASE_URL || '/admin-panel/';
+  }
+}
+
 export async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const token = getToken();
+  if (!token && !path.includes('/auth/')) {
+    handleSessionExpired();
+    throw new Error('Session expired. Please log in again.');
+  }
   const r = await fetch(`${API}${path}`, {
     method,
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: body ? JSON.stringify(body) : undefined,
   });
+  if (r.status === 401 && !path.includes('/auth/')) {
+    handleSessionExpired();
+    throw new Error('Session expired. Please log in again.');
+  }
   if (!r.ok) {
     const err = await r.json().catch(() => ({ error: r.statusText }));
     throw new Error((err as any).error || r.statusText);

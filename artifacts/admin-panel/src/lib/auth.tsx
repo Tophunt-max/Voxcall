@@ -10,9 +10,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const token = localStorage.getItem('voxlink_admin_token');
     const u = localStorage.getItem('voxlink_admin_user');
-    if (u) try { setUser(JSON.parse(u)); } catch {}
-    setLoading(false);
+    if (!token || !u) {
+      setLoading(false);
+      return;
+    }
+    api.dashboard().then(() => {
+      try { setUser(JSON.parse(u)); } catch {}
+    }).catch(() => {
+      localStorage.removeItem('voxlink_admin_token');
+      localStorage.removeItem('voxlink_admin_user');
+    }).finally(() => setLoading(false));
   }, []);
 
   const login = async (email: string, password: string) => {
