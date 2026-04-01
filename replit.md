@@ -234,5 +234,24 @@ KYC verification applications. Fields: id, user_id, display_name, date_of_birth,
 - **Backend**: `wrangler deploy` → Cloudflare Workers + D1 + R2 + Durable Objects
 - **Admin Panel**: `pnpm --filter @workspace/admin-panel build` → Static files (Cloudflare Pages or any CDN)
 
+## Key Mobile Components
+
+| Component | File | Purpose |
+|---|---|---|
+| `HostCard` | `components/HostCard.tsx` | Listener card with Audio Call + Video Call buttons (replaced Talk Now) |
+| `InsufficientCoinsPopup` | `components/InsufficientCoinsPopup.tsx` | Bottom sheet popup showing coin plans when user lacks coins for a call |
+| `TalkNowSheet` | `app/user/hosts/[id].tsx` | Call type selector on host profile (Audio/Video with coin rates) |
+
+### Call Flow (Coin-Gated)
+1. User taps Audio Call or Video Call on HostCard, search results, or host profile
+2. App checks if `user.coins >= rate * 2` (minimum 2 minutes worth)
+3. If insufficient → `InsufficientCoinsPopup` shows with coin plans to buy
+4. If sufficient → `initiateCall()` via CallContext → navigate to outgoing call screen
+
+### Admin Finance Pages
+- **Deposits** (`admin-panel/src/pages/Deposits.tsx`): All coin purchases with search, filters, refund (idempotent)
+- **Payout Management** (`admin-panel/src/pages/PayoutManagement.tsx`): Real API-driven (no mock data), approve/reject/mark paid
+- **coin_purchases table**: Tracks plan, coins, bonus, amount, gateway, payment_ref, utr_id, promo_code, status
+
 ## tintColor Rule
 IMPORTANT: Always use `tintColor={color}` as direct Image prop, NOT inside `style={}`. Example: `<Image source={...} tintColor={colors.primary} />`
