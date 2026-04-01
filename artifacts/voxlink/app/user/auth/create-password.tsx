@@ -19,8 +19,8 @@ export default function CreatePasswordScreen() {
   const [loading, setLoading] = useState(false);
 
   const handleUpdate = async () => {
-    if (!password || password.length < 6) {
-      showErrorToast("Password must be at least 6 characters.", "Weak Password");
+    if (!password || password.length < 8) {
+      showErrorToast("Password must be at least 8 characters.", "Weak Password");
       return;
     }
     if (password !== confirm) {

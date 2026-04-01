@@ -10,7 +10,7 @@ const auth = new Hono<{ Bindings: Env }>();
 const registerSchema = z.object({
   name: z.string().min(2),
   email: z.string().email(),
-  password: z.string().min(6),
+  password: z.string().min(8),
   gender: z.enum(['male', 'female', 'other']).optional(),
   phone: z.string().optional(),
   referral_code: z.string().optional(),
@@ -51,10 +51,8 @@ auth.post('/register', zValidator('json', registerSchema), async (c) => {
       }
     } catch { /* ignore referral errors — don't block registration */ }
   }
-  // In production: send OTP via SMS/email
-  console.log(`OTP for ${email}: ${otp}`);
   const token = await signToken({ sub: id, role: 'user', name }, c.env.JWT_SECRET);
-  return c.json({ token, user: { id, name, email, role: 'user', coins: 100 }, otp }, 201);
+  return c.json({ token, user: { id, name, email, role: 'user', coins: 100 } }, 201);
 });
 
 // POST /api/auth/login
@@ -101,8 +99,7 @@ auth.post('/forgot-password', async (c) => {
   const otp = generateOTP();
   const otpExp = Math.floor(Date.now() / 1000) + 600;
   await db.prepare('UPDATE users SET otp = ?, otp_expires_at = ? WHERE id = ?').bind(otp, otpExp, user.id).run();
-  console.log(`Reset OTP for ${email}: ${otp}`);
-  return c.json({ success: true, otp }); // remove otp from response in production
+  return c.json({ success: true });
 });
 
 // POST /api/auth/reset-password

@@ -223,7 +223,6 @@ export default function HostDetailScreen() {
       if (e.message?.includes("CHAT_LOCKED") || e.message?.includes("locked")) {
         Alert.alert("🔒 Chat Locked", "Pehle call karo, phir chat unlock hogi!");
       } else {
-        console.log("chat error:", e);
         getOrCreateConversation(host.id, hostName, hostAvatar);
         router.push(`/shared/chat/${host.id}`);
       }

@@ -36,8 +36,8 @@ export default function RegisterScreen() {
       showErrorToast("Please fill in all fields including gender.", "Missing Fields");
       return;
     }
-    if (password.length < 6) {
-      showErrorToast("Password must be at least 6 characters.", "Weak Password");
+    if (password.length < 8) {
+      showErrorToast("Password must be at least 8 characters.", "Weak Password");
       return;
     }
     setLoading(true);

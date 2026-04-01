@@ -52,9 +52,6 @@ export default function ChatScreen() {
           timestamp: (m.created_at ?? 0) * 1000,
           isRead: true,
         }));
-        if (mapped.length > 0) {
-          console.log(`Loaded ${mapped.length} messages for room ${id}`);
-        }
       }).catch(() => {}).finally(() => setLoading(false));
     }
   }, [id]);

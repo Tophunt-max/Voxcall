@@ -42,8 +42,8 @@ export default function HostRegisterScreen() {
       showErrorToast("Please fill in all fields.", "Missing Fields");
       return;
     }
-    if (password.length < 6) {
-      showWarningToast("Password must be at least 6 characters.", "Weak Password");
+    if (password.length < 8) {
+      showWarningToast("Password must be at least 8 characters.", "Weak Password");
       return;
     }
     setLoading(true);
