@@ -37,9 +37,9 @@ export async function apiRequest<T>(
 export const API = {
   // Auth
   login: (email: string, password: string) =>
-    apiRequest<{ token: string; user: any }>('POST', '/api/user/auth/login', { email, password }, false),
+    apiRequest<{ token: string; user: any }>('POST', '/api/auth/login', { email, password }, false),
   register: (name: string, email: string, password: string, gender?: string, phone?: string, referral_code?: string) =>
-    apiRequest<{ token: string; user: any }>('POST', '/api/user/auth/register', { name, email, password, gender, phone, referral_code }, false),
+    apiRequest<{ token: string; user: any }>('POST', '/api/auth/register', { name, email, password, gender, phone, referral_code }, false),
   guestLogin: (device_id?: string | null) =>
     apiRequest<{ token: string; user: any; is_returning?: boolean }>('POST', '/api/auth/guest-login', { device_id: device_id ?? null }, false),
   quickLogin: (device_id?: string | null) =>

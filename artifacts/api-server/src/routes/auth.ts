@@ -13,6 +13,7 @@ const registerSchema = z.object({
   password: z.string().min(6),
   gender: z.enum(['male', 'female', 'other']).optional(),
   phone: z.string().optional(),
+  referral_code: z.string().optional(),
 });
 
 const loginSchema = z.object({
@@ -22,7 +23,7 @@ const loginSchema = z.object({
 
 // POST /api/auth/register
 auth.post('/register', zValidator('json', registerSchema), async (c) => {
-  const { name, email, password, gender, phone } = c.req.valid('json');
+  const { name, email, password, gender, phone, referral_code } = c.req.valid('json');
   const db = c.env.DB;
   const existing = await db.prepare('SELECT id FROM users WHERE email = ?').bind(email).first();
   if (existing) return c.json({ error: 'Email already registered' }, 409);
@@ -34,6 +35,22 @@ auth.post('/register', zValidator('json', registerSchema), async (c) => {
     `INSERT INTO users (id, name, email, password_hash, gender, phone, otp, otp_expires_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
   ).bind(id, name, email, hash, gender ?? null, phone ?? null, otp, otpExp).run();
+  // Handle referral code if provided
+  if (referral_code) {
+    try {
+      const ref = await db.prepare('SELECT * FROM referral_codes WHERE code = ?').bind(referral_code.trim().toUpperCase()).first<any>();
+      if (ref && ref.user_id !== id) {
+        const bonus = 25;
+        const useId = crypto.randomUUID();
+        await db.batch([
+          db.prepare('INSERT INTO referral_uses (id, referrer_id, referred_id, code, coins_given) VALUES (?, ?, ?, ?, ?)')
+            .bind(useId, ref.user_id, id, referral_code, bonus),
+          db.prepare('UPDATE users SET coins = coins + ? WHERE id = ?').bind(bonus, ref.user_id),
+          db.prepare('UPDATE users SET coins = coins + 10 WHERE id = ?').bind(id),
+        ]);
+      }
+    } catch { /* ignore referral errors — don't block registration */ }
+  }
   // In production: send OTP via SMS/email
   console.log(`OTP for ${email}: ${otp}`);
   const token = await signToken({ sub: id, role: 'user', name }, c.env.JWT_SECRET);
