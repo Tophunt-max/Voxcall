@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, Image, TouchableOpacity,
   Modal, Animated, Easing,
 } from "react-native";
-import { CameraView, useCameraPermissions } from "expo-camera";
+import { RTCView } from "react-native-webrtc";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -11,9 +11,8 @@ import { useCall } from "@/context/CallContext";
 import { useCallTimer } from "@/hooks/useCallTimer";
 import { usePermissions } from "@/hooks/usePermissions";
 import { PermissionDialog, PERMISSION_CONFIGS } from "@/components/PermissionDialog";
+import { useWebRTC } from "@/hooks/useWebRTC";
 import * as Haptics from "expo-haptics";
-
-type Facing = "front" | "back";
 
 type PermStep = "camera" | "microphone" | "done";
 
@@ -21,15 +20,26 @@ export default function VideoCallScreen() {
   const insets = useSafeAreaInsets();
   const { activeCall, endCall, toggleMute, toggleCamera, toggleSpeaker, markCallActive } = useCall();
   const [status, setStatus] = useState<"connecting" | "ringing" | "active">("connecting");
-  const [facing, setFacing] = useState<Facing>("front");
 
-  // Permission flow: camera first, then microphone
   const [permStep, setPermStep] = useState<PermStep | null>(null);
   const [permChecked, setPermChecked] = useState(false);
+  const [webrtcReady, setWebrtcReady] = useState(false);
 
   const { permissions, requestCamera, requestMicrophone, openSettings, refresh } = usePermissions();
 
-  // Pulse animation for remote avatar
+  const webrtc = useWebRTC({
+    sessionId: activeCall?.sessionId,
+    isVideo: true,
+    enabled: webrtcReady && !!activeCall?.sessionId,
+  });
+
+  useEffect(() => {
+    if (webrtc.isConnected && status !== "active") {
+      setStatus("active");
+      markCallActive();
+    }
+  }, [webrtc.isConnected, status, markCallActive]);
+
   const pulse = useRef(new Animated.Value(1)).current;
   useEffect(() => {
     const anim = Animated.loop(
@@ -42,7 +52,6 @@ export default function VideoCallScreen() {
     return () => anim.stop();
   }, []);
 
-  // Check all permissions on mount, show dialog for first missing one
   useEffect(() => {
     const check = async () => {
       await refresh();
@@ -59,20 +68,44 @@ export default function VideoCallScreen() {
       setPermStep("microphone");
     } else {
       setPermStep("done");
+      setWebrtcReady(true);
     }
   }, [permChecked]);
 
-  // Call timer setup
   useEffect(() => {
-    const t1 = setTimeout(() => setStatus("ringing"), 1000);
+    const t1 = setTimeout(() => {
+      if (status === "connecting") setStatus("ringing");
+    }, 2000);
     const t2 = setTimeout(() => {
-      setStatus("active");
-      markCallActive();
-    }, 3000);
+      if (status !== "active") {
+        setStatus("active");
+        markCallActive();
+      }
+    }, 8000);
     return () => { clearTimeout(t1); clearTimeout(t2); };
   }, [markCallActive]);
 
-  const handleAutoEnd = useCallback(() => { endCall(true); }, [endCall]);
+  useEffect(() => {
+    if (activeCall?.isMuted !== undefined) {
+      webrtc.toggleMute(activeCall.isMuted);
+    }
+  }, [activeCall?.isMuted]);
+
+  useEffect(() => {
+    if (activeCall?.isCameraOn !== undefined) {
+      webrtc.toggleCamera(activeCall.isCameraOn);
+    }
+  }, [activeCall?.isCameraOn]);
+
+  const handleEndCall = useCallback(() => {
+    webrtc.cleanup();
+    endCall();
+  }, [endCall, webrtc.cleanup]);
+
+  const handleAutoEnd = useCallback(() => {
+    webrtc.cleanup();
+    endCall(true);
+  }, [endCall, webrtc.cleanup]);
 
   const { elapsed, remaining, showLowCoinWarning, showRechargePopup, dismissRechargePopup } = useCallTimer({
     isActive: status === "active",
@@ -92,10 +125,9 @@ export default function VideoCallScreen() {
 
   const handleFlip = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setFacing(f => f === "front" ? "back" : "front");
+    webrtc.switchCamera();
   };
 
-  // Camera permission handlers
   const isCameraBlocked = permissions.camera.status === "blocked" ||
     (permissions.camera.status === "denied" && !permissions.camera.canAskAgain);
 
@@ -103,27 +135,27 @@ export default function VideoCallScreen() {
     if (isCameraBlocked) {
       openSettings();
       setPermStep("done");
+      setWebrtcReady(true);
     } else {
       await requestCamera();
-      // Move to microphone step regardless of result
       if (permissions.microphone.status !== "granted") {
         setPermStep("microphone");
       } else {
         setPermStep("done");
+        setWebrtcReady(true);
       }
     }
   };
 
   const handleCameraDeny = () => {
-    // Skip camera, check microphone
     if (permissions.microphone.status !== "granted") {
       setPermStep("microphone");
     } else {
       setPermStep("done");
+      setWebrtcReady(true);
     }
   };
 
-  // Microphone permission handlers
   const isMicBlocked = permissions.microphone.status === "blocked" ||
     (permissions.microphone.status === "denied" && !permissions.microphone.canAskAgain);
 
@@ -131,29 +163,33 @@ export default function VideoCallScreen() {
     if (isMicBlocked) {
       openSettings();
       setPermStep("done");
+      setWebrtcReady(true);
     } else {
       const granted = await requestMicrophone();
       setPermStep("done");
       if (!granted) {
-        // Mic denied — end call
-        endCall();
+        handleEndCall();
         router.back();
+        return;
       }
+      setWebrtcReady(true);
     }
   };
 
   const handleMicDeny = () => {
     setPermStep("done");
-    endCall();
+    handleEndCall();
     router.back();
   };
 
   const cameraGranted = permissions.camera.status === "granted";
   const micGranted = permissions.microphone.status === "granted";
 
+  const localStreamUrl = webrtc.localStream ? (webrtc.localStream as any).toURL() : null;
+  const remoteStreamUrl = webrtc.remoteStream ? (webrtc.remoteStream as any).toURL() : null;
+
   return (
     <View style={styles.screen}>
-      {/* ── Camera Permission Dialog ── */}
       <PermissionDialog
         visible={permStep === "camera"}
         config={{ ...PERMISSION_CONFIGS.camera, isBlocked: isCameraBlocked }}
@@ -161,7 +197,6 @@ export default function VideoCallScreen() {
         onDeny={handleCameraDeny}
       />
 
-      {/* ── Microphone Permission Dialog ── */}
       <PermissionDialog
         visible={permStep === "microphone"}
         config={{ ...PERMISSION_CONFIGS.microphone, isBlocked: isMicBlocked }}
@@ -169,13 +204,23 @@ export default function VideoCallScreen() {
         onDeny={handleMicDeny}
       />
 
-      {/* ── REMOTE VIDEO (full-screen background) ── */}
       <View style={styles.remoteArea}>
-        <Animated.Image
-          source={{ uri: remoteAvatarUri }}
-          style={[styles.remoteAvatar, { transform: [{ scale: pulse }] }]}
-        />
-        <View style={styles.remoteGrad} />
+        {remoteStreamUrl ? (
+          <RTCView
+            streamURL={remoteStreamUrl}
+            style={styles.remoteVideo}
+            objectFit="cover"
+            mirror={false}
+          />
+        ) : (
+          <>
+            <Animated.Image
+              source={{ uri: remoteAvatarUri }}
+              style={[styles.remoteAvatar, { transform: [{ scale: pulse }] }]}
+            />
+            <View style={styles.remoteGrad} />
+          </>
+        )}
         {status !== "active" && (
           <View style={styles.connectingBadge}>
             <Text style={styles.connectingText}>
@@ -185,12 +230,14 @@ export default function VideoCallScreen() {
         )}
       </View>
 
-      {/* ── LOCAL CAMERA (self preview, corner PiP) ── */}
       <View style={[styles.selfPreview, { top: insets.top + 12, right: 16 }]}>
-        {activeCall?.isCameraOn && cameraGranted ? (
-          <CameraView
+        {localStreamUrl && activeCall?.isCameraOn ? (
+          <RTCView
+            streamURL={localStreamUrl}
             style={styles.selfCameraView}
-            facing={facing}
+            objectFit="cover"
+            mirror={true}
+            zOrder={1}
           />
         ) : (
           <View style={styles.selfCameraOff}>
@@ -209,7 +256,6 @@ export default function VideoCallScreen() {
         </View>
       </View>
 
-      {/* ── Permission missing banners ── */}
       {permStep === "done" && (!cameraGranted || !micGranted) && (
         <View style={[styles.permMissingBar, { top: insets.top + 8 }]}>
           {!cameraGranted && (
@@ -227,12 +273,10 @@ export default function VideoCallScreen() {
         </View>
       )}
 
-      {/* ── OVERLAY UI ── */}
       <View
         style={[styles.overlay, { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 20 }]}
         pointerEvents="box-none"
       >
-        {/* Low Coin Warning */}
         {showLowCoinWarning && (
           <View style={styles.warningBanner}>
             <Feather name="alert-triangle" size={13} color="#FFD166" />
@@ -240,9 +284,15 @@ export default function VideoCallScreen() {
           </View>
         )}
 
-        {!showLowCoinWarning && <View />}
+        {webrtc.error && !showLowCoinWarning && (
+          <View style={styles.warningBanner}>
+            <Feather name="wifi-off" size={13} color="#FF6B6B" />
+            <Text style={styles.warningText}>Connection issue</Text>
+          </View>
+        )}
 
-        {/* Remote participant name + timer */}
+        {!showLowCoinWarning && !webrtc.error && <View />}
+
         <View style={styles.remoteInfo}>
           <Text style={styles.remoteName}>{activeCall?.participant.name ?? "Connecting..."}</Text>
           {status === "active" && (
@@ -269,7 +319,6 @@ export default function VideoCallScreen() {
           )}
         </View>
 
-        {/* Bottom Controls */}
         <View style={styles.bottomControls}>
           <View style={styles.ctrlItem}>
             <TouchableOpacity
@@ -293,7 +342,7 @@ export default function VideoCallScreen() {
 
           <View style={styles.ctrlItem}>
             <TouchableOpacity
-              onPress={() => { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning); endCall(); }}
+              onPress={() => { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning); handleEndCall(); }}
               style={styles.endBtn}
             >
               <Feather name="phone-off" size={26} color="#fff" />
@@ -320,7 +369,6 @@ export default function VideoCallScreen() {
         </View>
       </View>
 
-      {/* Recharge Popup */}
       <Modal visible={showRechargePopup} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.rechargeCard}>
@@ -332,7 +380,7 @@ export default function VideoCallScreen() {
             </Text>
             <TouchableOpacity
               style={styles.rechargeBtn}
-              onPress={() => { dismissRechargePopup(); endCall(); router.push("/user/screens/user/wallet"); }}
+              onPress={() => { dismissRechargePopup(); handleEndCall(); router.push("/user/screens/user/wallet"); }}
             >
               <Text style={styles.rechargeBtnText}>Abhi Recharge Karo</Text>
             </TouchableOpacity>
@@ -354,6 +402,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#12102a",
+  },
+  remoteVideo: {
+    ...StyleSheet.absoluteFillObject,
   },
   remoteAvatar: {
     width: 180, height: 180, borderRadius: 90,

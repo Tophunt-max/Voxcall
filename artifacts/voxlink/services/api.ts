@@ -104,12 +104,19 @@ export const API = {
   initiateCall: (host_id: string, call_type: 'audio' | 'video') =>
     apiRequest<any>('POST', '/api/calls/initiate', { host_id, call_type }),
   answerCall: (session_id: string, accepted: boolean) =>
-    apiRequest('POST', `/api/calls/${session_id}/answer`, { accepted }),
+    apiRequest<any>('POST', `/api/calls/${session_id}/answer`, { accepted }),
   endCall: (session_id: string, duration_seconds: number) =>
-    apiRequest('POST', '/api/calls/end', { session_id, duration_seconds }),
+    apiRequest<any>('POST', '/api/calls/end', { session_id, duration_seconds }),
   rateCall: (session_id: string, rating: number, comment?: string) =>
     apiRequest('POST', '/api/calls/rate', { session_id, rating, comment }),
   getCallHistory: () => apiRequest<any[]>('GET', '/api/calls/history'),
+
+  pushTracks: (sessionId: string, sdp: string, type: string, tracks: Array<{ mid: string; trackName: string }>) =>
+    apiRequest<{ answer: { type: string; sdp: string }; tracks: any[]; role: string }>('POST', `/api/calls/${sessionId}/sdp/push`, { sdp, type, tracks }),
+  pullTracks: (sessionId: string, trackNames: string[]) =>
+    apiRequest<{ offer: { type: string; sdp: string }; tracks: any[]; role: string }>('POST', `/api/calls/${sessionId}/sdp/pull`, { trackNames }),
+  sendPullAnswer: (sessionId: string, sdp: string, type: string) =>
+    apiRequest<{ success: boolean }>('POST', `/api/calls/${sessionId}/sdp/answer`, { sdp, type }),
 
   // Chat
   getChatRooms: () => apiRequest<any[]>('GET', '/api/chat/rooms'),

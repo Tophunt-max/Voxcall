@@ -69,7 +69,11 @@ app/
 - **Account ID**: `b592b3b2a5455323a76de721a92699cd`
 - **D1 Database ID**: `e591c16e-d6c0-447d-9a94-84d10aa4a705`
 - **CF Calls App ID**: `536d1e7e8d540b7ccfb238d32f734d1a`
-- **SFU**: Cloudflare Calls for WebRTC audio/video
+- **SFU**: Cloudflare Calls for WebRTC audio/video (real integration via `react-native-webrtc`)
+- **WebRTC**: `services/webrtc.ts` (WebRTCService class), `hooks/useWebRTC.ts` (React hook)
+- **CF Calls Flow**: Push local tracks → CF returns SDP answer → Pull remote tracks → CF returns offer → Send answer back
+- **SDP Signaling Endpoints**: `/api/calls/:id/sdp/push`, `/api/calls/:id/sdp/pull`, `/api/calls/:id/sdp/answer`
+- **Dev Client Required**: `react-native-webrtc` requires Expo development build (not Expo Go)
 - **Auth**: JWT via `jose` (HS256), 7-day expiry
 - **Entry point**: `src/index.ts`
 - **D1 migrations**: `migrations/0001_initial.sql`

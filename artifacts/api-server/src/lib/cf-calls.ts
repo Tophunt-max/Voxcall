@@ -1,11 +1,4 @@
-// Cloudflare Calls (SFU) API wrapper
-
 const CF_CALLS_BASE = 'https://rtc.live.cloudflare.com/v1/apps';
-
-export interface CFCallsSession {
-  sessionId: string;
-  sessionDescription: RTCSessionDescriptionInit;
-}
 
 export class CloudflareCalls {
   private appId: string;
@@ -34,40 +27,107 @@ export class CloudflareCalls {
       method: 'POST',
       headers: this.headers,
     });
-    if (!res.ok) throw new Error(`CF Calls error: ${res.status}`);
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`CF Calls createSession error ${res.status}: ${text}`);
+    }
     const data = await res.json() as any;
     return { sessionId: data.sessionId };
   }
 
-  async createTrack(sessionId: string, offer: RTCSessionDescriptionInit, trackName: string): Promise<{
-    sessionDescription: RTCSessionDescriptionInit;
-    tracks: any[];
-  }> {
+  async pushTracks(
+    sessionId: string,
+    offer: { type: string; sdp: string },
+    tracks: Array<{ location: 'local'; mid: string; trackName: string }>
+  ): Promise<{ answer: { type: string; sdp: string }; tracks: any[] }> {
     const res = await fetch(`${this.baseUrl}/sessions/${sessionId}/tracks/new`, {
       method: 'POST',
       headers: this.headers,
       body: JSON.stringify({
-        sessionDescription: offer,
-        tracks: [{ location: 'local', mid: '0', trackName }],
+        sessionDescription: { type: offer.type, sdp: offer.sdp },
+        tracks,
       }),
     });
-    if (!res.ok) throw new Error(`CF Calls track error: ${res.status}`);
-    return res.json() as any;
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`CF Calls pushTracks error ${res.status}: ${text}`);
+    }
+    const data = await res.json() as any;
+    return {
+      answer: data.sessionDescription || data.answer,
+      tracks: data.tracks || [],
+    };
+  }
+
+  async pullTracks(
+    sessionId: string,
+    remoteSessionId: string,
+    trackNames: string[]
+  ): Promise<{ offer: { type: string; sdp: string }; tracks: any[] }> {
+    const tracks = trackNames.map((trackName, i) => ({
+      location: 'remote' as const,
+      sessionId: remoteSessionId,
+      trackName,
+    }));
+
+    const res = await fetch(`${this.baseUrl}/sessions/${sessionId}/tracks/new`, {
+      method: 'POST',
+      headers: this.headers,
+      body: JSON.stringify({ tracks }),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`CF Calls pullTracks error ${res.status}: ${text}`);
+    }
+    const data = await res.json() as any;
+    return {
+      offer: data.sessionDescription,
+      tracks: data.tracks || [],
+    };
+  }
+
+  async sendAnswerForPull(
+    sessionId: string,
+    answer: { type: string; sdp: string }
+  ): Promise<void> {
+    const res = await fetch(`${this.baseUrl}/sessions/${sessionId}/renegotiate`, {
+      method: 'PUT',
+      headers: this.headers,
+      body: JSON.stringify({
+        sessionDescription: { type: answer.type, sdp: answer.sdp },
+      }),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`CF Calls renegotiate error ${res.status}: ${text}`);
+    }
+  }
+
+  async closeTracks(
+    sessionId: string,
+    trackMids: string[]
+  ): Promise<void> {
+    const res = await fetch(`${this.baseUrl}/sessions/${sessionId}/tracks/close`, {
+      method: 'PUT',
+      headers: this.headers,
+      body: JSON.stringify({
+        tracks: trackMids.map(mid => ({ mid })),
+        force: true,
+      }),
+    });
+    if (!res.ok) {
+      console.error('CF Calls closeTracks error:', res.status);
+    }
   }
 
   async closeSession(sessionId: string): Promise<void> {
-    await fetch(`${this.baseUrl}/sessions/${sessionId}`, {
-      method: 'DELETE',
-      headers: this.headers,
-    });
-  }
-
-  async sendIce(sessionId: string, candidate: RTCIceCandidateInit): Promise<void> {
-    await fetch(`${this.baseUrl}/sessions/${sessionId}/ice`, {
-      method: 'POST',
-      headers: this.headers,
-      body: JSON.stringify({ candidate }),
-    });
+    try {
+      await fetch(`${this.baseUrl}/sessions/${sessionId}`, {
+        method: 'PUT',
+        headers: this.headers,
+        body: JSON.stringify({ force_close: true }),
+      });
+    } catch {}
   }
 }
 

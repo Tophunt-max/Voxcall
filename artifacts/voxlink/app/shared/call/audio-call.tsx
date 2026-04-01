@@ -11,6 +11,7 @@ import { useCall } from "@/context/CallContext";
 import { useCallTimer } from "@/hooks/useCallTimer";
 import { usePermissions } from "@/hooks/usePermissions";
 import { PermissionDialog, PERMISSION_CONFIGS } from "@/components/PermissionDialog";
+import { useWebRTC } from "@/hooks/useWebRTC";
 import * as Haptics from "expo-haptics";
 
 export default function AudioCallScreen() {
@@ -23,7 +24,20 @@ export default function AudioCallScreen() {
   const { permissions, requestMicrophone, openSettings, refresh } = usePermissions();
   const pulse = useRef(new Animated.Value(1)).current;
 
-  // Check microphone permission on mount
+  const [webrtcReady, setWebrtcReady] = useState(false);
+  const webrtc = useWebRTC({
+    sessionId: activeCall?.sessionId,
+    isVideo: false,
+    enabled: webrtcReady && !!activeCall?.sessionId,
+  });
+
+  useEffect(() => {
+    if (webrtc.isConnected && status !== "active") {
+      setStatus("active");
+      markCallActive();
+    }
+  }, [webrtc.isConnected, status, markCallActive]);
+
   useEffect(() => {
     const checkMic = async () => {
       await refresh();
@@ -32,10 +46,11 @@ export default function AudioCallScreen() {
     checkMic();
   }, []);
 
-  // Show dialog after permission state is loaded
   useEffect(() => {
     if (micChecked && permissions.microphone.status !== "granted") {
       setShowMicDialog(true);
+    } else if (micChecked && permissions.microphone.status === "granted") {
+      setWebrtcReady(true);
     }
   }, [micChecked, permissions.microphone.status]);
 
@@ -46,15 +61,33 @@ export default function AudioCallScreen() {
         Animated.timing(pulse, { toValue: 1, duration: 900, easing: Easing.inOut(Easing.ease), useNativeDriver: false }),
       ])
     ).start();
-    const t1 = setTimeout(() => setStatus("ringing"), 1000);
+    const t1 = setTimeout(() => {
+      if (status === "connecting") setStatus("ringing");
+    }, 2000);
     const t2 = setTimeout(() => {
-      setStatus("active");
-      markCallActive();
-    }, 3000);
+      if (status !== "active") {
+        setStatus("active");
+        markCallActive();
+      }
+    }, 8000);
     return () => { clearTimeout(t1); clearTimeout(t2); };
   }, []);
 
-  const handleAutoEnd = useCallback(() => { endCall(true); }, [endCall]);
+  useEffect(() => {
+    if (activeCall?.isMuted !== undefined) {
+      webrtc.toggleMute(activeCall.isMuted);
+    }
+  }, [activeCall?.isMuted]);
+
+  const handleEndCall = useCallback(() => {
+    webrtc.cleanup();
+    endCall();
+  }, [endCall, webrtc.cleanup]);
+
+  const handleAutoEnd = useCallback(() => {
+    webrtc.cleanup();
+    endCall(true);
+  }, [endCall, webrtc.cleanup]);
 
   const { elapsed, remaining, showLowCoinWarning, showRechargePopup, dismissRechargePopup } = useCallTimer({
     isActive: status === "active",
@@ -83,9 +116,10 @@ export default function AudioCallScreen() {
     } else {
       const granted = await requestMicrophone();
       setShowMicDialog(false);
-      if (!granted) {
-        // Still not granted — end call
-        endCall();
+      if (granted) {
+        setWebrtcReady(true);
+      } else {
+        handleEndCall();
         router.back();
       }
     }
@@ -93,7 +127,7 @@ export default function AudioCallScreen() {
 
   const handleMicDeny = () => {
     setShowMicDialog(false);
-    endCall();
+    handleEndCall();
     router.back();
   };
 
@@ -104,7 +138,6 @@ export default function AudioCallScreen() {
       end={{ x: 1, y: 1 }}
       style={[styles.screen, { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 20 }]}
     >
-      {/* Microphone Permission Dialog */}
       <PermissionDialog
         visible={showMicDialog}
         config={{ ...PERMISSION_CONFIGS.microphone, isBlocked }}
@@ -112,7 +145,6 @@ export default function AudioCallScreen() {
         onDeny={handleMicDeny}
       />
 
-      {/* Microphone Denied Banner */}
       {micChecked && permissions.microphone.status !== "granted" && !showMicDialog && (
         <TouchableOpacity onPress={() => setShowMicDialog(true)} style={styles.permBanner}>
           <Feather name="mic-off" size={14} color="#FFD166" />
@@ -120,7 +152,6 @@ export default function AudioCallScreen() {
         </TouchableOpacity>
       )}
 
-      {/* Low Coin Warning Banner */}
       {showLowCoinWarning && (
         <View style={styles.warningBanner}>
           <Feather name="alert-triangle" size={14} color="#FFD166" />
@@ -130,7 +161,13 @@ export default function AudioCallScreen() {
         </View>
       )}
 
-      {/* Caller Info */}
+      {webrtc.error && (
+        <View style={styles.warningBanner}>
+          <Feather name="wifi-off" size={14} color="#FF6B6B" />
+          <Text style={styles.warningText}>Connection issue — trying to reconnect</Text>
+        </View>
+      )}
+
       <View style={styles.callerSection}>
         <Text style={styles.callTypeLabel}>Voice Call</Text>
         <Animated.View style={[styles.avatarRing, { transform: [{ scale: pulse }] }]}>
@@ -162,7 +199,6 @@ export default function AudioCallScreen() {
         </View>
       </View>
 
-      {/* Controls */}
       <View style={styles.controlsSection}>
         <View style={styles.controlRow}>
           <View style={styles.ctrlItem}>
@@ -176,7 +212,7 @@ export default function AudioCallScreen() {
           </View>
 
           <TouchableOpacity
-            onPress={() => { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning); endCall(); }}
+            onPress={() => { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning); handleEndCall(); }}
             style={styles.endBtn}
           >
             <Feather name="phone-off" size={30} color="#fff" />
@@ -194,7 +230,6 @@ export default function AudioCallScreen() {
         </View>
       </View>
 
-      {/* Recharge Popup */}
       <Modal visible={showRechargePopup} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.rechargeCard}>
@@ -208,7 +243,7 @@ export default function AudioCallScreen() {
               style={styles.rechargeBtn}
               onPress={() => {
                 dismissRechargePopup();
-                endCall();
+                handleEndCall();
                 router.push("/user/screens/user/wallet");
               }}
             >

@@ -6,7 +6,6 @@ import type { Env, JWTPayload } from '../types';
 const call = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
 call.use('*', authMiddleware);
 
-// POST /api/calls/initiate — start a call session
 call.post('/initiate', async (c) => {
   const { sub } = c.get('user');
   const body = await c.req.json<{ host_id: string; type?: 'audio' | 'video'; call_type?: 'audio' | 'video' }>();
@@ -26,20 +25,23 @@ call.post('/initiate', async (c) => {
   }
 
   const cfCalls = createCFCalls(c.env);
-  let cfSessionId = null;
+  let cfCallerSessionId: string | null = null;
+  let cfHostSessionId: string | null = null;
   if (cfCalls) {
     try {
-      const session = await cfCalls.createSession();
-      cfSessionId = session.sessionId;
+      const callerSession = await cfCalls.createSession();
+      cfCallerSessionId = callerSession.sessionId;
+      const hostSession = await cfCalls.createSession();
+      cfHostSessionId = hostSession.sessionId;
     } catch (e) {
-      console.error('CF Calls error:', e);
+      console.error('CF Calls session creation error:', e);
     }
   }
 
   const sessionId = crypto.randomUUID();
   await db.prepare(
-    'INSERT INTO call_sessions (id, caller_id, host_id, type, status, cf_session_id, rate_per_minute) VALUES (?, ?, ?, ?, ?, ?, ?)'
-  ).bind(sessionId, sub, body.host_id, callType, 'pending', cfSessionId, ratePerMin).run();
+    'INSERT INTO call_sessions (id, caller_id, host_id, type, status, cf_session_id, cf_host_session_id, rate_per_minute) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+  ).bind(sessionId, sub, body.host_id, callType, 'pending', cfCallerSessionId, cfHostSessionId, ratePerMin).run();
 
   try {
     const notifId = c.env.NOTIFICATION_HUB.idFromName(host.user_id);
@@ -51,10 +53,17 @@ call.post('/initiate', async (c) => {
   } catch {}
 
   const maxSeconds = Math.floor((caller.coins / ratePerMin) * 60);
-  return c.json({ session_id: sessionId, cf_session_id: cfSessionId, host_coins_per_minute: ratePerMin, rate_per_minute: ratePerMin, call_type: callType, max_seconds: maxSeconds });
+  return c.json({
+    session_id: sessionId,
+    cf_session_id: cfCallerSessionId,
+    cf_host_session_id: cfHostSessionId,
+    host_coins_per_minute: ratePerMin,
+    rate_per_minute: ratePerMin,
+    call_type: callType,
+    max_seconds: maxSeconds,
+  });
 });
 
-// POST /api/calls/end — flat route (mobile sends session_id in body)
 call.post('/end', async (c) => {
   const { sub } = c.get('user');
   const { session_id, duration_seconds } = await c.req.json<{ session_id: string; duration_seconds?: number }>();
@@ -78,7 +87,6 @@ call.post('/end', async (c) => {
     ?? (session.type === 'video'
         ? (hostRow?.video_coins_per_minute ?? hostRow?.coins_per_minute ?? 5)
         : (hostRow?.audio_coins_per_minute ?? hostRow?.coins_per_minute ?? 5));
-  // Charge if call was active OR if it was pending but had actual duration (auto-accepted in demo)
   const coinsCharged = (session.status === 'active' || (session.status === 'pending' && durationSec > 0))
     ? durationMin * effectiveRate
     : 0;
@@ -99,15 +107,15 @@ call.post('/end', async (c) => {
   }
   await db.batch(txs);
 
-  if (session.cf_session_id) {
-    const cfCalls = createCFCalls(c.env);
-    try { await cfCalls?.closeSession(session.cf_session_id); } catch {}
+  const cfCalls = createCFCalls(c.env);
+  if (cfCalls) {
+    if (session.cf_session_id) { try { await cfCalls.closeSession(session.cf_session_id); } catch {} }
+    if (session.cf_host_session_id) { try { await cfCalls.closeSession(session.cf_host_session_id); } catch {} }
   }
 
   return c.json({ success: true, duration_seconds: durationSec, coins_charged: coinsCharged, host_earnings: hostShare });
 });
 
-// POST /api/calls/rate — flat route (mobile sends session_id + rating in body)
 call.post('/rate', async (c) => {
   const { sub } = c.get('user');
   const body = await c.req.json<{ session_id: string; rating?: number; stars?: number; comment?: string }>();
@@ -129,7 +137,6 @@ call.post('/rate', async (c) => {
   return c.json({ success: true });
 });
 
-// POST /api/calls/:id/answer
 call.post('/:id/answer', async (c) => {
   const { sub } = c.get('user');
   const sessionId = c.req.param('id');
@@ -146,10 +153,124 @@ call.post('/:id/answer', async (c) => {
 
   const now = Math.floor(Date.now() / 1000);
   await db.prepare('UPDATE call_sessions SET status = ?, started_at = ? WHERE id = ?').bind('active', now, sessionId).run();
-  return c.json({ success: true, status: 'active', cf_session_id: session.cf_session_id });
+  return c.json({
+    success: true,
+    status: 'active',
+    cf_session_id: session.cf_session_id,
+    cf_host_session_id: session.cf_host_session_id,
+  });
 });
 
-// POST /api/calls/:id/end (parameterized — kept for backward compat)
+async function deriveRole(db: any, sessionId: string, userId: string): Promise<{ session: any; role: 'caller' | 'host' } | null> {
+  const session = await db.prepare(
+    `SELECT cs.*, h.user_id as host_user_id FROM call_sessions cs
+     LEFT JOIN hosts h ON h.id = cs.host_id
+     WHERE cs.id = ?`
+  ).bind(sessionId).first<any>();
+  if (!session) return null;
+  if (session.caller_id === userId) return { session, role: 'caller' };
+  if (session.host_user_id === userId) return { session, role: 'host' };
+  return null;
+}
+
+call.post('/:id/sdp/push', async (c) => {
+  const { sub } = c.get('user');
+  const sessionId = c.req.param('id');
+  const body = await c.req.json<{
+    sdp: string;
+    type: string;
+    tracks: Array<{ mid: string; trackName: string }>;
+  }>();
+  const db = c.env.DB;
+
+  const result = await deriveRole(db, sessionId, sub);
+  if (!result) return c.json({ error: 'Session not found or access denied' }, 403);
+  const { session, role } = result;
+
+  const cfCalls = createCFCalls(c.env);
+  if (!cfCalls) return c.json({ error: 'CF Calls not configured' }, 500);
+
+  const cfSessionId = role === 'host' ? session.cf_host_session_id : session.cf_session_id;
+  if (!cfSessionId) return c.json({ error: 'No CF session for this role' }, 400);
+
+  try {
+    const pushResult = await cfCalls.pushTracks(
+      cfSessionId,
+      { type: body.type, sdp: body.sdp },
+      body.tracks.map(t => ({ location: 'local' as const, mid: t.mid, trackName: t.trackName }))
+    );
+    return c.json({
+      answer: pushResult.answer,
+      tracks: pushResult.tracks,
+      role,
+    });
+  } catch (e: any) {
+    console.error('pushTracks error:', e);
+    return c.json({ error: e.message || 'Failed to push tracks' }, 500);
+  }
+});
+
+call.post('/:id/sdp/pull', async (c) => {
+  const { sub } = c.get('user');
+  const sessionId = c.req.param('id');
+  const body = await c.req.json<{
+    trackNames: string[];
+  }>();
+  const db = c.env.DB;
+
+  const result = await deriveRole(db, sessionId, sub);
+  if (!result) return c.json({ error: 'Session not found or access denied' }, 403);
+  const { session, role } = result;
+
+  const cfCalls = createCFCalls(c.env);
+  if (!cfCalls) return c.json({ error: 'CF Calls not configured' }, 500);
+
+  const mySessionId = role === 'host' ? session.cf_host_session_id : session.cf_session_id;
+  const remoteSessionId = role === 'host' ? session.cf_session_id : session.cf_host_session_id;
+
+  if (!mySessionId || !remoteSessionId) return c.json({ error: 'Missing CF session IDs' }, 400);
+
+  try {
+    const pullResult = await cfCalls.pullTracks(mySessionId, remoteSessionId, body.trackNames);
+    return c.json({
+      offer: pullResult.offer,
+      tracks: pullResult.tracks,
+      role,
+    });
+  } catch (e: any) {
+    console.error('pullTracks error:', e);
+    return c.json({ error: e.message || 'Failed to pull tracks' }, 500);
+  }
+});
+
+call.post('/:id/sdp/answer', async (c) => {
+  const { sub } = c.get('user');
+  const sessionId = c.req.param('id');
+  const body = await c.req.json<{
+    sdp: string;
+    type: string;
+  }>();
+  const db = c.env.DB;
+
+  const result = await deriveRole(db, sessionId, sub);
+  if (!result) return c.json({ error: 'Session not found or access denied' }, 403);
+  const { session, role } = result;
+
+  const cfCalls = createCFCalls(c.env);
+  if (!cfCalls) return c.json({ error: 'CF Calls not configured' }, 500);
+
+  const mySessionId = role === 'host' ? session.cf_host_session_id : session.cf_session_id;
+  if (!mySessionId) return c.json({ error: 'No CF session' }, 400);
+
+  try {
+    await cfCalls.sendAnswerForPull(mySessionId, { type: body.type, sdp: body.sdp });
+    return c.json({ success: true });
+  } catch (e: any) {
+    console.error('sendAnswer error:', e);
+    return c.json({ error: e.message || 'Failed to send answer' }, 500);
+  }
+});
+
 call.post('/:id/end', async (c) => {
   const { sub } = c.get('user');
   const sessionId = c.req.param('id');
@@ -162,8 +283,9 @@ call.post('/:id/end', async (c) => {
   const now = Math.floor(Date.now() / 1000);
   const durationSec = now - (session.started_at || now);
   const durationMin = Math.max(1, Math.ceil(durationSec / 60));
-  const hostRow = await db.prepare('SELECT coins_per_minute, user_id, total_minutes, total_earnings FROM hosts WHERE id = ?').bind(session.host_id).first<any>();
-  const coinsCharged = durationMin * (hostRow?.coins_per_minute || 5);
+  const hostRow = await db.prepare('SELECT coins_per_minute, audio_coins_per_minute, video_coins_per_minute, user_id, total_minutes, total_earnings FROM hosts WHERE id = ?').bind(session.host_id).first<any>();
+  const effectiveRate = session.rate_per_minute ?? (hostRow?.coins_per_minute || 5);
+  const coinsCharged = durationMin * effectiveRate;
   const hostShare = Math.floor(coinsCharged * 0.7);
 
   await db.batch([
@@ -176,15 +298,15 @@ call.post('/:id/end', async (c) => {
       .bind(durationMin, hostShare, session.host_id),
   ]);
 
-  if (session.cf_session_id) {
-    const cfCalls = createCFCalls(c.env);
-    try { await cfCalls?.closeSession(session.cf_session_id); } catch {}
+  const cfCalls = createCFCalls(c.env);
+  if (cfCalls) {
+    if (session.cf_session_id) { try { await cfCalls.closeSession(session.cf_session_id); } catch {} }
+    if (session.cf_host_session_id) { try { await cfCalls.closeSession(session.cf_host_session_id); } catch {} }
   }
 
   return c.json({ success: true, duration_seconds: durationSec, coins_charged: coinsCharged, host_earnings: hostShare });
 });
 
-// GET /api/calls/active
 call.get('/active', async (c) => {
   const { sub } = c.get('user');
   const session = await c.env.DB.prepare(
@@ -198,7 +320,6 @@ call.get('/active', async (c) => {
   return c.json(session ?? null);
 });
 
-// GET /api/calls/history
 call.get('/history', async (c) => {
   const { sub } = c.get('user');
   const result = await c.env.DB.prepare(
@@ -209,7 +330,6 @@ call.get('/history', async (c) => {
   return c.json(result.results);
 });
 
-// POST /api/calls/:id/rate (parameterized — kept for backward compat)
 call.post('/:id/rate', async (c) => {
   const { sub } = c.get('user');
   const sessionId = c.req.param('id');
@@ -227,7 +347,6 @@ call.post('/:id/rate', async (c) => {
   return c.json({ success: true });
 });
 
-// GET /api/calls/:id
 call.get('/:id', async (c) => {
   const { sub } = c.get('user');
   const sessionId = c.req.param('id');
@@ -242,12 +361,17 @@ call.get('/:id', async (c) => {
   return c.json(session);
 });
 
-// GET /api/calls/:id/cf-token
 call.get('/:id/cf-token', async (c) => {
+  const { sub } = c.get('user');
   const sessionId = c.req.param('id');
-  const session = await c.env.DB.prepare('SELECT cf_session_id FROM call_sessions WHERE id = ?').bind(sessionId).first<any>();
-  if (!session?.cf_session_id) return c.json({ error: 'No CF session' }, 404);
-  return c.json({ cf_session_id: session.cf_session_id, app_id: c.env.CF_CALLS_APP_ID });
+  const result = await deriveRole(c.env.DB, sessionId, sub);
+  if (!result) return c.json({ error: 'Not found or access denied' }, 403);
+  return c.json({
+    cf_session_id: result.session.cf_session_id,
+    cf_host_session_id: result.session.cf_host_session_id,
+    app_id: c.env.CF_CALLS_APP_ID,
+    role: result.role,
+  });
 });
 
 export default call;

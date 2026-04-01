@@ -16,6 +16,8 @@ export interface CallParticipant {
 export interface ActiveCall {
   callId: string;
   sessionId?: string;
+  cfCallerSessionId?: string;
+  cfHostSessionId?: string;
   type: CallType;
   status: CallStatus;
   participant: CallParticipant;
@@ -72,17 +74,18 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       const updated: ActiveCall = {
         ...call,
         sessionId,
+        cfCallerSessionId: res.cf_session_id,
+        cfHostSessionId: res.cf_host_session_id,
         coinsPerMinute: res.host_coins_per_minute ?? coinsPerMinute,
         maxSeconds: res.max_seconds,
       };
       updateCall(updated);
-      // Auto-accept on backend (simulates host answering in demo mode)
-      // This marks the session as 'active' so coins are charged correctly
+
       if (sessionId) {
         try { await API.answerCall(sessionId, true); } catch {}
       }
     } catch (e) {
-      console.warn("initiateCall API error (demo mode):", e);
+      console.warn("initiateCall API error:", e);
     }
   }, []);
 
@@ -97,18 +100,15 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     if (!curr) return;
     const updated = { ...curr, status: "active" as CallStatus, startTime: Date.now() };
     updateCall(updated);
-    // Mark session as active on backend so coins are charged
     if (curr.sessionId) {
       try { await API.answerCall(curr.sessionId, true); } catch {}
     }
     router.replace(curr.type === "audio" ? "/shared/call/audio-call" : "/shared/call/video-call");
   }, []);
 
-  // Called from audio-call / video-call when call becomes "active" for outgoing calls
-  // (acceptCall is only triggered for incoming calls — outgoing calls never call it)
   const markCallActive = useCallback(() => {
     const curr = activeCallRef.current;
-    if (!curr || curr.startTime) return; // already set, don't overwrite
+    if (!curr || curr.startTime) return;
     updateCall({ ...curr, status: "active" as CallStatus, startTime: Date.now() });
   }, []);
 
@@ -129,7 +129,6 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         const res = await API.endCall(call.sessionId, duration);
         if (res?.coins_charged != null) {
           coinsSpent = res.coins_charged;
-          // Fetch fresh balance from backend and update AuthContext
           try {
             const bal = await API.getBalance();
             if (bal?.coins != null) updateCoins(bal.coins);
