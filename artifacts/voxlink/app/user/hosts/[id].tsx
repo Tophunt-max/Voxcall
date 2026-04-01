@@ -126,6 +126,7 @@ export default function HostDetailScreen() {
   const [reviews, setReviews] = useState<any[]>([]);
   const [coinPopup, setCoinPopup] = useState(false);
   const [coinPopupRequired, setCoinPopupRequired] = useState(0);
+  const [reportModal, setReportModal] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -267,19 +268,7 @@ export default function HostDetailScreen() {
               />
             </TouchableOpacity>
             <TouchableOpacity
-              onPress={() =>
-                Alert.alert(
-                  "Report Host",
-                  `Why are you reporting ${hostName}?`,
-                  [
-                    { text: "Inappropriate Content", onPress: () => handleReport("Inappropriate Content", "inappropriate") },
-                    { text: "Harassment", onPress: () => handleReport("Harassment", "harassment") },
-                    { text: "Fake Profile", onPress: () => handleReport("Fake Profile", "spam") },
-                    { text: "Scam / Fraud", onPress: () => handleReport("Scam or Fraud", "scam") },
-                    { text: "Cancel", style: "cancel" },
-                  ]
-                )
-              }
+              onPress={() => setReportModal(true)}
               style={s.reportBtn}
               activeOpacity={0.85}
             >
@@ -448,6 +437,35 @@ export default function HostDetailScreen() {
         requiredCoins={coinPopupRequired}
         currentCoins={user?.coins ?? 0}
       />
+
+      <Modal visible={reportModal} transparent animationType="slide" onRequestClose={() => setReportModal(false)}>
+        <TouchableOpacity style={s.reportOverlay} activeOpacity={1} onPress={() => setReportModal(false)}>
+          <View style={s.reportSheet}>
+            <View style={s.reportHandle} />
+            <Text style={s.reportTitle}>Report {hostName}</Text>
+            <Text style={s.reportSubtitle}>Why are you reporting this host?</Text>
+            {[
+              { label: "Inappropriate Content", reason: "Inappropriate Content", category: "inappropriate" },
+              { label: "Harassment", reason: "Harassment", category: "harassment" },
+              { label: "Fake Profile", reason: "Fake Profile", category: "spam" },
+              { label: "Scam / Fraud", reason: "Scam or Fraud", category: "scam" },
+            ].map((opt) => (
+              <TouchableOpacity
+                key={opt.category}
+                onPress={() => { setReportModal(false); handleReport(opt.reason, opt.category); }}
+                style={s.reportOption}
+                activeOpacity={0.7}
+              >
+                <Text style={s.reportOptionTxt}>{opt.label}</Text>
+                <Feather name="chevron-right" size={16} color="#9CA3AF" />
+              </TouchableOpacity>
+            ))}
+            <TouchableOpacity onPress={() => setReportModal(false)} style={s.reportCancel} activeOpacity={0.8}>
+              <Text style={s.reportCancelTxt}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -637,6 +655,16 @@ const s = StyleSheet.create({
   },
   bottomBtnTxt: { fontSize: 16, fontFamily: "Poppins_600SemiBold", color: "#fff" },
   talkIco: { width: 22, height: 22 },
+
+  reportOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" } as any,
+  reportSheet: { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 20, paddingBottom: 32 } as any,
+  reportHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: "#E0E0E0", alignSelf: "center" as const, marginTop: 12, marginBottom: 16 },
+  reportTitle: { fontSize: 18, fontFamily: "Poppins_700Bold", color: "#111329", textAlign: "center" as const },
+  reportSubtitle: { fontSize: 13, fontFamily: "Poppins_400Regular", color: "#9CA3AF", textAlign: "center" as const, marginTop: 4, marginBottom: 16 },
+  reportOption: { flexDirection: "row" as const, alignItems: "center" as const, justifyContent: "space-between" as const, paddingVertical: 16, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: "#F0F0F0" },
+  reportOptionTxt: { fontSize: 15, fontFamily: "Poppins_500Medium", color: "#111329" },
+  reportCancel: { marginTop: 12, paddingVertical: 14, alignItems: "center" as const, backgroundColor: "#F3F4F6", borderRadius: 12 },
+  reportCancelTxt: { fontSize: 15, fontFamily: "Poppins_600SemiBold", color: "#6B7280" },
 });
 
 /* ─── Talk Now sheet styles ─── */
