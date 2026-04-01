@@ -1,0 +1,54 @@
+name: Deploy Admin Panel (Cloudflare Pages)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'artifacts/admin-panel/**'
+      - 'lib/**'
+      - '.github/workflows/deploy-admin.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Build & Deploy to Cloudflare Pages
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Admin Panel
+        working-directory: artifacts/admin-panel
+        run: pnpm run build
+        env:
+          PORT: '4173'
+          BASE_PATH: '/'
+          VITE_API_URL: ${{ secrets.VITE_API_URL || 'https://voxlink-api.ssunilkumarmohanta3.workers.dev' }}
+          NODE_ENV: production
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/pages-action@v1
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: b592b3b2a5455323a76de721a92699cd
+          projectName: voxlink-admin
+          directory: artifacts/admin-panel/dist/public
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          wranglerVersion: '3'
