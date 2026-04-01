@@ -188,6 +188,9 @@ KYC verification applications. Fields: id, user_id, display_name, date_of_birth,
 - ChatContext upgraded to use real `API.getChatRooms()` and `API.getMessages()`
 - `sendMessage` calls `API.sendMessage()` with optimistic UI update
 - chat/[id].tsx loads messages from real API on mount
+- Chat API paths: `/api/chat/rooms`, `/api/chat/rooms/:id/messages` (NOT `/api/shared/chat/...`)
+- `loadMessages` upserts conversation in context if missing (prevents messages from vanishing)
+- `getOrCreateConversation` accepts optional `roomId` to link conversation to backend room
 
 ### Key Business Rules
 - 1 coin = $0.01 USD

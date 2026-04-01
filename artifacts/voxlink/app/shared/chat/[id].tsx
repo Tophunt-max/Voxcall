@@ -43,17 +43,7 @@ export default function ChatScreen() {
       }
     } else {
       setLoading(true);
-      API.getMessages(id).then((msgs) => {
-        const mapped: Message[] = (msgs ?? []).map((m: any) => ({
-          id: m.id,
-          senderId: m.sender_id,
-          receiverId: "",
-          content: m.content ?? "",
-          type: "text",
-          timestamp: (m.created_at ?? 0) * 1000,
-          isRead: true,
-        }));
-      }).catch(() => { showErrorToast("Failed to load messages."); }).finally(() => setLoading(false));
+      loadMessages(id, id).catch(() => { showErrorToast("Failed to load messages."); }).finally(() => setLoading(false));
     }
   }, [id]);
 

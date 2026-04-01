@@ -216,7 +216,7 @@ export default function HostDetailScreen() {
     }
     try {
       const room = await API.createChatRoom(host.id);
-      getOrCreateConversation(host.id, hostName, hostAvatar);
+      getOrCreateConversation(host.id, hostName, hostAvatar, room.id);
       router.push(`/shared/chat/${room.id}`);
     } catch (e: any) {
       if (e.message?.includes("CHAT_LOCKED") || e.message?.includes("locked")) {

@@ -31,7 +31,7 @@ interface ChatContextValue {
   markRead: (conversationId: string) => void;
   loadConversations: (userId: string) => Promise<void>;
   loadMessages: (conversationId: string, roomId: string) => Promise<void>;
-  getOrCreateConversation: (participantId: string, participantName: string, avatar?: string) => Conversation;
+  getOrCreateConversation: (participantId: string, participantName: string, avatar?: string, roomId?: string) => Conversation;
   totalUnread: number;
 }
 
@@ -76,9 +76,27 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         timestamp: (m.created_at ?? 0) * 1000,
         isRead: true,
       }));
-      setConversations((prev) =>
-        prev.map((c) => (c.id === conversationId ? { ...c, messages: mapped } : c))
-      );
+      setConversations((prev) => {
+        const exists = prev.some((c) => c.id === conversationId || c.roomId === conversationId);
+        if (exists) {
+          return prev.map((c) =>
+            (c.id === conversationId || c.roomId === conversationId)
+              ? { ...c, messages: mapped, roomId: roomId }
+              : c
+          );
+        }
+        const newConvo: Conversation = {
+          id: conversationId,
+          participantId: conversationId,
+          participantName: "Chat",
+          lastMessage: mapped.length > 0 ? mapped[mapped.length - 1].content : "",
+          lastMessageTime: mapped.length > 0 ? mapped[mapped.length - 1].timestamp : Date.now(),
+          unreadCount: 0,
+          messages: mapped,
+          roomId,
+        };
+        return [newConvo, ...prev];
+      });
     } catch (e) {
       console.log("loadMessages error:", e);
     }
@@ -137,11 +155,17 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     );
   }, []);
 
-  const getOrCreateConversation = useCallback((participantId: string, participantName: string, avatar?: string): Conversation => {
-    const existing = conversations.find((c) => c.participantId === participantId || c.id === participantId);
-    if (existing) return existing;
+  const getOrCreateConversation = useCallback((participantId: string, participantName: string, avatar?: string, roomId?: string): Conversation => {
+    const existing = conversations.find((c) => c.participantId === participantId || c.id === participantId || (roomId && c.roomId === roomId));
+    if (existing) {
+      if (roomId && !existing.roomId) {
+        setConversations((prev) => prev.map((c) => c.id === existing.id ? { ...c, roomId } : c));
+        return { ...existing, roomId };
+      }
+      return existing;
+    }
     const newConvo: Conversation = {
-      id: participantId,
+      id: roomId ?? participantId,
       participantId,
       participantName,
       participantAvatar: avatar,
@@ -149,6 +173,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       lastMessageTime: Date.now(),
       unreadCount: 0,
       messages: [],
+      roomId,
     };
     setConversations((prev) => [newConvo, ...prev]);
     return newConvo;
