@@ -352,8 +352,9 @@ export default function SettingsPage() {
 
       {/* ── Random Call — User Cost Preview ─────────────────────────────── */}
       <div className="bg-card border border-border rounded-2xl overflow-hidden">
-        <div className="px-5 py-4 border-b border-border bg-secondary/30 flex items-center justify-between">
-          <div className="flex items-center gap-2">
+        {/* Header */}
+        <div className="px-5 py-4 border-b border-border bg-secondary/30">
+          <div className="flex items-center gap-2 mb-3">
             <div className="w-7 h-7 rounded-lg bg-blue-100 flex items-center justify-center">
               <PhoneCall size={13} className="text-blue-600" />
             </div>
@@ -362,143 +363,141 @@ export default function SettingsPage() {
               <p className="text-xs text-muted-foreground">Kitne coins katenge agar user itni der baat kare</p>
             </div>
           </div>
+          {/* Add duration bar */}
           <div className="flex items-center gap-2">
             <input
               type="number" min="1" max="999"
               value={newDuration}
               onChange={e => setNewDuration(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && addDuration()}
-              placeholder="mins"
-              className="w-20 px-2 py-1.5 border border-border rounded-lg text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30 text-center"
+              placeholder="Minutes (e.g. 45)"
+              className="flex-1 sm:w-48 sm:flex-none px-3 py-2 border border-border rounded-xl text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
             />
-            <button onClick={addDuration}
-              className="flex items-center gap-1 bg-primary text-primary-foreground px-2.5 py-1.5 rounded-lg text-xs font-semibold hover:opacity-90">
-              <Plus size={13} /> Add
+            <button
+              onClick={addDuration}
+              className="flex items-center gap-1.5 bg-primary text-primary-foreground px-3 py-2 rounded-xl text-sm font-semibold hover:opacity-90 transition-opacity whitespace-nowrap"
+            >
+              <Plus size={14} /> Add Duration
             </button>
           </div>
         </div>
 
-        {/* Table header */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border bg-secondary/20">
-                <th className="text-left px-5 py-3 font-semibold text-xs text-muted-foreground uppercase tracking-wide">Call Type</th>
-                {durations.map(d => (
-                  <th key={d.id} className="px-3 py-3 text-center font-semibold text-xs text-muted-foreground">
-                    {editingDur === d.id ? (
-                      <div className="flex items-center gap-1 justify-center">
+        {/* Duration cards grid */}
+        <div className="p-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+            {durations.map(d => {
+              const share = parseFloat(settings.host_revenue_share || '0.70');
+              const audioCoins = audioRate * d.minutes;
+              const videoCoins = videoRate * d.minutes;
+              const hostEarns = Math.round(audioCoins * share);
+              const audioUsd = (audioCoins * coinRate).toFixed(2);
+              const videoUsd = (videoCoins * coinRate).toFixed(2);
+              const isEditingThis = editingDur === d.id;
+
+              return (
+                <div key={d.id} className="border border-border rounded-xl overflow-hidden bg-background">
+                  {/* Card header — duration label + actions */}
+                  <div className="flex items-center justify-between px-3 py-2 bg-secondary/40 border-b border-border">
+                    {isEditingThis ? (
+                      <div className="flex items-center gap-1.5 flex-1">
                         <input
                           autoFocus
-                          type="number" min="1"
+                          type="number" min="1" max="999"
                           value={editDurVal}
                           onChange={e => setEditDurVal(e.target.value)}
-                          onKeyDown={e => { if (e.key === 'Enter') saveEditDur(); if (e.key === 'Escape') setEditingDur(null); }}
-                          className="w-14 px-1 py-0.5 border border-primary/50 rounded text-center text-xs bg-background focus:outline-none"
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') saveEditDur();
+                            if (e.key === 'Escape') setEditingDur(null);
+                          }}
+                          className="w-20 px-2 py-1 border border-primary/60 rounded-lg text-sm font-bold bg-background focus:outline-none focus:ring-2 focus:ring-primary/30 text-center"
                         />
-                        <button onClick={saveEditDur} className="text-green-600"><Check size={11} /></button>
-                        <button onClick={() => setEditingDur(null)} className="text-muted-foreground"><X size={11} /></button>
+                        <span className="text-xs text-muted-foreground">min</span>
+                        <button
+                          onClick={saveEditDur}
+                          className="ml-1 p-1 rounded-lg bg-green-500 text-white hover:bg-green-600 transition-colors"
+                        >
+                          <Check size={12} />
+                        </button>
+                        <button
+                          onClick={() => setEditingDur(null)}
+                          className="p-1 rounded-lg border border-border hover:bg-secondary transition-colors"
+                        >
+                          <X size={12} />
+                        </button>
                       </div>
                     ) : (
-                      <div className="flex items-center gap-1 justify-center group">
-                        <span className="uppercase tracking-wide">{d.minutes} MIN</span>
-                        <div className="opacity-0 group-hover:opacity-100 flex gap-0.5 transition-opacity">
-                          <button onClick={() => startEditDur(d)} className="text-muted-foreground hover:text-primary"><Edit2 size={10} /></button>
-                          <button onClick={() => removeDuration(d.id)} className="text-muted-foreground hover:text-red-500"><Trash2 size={10} /></button>
+                      <>
+                        <span className="font-bold text-sm">{d.minutes} min</span>
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => startEditDur(d)}
+                            title="Edit duration"
+                            className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground hover:text-primary transition-colors"
+                          >
+                            <Edit2 size={12} />
+                          </button>
+                          <button
+                            onClick={() => removeDuration(d.id)}
+                            title="Remove duration"
+                            className="p-1.5 rounded-lg hover:bg-red-50 text-muted-foreground hover:text-red-500 transition-colors"
+                          >
+                            <Trash2 size={12} />
+                          </button>
                         </div>
-                      </div>
+                      </>
                     )}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {/* Voice row */}
-              <tr className="hover:bg-secondary/20 transition-colors">
-                <td className="px-5 py-4">
-                  <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-lg bg-green-100 flex items-center justify-center flex-shrink-0">
-                      <span className="text-sm">🎤</span>
-                    </div>
-                    <div>
-                      <p className="font-semibold text-sm">Voice Call</p>
-                      <p className="text-xs text-muted-foreground">{audioRate} coins/min</p>
-                    </div>
                   </div>
-                </td>
-                {durations.map(d => {
-                  const coins = audioRate * d.minutes;
-                  const usd = (coins * coinRate).toFixed(2);
-                  return (
-                    <td key={d.id} className="px-3 py-4 text-center">
-                      <p className="font-bold text-base text-green-600">{coins}</p>
-                      <p className="text-xs text-muted-foreground">coins</p>
-                      <p className="text-[10px] text-green-400 font-medium">${usd}</p>
-                    </td>
-                  );
-                })}
-              </tr>
 
-              {/* Video row */}
-              <tr className="hover:bg-secondary/20 transition-colors">
-                <td className="px-5 py-4">
-                  <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-lg bg-violet-100 flex items-center justify-center flex-shrink-0">
-                      <span className="text-sm">🎥</span>
+                  {/* Card body — costs */}
+                  <div className="divide-y divide-border">
+                    <div className="flex items-center justify-between px-3 py-2.5">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-base leading-none">🎤</span>
+                        <span className="text-xs text-muted-foreground">Voice</span>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-bold text-sm text-green-600">{audioCoins} coins</p>
+                        <p className="text-[10px] text-muted-foreground">${audioUsd}</p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="font-semibold text-sm">Video Call</p>
-                      <p className="text-xs text-muted-foreground">{videoRate} coins/min</p>
+                    <div className="flex items-center justify-between px-3 py-2.5">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-base leading-none">🎥</span>
+                        <span className="text-xs text-muted-foreground">Video</span>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-bold text-sm text-violet-600">{videoCoins} coins</p>
+                        <p className="text-[10px] text-muted-foreground">${videoUsd}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between px-3 py-2.5 bg-amber-50/40">
+                      <div className="flex items-center gap-1.5">
+                        <Coins size={12} className="text-amber-500" />
+                        <span className="text-xs text-muted-foreground">Host earns</span>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-bold text-sm text-amber-600">{hostEarns} coins</p>
+                        <p className="text-[10px] text-muted-foreground">{Math.round(share * 100)}% share</p>
+                      </div>
                     </div>
                   </div>
-                </td>
-                {durations.map(d => {
-                  const coins = videoRate * d.minutes;
-                  const usd = (coins * coinRate).toFixed(2);
-                  return (
-                    <td key={d.id} className="px-3 py-4 text-center">
-                      <p className="font-bold text-base text-violet-600">{coins}</p>
-                      <p className="text-xs text-muted-foreground">coins</p>
-                      <p className="text-[10px] text-violet-400 font-medium">${usd}</p>
-                    </td>
-                  );
-                })}
-              </tr>
+                </div>
+              );
+            })}
 
-              {/* Host earnings row */}
-              <tr className="hover:bg-secondary/20 transition-colors bg-amber-50/30">
-                <td className="px-5 py-4">
-                  <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-lg bg-amber-100 flex items-center justify-center flex-shrink-0">
-                      <Coins size={13} className="text-amber-600" />
-                    </div>
-                    <div>
-                      <p className="font-semibold text-sm">Host Earns (Voice)</p>
-                      <p className="text-xs text-muted-foreground">{Math.round(parseFloat(settings.host_revenue_share || '0.70') * 100)}% of coins</p>
-                    </div>
-                  </div>
-                </td>
-                {durations.map(d => {
-                  const share = parseFloat(settings.host_revenue_share || '0.70');
-                  const coins = Math.round(audioRate * d.minutes * share);
-                  const usd = (coins * coinRate).toFixed(2);
-                  return (
-                    <td key={d.id} className="px-3 py-4 text-center">
-                      <p className="font-bold text-base text-amber-600">{coins}</p>
-                      <p className="text-xs text-muted-foreground">coins</p>
-                      <p className="text-[10px] text-amber-400 font-medium">${usd}</p>
-                    </td>
-                  );
-                })}
-              </tr>
-            </tbody>
-          </table>
+            {/* Empty state */}
+            {durations.length === 0 && (
+              <div className="col-span-full py-8 text-center text-sm text-muted-foreground">
+                No durations. Add one above.
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="px-5 py-3 bg-secondary/10 border-t border-border">
           <p className="text-xs text-muted-foreground flex items-center gap-1.5">
             <TrendingUp size={11} />
-            Values auto-update when you change settings above. Hover column headers to edit or delete durations.
+            Values auto-update when you change rates above. Click the pencil to edit a duration, trash to remove it.
           </p>
         </div>
       </div>
