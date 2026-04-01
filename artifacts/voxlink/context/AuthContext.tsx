@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { AppState } from "react-native";
 import { setItem, getItem, removeItem, StorageKeys } from "@/utils/storage";
-import { apiRequest } from "@/services/api";
+import { apiRequest, API } from "@/services/api";
 
 export type UserRole = "user" | "host";
 

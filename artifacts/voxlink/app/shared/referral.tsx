@@ -7,9 +7,9 @@ import {
   TouchableOpacity,
   Image,
   Share,
-  Clipboard,
   ActivityIndicator,
 } from "react-native";
+import * as ClipboardModule from "expo-clipboard";
 import { router } from "expo-router";
 import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -37,7 +37,7 @@ export default function ReferralScreen() {
 
   const handleCopy = () => {
     if (!referral?.code) return;
-    Clipboard.setString(referral.code);
+    ClipboardModule.setStringAsync(referral.code);
     setCopied(true);
     showSuccessToast("Referral code copied!", "Copied");
     setTimeout(() => setCopied(false), 2000);

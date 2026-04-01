@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -9,9 +9,10 @@ import {
   Platform,
   Alert,
   Switch,
-  Clipboard,
   Share,
+  ActivityIndicator,
 } from "react-native";
+import * as ClipboardModule from "expo-clipboard";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { Feather } from "@expo/vector-icons";
@@ -21,6 +22,7 @@ import { useAuth } from "@/context/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
 import { PermissionDialog, PERMISSION_CONFIGS } from "@/components/PermissionDialog";
 import { API } from "@/services/api";
+import { showSuccessToast, showErrorToast } from "@/components/Toast";
 
 interface MenuItemProps {
   iconSource?: any;
@@ -155,9 +157,9 @@ export default function ProfileScreen() {
     ]);
   };
 
-  const copyId = () => {
-    Clipboard.setString(uniqueId);
-    Alert.alert("Copied", "Your unique ID has been copied.");
+  const copyId = async () => {
+    await ClipboardModule.setStringAsync(uniqueId);
+    showSuccessToast("Your unique ID has been copied.", "Copied");
   };
 
   // Avatar picker
