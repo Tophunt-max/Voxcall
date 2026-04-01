@@ -35,7 +35,7 @@ name = "VoxLink Admin Panel"
 author = "agent"
 
 [workflows.workflow.metadata]
-outputType = "webview"
+outputType = "console"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
@@ -46,13 +46,13 @@ waitForPort = 20130
 name = "VoxLink Mobile App"
 author = "agent"
 
+[workflows.workflow.metadata]
+outputType = "console"
+
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "PORT=20426 BASE_PATH=/ pnpm --filter @workspace/voxlink run dev"
 waitForPort = 20426
-
-[workflows.workflow.metadata]
-outputType = "webview"
 
 [agent]
 stack = "PNPM_WORKSPACE"
