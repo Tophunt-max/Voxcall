@@ -18,10 +18,9 @@ A production-grade social audio/video calling platform where users connect with 
 
 ```
 VoxLink/
-├── artifacts/
-│   ├── admin-panel/     ← React Admin Dashboard
-│   ├── api-server/      ← Cloudflare Workers Backend
-│   └── voxlink/         ← Expo Mobile App
+├── admin-panel/         ← React Admin Dashboard
+├── api-server/          ← Cloudflare Workers Backend
+├── voxlink/             ← Expo Mobile App
 ├── lib/
 │   ├── db/              ← Drizzle ORM Schema (D1/SQLite)
 │   ├── api-spec/        ← OpenAPI Specification

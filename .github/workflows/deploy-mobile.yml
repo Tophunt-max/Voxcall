@@ -5,7 +5,7 @@ on:
     branches:
       - main
     paths:
-      - 'artifacts/voxlink/**'
+      - 'voxlink/**'
       - 'lib/**'
       - '.github/workflows/deploy-mobile.yml'
   workflow_dispatch:
@@ -35,7 +35,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Export Expo Web App
-        working-directory: artifacts/voxlink
+        working-directory: voxlink
         run: pnpm exec expo export --platform web --output-dir dist
         env:
           NODE_ENV: production
@@ -47,6 +47,6 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ vars.CF_ACCOUNT_ID }}
           projectName: voxlink-mobile
-          directory: artifacts/voxlink/dist
+          directory: voxlink/dist
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
           wranglerVersion: '3'
