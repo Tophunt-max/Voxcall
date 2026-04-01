@@ -6,7 +6,7 @@ import {
   Menu, X, ChevronRight, HelpCircle, Phone, Bell, Star,
   Hash, ArrowRightLeft, Trophy, ShieldCheck, TrendingUp, Tag,
   IndianRupee, MessageSquare, Flag, ShieldOff, Megaphone,
-  ScrollText, Image, Gift, Radio, Sliders
+  ScrollText, Image, Gift, Radio, Sliders, CreditCard
 } from 'lucide-react';
 
 const nav = [
@@ -24,6 +24,7 @@ const nav = [
   { href: '/coin-plans', label: 'Coin Plans', icon: Coins, section: 'finance' },
   { href: '/transactions', label: 'Transactions', icon: ArrowRightLeft, section: 'finance' },
   { href: '/promo-codes', label: 'Promo Codes', icon: Tag, section: 'finance' },
+  { href: '/payment-gateways', label: 'Payment Gateways', icon: CreditCard, section: 'finance' },
   { href: '/referral-system', label: 'Referral System', icon: Gift, section: 'growth' },
   { href: '/content-moderation', label: 'Moderation', icon: Flag, section: 'moderation' },
   { href: '/support-tickets', label: 'Support Tickets', icon: MessageSquare, section: 'moderation' },

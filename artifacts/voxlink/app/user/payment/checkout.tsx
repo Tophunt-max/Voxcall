@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   TextInput,
   Dimensions,
+  Platform,
 } from "react-native";
 import { router } from "expo-router";
 import { useColors } from "@/hooks/useColors";
@@ -23,8 +24,6 @@ const SCREEN_W = Dimensions.get("window").width;
 const WALLET_BANNER_W = SCREEN_W - 40;
 const AUTO_SLIDE_MS = 3500;
 
-type PayMethod = "card" | "paypal" | "gpay" | "applepay";
-
 interface CoinPlan {
   id: string;
   name: string;
@@ -36,6 +35,35 @@ interface CoinPlan {
   is_active?: number | boolean;
 }
 
+interface Gateway {
+  id: string;
+  name: string;
+  type: string;
+  icon_emoji: string;
+  instruction?: string;
+  redirect_url?: string;
+  native?: boolean;
+}
+
+// ─── Native platform gateways (always injected) ──────────────────────────────
+const NATIVE_ANDROID: Gateway = {
+  id: "__native_gpay",
+  name: "Google Pay",
+  type: "googlepay",
+  icon_emoji: "🟢",
+  instruction: "Pay instantly with your Google account",
+  native: true,
+};
+const NATIVE_IOS: Gateway = {
+  id: "__native_applepay",
+  name: "Apple Pay",
+  type: "applepay",
+  icon_emoji: "🍎",
+  instruction: "Pay with Face ID or Touch ID",
+  native: true,
+};
+
+// ─── WalletBannerSlider ───────────────────────────────────────────────────────
 function WalletBannerSlider({ banners }: { banners: any[] }) {
   const [activeIdx, setActiveIdx] = useState(0);
   const flatRef = useRef<FlatList<any>>(null);
@@ -119,44 +147,147 @@ function WalletBannerSlider({ banners }: { banners: any[] }) {
 
 const wStyles = StyleSheet.create({
   wrap: { alignItems: "center", marginBottom: 24 },
-  slide: {
-    width: WALLET_BANNER_W,
-    borderRadius: 16,
-    padding: 18,
-    minHeight: 100,
-    justifyContent: "center",
-  },
+  slide: { width: WALLET_BANNER_W, borderRadius: 16, padding: 18, minHeight: 100, justifyContent: "center" },
   textCol: { gap: 4 },
   title: { fontSize: 17, fontFamily: "Poppins_700Bold", color: "#fff" },
   sub: { fontSize: 12, fontFamily: "Poppins_400Regular", color: "rgba(255,255,255,0.85)" },
-  ctaBtn: {
-    alignSelf: "flex-start",
-    backgroundColor: "rgba(255,255,255,0.25)",
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 20,
-    marginTop: 4,
-  },
+  ctaBtn: { alignSelf: "flex-start", backgroundColor: "rgba(255,255,255,0.25)", paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, marginTop: 4 },
   ctaText: { fontSize: 12, fontFamily: "Poppins_600SemiBold", color: "#fff" },
   dots: { flexDirection: "row", gap: 6, marginTop: 8 },
   dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#D0C0E0" },
   dotActive: { width: 20, backgroundColor: "#A00EE7", borderRadius: 3 },
 });
 
-const PAYMENT_METHODS: Array<{ id: PayMethod; label: string; icon: any }> = [
-  { id: "card",     label: "Credit / Debit Card", icon: require("@/assets/icons/ic_secure.png") },
-  { id: "paypal",   label: "PayPal",               icon: require("@/assets/icons/ic_transaction.png") },
-  { id: "gpay",     label: "Google Pay",            icon: require("@/assets/icons/ic_guaranteed.png") },
-  { id: "applepay", label: "Apple Pay",             icon: require("@/assets/icons/ic_secure.png") },
-];
+// ─── SmartPaymentSection ──────────────────────────────────────────────────────
+function SmartPaymentSection({
+  gateways,
+  loading,
+  selected,
+  onSelect,
+  colors,
+}: {
+  gateways: Gateway[];
+  loading: boolean;
+  selected: Gateway | null;
+  onSelect: (gw: Gateway) => void;
+  colors: any;
+}) {
+  const platform = Platform.OS; // 'android' | 'ios' | 'web'
 
+  const platformLabel =
+    platform === "android" ? "Android" :
+    platform === "ios"     ? "iOS"     : "Web";
+
+  const platformEmoji =
+    platform === "android" ? "🤖" :
+    platform === "ios"     ? "🍎" : "🌐";
+
+  const platformBg =
+    platform === "android" ? "#34A85320" :
+    platform === "ios"     ? "#1C1C1E20" : "#2563EB20";
+
+  const platformColor =
+    platform === "android" ? "#34A853" :
+    platform === "ios"     ? "#555" : "#2563EB";
+
+  if (loading) {
+    return (
+      <View style={{ alignItems: "center", paddingVertical: 20 }}>
+        <ActivityIndicator color="#A00EE7" />
+      </View>
+    );
+  }
+
+  return (
+    <View>
+      {/* Platform Detection Badge */}
+      <View style={[pmStyles.detectedBadge, { backgroundColor: platformBg }]}>
+        <Text style={[pmStyles.detectedText, { color: platformColor }]}>
+          {platformEmoji} {platformLabel} detected — showing compatible payment methods
+        </Text>
+      </View>
+
+      {/* Gateways List */}
+      <View style={[pmStyles.card, { backgroundColor: colors.card }]}>
+        {gateways.length === 0 ? (
+          <View style={pmStyles.emptyWrap}>
+            <Text style={[pmStyles.emptyText, { color: colors.mutedForeground }]}>
+              No payment methods configured yet.{"\n"}Please contact support.
+            </Text>
+          </View>
+        ) : (
+          gateways.map((gw, idx) => {
+            const isSelected = selected?.id === gw.id;
+            return (
+              <TouchableOpacity
+                key={gw.id}
+                style={[
+                  pmStyles.gwRow,
+                  idx < gateways.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.borderLight },
+                  isSelected && { backgroundColor: colors.accent + "10" },
+                ]}
+                onPress={() => onSelect(gw)}
+                activeOpacity={0.8}
+              >
+                {/* Emoji icon */}
+                <View style={[pmStyles.emojiBox, { backgroundColor: isSelected ? colors.accent + "20" : colors.accentLight }]}>
+                  <Text style={pmStyles.emojiText}>{gw.icon_emoji || "💳"}</Text>
+                </View>
+
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <Text style={[pmStyles.gwName, { color: colors.text }]}>{gw.name}</Text>
+                    {gw.native && (
+                      <View style={[pmStyles.nativeBadge, { backgroundColor: colors.online + "20" }]}>
+                        <Text style={[pmStyles.nativeBadgeText, { color: colors.online }]}>Native</Text>
+                      </View>
+                    )}
+                  </View>
+                  {gw.instruction ? (
+                    <Text style={[pmStyles.gwInstruction, { color: colors.mutedForeground }]}>{gw.instruction}</Text>
+                  ) : null}
+                </View>
+
+                {/* Radio */}
+                <View style={[pmStyles.radio, { borderColor: isSelected ? colors.accent : colors.border }]}>
+                  {isSelected && <View style={[pmStyles.radioDot, { backgroundColor: colors.accent }]} />}
+                </View>
+              </TouchableOpacity>
+            );
+          })
+        )}
+      </View>
+    </View>
+  );
+}
+
+const pmStyles = StyleSheet.create({
+  detectedBadge: { borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 12, alignItems: "center" },
+  detectedText: { fontSize: 12, fontFamily: "Poppins_500Medium", textAlign: "center" },
+  card: { borderRadius: 14, overflow: "hidden", marginBottom: 24, elevation: 2 },
+  gwRow: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14 },
+  emojiBox: { width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  emojiText: { fontSize: 20 },
+  gwName: { fontSize: 14, fontFamily: "Poppins_600SemiBold" },
+  gwInstruction: { fontSize: 11, fontFamily: "Poppins_400Regular", marginTop: 2 },
+  nativeBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+  nativeBadgeText: { fontSize: 9, fontFamily: "Poppins_700Bold" },
+  radio: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, alignItems: "center", justifyContent: "center" },
+  radioDot: { width: 10, height: 10, borderRadius: 5 },
+  emptyWrap: { padding: 24, alignItems: "center" },
+  emptyText: { fontSize: 13, fontFamily: "Poppins_400Regular", textAlign: "center", lineHeight: 20 },
+});
+
+// ─── Main CheckoutScreen ──────────────────────────────────────────────────────
 export default function CheckoutScreen() {
   const colors = useColors();
   const { user, updateCoins } = useAuth();
   const [plans, setPlans] = useState<CoinPlan[]>([]);
   const [plansLoading, setPlansLoading] = useState(true);
   const [selectedPlan, setSelectedPlan] = useState<CoinPlan | null>(null);
-  const [payMethod, setPayMethod] = useState<PayMethod>("card");
+  const [selectedGateway, setSelectedGateway] = useState<Gateway | null>(null);
+  const [gateways, setGateways] = useState<Gateway[]>([]);
+  const [gatewaysLoading, setGatewaysLoading] = useState(true);
   const [loading, setLoading] = useState(false);
   const [promoCode, setPromoCode] = useState("");
   const [promoApplied, setPromoApplied] = useState<null | { type: string; discount: number; bonus_coins: number; discount_pct: number; code: string }>(null);
@@ -165,6 +296,7 @@ export default function CheckoutScreen() {
   const [walletBanners, setWalletBanners] = useState<any[]>([]);
 
   useEffect(() => {
+    // Load coin plans
     API.getCoinPlans()
       .then((data: any[]) => {
         const active = data.filter((p) => p.is_active !== 0);
@@ -174,7 +306,47 @@ export default function CheckoutScreen() {
       })
       .catch(() => setPlans([]))
       .finally(() => setPlansLoading(false));
-    API.getBanners('wallet').then(setWalletBanners).catch(() => {});
+
+    // Load wallet banners
+    API.getBanners("wallet").then(setWalletBanners).catch(() => {});
+
+    // Load payment gateways with platform auto-detection
+    const platform = Platform.OS; // android | ios | web
+    API.getPaymentGateways(platform)
+      .then((data: any[]) => {
+        const adminGateways: Gateway[] = data.map((gw) => ({
+          id: gw.id,
+          name: gw.name,
+          type: gw.type,
+          icon_emoji: gw.icon_emoji || "💳",
+          instruction: gw.instruction,
+          redirect_url: gw.redirect_url,
+          native: false,
+        }));
+
+        // Inject native payment method at top for mobile platforms
+        let allGateways: Gateway[] = [];
+        if (platform === "android") {
+          allGateways = [NATIVE_ANDROID, ...adminGateways];
+        } else if (platform === "ios") {
+          allGateways = [NATIVE_IOS, ...adminGateways];
+        } else {
+          allGateways = adminGateways;
+        }
+
+        setGateways(allGateways);
+        // Auto-select the first (native) gateway
+        if (allGateways.length > 0) setSelectedGateway(allGateways[0]);
+      })
+      .catch(() => {
+        // Fallback: inject native method only
+        const fallback =
+          platform === "android" ? [NATIVE_ANDROID] :
+          platform === "ios"     ? [NATIVE_IOS]     : [];
+        setGateways(fallback);
+        if (fallback.length > 0) setSelectedGateway(fallback[0]);
+      })
+      .finally(() => setGatewaysLoading(false));
   }, []);
 
   const handleApplyPromo = useCallback(async () => {
@@ -201,9 +373,13 @@ export default function CheckoutScreen() {
 
   const handlePurchase = useCallback(async () => {
     if (!user || !selectedPlan) return;
+    if (!selectedGateway) {
+      showErrorToast("Please select a payment method.", "No Payment Method");
+      return;
+    }
     setLoading(true);
     try {
-      const result = await API.purchaseCoins(selectedPlan.id, payMethod) as any;
+      const result = await API.purchaseCoins(selectedPlan.id, selectedGateway.type) as any;
       if (result?.new_balance != null) {
         updateCoins(result.new_balance);
         await notifyPurchaseSuccess(totalCoins);
@@ -217,7 +393,7 @@ export default function CheckoutScreen() {
     } finally {
       setLoading(false);
     }
-  }, [selectedPlan, payMethod, user, totalCoins]);
+  }, [selectedPlan, selectedGateway, user, totalCoins]);
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
@@ -242,7 +418,7 @@ export default function CheckoutScreen() {
           </View>
         </View>
 
-        {/* Wallet Banners (admin-set, position=wallet) */}
+        {/* Wallet Banners */}
         <WalletBannerSlider banners={walletBanners} />
 
         {/* Choose Package */}
@@ -318,27 +494,15 @@ export default function CheckoutScreen() {
           </View>
         ) : null}
 
-        {/* Payment Method */}
+        {/* Smart Payment Methods */}
         <Text style={[styles.sectionTitle, { color: colors.text }]}>Payment Method</Text>
-        <View style={[styles.methodsCard, { backgroundColor: colors.card }]}>
-          {PAYMENT_METHODS.map((method, idx) => {
-            const selected = method.id === payMethod;
-            return (
-              <TouchableOpacity
-                key={method.id}
-                style={[styles.methodRow, idx < PAYMENT_METHODS.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.borderLight }]}
-                onPress={() => setPayMethod(method.id)}
-                activeOpacity={0.8}
-              >
-                <Image source={method.icon} style={styles.methodIcon} tintColor={colors.accent} />
-                <Text style={[styles.methodLabel, { color: colors.text }]}>{method.label}</Text>
-                <View style={[styles.radio, { borderColor: selected ? colors.accent : colors.border }]}>
-                  {selected && <View style={[styles.radioDot, { backgroundColor: colors.accent }]} />}
-                </View>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+        <SmartPaymentSection
+          gateways={gateways}
+          loading={gatewaysLoading}
+          selected={selectedGateway}
+          onSelect={setSelectedGateway}
+          colors={colors}
+        />
 
         {/* Order Summary */}
         {selectedPlan && (
@@ -359,13 +523,13 @@ export default function CheckoutScreen() {
                 <Text style={[styles.summaryLabel, { color: colors.mutedForeground }]}>Total Coins</Text>
                 <Text style={[styles.summaryValue, { color: colors.coinGold, fontFamily: "Poppins_700Bold" }]}>{totalCoins.toLocaleString()}</Text>
               </View>
-              <View style={[styles.divider, { backgroundColor: colors.border }]} />
               {(promoApplied?.bonus_coins ?? 0) > 0 && (
                 <View style={styles.summaryRow}>
                   <Text style={[styles.summaryLabel, { color: colors.mutedForeground }]}>Promo Bonus</Text>
                   <Text style={[styles.summaryValue, { color: colors.online }]}>+{promoApplied!.bonus_coins.toLocaleString()} Coins</Text>
                 </View>
               )}
+              <View style={[styles.divider, { backgroundColor: colors.border }]} />
               {(promoApplied?.discount ?? 0) > 0 && (
                 <View style={styles.summaryRow}>
                   <Text style={[styles.summaryLabel, { color: colors.mutedForeground }]}>Promo Discount</Text>
@@ -376,6 +540,12 @@ export default function CheckoutScreen() {
                 <Text style={[styles.totalLabel, { color: colors.text }]}>Total Price</Text>
                 <Text style={[styles.totalValue, { color: colors.accent }]}>${finalPrice.toFixed(2)} {selectedPlan.currency}</Text>
               </View>
+              {selectedGateway && (
+                <View style={[styles.gwSummaryRow, { backgroundColor: colors.accentLight }]}>
+                  <Text style={[styles.gwSummaryEmoji]}>{selectedGateway.icon_emoji}</Text>
+                  <Text style={[styles.gwSummaryText, { color: colors.accent }]}>via {selectedGateway.name}</Text>
+                </View>
+              )}
             </View>
           </>
         )}
@@ -386,16 +556,18 @@ export default function CheckoutScreen() {
         </View>
       </ScrollView>
 
-      {/* Buy Button */}
+      {/* Pay Button */}
       <View style={[styles.footer, { backgroundColor: colors.background, borderTopColor: colors.border }]}>
         <TouchableOpacity
-          style={[styles.buyBtn, { backgroundColor: selectedPlan ? colors.accent : colors.border }]}
+          style={[styles.buyBtn, { backgroundColor: selectedPlan && selectedGateway ? colors.accent : colors.border }]}
           onPress={handlePurchase}
           activeOpacity={0.88}
-          disabled={!selectedPlan || loading}
+          disabled={!selectedPlan || !selectedGateway || loading}
         >
           <Text style={styles.buyBtnText}>
-            {selectedPlan ? `Pay $${finalPrice.toFixed(2)} — Get ${totalCoins.toLocaleString()} Coins` : "Select a Package"}
+            {selectedGateway && selectedPlan
+              ? `${selectedGateway.icon_emoji} Pay $${finalPrice.toFixed(2)} via ${selectedGateway.name}`
+              : "Select a Package"}
           </Text>
         </TouchableOpacity>
       </View>
@@ -428,19 +600,6 @@ const styles = StyleSheet.create({
   planCoins: { fontSize: 15, fontFamily: "Poppins_700Bold" },
   planLabel: { fontSize: 10, fontFamily: "Poppins_400Regular" },
   planPrice: { fontSize: 13, fontFamily: "Poppins_600SemiBold", marginTop: 2 },
-  methodsCard: { borderRadius: 14, overflow: "hidden", marginBottom: 24, elevation: 2 },
-  methodRow: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14 },
-  methodIcon: { width: 22, height: 22, resizeMode: "contain" },
-  methodLabel: { flex: 1, fontSize: 14, fontFamily: "Poppins_500Medium" },
-  radio: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, alignItems: "center", justifyContent: "center" },
-  radioDot: { width: 10, height: 10, borderRadius: 5 },
-  summaryCard: { borderRadius: 14, padding: 16, gap: 10, marginBottom: 12, elevation: 2 },
-  summaryRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  summaryLabel: { fontSize: 13, fontFamily: "Poppins_400Regular" },
-  summaryValue: { fontSize: 13, fontFamily: "Poppins_500Medium" },
-  divider: { height: 1, marginVertical: 4 },
-  totalLabel: { fontSize: 15, fontFamily: "Poppins_600SemiBold" },
-  totalValue: { fontSize: 17, fontFamily: "Poppins_700Bold" },
   promoRow: { flexDirection: "row", alignItems: "center", borderRadius: 14, borderWidth: 1.5, marginBottom: 8, overflow: "hidden" },
   promoInput: { flex: 1, paddingHorizontal: 14, paddingVertical: 14, fontSize: 14, fontFamily: "Poppins_500Medium", letterSpacing: 1 },
   promoBtn: { paddingHorizontal: 18, paddingVertical: 14, alignItems: "center", justifyContent: "center" },
@@ -448,6 +607,16 @@ const styles = StyleSheet.create({
   promoError: { fontSize: 12, fontFamily: "Poppins_400Regular", marginBottom: 8 },
   promoBadge: { borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 8, alignItems: "center" },
   promoBadgeText: { fontSize: 13, fontFamily: "Poppins_600SemiBold" },
+  summaryCard: { borderRadius: 14, padding: 16, gap: 10, marginBottom: 12, elevation: 2 },
+  summaryRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  summaryLabel: { fontSize: 13, fontFamily: "Poppins_400Regular" },
+  summaryValue: { fontSize: 13, fontFamily: "Poppins_500Medium" },
+  divider: { height: 1, marginVertical: 4 },
+  totalLabel: { fontSize: 15, fontFamily: "Poppins_600SemiBold" },
+  totalValue: { fontSize: 17, fontFamily: "Poppins_700Bold" },
+  gwSummaryRow: { flexDirection: "row", alignItems: "center", gap: 8, borderRadius: 10, padding: 10, marginTop: 4 },
+  gwSummaryEmoji: { fontSize: 18 },
+  gwSummaryText: { fontSize: 13, fontFamily: "Poppins_600SemiBold" },
   secureRow: { flexDirection: "row", alignItems: "center", gap: 8, justifyContent: "center", marginTop: 8 },
   secureIcon: { width: 14, height: 14, resizeMode: "contain" },
   secureText: { fontSize: 11, fontFamily: "Poppins_400Regular" },

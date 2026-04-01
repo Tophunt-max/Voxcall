@@ -75,4 +75,8 @@ export const api = {
   recalculateHostLevels: () => req<any>('POST', '/admin/hosts/recalculate-levels', {}),
   getLevelConfig: () => req<any[]>('GET', '/admin/level-config'),
   updateLevelConfig: (data: any[]) => req<any>('PUT', '/admin/level-config', data),
+  paymentGateways: () => req<any[]>('GET', '/admin/payment-gateways'),
+  createPaymentGateway: (data: any) => req<any>('POST', '/admin/payment-gateways', data),
+  updatePaymentGateway: (id: string, data: any) => req('PATCH', `/admin/payment-gateways/${id}`, data),
+  deletePaymentGateway: (id: string) => req('DELETE', `/admin/payment-gateways/${id}`),
 };

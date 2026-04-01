@@ -604,6 +604,42 @@ admin.get('/audit-logs', async (c) => {
   })));
 });
 
+// ─── Payment Gateways CRUD ───────────────────────────────────────────────────
+admin.get('/payment-gateways', async (c) => {
+  const result = await db(c).prepare('SELECT * FROM payment_gateways ORDER BY position ASC, created_at DESC').all();
+  return c.json(result.results);
+});
+admin.post('/payment-gateways', async (c) => {
+  const body = await c.req.json() as any;
+  const id = crypto.randomUUID();
+  await db(c).prepare(
+    'INSERT INTO payment_gateways (id, name, type, icon_emoji, platforms, instruction, redirect_url, is_active, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch(), unixepoch())'
+  ).bind(id, body.name, body.type || 'manual', body.icon_emoji || '💳', JSON.stringify(body.platforms || ['all']), body.instruction || '', body.redirect_url || '', body.is_active ? 1 : 1, body.position || 0).run();
+  return c.json({ id, success: true });
+});
+admin.patch('/payment-gateways/:id', async (c) => {
+  const { id } = c.req.param();
+  const body = await c.req.json() as any;
+  const sets: string[] = [], vals: any[] = [];
+  if (body.name !== undefined) { sets.push('name = ?'); vals.push(body.name); }
+  if (body.type !== undefined) { sets.push('type = ?'); vals.push(body.type); }
+  if (body.icon_emoji !== undefined) { sets.push('icon_emoji = ?'); vals.push(body.icon_emoji); }
+  if (body.platforms !== undefined) { sets.push('platforms = ?'); vals.push(JSON.stringify(body.platforms)); }
+  if (body.instruction !== undefined) { sets.push('instruction = ?'); vals.push(body.instruction); }
+  if (body.redirect_url !== undefined) { sets.push('redirect_url = ?'); vals.push(body.redirect_url); }
+  if (body.is_active !== undefined) { sets.push('is_active = ?'); vals.push(body.is_active ? 1 : 0); }
+  if (body.position !== undefined) { sets.push('position = ?'); vals.push(body.position); }
+  if (!sets.length) return c.json({ success: true });
+  sets.push('updated_at = unixepoch()');
+  await db(c).prepare(`UPDATE payment_gateways SET ${sets.join(', ')} WHERE id = ?`).bind(...vals, id).run();
+  return c.json({ success: true });
+});
+admin.delete('/payment-gateways/:id', async (c) => {
+  const { id } = c.req.param();
+  await db(c).prepare('DELETE FROM payment_gateways WHERE id = ?').bind(id).run();
+  return c.json({ success: true });
+});
+
 // ─── Banners CRUD ─────────────────────────────────────────────────────────────
 admin.get('/banners', async (c) => {
   const result = await db(c).prepare('SELECT * FROM banners ORDER BY created_at DESC').all();
@@ -877,6 +913,20 @@ admin.post('/run-migrations', async (c) => {
       is_popular INTEGER DEFAULT 0,
       is_active INTEGER DEFAULT 1,
       created_at INTEGER DEFAULT (unixepoch())
+    )`,
+    // Payment Gateways
+    `CREATE TABLE IF NOT EXISTS payment_gateways (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL DEFAULT 'manual',
+      icon_emoji TEXT DEFAULT '💳',
+      platforms TEXT DEFAULT '["all"]',
+      instruction TEXT DEFAULT '',
+      redirect_url TEXT DEFAULT '',
+      is_active INTEGER DEFAULT 1,
+      position INTEGER DEFAULT 0,
+      created_at INTEGER DEFAULT (unixepoch()),
+      updated_at INTEGER DEFAULT (unixepoch())
     )`,
     // Safe ALTER TABLE additions
     `ALTER TABLE users ADD COLUMN referral_code TEXT`,
