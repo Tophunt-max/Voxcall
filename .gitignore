@@ -38,6 +38,7 @@ scripts/
 .replit
 .replitignore
 replit.md
+artifacts/mockup-sandbox/
 
 # ─── IDE & Editor ───────────────────────────────────────────────
 .idea/
