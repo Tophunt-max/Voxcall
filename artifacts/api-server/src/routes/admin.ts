@@ -515,18 +515,21 @@ admin.patch('/deposits/:id', async (c) => {
   if (sets.length === 0) return c.json({ error: 'Nothing to update' }, 400);
   sets.push('updated_at = unixepoch()');
   vals.push(id);
-  await db(c).prepare(`UPDATE coin_purchases SET ${sets.join(', ')} WHERE id = ?`).bind(...vals).run();
   if (body.status === 'refunded') {
-    const purchase = await db(c).prepare('SELECT user_id, coins, bonus_coins FROM coin_purchases WHERE id = ?').bind(id).first<any>();
-    if (purchase) {
-      const totalRefund = (purchase.coins || 0) + (purchase.bonus_coins || 0);
-      await db(c).batch([
-        db(c).prepare('UPDATE users SET coins = coins - ?, updated_at = unixepoch() WHERE id = ?').bind(totalRefund, purchase.user_id),
-        db(c).prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)').bind(
-          crypto.randomUUID(), purchase.user_id, 'refund', -totalRefund, `Deposit refunded by admin`, id
-        ),
-      ]);
-    }
+    const purchase = await db(c).prepare('SELECT user_id, coins, bonus_coins, status FROM coin_purchases WHERE id = ?').bind(id).first<any>();
+    if (!purchase) return c.json({ error: 'Deposit not found' }, 404);
+    if (purchase.status === 'refunded') return c.json({ error: 'Deposit already refunded' }, 400);
+    if (purchase.status !== 'success') return c.json({ error: 'Only successful deposits can be refunded' }, 400);
+    const totalRefund = (purchase.coins || 0) + (purchase.bonus_coins || 0);
+    await db(c).batch([
+      db(c).prepare(`UPDATE coin_purchases SET ${sets.join(', ')} WHERE id = ?`).bind(...vals),
+      db(c).prepare('UPDATE users SET coins = coins - ?, updated_at = unixepoch() WHERE id = ?').bind(totalRefund, purchase.user_id),
+      db(c).prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)').bind(
+        crypto.randomUUID(), purchase.user_id, 'refund', -totalRefund, `Deposit refunded by admin`, id
+      ),
+    ]);
+  } else {
+    await db(c).prepare(`UPDATE coin_purchases SET ${sets.join(', ')} WHERE id = ?`).bind(...vals).run();
   }
   const u = c.get('user');
   await auditLog(db(c), u.sub, u.email || 'Admin', u.email || '', 'update', 'deposit', id, `Deposit ${id} updated: ${JSON.stringify(body)}`);
