@@ -184,7 +184,8 @@ export default function HomeScreen() {
   const loadTopics = useCallback(async () => {
     try {
       const topics = await API.getTalkTopics();
-      setSpecialties(["All", ...topics.map((t: any) => t.name)]);
+      const unique = Array.from(new Map(topics.map((t: any) => [t.name.toLowerCase(), t.name])).values());
+      setSpecialties(["All", ...unique]);
     } catch {
       setSpecialties(["All", "Life Coaching", "Relationships", "Career", "Wellness", "Mental Health", "Music", "Travel"]);
     }

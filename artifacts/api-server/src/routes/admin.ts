@@ -731,4 +731,215 @@ admin.put('/app-config', async (c) => {
   return c.json({ success: true });
 });
 
+// POST /api/admin/run-migrations — apply missing schema to production DB
+admin.post('/run-migrations', async (c) => {
+  const db = c.env.DB;
+  const results: string[] = [];
+
+  const statements = [
+    // Promo Codes
+    `CREATE TABLE IF NOT EXISTS promo_codes (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+      code TEXT UNIQUE NOT NULL,
+      type TEXT DEFAULT 'percent' CHECK(type IN ('percent','bonus')),
+      discount_pct INTEGER DEFAULT 0,
+      bonus_coins INTEGER DEFAULT 0,
+      max_uses INTEGER DEFAULT 100,
+      used_count INTEGER DEFAULT 0,
+      expires_at TEXT,
+      active INTEGER DEFAULT 1,
+      created_at INTEGER DEFAULT (unixepoch()),
+      updated_at INTEGER DEFAULT (unixepoch())
+    )`,
+    // Support Tickets
+    `CREATE TABLE IF NOT EXISTS support_tickets (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+      user_id TEXT,
+      user_name TEXT,
+      user_email TEXT,
+      subject TEXT NOT NULL,
+      category TEXT DEFAULT 'general',
+      priority TEXT DEFAULT 'medium',
+      status TEXT DEFAULT 'open',
+      messages TEXT DEFAULT '[]',
+      created_at INTEGER DEFAULT (unixepoch()),
+      updated_at INTEGER DEFAULT (unixepoch())
+    )`,
+    // Content Reports
+    `CREATE TABLE IF NOT EXISTS content_reports (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+      reporter_id TEXT,
+      reporter_name TEXT,
+      reported_user_id TEXT,
+      reported_user TEXT,
+      reported_type TEXT DEFAULT 'user',
+      reason TEXT NOT NULL,
+      category TEXT DEFAULT 'harassment',
+      evidence TEXT,
+      status TEXT DEFAULT 'pending',
+      action_taken TEXT,
+      created_at INTEGER DEFAULT (unixepoch()),
+      updated_at INTEGER DEFAULT (unixepoch())
+    )`,
+    // User Bans
+    `CREATE TABLE IF NOT EXISTS user_bans (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+      user_id TEXT,
+      user_name TEXT,
+      user_email TEXT,
+      type TEXT DEFAULT 'user',
+      reason TEXT NOT NULL,
+      ban_type TEXT DEFAULT 'permanent',
+      device_id TEXT,
+      banned_by TEXT DEFAULT 'Admin',
+      banned_at INTEGER DEFAULT (unixepoch()),
+      expires_at TEXT
+    )`,
+    // Audit Logs
+    `CREATE TABLE IF NOT EXISTS audit_logs (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+      admin_id TEXT,
+      admin_name TEXT,
+      admin_email TEXT,
+      action TEXT NOT NULL,
+      target_type TEXT,
+      target TEXT,
+      detail TEXT,
+      ip TEXT,
+      created_at INTEGER DEFAULT (unixepoch())
+    )`,
+    // Banners
+    `CREATE TABLE IF NOT EXISTS banners (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+      title TEXT NOT NULL,
+      subtitle TEXT DEFAULT '',
+      image_url TEXT DEFAULT '',
+      bg_color TEXT DEFAULT '#7C3AED',
+      cta_text TEXT DEFAULT 'Learn More',
+      cta_link TEXT DEFAULT '',
+      position TEXT DEFAULT 'home_top',
+      active INTEGER DEFAULT 1,
+      created_at INTEGER DEFAULT (unixepoch()),
+      updated_at INTEGER DEFAULT (unixepoch())
+    )`,
+    // Referral Codes
+    `CREATE TABLE IF NOT EXISTS referral_codes (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+      user_id TEXT UNIQUE NOT NULL,
+      code TEXT UNIQUE NOT NULL,
+      created_at INTEGER DEFAULT (unixepoch())
+    )`,
+    // Referral Uses
+    `CREATE TABLE IF NOT EXISTS referral_uses (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+      referrer_id TEXT NOT NULL,
+      referred_id TEXT NOT NULL,
+      coins_given INTEGER DEFAULT 100,
+      status TEXT DEFAULT 'pending',
+      created_at INTEGER DEFAULT (unixepoch()),
+      UNIQUE(referred_id)
+    )`,
+    // Talk Topics (if not exists)
+    `CREATE TABLE IF NOT EXISTS talk_topics (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+      name TEXT NOT NULL,
+      description TEXT,
+      icon TEXT DEFAULT '💬',
+      is_active INTEGER DEFAULT 1,
+      sort_order INTEGER DEFAULT 0,
+      created_at INTEGER DEFAULT (unixepoch())
+    )`,
+    // FAQs (if not exists)
+    `CREATE TABLE IF NOT EXISTS faqs (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+      question TEXT NOT NULL,
+      answer TEXT NOT NULL,
+      category TEXT DEFAULT 'general',
+      is_active INTEGER DEFAULT 1,
+      order_index INTEGER DEFAULT 0,
+      sort_order INTEGER DEFAULT 0,
+      created_at INTEGER DEFAULT (unixepoch())
+    )`,
+    // App Settings (if not exists)
+    `CREATE TABLE IF NOT EXISTS app_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at INTEGER DEFAULT (unixepoch())
+    )`,
+    // Coin Plans (if not exists)
+    `CREATE TABLE IF NOT EXISTS coin_plans (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+      name TEXT NOT NULL,
+      coins INTEGER NOT NULL,
+      bonus_coins INTEGER DEFAULT 0,
+      price REAL NOT NULL,
+      currency TEXT DEFAULT 'USD',
+      is_popular INTEGER DEFAULT 0,
+      is_active INTEGER DEFAULT 1,
+      created_at INTEGER DEFAULT (unixepoch())
+    )`,
+    // Safe ALTER TABLE additions
+    `ALTER TABLE users ADD COLUMN referral_code TEXT`,
+    `ALTER TABLE users ADD COLUMN google_id TEXT`,
+    `ALTER TABLE users ADD COLUMN device_id TEXT`,
+    // Index for device_id
+    `CREATE INDEX IF NOT EXISTS idx_users_device_id ON users(device_id) WHERE device_id IS NOT NULL`,
+    // Seed promo codes
+    `INSERT OR IGNORE INTO promo_codes (id, code, type, discount_pct, bonus_coins, max_uses, used_count, expires_at, active) VALUES
+      ('pc1', 'WELCOME50', 'percent', 50, 0, 100, 34, '2026-06-30', 1),
+      ('pc2', 'VOXLINK20', 'percent', 20, 0, 500, 210, '2026-05-15', 1),
+      ('pc3', 'COINS100', 'bonus', 0, 100, 200, 55, '2026-07-31', 1)`,
+    // Seed banners
+    `INSERT OR IGNORE INTO banners (id, title, subtitle, bg_color, cta_text, cta_link, position, active) VALUES
+      ('bn1', 'Weekend Offer — 30% Off Coins!', 'Limited time only. Use code WEEKEND30', '#7C3AED', 'Grab Deal', '/coins', 'home_top', 1),
+      ('bn2', 'New Hosts Available!', 'Explore 20+ new hosts added this week', '#0EA5E9', 'Browse Hosts', '/hosts', 'home_middle', 1)`,
+    // Seed talk topics
+    `INSERT OR IGNORE INTO talk_topics (id, name, icon, is_active, sort_order) VALUES
+      ('t1','Life Coaching','🌱',1,1),
+      ('t2','Relationships','❤️',1,2),
+      ('t3','Career','💼',1,3),
+      ('t4','Wellness','🧘',1,4),
+      ('t5','Mental Health','🧠',1,5),
+      ('t6','Music','🎵',1,6),
+      ('t7','Travel','✈️',1,7),
+      ('t8','Casual Talk','☕',1,8)`,
+    // Seed coin plans
+    `INSERT OR IGNORE INTO coin_plans (id, name, coins, bonus_coins, price, currency, is_popular, is_active) VALUES
+      ('cp1', 'Starter', 50, 0, 0.99, 'USD', 0, 1),
+      ('cp2', 'Basic', 100, 10, 1.99, 'USD', 0, 1),
+      ('cp3', 'Popular', 300, 50, 4.99, 'USD', 1, 1),
+      ('cp4', 'Pro', 500, 100, 7.99, 'USD', 0, 1),
+      ('cp5', 'Premium', 1000, 250, 14.99, 'USD', 0, 1),
+      ('cp6', 'Elite', 2000, 600, 24.99, 'USD', 0, 1)`,
+    // Seed FAQs
+    `INSERT OR IGNORE INTO faqs (id, question, answer, category, is_active, order_index) VALUES
+      ('f1','How do coins work?','Coins are used to connect with hosts. Each host charges a per-minute rate.','billing',1,1),
+      ('f2','How do I buy coins?','Tap the coin balance in the app to open the Buy Coins page.','billing',1,2),
+      ('f3','Are calls private?','Yes, all calls are private and end-to-end encrypted.','privacy',1,3)`
+  ];
+
+  for (const sql of statements) {
+    try {
+      await db.prepare(sql).run();
+      results.push(`OK: ${sql.trim().slice(0, 60)}...`);
+    } catch (e: any) {
+      // Ignore "already exists" / "duplicate column" errors
+      if (e?.message?.includes('already exists') || e?.message?.includes('duplicate column')) {
+        results.push(`SKIP (already exists): ${sql.trim().slice(0, 60)}...`);
+      } else {
+        results.push(`ERR: ${e?.message} | SQL: ${sql.trim().slice(0, 60)}...`);
+      }
+    }
+  }
+
+  const u = c.get('user');
+  try {
+    await db.prepare(`INSERT INTO audit_logs (id, admin_id, admin_name, action, detail, created_at)
+      VALUES (lower(hex(randomblob(8))), ?, ?, 'run_migrations', ?, unixepoch())`)
+      .bind(u.sub, u.email || 'Admin', `Applied ${results.length} migration steps`).run();
+  } catch {}
+
+  return c.json({ success: true, results, total: results.length });
+});
+
 export default admin;
