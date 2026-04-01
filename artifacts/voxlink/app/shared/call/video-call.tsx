@@ -1,9 +1,9 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import {
   View, Text, StyleSheet, Image, TouchableOpacity,
-  Modal, Animated, Easing,
+  Modal, Animated, Easing, Platform,
 } from "react-native";
-import { RTCView } from "react-native-webrtc";
+import { CameraView } from "expo-camera";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -13,6 +13,15 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { PermissionDialog, PERMISSION_CONFIGS } from "@/components/PermissionDialog";
 import { useWebRTC } from "@/hooks/useWebRTC";
 import * as Haptics from "expo-haptics";
+
+let RTCView: any = null;
+try {
+  if (Platform.OS !== 'web') {
+    RTCView = require('react-native-webrtc').RTCView;
+  }
+} catch {
+  RTCView = null;
+}
 
 type PermStep = "camera" | "microphone" | "done";
 
@@ -205,7 +214,7 @@ export default function VideoCallScreen() {
       />
 
       <View style={styles.remoteArea}>
-        {remoteStreamUrl ? (
+        {RTCView && remoteStreamUrl ? (
           <RTCView
             streamURL={remoteStreamUrl}
             style={styles.remoteVideo}
@@ -231,14 +240,21 @@ export default function VideoCallScreen() {
       </View>
 
       <View style={[styles.selfPreview, { top: insets.top + 12, right: 16 }]}>
-        {localStreamUrl && activeCall?.isCameraOn ? (
-          <RTCView
-            streamURL={localStreamUrl}
-            style={styles.selfCameraView}
-            objectFit="cover"
-            mirror={true}
-            zOrder={1}
-          />
+        {activeCall?.isCameraOn && cameraGranted ? (
+          RTCView && localStreamUrl ? (
+            <RTCView
+              streamURL={localStreamUrl}
+              style={styles.selfCameraView}
+              objectFit="cover"
+              mirror={true}
+              zOrder={1}
+            />
+          ) : (
+            <CameraView
+              style={styles.selfCameraView}
+              facing="front"
+            />
+          )
         ) : (
           <View style={styles.selfCameraOff}>
             <Feather

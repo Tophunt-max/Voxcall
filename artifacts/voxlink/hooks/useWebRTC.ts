@@ -1,6 +1,5 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
-import { MediaStream } from 'react-native-webrtc';
-import { WebRTCService } from '@/services/webrtc';
+import { WebRTCService, isWebRTCAvailable } from '@/services/webrtc';
 
 export interface UseWebRTCOptions {
   sessionId: string | undefined;
@@ -9,10 +8,11 @@ export interface UseWebRTCOptions {
 }
 
 export interface UseWebRTCReturn {
-  localStream: MediaStream | null;
-  remoteStream: MediaStream | null;
+  localStream: any;
+  remoteStream: any;
   connectionState: string;
   isConnected: boolean;
+  isAvailable: boolean;
   error: string | null;
   toggleMute: (muted: boolean) => void;
   toggleCamera: (enabled: boolean) => void;
@@ -22,12 +22,14 @@ export interface UseWebRTCReturn {
 
 export function useWebRTC(options: UseWebRTCOptions): UseWebRTCReturn {
   const { sessionId, isVideo, enabled } = options;
-  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
-  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+  const [localStream, setLocalStream] = useState<any>(null);
+  const [remoteStream, setRemoteStream] = useState<any>(null);
   const [connectionState, setConnectionState] = useState('new');
   const [error, setError] = useState<string | null>(null);
   const serviceRef = useRef<WebRTCService | null>(null);
   const startedRef = useRef(false);
+
+  const available = isWebRTCAvailable();
 
   const cleanup = useCallback(() => {
     if (serviceRef.current) {
@@ -41,7 +43,7 @@ export function useWebRTC(options: UseWebRTCOptions): UseWebRTCReturn {
   }, []);
 
   useEffect(() => {
-    if (!enabled || !sessionId || startedRef.current) return;
+    if (!enabled || !sessionId || startedRef.current || !available) return;
     startedRef.current = true;
 
     const service = new WebRTCService(sessionId, isVideo, {
@@ -70,7 +72,7 @@ export function useWebRTC(options: UseWebRTCOptions): UseWebRTCReturn {
       serviceRef.current = null;
       startedRef.current = false;
     };
-  }, [enabled, sessionId, isVideo]);
+  }, [enabled, sessionId, isVideo, available]);
 
   const toggleMute = useCallback((muted: boolean) => {
     serviceRef.current?.toggleMute(muted);
@@ -89,6 +91,7 @@ export function useWebRTC(options: UseWebRTCOptions): UseWebRTCReturn {
     remoteStream,
     connectionState,
     isConnected: connectionState === 'connected',
+    isAvailable: available,
     error,
     toggleMute,
     toggleCamera,
