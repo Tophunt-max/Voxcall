@@ -2,7 +2,7 @@
 import React, { useState } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  ScrollView, Image, ActivityIndicator,
+  ScrollView, Image, ActivityIndicator, TextInput,
 } from "react-native";
 import { showErrorToast, showSuccessToast } from "@/components/Toast";
 import { LinearGradient } from "expo-linear-gradient";
@@ -42,8 +42,10 @@ export default function HostKYCScreen() {
   const params = useLocalSearchParams<{
     specialties: string; languages: string; bio: string;
     audioRate: string; videoRate: string; experience: string;
+    dob: string;
   }>();
 
+  const [dob, setDob] = useState(params.dob ?? "");
   const [files, setFiles] = useState<Record<string, { uri: string; uploaded?: string }>>({});
   const [uploading, setUploading] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -99,11 +101,16 @@ export default function HostKYCScreen() {
       return;
     }
 
+    if (!dob.trim()) {
+      showErrorToast("Please enter your date of birth (YYYY-MM-DD).", "Missing DOB");
+      return;
+    }
+
     setSubmitting(true);
     try {
       await API.submitHostApp({
         display_name: user?.name,
-        date_of_birth: undefined,
+        date_of_birth: dob.trim(),
         gender: user?.gender,
         phone: user?.phone,
         bio: params.bio,
@@ -183,6 +190,18 @@ export default function HostKYCScreen() {
             KYC is mandatory per Indian regulations. Documents are reviewed only by admin and never shared with users.
           </Text>
         </View>
+
+        <Text style={s.fieldLabel}>Date of Birth</Text>
+        <TextInput
+          style={s.dobInput}
+          placeholder="YYYY-MM-DD (e.g. 1998-05-22)"
+          placeholderTextColor="#aaa"
+          value={dob}
+          onChangeText={setDob}
+          keyboardType="numbers-and-punctuation"
+          maxLength={10}
+          autoCorrect={false}
+        />
 
         {DOCS.map((doc) => {
           const picked = files[doc.key];
@@ -265,6 +284,8 @@ const s = StyleSheet.create({
   sectionSub: { fontSize: 13, fontFamily: "Poppins_400Regular", color: "#84889F", marginTop: -8 },
   noticeBanner: { flexDirection: "row", gap: 10, backgroundColor: "#F4E8FD", borderRadius: 12, padding: 14 },
   noticeTxt: { flex: 1, fontSize: 12, fontFamily: "Poppins_400Regular", color: "#111329", lineHeight: 18 },
+  fieldLabel: { fontSize: 13, fontFamily: "Poppins_600SemiBold", color: "#111329", marginBottom: 6 },
+  dobInput: { borderWidth: 1, borderColor: "#E8EAF0", borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, fontFamily: "Poppins_400Regular", color: "#111329", backgroundColor: "#F8F9FC" },
   docCard: { flexDirection: "row", alignItems: "center", gap: 14, borderRadius: 16, borderWidth: 1, borderColor: "#E8EAF0", padding: 16, backgroundColor: "#F8F9FC" },
   docCardDone: { borderColor: "#22C55E", backgroundColor: "#F0FDF4" },
   docIconBg: { width: 46, height: 46, borderRadius: 23, backgroundColor: "#F0E6FC", alignItems: "center", justifyContent: "center" },

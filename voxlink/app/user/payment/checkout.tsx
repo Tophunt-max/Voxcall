@@ -164,11 +164,9 @@ async function tryProcessPayment(
     const gw = gateways[i];
     try {
       if (gw.redirect_url && gw.redirect_url.startsWith("http")) {
-        // Build redirect URL with purchase params
+        // Build redirect URL — only pass plan_id; backend computes actual price from plan
         const params = new URLSearchParams({
           plan_id: plan.id,
-          coins: String(totalCoins),
-          amount: finalPrice.toFixed(2),
           currency: getCurrencyCode(),
           gateway: gw.type,
           source: "voxlink",

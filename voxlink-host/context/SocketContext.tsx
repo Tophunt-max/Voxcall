@@ -12,6 +12,7 @@ import React, {
 import socketService from "@/services/SocketService";
 import { SocketEvents } from "@/constants/events";
 import { useAuth } from "@/context/AuthContext";
+import { API } from "@/services/api";
 
 interface SocketContextValue {
   isConnected: boolean;
@@ -55,8 +56,10 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   );
 
   const sendMessage = useCallback(
-    (chatId: string, senderName: string, text: string) => {
-      socketService.simulateNewMessage(chatId, senderName, text);
+    (chatId: string, _senderName: string, text: string) => {
+      API.sendMessage(chatId, text).catch((err) =>
+        console.warn("[SocketContext] sendMessage failed:", err)
+      );
     },
     []
   );

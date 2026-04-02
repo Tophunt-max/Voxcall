@@ -118,13 +118,7 @@ export default function VideoCallScreen() {
     const t1 = setTimeout(() => {
       if (status === "connecting") setStatus("ringing");
     }, 2000);
-    const t2 = setTimeout(() => {
-      if (status !== "active") {
-        setStatus("active");
-        markCallActive();
-      }
-    }, 8000);
-    return () => { clearTimeout(t1); clearTimeout(t2); };
+    return () => { clearTimeout(t1); };
   }, [markCallActive]);
 
   useEffect(() => {

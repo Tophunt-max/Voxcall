@@ -4,6 +4,7 @@ import {
   FlatList, ImageBackground, TextInput, ActivityIndicator, RefreshControl
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
@@ -67,6 +68,7 @@ export default function HostWalletScreen() {
   const { user, updateCoins, refreshBalance } = useAuth();
   const [tab, setTab] = useState<"history" | "withdraw">("history");
   const [withdrawAmt, setWithdrawAmt] = useState("");
+  const [bankAccount, setBankAccount] = useState("");
   const [withdrawing, setWithdrawing] = useState(false);
   const ACCENT = "#A00EE7";
   const [earnings, setEarnings] = useState<EarningTx[]>([]);
@@ -116,9 +118,13 @@ export default function HostWalletScreen() {
       showErrorToast("You don't have enough coins.", "Insufficient Balance");
       return;
     }
+    if (!bankAccount.trim()) {
+      showWarningToast("Please enter your bank account or UPI ID.", "Account Required");
+      return;
+    }
     setWithdrawing(true);
     try {
-      await API.requestWithdrawal(amt, "bank", "");
+      await API.requestWithdrawal(amt, "bank", bankAccount.trim());
       setWithdrawAmt("");
       showSuccessToast(`${amt} coins withdrawal submitted!`, "Request Sent");
       await load(true);
@@ -257,6 +263,22 @@ export default function HostWalletScreen() {
               value={withdrawAmt}
               onChangeText={setWithdrawAmt}
               keyboardType="numeric"
+              selectionColor={ACCENT}
+              underlineColorAndroid="transparent"
+            />
+          </View>
+
+          <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Bank Account / UPI ID</Text>
+          <View accessible={false} style={[styles.inputWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Feather name="credit-card" size={18} color={colors.mutedForeground} style={{ marginLeft: 12 }} />
+            <TextInput
+              style={[styles.input, { color: colors.text }]}
+              placeholder="Enter bank account no. or UPI ID"
+              placeholderTextColor={colors.mutedForeground}
+              value={bankAccount}
+              onChangeText={setBankAccount}
+              autoCapitalize="none"
+              autoCorrect={false}
               selectionColor={ACCENT}
               underlineColorAndroid="transparent"
             />

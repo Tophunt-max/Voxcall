@@ -83,6 +83,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       // Fix C1: Caller should NOT call answerCall — only the HOST answers
     } catch (e) {
       console.warn("initiateCall API error:", e);
+      updateCall(null);
+      router.back();
     }
   }, []);
 
