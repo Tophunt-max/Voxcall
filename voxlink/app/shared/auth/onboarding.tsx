@@ -128,7 +128,7 @@ export default function OnboardingScreen() {
     } else {
       // Save that onboarding was seen
       await AsyncStorage.setItem("seenOnboarding", "true");
-      router.replace("/shared/auth/role-select");
+      router.replace("/user/auth/login");
     }
   };
 

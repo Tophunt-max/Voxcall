@@ -195,21 +195,8 @@ function RootLayoutNav() {
         <Stack.Screen name="user/payment/success" options={{ gestureEnabled: false }} />
         <Stack.Screen name="user/profile/edit" />
 
-        {/* Host screens */}
-        <Stack.Screen name="host/screens/host" />
-        <Stack.Screen name="host/auth/host-login" />
-        <Stack.Screen name="host/auth/host-register" />
-        <Stack.Screen name="host/auth/host-profile-setup" />
-        <Stack.Screen name="host/auth/host-become" />
-        <Stack.Screen name="host/auth/host-kyc" />
-        <Stack.Screen name="host/auth/host-status" />
-        <Stack.Screen name="host/host/dashboard" />
-        <Stack.Screen name="host/host/settings" />
-        <Stack.Screen name="host/host/withdraw" />
-
         {/* Shared screens */}
         <Stack.Screen name="shared/auth/onboarding" />
-        <Stack.Screen name="shared/auth/role-select" />
         <Stack.Screen name="shared/chat/[id]" />
         <Stack.Screen name="shared/call/audio-call" options={{ presentation: "fullScreenModal" }} />
         <Stack.Screen name="shared/call/video-call" options={{ presentation: "fullScreenModal" }} />
@@ -221,8 +208,6 @@ function RootLayoutNav() {
         <Stack.Screen name="shared/settings" />
         <Stack.Screen name="shared/help-center" />
         <Stack.Screen name="shared/language" />
-        <Stack.Screen name="shared/become-host" />
-        <Stack.Screen name="shared/become-host-success" />
         <Stack.Screen name="shared/search-hosts" />
         <Stack.Screen name="shared/coin-history" />
         <Stack.Screen name="shared/privacy" />

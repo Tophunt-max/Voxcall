@@ -165,7 +165,7 @@ export default function ProfileScreen() {
         style: "destructive",
         onPress: async () => {
           await logout();
-          router.replace("/shared/auth/role-select");
+          router.replace("/user/auth/login");
         },
       },
     ]);

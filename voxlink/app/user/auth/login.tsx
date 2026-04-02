@@ -143,7 +143,6 @@ export default function LoginScreen() {
         role: "user" as const,
       };
       await loginWithToken(data.token, profile);
-      await AsyncStorage.removeItem("hostAppPending");
       showSuccessToast(`Welcome, ${profile.name}!`);
       router.replace("/user/screens/home");
     } finally {
@@ -254,12 +253,6 @@ export default function LoginScreen() {
           Quick Login saves your account to this device — reinstall and it's still yours
         </Text>
 
-        <View style={s.bottomLinks}>
-          <TouchableOpacity onPress={() => router.push("/host/auth/host-login")} style={s.hostLink}>
-            <Feather name="headphones" size={14} color={ACCENT} />
-            <Text style={s.hostLinkTxt}>Are you a Host? Sign in here</Text>
-          </TouchableOpacity>
-        </View>
       </View>
     </View>
   );
@@ -380,20 +373,5 @@ const s = StyleSheet.create({
     textAlign: "center",
     marginTop: -4,
     lineHeight: 18,
-  },
-  bottomLinks: {
-    alignItems: "center",
-    marginTop: 8,
-  },
-  hostLink: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingVertical: 10,
-  },
-  hostLinkTxt: {
-    fontSize: 13,
-    fontFamily: "Poppins_500Medium",
-    color: ACCENT,
   },
 });

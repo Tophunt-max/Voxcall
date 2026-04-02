@@ -71,18 +71,13 @@ export default function Index() {
   const { isLoggedIn, isLoading, user } = useAuth();
   const [splashDone, setSplashDone] = useState(false);
   const [seenOnboarding, setSeenOnboarding] = useState<boolean | null>(null);
-  const [hostAppPending, setHostAppPending] = useState<boolean | null>(null);
 
   const fadeIn = useRef(new Animated.Value(0)).current;
   const logoScale = useRef(new Animated.Value(0.7)).current;
 
   useEffect(() => {
-    // Check onboarding + host app pending state
     AsyncStorage.getItem("seenOnboarding").then((val) => {
       setSeenOnboarding(val === "true");
-    });
-    AsyncStorage.getItem("hostAppPending").then((val) => {
-      setHostAppPending(val === "true");
     });
 
     // Fade in animation
@@ -99,14 +94,11 @@ export default function Index() {
   }, []);
 
   /* ─── Route after splash ─── */
-  if (splashDone && !isLoading && seenOnboarding !== null && hostAppPending !== null) {
+  if (splashDone && !isLoading && seenOnboarding !== null) {
     if (isLoggedIn && user) {
-      if (user.role === "host") return <Redirect href="/host/screens/host" />;
-      // User registered as host but still pending admin approval
-      if (hostAppPending) return <Redirect href="/host/auth/host-status" />;
       return <Redirect href="/user/screens/home" />;
     }
-    if (seenOnboarding) return <Redirect href="/shared/auth/role-select" />;
+    if (seenOnboarding) return <Redirect href="/user/auth/login" />;
     return <Redirect href="/shared/auth/onboarding" />;
   }
 
