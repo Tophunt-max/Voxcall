@@ -78,12 +78,13 @@ outputType = "webview"
 name = "voxlink-host: expo"
 author = "agent"
 
+[workflows.workflow.metadata]
+outputType = "webview"
+
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "pnpm --filter @workspace/voxlink-host run dev"
-
-[workflows.workflow.metadata]
-outputType = "console"
+args = "PORT=8099 pnpm --filter @workspace/voxlink-host run dev"
+waitForPort = 8099
 
 [agent]
 stack = "PNPM_WORKSPACE"
