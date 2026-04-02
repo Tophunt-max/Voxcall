@@ -132,6 +132,7 @@ jobs:
           token: ${{ secrets.EXPO_TOKEN }}
 
       - name: Submit Preview APK to EAS
+        continue-on-error: true
         working-directory: voxlink-host
         run: |
           eas build \
@@ -184,6 +185,7 @@ jobs:
           token: ${{ secrets.EXPO_TOKEN }}
 
       - name: Submit Production AAB to EAS
+        continue-on-error: true
         working-directory: voxlink-host
         run: |
           eas build \

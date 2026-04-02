@@ -86,7 +86,10 @@
       "reactCompiler": true
     },
     "extra": {
-      "appRole": "host"
+      "appRole": "host",
+      "eas": {
+        "projectId": "64a9be2e-aee7-446e-8946-b8257ce958bf"
+      }
     }
   }
 }
