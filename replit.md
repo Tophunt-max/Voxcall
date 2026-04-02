@@ -293,6 +293,23 @@ This makes the local admin panel connect directly to the production API.
 - Deploys Worker → optionally sets JWT_SECRET (if GitHub secret exists) → sets CF_CALLS_APP_SECRET (if secret exists)
 - Both secret steps have `if: ${{ env.SECRET != '' }}` guards to avoid failures
 
+## Production Security (Updated 2026-04-02)
+
+### Changes Applied
+1. **JWT_SECRET** — Set as Cloudflare Worker secret via wrangler ✅ (was missing)
+2. **PBKDF2 Password Hashing** — Replaced plain SHA-256 with PBKDF2 (100k iterations + salt). Legacy SHA-256 passwords still verify for backward compat.
+3. **CORS Restricted** — `origin: '*'` replaced with allowlist: localhost, *.replit.app, *.replit.dev, voxlink domains. Mobile (no-origin) still allowed.
+4. **Rate Limiting** — 10 req/60s per IP on `/login`, `/register`, `/forgot-password`, `/reset-password`. Uses D1 `rate_limits` table.
+5. **Firestore Duplicate Removed** — `saveFirestoreUser()` calls removed from login.tsx. Only D1 used.
+6. **@react-native-firebase removed** — `@react-native-firebase/app` + `/auth` removed from package.json.
+7. **JWT Auto-Refresh** — `api.ts` retries on 401: calls `/api/auth/refresh`, saves new token, retries original request. Multiple concurrent 401s collapsed into single refresh.
+8. **Error Monitoring** — `ErrorReporter.ts` created. Reports crashes to `/api/errors` endpoint (D1 `app_errors` table). Global JS error handler + ErrorBoundary both wired up.
+9. **CF_CALLS_APP_ID** — Still in [vars] temporarily (can't set as secret while var binding exists). Will move after next `wrangler secret put CF_CALLS_APP_ID` + remove from [vars] + redeploy.
+
+### D1 Tables Added
+- `rate_limits (id, attempts, window_reset)` — rate limiting per IP/route
+- `app_errors (id, user_id, message, stack, context, platform, app_version, extra, created_at)` — client crash logs
+
 ## Production Verification (Tested 2026-04-01)
 - API health: ✅ 
 - Admin login: ✅ (admin@voxlink.app / admin123)

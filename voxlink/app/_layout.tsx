@@ -10,6 +10,7 @@ import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
 import { configurePushNotifications } from "@/services/NotificationService";
+import { setupGlobalErrorHandler } from "@/services/ErrorReporter";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -102,6 +103,7 @@ export default function RootLayout() {
 
   useEffect(() => {
     configurePushNotifications();
+    setupGlobalErrorHandler();
   }, []);
 
   if (!fontsLoaded && !fontError) return null;

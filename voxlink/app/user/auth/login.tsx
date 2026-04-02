@@ -13,7 +13,6 @@ import * as Application from "expo-application";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAuth } from "@/context/AuthContext";
 import { API } from "@/services/api";
-import { saveFirestoreUser } from "@/services/firestoreUser";
 import { getRandomAvatarKey } from "@/utils/randomAvatar";
 import { showErrorToast, showSuccessToast } from "@/components/Toast";
 
@@ -143,15 +142,6 @@ export default function LoginScreen() {
         coins: data.user.coins ?? 50,
         role: "user" as const,
       };
-      await saveFirestoreUser({
-        uid: profile.id,
-        name: profile.name,
-        email: profile.email,
-        avatar: profile.avatar || "",
-        coins: profile.coins,
-        role: "user",
-        loginMethod: "google",
-      });
       await loginWithToken(data.token, profile);
       await AsyncStorage.removeItem("hostAppPending");
       showSuccessToast(`Welcome, ${profile.name}!`);
@@ -176,16 +166,6 @@ export default function LoginScreen() {
         role: "user" as const,
         is_guest: true,
       };
-      await saveFirestoreUser({
-        uid: profile.id,
-        name: profile.name,
-        email: profile.email,
-        avatar: avatarKey,
-        coins: profile.coins,
-        role: "user",
-        is_guest: true,
-        loginMethod: "quick",
-      });
       await loginWithToken(data.token, profile);
       if (data.is_returning) {
         showSuccessToast("Welcome back!", "Quick Login");

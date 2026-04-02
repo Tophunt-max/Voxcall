@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import type { Context, Next } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { signToken, verifyToken } from '../lib/jwt';
@@ -6,6 +7,44 @@ import { hashPassword, verifyPassword, generateOTP, generateId } from '../lib/ha
 import type { Env } from '../types';
 
 const auth = new Hono<{ Bindings: Env }>();
+
+// ─── Rate Limiting ───────────────────────────────────────────────────────────
+// Limits: 10 attempts / 60s per IP per route — uses D1 for persistence
+async function rateLimit(c: Context<{ Bindings: Env }>, next: Next) {
+  const ip =
+    c.req.header('cf-connecting-ip') ||
+    c.req.header('x-forwarded-for')?.split(',')[0].trim() ||
+    'unknown';
+  const routeKey = c.req.path.split('/').slice(-1)[0]; // e.g. "login"
+  const windowSecs = 60;
+  const maxAttempts = 10;
+  const now = Math.floor(Date.now() / 1000);
+  const windowSlot = Math.floor(now / windowSecs);
+  const key = `rl:${routeKey}:${ip}:${windowSlot}`;
+
+  try {
+    const row = await c.env.DB.prepare(
+      'SELECT attempts, window_reset FROM rate_limits WHERE id = ?'
+    ).bind(key).first<{ attempts: number; window_reset: number }>();
+
+    if (row && row.window_reset > now) {
+      if (row.attempts >= maxAttempts) {
+        return c.json({ error: 'Too many requests. Please try again in a minute.' }, 429);
+      }
+      await c.env.DB.prepare(
+        'UPDATE rate_limits SET attempts = attempts + 1 WHERE id = ?'
+      ).bind(key).run();
+    } else {
+      await c.env.DB.prepare(
+        'INSERT OR REPLACE INTO rate_limits (id, attempts, window_reset) VALUES (?, 1, ?)'
+      ).bind(key, now + windowSecs).run();
+    }
+  } catch {
+    // Rate limit table may not exist yet — don't block legitimate requests
+  }
+
+  return next();
+}
 
 const registerSchema = z.object({
   name: z.string().min(2),
@@ -22,7 +61,7 @@ const loginSchema = z.object({
 });
 
 // POST /api/auth/register
-auth.post('/register', zValidator('json', registerSchema), async (c) => {
+auth.post('/register', rateLimit, zValidator('json', registerSchema), async (c) => {
   const { name, email, password, gender, phone, referral_code } = c.req.valid('json');
   const db = c.env.DB;
   const existing = await db.prepare('SELECT id FROM users WHERE email = ?').bind(email).first();
@@ -56,7 +95,7 @@ auth.post('/register', zValidator('json', registerSchema), async (c) => {
 });
 
 // POST /api/auth/login
-auth.post('/login', zValidator('json', loginSchema), async (c) => {
+auth.post('/login', rateLimit, zValidator('json', loginSchema), async (c) => {
   const { email, password } = c.req.valid('json');
   const db = c.env.DB;
   const user = await db.prepare(
@@ -91,7 +130,7 @@ auth.post('/verify-otp', async (c) => {
 });
 
 // POST /api/auth/forgot-password
-auth.post('/forgot-password', async (c) => {
+auth.post('/forgot-password', rateLimit, async (c) => {
   const { email } = await c.req.json();
   const db = c.env.DB;
   const user = await db.prepare('SELECT id FROM users WHERE email = ?').bind(email).first<any>();
@@ -103,7 +142,7 @@ auth.post('/forgot-password', async (c) => {
 });
 
 // POST /api/auth/reset-password
-auth.post('/reset-password', async (c) => {
+auth.post('/reset-password', rateLimit, async (c) => {
   const { email, otp, new_password } = await c.req.json();
   const db = c.env.DB;
   const now = Math.floor(Date.now() / 1000);

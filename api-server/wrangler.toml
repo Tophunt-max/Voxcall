@@ -28,8 +28,10 @@ tag = "v1"
 new_sqlite_classes = ["ChatRoom", "CallSignaling", "NotificationHub"]
 
 [vars]
-CF_CALLS_APP_ID = "536d1e7e8d540b7ccfb238d32f734d1a"
 CF_ACCOUNT_ID = "b592b3b2a5455323a76de721a92699cd"
+CF_CALLS_APP_ID = "536d1e7e8d540b7ccfb238d32f734d1a"
+# NOTE (Issue #9): CF_CALLS_APP_ID should be moved to `wrangler secret put CF_CALLS_APP_ID`
+# after the next deployment removes this [vars] entry.
 
 [dev]
 port = 8080

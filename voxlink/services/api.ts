@@ -1,9 +1,7 @@
 // VoxLink API Client — connects to Cloudflare Workers backend
-import { getItem } from '@/utils/storage';
+import { getItem, setItem } from '@/utils/storage';
 import { StorageKeys } from '@/utils/storage';
 
-// In development: localhost:8080 (wrangler dev)
-// In production: set EXPO_PUBLIC_API_URL env var to your deployed worker URL
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8080';
 
 async function getToken(): Promise<string> {
@@ -11,11 +9,44 @@ async function getToken(): Promise<string> {
   return token || '';
 }
 
+// ─── JWT Auto-Refresh ─────────────────────────────────────────────────────────
+// On 401: silently refresh token and retry the original request once.
+// Multiple concurrent 401s are collapsed into a single refresh call.
+let _refreshing: Promise<string | null> | null = null;
+
+async function refreshAuthToken(): Promise<string | null> {
+  if (_refreshing) return _refreshing;
+  _refreshing = (async () => {
+    try {
+      const old = await getItem<string>(StorageKeys.AUTH_TOKEN);
+      if (!old) return null;
+      const res = await fetch(`${BASE_URL}/api/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: old }),
+      });
+      if (!res.ok) return null;
+      const data = await res.json() as { token: string };
+      if (data.token) {
+        await setItem(StorageKeys.AUTH_TOKEN, data.token);
+        return data.token;
+      }
+      return null;
+    } catch {
+      return null;
+    } finally {
+      _refreshing = null;
+    }
+  })();
+  return _refreshing;
+}
+
 export async function apiRequest<T>(
   method: string,
   path: string,
   body?: unknown,
-  auth = true
+  auth = true,
+  _retry = true
 ): Promise<T> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (auth) {
@@ -27,6 +58,13 @@ export async function apiRequest<T>(
     headers,
     body: body ? JSON.stringify(body) : undefined,
   });
+
+  // Auto-refresh on 401 then retry once
+  if (res.status === 401 && auth && _retry) {
+    const newToken = await refreshAuthToken();
+    if (newToken) return apiRequest<T>(method, path, body, auth, false);
+  }
+
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error((err as any).error || res.statusText);
@@ -147,11 +185,11 @@ export const API = {
   submitReport: (data: { reported_user_id: string; reported_user?: string; reason: string; category?: string; reported_type?: string }) =>
     apiRequest<{ success: boolean; id: string }>('POST', '/api/user/report', data),
 
-  // Banners (public) — position: 'home' | 'wallet' | undefined (all)
+  // Banners (public)
   getBanners: (position?: 'home' | 'wallet') =>
     apiRequest<any[]>('GET', position ? `/api/banners?position=${position}` : '/api/banners', undefined, false),
 
-  // Payment Gateways (public) — returns all active gateways ordered by priority (position ASC)
+  // Payment Gateways (public)
   getPaymentGateways: () =>
     apiRequest<any[]>('GET', '/api/payment-gateways', undefined, false),
 
