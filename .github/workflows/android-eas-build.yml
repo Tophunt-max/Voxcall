@@ -1,0 +1,71 @@
+name: Android EAS Build (APK)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'voxlink/**'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/android-eas-build.yml'
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: 'EAS build profile'
+        required: false
+        default: 'preview'
+        type: choice
+        options:
+          - preview
+          - production
+
+jobs:
+  build-android:
+    name: Build Android APK (EAS)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Setup EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Build Android APK via EAS
+        working-directory: voxlink
+        run: |
+          eas build \
+            --platform android \
+            --profile ${{ github.event.inputs.profile || 'preview' }} \
+            --non-interactive \
+            --no-wait
+        env:
+          EXPO_PUBLIC_API_URL: ${{ vars.EXPO_PUBLIC_API_URL }}
+          EXPO_PUBLIC_FIREBASE_VAPID_KEY: ${{ vars.EXPO_PUBLIC_FIREBASE_VAPID_KEY }}
+          EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: "128169786412"
+          EXPO_PUBLIC_FIREBASE_PROJECT_ID: "connectme-80909"
+          EXPO_PUBLIC_FIREBASE_APP_ID: "1:128169786412:android:6afbab51b285c0eb98e589"
+
+      - name: Build submitted to EAS
+        run: |
+          echo "✅ Android build submitted to EAS!"
+          echo "📱 Track progress at: https://expo.dev/accounts/[your-account]/projects/voxlink/builds"
+          echo "📥 Download APK from EAS dashboard when build completes."
