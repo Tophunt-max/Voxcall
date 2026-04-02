@@ -310,6 +310,35 @@ This makes the local admin panel connect directly to the production API.
 - `rate_limits (id, attempts, window_reset)` — rate limiting per IP/route
 - `app_errors (id, user_id, message, stack, context, platform, app_version, extra, created_at)` — client crash logs
 
+## Push Notification System (Completed 2026-04-02)
+
+### Architecture
+- **Backend** (`api-server/src/lib/expoPush.ts`): Expo Push HTTP v2 API utility
+- **Call trigger** (`api-server/src/routes/call.ts`): Sends push to host when user initiates call
+- **Chat trigger** (`api-server/src/routes/chat.ts`): Sends push to recipient on new message
+- **Admin trigger** (`api-server/src/routes/admin.ts`): Admin notifications/send hits real Expo push
+- **Push payload**: `{ type, session_id/room_id, call_type, caller_id }` in `data` field
+
+### Mobile Flow
+- **Token registration**: On login → `Notifications.getExpoPushTokenAsync({ projectId: '0e529a27-...' })` → PATCH `/api/user/me` with `{ fcm_token }`
+- **Android channels**: `calls` (MAX priority), `messages`, `default`
+- **EAS project ID**: `0e529a27-fcf1-4850-a306-971ef07dd2ac` in `app.json`
+
+### Foreground Call Flow (WebSocket)
+`Backend → NotificationHub WebSocket (incoming_call event) → SocketService.emit(CALL_INCOMING) → AppBridge.useSocketEvent → CallContext.receiveCall → navigate /incoming`
+
+### Background/Killed Call Flow (Push Notification)
+`Backend → Expo Push → device notification → user taps → AppBridge.useLastNotificationResponse → CallContext.receiveCall (caller name from body) → navigate /incoming`
+
+### AppBridge Component (`voxlink/app/_layout.tsx`)
+Merges socket + notification tap handling. Lives inside all providers so it can call `useCall()` and `useSocketEvent()`. Handles:
+1. `CALL_INCOMING` socket event → `receiveCall()`
+2. Notification tap with `type=incoming_call` → parse caller name from body → `receiveCall()` → navigate
+3. Notification tap with `type=chat_message` → navigate to chat screen
+
+### Low Coins Alert
+`AuthContext.updateCoins` → if balance ≤ 10 → `notifyLowCoins()` (debounced 60s via `lowCoinAlertedRef`)
+
 ## Production Verification (Tested 2026-04-01)
 - API health: ✅ 
 - Admin login: ✅ (admin@voxlink.app / admin123)

@@ -6,11 +6,12 @@ import {
   useFonts,
 } from "@expo-google-fonts/poppins";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Stack } from "expo-router";
+import { Stack, router } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
 import { configurePushNotifications } from "@/services/NotificationService";
 import { setupGlobalErrorHandler } from "@/services/ErrorReporter";
+import * as Notifications from "expo-notifications";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -21,15 +22,77 @@ import { AuthProvider } from "@/context/AuthContext";
 import { CallProvider } from "@/context/CallContext";
 import { ChatProvider } from "@/context/ChatContext";
 import { LanguageProvider } from "@/context/LanguageContext";
-import { SocketProvider } from "@/context/SocketContext";
+import { SocketProvider, useSocketEvent } from "@/context/SocketContext";
+import { SocketEvents } from "@/constants/events";
+import { useCall } from "@/context/CallContext";
 
 SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient();
 
+// ─── AppBridge ───────────────────────────────────────────────────────────────
+// Handles all real-time → UI bridging. Must be inside all providers.
+// 1. CALL_INCOMING via WebSocket (foreground)
+// 2. Notification taps (background / killed app)
+// 3. Notification received in foreground (incoming call only)
+function AppBridge() {
+  const { receiveCall, activeCall } = useCall();
+
+  // Bridge: WebSocket CALL_INCOMING → CallContext.receiveCall
+  useSocketEvent(
+    SocketEvents.CALL_INCOMING,
+    (data: any) => {
+      if (activeCall) return;
+      receiveCall(
+        {
+          id: data.callerId ?? data.caller_id ?? "",
+          name: data.hostName ?? data.callerName ?? "Incoming Call",
+          avatar: data.hostAvatar ?? data.callerAvatar,
+          role: "host",
+        },
+        data.type ?? data.call_type ?? "audio",
+        data.callId ?? data.sessionId ?? data.session_id ?? ""
+      );
+    },
+    [activeCall]
+  );
+
+  // Bridge: Push notification tap → navigate + set up CallContext
+  const lastResponse = Notifications.useLastNotificationResponse();
+  useEffect(() => {
+    if (!lastResponse) return;
+    const data = lastResponse.notification.request.content.data as Record<string, unknown>;
+    if (!data) return;
+
+    if (data.type === "incoming_call") {
+      if (!activeCall) {
+        // Extract caller info from notification body: "<name> is calling you"
+        const body = lastResponse.notification.request.content.body ?? "";
+        const callerName = body.replace(" is calling you", "").trim() || "Caller";
+        receiveCall(
+          {
+            id: String(data.caller_id ?? ""),
+            name: callerName,
+            role: "host",
+          },
+          (data.call_type as "audio" | "video") ?? "audio",
+          String(data.session_id ?? "")
+        );
+      }
+      router.push("/shared/call/incoming");
+    } else if (data.type === "chat_message" && data.room_id) {
+      router.push({ pathname: "/shared/chat/[id]", params: { id: String(data.room_id) } });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastResponse]);
+
+  return null;
+}
+
 function RootLayoutNav() {
   return (
     <>
+      <AppBridge />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index" />
 

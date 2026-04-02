@@ -1,8 +1,17 @@
 // VoxLink Socket Service
-// Mock WebSocket layer — in production, swap this with socket.io-client
-// All events mirror the real-time API contract exactly
+// Connects to backend NotificationHub Durable Object for real-time events
+// Falls back to event emitter only when WebSocket is unavailable
 
 import { SocketEvents } from "@/constants/events";
+
+const BASE_URL = process.env.EXPO_PUBLIC_API_URL || "http://localhost:8080";
+
+function getWsUrl(userId: string): string {
+  const wsBase = BASE_URL.replace(/^https?:\/\//, (match) =>
+    match === "https://" ? "wss://" : "ws://"
+  );
+  return `${wsBase}/api/ws/notifications?userId=${encodeURIComponent(userId)}`;
+}
 
 type EventHandler = (...args: any[]) => void;
 
@@ -11,10 +20,11 @@ class SocketService {
   private listeners: Map<string, Set<EventHandler>> = new Map();
   private _connected = false;
   private _userId: string | null = null;
+  private ws: WebSocket | null = null;
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
   private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempts = 0;
-  private maxReconnectAttempts = 5;
+  private maxReconnectAttempts = 8;
 
   static getInstance(): SocketService {
     if (!SocketService.instance) {
@@ -34,50 +44,138 @@ class SocketService {
   // ─── Connection Management ────────────────────────────────────────────────
 
   connect(userId: string): void {
-    if (this._connected) return;
+    if (this._connected && this._userId === userId) return;
     this._userId = userId;
+    this._openWebSocket(userId);
+  }
 
-    // Simulate async connection
-    setTimeout(() => {
-      this._connected = true;
-      this.reconnectAttempts = 0;
-      this.emit(SocketEvents.CONNECT, { userId });
-      this.startHeartbeat();
-      console.log("[Socket] Connected as", userId);
-    }, 300);
+  private _openWebSocket(userId: string): void {
+    if (this.ws) {
+      try { this.ws.close(); } catch {}
+      this.ws = null;
+    }
+
+    try {
+      const url = getWsUrl(userId);
+      const ws = new WebSocket(url);
+      this.ws = ws;
+
+      ws.onopen = () => {
+        this._connected = true;
+        this.reconnectAttempts = 0;
+        this.emit(SocketEvents.CONNECT, { userId });
+        this.startHeartbeat();
+        console.log("[Socket] Connected to NotificationHub as", userId);
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(typeof event.data === "string" ? event.data : "{}");
+          this._handleServerMessage(msg);
+        } catch {}
+      };
+
+      ws.onerror = (err) => {
+        console.warn("[Socket] WebSocket error:", err);
+      };
+
+      ws.onclose = () => {
+        this._connected = false;
+        this.ws = null;
+        this.stopHeartbeat();
+        this.emit(SocketEvents.DISCONNECT, {});
+        if (this._userId) this._scheduleReconnect();
+      };
+    } catch (err) {
+      console.warn("[Socket] WebSocket open failed:", err);
+      this._scheduleReconnect();
+    }
+  }
+
+  private _handleServerMessage(msg: any): void {
+    if (!msg?.type) return;
+
+    switch (msg.type) {
+      case "incoming_call":
+        this.emit(SocketEvents.CALL_INCOMING, {
+          callId: msg.session_id,
+          sessionId: msg.session_id,
+          type: msg.call_type ?? "audio",
+          callerId: msg.caller_id,
+          timestamp: Date.now(),
+        });
+        break;
+      case "message":
+      case "chat_message":
+        this.emit(SocketEvents.MESSAGE_RECEIVED, {
+          chatId: msg.room_id ?? msg.chat_id,
+          id: msg.id ?? `msg_${Date.now()}`,
+          senderName: msg.sender_name ?? "User",
+          text: msg.content ?? msg.text ?? "",
+          timestamp: msg.timestamp ?? Date.now(),
+        });
+        break;
+      case "coin_update":
+        this.emit(SocketEvents.COIN_DEDUCTED, {
+          amount: msg.amount ?? 0,
+          newBalance: msg.new_balance ?? 0,
+          timestamp: Date.now(),
+        });
+        break;
+      case "presence":
+        this.emit(SocketEvents.PRESENCE_UPDATE, {
+          userId: msg.user_id,
+          isOnline: msg.is_online ?? false,
+          timestamp: Date.now(),
+        });
+        break;
+      default:
+        break;
+    }
   }
 
   disconnect(): void {
-    this._connected = false;
     this._userId = null;
+    this._connected = false;
     this.stopHeartbeat();
+    if (this.ws) {
+      try { this.ws.close(); } catch {}
+      this.ws = null;
+    }
     this.emit(SocketEvents.DISCONNECT, {});
     console.log("[Socket] Disconnected");
   }
 
-  reconnect(): void {
-    if (this._connected) return;
+  private _scheduleReconnect(): void {
+    if (!this._userId) return;
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
       console.warn("[Socket] Max reconnect attempts reached");
       return;
     }
-
     this.reconnectAttempts++;
     const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
     console.log(`[Socket] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`);
-
     this.reconnectTimeout = setTimeout(() => {
-      if (this._userId) this.connect(this._userId);
+      if (this._userId) this._openWebSocket(this._userId);
     }, delay);
+  }
+
+  reconnect(): void {
+    if (this._connected) return;
+    if (this._userId) this._openWebSocket(this._userId);
   }
 
   private startHeartbeat(): void {
     this.heartbeatInterval = setInterval(() => {
-      if (!this._connected) {
+      if (!this._connected || !this.ws) {
         this.stopHeartbeat();
         return;
       }
-      // In production: send ping frame
+      try {
+        if (this.ws.readyState === WebSocket.OPEN) {
+          this.ws.send(JSON.stringify({ type: "ping" }));
+        }
+      } catch {}
     }, 30000);
   }
 
@@ -130,7 +228,7 @@ class SocketService {
     }
   }
 
-  // ─── Mock Simulation Methods (for dev/testing) ───────────────────────────
+  // ─── Dev/Test Simulation helpers ─────────────────────────────────────────
 
   simulateIncomingCall(hostName: string, hostAvatar: string, callType: "audio" | "video" = "audio"): void {
     setTimeout(() => {

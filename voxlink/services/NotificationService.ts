@@ -159,6 +159,11 @@ export async function getUnreadCount(): Promise<number> {
 // ─── Pre-built Notification Types ───────────────────────────────────────────
 
 export function notifyIncomingCall(hostName: string, hostAvatar: string) {
+  scheduleLocalNotification({
+    title: "Incoming Call",
+    body: `${hostName} is calling you`,
+    data: { type: "incoming_call" },
+  });
   return addNotification({
     type: "call",
     title: "Incoming Call",
@@ -168,6 +173,11 @@ export function notifyIncomingCall(hostName: string, hostAvatar: string) {
 }
 
 export function notifyNewMessage(senderName: string, message: string, chatId: string) {
+  scheduleLocalNotification({
+    title: senderName,
+    body: message,
+    data: { type: "chat_message", room_id: chatId },
+  });
   return addNotification({
     type: "message",
     title: senderName,
@@ -177,6 +187,11 @@ export function notifyNewMessage(senderName: string, message: string, chatId: st
 }
 
 export function notifyLowCoins(balance: number) {
+  scheduleLocalNotification({
+    title: "Low Coin Balance",
+    body: `You have ${balance} coins left. Recharge to keep calling!`,
+    data: { type: "system" },
+  });
   return addNotification({
     type: "system",
     title: "Low Coin Balance",
@@ -186,6 +201,11 @@ export function notifyLowCoins(balance: number) {
 }
 
 export function notifyPurchaseSuccess(coins: number) {
+  scheduleLocalNotification({
+    title: "Purchase Successful",
+    body: `${coins.toLocaleString()} coins added to your wallet!`,
+    data: { type: "payment" },
+  });
   return addNotification({
     type: "payment",
     title: "Purchase Successful",

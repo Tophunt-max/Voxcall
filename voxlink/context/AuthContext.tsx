@@ -1,8 +1,10 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
 import { AppState } from "react-native";
 import { setItem, getItem, removeItem, StorageKeys } from "@/utils/storage";
 import { apiRequest, API } from "@/services/api";
-import { registerForPushNotifications } from "@/services/NotificationService";
+import { registerForPushNotifications, notifyLowCoins } from "@/services/NotificationService";
+
+const LOW_COINS_THRESHOLD = 10;
 
 export type UserRole = "user" | "host";
 
@@ -163,9 +165,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const lowCoinAlertedRef = useRef(false);
+
   const updateCoins = useCallback((newBalance: number) => {
     setState((prev) => {
       if (!prev.user) return prev;
+      const prevCoins = prev.user.coins ?? 0;
+      // Trigger low coins alert once when balance drops to threshold
+      if (
+        newBalance > 0 &&
+        newBalance <= LOW_COINS_THRESHOLD &&
+        prevCoins > LOW_COINS_THRESHOLD &&
+        !lowCoinAlertedRef.current
+      ) {
+        lowCoinAlertedRef.current = true;
+        notifyLowCoins(newBalance);
+        setTimeout(() => { lowCoinAlertedRef.current = false; }, 60000);
+      }
       const updated = { ...prev.user, coins: newBalance };
       setItem(StorageKeys.USER, updated);
       return { ...prev, user: updated };
