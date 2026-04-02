@@ -271,14 +271,16 @@ async function quickLoginHandler(c: any, deviceId: string | null) {
   const quickEmail = `${quickId}@quick.voxlink.app`;
   const quickName = 'VoxLink User';
 
+  // Bug fix: 0 coins for guest accounts (was 50) — prevents Sybil attack of creating
+  // unlimited guest accounts to farm free coins.
   await db.prepare(
-    `INSERT INTO users (id, name, email, password_hash, coins, is_verified, role, device_id) VALUES (?, ?, ?, '', 50, 0, 'user', ?)`
+    `INSERT INTO users (id, name, email, password_hash, coins, is_verified, role, device_id) VALUES (?, ?, ?, '', 0, 0, 'user', ?)`
   ).bind(quickId, quickName, quickEmail, deviceId ?? null).run();
 
   const token = await signToken({ sub: quickId, role: 'user', name: quickName }, c.env.JWT_SECRET);
   return c.json({
     token,
-    user: { id: quickId, name: quickName, email: quickEmail, coins: 50, role: 'user', is_guest: true },
+    user: { id: quickId, name: quickName, email: quickEmail, coins: 0, role: 'user', is_guest: true },
     is_returning: false,
   });
 }

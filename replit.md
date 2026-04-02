@@ -443,3 +443,15 @@ Merges socket + notification tap handling. Lives inside all providers so it can 
 
 ### API Server — 1 Fix
 7. **`admin.ts` Analytics Endpoint Hardcoded 7 Days** — Backend always returned 7 days regardless. Now reads `?days=N` query param (validated: only 7 or 30 allowed), builds the correct date range, and uses "Mon/Tue" labels for 7 days vs "Jan 5" labels for 30 days.
+
+## Bug Fix Log (Round 6 — 4 Bugs Fixed 2026-04-02)
+
+### API Server — 4 Fixes
+
+1. **`coin.ts` Promo Code Bonus Coins Never Applied on Purchase** — `POST /api/coins/purchase` computed `total = plan.coins + plan.bonus_coins` only. The `promo_code` field received from the client was stored in `coin_purchases` but never looked up or applied. A user applying a promo with `+50 bonus_coins` would get 0 bonus. Now the backend fetches the promo, validates it (expiry + max_uses), and adds `bonus_coins` to the total before crediting.
+
+2. **`coin.ts` Promo Code `used_count` Never Incremented** — `POST /api/coins/purchase` never updated `promo_codes SET used_count = used_count + 1`. A promo code configured with `max_uses = 10` could be used by unlimited users forever — the `apply-promo` validation always saw `used_count = 0`. Now incremented atomically in the same DB batch as the purchase.
+
+3. **`admin.ts` Withdrawal Rejection Doesn't Refund Coins** — `PATCH /api/admin/withdrawals/:id` previously just updated the `status` column for all status transitions. Coins are deducted from the host's balance when a withdrawal is *requested*. If an admin rejected it, the host permanently lost those coins. Now, when `status = 'rejected'`, the backend atomically: refunds the coins back to the host user, inserts a `refund` coin_transaction, and also prevents rejecting already-rejected/paid withdrawals.
+
+4. **`auth.ts` Quick-Login Grants 50 Free Coins (Sybil Attack)** — Guest accounts created via `/api/auth/quick-login` were initialized with `coins = 50`. Anyone could create unlimited guest accounts to farm 50 free coins each, then call hosts without paying. Now guest accounts start with `coins = 0`.

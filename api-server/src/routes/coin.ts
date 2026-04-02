@@ -57,7 +57,24 @@ coin.post('/purchase', async (c) => {
   const db = c.env.DB;
   const plan = await db.prepare('SELECT * FROM coin_plans WHERE id = ? AND is_active = 1').bind(plan_id).first<any>();
   if (!plan) return c.json({ error: 'Plan not found' }, 404);
-  const total = plan.coins + (plan.bonus_coins || 0);
+
+  // Bug fix: look up promo code and apply bonus_coins if valid
+  let promoBonus = 0;
+  let promoRow: any = null;
+  if (promo_code) {
+    promoRow = await db.prepare(
+      'SELECT * FROM promo_codes WHERE UPPER(code) = UPPER(?) AND active = 1'
+    ).bind(promo_code.trim()).first<any>();
+    if (promoRow) {
+      const expired = promoRow.expires_at && new Date(promoRow.expires_at * 1000) < new Date();
+      const maxed = promoRow.max_uses && promoRow.used_count >= promoRow.max_uses;
+      if (!expired && !maxed && promoRow.type === 'bonus') {
+        promoBonus = promoRow.bonus_coins ?? 0;
+      }
+    }
+  }
+
+  const total = plan.coins + (plan.bonus_coins || 0) + promoBonus;
   const purchaseId = crypto.randomUUID();
   let gatewayName = payment_method || 'unknown';
   if (gateway_id) {
@@ -66,14 +83,21 @@ coin.post('/purchase', async (c) => {
       if (gw?.name) gatewayName = gw.name;
     } catch {}
   }
-  await db.batch([
+  const batchOps: any[] = [
     db.prepare('UPDATE users SET coins = coins + ?, updated_at = unixepoch() WHERE id = ?').bind(total, sub),
     db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
       .bind(crypto.randomUUID(), sub, 'purchase', total, `Purchased ${plan.name} — ${total} coins`, plan_id),
     db.prepare(`INSERT INTO coin_purchases (id, user_id, plan_id, plan_name, coins, bonus_coins, amount, currency, payment_method, gateway_id, gateway_name, payment_ref, utr_id, promo_code, status)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'success')`)
-      .bind(purchaseId, sub, plan_id, plan.name, plan.coins, plan.bonus_coins || 0, plan.price, plan.currency || 'USD', payment_method || 'unknown', gateway_id || null, gatewayName, payment_ref || null, utr_id || null, promo_code || null),
-  ]);
+      .bind(purchaseId, sub, plan_id, plan.name, plan.coins, (plan.bonus_coins || 0) + promoBonus, plan.price, plan.currency || 'USD', payment_method || 'unknown', gateway_id || null, gatewayName, payment_ref || null, utr_id || null, promo_code || null),
+  ];
+  // Bug fix: increment promo used_count so max_uses limit works correctly
+  if (promoRow) {
+    batchOps.push(
+      db.prepare('UPDATE promo_codes SET used_count = used_count + 1 WHERE id = ?').bind(promoRow.id)
+    );
+  }
+  await db.batch(batchOps);
   const user = await db.prepare('SELECT coins FROM users WHERE id = ?').bind(sub).first<any>();
   return c.json({ success: true, coins_added: total, new_balance: user?.coins, purchase_id: purchaseId });
 });

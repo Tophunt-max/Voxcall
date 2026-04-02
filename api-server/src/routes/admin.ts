@@ -224,7 +224,26 @@ admin.get('/withdrawals', async (c) => {
 admin.patch('/withdrawals/:id', async (c) => {
   const { id } = c.req.param();
   const { status, admin_note } = await c.req.json();
-  await db(c).prepare('UPDATE withdrawal_requests SET status = ?, admin_note = ?, updated_at = unixepoch() WHERE id = ?')
+  const d = db(c);
+
+  // Bug fix: when rejecting a withdrawal, refund the coins to the host's balance
+  if (status === 'rejected') {
+    const wr = await d.prepare('SELECT wr.coins, wr.status, h.user_id FROM withdrawal_requests wr JOIN hosts h ON h.id = wr.host_id WHERE wr.id = ?').bind(id).first<any>();
+    if (!wr) return c.json({ error: 'Withdrawal request not found' }, 404);
+    if (wr.status !== 'pending' && wr.status !== 'approved') {
+      return c.json({ error: `Cannot reject a ${wr.status} withdrawal` }, 400);
+    }
+    await d.batch([
+      d.prepare('UPDATE withdrawal_requests SET status = ?, admin_note = ?, updated_at = unixepoch() WHERE id = ?').bind(status, admin_note ?? null, id),
+      d.prepare('UPDATE users SET coins = coins + ?, updated_at = unixepoch() WHERE id = ?').bind(wr.coins, wr.user_id),
+      d.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)').bind(
+        crypto.randomUUID(), wr.user_id, 'refund', wr.coins, `Withdrawal rejected by admin — ${wr.coins} coins refunded`, id
+      ),
+    ]);
+    return c.json({ success: true, refunded_coins: wr.coins });
+  }
+
+  await d.prepare('UPDATE withdrawal_requests SET status = ?, admin_note = ?, updated_at = unixepoch() WHERE id = ?')
     .bind(status, admin_note ?? null, id).run();
   return c.json({ success: true });
 });
