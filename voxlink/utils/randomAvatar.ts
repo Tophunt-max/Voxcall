@@ -1,9 +1,12 @@
 import { Image } from 'react-native';
 
 const AVATAR_SOURCES = [
-  require("@/assets/images/avatar_male.png"),
-  require("@/assets/images/avatar_female.png"),
-  require("@/assets/images/avatar_placeholder.png"),
+  require("@/assets/avatars/avatar_1.png"),
+  require("@/assets/avatars/avatar_2.png"),
+  require("@/assets/avatars/avatar_3.png"),
+  require("@/assets/avatars/avatar_4.png"),
+  require("@/assets/avatars/avatar_5.png"),
+  require("@/assets/avatars/avatar_6.png"),
 ];
 
 export function getRandomAvatarSource() {
@@ -30,9 +33,12 @@ export function getRandomAvatarUri(): string {
 }
 
 export const AVATAR_LOCAL_KEYS = [
-  "avatar_male",
-  "avatar_female",
-  "avatar_placeholder",
+  "avatar_1",
+  "avatar_2",
+  "avatar_3",
+  "avatar_4",
+  "avatar_5",
+  "avatar_6",
 ];
 
 export function getRandomAvatarKey(): string {
