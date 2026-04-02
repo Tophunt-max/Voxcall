@@ -244,7 +244,7 @@ export default function AudioCallScreen() {
               onPress={() => {
                 dismissRechargePopup();
                 handleEndCall();
-                router.push("/user/screens/user/wallet");
+                router.push("/user/screens/home/wallet");
               }}
             >
               <Text style={styles.rechargeBtnText}>Abhi Recharge Karo</Text>

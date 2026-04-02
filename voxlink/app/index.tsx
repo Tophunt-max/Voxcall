@@ -104,7 +104,7 @@ export default function Index() {
       if (user.role === "host") return <Redirect href="/host/screens/host" />;
       // User registered as host but still pending admin approval
       if (hostAppPending) return <Redirect href="/host/auth/host-status" />;
-      return <Redirect href="/user/screens/user" />;
+      return <Redirect href="/user/screens/home" />;
     }
     if (seenOnboarding) return <Redirect href="/shared/auth/role-select" />;
     return <Redirect href="/shared/auth/onboarding" />;

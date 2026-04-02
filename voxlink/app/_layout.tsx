@@ -165,7 +165,7 @@ function RootLayoutNav() {
         <Stack.Screen name="index" />
 
         {/* User screens */}
-        <Stack.Screen name="user/screens/user" />
+        <Stack.Screen name="user/screens/home" />
         <Stack.Screen name="user/auth/login" />
         <Stack.Screen name="user/auth/register" />
         <Stack.Screen name="user/auth/forgot-password" />

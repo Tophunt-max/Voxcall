@@ -88,7 +88,7 @@ function BannerSlider({ slides }: { slides: SlideItem[] }) {
     if (item.type === "find_more") {
       return (
         <TouchableOpacity
-          onPress={() => router.push("/user/screens/user/random")}
+          onPress={() => router.push("/user/screens/home/random")}
           activeOpacity={0.9}
           style={[styles.slide, { backgroundColor: "#A00EE7" }]}
         >
@@ -254,7 +254,7 @@ export default function HomeScreen() {
       <View style={[styles.header, { paddingTop: topPad + 12, backgroundColor: colors.background }]}>
         <View style={styles.headerLeft}>
           <TouchableOpacity
-            onPress={() => router.push("/user/screens/user/profile")}
+            onPress={() => router.push("/user/screens/home/profile")}
             style={styles.avatarBorderWrapper}
           >
             <View style={[styles.avatarBorder, { borderColor: colors.primary }]}>

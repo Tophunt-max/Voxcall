@@ -415,7 +415,7 @@ export default function VideoCallScreen() {
             </Text>
             <TouchableOpacity
               style={styles.rechargeBtn}
-              onPress={() => { dismissRechargePopup(); handleEndCall(); router.push("/user/screens/user/wallet"); }}
+              onPress={() => { dismissRechargePopup(); handleEndCall(); router.push("/user/screens/home/wallet"); }}
             >
               <Text style={styles.rechargeBtnText}>Abhi Recharge Karo</Text>
             </TouchableOpacity>

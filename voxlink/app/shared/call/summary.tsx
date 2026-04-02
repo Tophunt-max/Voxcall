@@ -179,7 +179,7 @@ export default function CallSummaryScreen() {
       {/* Recharge button if auto-ended */}
       {isAutoEnded && (
         <TouchableOpacity
-          onPress={() => router.replace("/user/screens/user/wallet")}
+          onPress={() => router.replace("/user/screens/home/wallet")}
           style={[s.actionBtn, { backgroundColor: "#A00EE7" }]}
           activeOpacity={0.85}
         >
@@ -190,7 +190,7 @@ export default function CallSummaryScreen() {
 
       {/* Back to home */}
       <TouchableOpacity
-        onPress={() => router.replace("/user/screens/user")}
+        onPress={() => router.replace("/user/screens/home")}
         style={[s.actionBtn, { backgroundColor: isAutoEnded ? colors.surface : colors.primary, borderWidth: isAutoEnded ? 1 : 0, borderColor: colors.border }]}
         activeOpacity={0.85}
       >

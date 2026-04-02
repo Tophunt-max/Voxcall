@@ -46,7 +46,7 @@ export default function HostSettingsScreen() {
   const handleSwitchToUser = () => {
     Alert.alert("Switch to User", "Switch back to regular user mode?", [
       { text: "Cancel", style: "cancel" },
-      { text: "Switch", onPress: () => { switchRole("user"); router.replace("/user/screens/user"); } }
+      { text: "Switch", onPress: () => { switchRole("user"); router.replace("/user/screens/home"); } }
     ]);
   };
 

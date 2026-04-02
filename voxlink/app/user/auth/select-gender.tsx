@@ -20,7 +20,7 @@ export default function SelectGenderScreen() {
     setLoading(true);
     await new Promise(r => setTimeout(r, 600));
     setLoading(false);
-    router.replace("/user/screens/user");
+    router.replace("/user/screens/home");
   };
 
   return (

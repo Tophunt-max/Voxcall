@@ -145,7 +145,7 @@ export default function LoginScreen() {
       await loginWithToken(data.token, profile);
       await AsyncStorage.removeItem("hostAppPending");
       showSuccessToast(`Welcome, ${profile.name}!`);
-      router.replace("/user/screens/user");
+      router.replace("/user/screens/home");
     } finally {
       setGoogleLoading(false);
     }
@@ -170,7 +170,7 @@ export default function LoginScreen() {
       if (data.is_returning) {
         showSuccessToast("Welcome back!", "Quick Login");
       }
-      router.replace("/user/screens/user");
+      router.replace("/user/screens/home");
     } catch {
       showErrorToast("Quick Login failed. Please try again.");
     } finally {

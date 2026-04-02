@@ -151,7 +151,7 @@ export default function HostHomeScreen() {
       {/* Switch back to user */}
       <TouchableOpacity
         style={[styles.switchBtn, { backgroundColor: colors.surface, borderColor: colors.border, marginHorizontal: 16 }]}
-        onPress={() => { switchRole("user"); router.replace("/user/screens/user"); }}
+        onPress={() => { switchRole("user"); router.replace("/user/screens/home"); }}
         activeOpacity={0.8}
       >
         <Image source={require("@/assets/icons/ic_users.png")} style={styles.switchIcon} tintColor={colors.mutedForeground} resizeMode="contain" />
