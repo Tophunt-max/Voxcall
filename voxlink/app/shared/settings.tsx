@@ -9,12 +9,16 @@ import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
 import { PermissionDialog, PERMISSION_CONFIGS } from "@/components/PermissionDialog";
+import { useLanguage } from "@/context/LanguageContext";
+import { LANGUAGES } from "@/localization";
 
 export default function SettingsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { logout } = useAuth();
   const { permissions, requestNotifications, openSettings, refresh } = usePermissions();
+  const { language } = useLanguage();
+  const currentLangLabel = LANGUAGES.find((l) => l.code === language)?.name ?? "English";
 
   const [showNotifDialog, setShowNotifDialog] = useState(false);
 
@@ -135,7 +139,7 @@ export default function SettingsScreen() {
               <Image source={require("@/assets/images/lang_setting.png")} style={styles.menuIcon} resizeMode="contain" />
             </View>
             <Text style={[styles.menuLabel, { color: colors.text }]}>App Language</Text>
-            <Text style={[styles.menuValue, { color: colors.mutedForeground }]}>English</Text>
+            <Text style={[styles.menuValue, { color: colors.mutedForeground }]}>{currentLangLabel}</Text>
             <Image source={require("@/assets/icons/ic_back.png")} style={[styles.chevron, { transform: [{ rotate: "180deg" }] }]} tintColor={colors.mutedForeground} resizeMode="contain" />
           </TouchableOpacity>
         </View>

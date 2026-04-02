@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState, useCallback } fr
 import { AppState } from "react-native";
 import { setItem, getItem, removeItem, StorageKeys } from "@/utils/storage";
 import { apiRequest, API } from "@/services/api";
+import { registerForPushNotifications } from "@/services/NotificationService";
 
 export type UserRole = "user" | "host";
 
@@ -51,6 +52,15 @@ async function fetchFreshBalance(): Promise<number | null> {
   }
 }
 
+async function syncPushToken(): Promise<void> {
+  try {
+    const token = await registerForPushNotifications();
+    if (token) {
+      await apiRequest("PATCH", "/api/user/me", { fcm_token: token });
+    }
+  } catch {}
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<AuthState>({
     user: null,
@@ -64,8 +74,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const user = await getItem<UserProfile>(StorageKeys.USER);
         if (user) {
           setState({ user, isLoggedIn: true, isLoading: false });
-          // Silently refresh balance from server so admin changes reflect
-          const freshCoins = await fetchFreshBalance();
+          // Silently refresh balance + push token in parallel
+          const [freshCoins] = await Promise.all([
+            fetchFreshBalance(),
+            syncPushToken(),
+          ]);
           if (freshCoins !== null) {
             setState((prev) => {
               if (!prev.user) return prev;
@@ -112,6 +125,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setItem(StorageKeys.USER, user),
     ]);
     setState({ user, isLoggedIn: true, isLoading: false });
+    // Sync push token in background after login
+    syncPushToken().catch(() => {});
   }, []);
 
   const login = useCallback(async (user: UserProfile) => {
@@ -128,6 +143,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const updateProfile = useCallback(async (updates: Partial<UserProfile>) => {
+    // Map frontend fields to backend field names
+    const backendUpdates: Record<string, unknown> = {};
+    if (updates.name !== undefined) backendUpdates.name = updates.name;
+    if (updates.bio !== undefined) backendUpdates.bio = updates.bio;
+    if (updates.phone !== undefined) backendUpdates.phone = updates.phone;
+    if (updates.gender !== undefined) backendUpdates.gender = updates.gender;
+    if (updates.avatar !== undefined) backendUpdates.avatar_url = updates.avatar;
+    if (Object.keys(backendUpdates).length > 0) {
+      try {
+        await apiRequest("PATCH", "/api/user/me", backendUpdates);
+      } catch {}
+    }
     setState((prev) => {
       if (!prev.user) return prev;
       const updated = { ...prev.user, ...updates };

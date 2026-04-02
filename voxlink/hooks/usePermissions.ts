@@ -4,6 +4,8 @@ import { useCameraPermissions } from "expo-camera";
 import * as ImagePicker from "expo-image-picker";
 import { Audio } from "expo-av";
 import * as Notifications from "expo-notifications";
+import { registerForPushNotifications } from "@/services/NotificationService";
+import { apiRequest } from "@/services/api";
 
 export type PermissionType =
   | "camera"
@@ -153,6 +155,14 @@ export function usePermissions() {
           canAskAgain: result.canAskAgain ?? false,
         },
       }));
+      if (granted) {
+        const token = await registerForPushNotifications();
+        if (token) {
+          try {
+            await apiRequest("PATCH", "/api/user/me", { fcm_token: token });
+          } catch {}
+        }
+      }
       return granted;
     } catch {
       return false;

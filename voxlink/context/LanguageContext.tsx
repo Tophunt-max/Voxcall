@@ -9,7 +9,7 @@ import React, {
   useCallback,
 } from "react";
 import { I18nManager } from "react-native";
-import { setItem, getItem, StorageKeys } from "@/utils/storage";
+import { setItem, getItem, StorageKeys, removeItem } from "@/utils/storage";
 import { setLanguage, isRTL, getTranslations, LANGUAGES, SupportedLanguage } from "@/localization";
 import type { Translations } from "@/localization/en";
 
@@ -23,14 +23,20 @@ interface LanguageContextValue {
 
 const LanguageContext = createContext<LanguageContextValue | null>(null);
 
-const STORAGE_KEY = "app_language";
-
 export function LanguageProvider({ children }: { children: React.ReactNode }) {
   const [language, setLang] = useState<SupportedLanguage>("en");
 
   useEffect(() => {
     (async () => {
-      const saved = await getItem<SupportedLanguage>(STORAGE_KEY);
+      // Migrate old "app_language" key to StorageKeys.LANGUAGE if present
+      const legacy = await getItem<SupportedLanguage>("app_language");
+      if (legacy && LANGUAGES.find((l) => l.code === legacy)) {
+        await setItem(StorageKeys.LANGUAGE, legacy);
+        await removeItem("app_language");
+        applyLanguage(legacy, false);
+        return;
+      }
+      const saved = await getItem<SupportedLanguage>(StorageKeys.LANGUAGE);
       if (saved && LANGUAGES.find((l) => l.code === saved)) {
         applyLanguage(saved, false);
       }
@@ -45,7 +51,7 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
       I18nManager.forceRTL(rtl);
     }
     if (save) {
-      setItem(STORAGE_KEY, lang).catch(() => {});
+      setItem(StorageKeys.LANGUAGE, lang).catch(() => {});
     }
   }
 
