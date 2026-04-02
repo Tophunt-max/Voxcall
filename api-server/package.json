@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev --port 8080 --ip 0.0.0.0",
+    "dev": "wrangler dev --port 8787 --ip 0.0.0.0",
     "build": "wrangler deploy --dry-run --outdir dist",
     "deploy": "wrangler deploy",
     "typecheck": "tsc -p tsconfig.json --noEmit",
