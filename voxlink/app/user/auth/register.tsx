@@ -123,7 +123,7 @@ export default function RegisterScreen() {
           }
           value={password}
           onChangeText={setPassword}
-          placeholder="Password (min 6 chars)"
+          placeholder="Password (min 8 chars)"
           secureTextEntry={!showPw}
         />
 

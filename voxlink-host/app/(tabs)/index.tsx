@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, Image,
   ScrollView, Switch
 } from "react-native";
 import { router } from "expo-router";
+import { useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
@@ -13,17 +14,23 @@ import { showErrorToast } from "@/components/Toast";
 export default function HostHomeScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { user } = useAuth();
-  const [isOnline, setIsOnline] = useState(false);
+  const { user, setOnlineStatus } = useAuth();
+  // Sync isOnline from AuthContext (not a local false default)
+  const [isOnline, setIsOnline] = useState(user?.isOnline ?? false);
   const [stats, setStats] = useState({ calls: "…", hours: "…h", earnings: "…" });
   const topPad = insets.top;
 
+  // Keep local toggle in sync when AuthContext updates (e.g. on foreground refresh)
   useEffect(() => {
+    setIsOnline(user?.isOnline ?? false);
+  }, [user?.isOnline]);
+
+  const loadEarnings = useCallback(() => {
     API.getEarnings()
       .then((data: any) => {
         const h = data.host ?? {};
         const minutes = Number(h.total_minutes) || 0;
-        const sessions = (data.transactions || []).length;
+        const sessions = Number(h.total_calls) || (data.transactions || []).length;
         const earnings = Number(h.total_earnings) || 0;
         setStats({
           calls: String(sessions),
@@ -33,6 +40,11 @@ export default function HostHomeScreen() {
       })
       .catch(() => { setStats({ calls: "0", hours: "0h", earnings: "0" }); showErrorToast("Failed to load dashboard data."); });
   }, []);
+
+  // Refresh earnings every time this screen comes into focus (e.g. after a call ends)
+  useFocusEffect(useCallback(() => {
+    loadEarnings();
+  }, [loadEarnings]));
 
   return (
     <ScrollView
@@ -81,7 +93,13 @@ export default function HostHomeScreen() {
           value={isOnline}
           onValueChange={async (v) => {
             setIsOnline(v);
-            try { await API.setHostOnline(v); } catch { setIsOnline(!v); showErrorToast("Failed to update online status."); }
+            try {
+              // Use setOnlineStatus from AuthContext so isOnline stays in sync across the app
+              await setOnlineStatus(v);
+            } catch {
+              setIsOnline(!v);
+              showErrorToast("Failed to update online status.");
+            }
           }}
           trackColor={{ false: "rgba(255,255,255,0.3)", true: "rgba(255,255,255,0.6)" }}
           thumbColor="#fff"

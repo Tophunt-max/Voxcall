@@ -140,8 +140,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
+    // Go offline on backend (correct param: is_online, not isOnline)
     try {
-      await apiRequest("PATCH", "/api/host/status", { isOnline: false });
+      await apiRequest("PATCH", "/api/host/status", { is_online: false });
+    } catch {}
+    // Clear FCM token so push notifications stop after logout
+    try {
+      await apiRequest("PATCH", "/api/user/me", { fcm_token: null });
     } catch {}
     await Promise.all([
       removeItem(StorageKeys.AUTH_TOKEN),
@@ -193,8 +198,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const setOnlineStatus = useCallback(async (online: boolean) => {
+    // Backend expects is_online (snake_case), not isOnline
     try {
-      await apiRequest("PATCH", "/api/host/status", { isOnline: online });
+      await apiRequest("PATCH", "/api/host/status", { is_online: online });
     } catch {}
     setState((prev) => {
       if (!prev.user) return prev;

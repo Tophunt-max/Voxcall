@@ -6,6 +6,7 @@ import {
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
+import { API } from "@/services/api";
 
 export default function VerifyOtpScreen() {
   const colors = useColors();
@@ -42,18 +43,34 @@ export default function VerifyOtpScreen() {
       return;
     }
     setLoading(true);
-    await new Promise(r => setTimeout(r, 1000));
-    setLoading(false);
-    if (params.mode === "forgot") {
-      router.push({ pathname: "/user/auth/create-password", params: { email: params.email } });
-    } else {
-      router.push({ pathname: "/user/auth/fill-profile" });
+    try {
+      if (params.mode === "forgot") {
+        // For forgot password: pass OTP to create-password screen where reset-password verifies it
+        router.push({ pathname: "/user/auth/create-password", params: { email: params.email, otp: code } });
+      } else {
+        // For registration: verify OTP with backend to activate account and earn bonus coins
+        await API.verifyOtp(params.email || "", code);
+        router.push({ pathname: "/user/auth/fill-profile" });
+      }
+    } catch (err: any) {
+      Alert.alert("Invalid OTP", err?.message || "The OTP you entered is incorrect or has expired. Please try again.");
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleResend = () => {
+  const handleResend = async () => {
     setResendTimer(59);
     setOtp(["", "", "", "", "", ""]);
+    try {
+      if (params.mode === "forgot") {
+        await fetch(`${process.env.EXPO_PUBLIC_API_URL || "http://localhost:8080"}/api/auth/forgot-password`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: params.email }),
+        });
+      }
+    } catch {}
     Alert.alert("OTP Sent", "A new OTP has been sent to your email.");
   };
 

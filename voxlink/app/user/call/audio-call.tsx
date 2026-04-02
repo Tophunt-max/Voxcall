@@ -55,16 +55,17 @@ export default function AudioCallScreen() {
   }, [micChecked, permissions.microphone.status]);
 
   useEffect(() => {
-    Animated.loop(
+    const anim = Animated.loop(
       Animated.sequence([
         Animated.timing(pulse, { toValue: 1.08, duration: 900, easing: Easing.inOut(Easing.ease), useNativeDriver: false }),
         Animated.timing(pulse, { toValue: 1, duration: 900, easing: Easing.inOut(Easing.ease), useNativeDriver: false }),
       ])
-    ).start();
+    );
+    anim.start();
     const t1 = setTimeout(() => {
       if (status === "connecting") setStatus("ringing");
     }, 2000);
-    return () => { clearTimeout(t1); };
+    return () => { anim.stop(); clearTimeout(t1); };
   }, []);
 
   useEffect(() => {

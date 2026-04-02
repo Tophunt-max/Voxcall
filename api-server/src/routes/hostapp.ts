@@ -35,9 +35,15 @@ hostapp.get('/status', async (c) => {
 
 // POST /api/host-app/submit — submit or update the KYC application
 hostapp.post('/submit', async (c) => {
-  const { sub } = c.get('user');
+  const { sub, role } = c.get('user');
   const db = c.env.DB;
   const body = await c.req.json<any>();
+
+  // Block users who are already active hosts — no need to re-submit KYC
+  if (role === 'host') {
+    const existingHost = await db.prepare('SELECT id FROM hosts WHERE user_id = ?').bind(sub).first<any>();
+    if (existingHost) return c.json({ error: 'You are already a host' }, 409);
+  }
 
   // Check if already approved — cannot re-apply
   const existing = await db
@@ -61,6 +67,20 @@ hostapp.post('/submit', async (c) => {
     return c.json({ error: 'Aadhar front and back photos required' }, 400);
   }
 
+  // Validate rates: must be positive numbers, not too large
+  const audioRateNum = Number(audio_rate ?? 5);
+  const videoRateNum = Number(video_rate ?? 8);
+  if (isNaN(audioRateNum) || audioRateNum < 1 || audioRateNum > 500) {
+    return c.json({ error: 'audio_rate must be between 1 and 500' }, 400);
+  }
+  if (isNaN(videoRateNum) || videoRateNum < 1 || videoRateNum > 500) {
+    return c.json({ error: 'video_rate must be between 1 and 500' }, 400);
+  }
+
+  // Validate specialties and languages are arrays
+  const safeSpecialties = Array.isArray(specialties) ? specialties : [];
+  const safeLanguages = Array.isArray(languages) ? languages : (languages ? [String(languages)] : ['English']);
+
   if (existing) {
     await db.prepare(
       `UPDATE host_applications SET
@@ -73,8 +93,8 @@ hostapp.post('/submit', async (c) => {
        WHERE id=?`
     ).bind(
       display_name ?? null, date_of_birth ?? null, gender ?? null, phone ?? null, bio ?? null,
-      JSON.stringify(specialties ?? []), JSON.stringify(languages ?? ['English']), experience ?? null,
-      audio_rate ?? 5, video_rate ?? 8,
+      JSON.stringify(safeSpecialties), JSON.stringify(safeLanguages), experience ?? null,
+      audioRateNum, videoRateNum,
       aadhar_front_url, aadhar_back_url, verification_video_url ?? null,
       id
     ).run();
@@ -88,8 +108,8 @@ hostapp.post('/submit', async (c) => {
     ).bind(
       id, sub,
       display_name ?? null, date_of_birth ?? null, gender ?? null, phone ?? null, bio ?? null,
-      JSON.stringify(specialties ?? []), JSON.stringify(languages ?? ['English']), experience ?? null,
-      audio_rate ?? 5, video_rate ?? 8,
+      JSON.stringify(safeSpecialties), JSON.stringify(safeLanguages), experience ?? null,
+      audioRateNum, videoRateNum,
       aadhar_front_url, aadhar_back_url, verification_video_url ?? null
     ).run();
   }

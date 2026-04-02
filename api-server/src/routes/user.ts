@@ -22,11 +22,22 @@ user.get('/me', async (c) => {
 user.patch('/me', async (c) => {
   const { sub } = c.get('user');
   const body = await c.req.json();
+  const LIMITS: Record<string, number> = { name: 100, phone: 20, bio: 500, gender: 10, avatar_url: 2000, fcm_token: 500 };
   const allowed = ['name', 'phone', 'bio', 'gender', 'avatar_url', 'fcm_token'];
   const sets: string[] = [];
   const vals: any[] = [];
   for (const key of allowed) {
-    if (body[key] !== undefined) { sets.push(`${key} = ?`); vals.push(body[key]); }
+    if (body[key] !== undefined) {
+      // Allow null for fcm_token (logout clears it); validate string length for all others
+      if (body[key] !== null) {
+        const str = String(body[key]);
+        if (str.length > (LIMITS[key] ?? 1000)) {
+          return c.json({ error: `${key} exceeds maximum length of ${LIMITS[key]} characters` }, 400);
+        }
+      }
+      sets.push(`${key} = ?`);
+      vals.push(body[key]);
+    }
   }
   if (!sets.length) return c.json({ error: 'Nothing to update' }, 400);
   sets.push('updated_at = unixepoch()');

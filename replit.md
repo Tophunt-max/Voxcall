@@ -350,6 +350,36 @@ Merges socket + notification tap handling. Lives inside all providers so it can 
 - Admin dashboard: ✅ (21 users, 5 hosts, 12 calls today, 117 coins revenue)
 - WebRTC service: ✅ (correctly calls API routes with real SDP)
 
+## Bug Fix Log (Round 3 — 20 More Bugs Fixed 2026-04-02)
+
+### Backend (API Server) — 6 Fixes
+1. **Host Rate Cap** — `host.ts` PATCH /me now rejects rates <1 and caps at 500 coins/min
+2. **Call Initiate Rate Limit** — `call.ts` POST /initiate now limited to 5/min per user
+3. **KYC Already-Host Block** — `hostapp.ts` blocks users who are already active hosts from re-submitting
+4. **KYC Rate Validation** — audio_rate/video_rate validated 1-500; specialties/languages must be arrays
+5. **User Profile Length Limits** — `user.ts` PATCH /me enforces per-field length limits; `fcm_token=null` allowed for logout
+6. **Google Login Sybil** — `auth.ts` google-login now grants 0 coins (down from 50) to prevent sybil attacks
+
+### Mobile App — User (voxlink) — 5 Fixes
+7. **OTP Verification Mock Removed** — `verify-otp.tsx` now calls real `/api/auth/verify-otp` for register; passes OTP to create-password for forgot flow
+8. **Password Placeholder** — `register.tsx` placeholder now correctly says "min 8 chars" (was "min 6")
+9. **Audio Call Animation Leak** — `audio-call.tsx` Animated.loop now stored in variable and stopped in useEffect cleanup
+10. **Logout FCM Revoke** — `AuthContext.tsx` logout now clears fcm_token on backend + calls /api/auth/logout before clearing storage
+11. **verifyOtp API** — Added `API.verifyOtp` to `services/api.ts`
+
+### Mobile App — Host (voxlink-host) — 4 Fixes
+12. **isOnline Always Offline** — `index.tsx` initializes from `user.isOnline` and syncs via useEffect
+13. **Earnings Stale on Tab** — `index.tsx` uses `useFocusEffect` to refresh earnings on every screen focus
+14. **is_online vs isOnline Mismatch** — `AuthContext.tsx` setOnlineStatus and logout now send `is_online` (backend's expected key)
+15. **Online Toggle Uses AuthContext** — Switch now calls `setOnlineStatus` from AuthContext so state is consistent app-wide
+
+### Admin Panel — 5 Fixes
+16. **Analytics All Mock Data** — `Analytics.tsx` now uses real API weekly data for all charts; top hosts from live API
+17. **Analytics DAU/MAU** — Derived from real weekly data instead of hardcoded numbers
+18. **Dashboard Loading State** — Shows loading spinner while fetching; `settings` API fetched in parallel
+19. **Dashboard Hardcoded Values** — Payout rate and coin value now loaded from `/api/admin/settings`
+20. **Badge Missing Status Colors** — Added `ringing` (blue) and `cancelled` (amber) badge variants
+
 ## Bug Fix Log (Round 2 — 18 Deep Bugs Fixed 2026-04-02)
 
 ### Backend (API Server) — 7 Fixes

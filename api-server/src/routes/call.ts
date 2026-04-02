@@ -9,9 +9,25 @@ call.use('*', authMiddleware);
 
 call.post('/initiate', async (c) => {
   const { sub } = c.get('user');
+  const db = c.env.DB;
+
+  // Rate limit: max 5 call initiations per user per minute to prevent host spam
+  const rlKey = `rl:initiate:${sub}:${Math.floor(Date.now() / 60000)}`;
+  try {
+    const rlRow = await db.prepare('SELECT attempts, window_reset FROM rate_limits WHERE id = ?').bind(rlKey).first<any>();
+    const now = Math.floor(Date.now() / 1000);
+    if (rlRow && rlRow.window_reset > now && rlRow.attempts >= 5) {
+      return c.json({ error: 'Too many call requests. Please wait before trying again.' }, 429);
+    }
+    if (rlRow && rlRow.window_reset > now) {
+      await db.prepare('UPDATE rate_limits SET attempts = attempts + 1 WHERE id = ?').bind(rlKey).run();
+    } else {
+      await db.prepare('INSERT OR REPLACE INTO rate_limits (id, attempts, window_reset) VALUES (?, 1, ?)').bind(rlKey, now + 60).run();
+    }
+  } catch { /* rate limit table may not exist — don't block */ }
+
   const body = await c.req.json<{ host_id: string; type?: 'audio' | 'video'; call_type?: 'audio' | 'video' }>();
   const callType = body.type || body.call_type || 'audio';
-  const db = c.env.DB;
 
   const host = await db.prepare('SELECT id, coins_per_minute, audio_coins_per_minute, video_coins_per_minute, user_id FROM hosts WHERE id = ? AND is_online = 1 AND is_active = 1').bind(body.host_id).first<any>();
   if (!host) return c.json({ error: 'Host not available' }, 404);

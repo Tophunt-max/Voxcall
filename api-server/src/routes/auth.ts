@@ -207,11 +207,13 @@ auth.post('/google-login', async (c) => {
   if (!user) {
     const id = 'g_' + generateId().slice(0, 12);
     const av = avatar_url || null;
+    // Google login: start with 0 coins — no OTP verification so no registration bonus
+    // This prevents Sybil attacks where many Google accounts farm signup coins
     await db.prepare(
       `INSERT INTO users (id, name, email, password_hash, role, coins, is_verified, avatar_url, google_id)
-       VALUES (?, ?, ?, '', 'user', 50, 1, ?, ?)`
+       VALUES (?, ?, ?, '', 'user', 0, 1, ?, ?)`
     ).bind(id, name, email, av, google_id).run();
-    user = { id, name, email, role: 'user', coins: 50, avatar_url: av };
+    user = { id, name, email, role: 'user', coins: 0, avatar_url: av };
   } else {
     if (avatar_url && !user.avatar_url) {
       await db.prepare('UPDATE users SET avatar_url = ?, google_id = ? WHERE id = ?')

@@ -24,17 +24,37 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 export default function Dashboard() {
   const [data, setData] = useState<any>(null);
   const [analytics, setAnalytics] = useState<any>(null);
+  const [settings, setSettings] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
 
   useEffect(() => {
-    api.dashboard().then(setData).catch(e => setErr(e.message));
-    api.analytics().then(setAnalytics).catch(() => {});
+    Promise.all([
+      api.dashboard().then(setData).catch(e => setErr(e.message)),
+      api.analytics().then(setAnalytics).catch(() => {}),
+      api.settings().then(setSettings).catch(() => {}),
+    ]).finally(() => setLoading(false));
   }, []);
 
   const weekly = analytics?.weekly ?? [];
   const roleData = analytics?.role_distribution ?? [];
   const avgDuration = analytics?.avg_call_duration ?? 0;
   const avgDurationMin = avgDuration > 0 ? `${(avgDuration / 60).toFixed(1)} min` : '—';
+
+  const payoutRate = settings['host_revenue_share']
+    ? `${parseFloat(settings['host_revenue_share']) * 100}%`
+    : '70%';
+  const coinValue = settings['coin_value_inr']
+    ? `₹${settings['coin_value_inr']}`
+    : '₹0.01';
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64 text-sm text-muted-foreground">
+        Loading dashboard…
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -145,8 +165,8 @@ export default function Dashboard() {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         {[
           { label: 'Avg. Call Duration', value: avgDurationMin, icon: Clock, color: 'text-violet-600 bg-violet-50' },
-          { label: 'Host Payout Rate', value: '70%', icon: Coins, color: 'text-green-600 bg-green-50' },
-          { label: 'Coin → INR', value: '₹1', icon: TrendingUp, color: 'text-blue-600 bg-blue-50' },
+          { label: 'Host Payout Rate', value: payoutRate, icon: Coins, color: 'text-green-600 bg-green-50' },
+          { label: 'Coin → INR', value: coinValue, icon: TrendingUp, color: 'text-blue-600 bg-blue-50' },
           { label: 'Active Hosts', value: `${data?.total_hosts ?? 0}`, icon: Mic2, color: 'text-orange-600 bg-orange-50' },
         ].map(s => (
           <div key={s.label} className="bg-card border border-border rounded-xl p-4 flex items-center gap-3">

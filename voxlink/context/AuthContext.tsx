@@ -137,6 +137,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
+    // Clear FCM token on backend before logging out so we stop receiving push notifications
+    try {
+      await apiRequest("PATCH", "/api/user/me", { fcm_token: null });
+    } catch {}
+    // Notify backend of logout (stateless JWT, best-effort)
+    try {
+      await apiRequest("POST", "/api/auth/logout", {});
+    } catch {}
     await Promise.all([
       removeItem(StorageKeys.AUTH_TOKEN),
       removeItem(StorageKeys.USER),

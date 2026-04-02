@@ -98,13 +98,21 @@ hostProtected.use('*', authMiddleware);
 hostProtected.patch('/me', async (c) => {
   const { sub } = c.get('user');
   const body = await c.req.json();
+  const MAX_RATE = 500; // coins per minute cap to prevent hosts from setting abusive rates
   const allowed = ['display_name', 'specialties', 'languages', 'coins_per_minute', 'audio_coins_per_minute', 'video_coins_per_minute'];
   const sets: string[] = [];
   const vals: any[] = [];
   for (const key of allowed) {
     if (body[key] !== undefined) {
+      let val = Array.isArray(body[key]) ? JSON.stringify(body[key]) : body[key];
+      // Cap rate fields to prevent abuse
+      if (['coins_per_minute', 'audio_coins_per_minute', 'video_coins_per_minute'].includes(key)) {
+        const num = Number(val);
+        if (isNaN(num) || num < 1) return c.json({ error: `${key} must be at least 1` }, 400);
+        val = Math.min(num, MAX_RATE);
+      }
       sets.push(`${key} = ?`);
-      vals.push(Array.isArray(body[key]) ? JSON.stringify(body[key]) : body[key]);
+      vals.push(val);
     }
   }
   if (!sets.length) return c.json({ error: 'Nothing to update' }, 400);
