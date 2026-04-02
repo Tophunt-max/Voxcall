@@ -1,12 +1,10 @@
-import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
+import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { AppState } from "react-native";
 import { setItem, getItem, removeItem, StorageKeys } from "@/utils/storage";
 import { apiRequest, API } from "@/services/api";
-import { registerForPushNotifications, notifyLowCoins } from "@/services/NotificationService";
+import { registerForPushNotifications } from "@/services/NotificationService";
 
-const LOW_COINS_THRESHOLD = 10;
-
-export type UserRole = "user" | "host";
+export type UserRole = "host";
 
 export interface UserProfile {
   id: string;
@@ -24,6 +22,8 @@ export interface UserProfile {
   rating?: number;
   totalCalls?: number;
   earnings?: number;
+  isVerified?: boolean;
+  kycStatus?: "pending" | "approved" | "rejected";
   is_guest?: boolean;
 }
 
@@ -38,17 +38,20 @@ interface AuthContextValue extends AuthState {
   loginWithToken: (token: string, user: UserProfile) => Promise<void>;
   logout: () => Promise<void>;
   updateProfile: (updates: Partial<UserProfile>) => Promise<void>;
-  updateCoins: (newBalance: number) => void;
-  refreshBalance: () => Promise<void>;
-  switchRole: (role: UserRole) => Promise<void>;
+  updateEarnings: (newEarnings: number) => void;
+  refreshProfile: () => Promise<void>;
+  setOnlineStatus: (online: boolean) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-async function fetchFreshBalance(): Promise<number | null> {
+async function fetchFreshProfile(): Promise<Partial<UserProfile> | null> {
   try {
-    const bal = await apiRequest<{ coins: number }>("GET", "/api/coins/balance");
-    return bal?.coins ?? null;
+    const profile = await apiRequest<{ earnings: number; rating: number; totalCalls: number; isOnline: boolean }>(
+      "GET",
+      "/api/host/profile"
+    );
+    return profile ?? null;
   } catch {
     return null;
   }
@@ -75,16 +78,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         const user = await getItem<UserProfile>(StorageKeys.USER);
         if (user) {
-          setState({ user, isLoggedIn: true, isLoading: false });
-          // Silently refresh balance + push token in parallel
-          const [freshCoins] = await Promise.all([
-            fetchFreshBalance(),
+          const hostUser: UserProfile = { ...user, role: "host" };
+          setState({ user: hostUser, isLoggedIn: true, isLoading: false });
+          const [freshProfile] = await Promise.all([
+            fetchFreshProfile(),
             syncPushToken(),
           ]);
-          if (freshCoins !== null) {
+          if (freshProfile) {
             setState((prev) => {
               if (!prev.user) return prev;
-              const updated = { ...prev.user, coins: freshCoins };
+              const updated = { ...prev.user, ...freshProfile };
               setItem(StorageKeys.USER, updated);
               return { ...prev, user: updated };
             });
@@ -98,17 +101,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     })();
   }, []);
 
-  // Refresh balance when app comes back to foreground
   useEffect(() => {
     const sub = AppState.addEventListener("change", (nextState) => {
       if (nextState === "active") {
         setState((prev) => {
           if (!prev.isLoggedIn || !prev.user) return prev;
-          fetchFreshBalance().then((freshCoins) => {
-            if (freshCoins !== null) {
+          fetchFreshProfile().then((freshProfile) => {
+            if (freshProfile) {
               setState((p) => {
                 if (!p.user) return p;
-                const updated = { ...p.user, coins: freshCoins };
+                const updated = { ...p.user, ...freshProfile };
                 setItem(StorageKeys.USER, updated);
                 return { ...p, user: updated };
               });
@@ -122,21 +124,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const loginWithToken = useCallback(async (token: string, user: UserProfile) => {
+    const hostUser: UserProfile = { ...user, role: "host" };
     await Promise.all([
       setItem(StorageKeys.AUTH_TOKEN, token),
-      setItem(StorageKeys.USER, user),
+      setItem(StorageKeys.USER, hostUser),
     ]);
-    setState({ user, isLoggedIn: true, isLoading: false });
-    // Sync push token in background after login
+    setState({ user: hostUser, isLoggedIn: true, isLoading: false });
     syncPushToken().catch(() => {});
   }, []);
 
   const login = useCallback(async (user: UserProfile) => {
-    await setItem(StorageKeys.USER, user);
-    setState({ user, isLoggedIn: true, isLoading: false });
+    const hostUser: UserProfile = { ...user, role: "host" };
+    await setItem(StorageKeys.USER, hostUser);
+    setState({ user: hostUser, isLoggedIn: true, isLoading: false });
   }, []);
 
   const logout = useCallback(async () => {
+    try {
+      await apiRequest("PATCH", "/api/host/status", { isOnline: false });
+    } catch {}
     await Promise.all([
       removeItem(StorageKeys.AUTH_TOKEN),
       removeItem(StorageKeys.USER),
@@ -145,13 +151,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const updateProfile = useCallback(async (updates: Partial<UserProfile>) => {
-    // Map frontend fields to backend field names
     const backendUpdates: Record<string, unknown> = {};
     if (updates.name !== undefined) backendUpdates.name = updates.name;
     if (updates.bio !== undefined) backendUpdates.bio = updates.bio;
     if (updates.phone !== undefined) backendUpdates.phone = updates.phone;
     if (updates.gender !== undefined) backendUpdates.gender = updates.gender;
     if (updates.avatar !== undefined) backendUpdates.avatar_url = updates.avatar;
+    if (updates.language !== undefined) backendUpdates.language = updates.language;
     if (Object.keys(backendUpdates).length > 0) {
       try {
         await apiRequest("PATCH", "/api/user/me", backendUpdates);
@@ -165,52 +171,52 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
-  const lowCoinAlertedRef = useRef(false);
-
-  const updateCoins = useCallback((newBalance: number) => {
+  const updateEarnings = useCallback((newEarnings: number) => {
     setState((prev) => {
       if (!prev.user) return prev;
-      const prevCoins = prev.user.coins ?? 0;
-      // Trigger low coins alert once when balance drops to threshold
-      if (
-        newBalance > 0 &&
-        newBalance <= LOW_COINS_THRESHOLD &&
-        prevCoins > LOW_COINS_THRESHOLD &&
-        !lowCoinAlertedRef.current
-      ) {
-        lowCoinAlertedRef.current = true;
-        notifyLowCoins(newBalance);
-        setTimeout(() => { lowCoinAlertedRef.current = false; }, 60000);
-      }
-      const updated = { ...prev.user, coins: newBalance };
+      const updated = { ...prev.user, earnings: newEarnings };
       setItem(StorageKeys.USER, updated);
       return { ...prev, user: updated };
     });
   }, []);
 
-  const refreshBalance = useCallback(async () => {
-    const freshCoins = await fetchFreshBalance();
-    if (freshCoins !== null) {
+  const refreshProfile = useCallback(async () => {
+    const freshProfile = await fetchFreshProfile();
+    if (freshProfile) {
       setState((prev) => {
         if (!prev.user) return prev;
-        const updated = { ...prev.user, coins: freshCoins };
+        const updated = { ...prev.user, ...freshProfile };
         setItem(StorageKeys.USER, updated);
         return { ...prev, user: updated };
       });
     }
   }, []);
 
-  const switchRole = useCallback(async (role: UserRole) => {
+  const setOnlineStatus = useCallback(async (online: boolean) => {
+    try {
+      await apiRequest("PATCH", "/api/host/status", { isOnline: online });
+    } catch {}
     setState((prev) => {
       if (!prev.user) return prev;
-      const updated = { ...prev.user, role };
+      const updated = { ...prev.user, isOnline: online };
       setItem(StorageKeys.USER, updated);
       return { ...prev, user: updated };
     });
   }, []);
 
   return (
-    <AuthContext.Provider value={{ ...state, login, loginWithToken, logout, updateProfile, updateCoins, refreshBalance, switchRole }}>
+    <AuthContext.Provider
+      value={{
+        ...state,
+        login,
+        loginWithToken,
+        logout,
+        updateProfile,
+        updateEarnings,
+        refreshProfile,
+        setOnlineStatus,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

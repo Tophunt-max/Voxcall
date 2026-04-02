@@ -4,7 +4,7 @@ import { API } from "@/services/api";
 import { useAuth } from "@/context/AuthContext";
 
 export type CallType = "audio" | "video";
-export type CallStatus = "idle" | "outgoing" | "incoming" | "active" | "ended";
+export type CallStatus = "idle" | "incoming" | "active" | "ended";
 
 export interface CallParticipant {
   id: string;
@@ -23,7 +23,6 @@ export interface ActiveCall {
   participant: CallParticipant;
   startTime?: number;
   coinsPerMinute?: number;
-  maxSeconds?: number;
   isMuted?: boolean;
   isCameraOn?: boolean;
   isSpeakerOn?: boolean;
@@ -31,7 +30,6 @@ export interface ActiveCall {
 
 interface CallContextValue {
   activeCall: ActiveCall | null;
-  initiateCall: (participant: CallParticipant, type: CallType, coinsPerMinute?: number) => void;
   receiveCall: (participant: CallParticipant, type: CallType, callId: string) => void;
   acceptCall: () => void;
   markCallActive: () => void;
@@ -45,7 +43,7 @@ interface CallContextValue {
 const CallContext = createContext<CallContextValue | null>(null);
 
 export function CallProvider({ children }: { children: React.ReactNode }) {
-  const { updateCoins } = useAuth();
+  const { updateEarnings, refreshProfile } = useAuth();
   const [activeCall, setActiveCall] = useState<ActiveCall | null>(null);
   const activeCallRef = useRef<ActiveCall | null>(null);
 
@@ -54,43 +52,19 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     setActiveCall(call);
   };
 
-  const initiateCall = useCallback(async (participant: CallParticipant, type: CallType, coinsPerMinute = 5) => {
-    const localId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
+  const receiveCall = useCallback((participant: CallParticipant, type: CallType, callId: string) => {
     const call: ActiveCall = {
-      callId: localId,
+      callId,
+      sessionId: callId,
       type,
-      status: "outgoing",
+      status: "incoming",
       participant,
-      coinsPerMinute,
       isMuted: false,
-      isCameraOn: type === "video",
-      isSpeakerOn: type === "video",
+      isCameraOn: false,
+      isSpeakerOn: false,
     };
     updateCall(call);
-
-    try {
-      const res = await API.initiateCall(participant.id, type);
-      const sessionId = res.session_id;
-      const updated: ActiveCall = {
-        ...call,
-        sessionId,
-        cfCallerSessionId: res.cf_session_id,
-        cfHostSessionId: res.cf_host_session_id,
-        coinsPerMinute: res.host_coins_per_minute ?? coinsPerMinute,
-        maxSeconds: res.max_seconds,
-      };
-      updateCall(updated);
-      // Fix C1: Caller should NOT call answerCall — only the HOST answers
-    } catch (e) {
-      console.warn("initiateCall API error:", e);
-    }
-  }, []);
-
-  const receiveCall = useCallback((participant: CallParticipant, type: CallType, callId: string) => {
-    // Fix C3: also set sessionId = callId so acceptCall/declineCall can call the backend
-    const call: ActiveCall = { callId, sessionId: callId, type, status: "incoming", participant, isMuted: false, isCameraOn: false, isSpeakerOn: false };
-    updateCall(call);
-    router.push("/shared/call/incoming");
+    router.push("/calls/incoming");
   }, []);
 
   const acceptCall = useCallback(async () => {
@@ -101,7 +75,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     if (curr.sessionId) {
       try { await API.answerCall(curr.sessionId, true); } catch {}
     }
-    router.replace(curr.type === "audio" ? "/shared/call/audio-call" : "/shared/call/video-call");
+    router.replace(curr.type === "audio" ? "/calls/audio-call" : "/calls/video-call");
   }, []);
 
   const markCallActive = useCallback(() => {
@@ -113,7 +87,6 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const declineCall = useCallback(() => {
     const curr = activeCallRef.current;
     updateCall(null);
-    // Fix M3: notify backend that host declined
     if (curr?.sessionId) {
       try { API.answerCall(curr.sessionId, false); } catch {}
     }
@@ -125,46 +98,56 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     const duration = call?.startTime ? Math.floor((Date.now() - call.startTime) / 1000) : 0;
     updateCall(null);
 
-    let coinsSpent = Math.ceil(duration / 60) * (call?.coinsPerMinute ?? 5);
+    let coinsEarned = Math.floor(duration / 60) * (call?.coinsPerMinute ?? 5);
 
     if (call?.sessionId) {
       try {
         const res = await API.endCall(call.sessionId, duration);
-        if (res?.coins_charged != null) {
-          coinsSpent = res.coins_charged;
+        if (res?.coins_earned != null) {
+          coinsEarned = res.coins_earned;
         }
-      } catch (e) { console.warn("endCall API error:", e); }
-      // Always refresh balance after call ends (remote may have already billed)
+      } catch (e) {
+        console.warn("endCall API error:", e);
+      }
       try {
-        const bal = await API.getBalance();
-        if (bal?.coins != null) updateCoins(bal.coins);
+        await refreshProfile();
       } catch {}
     }
 
     if (call) {
       router.replace({
-        pathname: "/shared/call/summary",
+        pathname: "/calls/summary",
         params: {
           duration: String(duration),
           type: call.type,
           participantName: call.participant.name,
           participantId: call.participant.id,
           sessionId: call.sessionId ?? "",
-          coinsSpent: String(coinsSpent),
+          coinsEarned: String(coinsEarned),
           autoEnded: autoEnded ? "1" : "0",
         },
       });
     } else {
       router.back();
     }
-  }, []);
+  }, [refreshProfile]);
 
   const toggleMute = useCallback(() => setActiveCall((p) => p ? { ...p, isMuted: !p.isMuted } : null), []);
   const toggleCamera = useCallback(() => setActiveCall((p) => p ? { ...p, isCameraOn: !p.isCameraOn } : null), []);
   const toggleSpeaker = useCallback(() => setActiveCall((p) => p ? { ...p, isSpeakerOn: !p.isSpeakerOn } : null), []);
 
   return (
-    <CallContext.Provider value={{ activeCall, initiateCall, receiveCall, acceptCall, markCallActive, declineCall, endCall, toggleMute, toggleCamera, toggleSpeaker }}>
+    <CallContext.Provider value={{
+      activeCall,
+      receiveCall,
+      acceptCall,
+      markCallActive,
+      declineCall,
+      endCall,
+      toggleMute,
+      toggleCamera,
+      toggleSpeaker,
+    }}>
       {children}
     </CallContext.Provider>
   );

@@ -1,13 +1,12 @@
-// VoxLink Payment Service
-// Coin purchase simulation + transaction history management
+// VoxLink Host — Earnings & Withdrawal Service
+// Hosts earn coins per minute from calls; they can withdraw earnings
 
-import { appendToArray, StorageKeys } from "@/utils/storage";
-import { CoinPlan } from "@/data/mockData";
+import { appendToArray, getItem, StorageKeys } from "@/utils/storage";
 
-export type TransactionType = "purchase" | "spend" | "bonus" | "refund" | "transfer" | "withdrawal";
+export type TransactionType = "earning" | "bonus" | "withdrawal" | "adjustment";
 export type TransactionStatus = "completed" | "pending" | "failed" | "refunded";
 
-export interface CoinTransaction {
+export interface EarningTransaction {
   id: string;
   type: TransactionType;
   title: string;
@@ -17,23 +16,23 @@ export interface CoinTransaction {
   timestamp: number;
   status: TransactionStatus;
   orderId?: string;
-  planId?: string;
-  hostId?: string;
+  userId?: string;
+  userName?: string;
+  callDuration?: number;
   paymentMethod?: string;
   currency?: string;
-  fiatAmount?: number;
 }
 
-export interface PurchaseResult {
+export interface EarningResult {
   success: boolean;
-  transaction?: CoinTransaction;
+  transaction?: EarningTransaction;
   newBalance?: number;
   error?: string;
 }
 
 export interface WithdrawResult {
   success: boolean;
-  transaction?: CoinTransaction;
+  transaction?: EarningTransaction;
   newBalance?: number;
   error?: string;
 }
@@ -43,105 +42,74 @@ function delay(ms = MOCK_DELAY) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-function generateOrderId() {
-  return `ORD${Date.now().toString().slice(-8)}${Math.random().toString(36).slice(2, 5).toUpperCase()}`;
-}
-
 function generateTxId() {
   return `TX_${Date.now()}_${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
 }
 
-export async function purchaseCoins(
-  plan: CoinPlan,
-  currentBalance: number,
-  paymentMethod = "card"
-): Promise<PurchaseResult> {
-  await delay();
-
-  // Simulate 95% success rate
-  if (Math.random() < 0.05) {
-    return { success: false, error: "Payment failed. Please try again." };
-  }
-
-  const totalCoins = plan.coins + (plan.bonus ?? 0);
-  const newBalance = currentBalance + totalCoins;
-
-  const tx: CoinTransaction = {
-    id: generateTxId(),
-    type: "purchase",
-    title: `Purchased ${plan.coins.toLocaleString()} Coins`,
-    description: plan.bonus
-      ? `+${plan.bonus} bonus coins included`
-      : `Payment via ${paymentMethod}`,
-    amount: totalCoins,
-    balanceAfter: newBalance,
-    timestamp: Date.now(),
-    status: "completed",
-    orderId: generateOrderId(),
-    planId: plan.id,
-    paymentMethod,
-    currency: plan.currency,
-    fiatAmount: plan.price,
-  };
-
-  await appendToArray<CoinTransaction>(StorageKeys.COIN_HISTORY, tx);
-  return { success: true, transaction: tx, newBalance };
+function generateOrderId() {
+  return `WD${Date.now().toString().slice(-8)}${Math.random().toString(36).slice(2, 5).toUpperCase()}`;
 }
 
-export async function spendCoins(params: {
-  amount: number;
+// ─── Record Call Earning ──────────────────────────────────────────────────────
+
+export async function recordCallEarning(params: {
+  coinsEarned: number;
   currentBalance: number;
-  hostId: string;
-  hostName: string;
+  userId: string;
+  userName: string;
   callDuration: number;
-}): Promise<PurchaseResult> {
-  const { amount, currentBalance, hostId, hostName, callDuration } = params;
-
-  if (currentBalance < amount) {
-    return { success: false, error: "Insufficient coins" };
-  }
-
-  const newBalance = currentBalance - amount;
+}): Promise<EarningResult> {
+  const { coinsEarned, currentBalance, userId, userName, callDuration } = params;
+  const newBalance = currentBalance + coinsEarned;
   const mins = Math.floor(callDuration / 60);
   const secs = callDuration % 60;
   const durationStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
 
-  const tx: CoinTransaction = {
+  const tx: EarningTransaction = {
     id: generateTxId(),
-    type: "spend",
-    title: `Call with ${hostName}`,
+    type: "earning",
+    title: `Call with ${userName}`,
     description: `Duration: ${durationStr}`,
-    amount: -amount,
+    amount: coinsEarned,
     balanceAfter: newBalance,
     timestamp: Date.now(),
     status: "completed",
-    hostId,
+    userId,
+    userName,
+    callDuration,
   };
 
-  await appendToArray<CoinTransaction>(StorageKeys.COIN_HISTORY, tx);
+  await appendToArray<EarningTransaction>(StorageKeys.COIN_HISTORY, tx);
   return { success: true, transaction: tx, newBalance };
 }
 
-export async function creditBonusCoins(params: {
+// ─── Credit Bonus ─────────────────────────────────────────────────────────────
+
+export async function creditBonus(params: {
   amount: number;
   currentBalance: number;
   reason: string;
-}): Promise<PurchaseResult> {
+}): Promise<EarningResult> {
   const newBalance = params.currentBalance + params.amount;
-  const tx: CoinTransaction = {
+  const tx: EarningTransaction = {
     id: generateTxId(),
     type: "bonus",
-    title: "Bonus Coins",
+    title: "Bonus Reward",
     description: params.reason,
     amount: params.amount,
     balanceAfter: newBalance,
     timestamp: Date.now(),
     status: "completed",
   };
-
-  await appendToArray<CoinTransaction>(StorageKeys.COIN_HISTORY, tx);
+  await appendToArray<EarningTransaction>(StorageKeys.COIN_HISTORY, tx);
   return { success: true, transaction: tx, newBalance };
 }
+
+// ─── Withdraw Earnings ────────────────────────────────────────────────────────
+
+export const MINIMUM_WITHDRAWAL = 500;
+export const COIN_TO_INR_RATE = 0.5;
+export const COIN_TO_USD_RATE = 0.006;
 
 export async function withdrawEarnings(params: {
   amount: number;
@@ -154,14 +122,12 @@ export async function withdrawEarnings(params: {
   if (params.currentBalance < params.amount) {
     return { success: false, error: "Insufficient balance" };
   }
-
-  // Minimum withdrawal: 100 coins
-  if (params.amount < 100) {
-    return { success: false, error: "Minimum withdrawal is 100 coins" };
+  if (params.amount < MINIMUM_WITHDRAWAL) {
+    return { success: false, error: `Minimum withdrawal is ${MINIMUM_WITHDRAWAL} coins` };
   }
 
   const newBalance = params.currentBalance - params.amount;
-  const tx: CoinTransaction = {
+  const tx: EarningTransaction = {
     id: generateTxId(),
     type: "withdrawal",
     title: "Earnings Withdrawal",
@@ -170,23 +136,34 @@ export async function withdrawEarnings(params: {
     balanceAfter: newBalance,
     timestamp: Date.now(),
     status: "pending",
+    orderId: generateOrderId(),
     paymentMethod: params.method,
   };
 
-  await appendToArray<CoinTransaction>(StorageKeys.COIN_HISTORY, tx);
+  await appendToArray<EarningTransaction>(StorageKeys.COIN_HISTORY, tx);
   return { success: true, transaction: tx, newBalance };
 }
 
-export async function getTransactionHistory(): Promise<CoinTransaction[]> {
-  const { getItem } = await import("@/utils/storage");
-  const txs = await getItem<CoinTransaction[]>(StorageKeys.COIN_HISTORY);
+// ─── Transaction History ──────────────────────────────────────────────────────
+
+export async function getTransactionHistory(): Promise<EarningTransaction[]> {
+  const txs = await getItem<EarningTransaction[]>(StorageKeys.COIN_HISTORY);
   return (txs ?? []).sort((a, b) => b.timestamp - a.timestamp);
 }
 
-export function coinsToCurrency(coins: number, rate = 0.01): string {
-  return `$${(coins * rate).toFixed(2)}`;
+export async function getTotalEarnings(): Promise<number> {
+  const txs = await getTransactionHistory();
+  return txs
+    .filter((t) => t.type === "earning" || t.type === "bonus")
+    .reduce((sum, t) => sum + t.amount, 0);
 }
 
-export function currencyToCoins(usd: number, rate = 100): number {
-  return Math.floor(usd * rate);
+// ─── Conversion Helpers ───────────────────────────────────────────────────────
+
+export function coinsToINR(coins: number): string {
+  return `₹${(coins * COIN_TO_INR_RATE).toFixed(2)}`;
+}
+
+export function coinsToUSD(coins: number): string {
+  return `$${(coins * COIN_TO_USD_RATE).toFixed(2)}`;
 }

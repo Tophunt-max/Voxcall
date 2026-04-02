@@ -1,6 +1,6 @@
 export { formatDuration, formatRelativeTime } from "@/utils/format";
 
-export interface Host {
+export interface HostProfile {
   id: string;
   name: string;
   avatar: string;
@@ -15,32 +15,37 @@ export interface Host {
   isTopRated: boolean;
   gender: "male" | "female";
   country: string;
-}
-
-export interface CoinPlan {
-  id: string;
-  coins: number;
-  price: number;
-  currency: string;
-  bonus?: number;
-  isPopular?: boolean;
+  earnings: number;
+  kycStatus: "pending" | "approved" | "rejected";
+  isVerified: boolean;
 }
 
 export interface CallRecord {
   id: string;
-  hostId?: string;
-  hostName: string;
-  hostAvatar: string;
+  userId?: string;
+  userName: string;
+  userAvatar: string;
   type: "audio" | "video";
   duration: number;
-  coinsSpent: number;
+  coinsEarned: number;
   timestamp: number;
   rating?: number;
+  userRatedHost?: boolean;
+}
+
+export interface WithdrawalRecord {
+  id: string;
+  amount: number;
+  method: string;
+  accountDetails: string;
+  status: "pending" | "approved" | "rejected";
+  timestamp: number;
+  orderId: string;
 }
 
 export interface Notification {
   id: string;
-  type: "call" | "message" | "promo" | "system";
+  type: "call" | "message" | "earning" | "system" | "review";
   title: string;
   body: string;
   timestamp: number;

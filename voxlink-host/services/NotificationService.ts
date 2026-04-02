@@ -1,8 +1,5 @@
-// VoxLink Notification Service
-// FCM-based push notifications (Firebase Cloud Messaging)
-// Native: @react-native-firebase/messaging
-// Web: Firebase Web Messaging + Service Worker
-// In-app: AsyncStorage-backed notification list
+// VoxLink Host — Notification Service
+// FCM-based push notifications + in-app notification store (Host-specific)
 
 import { Platform } from "react-native";
 import { appendToArray, getItem, setItem, StorageKeys } from "@/utils/storage";
@@ -10,7 +7,7 @@ import { requestFCMPermission, getFCMToken, setupBackgroundMessageHandler } from
 
 export interface InAppNotification {
   id: string;
-  type: "call" | "message" | "promo" | "system" | "review" | "payment";
+  type: "call" | "message" | "system" | "review" | "payment" | "earning";
   title: string;
   body: string;
   timestamp: number;
@@ -24,7 +21,7 @@ function generateNotifId() {
   return `notif_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 }
 
-// ─── Web Browser Notification (foreground) ───────────────────────────────────
+// ─── Web Browser Notification ────────────────────────────────────────────────
 
 function isWebNotificationSupported(): boolean {
   return Platform.OS === "web" && typeof window !== "undefined" && "Notification" in window;
@@ -94,15 +91,11 @@ export async function scheduleLocalNotification(params: {
     }
     return;
   }
-  // On native, FCM handles all push — local notifications via notifee (optional)
-  // Background push is handled by Firebase automatically
 }
 
-export async function cancelAllNotifications(): Promise<void> {
-  // Handled by FCM / OS — no local scheduler to cancel
-}
+export async function cancelAllNotifications(): Promise<void> {}
 
-// ─── In-App Notification Store ──────────────────────────────────────────────
+// ─── In-App Notification Store ───────────────────────────────────────────────
 
 export async function addNotification(
   notif: Omit<InAppNotification, "id" | "timestamp" | "isRead">
@@ -145,19 +138,20 @@ export async function getUnreadCount(): Promise<number> {
   return all.filter((n) => !n.isRead).length;
 }
 
-// ─── Pre-built Notification Types ───────────────────────────────────────────
+// ─── Host-Specific Notification Types ────────────────────────────────────────
 
-export function notifyIncomingCall(hostName: string, hostAvatar: string) {
+export function notifyIncomingCall(userName: string, userAvatar: string) {
   scheduleLocalNotification({
     title: "Incoming Call",
-    body: `${hostName} is calling you`,
+    body: `${userName} wants to call you`,
     data: { type: "incoming_call" },
   });
   return addNotification({
     type: "call",
     title: "Incoming Call",
-    body: `${hostName} is calling you`,
-    avatar: hostAvatar,
+    body: `${userName} wants to call you`,
+    avatar: userAvatar,
+    actionUrl: "/calls/incoming",
   });
 }
 
@@ -171,34 +165,68 @@ export function notifyNewMessage(senderName: string, message: string, chatId: st
     type: "message",
     title: senderName,
     body: message,
-    actionUrl: `/shared/chat/${chatId}`,
+    actionUrl: `/chat/${chatId}`,
   });
 }
 
-export function notifyLowCoins(balance: number) {
+export function notifyCallEarning(userName: string, coinsEarned: number, durationSecs: number) {
+  const mins = Math.floor(durationSecs / 60);
+  const secs = durationSecs % 60;
+  const durStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
   scheduleLocalNotification({
-    title: "Low Coin Balance",
-    body: `You have ${balance} coins left. Recharge to keep calling!`,
-    data: { type: "system" },
+    title: `+${coinsEarned} coins earned!`,
+    body: `Call with ${userName} for ${durStr}`,
+    data: { type: "earning" },
   });
   return addNotification({
-    type: "system",
-    title: "Low Coin Balance",
-    body: `You have ${balance} coins left. Recharge to keep calling!`,
-    actionUrl: "/user/payment/checkout",
+    type: "earning",
+    title: `+${coinsEarned} coins earned`,
+    body: `Call with ${userName} · ${durStr}`,
+    actionUrl: "/calls/history",
   });
 }
 
-export function notifyPurchaseSuccess(coins: number) {
+export function notifyReviewReceived(userName: string, rating: number) {
+  const stars = "★".repeat(rating) + "☆".repeat(5 - rating);
   scheduleLocalNotification({
-    title: "Purchase Successful",
-    body: `${coins.toLocaleString()} coins added to your wallet!`,
-    data: { type: "payment" },
+    title: "New Review",
+    body: `${userName} rated you ${stars}`,
+    data: { type: "review" },
   });
+  return addNotification({
+    type: "review",
+    title: "New Review",
+    body: `${userName} rated you ${stars}`,
+    actionUrl: "/(tabs)/",
+  });
+}
+
+export function notifyWithdrawalStatus(amount: number, status: "approved" | "rejected") {
+  const title = status === "approved" ? "Withdrawal Approved" : "Withdrawal Rejected";
+  const body =
+    status === "approved"
+      ? `Your withdrawal of ${amount} coins has been processed.`
+      : `Your withdrawal of ${amount} coins was rejected. Please contact support.`;
+  scheduleLocalNotification({ title, body, data: { type: "payment" } });
   return addNotification({
     type: "payment",
-    title: "Purchase Successful",
-    body: `${coins.toLocaleString()} coins added to your wallet!`,
-    actionUrl: "/shared/coin-history",
+    title,
+    body,
+    actionUrl: "/(tabs)/wallet",
+  });
+}
+
+export function notifyKYCStatus(status: "approved" | "rejected") {
+  const title = status === "approved" ? "KYC Verified!" : "KYC Rejected";
+  const body =
+    status === "approved"
+      ? "Your identity has been verified. You can now go online!"
+      : "Your KYC was rejected. Please re-submit your documents.";
+  scheduleLocalNotification({ title, body, data: { type: "system" } });
+  return addNotification({
+    type: "system",
+    title,
+    body,
+    actionUrl: "/auth/status",
   });
 }
