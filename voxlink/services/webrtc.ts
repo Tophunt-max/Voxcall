@@ -6,7 +6,17 @@ let mediaDevicesRef: any = null;
 let MediaStreamClass: any = null;
 
 try {
-  if (Platform.OS !== 'web') {
+  if (Platform.OS === 'web') {
+    // Browser native WebRTC — available in all modern browsers
+    if (typeof window !== 'undefined' && (window as any).RTCPeerConnection) {
+      RTC = {
+        RTCPeerConnection: (window as any).RTCPeerConnection,
+        RTCSessionDescription: (window as any).RTCSessionDescription,
+      };
+      mediaDevicesRef = (navigator as any).mediaDevices;
+      // MediaStream is global on web
+    }
+  } else {
     const webrtc = require('react-native-webrtc');
     RTC = {
       RTCPeerConnection: webrtc.RTCPeerConnection,
@@ -75,12 +85,12 @@ export class WebRTCService {
     try {
       this.pc = new RTC.RTCPeerConnection({ iceServers: ICE_SERVERS });
 
-      if (MediaStreamClass) {
-        try {
-          this.remoteStream = new MediaStreamClass(undefined);
-        } catch {
-          this.remoteStream = null;
-        }
+      try {
+        // Web uses global MediaStream; native uses react-native-webrtc MediaStream
+        const MS = MediaStreamClass ?? (typeof MediaStream !== 'undefined' ? MediaStream : null);
+        if (MS) this.remoteStream = new MS();
+      } catch {
+        this.remoteStream = null;
       }
 
       this.pc.addEventListener('track', (event: any) => {

@@ -24,10 +24,39 @@ function generateNotifId() {
   return `notif_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 }
 
+// ─── Web Browser Notification helpers ───────────────────────────────────────
+
+function isWebNotificationSupported(): boolean {
+  return Platform.OS === "web" && typeof window !== "undefined" && "Notification" in window;
+}
+
+async function showBrowserNotification(title: string, body: string, data?: Record<string, unknown>): Promise<void> {
+  if (!isWebNotificationSupported()) return;
+  try {
+    if ((window as any).Notification.permission === "granted") {
+      const n = new (window as any).Notification(title, {
+        body,
+        icon: "/favicon.ico",
+        data,
+      });
+      setTimeout(() => n.close(), 6000);
+    }
+  } catch {}
+}
+
 // ─── Push Notification Setup ────────────────────────────────────────────────
 
 export async function configurePushNotifications(): Promise<void> {
-  if (!Notifications || Platform.OS === "web") return;
+  // Web: request browser notification permission
+  if (Platform.OS === "web") {
+    try {
+      if (isWebNotificationSupported() && (window as any).Notification.permission === "default") {
+        await (window as any).Notification.requestPermission();
+      }
+    } catch {}
+    return;
+  }
+  if (!Notifications) return;
   try {
     if (Platform.OS === "android") {
       await Notifications.setNotificationChannelAsync("default", {
@@ -88,7 +117,15 @@ export async function scheduleLocalNotification(params: {
   data?: Record<string, unknown>;
   delaySeconds?: number;
 }): Promise<void> {
-  if (!Notifications || Platform.OS === "web") return;
+  if (Platform.OS === "web") {
+    if (params.delaySeconds) {
+      setTimeout(() => showBrowserNotification(params.title, params.body, params.data), params.delaySeconds * 1000);
+    } else {
+      await showBrowserNotification(params.title, params.body, params.data);
+    }
+    return;
+  }
+  if (!Notifications) return;
   try {
     await Notifications.scheduleNotificationAsync({
       content: {

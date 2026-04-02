@@ -3,7 +3,6 @@ import {
   View, Text, StyleSheet, Image, TouchableOpacity,
   Modal, Animated, Easing, Platform,
 } from "react-native";
-import { CameraView } from "expo-camera";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -12,15 +11,49 @@ import { useCallTimer } from "@/hooks/useCallTimer";
 import { usePermissions } from "@/hooks/usePermissions";
 import { PermissionDialog, PERMISSION_CONFIGS } from "@/components/PermissionDialog";
 import { useWebRTC } from "@/hooks/useWebRTC";
-import * as Haptics from "expo-haptics";
 
 let RTCView: any = null;
+let CameraView: any = null;
+let Haptics: any = null;
 try {
   if (Platform.OS !== 'web') {
     RTCView = require('react-native-webrtc').RTCView;
+    CameraView = require('expo-camera').CameraView;
+  } else {
+    CameraView = require('expo-camera').CameraView; // has web support
   }
-} catch {
-  RTCView = null;
+  Haptics = require('expo-haptics');
+} catch {}
+
+// ─── StreamView ──────────────────────────────────────────────────────────────
+// Renders a MediaStream as video. Native: RTCView; Web: <video> srcObject.
+function StreamView({ stream, style, mirror = false }: { stream: any; style?: any; mirror?: boolean }) {
+  const videoRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (Platform.OS === 'web' && videoRef.current && stream) {
+      videoRef.current.srcObject = stream;
+    }
+  }, [stream]);
+
+  if (!stream) return null;
+
+  if (Platform.OS === 'web') {
+    return React.createElement('video', {
+      ref: videoRef,
+      autoPlay: true,
+      playsInline: true,
+      muted: mirror, // self-view is muted, remote is not
+      style: {
+        ...StyleSheet.flatten(style),
+        objectFit: 'cover',
+        transform: mirror ? 'scaleX(-1)' : undefined,
+      },
+    });
+  }
+
+  if (!RTCView || !stream?.toURL) return null;
+  return <RTCView streamURL={stream.toURL()} style={style} objectFit="cover" mirror={mirror} zOrder={mirror ? 1 : 0} />;
 }
 
 type PermStep = "camera" | "microphone" | "done";
@@ -133,7 +166,7 @@ export default function VideoCallScreen() {
     `https://api.dicebear.com/7.x/avataaars/svg?seed=${activeCall?.participant.id ?? "host"}`;
 
   const handleFlip = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Haptics?.impactAsync?.(Haptics?.ImpactFeedbackStyle?.Light);
     webrtc.switchCamera();
   };
 
@@ -194,9 +227,6 @@ export default function VideoCallScreen() {
   const cameraGranted = permissions.camera.status === "granted";
   const micGranted = permissions.microphone.status === "granted";
 
-  const localStreamUrl = webrtc.localStream ? (webrtc.localStream as any).toURL() : null;
-  const remoteStreamUrl = webrtc.remoteStream ? (webrtc.remoteStream as any).toURL() : null;
-
   return (
     <View style={styles.screen}>
       <PermissionDialog
@@ -214,13 +244,8 @@ export default function VideoCallScreen() {
       />
 
       <View style={styles.remoteArea}>
-        {RTCView && remoteStreamUrl ? (
-          <RTCView
-            streamURL={remoteStreamUrl}
-            style={styles.remoteVideo}
-            objectFit="cover"
-            mirror={false}
-          />
+        {webrtc.remoteStream ? (
+          <StreamView stream={webrtc.remoteStream} style={styles.remoteVideo} mirror={false} />
         ) : (
           <>
             <Animated.Image
@@ -241,20 +266,14 @@ export default function VideoCallScreen() {
 
       <View style={[styles.selfPreview, { top: insets.top + 12, right: 16 }]}>
         {activeCall?.isCameraOn && cameraGranted ? (
-          RTCView && localStreamUrl ? (
-            <RTCView
-              streamURL={localStreamUrl}
-              style={styles.selfCameraView}
-              objectFit="cover"
-              mirror={true}
-              zOrder={1}
-            />
-          ) : (
+          webrtc.localStream ? (
+            <StreamView stream={webrtc.localStream} style={styles.selfCameraView} mirror={true} />
+          ) : CameraView ? (
             <CameraView
               style={styles.selfCameraView}
               facing="front"
             />
-          )
+          ) : null
         ) : (
           <View style={styles.selfCameraOff}>
             <Feather
@@ -338,7 +357,7 @@ export default function VideoCallScreen() {
         <View style={styles.bottomControls}>
           <View style={styles.ctrlItem}>
             <TouchableOpacity
-              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); toggleCamera(); }}
+              onPress={() => { Haptics?.impactAsync?.(Haptics?.ImpactFeedbackStyle?.Light); toggleCamera(); }}
               style={[styles.ctrlBtn, !activeCall?.isCameraOn && styles.ctrlBtnOff]}
             >
               <Feather name={activeCall?.isCameraOn ? "camera" : "camera-off"} size={22} color="#fff" />
@@ -348,7 +367,7 @@ export default function VideoCallScreen() {
 
           <View style={styles.ctrlItem}>
             <TouchableOpacity
-              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); toggleMute(); }}
+              onPress={() => { Haptics?.impactAsync?.(Haptics?.ImpactFeedbackStyle?.Light); toggleMute(); }}
               style={[styles.ctrlBtn, activeCall?.isMuted && styles.ctrlBtnOff]}
             >
               <Feather name={activeCall?.isMuted ? "mic-off" : "mic"} size={22} color="#fff" />
@@ -358,7 +377,7 @@ export default function VideoCallScreen() {
 
           <View style={styles.ctrlItem}>
             <TouchableOpacity
-              onPress={() => { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning); handleEndCall(); }}
+              onPress={() => { Haptics?.notificationAsync?.(Haptics?.NotificationFeedbackType?.Warning); handleEndCall(); }}
               style={styles.endBtn}
             >
               <Feather name="phone-off" size={26} color="#fff" />
@@ -375,7 +394,7 @@ export default function VideoCallScreen() {
 
           <View style={styles.ctrlItem}>
             <TouchableOpacity
-              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); toggleSpeaker(); }}
+              onPress={() => { Haptics?.impactAsync?.(Haptics?.ImpactFeedbackStyle?.Light); toggleSpeaker(); }}
               style={[styles.ctrlBtn, activeCall?.isSpeakerOn && styles.ctrlBtnActive]}
             >
               <Feather name={activeCall?.isSpeakerOn ? "volume-2" : "volume-x"} size={22} color="#fff" />
