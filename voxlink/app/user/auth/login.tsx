@@ -12,7 +12,7 @@ import * as Google from "expo-auth-session/providers/google";
 import * as Application from "expo-application";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAuth } from "@/context/AuthContext";
-import { API } from "@/services/api";
+import { API, resolveMediaUrl } from "@/services/api";
 import { getRandomAvatarKey } from "@/utils/randomAvatar";
 import { showErrorToast, showSuccessToast } from "@/components/Toast";
 
@@ -138,7 +138,7 @@ export default function LoginScreen() {
         id: data.user.id || id,
         name: data.user.name || name,
         email: data.user.email || email,
-        avatar: photo || data.user.avatar_url || null,
+        avatar: photo || resolveMediaUrl(data.user.avatar_url) || null,
         coins: data.user.coins ?? 50,
         role: "user" as const,
       };
@@ -156,7 +156,7 @@ export default function LoginScreen() {
     try {
       const deviceId = await getDeviceId();
       const data = await API.quickLogin(deviceId);
-      const avatarKey = data.user.avatar_url || getRandomAvatarKey();
+      const avatarKey = resolveMediaUrl(data.user.avatar_url) || getRandomAvatarKey();
       const profile = {
         id: data.user.id,
         name: data.user.name || "VoxLink User",

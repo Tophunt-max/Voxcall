@@ -23,7 +23,7 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { PermissionDialog, PERMISSION_CONFIGS } from "@/components/PermissionDialog";
 import { useLanguage } from "@/context/LanguageContext";
 import { LANGUAGES } from "@/localization";
-import { API } from "@/services/api";
+import { API, resolveMediaUrl } from "@/services/api";
 import { showSuccessToast, showErrorToast } from "@/components/Toast";
 
 interface MenuItemProps {
@@ -205,7 +205,7 @@ export default function ProfileScreen() {
       formData.append("path", `avatars/${user?.id ?? "user"}/avatar.${ext}`);
       const uploadData = await API.uploadFile(formData);
       if (uploadData?.url) {
-        await updateProfile({ avatar: uploadData.url });
+        await updateProfile({ avatar: resolveMediaUrl(uploadData.url) || uploadData.url });
       }
     } catch {
       Alert.alert("Upload Failed", "Could not upload avatar. Please try again.");
@@ -236,7 +236,7 @@ export default function ProfileScreen() {
 
   const resolvedAvatar =
     avatarUri ??
-    user?.avatar ??
+    resolveMediaUrl(user?.avatar) ??
     `https://api.dicebear.com/7.x/avataaars/png?seed=${user?.id ?? "me"}`;
 
   return (

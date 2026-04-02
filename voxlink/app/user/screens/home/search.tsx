@@ -15,7 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { useAuth } from "@/context/AuthContext";
 import { useCall } from "@/context/CallContext";
-import { API } from "@/services/api";
+import { API, resolveMediaUrl } from "@/services/api";
 import { showErrorToast } from "@/components/Toast";
 import { InsufficientCoinsPopup } from "@/components/InsufficientCoinsPopup";
 
@@ -23,7 +23,7 @@ function mapApiHost(h: any) {
   return {
     id: h.id,
     name: h.display_name || h.name || "Host",
-    avatar: h.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${h.id}`,
+    avatar: resolveMediaUrl(h.avatar_url) || `https://api.dicebear.com/7.x/avataaars/svg?seed=${h.id}`,
     bio: h.bio || "",
     rating: Number(h.rating) || 0,
     reviewCount: Number(h.review_count) || 0,

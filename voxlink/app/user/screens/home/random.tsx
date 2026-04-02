@@ -8,7 +8,7 @@ import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/context/AuthContext";
 import { useCall } from "@/context/CallContext";
-import { API } from "@/services/api";
+import { API, resolveMediaUrl } from "@/services/api";
 import { showErrorToast } from "@/components/Toast";
 
 const { width: SW, height: SH } = Dimensions.get("window");
@@ -104,9 +104,7 @@ function ListenerCard({ host, isLeft, isSpecial, delay, onCycled, onPress }: Lis
     ? { paddingLeft: 32, paddingRight: 14, paddingVertical: 8 }
     : { paddingLeft: 20, paddingRight: 32, paddingVertical: 8 };
 
-  const avatarUri = host.avatar_url && host.avatar_url.startsWith("http")
-    ? host.avatar_url
-    : `https://api.dicebear.com/7.x/avataaars/svg?seed=${host.id}`;
+  const avatarUri = resolveMediaUrl(host.avatar_url) || `https://api.dicebear.com/7.x/avataaars/svg?seed=${host.id}`;
 
   return (
     <Animated.View style={{ opacity, transform: [{ scale }] }}>
@@ -194,9 +192,7 @@ function MatchFoundScreen({ host, callType, adminCoinRate, onAccept, onDecline }
     Animated.spring(scale, { toValue: 1, tension: 55, friction: 8, useNativeDriver: false }).start();
   }, []);
 
-  const avatarUri = host.avatar_url && host.avatar_url.startsWith("http")
-    ? host.avatar_url
-    : `https://api.dicebear.com/7.x/avataaars/svg?seed=${host.id}`;
+  const avatarUri = resolveMediaUrl(host.avatar_url) || `https://api.dicebear.com/7.x/avataaars/svg?seed=${host.id}`;
 
   const coinsPerMin = adminCoinRate;
 
@@ -349,9 +345,7 @@ export default function RandomScreen() {
     if (!matchedHost) return;
     setPhase("idle");
 
-    const avatarUri = matchedHost.avatar_url && matchedHost.avatar_url.startsWith("http")
-      ? matchedHost.avatar_url
-      : `https://api.dicebear.com/7.x/avataaars/svg?seed=${matchedHost.id}`;
+    const avatarUri = resolveMediaUrl(matchedHost.avatar_url) || `https://api.dicebear.com/7.x/avataaars/svg?seed=${matchedHost.id}`;
 
     // adminCoinRate is set by admin in Settings → Random Call Rates
     initiateCall(

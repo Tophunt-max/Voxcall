@@ -19,7 +19,7 @@ import { useCall } from "@/context/CallContext";
 import { HostCard } from "@/components/HostCard";
 import { InsufficientCoinsPopup } from "@/components/InsufficientCoinsPopup";
 import { Host } from "@/data/mockData";
-import { API } from "@/services/api";
+import { API, resolveMediaUrl } from "@/services/api";
 import { showErrorToast } from "@/components/Toast";
 import { RefreshControl } from "react-native";
 
@@ -31,7 +31,7 @@ function mapApiHost(h: any): Host {
   return {
     id: h.id,
     name: h.display_name || h.name || "Host",
-    avatar: h.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${h.id}`,
+    avatar: resolveMediaUrl(h.avatar_url) || `https://api.dicebear.com/7.x/avataaars/svg?seed=${h.id}`,
     bio: h.bio || "",
     rating: Number(h.rating) || 0,
     reviewCount: Number(h.review_count) || 0,
@@ -259,8 +259,10 @@ export default function HomeScreen() {
           >
             <View style={[styles.avatarBorder, { borderColor: colors.primary }]}>
               <Image
-                source={{ uri: `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.id ?? "me"}` }}
+                source={{ uri: user?.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.id ?? "me"}` }}
                 style={styles.headerAvatar}
+                onError={() => {}}
+                defaultSource={require("@/assets/images/home_call_person.png")}
               />
             </View>
           </TouchableOpacity>

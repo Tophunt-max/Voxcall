@@ -4,6 +4,12 @@ import { StorageKeys } from '@/utils/storage';
 
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8080';
 
+export function resolveMediaUrl(path?: string | null): string | undefined {
+  if (!path) return undefined;
+  if (path.startsWith('http://') || path.startsWith('https://')) return path;
+  return `${BASE_URL}${path.startsWith('/') ? '' : '/'}${path}`;
+}
+
 async function getToken(): Promise<string> {
   const token = await getItem<string>(StorageKeys.AUTH_TOKEN);
   return token || '';
