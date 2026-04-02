@@ -444,6 +444,20 @@ Merges socket + notification tap handling. Lives inside all providers so it can 
 ### API Server — 1 Fix
 7. **`admin.ts` Analytics Endpoint Hardcoded 7 Days** — Backend always returned 7 days regardless. Now reads `?days=N` query param (validated: only 7 or 30 allowed), builds the correct date range, and uses "Mon/Tue" labels for 7 days vs "Jan 5" labels for 30 days.
 
+## Bug Fix Log (Round 8 — 5 Bugs Fixed 2026-04-02)
+
+### Admin Panel — Moderation Section
+
+1. **ContentModeration: `reviewed` Status Was Dead Code** — The filter dropdown had a "Reviewed" option and the stat card showed "Reviewed: X" but no action in the UI ever set `status = 'reviewed'`. Added a "Mark Reviewed" button (blue) in the Report modal for pending reports. Reviewed reports now also show action buttons (Warn/Ban/Suspend/Remove) so the admin can still act on them later.
+
+2. **ContentModeration: Dismiss Local State Bug** — After dismissing a report, the optimistic UI update stored `action_taken: 'dismiss'` (the action string) in local state, but the backend stores `action_taken: null`. This caused the "Previous Action" chip to show "dismiss" until a page refresh. Fixed: dismiss and mark-reviewed both correctly store `action_taken: null` locally.
+
+3. **ContentModeration: Badge Variants Missing for `reviewed`/`dismissed`/`banned`** — The `Badge` component had no variants for these states so reports with those statuses showed in a default grey color. Added `reviewed` (blue), `dismissed` (slate), `banned` (red), and `actioned` (orange) variants.
+
+4. **ContentModeration: Status Badge Always Showed `banned` for Actioned Reports** — Previously all actioned reports showed a "banned" badge regardless of the actual action taken (warn/suspend/content_removed). Now the badge correctly reflects the action: `warned` → warning amber, `banned` → banned red, `suspended_7d`/`content_removed` → actioned orange.
+
+5. **SupportTickets: Missing User JOIN** — `GET /admin/support-tickets` did `SELECT *` without joining the `users` table, so `user_name` and `user_email` came only from the snapshot in `support_tickets` (often empty for manually-created tickets). Now JOINs `users` table via `user_id` to get the current display name, email, and avatar. The ticket modal also shows the user's email and real avatar.
+
 ## Bug Fix Log (Round 7 — 9 Bugs Fixed 2026-04-02)
 
 ### Admin Panel — 3 Fixes

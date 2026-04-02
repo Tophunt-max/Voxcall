@@ -8,9 +8,10 @@ import { Search, MessageSquare, Clock, CheckCircle, AlertCircle, Send } from 'lu
 const priorityColor: Record<string, string> = { high: 'text-red-600 bg-red-50', medium: 'text-amber-600 bg-amber-50', low: 'text-green-600 bg-green-50' };
 const statusIcon: Record<string, any> = { open: AlertCircle, in_progress: Clock, resolved: CheckCircle };
 
-function UserAvatar({ name }: { name: string }) {
-  const colors = ['bg-violet-500', 'bg-blue-500', 'bg-green-500', 'bg-amber-500', 'bg-pink-500'];
-  const c = colors[(name || 'U').charCodeAt(0) % colors.length];
+function UserAvatar({ name, avatar }: { name: string; avatar?: string }) {
+  if (avatar) return <img src={avatar} alt={name} className="w-8 h-8 rounded-full object-cover flex-shrink-0" />;
+  const colorList = ['bg-violet-500', 'bg-blue-500', 'bg-green-500', 'bg-amber-500', 'bg-pink-500'];
+  const c = colorList[(name || 'U').charCodeAt(0) % colorList.length];
   return <div className={`w-8 h-8 rounded-full ${c} flex items-center justify-center text-white font-bold text-xs flex-shrink-0`}>{(name || 'U')[0]}</div>;
 }
 
@@ -67,7 +68,7 @@ export default function SupportTickets() {
       key: 'ticket', header: 'Ticket',
       render: (r: any) => (
         <div className="flex items-center gap-3">
-          <UserAvatar name={r.user_name || r.user || 'U'} />
+          <UserAvatar name={r.user_name || r.user || 'U'} avatar={r.user_avatar} />
           <div className="min-w-0">
             <p className="font-semibold text-sm truncate">{r.subject}</p>
             <p className="text-xs text-muted-foreground">{r.user_name || r.user || '—'} · #{r.id.slice(0, 8)}</p>
@@ -156,10 +157,14 @@ export default function SupportTickets() {
         {selected && (
           <div className="space-y-4">
             <div className="flex items-start gap-3 p-3 bg-secondary rounded-xl">
-              <UserAvatar name={selected.user_name || selected.user || 'U'} />
+              <UserAvatar name={selected.user_name || selected.user || 'U'} avatar={selected.user_avatar} />
               <div className="flex-1 min-w-0">
                 <p className="font-semibold text-sm">{selected.subject}</p>
-                <p className="text-xs text-muted-foreground">{selected.user_name || selected.user} · {selected.created_at ? new Date(selected.created_at * 1000).toLocaleDateString() : '—'}</p>
+                <p className="text-xs text-muted-foreground">
+                  {selected.user_name || selected.user || 'Unknown'}
+                  {selected.user_email ? ` · ${selected.user_email}` : ''}
+                  {' · '}{selected.created_at ? new Date(selected.created_at * 1000).toLocaleDateString() : '—'}
+                </p>
               </div>
               <select className="text-xs border border-border rounded-lg px-2 py-1 bg-background"
                 value={selected.status} onChange={e => updateStatus(selected.id, e.target.value)}>

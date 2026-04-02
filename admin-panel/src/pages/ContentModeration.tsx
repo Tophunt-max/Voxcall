@@ -71,10 +71,11 @@ export default function ContentModeration() {
     if (!selected || actionLoading) return;
     setActionLoading(true);
     try {
-      const newStatus = action === 'dismiss' ? 'dismissed' : 'actioned';
-      await api.updateContentReport(selected.id, { status: newStatus, action_taken: action === 'dismiss' ? null : action });
-      setRows(rows.map(r => r.id === selected.id ? { ...r, status: newStatus, action_taken: action } : r));
-      showToast(action === 'dismiss' ? 'Report dismissed' : `Action taken: ${action}`);
+      const newStatus = action === 'dismiss' ? 'dismissed' : action === 'review' ? 'reviewed' : 'actioned';
+      const actionTaken = action === 'dismiss' || action === 'review' ? null : action;
+      await api.updateContentReport(selected.id, { status: newStatus, action_taken: actionTaken });
+      setRows(rows.map(r => r.id === selected.id ? { ...r, status: newStatus, action_taken: actionTaken } : r));
+      showToast(action === 'dismiss' ? 'Report dismissed' : action === 'review' ? 'Marked as reviewed' : `Action taken: ${action}`);
       setSelected(null);
     } catch { showToast('Failed to take action'); }
     setActionLoading(false);
@@ -118,8 +119,16 @@ export default function ContentModeration() {
     {
       key: 'status', header: 'Status',
       render: (r: any) => {
-        const v = r.status === 'pending' ? 'pending' : r.status === 'actioned' ? 'banned' : r.status;
-        const label = r.status === 'actioned' ? (r.action_taken || 'actioned').replace(/_/g, ' ') : r.status;
+        const actionVariant: Record<string, string> = {
+          banned: 'banned', warned: 'warning', suspended_7d: 'actioned',
+          content_removed: 'actioned', warned_actioned: 'warning',
+        };
+        const v = r.status === 'actioned'
+          ? (actionVariant[r.action_taken] || 'actioned')
+          : (r.status || 'default');
+        const label = r.status === 'actioned'
+          ? (r.action_taken || 'actioned').replace(/_/g, ' ')
+          : r.status;
         return <Badge variant={v}>{label}</Badge>;
       }
     },
@@ -226,7 +235,7 @@ export default function ContentModeration() {
               </div>
             )}
 
-            {selected.status === 'pending' ? (
+            {(selected.status === 'pending' || selected.status === 'reviewed') ? (
               <div className="space-y-2 pt-1">
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Take Action</p>
                 <div className="grid grid-cols-2 gap-2">
@@ -242,10 +251,18 @@ export default function ContentModeration() {
                     </button>
                   ))}
                 </div>
-                <button onClick={() => takeAction('dismiss')} disabled={actionLoading}
-                  className="w-full bg-secondary hover:bg-secondary/80 text-foreground px-3 py-2.5 rounded-xl text-sm font-semibold transition-colors disabled:opacity-50 mt-1">
-                  Dismiss Report
-                </button>
+                <div className="grid grid-cols-2 gap-2">
+                  {selected.status === 'pending' && (
+                    <button onClick={() => takeAction('review')} disabled={actionLoading}
+                      className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-2.5 rounded-xl text-sm font-semibold transition-colors disabled:opacity-50">
+                      Mark Reviewed
+                    </button>
+                  )}
+                  <button onClick={() => takeAction('dismiss')} disabled={actionLoading}
+                    className={`bg-secondary hover:bg-secondary/80 text-foreground px-3 py-2.5 rounded-xl text-sm font-semibold transition-colors disabled:opacity-50 ${selected.status === 'pending' ? '' : 'col-span-2'}`}>
+                    Dismiss Report
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="pt-1">

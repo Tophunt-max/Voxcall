@@ -631,8 +631,19 @@ admin.delete('/promo-codes/:id', async (c) => {
 
 // ─── Support Tickets ──────────────────────────────────────────────────────────
 admin.get('/support-tickets', async (c) => {
-  const result = await db(c).prepare('SELECT * FROM support_tickets ORDER BY created_at DESC').all();
-  return c.json((result.results || []).map((t: any) => ({ ...t, messages: JSON.parse(t.messages || '[]') })));
+  const result = await db(c).prepare(
+    `SELECT st.*,
+       u.name as user_display_name, u.email as user_display_email, u.avatar_url as user_avatar
+     FROM support_tickets st
+     LEFT JOIN users u ON u.id = st.user_id
+     ORDER BY st.created_at DESC`
+  ).all();
+  return c.json((result.results || []).map((t: any) => ({
+    ...t,
+    user_name: t.user_display_name || t.user_name || 'Unknown',
+    user_email: t.user_display_email || t.user_email || '',
+    messages: JSON.parse(t.messages || '[]'),
+  })));
 });
 admin.patch('/support-tickets/:id', async (c) => {
   const { id } = c.req.param();
