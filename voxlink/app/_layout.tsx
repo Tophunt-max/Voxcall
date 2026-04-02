@@ -11,6 +11,7 @@ import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
 import { Platform } from "react-native";
 import { configurePushNotifications } from "@/services/NotificationService";
+import { onForegroundMessage, setupBackgroundMessageHandler } from "@/services/fcm";
 import { setupGlobalErrorHandler } from "@/services/ErrorReporter";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -25,11 +26,10 @@ import { SocketProvider, useSocketEvent } from "@/context/SocketContext";
 import { SocketEvents } from "@/constants/events";
 import { useCall } from "@/context/CallContext";
 
-// Only import Notifications and KeyboardProvider on native platforms
-// to avoid crashes on web (expo-notifications has no web support)
-let Notifications: any = null;
+// RNFirebase messaging (native only) — lazy loaded to avoid web crash
+let RNMessaging: any = null;
 if (Platform.OS !== "web") {
-  try { Notifications = require("expo-notifications"); } catch {}
+  try { RNMessaging = require("@react-native-firebase/messaging").default; } catch {}
 }
 
 let KeyboardProvider: React.ComponentType<{ children: React.ReactNode }> | null = null;
@@ -41,41 +41,93 @@ SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient();
 
-// ─── NotificationTapBridge ───────────────────────────────────────────────────
-// Handles push notification taps. NATIVE ONLY — not rendered on web.
-// Uses useLastNotificationResponse hook (not available on web).
-function NotificationTapBridge() {
+// ─── FCM Notification Tap Bridge (Native only) ───────────────────────────────
+// Handles push notification taps using @react-native-firebase/messaging
+function FCMNotificationTapBridge() {
   const { receiveCall, activeCall } = useCall();
-  const lastResponse = Notifications!.useLastNotificationResponse();
 
   useEffect(() => {
-    if (!lastResponse) return;
-    const data = lastResponse.notification.request.content.data as Record<string, unknown>;
-    if (!data) return;
+    if (!RNMessaging) return;
 
-    if (data.type === "incoming_call") {
-      if (!activeCall) {
-        const body = lastResponse.notification.request.content.body ?? "";
-        const callerName = body.replace(" is calling you", "").trim() || "Caller";
-        receiveCall(
-          { id: String(data.caller_id ?? ""), name: callerName, role: "host" },
-          (data.call_type as "audio" | "video") ?? "audio",
-          String(data.session_id ?? "")
-        );
+    function handleNotificationData(data: Record<string, any>) {
+      if (!data) return;
+      if (data.type === "incoming_call") {
+        if (!activeCall) {
+          receiveCall(
+            { id: String(data.caller_id ?? ""), name: data.caller_name ?? "Caller", role: "host" },
+            (data.call_type as "audio" | "video") ?? "audio",
+            String(data.session_id ?? "")
+          );
+        }
+        router.push("/shared/call/incoming");
+      } else if (data.type === "chat_message" && data.room_id) {
+        router.push({ pathname: "/shared/chat/[id]", params: { id: String(data.room_id) } });
       }
-      router.push("/shared/call/incoming");
-    } else if (data.type === "chat_message" && data.room_id) {
-      router.push({ pathname: "/shared/chat/[id]", params: { id: String(data.room_id) } });
     }
+
+    // App in background → tapped notification
+    const unsubBackground = RNMessaging().onNotificationOpenedApp((msg: any) => {
+      handleNotificationData(msg?.data ?? {});
+    });
+
+    // App was quit → opened via notification
+    RNMessaging().getInitialNotification().then((msg: any) => {
+      if (msg) handleNotificationData(msg?.data ?? {});
+    });
+
+    // Foreground message → show local alert / in-app toast handled by AppBridge
+    const unsubForeground = onForegroundMessage(({ title, body, data }) => {
+      // Foreground call notifications are handled via WebSocket (AppBridge)
+      // Chat messages — could show in-app toast here if needed
+      console.log("[FCM Foreground]", title, body, data);
+    });
+
+    return () => {
+      unsubBackground();
+      if (typeof unsubForeground === "function") unsubForeground();
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lastResponse]);
+  }, []);
+
+  return null;
+}
+
+// ─── Web FCM Notification Click Bridge ──────────────────────────────────────
+// Listens for notification clicks forwarded from the Service Worker
+function WebNotificationBridge() {
+  const { receiveCall, activeCall } = useCall();
+
+  useEffect(() => {
+    if (Platform.OS !== "web" || typeof navigator === "undefined") return;
+
+    function handleMessage(event: MessageEvent) {
+      if (event.data?.type !== "NOTIFICATION_CLICK") return;
+      const data = event.data?.data ?? {};
+      if (data.type === "incoming_call") {
+        if (!activeCall) {
+          receiveCall(
+            { id: String(data.caller_id ?? ""), name: data.caller_name ?? "Caller", role: "host" },
+            (data.call_type as "audio" | "video") ?? "audio",
+            String(data.session_id ?? "")
+          );
+        }
+        router.push("/shared/call/incoming");
+      } else if (data.type === "chat_message" && data.room_id) {
+        router.push({ pathname: "/shared/chat/[id]", params: { id: String(data.room_id) } });
+      }
+    }
+
+    navigator.serviceWorker?.addEventListener("message", handleMessage);
+    return () => navigator.serviceWorker?.removeEventListener("message", handleMessage);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return null;
 }
 
 // ─── AppBridge ───────────────────────────────────────────────────────────────
-// Handles WebSocket CALL_INCOMING → CallContext on all platforms.
-// Renders NotificationTapBridge only on native (requires push notification APIs).
+// WebSocket CALL_INCOMING → CallContext (all platforms)
+// FCM tap handlers (native + web)
 function AppBridge() {
   const { receiveCall, activeCall } = useCall();
 
@@ -97,8 +149,12 @@ function AppBridge() {
     [activeCall]
   );
 
-  if (Platform.OS === "web" || !Notifications) return null;
-  return <NotificationTapBridge />;
+  return (
+    <>
+      {Platform.OS !== "web" && <FCMNotificationTapBridge />}
+      {Platform.OS === "web" && <WebNotificationBridge />}
+    </>
+  );
 }
 
 function RootLayoutNav() {
@@ -162,7 +218,7 @@ function RootLayoutNav() {
   );
 }
 
-// KeyboardProvider wrapper — skips the provider on web to avoid native module crash
+// KeyboardProvider wrapper — skips on web to avoid native module crash
 function MaybeKeyboardProvider({ children }: { children: React.ReactNode }) {
   if (Platform.OS === "web" || !KeyboardProvider) return <>{children}</>;
   return <KeyboardProvider>{children}</KeyboardProvider>;

@@ -16,7 +16,6 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.voxlink.app",
-      "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "NSCameraUsageDescription": "VoxLink needs camera access for video calls so the other person can see you.",
         "NSMicrophoneUsageDescription": "VoxLink needs microphone access for audio and video calls.",
