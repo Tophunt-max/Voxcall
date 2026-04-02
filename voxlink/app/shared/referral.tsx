@@ -6,10 +6,11 @@ import {
   ScrollView,
   TouchableOpacity,
   Image,
-  Share,
+  Platform,
   ActivityIndicator,
 } from "react-native";
 import * as ClipboardModule from "expo-clipboard";
+import { crossShare } from "@/utils/fileUpload";
 import { router } from "expo-router";
 import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -45,9 +46,10 @@ export default function ReferralScreen() {
 
   const handleShare = () => {
     if (!referral?.code) return;
-    Share.share({
+    crossShare({
       message: `Join VoxLink and connect with amazing hosts for audio & video calls!\n\nUse my referral code: ${referral.code} to get bonus coins on signup!\n\nDownload now: https://voxlink.app`,
       title: "Join VoxLink",
+      url: "https://voxlink.app",
     });
   };
 

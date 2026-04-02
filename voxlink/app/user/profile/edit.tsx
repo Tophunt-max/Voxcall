@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform, Image, Alert } from "react-native";
 import * as ImagePicker from "expo-image-picker";
+import { appendFileToFormData } from "@/utils/fileUpload";
 import AppInput from "@/components/AppInput";
 import { showSuccessToast } from "@/components/Toast";
 import { router } from "expo-router";
@@ -52,8 +53,9 @@ export default function EditProfileScreen() {
     try {
       setUploadingAvatar(true);
       const formData = new FormData();
-      const ext = asset.uri.split(".").pop() || "jpg";
-      formData.append("file", { uri: asset.uri, name: `avatar_${user?.id ?? "user"}.${ext}`, type: `image/${ext}` } as any);
+      const ext = asset.uri.split(".").pop()?.split("?")[0] || "jpg";
+      const fileName = `avatar_${user?.id ?? "user"}.${ext}`;
+      await appendFileToFormData(formData, "file", asset.uri, fileName, `image/${ext}`);
       formData.append("path", `avatars/${user?.id ?? "user"}/avatar.${ext}`);
       const uploadData = await API.uploadFile(formData);
       if (uploadData?.url) {

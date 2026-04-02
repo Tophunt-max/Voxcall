@@ -9,9 +9,9 @@ import {
   Platform,
   Alert,
   Switch,
-  Share,
   ActivityIndicator,
 } from "react-native";
+import { crossShare, appendFileToFormData } from "@/utils/fileUpload";
 import * as ClipboardModule from "expo-clipboard";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
@@ -199,12 +199,9 @@ export default function ProfileScreen() {
     try {
       setUploadingAvatar(true);
       const formData = new FormData();
-      const ext = asset.uri.split(".").pop() || "jpg";
-      formData.append("file", {
-        uri: asset.uri,
-        name: `avatar_${user?.id ?? "user"}.${ext}`,
-        type: `image/${ext}`,
-      } as any);
+      const ext = asset.uri.split(".").pop()?.split("?")[0] || "jpg";
+      const fileName = `avatar_${user?.id ?? "user"}.${ext}`;
+      await appendFileToFormData(formData, "file", asset.uri, fileName, `image/${ext}`);
       formData.append("path", `avatars/${user?.id ?? "user"}/avatar.${ext}`);
       const uploadData = await API.uploadFile(formData);
       if (uploadData?.url) {
@@ -482,10 +479,11 @@ export default function ProfileScreen() {
           iconSource={require("@/assets/images/icon_share.png")}
           label="Share App"
           onPress={() =>
-            Share.share({
+            crossShare({
               message:
                 "Join VoxLink - Connect with amazing hosts for audio & video calls! Download now: https://voxlink.app",
               title: "VoxLink",
+              url: "https://voxlink.app",
             })
           }
         />

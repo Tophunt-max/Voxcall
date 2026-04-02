@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { Platform } from "react-native";
 import { Audio } from "expo-av";
 
 type RingtoneType = "outgoing" | "incoming";
@@ -18,11 +19,13 @@ export function useRingtone(type: RingtoneType, active: boolean = true) {
 
     const load = async () => {
       try {
-        await Audio.setAudioModeAsync({
-          playsInSilentModeIOS: true,
-          staysActiveInBackground: false,
-          shouldDuckAndroid: false,
-        });
+        if (Platform.OS !== "web") {
+          await Audio.setAudioModeAsync({
+            playsInSilentModeIOS: true,
+            staysActiveInBackground: false,
+            shouldDuckAndroid: false,
+          });
+        }
 
         const { sound } = await Audio.Sound.createAsync(RINGTONE_FILES[type], {
           isLooping: true,

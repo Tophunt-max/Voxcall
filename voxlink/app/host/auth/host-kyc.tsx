@@ -10,6 +10,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
+import { appendFileToFormData } from "@/utils/fileUpload";
 import { useAuth } from "@/context/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
 import { PermissionDialog, PERMISSION_CONFIGS } from "@/components/PermissionDialog";
@@ -75,8 +76,9 @@ export default function HostKYCScreen() {
     setUploading(doc.key);
     try {
       const formData = new FormData();
-      const ext = asset.uri.split(".").pop() || (doc.accept === "image" ? "jpg" : "mp4");
-      formData.append("file", { uri: asset.uri, name: `kyc_${doc.key}.${ext}`, type: doc.accept === "image" ? `image/${ext}` : `video/${ext}` } as any);
+      const ext = asset.uri.split(".").pop()?.split("?")[0] || (doc.accept === "image" ? "jpg" : "mp4");
+      const mimeType = doc.accept === "image" ? `image/${ext}` : `video/${ext}`;
+      await appendFileToFormData(formData, "file", asset.uri, `kyc_${doc.key}.${ext}`, mimeType);
       formData.append("path", `kyc/${user?.id ?? "unknown"}/${doc.key}.${ext}`);
 
       const uploadData = await API.uploadFile(formData);
