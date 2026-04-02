@@ -124,19 +124,19 @@ function RootLayoutNav() {
       <AppBridge />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index" />
+        <Stack.Screen name="(tabs)" />
         <Stack.Screen name="auth/login" />
         <Stack.Screen name="auth/register" />
         <Stack.Screen name="auth/profile-setup" />
+        <Stack.Screen name="auth/become" />
         <Stack.Screen name="auth/kyc" />
         <Stack.Screen name="auth/status" />
-        <Stack.Screen name="dashboard/index" />
         <Stack.Screen name="calls/incoming" options={{ presentation: "fullScreenModal" }} />
         <Stack.Screen name="calls/audio-call" options={{ presentation: "fullScreenModal" }} />
         <Stack.Screen name="calls/video-call" options={{ presentation: "fullScreenModal" }} />
         <Stack.Screen name="calls/summary" />
         <Stack.Screen name="calls/history" />
         <Stack.Screen name="chat/[id]" />
-        <Stack.Screen name="earnings/index" />
         <Stack.Screen name="notifications" />
         <Stack.Screen name="settings" />
       </Stack>

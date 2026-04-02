@@ -43,7 +43,7 @@ export default function HostProfileSetupScreen() {
     setLoading(true);
     await updateProfile({ name: displayName.trim(), gender: gender as any, phone: phone.trim() });
     setLoading(false);
-    router.push("/auth/register");
+    router.push("/auth/become");
   };
 
   return (
