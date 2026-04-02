@@ -91,7 +91,8 @@ auth.post('/register', rateLimit, zValidator('json', registerSchema), async (c) 
     } catch { /* ignore referral errors — don't block registration */ }
   }
   const token = await signToken({ sub: id, role: 'user', name }, c.env.JWT_SECRET);
-  return c.json({ token, user: { id, name, email, role: 'user', coins: 100 } }, 201);
+  // Fix NEW-3: coins start at 0; 100 bonus coins are added after OTP verification
+  return c.json({ token, user: { id, name, email, role: 'user', coins: 0 } }, 201);
 });
 
 // POST /api/auth/login

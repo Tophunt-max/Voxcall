@@ -132,12 +132,13 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         const res = await API.endCall(call.sessionId, duration);
         if (res?.coins_charged != null) {
           coinsSpent = res.coins_charged;
-          try {
-            const bal = await API.getBalance();
-            if (bal?.coins != null) updateCoins(bal.coins);
-          } catch {}
         }
       } catch (e) { console.warn("endCall API error:", e); }
+      // Always refresh balance after call ends (remote may have already billed)
+      try {
+        const bal = await API.getBalance();
+        if (bal?.coins != null) updateCoins(bal.coins);
+      } catch {}
     }
 
     if (call) {

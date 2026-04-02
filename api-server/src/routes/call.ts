@@ -132,6 +132,20 @@ call.post('/end', async (c) => {
   }
   await db.batch(txs);
 
+  // Fix NEW-1 + NEW-2: notify the OTHER party that call ended (cancel/end)
+  try {
+    const isCallerEnding = session.caller_id === sub;
+    const otherUserId = isCallerEnding ? hostRow?.user_id : session.caller_id;
+    if (otherUserId) {
+      const notifId = c.env.NOTIFICATION_HUB.idFromName(otherUserId);
+      const notifStub = c.env.NOTIFICATION_HUB.get(notifId);
+      await notifStub.fetch('https://dummy/notify', {
+        method: 'POST',
+        body: JSON.stringify({ type: 'call_ended', session_id: session_id }),
+      });
+    }
+  } catch {}
+
   const cfCalls = createCFCalls(c.env);
   if (cfCalls) {
     if (session.cf_session_id) { try { await cfCalls.closeSession(session.cf_session_id); } catch {} }
@@ -359,6 +373,20 @@ call.post('/:id/end', async (c) => {
     );
   }
   await db.batch(batchOps);
+
+  // Fix NEW-1 + NEW-2: notify the OTHER party that call ended
+  try {
+    const isCallerEnding = session.caller_id === sub;
+    const otherUserId = isCallerEnding ? hostRow?.user_id : session.caller_id;
+    if (otherUserId) {
+      const notifId = c.env.NOTIFICATION_HUB.idFromName(otherUserId);
+      const notifStub = c.env.NOTIFICATION_HUB.get(notifId);
+      await notifStub.fetch('https://dummy/notify', {
+        method: 'POST',
+        body: JSON.stringify({ type: 'call_ended', session_id: sessionId }),
+      });
+    }
+  } catch {}
 
   const cfCalls = createCFCalls(c.env);
   if (cfCalls) {

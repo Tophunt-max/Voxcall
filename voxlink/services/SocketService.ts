@@ -120,6 +120,13 @@ class SocketService {
           timestamp: Date.now(),
         });
         break;
+      // Fix NEW-1 + NEW-2: remote party ended or cancelled — dismiss our screen
+      case "call_ended":
+        this.emit(SocketEvents.CALL_END, {
+          sessionId: msg.session_id,
+          timestamp: Date.now(),
+        });
+        break;
       case "message":
       case "chat_message":
         this.emit(SocketEvents.MESSAGE_RECEIVED, {

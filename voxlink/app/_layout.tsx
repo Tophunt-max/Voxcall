@@ -127,9 +127,10 @@ function WebNotificationBridge() {
 
 // ─── AppBridge ───────────────────────────────────────────────────────────────
 // WebSocket CALL_INCOMING → CallContext (all platforms)
+// WebSocket CALL_END → dismiss active call screen (remote party hung up)
 // FCM tap handlers (native + web)
 function AppBridge() {
-  const { receiveCall, activeCall } = useCall();
+  const { receiveCall, endCall, activeCall } = useCall();
 
   useSocketEvent(
     SocketEvents.CALL_INCOMING,
@@ -148,6 +149,19 @@ function AppBridge() {
       );
     },
     [activeCall]
+  );
+
+  // Fix NEW-1 + NEW-2: when remote party ends or cancels, dismiss our screen
+  useSocketEvent(
+    SocketEvents.CALL_END,
+    (data: any) => {
+      const sid = data?.sessionId ?? data?.session_id;
+      if (activeCall && (!sid || activeCall.sessionId === sid)) {
+        // endCall will try API.endCall → gets "already ended" (silently caught) → goes to summary
+        endCall(true);
+      }
+    },
+    [activeCall, endCall]
   );
 
   return (
