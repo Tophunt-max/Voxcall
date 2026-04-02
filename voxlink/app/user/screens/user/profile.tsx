@@ -21,6 +21,8 @@ import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
 import { PermissionDialog, PERMISSION_CONFIGS } from "@/components/PermissionDialog";
+import { useLanguage } from "@/context/LanguageContext";
+import { LANGUAGES } from "@/localization";
 import { API } from "@/services/api";
 import { showSuccessToast, showErrorToast } from "@/components/Toast";
 
@@ -120,6 +122,8 @@ export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const { user, logout, updateProfile } = useAuth();
   const { permissions, requestNotifications, requestMediaLibrary, openSettings } = usePermissions();
+  const { language } = useLanguage();
+  const currentLangLabel = LANGUAGES.find((l) => l.code === language)?.name ?? "English";
 
   const [showNotifDialog, setShowNotifDialog] = useState(false);
   const [showMediaDialog, setShowMediaDialog] = useState(false);
@@ -402,25 +406,29 @@ export default function ProfileScreen() {
           label="My Wallet"
           onPress={() => router.push("/user/payment/checkout")}
         />
-        <MenuItem
-          iconName="bell"
-          label="Notifications"
-          isSwitch
-          switchValue={notificationsGranted}
-          onSwitchChange={handleNotifToggle}
-          onPress={() => handleNotifToggle(!notificationsGranted)}
-          subLabel={
-            notifBlocked
-              ? "Blocked — tap to open Settings"
-              : !notificationsGranted
-              ? "Tap to enable"
-              : undefined
-          }
-        />
+        {notifBlocked ? (
+          <MenuItem
+            iconName="bell"
+            label="Notifications"
+            value="Blocked"
+            subLabel="Tap to open Settings"
+            onPress={() => setShowNotifDialog(true)}
+          />
+        ) : (
+          <MenuItem
+            iconName="bell"
+            label="Notifications"
+            isSwitch
+            switchValue={notificationsGranted}
+            onSwitchChange={handleNotifToggle}
+            onPress={() => handleNotifToggle(!notificationsGranted)}
+            subLabel={!notificationsGranted ? "Tap to enable" : undefined}
+          />
+        )}
         <MenuItem
           iconSource={require("@/assets/icons/ic_language.png")}
           label="Language"
-          value="English"
+          value={currentLangLabel}
           onPress={() => router.push("/shared/language")}
         />
         <MenuItem
