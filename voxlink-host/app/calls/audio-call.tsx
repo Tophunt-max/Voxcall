@@ -150,7 +150,7 @@ export default function AudioCallScreen() {
         <View style={styles.warningBanner}>
           <Feather name="alert-triangle" size={14} color="#FFD166" />
           <Text style={styles.warningText}>
-            Call jaldi khatam hoga — {remainingLabel}
+            Call ending soon — {remainingLabel}
           </Text>
         </View>
       )}

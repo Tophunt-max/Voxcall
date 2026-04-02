@@ -54,7 +54,7 @@ export default function CallSummaryScreen() {
       }
       setRated(true);
     } catch (e: any) {
-      showErrorToast(e?.message ?? "Rating submit nahi hua, dobara try karo", "Error");
+      showErrorToast(e?.message ?? "Failed to submit rating, please try again.", "Error");
     } finally {
       setSubmitting(false);
     }
@@ -71,7 +71,7 @@ export default function CallSummaryScreen() {
         {isAutoEnded && (
           <View style={s.autoEndedBanner}>
             <Feather name="info" size={14} color="#60B8FF" />
-            <Text style={s.autoEndedText}>User ke coins khatam ho gaye — call auto-disconnect hua</Text>
+            <Text style={s.autoEndedText}>User ran out of coins — call was auto-disconnected</Text>
           </View>
         )}
 
@@ -119,10 +119,10 @@ export default function CallSummaryScreen() {
         {!rated ? (
           <View style={s.ratingSection}>
             <Text style={[s.ratingPrompt, { color: colors.foreground }]}>
-              {userName} ko rate karo
+              Rate {userName}
             </Text>
             <Text style={[s.ratingSubtitle, { color: colors.mutedForeground }]}>
-              Is call ke baare mein aapka experience share karo
+              Share your experience from this call
             </Text>
             <StarRating
               rating={rating}

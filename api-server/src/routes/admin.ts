@@ -115,7 +115,9 @@ admin.patch('/users/:id', async (c) => {
 // GET /api/admin/hosts
 admin.get('/hosts', async (c) => {
   const result = await db(c).prepare(
-    'SELECT h.*, u.name, u.email, u.avatar_url FROM hosts h JOIN users u ON u.id = h.user_id ORDER BY h.created_at DESC'
+    `SELECT h.*, u.name, u.email, u.avatar_url,
+      (SELECT COUNT(*) FROM call_sessions cs WHERE cs.host_id = h.id AND cs.status = 'ended') AS total_calls
+    FROM hosts h JOIN users u ON u.id = h.user_id ORDER BY h.created_at DESC`
   ).all();
   return c.json(result.results.map((h: any) => ({ ...h, specialties: JSON.parse(h.specialties || '[]'), languages: JSON.parse(h.languages || '[]') })));
 });

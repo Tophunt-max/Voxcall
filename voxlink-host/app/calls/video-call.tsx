@@ -309,7 +309,7 @@ export default function VideoCallScreen() {
         {showLowCoinWarning && (
           <View style={styles.warningBanner}>
             <Feather name="alert-triangle" size={13} color="#FFD166" />
-            <Text style={styles.warningText}>Call jaldi khatam hoga — {remainingLabel}</Text>
+            <Text style={styles.warningText}>Call ending soon — {remainingLabel}</Text>
           </View>
         )}
 

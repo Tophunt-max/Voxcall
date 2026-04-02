@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  Image, KeyboardAvoidingView, Platform, ScrollView
+  Image, KeyboardAvoidingView, Platform, ScrollView, Alert
 } from "react-native";
 import AppInput from "@/components/AppInput";
 import { showErrorToast, showSuccessToast } from "@/components/Toast";
@@ -15,6 +15,11 @@ export default function ForgotPasswordScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const [email, setEmail] = useState("");
+  const [otp, setOtp] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [showPass, setShowPass] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
 
@@ -30,6 +35,31 @@ export default function ForgotPasswordScreen() {
       showSuccessToast("OTP sent to your email.", "Email Sent");
     } catch (err: any) {
       showErrorToast(err?.message || "Email not found. Please check and try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleReset = async () => {
+    if (!otp.trim() || otp.trim().length < 4) {
+      showErrorToast("Please enter the OTP sent to your email.");
+      return;
+    }
+    if (!password || password.length < 8) {
+      showErrorToast("Password must be at least 8 characters.", "Weak Password");
+      return;
+    }
+    if (password !== confirm) {
+      showErrorToast("Passwords don't match.", "Mismatch");
+      return;
+    }
+    setLoading(true);
+    try {
+      await API.resetPassword(email.trim().toLowerCase(), otp.trim(), password);
+      showSuccessToast("Password updated successfully! Please sign in.", "Success");
+      router.replace("/auth/login");
+    } catch (err: any) {
+      Alert.alert("Error", err?.message || "Failed to reset password. The OTP may have expired.");
     } finally {
       setLoading(false);
     }
@@ -55,25 +85,85 @@ export default function ForgotPasswordScreen() {
         {sent ? (
           <>
             <View style={[styles.successIcon, { backgroundColor: "#E8F8EC" }]}>
-              <Feather name="check-circle" size={40} color="#0BAF23" />
+              <Feather name="mail" size={40} color="#0BAF23" />
             </View>
-            <Text style={[styles.title, { color: colors.text }]}>Email Sent!</Text>
+            <Text style={[styles.title, { color: colors.text }]}>Check Your Email</Text>
             <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
-              We've sent password reset instructions to{"\n"}<Text style={{ color: colors.primary, fontFamily: "Poppins_600SemiBold" }}>{email}</Text>.{"\n\n"}Please check your inbox and follow the link to reset your password.
+              We sent a 6-digit OTP to{"\n"}
+              <Text style={{ color: colors.primary, fontFamily: "Poppins_600SemiBold" }}>{email}</Text>.{"\n\n"}
+              Enter the code below and set your new password.
             </Text>
+
+            <AppInput
+              variant="custom"
+              inactiveBorder={colors.border}
+              bgColor={colors.surface}
+              textColor={colors.text}
+              placeholder="Enter OTP Code"
+              placeholderTextColor={colors.mutedForeground}
+              value={otp}
+              onChangeText={setOtp}
+              keyboardType="number-pad"
+              wrapStyle={{ width: "100%", marginBottom: 14 }}
+            />
+
+            <AppInput
+              variant="custom"
+              inactiveBorder={colors.border}
+              bgColor={colors.surface}
+              textColor={colors.text}
+              placeholder="New Password"
+              placeholderTextColor={colors.mutedForeground}
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry={!showPass}
+              rightIcon={
+                <TouchableOpacity onPress={() => setShowPass((v) => !v)}>
+                  <Feather name={showPass ? "eye-off" : "eye"} size={18} color={colors.mutedForeground} />
+                </TouchableOpacity>
+              }
+              wrapStyle={{ width: "100%", marginBottom: 14 }}
+            />
+
+            <AppInput
+              variant="custom"
+              inactiveBorder={colors.border}
+              bgColor={colors.surface}
+              textColor={colors.text}
+              placeholder="Confirm New Password"
+              placeholderTextColor={colors.mutedForeground}
+              value={confirm}
+              onChangeText={setConfirm}
+              secureTextEntry={!showConfirm}
+              rightIcon={
+                <TouchableOpacity onPress={() => setShowConfirm((v) => !v)}>
+                  <Feather name={showConfirm ? "eye-off" : "eye"} size={18} color={colors.mutedForeground} />
+                </TouchableOpacity>
+              }
+              wrapStyle={{ width: "100%", marginBottom: 20 }}
+            />
+
             <TouchableOpacity
-              style={[styles.btn, { backgroundColor: colors.primary }]}
-              onPress={() => router.replace("/auth/login")}
+              style={[styles.btn, { backgroundColor: colors.primary, opacity: loading ? 0.7 : 1 }]}
+              onPress={handleReset}
+              disabled={loading}
               activeOpacity={0.85}
             >
-              <Text style={styles.btnText}>Back to Sign In</Text>
+              <Text style={styles.btnText}>{loading ? "Resetting..." : "Reset Password"}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity onPress={handleSend} style={styles.resendWrap} disabled={loading}>
+              <Text style={[styles.resendText, { color: colors.mutedForeground }]}>
+                Didn't receive it?{" "}
+                <Text style={{ color: colors.accent, fontFamily: "Poppins_600SemiBold" }}>Resend OTP</Text>
+              </Text>
             </TouchableOpacity>
           </>
         ) : (
           <>
             <Text style={[styles.title, { color: colors.text }]}>Forgot Password?</Text>
             <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
-              Enter your registered email address. We'll send you instructions to reset your password.
+              Enter your registered email address. We'll send you an OTP to reset your password.
             </Text>
 
             <AppInput
@@ -97,7 +187,7 @@ export default function ForgotPasswordScreen() {
               disabled={loading}
               activeOpacity={0.85}
             >
-              <Text style={styles.btnText}>{loading ? "Sending..." : "Send Reset Link"}</Text>
+              <Text style={styles.btnText}>{loading ? "Sending..." : "Send OTP"}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity onPress={() => router.back()} style={styles.backToLogin}>
@@ -127,4 +217,6 @@ const styles = StyleSheet.create({
   btnText: { color: "#fff", fontSize: 16, fontFamily: "Poppins_600SemiBold" },
   backToLogin: { marginTop: 8 },
   backToLoginText: { fontSize: 14, fontFamily: "Poppins_400Regular" },
+  resendWrap: { marginTop: 4 },
+  resendText: { fontSize: 14, fontFamily: "Poppins_400Regular" },
 });

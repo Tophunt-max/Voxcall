@@ -402,10 +402,9 @@ export default function VideoCallScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.rechargeCard}>
             <Text style={styles.rechargeEmoji}>💰</Text>
-            <Text style={styles.rechargeTitle}>Coins Khatam Ho Rahe Hain!</Text>
+            <Text style={styles.rechargeTitle}>Running Out of Coins!</Text>
             <Text style={styles.rechargeSubtitle}>
-              {remaining != null ? `${remaining} second` : "Kuch second"}
-              {remaining === 1 ? "" : "s"} mein call auto-disconnect hoga
+              Call will auto-disconnect in {remaining != null ? `${remaining} second${remaining === 1 ? "" : "s"}` : "a few seconds"}
             </Text>
             <TouchableOpacity
               style={styles.rechargeBtn}

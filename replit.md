@@ -444,6 +444,34 @@ Merges socket + notification tap handling. Lives inside all providers so it can 
 ### API Server — 1 Fix
 7. **`admin.ts` Analytics Endpoint Hardcoded 7 Days** — Backend always returned 7 days regardless. Now reads `?days=N` query param (validated: only 7 or 30 allowed), builds the correct date range, and uses "Mon/Tue" labels for 7 days vs "Jan 5" labels for 30 days.
 
+## Bug Fix Log (Round 7 — 9 Bugs Fixed 2026-04-02)
+
+### Admin Panel — 3 Fixes
+
+1. **Analytics Page Hardcoded "30-Day" Label** — The Analytics page always showed "30-Day" in the subtitle regardless of the selected range. Subtitle is now dynamic: "7-Day Analytics Overview" vs "30-Day Analytics Overview".
+
+2. **Analytics "Daily Calls" Chart Subtitle Static** — The subtitle under the Daily Calls bar chart always read "Last 7 days" regardless of range selection. Now correctly shows "Last 7 days" or "Last 30 days".
+
+3. **`/admin/hosts` Missing `total_calls`** — The hosts table in the admin API returned no call count. Added a correlated COUNT subquery from `call_sessions WHERE status = 'ended'` for each host.
+
+### API Server — 2 Fixes
+
+4. **`/api/calls/history` Only Returned Caller Sessions** — Hosts always saw an empty call history because the query only fetched sessions where `caller_id = user`. Fixed by adding `OR h.user_id = ?` with a join to the hosts table, and the response now includes both `caller_name`/`caller_avatar` and `host_name`/`host_avatar`.
+
+5. **`/api/auth/reset-password` Field Mismatch** — The backend expected `new_password` but the host app's `resetPassword` function was sending `password`. Fixed the client-side `api.ts` to send `new_password`.
+
+### Host App — 2 Fixes
+
+6. **`forgot-password.tsx` Single-Step Flow** — The forgot-password screen had no OTP verification step — it allowed setting a new password with just an email. Completely rewritten as a proper 2-step flow: Step 1 sends OTP to email, Step 2 verifies OTP and sets new password.
+
+7. **Hindi-Language Strings in Audio/Video Call Screens** — "Call jaldi khatam hoga" and warning labels in `audio-call.tsx` and `video-call.tsx` translated to English. Summary screen "Is call ke baare mein..." and "rate karo" translated.
+
+### User App — 2 Fixes
+
+8. **Hindi-Language Strings in Call Summary** — "Rating submit nahi hua", "Coins khatam ho gaye", "rate karo", "Aapka feedback..." all translated to English in `summary.tsx`.
+
+9. **Hindi-Language Strings in Host Profile & Call Screens** — "Chat ke liye pehle call karo", "Chat Locked" alert body, "Coins Khatam Ho Rahe Hain!", and the coin countdown message in `hosts/[id].tsx`, `audio-call.tsx`, and `video-call.tsx` all translated to English.
+
 ## Bug Fix Log (Round 6 — 4 Bugs Fixed 2026-04-02)
 
 ### API Server — 4 Fixes

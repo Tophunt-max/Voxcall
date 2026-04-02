@@ -198,13 +198,13 @@ export default function HostDetailScreen() {
     if (!chatUnlocked) {
       Alert.alert(
         "🔒 Chat Locked",
-        `Chat ke liye pehle ${hostName} se call karo. Call ke baad chat automatically unlock ho jaayegi!`,
+        `To chat with ${hostName}, you need to call them first. Chat unlocks automatically after a call!`,
         [
           {
-            text: "Call Karo",
+            text: "Call Now",
             onPress: () => {
               if (host.is_online) setTalkSheet(true);
-              else Alert.alert("Offline", `${hostName} abhi online nahi hai.`);
+              else Alert.alert("Offline", `${hostName} is currently offline.`);
             },
           },
           { text: "Cancel", style: "cancel" },
@@ -218,7 +218,7 @@ export default function HostDetailScreen() {
       router.push(`/user/chat/${room.id}`);
     } catch (e: any) {
       if (e.message?.includes("CHAT_LOCKED") || e.message?.includes("locked")) {
-        Alert.alert("🔒 Chat Locked", "Pehle call karo, phir chat unlock hogi!");
+        Alert.alert("🔒 Chat Locked", "Make a call first, then chat will unlock automatically!");
       } else {
         getOrCreateConversation(host.id, hostName, hostAvatar);
         router.push(`/user/chat/${host.id}`);

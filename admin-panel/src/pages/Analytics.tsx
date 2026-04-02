@@ -104,7 +104,7 @@ export default function Analytics() {
             <div>
               <h3 className="font-bold text-base">Revenue & Users Trend</h3>
               <p className="text-xs text-muted-foreground">
-                {range === '7d' ? 'Last 7 days (live data)' : 'Last 7 days — 30-day view coming soon'}
+                {range === '7d' ? 'Last 7 days (live data)' : 'Last 30 days (live data)'}
               </p>
             </div>
             <div className="flex items-center gap-1.5 text-xs text-violet-600 bg-violet-50 px-2.5 py-1 rounded-full font-semibold">
@@ -164,7 +164,7 @@ export default function Analytics() {
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         <div className="bg-card border border-border rounded-2xl p-5">
           <h3 className="font-bold text-base mb-1">Daily Calls</h3>
-          <p className="text-xs text-muted-foreground mb-4">Call count — last 7 days</p>
+          <p className="text-xs text-muted-foreground mb-4">Call count — last {range === '7d' ? '7' : '30'} days</p>
           {chartData.length === 0 ? (
             <div className="h-[180px] flex items-center justify-center text-sm text-muted-foreground">No calls yet</div>
           ) : (

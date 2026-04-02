@@ -321,10 +321,10 @@ export default function RandomScreen() {
           if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
         } else {
           // No hosts yet — keep polling
-          setNoHostMsg(res.message ?? "Koi host nahi mila, dhundh rahe hain...");
+          setNoHostMsg(res.message ?? "No hosts available right now, still searching...");
         }
       } catch {
-        if (isMounted.current) setNoHostMsg("Network error, retry ho rahi hai...");
+        if (isMounted.current) setNoHostMsg("Network error, retrying...");
       }
     };
 
@@ -433,7 +433,7 @@ export default function RandomScreen() {
       {phase === "searching" && (
         <View style={styles.searchingBadge}>
           <ActivityIndicator size="small" color={GRAD[1]} />
-          <Text style={styles.searchingText}>{noHostMsg || "Match dhundh rahe hain..."}</Text>
+          <Text style={styles.searchingText}>{noHostMsg || "Finding your match..."}</Text>
         </View>
       )}
 

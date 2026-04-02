@@ -151,7 +151,7 @@ export default function AudioCallScreen() {
         <View style={styles.warningBanner}>
           <Feather name="alert-triangle" size={14} color="#FFD166" />
           <Text style={styles.warningText}>
-            Coins khatam hone wale hain — {remainingLabel}
+            Coins running low — {remainingLabel}
           </Text>
         </View>
       )}
@@ -229,10 +229,9 @@ export default function AudioCallScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.rechargeCard}>
             <Text style={styles.rechargeEmoji}>💰</Text>
-            <Text style={styles.rechargeTitle}>Coins Khatam Ho Rahe Hain!</Text>
+            <Text style={styles.rechargeTitle}>Running Out of Coins!</Text>
             <Text style={styles.rechargeSubtitle}>
-              {remaining != null ? `${remaining} second` : "Kuch "}
-              {remaining === 1 ? "" : "s"} mein call auto-disconnect hoga
+              Call will auto-disconnect in {remaining != null ? `${remaining} second${remaining === 1 ? "" : "s"}` : "a few seconds"}
             </Text>
             <TouchableOpacity
               style={styles.rechargeBtn}

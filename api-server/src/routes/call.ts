@@ -443,10 +443,15 @@ call.get('/active', async (c) => {
 call.get('/history', async (c) => {
   const { sub } = c.get('user');
   const result = await c.env.DB.prepare(
-    `SELECT cs.*, h.display_name as host_name, u.avatar_url as host_avatar
-     FROM call_sessions cs JOIN hosts h ON h.id = cs.host_id JOIN users u ON u.id = h.user_id
-     WHERE cs.caller_id = ? ORDER BY cs.created_at DESC LIMIT 50`
-  ).bind(sub).all();
+    `SELECT cs.*, h.display_name as host_name, hu.avatar_url as host_avatar,
+            cu.name as caller_name, cu.avatar_url as caller_avatar
+     FROM call_sessions cs
+     JOIN hosts h ON h.id = cs.host_id
+     JOIN users hu ON hu.id = h.user_id
+     JOIN users cu ON cu.id = cs.caller_id
+     WHERE cs.caller_id = ? OR h.user_id = ?
+     ORDER BY cs.created_at DESC LIMIT 50`
+  ).bind(sub, sub).all();
   return c.json(result.results);
 });
 
