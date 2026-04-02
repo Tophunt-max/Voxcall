@@ -1,27 +1,45 @@
 import React, { useState, useEffect } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Image, Platform, Alert, Switch
+  Image, Platform, Alert, Switch, ActivityIndicator
 } from "react-native";
+import * as ImagePicker from "expo-image-picker";
+import { appendFileToFormData } from "@/utils/fileUpload";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
+import { Feather } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
+import { usePermissions } from "@/hooks/usePermissions";
+import { PermissionDialog, PERMISSION_CONFIGS } from "@/components/PermissionDialog";
+import { useLanguage } from "@/context/LanguageContext";
+import { LANGUAGES } from "@/localization";
 import { API, resolveMediaUrl } from "@/services/api";
-import { showErrorToast } from "@/components/Toast";
+import { showErrorToast, showSuccessToast } from "@/components/Toast";
 
 export default function HostProfileScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { user, logout } = useAuth();
+  const { user, logout, updateProfile } = useAuth();
+  const { permissions, requestNotifications, openSettings } = usePermissions();
+  const { language } = useLanguage();
+  const currentLangLabel = LANGUAGES.find((l) => l.code === language)?.name ?? "English";
+
   const [isOnline, setIsOnline] = useState(false);
-  // Bug 8 fix: real stats from API
   const [hostStats, setHostStats] = useState({ calls: "—", rating: "—" });
+  const [avatarUri, setAvatarUri] = useState<string | null>(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [showNotifDialog, setShowNotifDialog] = useState(false);
+
   const topPad = insets.top;
   const bottomPad = insets.bottom;
   const uniqueId = user?.id?.slice(0, 8).toUpperCase() ?? "00000000";
 
-  // Bug 8 fix: fetch real calls + rating
+  const notificationsGranted = permissions.notifications.status === "granted";
+  const notifBlocked =
+    permissions.notifications.status === "blocked" ||
+    (permissions.notifications.status === "denied" && !permissions.notifications.canAskAgain);
+
   useEffect(() => {
     API.getEarnings()
       .then((data: any) => {
@@ -34,13 +52,71 @@ export default function HostProfileScreen() {
       .catch(() => {});
   }, []);
 
-  // Bug 11 fix: redirect to login instead of non-existent role-select
   const handleLogout = () => {
     Alert.alert("Sign Out", "Are you sure you want to sign out?", [
       { text: "Cancel", style: "cancel" },
-      { text: "Sign Out", style: "destructive", onPress: async () => { await logout(); router.replace("/auth/login"); } }
+      {
+        text: "Sign Out", style: "destructive",
+        onPress: async () => { await logout(); router.replace("/auth/login"); }
+      }
     ]);
   };
+
+  const handleAvatarPress = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== "granted") {
+      Alert.alert("Permission Required", "Please allow access to your photo library to change your profile photo.");
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.85,
+    });
+    if (result.canceled) return;
+    const asset = result.assets[0];
+    setAvatarUri(asset.uri);
+    try {
+      setUploadingAvatar(true);
+      const formData = new FormData();
+      const ext = asset.uri.split(".").pop()?.split("?")[0] || "jpg";
+      const fileName = `avatar_${user?.id ?? "host"}.${ext}`;
+      await appendFileToFormData(formData, "file", asset.uri, fileName, `image/${ext}`);
+      formData.append("path", `avatars/${user?.id ?? "host"}/avatar.${ext}`);
+      const uploadData = await API.uploadFile(formData);
+      if (uploadData?.url) {
+        await updateProfile({ avatar: uploadData.url });
+        showSuccessToast("Profile photo updated!", "Photo Saved");
+      }
+    } catch {
+      Alert.alert("Upload Failed", "Could not upload your photo. Please try again.");
+      setAvatarUri(null);
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
+
+  const handleNotifToggle = (value: boolean) => {
+    if (value) {
+      if (notifBlocked || !notificationsGranted) {
+        setShowNotifDialog(true);
+      }
+    } else {
+      Alert.alert(
+        "Turn Off Notifications",
+        "To disable notifications, go to your phone's Settings and turn off notifications for VoxLink Host.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Open Settings", onPress: openSettings },
+        ]
+      );
+    }
+  };
+
+  const displayAvatar = avatarUri
+    ?? resolveMediaUrl(user?.avatar)
+    ?? `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.id ?? "host"}`;
 
   const CHEVRON_ROTATE = { transform: [{ rotate: "180deg" }] } as const;
 
@@ -50,30 +126,54 @@ export default function HostProfileScreen() {
       contentContainerStyle={{ paddingBottom: bottomPad + 90 }}
       showsVerticalScrollIndicator={false}
     >
+      <PermissionDialog
+        visible={showNotifDialog}
+        config={{ ...PERMISSION_CONFIGS.notifications, isBlocked: notifBlocked }}
+        onAllow={async () => {
+          if (notifBlocked) {
+            openSettings();
+          } else {
+            await requestNotifications();
+          }
+          setShowNotifDialog(false);
+        }}
+        onDeny={() => setShowNotifDialog(false)}
+      />
+
       <View style={[styles.header, { paddingTop: topPad + 12 }]}>
         <Text style={[styles.title, { color: colors.text }]}>My Profile</Text>
-        <TouchableOpacity onPress={() => router.push("/settings")} style={[styles.editBtn, { backgroundColor: colors.surface }]}>
-          <Image source={require("@/assets/icons/ic_edit.png")} style={styles.editIcon} tintColor={colors.primary} resizeMode="contain" />
+        <TouchableOpacity onPress={() => router.push("/settings")} style={[styles.settingsBtn, { backgroundColor: colors.surface }]}>
+          <Image source={require("@/assets/icons/ic_settings.png")} style={styles.settingsIcon} tintColor={colors.primary} resizeMode="contain" />
         </TouchableOpacity>
       </View>
 
       <View style={[styles.profileCard, { backgroundColor: colors.card, ...Platform.select({ web: { boxShadow: "0 2px 12px rgba(0,0,0,0.07)" } as any, ios: { shadowColor: "#000", shadowOpacity: 0.07, shadowRadius: 12, shadowOffset: { width: 0, height: 2 } }, android: { elevation: 3 } }) }]}>
-        <View style={styles.avatarOuter}>
+        <TouchableOpacity onPress={handleAvatarPress} activeOpacity={0.85} style={styles.avatarOuter}>
           <View style={[styles.dottedBorder, { borderColor: colors.primary }]}>
-            <Image source={{ uri: resolveMediaUrl(user?.avatar) ?? `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.id ?? "host"}` }} style={styles.avatar} />
+            <Image source={{ uri: displayAvatar }} style={styles.avatar} />
           </View>
-          <View style={[styles.hostBadge, { backgroundColor: colors.primary }]}>
-            <Image source={require("@/assets/icons/ic_listener.png")} style={styles.hostBadgeIcon} tintColor="#fff" resizeMode="contain" />
+          <View style={[styles.cameraBtn, { backgroundColor: uploadingAvatar ? colors.muted : colors.primary }]}>
+            {uploadingAvatar ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Image source={require("@/assets/icons/ic_edit.png")} style={styles.cameraIcon} tintColor="#fff" resizeMode="contain" />
+            )}
           </View>
-        </View>
+        </TouchableOpacity>
+
         <Text style={[styles.name, { color: colors.text }]}>{user?.name ?? "Host"}</Text>
         <Text style={[styles.role, { color: colors.accent }]}>Professional Host</Text>
         <View style={[styles.idBadge, { backgroundColor: "#F0E4F8" }]}>
           <Image source={require("@/assets/icons/ic_id_badge.png")} style={styles.idIcon} tintColor="#9D82B6" resizeMode="contain" />
           <Text style={[styles.idText, { color: "#9D82B6" }]}>ID: {uniqueId}</Text>
         </View>
+
         <View style={[styles.statsRow, { borderTopColor: colors.border }]}>
-          {[{ label: "Calls", val: hostStats.calls }, { label: "Rating", val: hostStats.rating }, { label: "Coins", val: String(user?.coins ?? 0) }].map((s, i) => (
+          {[
+            { label: "Calls", val: hostStats.calls },
+            { label: "Rating", val: hostStats.rating },
+            { label: "Coins", val: String(user?.coins ?? 0) }
+          ].map((s, i) => (
             <React.Fragment key={s.label}>
               {i > 0 && <View style={[styles.statDiv, { backgroundColor: colors.border }]} />}
               <View style={styles.stat}>
@@ -101,21 +201,35 @@ export default function HostProfileScreen() {
             thumbColor="#fff"
           />
         </View>
+        <View style={[styles.menuItem, { borderBottomColor: colors.border }]}>
+          <View style={[styles.menuIcon, { backgroundColor: notificationsGranted ? "#E8F5E9" : colors.surface }]}>
+            <Image source={require("@/assets/icons/ic_notify.png")} style={styles.menuIconImg} tintColor={notificationsGranted ? "#0BAF23" : colors.text} resizeMode="contain" />
+          </View>
+          <Text style={[styles.menuLabel, { color: colors.text }]}>Push Notifications</Text>
+          <Switch
+            value={notificationsGranted}
+            onValueChange={handleNotifToggle}
+            trackColor={{ false: colors.border, true: "#0BAF23" }}
+            thumbColor="#fff"
+          />
+        </View>
       </View>
 
       <View style={[styles.section, { backgroundColor: colors.card }]}>
         <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Account</Text>
         {[
-          { icon: require("@/assets/icons/ic_edit.png"), label: "Edit Profile", onPress: () => router.push("/settings") },
+          { icon: require("@/assets/icons/ic_edit.png"), label: "Edit Profile", onPress: () => router.push("/profile/edit") },
           { icon: require("@/assets/icons/ic_settings.png"), label: "Settings", onPress: () => router.push("/settings") },
-          { icon: require("@/assets/icons/ic_language.png"), label: "Language", value: "English", onPress: () => router.push("/settings") },
+          { icon: require("@/assets/icons/ic_language.png"), label: "Language", value: currentLangLabel, onPress: () => router.push("/language") },
         ].map((m, i) => (
           <TouchableOpacity key={i} style={[styles.menuItem, { borderBottomColor: colors.border }]} onPress={m.onPress} activeOpacity={0.75}>
             <View style={[styles.menuIcon, { backgroundColor: colors.surface }]}>
               <Image source={m.icon} style={styles.menuIconImg} tintColor={colors.text} resizeMode="contain" />
             </View>
             <Text style={[styles.menuLabel, { color: colors.text }]}>{m.label}</Text>
-            {"value" in m && <Text style={{ color: colors.mutedForeground, fontSize: 12, fontFamily: "Poppins_400Regular" }}>{m.value}</Text>}
+            {"value" in m && m.value ? (
+              <Text style={{ color: colors.mutedForeground, fontSize: 12, fontFamily: "Poppins_400Regular", marginRight: 4 }}>{m.value}</Text>
+            ) : null}
             <Image source={require("@/assets/icons/ic_back.png")} style={[styles.chevron, CHEVRON_ROTATE]} tintColor={colors.mutedForeground} resizeMode="contain" />
           </TouchableOpacity>
         ))}
@@ -123,11 +237,36 @@ export default function HostProfileScreen() {
 
       <View style={[styles.section, { backgroundColor: colors.card }]}>
         <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>More</Text>
-        <TouchableOpacity style={[styles.menuItem, { borderBottomColor: colors.border }]} onPress={() => router.push("/settings")} activeOpacity={0.75}>
+
+        <TouchableOpacity style={[styles.menuItem, { borderBottomColor: colors.border }]} onPress={() => router.push("/referral")} activeOpacity={0.75}>
           <View style={[styles.menuIcon, { backgroundColor: colors.surface }]}>
-            <Image source={require("@/assets/images/help_graphic.png")} style={styles.menuIconImg} resizeMode="contain" />
+            <Feather name="gift" size={18} color={colors.text} />
+          </View>
+          <Text style={[styles.menuLabel, { color: colors.text }]}>Refer & Earn</Text>
+          <Image source={require("@/assets/icons/ic_back.png")} style={[styles.chevron, CHEVRON_ROTATE]} tintColor={colors.mutedForeground} resizeMode="contain" />
+        </TouchableOpacity>
+
+        <TouchableOpacity style={[styles.menuItem, { borderBottomColor: colors.border }]} onPress={() => router.push("/help-center")} activeOpacity={0.75}>
+          <View style={[styles.menuIcon, { backgroundColor: colors.surface }]}>
+            <Image source={require("@/assets/images/help_graphic.png")} style={styles.menuIconImg} tintColor={colors.text} resizeMode="contain" />
           </View>
           <Text style={[styles.menuLabel, { color: colors.text }]}>Help Center</Text>
+          <Image source={require("@/assets/icons/ic_back.png")} style={[styles.chevron, CHEVRON_ROTATE]} tintColor={colors.mutedForeground} resizeMode="contain" />
+        </TouchableOpacity>
+
+        <TouchableOpacity style={[styles.menuItem, { borderBottomColor: colors.border }]} onPress={() => router.push("/privacy")} activeOpacity={0.75}>
+          <View style={[styles.menuIcon, { backgroundColor: colors.surface }]}>
+            <Feather name="shield" size={18} color={colors.text} />
+          </View>
+          <Text style={[styles.menuLabel, { color: colors.text }]}>Privacy Policy</Text>
+          <Image source={require("@/assets/icons/ic_back.png")} style={[styles.chevron, CHEVRON_ROTATE]} tintColor={colors.mutedForeground} resizeMode="contain" />
+        </TouchableOpacity>
+
+        <TouchableOpacity style={[styles.menuItem, { borderBottomColor: colors.border }]} onPress={() => router.push("/about")} activeOpacity={0.75}>
+          <View style={[styles.menuIcon, { backgroundColor: colors.surface }]}>
+            <Feather name="info" size={18} color={colors.text} />
+          </View>
+          <Text style={[styles.menuLabel, { color: colors.text }]}>About VoxLink</Text>
           <Image source={require("@/assets/icons/ic_back.png")} style={[styles.chevron, CHEVRON_ROTATE]} tintColor={colors.mutedForeground} resizeMode="contain" />
         </TouchableOpacity>
       </View>
@@ -148,14 +287,18 @@ export default function HostProfileScreen() {
 const styles = StyleSheet.create({
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 16, paddingBottom: 12 },
   title: { fontSize: 20, fontFamily: "Poppins_700Bold" },
-  editBtn: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
-  editIcon: { width: 18, height: 18 },
+  settingsBtn: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
+  settingsIcon: { width: 18, height: 18 },
   profileCard: { marginHorizontal: 16, borderRadius: 20, padding: 20, alignItems: "center", gap: 8, marginBottom: 16 },
   avatarOuter: { position: "relative" },
   dottedBorder: { borderWidth: 1.5, borderRadius: 50, borderStyle: "dashed" as any, padding: 3 },
   avatar: { width: 80, height: 80, borderRadius: 40 },
-  hostBadge: { position: "absolute", right: 2, bottom: 2, width: 24, height: 24, borderRadius: 12, alignItems: "center", justifyContent: "center" },
-  hostBadgeIcon: { width: 14, height: 14 },
+  cameraBtn: {
+    position: "absolute", right: 0, bottom: 0,
+    width: 26, height: 26, borderRadius: 13,
+    alignItems: "center", justifyContent: "center",
+  },
+  cameraIcon: { width: 13, height: 13 },
   name: { fontSize: 18, fontFamily: "Poppins_700Bold", marginTop: 4 },
   role: { fontSize: 12, fontFamily: "Poppins_500Medium" },
   idBadge: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20, marginTop: 4 },

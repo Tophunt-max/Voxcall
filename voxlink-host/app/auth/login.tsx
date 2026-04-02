@@ -102,6 +102,10 @@ export default function HostLoginScreen() {
           secureTextEntry={!showPw}
         />
 
+        <TouchableOpacity onPress={() => router.push("/auth/forgot-password")} style={{ alignSelf: "flex-end", marginTop: -4 }}>
+          <Text style={{ fontSize: 13, fontFamily: "Poppins_500Medium", color: ACCENT }}>Forgot Password?</Text>
+        </TouchableOpacity>
+
         <PrimaryButton title="Sign In as Host" onPress={handleLogin} loading={loading} />
 
         <View style={s.divRow}>

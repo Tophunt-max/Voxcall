@@ -139,6 +139,13 @@ function RootLayoutNav() {
         <Stack.Screen name="chat/[id]" />
         <Stack.Screen name="notifications" />
         <Stack.Screen name="settings" />
+        <Stack.Screen name="auth/forgot-password" />
+        <Stack.Screen name="profile/edit" />
+        <Stack.Screen name="help-center" />
+        <Stack.Screen name="language" />
+        <Stack.Screen name="privacy" />
+        <Stack.Screen name="about" />
+        <Stack.Screen name="referral" />
       </Stack>
       <ToastContainer />
     </>
