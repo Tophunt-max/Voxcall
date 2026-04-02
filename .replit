@@ -81,3 +81,8 @@ timeoutMs = 20000
 
 [nix]
 channel = "stable-25_05"
+
+[userenv]
+
+[userenv.shared]
+EXPO_PUBLIC_FIREBASE_VAPID_KEY = "BA169KXMPc3JsGE64NRFeibiuxRCPfphnVroydDaG69iL4HYuhMqA1hKx3e-b5wAWhgqcBS_mIcO8Yz428do63E"
