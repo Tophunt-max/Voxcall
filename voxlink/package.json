@@ -58,6 +58,8 @@
   "dependencies": {
     "@config-plugins/react-native-webrtc": "^13.0.0",
     "@expo-google-fonts/poppins": "^0.4.1",
+    "@react-native-firebase/app": "^24.0.0",
+    "@react-native-firebase/messaging": "^24.0.0",
     "@react-native-google-signin/google-signin": "^16.1.2",
     "expo-application": "^7.0.8",
     "expo-auth-session": "^7.0.10",
@@ -65,7 +67,6 @@
     "expo-camera": "^17.0.10",
     "expo-clipboard": "~8.0.8",
     "expo-localization": "~17.0.8",
-    "expo-notifications": "~0.32.16",
     "firebase": "^12.11.0",
     "react-native-webrtc": "^124.0.7"
   }

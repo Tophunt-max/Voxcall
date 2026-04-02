@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { authMiddleware } from '../middleware/auth';
-import { sendExpoPush } from '../lib/expoPush';
+import { sendFCMPush } from '../lib/fcm';
 import type { Env, JWTPayload } from '../types';
 
 const chat = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
@@ -92,7 +92,8 @@ chat.post('/rooms/:id/messages', async (c) => {
         .first<{ fcm_token: string }>();
       if (recipient?.fcm_token) {
         const pushBody = media_url ? '[Media]' : (content ?? '');
-        await sendExpoPush(
+        await sendFCMPush(
+          c.env.FIREBASE_SERVICE_ACCOUNT,
           recipient.fcm_token,
           senderName || 'New Message',
           pushBody,

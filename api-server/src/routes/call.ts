@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { authMiddleware } from '../middleware/auth';
 import { createCFCalls } from '../lib/cf-calls';
-import { sendExpoPush } from '../lib/expoPush';
+import { sendFCMPush } from '../lib/fcm';
 import type { Env, JWTPayload } from '../types';
 
 const call = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
@@ -62,7 +62,8 @@ call.post('/initiate', async (c) => {
       .first<{ fcm_token: string }>();
     if (hostUser?.fcm_token) {
       const callLabel = callType === 'video' ? 'Video Call' : 'Audio Call';
-      await sendExpoPush(
+      await sendFCMPush(
+        c.env.FIREBASE_SERVICE_ACCOUNT,
         hostUser.fcm_token,
         `Incoming ${callLabel}`,
         `${caller.name || 'Someone'} is calling you`,

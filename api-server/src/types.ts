@@ -8,6 +8,7 @@ export interface Env {
   CF_CALLS_APP_ID: string;
   CF_CALLS_APP_SECRET: string;
   CF_ACCOUNT_ID: string;
+  FIREBASE_SERVICE_ACCOUNT: string;
 }
 
 export interface JWTPayload {

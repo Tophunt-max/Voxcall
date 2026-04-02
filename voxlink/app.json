@@ -15,6 +15,8 @@
     },
     "ios": {
       "supportsTablet": false,
+      "bundleIdentifier": "com.voxlink.app",
+      "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "NSCameraUsageDescription": "VoxLink needs camera access for video calls so the other person can see you.",
         "NSMicrophoneUsageDescription": "VoxLink needs microphone access for audio and video calls.",
@@ -23,6 +25,8 @@
       }
     },
     "android": {
+      "package": "com.voxlink.app",
+      "googleServicesFile": "./google-services.json",
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO",
@@ -47,6 +51,8 @@
       ],
       "expo-font",
       "expo-web-browser",
+      "@react-native-firebase/app",
+      "@react-native-firebase/messaging",
       [
         "expo-camera",
         {
@@ -60,14 +66,6 @@
         {
           "photosPermission": "VoxLink needs access to your photos to upload profile pictures and KYC documents.",
           "cameraPermission": "VoxLink needs camera access to take profile photos."
-        }
-      ],
-      [
-        "expo-notifications",
-        {
-          "icon": "./assets/images/icon.png",
-          "color": "#A00EE7",
-          "sounds": []
         }
       ],
       [

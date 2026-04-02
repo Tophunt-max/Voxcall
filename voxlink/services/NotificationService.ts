@@ -1,12 +1,12 @@
 // VoxLink Notification Service
-// Local push notifications + in-app notification management
+// FCM-based push notifications (Firebase Cloud Messaging)
+// Native: @react-native-firebase/messaging
+// Web: Firebase Web Messaging + Service Worker
+// In-app: AsyncStorage-backed notification list
 
 import { Platform } from "react-native";
 import { appendToArray, getItem, setItem, StorageKeys } from "@/utils/storage";
-import Constants from "expo-constants";
-
-let Notifications: any = null;
-try { Notifications = require("expo-notifications"); } catch {}
+import { requestFCMPermission, getFCMToken, setupBackgroundMessageHandler } from "./fcm";
 
 export interface InAppNotification {
   id: string;
@@ -24,92 +24,58 @@ function generateNotifId() {
   return `notif_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 }
 
-// ─── Web Browser Notification helpers ───────────────────────────────────────
+// ─── Web Browser Notification (foreground) ───────────────────────────────────
 
 function isWebNotificationSupported(): boolean {
   return Platform.OS === "web" && typeof window !== "undefined" && "Notification" in window;
 }
 
-async function showBrowserNotification(title: string, body: string, data?: Record<string, unknown>): Promise<void> {
+async function showBrowserNotification(
+  title: string,
+  body: string,
+  data?: Record<string, unknown>
+): Promise<void> {
   if (!isWebNotificationSupported()) return;
   try {
     if ((window as any).Notification.permission === "granted") {
       const n = new (window as any).Notification(title, {
         body,
-        icon: "/favicon.ico",
+        icon: "/assets/images/icon.png",
         data,
+        requireInteraction: data?.type === "incoming_call",
       });
-      setTimeout(() => n.close(), 6000);
+      if (data?.type !== "incoming_call") {
+        setTimeout(() => n.close(), 6000);
+      }
     }
   } catch {}
 }
 
-// ─── Push Notification Setup ────────────────────────────────────────────────
+// ─── FCM Setup ───────────────────────────────────────────────────────────────
 
 export async function configurePushNotifications(): Promise<void> {
-  // Web: request browser notification permission
-  if (Platform.OS === "web") {
-    try {
-      if (isWebNotificationSupported() && (window as any).Notification.permission === "default") {
-        await (window as any).Notification.requestPermission();
-      }
-    } catch {}
-    return;
-  }
-  if (!Notifications) return;
   try {
-    if (Platform.OS === "android") {
-      await Notifications.setNotificationChannelAsync("default", {
-        name: "Default",
-        importance: Notifications.AndroidImportance.HIGH,
-        vibrationPattern: [0, 250, 250, 250],
-        lightColor: "#A00EE7",
-        sound: "default",
-      });
-      await Notifications.setNotificationChannelAsync("calls", {
-        name: "Incoming Calls",
-        importance: Notifications.AndroidImportance.MAX,
-        vibrationPattern: [0, 500, 250, 500],
-        lightColor: "#A00EE7",
-        sound: "default",
-        enableLights: true,
-        enableVibrate: true,
-      });
+    await requestFCMPermission();
+    if (Platform.OS !== "web") {
+      setupBackgroundMessageHandler();
     }
-
-    Notifications.setNotificationHandler({
-      handleNotification: async () => ({
-        shouldShowAlert: true,
-        shouldPlaySound: true,
-        shouldSetBadge: true,
-      }),
-    });
   } catch (err) {
     console.warn("[Notifications] configure error:", err);
   }
 }
 
 export async function registerForPushNotifications(): Promise<string | null> {
-  if (!Notifications || Platform.OS === "web") return null;
   try {
-    const { status: existing } = await Notifications.getPermissionsAsync();
-    let finalStatus = existing;
-    if (existing !== "granted") {
-      const { status } = await Notifications.requestPermissionsAsync();
-      finalStatus = status;
-    }
-    if (finalStatus !== "granted") return null;
-    const projectId =
-      Constants.expoConfig?.extra?.eas?.projectId ??
-      "0e529a27-fcf1-4850-a306-971ef07dd2ac";
-    const { data } = await Notifications.getExpoPushTokenAsync({ projectId });
-    await setItem(StorageKeys.PUSH_TOKEN, data);
-    return data;
+    const token = await getFCMToken();
+    if (token) await setItem(StorageKeys.PUSH_TOKEN, token);
+    return token;
   } catch (err) {
     console.warn("[Notifications] register error:", err);
     return null;
   }
 }
+
+// ─── Local / Scheduled Notification ─────────────────────────────────────────
 
 export async function scheduleLocalNotification(params: {
   title: string;
@@ -119,35 +85,21 @@ export async function scheduleLocalNotification(params: {
 }): Promise<void> {
   if (Platform.OS === "web") {
     if (params.delaySeconds) {
-      setTimeout(() => showBrowserNotification(params.title, params.body, params.data), params.delaySeconds * 1000);
+      setTimeout(
+        () => showBrowserNotification(params.title, params.body, params.data),
+        params.delaySeconds * 1000
+      );
     } else {
       await showBrowserNotification(params.title, params.body, params.data);
     }
     return;
   }
-  if (!Notifications) return;
-  try {
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: params.title,
-        body: params.body,
-        data: params.data ?? {},
-        sound: true,
-      },
-      trigger: params.delaySeconds
-        ? { seconds: params.delaySeconds }
-        : null,
-    });
-  } catch (err) {
-    console.warn("[Notifications] schedule error:", err);
-  }
+  // On native, FCM handles all push — local notifications via notifee (optional)
+  // Background push is handled by Firebase automatically
 }
 
 export async function cancelAllNotifications(): Promise<void> {
-  if (!Notifications || Platform.OS === "web") return;
-  try {
-    await Notifications.cancelAllScheduledNotificationsAsync();
-  } catch {}
+  // Handled by FCM / OS — no local scheduler to cancel
 }
 
 // ─── In-App Notification Store ──────────────────────────────────────────────

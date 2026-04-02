@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { authMiddleware, adminMiddleware } from '../middleware/auth';
-import { sendExpoPush, getPushTokens } from '../lib/expoPush';
+import { sendFCMPush, getFCMTokens } from '../lib/fcm';
 import type { Env, JWTPayload } from '../types';
 
 const admin = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
@@ -362,9 +362,9 @@ admin.post('/notifications/send', async (c) => {
     let totalPushed = 0;
     for (let i = 0; i < userIds.length; i += batchSize) {
       const batch = userIds.slice(i, i + batchSize);
-      const tokens = await getPushTokens(db(c), batch);
+      const tokens = await getFCMTokens(db(c), batch);
       if (tokens.length > 0) {
-        const result = await sendExpoPush(tokens, title, msgBody, { type, notif_type: type });
+        const result = await sendFCMPush(c.env.FIREBASE_SERVICE_ACCOUNT, tokens, title, msgBody, { type, notif_type: type });
         totalPushed += result.sent;
       }
     }
