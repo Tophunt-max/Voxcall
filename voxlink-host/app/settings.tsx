@@ -1,0 +1,137 @@
+import React, { useState, useEffect, useCallback } from "react";
+import {
+  View, Text, StyleSheet, TouchableOpacity, Image,
+  ScrollView, Switch, Alert
+} from "react-native";
+import { router } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Feather } from "@expo/vector-icons";
+import { useColors } from "@/hooks/useColors";
+import { useAuth } from "@/context/AuthContext";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
+const SETTINGS_KEY = "host_settings_v1";
+
+function Row({ icon, label, value, onPress, isSwitch, switchVal, onSwitch, danger }: {
+  icon: string; label: string; value?: string; onPress: () => void;
+  isSwitch?: boolean; switchVal?: boolean; onSwitch?: (v: boolean) => void; danger?: boolean;
+}) {
+  const colors = useColors();
+  return (
+    <TouchableOpacity style={[styles.row, { borderBottomColor: colors.border }]} onPress={onPress} activeOpacity={0.75}>
+      <View style={[styles.rowIcon, { backgroundColor: danger ? "#FDECEA" : colors.surface }]}>
+        <Feather name={icon as any} size={17} color={danger ? "#F44336" : colors.primary} />
+      </View>
+      <Text style={[styles.rowLabel, { color: danger ? "#F44336" : colors.text }]}>{label}</Text>
+      {isSwitch ? (
+        <Switch value={switchVal} onValueChange={onSwitch} trackColor={{ false: colors.border, true: "#0BAF23" }} thumbColor="#fff" />
+      ) : (
+        <View style={styles.rowRight}>
+          {value && <Text style={[styles.rowValue, { color: colors.mutedForeground }]}>{value}</Text>}
+          <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+        </View>
+      )}
+    </TouchableOpacity>
+  );
+}
+
+export default function HostSettingsScreen() {
+  const colors = useColors();
+  const insets = useSafeAreaInsets();
+  const { logout } = useAuth();
+  const [callNotif, setCallNotif] = useState(true);
+  const [chatNotif, setChatNotif] = useState(true);
+  const [coinNotif, setCoinNotif] = useState(true);
+  const [autoOnline, setAutoOnline] = useState(false);
+
+  const topPad = insets.top;
+
+  useEffect(() => {
+    AsyncStorage.getItem(SETTINGS_KEY)
+      .then((raw) => {
+        if (!raw) return;
+        const saved = JSON.parse(raw);
+        if (saved.callNotif !== undefined) setCallNotif(saved.callNotif);
+        if (saved.chatNotif !== undefined) setChatNotif(saved.chatNotif);
+        if (saved.coinNotif !== undefined) setCoinNotif(saved.coinNotif);
+        if (saved.autoOnline !== undefined) setAutoOnline(saved.autoOnline);
+      })
+      .catch(() => {});
+  }, []);
+
+  const persistSettings = useCallback((patch: Partial<{ callNotif: boolean; chatNotif: boolean; coinNotif: boolean; autoOnline: boolean }>) => {
+    AsyncStorage.getItem(SETTINGS_KEY)
+      .then((raw) => {
+        const current = raw ? JSON.parse(raw) : {};
+        return AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...current, ...patch }));
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleCallNotif = (v: boolean) => { setCallNotif(v); persistSettings({ callNotif: v }); };
+  const handleChatNotif = (v: boolean) => { setChatNotif(v); persistSettings({ chatNotif: v }); };
+  const handleCoinNotif = (v: boolean) => { setCoinNotif(v); persistSettings({ coinNotif: v }); };
+  const handleAutoOnline = (v: boolean) => { setAutoOnline(v); persistSettings({ autoOnline: v }); };
+
+  const handleLogout = () => {
+    Alert.alert("Sign Out", "Are you sure you want to sign out?", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Sign Out", style: "destructive", onPress: async () => { await logout(); router.replace("/auth/login"); } }
+    ]);
+  };
+
+  return (
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <View style={[styles.header, { paddingTop: topPad + 8, backgroundColor: colors.background, borderBottomColor: colors.border }]}>
+        <TouchableOpacity onPress={() => router.back()} style={[styles.backBtn, { backgroundColor: colors.surface }]}>
+          <Feather name="arrow-left" size={20} color={colors.text} />
+        </TouchableOpacity>
+        <Text style={[styles.title, { color: colors.text }]}>Host Settings</Text>
+        <View style={{ width: 40 }} />
+      </View>
+
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
+        <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Availability</Text>
+        <View style={[styles.card, { backgroundColor: colors.card }]}>
+          <Row icon="clock" label="Auto Go Online on App Open" isSwitch switchVal={autoOnline} onSwitch={handleAutoOnline} onPress={() => {}} />
+          <Row icon="phone-off" label="Do Not Disturb Mode" onPress={() => Alert.alert("Coming Soon", "DND mode will be available in a future update.")} />
+          <Row icon="calendar" label="Availability Schedule" onPress={() => Alert.alert("Coming Soon", "Schedule settings coming soon.")} />
+        </View>
+
+        <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Notifications</Text>
+        <View style={[styles.card, { backgroundColor: colors.card }]}>
+          <Row icon="phone" label="Incoming Call Alerts" isSwitch switchVal={callNotif} onSwitch={handleCallNotif} onPress={() => {}} />
+          <Row icon="message-circle" label="Chat Notifications" isSwitch switchVal={chatNotif} onSwitch={handleChatNotif} onPress={() => {}} />
+          <Row icon="dollar-sign" label="Coin Earned Alerts" isSwitch switchVal={coinNotif} onSwitch={handleCoinNotif} onPress={() => {}} />
+        </View>
+
+        <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Earnings</Text>
+        <View style={[styles.card, { backgroundColor: colors.card }]}>
+          <Row icon="trending-up" label="Payout Method" value="Bank Account" onPress={() => Alert.alert("Coming Soon", "Payout settings coming soon.")} />
+          <Row icon="file-text" label="Withdraw Earnings" onPress={() => router.push("/earnings")} />
+        </View>
+
+        <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Account</Text>
+        <View style={[styles.card, { backgroundColor: colors.card }]}>
+          <Row icon="help-circle" label="Help & Support" onPress={() => Alert.alert("Help", "Contact us at support@voxlink.app")} />
+          <Row icon="shield" label="Privacy Policy" onPress={() => Alert.alert("Privacy", "Privacy policy available at voxlink.app/privacy")} />
+          <Row icon="info" label="About VoxLink Host" onPress={() => Alert.alert("VoxLink Host", "Version 1.0.0 — Built for hosts")} />
+          <Row icon="log-out" label="Sign Out" onPress={handleLogout} danger />
+        </View>
+      </ScrollView>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingBottom: 12, borderBottomWidth: 1 },
+  backBtn: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
+  title: { fontSize: 17, fontFamily: "Poppins_600SemiBold" },
+  sectionLabel: { fontSize: 11, fontFamily: "Poppins_500Medium", textTransform: "uppercase", letterSpacing: 0.5, marginHorizontal: 16, marginTop: 20, marginBottom: 6 },
+  card: { marginHorizontal: 16, borderRadius: 12, overflow: "hidden" },
+  row: { flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingVertical: 14, gap: 12, borderBottomWidth: 1 },
+  rowIcon: { width: 36, height: 36, borderRadius: 10, alignItems: "center", justifyContent: "center" },
+  rowLabel: { flex: 1, fontSize: 14, fontFamily: "Poppins_500Medium" },
+  rowRight: { flexDirection: "row", alignItems: "center", gap: 6 },
+  rowValue: { fontSize: 13, fontFamily: "Poppins_400Regular" },
+});

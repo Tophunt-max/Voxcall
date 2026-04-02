@@ -8,7 +8,8 @@ VoxLink is a production-grade social audio/video calling mobile app + admin pane
 
 | Artifact | Port | Path | Description |
 |---|---|---|---|
-| `voxlink` | 20426 | `/` | Expo 54 Mobile App (React Native) |
+| `voxlink` | 20426 | `/` | Expo 54 Mobile App — User App (`com.voxlink.app`) |
+| `voxlink-host` | – | – | Expo 54 Mobile App — Host App (`com.voxlink.host`) |
 | `api-server` | 8080 | – | Cloudflare Workers backend |
 | `admin-panel` | 20130 | `/admin-panel/` | React + Vite Admin Panel |
 | `mockup-sandbox` | 8081 | `/__mockup` | UI Component Preview Server |

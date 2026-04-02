@@ -38,6 +38,7 @@ packages:
   - admin-panel
   - api-server
   - voxlink
+  - voxlink-host
   - lib/*
   - lib/integrations/*
 

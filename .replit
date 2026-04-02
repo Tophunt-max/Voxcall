@@ -34,6 +34,10 @@ args = "VoxLink Admin Panel"
 task = "workflow.run"
 args = "VoxLink Gateway"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "voxlink-host: expo"
+
 [[workflows.workflow]]
 name = "VoxLink - Voice & Video Connection"
 author = "agent"
@@ -69,6 +73,17 @@ waitForPort = 3000
 
 [workflows.workflow.metadata]
 outputType = "webview"
+
+[[workflows.workflow]]
+name = "voxlink-host: expo"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pnpm --filter @workspace/voxlink-host run dev"
+
+[workflows.workflow.metadata]
+outputType = "console"
 
 [agent]
 stack = "PNPM_WORKSPACE"

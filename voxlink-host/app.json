@@ -1,0 +1,94 @@
+{
+  "expo": {
+    "name": "VoxLink Host",
+    "slug": "voxlink-host",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "voxlinkhost",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/images/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#111329"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.voxlink.host",
+      "infoPlist": {
+        "NSCameraUsageDescription": "VoxLink needs camera access for video calls so the other person can see you.",
+        "NSMicrophoneUsageDescription": "VoxLink needs microphone access for audio and video calls.",
+        "NSPhotoLibraryUsageDescription": "VoxLink needs access to your photos to upload profile pictures and KYC documents.",
+        "NSPhotoLibraryAddUsageDescription": "VoxLink needs permission to save photos to your library."
+      }
+    },
+    "android": {
+      "package": "com.voxlink.host",
+      "googleServicesFile": "./google-services.json",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.VIBRATE"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/images/icon.png"
+    },
+    "plugins": [
+      [
+        "expo-router",
+        {
+          "origin": "https://replit.com/"
+        }
+      ],
+      "expo-font",
+      "expo-web-browser",
+      "@react-native-firebase/app",
+      "@react-native-firebase/messaging",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "VoxLink needs camera access for video calls so the other person can see you.",
+          "microphonePermission": "VoxLink needs microphone access for audio and video calls.",
+          "recordAudioAndroid": true
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "VoxLink needs access to your photos to upload profile pictures and KYC documents.",
+          "cameraPermission": "VoxLink needs camera access to take profile photos."
+        }
+      ],
+      [
+        "@config-plugins/react-native-webrtc",
+        {
+          "cameraPermission": "VoxLink needs camera access for video calls so the other person can see you.",
+          "microphonePermission": "VoxLink needs microphone access for audio and video calls."
+        }
+      ]
+    ],
+    "assetBundlePatterns": [
+      "assets/**",
+      "assets/icons/**",
+      "assets/images/**",
+      "assets/lottie/**"
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "0e529a27-fcf1-4850-a306-971ef07dd2ac"
+      }
+    }
+  }
+}
