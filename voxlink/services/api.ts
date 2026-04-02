@@ -92,6 +92,8 @@ export const API = {
     apiRequest<{ token: string; user: any }>('POST', '/api/auth/google-login', { email, name, google_id, avatar_url }, false),
   verifyOtp: (email: string, otp: string) =>
     apiRequest<{ success: boolean; bonus_coins?: number }>('POST', '/api/auth/verify-otp', { email, otp }, false),
+  resetPassword: (email: string, otp: string, new_password: string) =>
+    apiRequest<{ success: boolean }>('POST', '/api/auth/reset-password', { email, otp, new_password }, false),
 
   // Host KYC Application
   getHostAppStatus: () => apiRequest<any>('GET', '/api/host-app/status'),

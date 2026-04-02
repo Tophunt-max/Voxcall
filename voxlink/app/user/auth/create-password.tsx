@@ -1,17 +1,19 @@
 import React, { useState } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  Image, KeyboardAvoidingView, Platform, ScrollView
+  Image, KeyboardAvoidingView, Platform, ScrollView, Alert
 } from "react-native";
 import { showErrorToast, showSuccessToast } from "@/components/Toast";
 import AppInput from "@/components/AppInput";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
+import { API } from "@/services/api";
 
 export default function CreatePasswordScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const params = useLocalSearchParams<{ email: string; otp: string }>();
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [showPass, setShowPass] = useState(false);
@@ -27,11 +29,20 @@ export default function CreatePasswordScreen() {
       showErrorToast("Passwords don't match.", "Mismatch");
       return;
     }
+    if (!params.email || !params.otp) {
+      showErrorToast("Session expired. Please restart the forgot password flow.", "Error");
+      return;
+    }
     setLoading(true);
-    await new Promise(r => setTimeout(r, 1000));
-    setLoading(false);
-    showSuccessToast("Password updated successfully! Please sign in.", "Success");
-    router.replace("/user/auth/login");
+    try {
+      await API.resetPassword(params.email, params.otp, password);
+      showSuccessToast("Password updated successfully! Please sign in.", "Success");
+      router.replace("/user/auth/login");
+    } catch (err: any) {
+      Alert.alert("Error", err?.message || "Failed to reset password. The OTP may have expired.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (

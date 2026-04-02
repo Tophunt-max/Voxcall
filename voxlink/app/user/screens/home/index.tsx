@@ -37,7 +37,7 @@ function mapApiHost(h: any): Host {
     reviewCount: Number(h.review_count) || 0,
     languages: Array.isArray(h.languages) ? h.languages : (() => { try { return JSON.parse(h.languages || "[]"); } catch { return []; } })(),
     specialties: Array.isArray(h.specialties) ? h.specialties : (() => { try { return JSON.parse(h.specialties || "[]"); } catch { return []; } })(),
-    coinsPerMinute: Number(h.coins_per_minute) || 1,
+    coinsPerMinute: Number(h.audio_coins_per_minute ?? h.coins_per_minute) || 1,
     totalMinutes: Number(h.total_minutes) || 0,
     isOnline: !!h.is_online,
     isTopRated: !!h.is_top_rated,

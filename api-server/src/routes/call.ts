@@ -182,7 +182,7 @@ call.post('/end', async (c) => {
 call.post('/rate', async (c) => {
   const { sub } = c.get('user');
   const body = await c.req.json<{ session_id: string; rating?: number; stars?: number; comment?: string }>();
-  const starsVal = body.stars ?? body.rating ?? 5;
+  const starsVal = Math.min(5, Math.max(1, Number(body.stars ?? body.rating ?? 5)));
   const sessionId = body.session_id;
   const db = c.env.DB;
 
@@ -454,7 +454,7 @@ call.post('/:id/rate', async (c) => {
   const { sub } = c.get('user');
   const sessionId = c.req.param('id');
   const body = await c.req.json<{ stars?: number; rating?: number; comment?: string }>();
-  const starsVal = body.stars ?? body.rating ?? 5;
+  const starsVal = Math.min(5, Math.max(1, Number(body.stars ?? body.rating ?? 5)));
   const db = c.env.DB;
   const session = await db.prepare('SELECT host_id FROM call_sessions WHERE id = ? AND caller_id = ?').bind(sessionId, sub).first<any>();
   if (!session) return c.json({ error: 'Session not found' }, 404);

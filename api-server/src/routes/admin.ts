@@ -124,9 +124,9 @@ admin.patch('/hosts/:id', async (c) => {
   if (is_top_rated !== undefined) { sets.push('is_top_rated = ?'); vals.push(is_top_rated); }
   if (identity_verified !== undefined) { sets.push('identity_verified = ?'); vals.push(identity_verified); }
   if (level !== undefined) { sets.push('level = ?'); vals.push(Math.min(5, Math.max(1, parseInt(level)))); }
-  if (audio_coins_per_minute !== undefined) { sets.push('audio_coins_per_minute = ?'); vals.push(parseInt(audio_coins_per_minute)); }
-  if (video_coins_per_minute !== undefined) { sets.push('video_coins_per_minute = ?'); vals.push(parseInt(video_coins_per_minute)); }
-  if (coins_per_minute !== undefined) { sets.push('coins_per_minute = ?'); vals.push(parseInt(coins_per_minute)); }
+  if (audio_coins_per_minute !== undefined) { sets.push('audio_coins_per_minute = ?'); vals.push(Math.min(500, Math.max(1, parseInt(audio_coins_per_minute)))); }
+  if (video_coins_per_minute !== undefined) { sets.push('video_coins_per_minute = ?'); vals.push(Math.min(500, Math.max(1, parseInt(video_coins_per_minute)))); }
+  if (coins_per_minute !== undefined) { sets.push('coins_per_minute = ?'); vals.push(Math.min(500, Math.max(1, parseInt(coins_per_minute)))); }
   if (!sets.length) return c.json({ error: 'Nothing to update' }, 400);
   sets.push('updated_at = unixepoch()');
   vals.push(id);

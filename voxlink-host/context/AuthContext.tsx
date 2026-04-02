@@ -49,7 +49,7 @@ async function fetchFreshProfile(): Promise<Partial<UserProfile> | null> {
   try {
     const profile = await apiRequest<{ earnings: number; rating: number; totalCalls: number; isOnline: boolean }>(
       "GET",
-      "/api/host/profile"
+      "/api/host/me"
     );
     return profile ?? null;
   } catch {

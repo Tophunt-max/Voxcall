@@ -89,7 +89,7 @@ function EditRateModal({ host, onClose, onSaved }: { host: any; onClose: () => v
           <div>
             <label className="text-sm font-medium mb-1 block">🎤 Audio Rate (coins/min)</label>
             <input
-              type="number" min="1" max="200"
+              type="number" min="1" max="500"
               value={audio}
               onChange={(e) => setAudio(e.target.value)}
               className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300"

@@ -409,3 +409,20 @@ Merges socket + notification tap handling. Lives inside all providers so it can 
 16. **Hosts Load Error Handling** — `.catch()` added to load, error banner with Retry button shown
 17. **Withdrawals Load Error Handling** — `.catch()` added to load, error banner shown
 18. **Users Pagination** — Page state added with Prev/Next controls; page resets on search
+
+## Bug Fix Log (Round 4 — 8 Bugs Fixed 2026-04-02)
+
+### User App — 2 Fixes
+1. **`create-password.tsx` Never Called API** — `handleUpdate()` was just doing a 1-second timeout then navigating. Now reads `email` and `otp` from `useLocalSearchParams`, calls `API.resetPassword()` with them. Forgot-password flow is now fully functional.
+2. **`api.ts` Missing `resetPassword` Method** — Added `resetPassword(email, otp, new_password)` method calling `POST /api/auth/reset-password`.
+
+### Host App — 1 Fix
+3. **`AuthContext.tsx` Wrong Profile Endpoint** — `fetchFreshProfile()` was calling `/api/host/profile` which doesn't exist (404). Fixed to call `/api/host/me`. Host foreground refresh now works correctly.
+
+### API Server — 3 Fixes
+4. **`host.ts` Topic Filter Ignored** — GET /api/hosts accepted `topic` query param but never used it in the SQL query. Added `AND h.specialties LIKE ?` clause so topic filtering actually works.
+5. **`call.ts` Stars Validation Missing** — Both `/rate` and `/:id/rate` endpoints accepted any numeric stars value. Added `Math.min(5, Math.max(1, ...))` clamp to prevent corrupt host ratings (e.g. stars: 100).
+6. **`admin.ts` No Rate Validation on Host Update** — PATCH /admin/hosts/:id set `audio_coins_per_minute`, `video_coins_per_minute`, and `coins_per_minute` without range checks. Admin could set 0 or negative rates. Added clamp: min 1, max 500.
+
+### Admin Panel — 1 Fix
+7. **`Hosts.tsx` Audio Rate Input Cap Too Low** — HTML input had `max="200"` but backend allows up to 500 coins/min. Changed to `max="500"` to match backend cap.

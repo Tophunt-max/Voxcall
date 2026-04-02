@@ -50,6 +50,7 @@ host.get('/', async (c) => {
   const params: any[] = [];
   if (online === '1') { query += ' AND h.is_online = 1'; }
   if (search) { query += ' AND (u.name LIKE ? OR h.display_name LIKE ?)'; params.push(`%${search}%`, `%${search}%`); }
+  if (topic) { query += ' AND h.specialties LIKE ?'; params.push(`%${topic}%`); }
   query += ' ORDER BY h.is_online DESC, h.rating DESC, h.total_minutes DESC LIMIT ? OFFSET ?';
   params.push(parseInt(limit), offset);
   const result = await c.env.DB.prepare(query).bind(...params).all();
