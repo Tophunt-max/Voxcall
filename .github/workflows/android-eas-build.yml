@@ -1,4 +1,4 @@
-name: Android EAS Build (APK)
+name: Android Local Build (APK)
 
 on:
   push:
@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
     inputs:
       profile:
-        description: 'EAS build profile'
+        description: 'Build profile'
         required: false
         default: 'preview'
         type: choice
@@ -21,9 +21,9 @@ on:
 
 jobs:
   build-android:
-    name: Build Android APK (EAS)
+    name: Build Android APK (Local - Free)
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
 
     steps:
       - name: Checkout
@@ -40,32 +40,80 @@ jobs:
           node-version: '20'
           cache: 'pnpm'
 
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Accept Android SDK Licenses
+        run: yes | sdkmanager --licenses || true
+
+      - name: Install Android build tools
+        run: |
+          sdkmanager \
+            "platforms;android-35" \
+            "build-tools;35.0.0" \
+            "ndk;27.1.12297006"
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Setup EAS
-        uses: expo/expo-github-action@v8
-        with:
-          eas-version: latest
-          token: ${{ secrets.EXPO_TOKEN }}
+      - name: Setup EAS CLI
+        run: npm install -g eas-cli@latest
 
-      - name: Build Android APK via EAS
+      - name: Generate Expo prebuild (Android native project)
         working-directory: voxlink
         run: |
-          eas build \
+          pnpm exec expo prebuild \
             --platform android \
-            --profile ${{ github.event.inputs.profile || 'preview' }} \
-            --non-interactive \
-            --no-wait
+            --clean \
+            --non-interactive
         env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           EXPO_PUBLIC_API_URL: ${{ vars.EXPO_PUBLIC_API_URL }}
           EXPO_PUBLIC_FIREBASE_VAPID_KEY: ${{ vars.EXPO_PUBLIC_FIREBASE_VAPID_KEY }}
           EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: "128169786412"
           EXPO_PUBLIC_FIREBASE_PROJECT_ID: "connectme-80909"
           EXPO_PUBLIC_FIREBASE_APP_ID: "1:128169786412:android:6afbab51b285c0eb98e589"
 
-      - name: Build submitted to EAS
+      - name: Build Debug APK via Gradle
+        working-directory: voxlink/android
         run: |
-          echo "✅ Android build submitted to EAS!"
-          echo "📱 Track progress at: https://expo.dev/accounts/[your-account]/projects/voxlink/builds"
-          echo "📥 Download APK from EAS dashboard when build completes."
+          chmod +x gradlew
+          ./gradlew assembleRelease \
+            --no-daemon \
+            --stacktrace \
+            -Pandroid.injected.signing.store.file="" \
+            2>&1 | tail -30 || \
+          ./gradlew assembleDebug \
+            --no-daemon \
+            --stacktrace
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+          JAVA_HOME: ${{ env.JAVA_HOME }}
+
+      - name: Find and rename APK
+        id: apk
+        run: |
+          APK=$(find voxlink/android -name "*.apk" | head -1)
+          echo "Found APK: $APK"
+          cp "$APK" voxlink-android.apk
+          echo "apk_path=voxlink-android.apk" >> $GITHUB_OUTPUT
+
+      - name: Upload APK as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoxLink-Android-${{ github.run_number }}
+          path: voxlink-android.apk
+          retention-days: 30
+
+      - name: Build Summary
+        run: |
+          echo "## ✅ Android APK Built Successfully!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Download:** Go to Actions → This run → Artifacts → VoxLink-Android-${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Install:** Download APK → enable 'Unknown sources' on Android → install" >> $GITHUB_STEP_SUMMARY
