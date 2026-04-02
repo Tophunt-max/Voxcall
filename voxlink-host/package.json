@@ -58,6 +58,7 @@
   "dependencies": {
     "@config-plugins/react-native-webrtc": "^13.0.0",
     "@expo-google-fonts/poppins": "^0.4.1",
+    "@react-native-community/datetimepicker": "^8.4.4",
     "@react-native-firebase/app": "^24.0.0",
     "@react-native-firebase/messaging": "^24.0.0",
     "@react-native-google-signin/google-signin": "^16.1.2",
