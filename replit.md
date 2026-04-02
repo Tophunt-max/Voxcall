@@ -349,3 +349,33 @@ Merges socket + notification tap handling. Lives inside all providers so it can 
 - End call: ✅ (coins charged correctly)
 - Admin dashboard: ✅ (21 users, 5 hosts, 12 calls today, 117 coins revenue)
 - WebRTC service: ✅ (correctly calls API routes with real SDP)
+
+## Bug Fix Log (Round 2 — 18 Deep Bugs Fixed 2026-04-02)
+
+### Backend (API Server) — 7 Fixes
+1. **SQL Column Injection** — `admin.ts` PATCH routes for `talk_topics` and `faqs` now use allowlist for column names
+2. **NotificationHub Auth** — `/notify` endpoint checks `X-CF-Worker-Internal: 1` header for defence-in-depth
+3. **Referral Sybil Attack** — Referral coins now deferred to OTP verification, not registration (prevents fake account farming)
+4. **ChatRoom Impersonation** — Worker passes verified `userId` via `X-CF-User-Id` header; DO no longer trusts URL params
+5. **Chat WebSocket Auth** — Worker now verifies room ownership before proxying to Durable Object
+6. **Promo Code Brute Force** — `POST /api/coins/apply-promo` now requires authentication
+7. **NaN in admin routes** — unchanged (input validated at client now)
+
+### Mobile App — User (voxlink) — 2 Fixes
+6. **Upload JWT Refresh** — `updateAvatar` and `uploadFile` now use 401 auto-refresh (same as `apiRequest`)
+7. **WebRTC ICE Listener Leak** — `waitForIceGathering` now uses named handler with `removeEventListener` cleanup
+
+### Mobile App — Host (voxlink-host) — 5 Fixes
+8. **acceptCall Race Condition** — API call awaited before state update; failed accept → silent decline
+9. **DOB Lost on Registration** — `dob` field now included in `updateProfile` call in `profile-setup.tsx`
+10. **Earnings Totals Incorrect** — Added `isApproximate` flag for truncated transaction lists (100-item limit)
+11. **Token Refresh Loop** — Failed refresh now clears stored token and throws `SESSION_EXPIRED` to trigger logout
+12. **Upload JWT Refresh (host)** — Same fix as user app applied to host app `api.ts`
+
+### Admin Panel — 6 Fixes
+13. **`new Function()` RCE Risk** — Replaced with safe arithmetic evaluator (substitutes variables, validates chars)
+14. **CoinPlans NaN Validation** — Form validates coins/price before API submission
+15. **Hosts Action Double-Click** — Per-action `toggling` state prevents duplicate requests
+16. **Hosts Load Error Handling** — `.catch()` added to load, error banner with Retry button shown
+17. **Withdrawals Load Error Handling** — `.catch()` added to load, error banner shown
+18. **Users Pagination** — Page state added with Prev/Next controls; page resets on search

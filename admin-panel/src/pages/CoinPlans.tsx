@@ -74,8 +74,16 @@ export default function CoinPlans() {
   };
 
   const save = async () => {
+    // Bug 15 Fix: Validate numeric fields before submitting — parseInt/parseFloat of empty
+    // string produces NaN which gets stored in the DB and causes rendering/logic errors.
+    const coinsVal = parseInt(form.coins);
+    const priceVal = parseFloat(form.price);
+    const bonusVal = parseInt(form.bonus_coins) || 0;
+    if (!form.name.trim()) { showToast('Plan name is required'); return; }
+    if (isNaN(coinsVal) || coinsVal <= 0) { showToast('Coins must be a positive number'); return; }
+    if (isNaN(priceVal) || priceVal <= 0) { showToast('Price must be a positive number'); return; }
     setSaving(true);
-    const data = { name: form.name, coins: parseInt(form.coins), price: parseFloat(form.price), bonus_coins: parseInt(form.bonus_coins) || 0, is_popular: form.is_popular ? 1 : 0, is_active: form.is_active ? 1 : 0 };
+    const data = { name: form.name.trim(), coins: coinsVal, price: priceVal, bonus_coins: bonusVal, is_popular: form.is_popular ? 1 : 0, is_active: form.is_active ? 1 : 0 };
     try {
       if (editing?.id) { await api.updateCoinPlan(editing.id, data); }
       else { await api.createCoinPlan(data); }

@@ -142,21 +142,33 @@ function HostAvatar({ name, level }: { name: string; level: number }) {
 export default function Hosts() {
   const [hosts, setHosts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [toast, setToast] = useState('');
   const [editHost, setEditHost] = useState<any>(null);
   const [recalculating, setRecalculating] = useState(false);
+  // Bug 16 Fix: Track which host+field is being toggled to disable button during request
+  const [toggling, setToggling] = useState<string | null>(null);
 
-  const load = () => { setLoading(true); api.hosts().then(setHosts).finally(() => setLoading(false)); };
+  const load = () => {
+    setLoading(true);
+    setLoadError('');
+    // Bug 17 Fix: Add .catch() so load failures show an error instead of silent empty state
+    api.hosts().then(setHosts).catch((e: any) => setLoadError(e.message || 'Failed to load hosts')).finally(() => setLoading(false));
+  };
   useEffect(load, []);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 2500); };
 
   const toggle = async (id: string, field: string, cur: boolean) => {
+    const key = `${id}:${field}`;
+    if (toggling === key) return; // Bug 16 Fix: Prevent duplicate requests on double-click
+    setToggling(key);
     try {
       await api.updateHost(id, { [field]: !cur ? 1 : 0 });
       load();
       showToast('Host updated');
     } catch (e: any) { showToast('Error: ' + e.message); }
+    finally { setToggling(null); }
   };
 
   const recalculateLevels = async () => {
@@ -208,18 +220,30 @@ export default function Hosts() {
       )
     },
     { key: 'active', header: 'Active',
-      render: (h: any) => <Toggle value={!!h.is_active} onChange={() => toggle(h.id, 'is_active', !!h.is_active)} />
+      render: (h: any) => (
+        <div style={{ opacity: toggling === `${h.id}:is_active` ? 0.5 : 1, pointerEvents: toggling === `${h.id}:is_active` ? 'none' : 'auto' }}>
+          <Toggle value={!!h.is_active} onChange={() => toggle(h.id, 'is_active', !!h.is_active)} />
+        </div>
+      )
     },
     { key: 'top', header: 'Top Rated', className: 'hidden sm:table-cell',
       render: (h: any) => (
-        <button onClick={() => toggle(h.id, 'is_top_rated', !!h.is_top_rated)}>
+        <button
+          onClick={() => toggle(h.id, 'is_top_rated', !!h.is_top_rated)}
+          disabled={toggling === `${h.id}:is_top_rated`}
+          className="disabled:opacity-50"
+        >
           <Star size={17} className={h.is_top_rated ? 'text-amber-400 fill-amber-400' : 'text-slate-300'} />
         </button>
       )
     },
     { key: 'verified', header: 'Verified', className: 'hidden lg:table-cell',
       render: (h: any) => (
-        <button onClick={() => toggle(h.id, 'identity_verified', !!h.identity_verified)}>
+        <button
+          onClick={() => toggle(h.id, 'identity_verified', !!h.identity_verified)}
+          disabled={toggling === `${h.id}:identity_verified`}
+          className="disabled:opacity-50"
+        >
           {h.identity_verified
             ? <CheckCircle size={17} className="text-green-500" />
             : <Circle size={17} className="text-slate-300" />}
@@ -243,6 +267,11 @@ export default function Hosts() {
       {toast && (
         <div className="fixed bottom-5 right-5 z-50 bg-foreground text-background text-sm px-4 py-2.5 rounded-xl shadow-xl">
           {toast}
+        </div>
+      )}
+      {loadError && (
+        <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3">
+          Failed to load hosts: {loadError} — <button className="underline font-semibold" onClick={load}>Retry</button>
         </div>
       )}
 

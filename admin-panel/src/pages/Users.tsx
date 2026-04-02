@@ -3,7 +3,7 @@ import { api } from '@/lib/api';
 import { Table } from '@/components/ui/Table';
 import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
-import { Search, Edit2, Coins, CheckCircle, XCircle } from 'lucide-react';
+import { Search, Edit2, Coins, CheckCircle, XCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 
 function Avatar({ name }: { name: string }) {
   const colors = ['bg-violet-500', 'bg-blue-500', 'bg-green-500', 'bg-amber-500', 'bg-pink-500', 'bg-cyan-500'];
@@ -23,19 +23,32 @@ export default function Users() {
   const [coins, setCoins] = useState('');
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState('');
+  // Bug 18 Fix: Add pagination state instead of hardcoding page '1'
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
 
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const load = (searchVal: string) => {
+  const load = (searchVal: string, pageNum: number) => {
     setLoading(true);
-    api.users('1', searchVal).then(setUsers).catch(console.error).finally(() => setLoading(false));
+    api.users(String(pageNum), searchVal).then((data: any[]) => {
+      setUsers(data);
+      // Assume a page size of 50 — if we got 50 results, there might be more
+      setHasMore(Array.isArray(data) && data.length === 50);
+    }).catch(console.error).finally(() => setLoading(false));
   };
 
   useEffect(() => {
     if (searchTimer.current) clearTimeout(searchTimer.current);
-    searchTimer.current = setTimeout(() => load(search), 400);
+    setPage(1);
+    searchTimer.current = setTimeout(() => load(search, 1), 400);
     return () => { if (searchTimer.current) clearTimeout(searchTimer.current); };
   }, [search]);
+
+  const goToPage = (newPage: number) => {
+    setPage(newPage);
+    load(search, newPage);
+  };
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 2500); };
 
@@ -121,6 +134,27 @@ export default function Users() {
       </div>
 
       <Table columns={cols} data={users} loading={loading} empty="No users found" keyFn={u => u.id} />
+
+      {/* Bug 18 Fix: Pagination controls */}
+      {(page > 1 || hasMore) && (
+        <div className="flex items-center justify-center gap-3 pt-2">
+          <button
+            onClick={() => goToPage(page - 1)}
+            disabled={page <= 1 || loading}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border text-sm font-semibold hover:bg-secondary disabled:opacity-40 transition-colors"
+          >
+            <ChevronLeft size={15} /> Prev
+          </button>
+          <span className="text-sm text-muted-foreground font-medium">Page {page}</span>
+          <button
+            onClick={() => goToPage(page + 1)}
+            disabled={!hasMore || loading}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border text-sm font-semibold hover:bg-secondary disabled:opacity-40 transition-colors"
+          >
+            Next <ChevronRight size={15} />
+          </button>
+        </div>
+      )}
 
       <Modal open={!!editing} onClose={() => setEditing(null)} title="Edit User">
         {editing && (

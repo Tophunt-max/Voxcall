@@ -92,8 +92,13 @@ export default function EarningsHistoryScreen() {
   useEffect(() => { load(); }, []);
 
   const filtered = filterByTab(transactions, tab);
+  // Bug 12 Fix: Use API-reported balance (from refreshBalance → user.coins) as the source of
+  // truth for current balance. The visible transaction list is truncated (last 100 items),
+  // so locally summing it produces incorrect lifetime totals for busy hosts.
+  // totalEarned/totalWithdrawn are approximations from visible history only.
   const totalEarned     = transactions.filter(t => t.amount > 0).reduce((s, t) => s + t.amount, 0);
   const totalWithdrawn  = transactions.filter(t => t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0);
+  const isApproximate   = transactions.length >= 100;
 
   const renderItem = ({ item }: { item: Transaction }) => {
     const cfg = TYPE_CONFIG[item.type] ?? TYPE_CONFIG.earn;

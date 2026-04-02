@@ -96,22 +96,36 @@ export const API = {
   submitHostApp: (data: any) => apiRequest<any>('POST', '/api/host-app/submit', data),
   me: () => apiRequest<any>('GET', '/api/user/me'),
   updateProfile: (data: any) => apiRequest('PATCH', '/api/user/me', data),
-  updateAvatar: async (formData: FormData) => {
-    const token = await getToken();
+  updateAvatar: async (formData: FormData, _retry = true): Promise<any> => {
+    // Bug 6 Fix: Use shared token getter with 401 auto-refresh (same as apiRequest)
+    let token = await getToken();
     const res = await fetch(`${BASE_URL}/api/upload/avatar`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
       body: formData,
     });
+    if (res.status === 401 && _retry) {
+      const newToken = await refreshAuthToken();
+      if (newToken) return API.updateAvatar(formData, false);
+    }
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error((err as any).error || 'Avatar upload failed');
+    }
     return res.json();
   },
-  uploadFile: async (formData: FormData): Promise<{ url: string; key: string }> => {
-    const token = await getToken();
+  uploadFile: async (formData: FormData, _retry = true): Promise<{ url: string; key: string }> => {
+    // Bug 6 Fix: Use shared token getter with 401 auto-refresh (same as apiRequest)
+    let token = await getToken();
     const res = await fetch(`${BASE_URL}/api/upload/media`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
       body: formData,
     });
+    if (res.status === 401 && _retry) {
+      const newToken = await refreshAuthToken();
+      if (newToken) return API.uploadFile(formData, false);
+    }
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error((err as any).error || 'Upload failed');

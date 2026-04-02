@@ -70,11 +70,21 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const acceptCall = useCallback(async () => {
     const curr = activeCallRef.current;
     if (!curr) return;
+    // Bug 10 Fix: Call API first before updating state/navigating.
+    // If the API fails (caller already cancelled), decline the call instead of
+    // navigating to a dead call screen.
+    if (curr.sessionId) {
+      try {
+        await API.answerCall(curr.sessionId, true);
+      } catch {
+        // Call no longer valid — silently decline and reset
+        updateCall(null);
+        try { router.back(); } catch {}
+        return;
+      }
+    }
     const updated = { ...curr, status: "active" as CallStatus, startTime: Date.now() };
     updateCall(updated);
-    if (curr.sessionId) {
-      try { await API.answerCall(curr.sessionId, true); } catch {}
-    }
     router.replace(curr.type === "audio" ? "/calls/audio-call" : "/calls/video-call");
   }, []);
 

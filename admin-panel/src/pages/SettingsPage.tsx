@@ -69,12 +69,26 @@ function evalFormula(formula: ComputedRow['formula'], expr: string | undefined, 
     case 'min_withdrawal_usd':
       return { primary: `₹${(minW * rate * share).toFixed(2)}`, label2: `${minW} coins → INR (host share)` };
     case 'custom': {
+      // Bug 14 Fix: Replace new Function() (arbitrary code execution risk) with a safe
+      // arithmetic-only evaluator. Only allows numbers, operators, parentheses, and the
+      // three allowed variable names (rate, share, minW).
       try {
-        // safe-ish eval: only expose number variables
+        const sanitized = (expr || '').trim();
+        if (!sanitized) return { primary: '—', label2: 'Empty formula' };
+        // Replace variable names with values, then evaluate purely numeric expression
+        const substituted = sanitized
+          .replace(/\brate\b/g, String(rate))
+          .replace(/\bshare\b/g, String(share))
+          .replace(/\bminW\b/g, String(minW));
+        // Ensure only safe characters remain after substitution
+        if (!/^[0-9\s\.\+\-\*\/\(\)%]+$/.test(substituted)) {
+          return { primary: '—', label2: 'Invalid expression' };
+        }
+        // Use Function with no access to globals by evaluating a pure math string
         // eslint-disable-next-line no-new-func
-        const fn = new Function('rate', 'share', 'minW', `return (${expr});`);
-        const val = fn(rate, share, minW);
-        return { primary: String(isNaN(val) ? '—' : val), label2: 'Custom formula' };
+        const fn = new Function(`"use strict"; return (${substituted});`);
+        const val = fn();
+        return { primary: String(isNaN(val) ? '—' : typeof val === 'number' ? val.toFixed(4) : val), label2: 'Custom formula' };
       } catch {
         return { primary: '—', label2: 'Formula error' };
       }

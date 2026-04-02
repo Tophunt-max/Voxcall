@@ -68,14 +68,21 @@ export class WebRTCService {
       if (!this.pc) { resolve(); return; }
       if (this.pc.iceGatheringState === 'complete') { resolve(); return; }
 
-      const timeout = setTimeout(() => resolve(), 3000);
+      const timeout = setTimeout(() => {
+        // Bug 7 Fix: Remove listener before resolving to prevent listener accumulation
+        this.pc?.removeEventListener('icegatheringstatechange', handler);
+        resolve();
+      }, 3000);
 
-      this.pc.addEventListener('icegatheringstatechange', () => {
+      const handler = () => {
         if (this.pc?.iceGatheringState === 'complete') {
           clearTimeout(timeout);
+          // Bug 7 Fix: Remove named handler after use to prevent ICE listener memory leak
+          this.pc.removeEventListener('icegatheringstatechange', handler);
           resolve();
         }
-      });
+      };
+      this.pc.addEventListener('icegatheringstatechange', handler);
     });
   }
 

@@ -74,19 +74,15 @@ auth.post('/register', rateLimit, zValidator('json', registerSchema), async (c) 
     `INSERT INTO users (id, name, email, password_hash, gender, phone, otp, otp_expires_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
   ).bind(id, name, email, hash, gender ?? null, phone ?? null, otp, otpExp).run();
-  // Handle referral code if provided
+  // Bug 3 Fix: Record referral as pending (coins_given=0) — coins awarded only after OTP verification
+  // This prevents Sybil attacks where fake accounts are created to farm referral coins.
   if (referral_code) {
     try {
       const ref = await db.prepare('SELECT * FROM referral_codes WHERE code = ?').bind(referral_code.trim().toUpperCase()).first<any>();
       if (ref && ref.user_id !== id) {
-        const bonus = 25;
         const useId = crypto.randomUUID();
-        await db.batch([
-          db.prepare('INSERT INTO referral_uses (id, referrer_id, referred_id, code, coins_given) VALUES (?, ?, ?, ?, ?)')
-            .bind(useId, ref.user_id, id, referral_code, bonus),
-          db.prepare('UPDATE users SET coins = coins + ? WHERE id = ?').bind(bonus, ref.user_id),
-          db.prepare('UPDATE users SET coins = coins + 10 WHERE id = ?').bind(id),
-        ]);
+        await db.prepare('INSERT INTO referral_uses (id, referrer_id, referred_id, code, coins_given) VALUES (?, ?, ?, ?, 0)')
+          .bind(useId, ref.user_id, id, referral_code.trim().toUpperCase()).run();
       }
     } catch { /* ignore referral errors — don't block registration */ }
   }
@@ -126,8 +122,23 @@ auth.post('/verify-otp', async (c) => {
   if (!user || user.otp !== otp || user.otp_expires_at < now) {
     return c.json({ error: 'Invalid or expired OTP' }, 400);
   }
-  await db.prepare('UPDATE users SET is_verified = 1, otp = NULL, coins = coins + 100 WHERE id = ?').bind(user.id).run();
-  return c.json({ success: true, bonus_coins: 100 });
+  // Bug 3 Fix: Process pending referral only after OTP verified — prevents Sybil attacks
+  const pendingReferral = await db.prepare(
+    'SELECT * FROM referral_uses WHERE referred_id = ? AND coins_given = 0'
+  ).bind(user.id).first<any>();
+
+  if (pendingReferral) {
+    const bonus = 25;
+    await db.batch([
+      db.prepare('UPDATE users SET is_verified = 1, otp = NULL, coins = coins + 110 WHERE id = ?').bind(user.id),
+      db.prepare('UPDATE users SET coins = coins + ? WHERE id = ?').bind(bonus, pendingReferral.referrer_id),
+      db.prepare('UPDATE referral_uses SET coins_given = ? WHERE id = ?').bind(bonus, pendingReferral.id),
+    ]);
+    return c.json({ success: true, bonus_coins: 110 });
+  } else {
+    await db.prepare('UPDATE users SET is_verified = 1, otp = NULL, coins = coins + 100 WHERE id = ?').bind(user.id).run();
+    return c.json({ success: true, bonus_coins: 100 });
+  }
 });
 
 // POST /api/auth/forgot-password

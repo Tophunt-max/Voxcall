@@ -115,10 +115,27 @@ chat.post('/rooms/:id/messages', async (c) => {
 
 // WebSocket for chat — proxies to ChatRoom Durable Object
 chat.get('/ws/:roomId', async (c) => {
+  const { sub: userId, name: userName } = c.get('user');
   const { roomId } = c.req.param();
+
+  // Bug 4 Fix: verify room access before connecting
+  const db = c.env.DB;
+  const room = await db.prepare(
+    `SELECT cr.id FROM chat_rooms cr
+     JOIN hosts h ON h.id = cr.host_id
+     WHERE cr.id = ? AND (cr.user_id = ? OR h.user_id = ?)`
+  ).bind(roomId, userId, userId).first<any>();
+  if (!room) return c.json({ error: 'Access denied or room not found' }, 403);
+
   const id = c.env.CHAT_ROOM.idFromName(roomId);
   const stub = c.env.CHAT_ROOM.get(id);
-  return stub.fetch(c.req.raw);
+
+  // Pass verified user identity via trusted Worker headers (cannot be spoofed by client)
+  const headers = new Headers(c.req.raw.headers);
+  headers.set('X-CF-User-Id', userId);
+  headers.set('X-CF-User-Name', userName || 'User');
+  const proxied = new Request(c.req.raw.url, { ...c.req.raw, headers });
+  return stub.fetch(proxied);
 });
 
 export default chat;

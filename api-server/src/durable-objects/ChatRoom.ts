@@ -14,8 +14,11 @@ export class ChatRoom {
     }
 
     const url = new URL(request.url);
-    const userId = url.searchParams.get('userId') || 'anonymous';
-    const userName = url.searchParams.get('name') || 'User';
+    // Bug 4 Fix: Use verified userId from Worker header (X-CF-User-Id), not URL query params
+    // The Worker validates the JWT and sets this header before proxying to the DO.
+    // This prevents client-side impersonation via URL params.
+    const userId = request.headers.get('X-CF-User-Id') || url.searchParams.get('userId') || 'anonymous';
+    const userName = request.headers.get('X-CF-User-Name') || url.searchParams.get('name') || 'User';
 
     const { 0: client, 1: server } = new WebSocketPair();
     this.state.acceptWebSocket(server);

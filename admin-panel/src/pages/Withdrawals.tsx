@@ -14,7 +14,13 @@ export default function Withdrawals() {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState('');
 
-  const load = () => { setLoading(true); api.withdrawals().then(setItems).finally(() => setLoading(false)); };
+  const [loadError, setLoadError] = useState('');
+  const load = () => {
+    setLoading(true);
+    setLoadError('');
+    // Bug 17 Fix: Add .catch() so load failures show an error message instead of empty/broken page
+    api.withdrawals().then(setItems).catch((e: any) => setLoadError(e.message || 'Failed to load withdrawals')).finally(() => setLoading(false));
+  };
   useEffect(load, []);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 2500); };
@@ -82,6 +88,11 @@ export default function Withdrawals() {
         <h2 className="font-bold text-lg">Withdrawal Requests</h2>
         <p className="text-sm text-muted-foreground">Review and process host payout requests</p>
       </div>
+      {loadError && (
+        <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3">
+          Failed to load withdrawals: {loadError} — <button className="underline font-semibold" onClick={load}>Retry</button>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <StatCard icon={Wallet} label="Pending Requests" value={pending.length} gradient="gradient-orange" />

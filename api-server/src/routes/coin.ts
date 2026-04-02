@@ -10,8 +10,8 @@ coin.get('/plans', async (c) => {
   return c.json(plans.results);
 });
 
-// POST /api/coins/apply-promo — validate a promo code (public, no auth needed)
-coin.post('/apply-promo', async (c) => {
+// POST /api/coins/apply-promo — validate a promo code (requires auth to prevent brute-force)
+coin.post('/apply-promo', authMiddleware, async (c) => {
   const { code, plan_id } = await c.req.json();
   if (!code) return c.json({ error: 'code is required' }, 400);
   const db = c.env.DB;

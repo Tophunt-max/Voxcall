@@ -41,7 +41,9 @@ export default function HostProfileSetupScreen() {
       return;
     }
     setLoading(true);
-    await updateProfile({ name: displayName.trim(), gender: gender as any, phone: phone.trim() });
+    // Bug 11 Fix: Include dob in updateProfile — previously it was collected but never sent,
+    // causing it to be lost if the app restarted before the KYC step.
+    await updateProfile({ name: displayName.trim(), gender: gender as any, phone: phone.trim(), dob: dob.trim() });
     setLoading(false);
     router.push("/auth/become");
   };

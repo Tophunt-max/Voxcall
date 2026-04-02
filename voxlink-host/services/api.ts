@@ -69,6 +69,10 @@ export async function apiRequest<T>(
   if (res.status === 401 && auth && _retry) {
     const newToken = await refreshAuthToken();
     if (newToken) return apiRequest<T>(method, path, body, auth, false);
+    // Bug 13 Fix: If refresh also fails, clear the stored token to prevent an infinite
+    // broken-state loop where every request fails with 401 but never triggers logout.
+    await setItem(StorageKeys.AUTH_TOKEN, '');
+    throw new Error('SESSION_EXPIRED');
   }
 
   if (!res.ok) {
@@ -96,22 +100,36 @@ export const API = {
   submitHostApp: (data: any) => apiRequest<any>('POST', '/api/host-app/submit', data),
   me: () => apiRequest<any>('GET', '/api/user/me'),
   updateProfile: (data: any) => apiRequest('PATCH', '/api/user/me', data),
-  updateAvatar: async (formData: FormData) => {
-    const token = await getToken();
+  updateAvatar: async (formData: FormData, _retry = true): Promise<any> => {
+    // Bug 6 Fix (host): 401 auto-refresh for file uploads
+    let token = await getToken();
     const res = await fetch(`${BASE_URL}/api/upload/avatar`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
       body: formData,
     });
+    if (res.status === 401 && _retry) {
+      const newToken = await refreshAuthToken();
+      if (newToken) return API.updateAvatar(formData, false);
+    }
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error((err as any).error || 'Avatar upload failed');
+    }
     return res.json();
   },
-  uploadFile: async (formData: FormData): Promise<{ url: string; key: string }> => {
-    const token = await getToken();
+  uploadFile: async (formData: FormData, _retry = true): Promise<{ url: string; key: string }> => {
+    // Bug 6 Fix (host): 401 auto-refresh for file uploads
+    let token = await getToken();
     const res = await fetch(`${BASE_URL}/api/upload/media`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
       body: formData,
     });
+    if (res.status === 401 && _retry) {
+      const newToken = await refreshAuthToken();
+      if (newToken) return API.uploadFile(formData, false);
+    }
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error((err as any).error || 'Upload failed');

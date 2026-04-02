@@ -288,8 +288,11 @@ admin.post('/talk-topics', async (c) => {
 admin.patch('/talk-topics/:id', async (c) => {
   const { id } = c.req.param();
   const body = await c.req.json() as any;
-  const fields = Object.entries(body).map(([k]) => `${k} = ?`).join(', ');
-  await db(c).prepare(`UPDATE talk_topics SET ${fields} WHERE id = ?`).bind(...Object.values(body), id).run();
+  const ALLOWED_KEYS = new Set(['name', 'icon', 'is_active']);
+  const safe = Object.fromEntries(Object.entries(body).filter(([k]) => ALLOWED_KEYS.has(k)));
+  if (Object.keys(safe).length === 0) return c.json({ error: 'No valid fields to update' }, 400);
+  const fields = Object.keys(safe).map(k => `${k} = ?`).join(', ');
+  await db(c).prepare(`UPDATE talk_topics SET ${fields} WHERE id = ?`).bind(...Object.values(safe), id).run();
   return c.json({ success: true });
 });
 admin.delete('/talk-topics/:id', async (c) => {
@@ -405,8 +408,11 @@ admin.post('/faqs', async (c) => {
 admin.patch('/faqs/:id', async (c) => {
   const { id } = c.req.param();
   const body = await c.req.json() as any;
-  const fields = Object.entries(body).map(([k]) => `${k} = ?`).join(', ');
-  const vals = [...Object.values(body), id];
+  const ALLOWED_KEYS = new Set(['question', 'answer', 'order_index', 'is_active']);
+  const safe = Object.fromEntries(Object.entries(body).filter(([k]) => ALLOWED_KEYS.has(k)));
+  if (Object.keys(safe).length === 0) return c.json({ error: 'No valid fields to update' }, 400);
+  const fields = Object.keys(safe).map(k => `${k} = ?`).join(', ');
+  const vals = [...Object.values(safe), id];
   await db(c).prepare(`UPDATE faqs SET ${fields}, updated_at = unixepoch() WHERE id = ?`).bind(...vals).run();
   return c.json({ success: true });
 });
