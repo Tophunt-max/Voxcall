@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, Image,
   ScrollView, Switch, Alert, Platform
@@ -8,6 +8,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
+const SETTINGS_KEY = "host_settings_v1";
 
 function Row({ icon, label, value, onPress, isSwitch, switchVal, onSwitch, danger }: {
   icon: string; label: string; value?: string; onPress: () => void;
@@ -43,6 +46,35 @@ export default function HostSettingsScreen() {
 
   const topPad = insets.top;
 
+  // Bug 12 fix: load persisted settings on mount
+  useEffect(() => {
+    AsyncStorage.getItem(SETTINGS_KEY)
+      .then((raw) => {
+        if (!raw) return;
+        const saved = JSON.parse(raw);
+        if (saved.callNotif !== undefined) setCallNotif(saved.callNotif);
+        if (saved.chatNotif !== undefined) setChatNotif(saved.chatNotif);
+        if (saved.coinNotif !== undefined) setCoinNotif(saved.coinNotif);
+        if (saved.autoOnline !== undefined) setAutoOnline(saved.autoOnline);
+      })
+      .catch(() => {});
+  }, []);
+
+  // Bug 12 fix: persist settings whenever they change
+  const persistSettings = useCallback((patch: Partial<{ callNotif: boolean; chatNotif: boolean; coinNotif: boolean; autoOnline: boolean }>) => {
+    AsyncStorage.getItem(SETTINGS_KEY)
+      .then((raw) => {
+        const current = raw ? JSON.parse(raw) : {};
+        return AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...current, ...patch }));
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleCallNotif = (v: boolean) => { setCallNotif(v); persistSettings({ callNotif: v }); };
+  const handleChatNotif = (v: boolean) => { setChatNotif(v); persistSettings({ chatNotif: v }); };
+  const handleCoinNotif = (v: boolean) => { setCoinNotif(v); persistSettings({ coinNotif: v }); };
+  const handleAutoOnline = (v: boolean) => { setAutoOnline(v); persistSettings({ autoOnline: v }); };
+
   const handleSwitchToUser = () => {
     Alert.alert("Switch to User", "Switch back to regular user mode?", [
       { text: "Cancel", style: "cancel" },
@@ -71,7 +103,7 @@ export default function HostSettingsScreen() {
         {/* Availability */}
         <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Availability</Text>
         <View style={[styles.card, { backgroundColor: colors.card }]}>
-          <Row icon="clock" label="Auto Go Online on App Open" isSwitch switchVal={autoOnline} onSwitch={setAutoOnline} onPress={() => {}} />
+          <Row icon="clock" label="Auto Go Online on App Open" isSwitch switchVal={autoOnline} onSwitch={handleAutoOnline} onPress={() => {}} />
           <Row icon="phone-off" label="Do Not Disturb Mode" onPress={() => Alert.alert("Coming Soon", "DND mode will be available in a future update.")} />
           <Row icon="calendar" label="Availability Schedule" onPress={() => Alert.alert("Coming Soon", "Schedule settings coming soon.")} />
         </View>
@@ -79,9 +111,9 @@ export default function HostSettingsScreen() {
         {/* Notifications */}
         <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Notifications</Text>
         <View style={[styles.card, { backgroundColor: colors.card }]}>
-          <Row icon="phone" label="Incoming Call Alerts" isSwitch switchVal={callNotif} onSwitch={setCallNotif} onPress={() => {}} />
-          <Row icon="message-circle" label="Chat Notifications" isSwitch switchVal={chatNotif} onSwitch={setChatNotif} onPress={() => {}} />
-          <Row icon="dollar-sign" label="Coin Earned Alerts" isSwitch switchVal={coinNotif} onSwitch={setCoinNotif} onPress={() => {}} />
+          <Row icon="phone" label="Incoming Call Alerts" isSwitch switchVal={callNotif} onSwitch={handleCallNotif} onPress={() => {}} />
+          <Row icon="message-circle" label="Chat Notifications" isSwitch switchVal={chatNotif} onSwitch={handleChatNotif} onPress={() => {}} />
+          <Row icon="dollar-sign" label="Coin Earned Alerts" isSwitch switchVal={coinNotif} onSwitch={handleCoinNotif} onPress={() => {}} />
         </View>
 
         {/* Earnings */}

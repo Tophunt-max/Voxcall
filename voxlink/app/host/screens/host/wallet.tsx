@@ -18,6 +18,7 @@ interface EarningTx {
   duration: string;
   coins: number;
   date: string;
+  rawCreatedAt: number;
   type: "audio" | "video";
 }
 
@@ -39,22 +40,25 @@ function formatTxDate(ts: number): string {
 }
 
 function mapTxToEarning(tx: any): EarningTx {
+  const durationMin = tx.duration_min ?? (tx.duration_seconds ? Math.ceil(tx.duration_seconds / 60) : null);
   return {
     id: tx.id,
     user: tx.caller_name || "Unknown Caller",
-    duration: tx.duration_min ? `${tx.duration_min} min` : "—",
+    duration: durationMin ? `${durationMin} min` : "—",
     coins: Math.abs(tx.amount ?? tx.coins ?? 0),
     date: tx.created_at ? formatTxDate(tx.created_at) : "",
+    rawCreatedAt: typeof tx.created_at === "number" ? tx.created_at : 0,
     type: tx.call_type === "video" ? "video" : "audio",
   };
 }
 
+// Bug 4 fix: use rawCreatedAt (Unix seconds) instead of trying to parse formatted date string
 function weeklyCoins(txs: EarningTx[]): number {
-  const now = Date.now();
-  return txs.filter((t) => {
-    const d = new Date(t.date);
-    return now - d.getTime() < 7 * 86400000;
-  }).reduce((s, t) => s + t.coins, 0);
+  const nowSec = Math.floor(Date.now() / 1000);
+  const weekAgoSec = nowSec - 7 * 86400;
+  return txs
+    .filter((t) => t.rawCreatedAt > 0 && t.rawCreatedAt >= weekAgoSec)
+    .reduce((s, t) => s + t.coins, 0);
 }
 
 export default function HostWalletScreen() {

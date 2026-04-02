@@ -1,10 +1,12 @@
-import React, { useState } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform, Switch, Image } from "react-native";
+import React, { useState, useEffect } from "react";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform, Switch, Image, Alert } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
+import { API } from "@/services/api";
+import { showErrorToast } from "@/components/Toast";
 
 export default function HostDashboardScreen() {
   const colors = useColors();
@@ -12,16 +14,35 @@ export default function HostDashboardScreen() {
   const { user, switchRole } = useAuth();
   const [isAcceptingCalls, setIsAcceptingCalls] = useState(true);
   const [isAcceptingRandom, setIsAcceptingRandom] = useState(false);
+  // Bug 5 fix: real stats state
+  const [stats, setStats] = useState([
+    { label: "Total Earnings", value: "…", icon: "trending-up" },
+    { label: "Total Calls", value: "…", icon: "phone" },
+    { label: "Avg Rating", value: "…", icon: "star" },
+    { label: "Active Minutes", value: "…", icon: "clock" },
+  ]);
 
   const topPad = insets.top;
   const bottomPad = insets.bottom;
 
-  const stats = [
-    { label: "Total Earnings", value: "2,450 Coins", icon: "trending-up" },
-    { label: "Total Calls", value: "48", icon: "phone" },
-    { label: "Avg Rating", value: "4.8 / 5.0", icon: "star" },
-    { label: "Active Minutes", value: "1,240", icon: "clock" },
-  ];
+  // Bug 5 fix: load real stats from API
+  useEffect(() => {
+    API.getEarnings()
+      .then((data: any) => {
+        const h = data.host ?? {};
+        const earnings = Number(h.total_earnings) || 0;
+        const calls = data.transactions?.length ?? 0;
+        const rating = h.rating ? Number(h.rating).toFixed(1) : "—";
+        const minutes = Number(h.total_minutes) || 0;
+        setStats([
+          { label: "Total Earnings", value: `${earnings.toLocaleString()} Coins`, icon: "trending-up" },
+          { label: "Total Calls", value: String(calls), icon: "phone" },
+          { label: "Avg Rating", value: rating === "—" ? "—" : `${rating} / 5.0`, icon: "star" },
+          { label: "Active Minutes", value: String(minutes), icon: "clock" },
+        ]);
+      })
+      .catch(() => showErrorToast("Failed to load dashboard stats."));
+  }, []);
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: colors.background }} contentContainerStyle={{ paddingBottom: bottomPad + 24 }}>
@@ -43,7 +64,15 @@ export default function HostDashboardScreen() {
               {isAcceptingCalls ? "Accepting incoming calls" : "Not visible to callers"}
             </Text>
           </View>
-          <Switch value={isAcceptingCalls} onValueChange={setIsAcceptingCalls} trackColor={{ true: "rgba(255,255,255,0.3)", false: colors.muted }} thumbColor={isAcceptingCalls ? "#fff" : colors.mutedForeground} />
+          <Switch
+            value={isAcceptingCalls}
+            onValueChange={async (v) => {
+              setIsAcceptingCalls(v);
+              try { await API.setHostOnline(v); } catch { setIsAcceptingCalls(!v); showErrorToast("Failed to update status."); }
+            }}
+            trackColor={{ true: "rgba(255,255,255,0.3)", false: colors.muted }}
+            thumbColor={isAcceptingCalls ? "#fff" : colors.mutedForeground}
+          />
         </View>
 
         <View style={styles.statsGrid}>
@@ -70,9 +99,9 @@ export default function HostDashboardScreen() {
         <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Quick Actions</Text>
           {[
-            { icon: "dollar-sign", label: "Withdraw Earnings", action: () => {} },
-            { icon: "bar-chart-2", label: "View Analytics", action: () => {} },
-            { icon: "user-check", label: "Verify Profile", action: () => {} },
+            { icon: "dollar-sign", label: "Withdraw Earnings", action: () => router.push("/host/screens/host/wallet") },
+            { icon: "bar-chart-2", label: "View Analytics", action: () => Alert.alert("Coming Soon", "Analytics dashboard will be available in a future update.") },
+            { icon: "user-check", label: "Verify Profile", action: () => router.push("/host/screens/host/profile") },
           ].map((item) => (
             <TouchableOpacity key={item.label} onPress={item.action} style={[styles.actionRow, { borderBottomColor: colors.border }]} activeOpacity={0.75}>
               <View style={[styles.actionIcon, { backgroundColor: colors.secondary }]}>
@@ -85,7 +114,7 @@ export default function HostDashboardScreen() {
         </View>
 
         <TouchableOpacity
-          onPress={() => switchRole("user")}
+          onPress={() => { switchRole("user"); router.replace("/user/screens/home"); }}
           style={[styles.switchBtn, { borderColor: colors.border }]}
           activeOpacity={0.75}
         >

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   Image, Platform, Alert, Switch
@@ -7,20 +7,38 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
+import { API, resolveMediaUrl } from "@/services/api";
+import { showErrorToast } from "@/components/Toast";
 
 export default function HostProfileScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { user, logout, switchRole } = useAuth();
   const [isOnline, setIsOnline] = useState(false);
+  // Bug 8 fix: real stats from API
+  const [hostStats, setHostStats] = useState({ calls: "—", rating: "—" });
   const topPad = insets.top;
   const bottomPad = insets.bottom;
   const uniqueId = user?.id?.slice(0, 8).toUpperCase() ?? "00000000";
 
+  // Bug 8 fix: fetch real calls + rating
+  useEffect(() => {
+    API.getEarnings()
+      .then((data: any) => {
+        const h = data.host ?? {};
+        setHostStats({
+          calls: String(data.transactions?.length ?? 0),
+          rating: h.rating ? Number(h.rating).toFixed(1) : "—",
+        });
+      })
+      .catch(() => {});
+  }, []);
+
+  // Bug 11 fix: redirect to login instead of non-existent role-select
   const handleLogout = () => {
     Alert.alert("Sign Out", "Are you sure you want to sign out?", [
       { text: "Cancel", style: "cancel" },
-      { text: "Sign Out", style: "destructive", onPress: async () => { await logout(); router.replace("/shared/auth/role-select"); } }
+      { text: "Sign Out", style: "destructive", onPress: async () => { await logout(); router.replace("/user/auth/login"); } }
     ]);
   };
 
@@ -42,7 +60,7 @@ export default function HostProfileScreen() {
       <View style={[styles.profileCard, { backgroundColor: colors.card, ...Platform.select({ web: { boxShadow: "0 2px 12px rgba(0,0,0,0.07)" } as any, ios: { shadowColor: "#000", shadowOpacity: 0.07, shadowRadius: 12, shadowOffset: { width: 0, height: 2 } }, android: { elevation: 3 } }) }]}>
         <View style={styles.avatarOuter}>
           <View style={[styles.dottedBorder, { borderColor: colors.primary }]}>
-            <Image source={{ uri: `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.id ?? "host"}` }} style={styles.avatar} />
+            <Image source={{ uri: resolveMediaUrl(user?.avatar) ?? `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.id ?? "host"}` }} style={styles.avatar} />
           </View>
           <View style={[styles.hostBadge, { backgroundColor: colors.primary }]}>
             <Image source={require("@/assets/icons/ic_listener.png")} style={styles.hostBadgeIcon} tintColor="#fff" resizeMode="contain" />
@@ -55,7 +73,7 @@ export default function HostProfileScreen() {
           <Text style={[styles.idText, { color: "#9D82B6" }]}>ID: {uniqueId}</Text>
         </View>
         <View style={[styles.statsRow, { borderTopColor: colors.border }]}>
-          {[{ label: "Calls", val: "0" }, { label: "Rating", val: "—" }, { label: "Coins", val: String(user?.coins ?? 0) }].map((s, i) => (
+          {[{ label: "Calls", val: hostStats.calls }, { label: "Rating", val: hostStats.rating }, { label: "Coins", val: String(user?.coins ?? 0) }].map((s, i) => (
             <React.Fragment key={s.label}>
               {i > 0 && <View style={[styles.statDiv, { backgroundColor: colors.border }]} />}
               <View style={styles.stat}>
@@ -73,7 +91,15 @@ export default function HostProfileScreen() {
             <Image source={require("@/assets/icons/ic_available.png")} style={styles.menuIconImg} tintColor={isOnline ? "#0BAF23" : colors.text} resizeMode="contain" />
           </View>
           <Text style={[styles.menuLabel, { color: colors.text }]}>Online Status</Text>
-          <Switch value={isOnline} onValueChange={setIsOnline} trackColor={{ false: colors.border, true: "#0BAF23" }} thumbColor="#fff" />
+          <Switch
+            value={isOnline}
+            onValueChange={async (v) => {
+              setIsOnline(v);
+              try { await API.setHostOnline(v); } catch { setIsOnline(!v); showErrorToast("Failed to update online status."); }
+            }}
+            trackColor={{ false: colors.border, true: "#0BAF23" }}
+            thumbColor="#fff"
+          />
         </View>
       </View>
 

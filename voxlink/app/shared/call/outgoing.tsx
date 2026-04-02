@@ -6,6 +6,7 @@ import {
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRingtone } from "@/hooks/useRingtone";
+import { resolveMediaUrl } from "@/services/api";
 
 export default function OutgoingCallScreen() {
   const insets = useSafeAreaInsets();
@@ -20,9 +21,8 @@ export default function OutgoingCallScreen() {
   const hostId    = params.hostId   ?? "host";
   const callType  = params.callType ?? "audio";
   const hostName  = params.hostName ?? "Host";
-  const hostAvatar = params.hostAvatar && params.hostAvatar.startsWith("http")
-    ? params.hostAvatar
-    : `https://api.dicebear.com/7.x/avataaars/svg?seed=${hostId}`;
+  // Bug 9 fix: use resolveMediaUrl so relative /api/files/... paths are also handled
+  const hostAvatar = resolveMediaUrl(params.hostAvatar) ?? `https://api.dicebear.com/7.x/avataaars/svg?seed=${hostId}`;
   const specialty = params.specialty ?? "";
 
   const [status, setStatus] = useState<"connecting" | "ringing">("connecting");

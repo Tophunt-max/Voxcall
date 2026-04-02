@@ -125,10 +125,14 @@ hostProtected.get('/earnings', async (c) => {
     'SELECT id, total_earnings, total_minutes, rating, review_count FROM hosts WHERE user_id = ?'
   ).bind(sub).first<any>();
   if (!h) return c.json({ error: 'Not a host' }, 403);
+  // Bug 2 fix: use 'bonus' type (matches what call.ts inserts) and join for caller_name + call metadata
   const txs = await c.env.DB.prepare(
-    `SELECT ct.* FROM coin_transactions ct
+    `SELECT ct.id, ct.amount, ct.description, ct.created_at,
+            cs.type as call_type, cs.duration_seconds, u.name as caller_name
+     FROM coin_transactions ct
      JOIN call_sessions cs ON cs.id = ct.ref_id
-     WHERE cs.host_id = ? AND ct.type = 'earn'
+     JOIN users u ON u.id = cs.caller_id
+     WHERE cs.host_id = ? AND ct.type = 'bonus'
      ORDER BY ct.created_at DESC LIMIT 50`
   ).bind(h.id).all();
   // Withdrawal requests

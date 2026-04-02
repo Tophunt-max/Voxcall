@@ -7,7 +7,7 @@ import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
-import { API } from "@/services/api";
+import { API, resolveMediaUrl } from "@/services/api";
 import { showErrorToast } from "@/components/Toast";
 
 export default function HostHomeScreen() {
@@ -45,7 +45,7 @@ export default function HostHomeScreen() {
         <View style={styles.headerLeft}>
           <View style={[styles.dottedBorder, { borderColor: colors.primary }]}>
             <Image
-              source={{ uri: `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.id ?? "host"}` }}
+              source={{ uri: resolveMediaUrl(user?.avatar) ?? `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.id ?? "host"}` }}
               style={styles.headerAvatar}
             />
           </View>
@@ -79,7 +79,10 @@ export default function HostHomeScreen() {
         </View>
         <Switch
           value={isOnline}
-          onValueChange={setIsOnline}
+          onValueChange={async (v) => {
+            setIsOnline(v);
+            try { await API.setHostOnline(v); } catch { setIsOnline(!v); showErrorToast("Failed to update online status."); }
+          }}
           trackColor={{ false: "rgba(255,255,255,0.3)", true: "rgba(255,255,255,0.6)" }}
           thumbColor="#fff"
         />

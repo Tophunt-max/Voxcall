@@ -123,6 +123,10 @@ call.post('/end', async (c) => {
         .bind(crypto.randomUUID(), session.caller_id, 'spend', -coinsCharged, `${session.type || 'audio'} call — ${durationMin} min`, session_id),
       db.prepare('UPDATE hosts SET total_minutes = total_minutes + ?, total_earnings = total_earnings + ? WHERE id = ?')
         .bind(durationMin, hostShare, session.host_id),
+      // Bug 2 fix: insert earn transaction for host so wallet earnings show correctly
+      db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
+        .bind(crypto.randomUUID(), hostRow?.user_id, 'bonus', hostShare, `${session.type || 'audio'} call — ${durationMin} min`, session_id),
+      db.prepare('UPDATE users SET coins = coins + ? WHERE id = ?').bind(hostShare, hostRow?.user_id),
     );
   }
   await db.batch(txs);
@@ -166,13 +170,37 @@ call.post('/:id/answer', async (c) => {
   const session = await db.prepare('SELECT * FROM call_sessions WHERE id = ?').bind(sessionId).first<any>();
   if (!session) return c.json({ error: 'Session not found' }, 404);
 
+  // Bug 13 fix: verify the requester is actually the host of this session
+  const hostCheck = await db.prepare('SELECT id FROM hosts WHERE id = ? AND user_id = ?').bind(session.host_id, sub).first<any>();
+  if (!hostCheck) return c.json({ error: 'Not authorized — you are not the host of this session' }, 403);
+
   if (!accepted) {
     await db.prepare('UPDATE call_sessions SET status = ?, ended_at = unixepoch() WHERE id = ?').bind('declined', sessionId).run();
+    // Bug 3 fix: notify caller that call was declined
+    try {
+      const notifId = c.env.NOTIFICATION_HUB.idFromName(session.caller_id);
+      const notifStub = c.env.NOTIFICATION_HUB.get(notifId);
+      await notifStub.fetch('https://dummy/notify', {
+        method: 'POST',
+        body: JSON.stringify({ type: 'call_declined', session_id: sessionId }),
+      });
+    } catch {}
     return c.json({ success: true, status: 'declined' });
   }
 
   const now = Math.floor(Date.now() / 1000);
   await db.prepare('UPDATE call_sessions SET status = ?, started_at = ? WHERE id = ?').bind('active', now, sessionId).run();
+
+  // Bug 3 fix: notify caller that call was accepted
+  try {
+    const notifId = c.env.NOTIFICATION_HUB.idFromName(session.caller_id);
+    const notifStub = c.env.NOTIFICATION_HUB.get(notifId);
+    await notifStub.fetch('https://dummy/notify', {
+      method: 'POST',
+      body: JSON.stringify({ type: 'call_accepted', session_id: sessionId }),
+    });
+  } catch {}
+
   return c.json({
     success: true,
     status: 'active',
@@ -298,25 +326,38 @@ call.post('/:id/end', async (c) => {
 
   const session = await db.prepare('SELECT * FROM call_sessions WHERE id = ?').bind(sessionId).first<any>();
   if (!session) return c.json({ error: 'Session not found' }, 404);
-  if (session.status !== 'active') return c.json({ error: 'Call not active' }, 400);
+  // Bug 14 fix: also allow ending pending calls (e.g. host declined or caller cancelled)
+  if (session.status !== 'active' && session.status !== 'pending') return c.json({ error: 'Call already ended' }, 400);
 
   const now = Math.floor(Date.now() / 1000);
   const durationSec = now - (session.started_at || now);
   const durationMin = Math.max(1, Math.ceil(durationSec / 60));
   const hostRow = await db.prepare('SELECT coins_per_minute, audio_coins_per_minute, video_coins_per_minute, user_id, total_minutes, total_earnings FROM hosts WHERE id = ?').bind(session.host_id).first<any>();
-  const effectiveRate = session.rate_per_minute ?? (hostRow?.coins_per_minute || 5);
-  const coinsCharged = durationMin * effectiveRate;
+  const effectiveRate = session.rate_per_minute ?? (session.type === 'video'
+    ? (hostRow?.video_coins_per_minute ?? hostRow?.coins_per_minute ?? 5)
+    : (hostRow?.audio_coins_per_minute ?? hostRow?.coins_per_minute ?? 5));
+  // Bug 14 fix: only charge if call was actually active
+  const coinsCharged = session.status === 'active' ? durationMin * effectiveRate : 0;
   const hostShare = Math.floor(coinsCharged * 0.7);
 
-  await db.batch([
+  const batchOps: any[] = [
     db.prepare('UPDATE call_sessions SET status = ?, ended_at = ?, duration_seconds = ?, coins_charged = ? WHERE id = ?')
       .bind('ended', now, durationSec, coinsCharged, sessionId),
-    db.prepare('UPDATE users SET coins = coins - ? WHERE id = ? AND coins >= ?').bind(coinsCharged, session.caller_id, coinsCharged),
-    db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
-      .bind(crypto.randomUUID(), session.caller_id, 'spend', -coinsCharged, `${session.type} call — ${durationMin} min`, sessionId),
-    db.prepare('UPDATE hosts SET total_minutes = total_minutes + ?, total_earnings = total_earnings + ? WHERE id = ?')
-      .bind(durationMin, hostShare, session.host_id),
-  ]);
+  ];
+  if (coinsCharged > 0) {
+    batchOps.push(
+      db.prepare('UPDATE users SET coins = coins - ? WHERE id = ? AND coins >= ?').bind(coinsCharged, session.caller_id, coinsCharged),
+      db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
+        .bind(crypto.randomUUID(), session.caller_id, 'spend', -coinsCharged, `${session.type} call — ${durationMin} min`, sessionId),
+      db.prepare('UPDATE hosts SET total_minutes = total_minutes + ?, total_earnings = total_earnings + ? WHERE id = ?')
+        .bind(durationMin, hostShare, session.host_id),
+      // Bug 2+14 fix: earn transaction for host
+      db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
+        .bind(crypto.randomUUID(), hostRow?.user_id, 'bonus', hostShare, `${session.type} call — ${durationMin} min`, sessionId),
+      db.prepare('UPDATE users SET coins = coins + ? WHERE id = ?').bind(hostShare, hostRow?.user_id),
+    );
+  }
+  await db.batch(batchOps);
 
   const cfCalls = createCFCalls(c.env);
   if (cfCalls) {

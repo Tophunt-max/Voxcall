@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
 import { useCall } from "@/context/CallContext";
+import { resolveMediaUrl } from "@/services/api";
 import * as Haptics from "expo-haptics";
 import { useRingtone } from "@/hooks/useRingtone";
 
@@ -40,7 +41,10 @@ export default function IncomingCallScreen() {
       <View style={styles.top}>
         <Text style={styles.incomingLabel}>Incoming {activeCall?.type === "video" ? "Video" : "Audio"} Call</Text>
         <View style={styles.avatarRing}>
-          <Image source={{ uri: `https://api.dicebear.com/7.x/avataaars/svg?seed=${activeCall?.participant.id}` }} style={styles.avatar} />
+          <Image
+            source={{ uri: resolveMediaUrl(activeCall?.participant.avatar) ?? `https://api.dicebear.com/7.x/avataaars/svg?seed=${activeCall?.participant.id}` }}
+            style={styles.avatar}
+          />
         </View>
         <Text style={styles.callerName}>{activeCall?.participant.name ?? "Unknown"}</Text>
         <Text style={styles.callerRole}>VoxLink Host</Text>
