@@ -69,7 +69,7 @@ jobs:
           EXPO_PUBLIC_API_URL: ${{ vars.EXPO_PUBLIC_API_URL }}
           EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: "128169786412"
           EXPO_PUBLIC_FIREBASE_PROJECT_ID: "connectme-80909"
-          EXPO_PUBLIC_FIREBASE_APP_ID: "1:128169786412:android:6afbab51b285c0eb98e589"
+          EXPO_PUBLIC_FIREBASE_APP_ID: "1:128169786412:android:553f258ca8dcba7898e589"
 
       - name: Build APK via Gradle
         working-directory: voxlink-host/android
@@ -145,7 +145,7 @@ jobs:
           EXPO_PUBLIC_FIREBASE_VAPID_KEY: ${{ vars.EXPO_PUBLIC_FIREBASE_VAPID_KEY }}
           EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: "128169786412"
           EXPO_PUBLIC_FIREBASE_PROJECT_ID: "connectme-80909"
-          EXPO_PUBLIC_FIREBASE_APP_ID: "1:128169786412:android:6afbab51b285c0eb98e589"
+          EXPO_PUBLIC_FIREBASE_APP_ID: "1:128169786412:android:553f258ca8dcba7898e589"
 
       - name: Summary
         run: |
@@ -198,7 +198,7 @@ jobs:
           EXPO_PUBLIC_FIREBASE_VAPID_KEY: ${{ vars.EXPO_PUBLIC_FIREBASE_VAPID_KEY }}
           EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: "128169786412"
           EXPO_PUBLIC_FIREBASE_PROJECT_ID: "connectme-80909"
-          EXPO_PUBLIC_FIREBASE_APP_ID: "1:128169786412:android:6afbab51b285c0eb98e589"
+          EXPO_PUBLIC_FIREBASE_APP_ID: "1:128169786412:android:553f258ca8dcba7898e589"
 
       - name: Summary
         run: |

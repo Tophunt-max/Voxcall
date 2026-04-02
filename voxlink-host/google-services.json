@@ -33,6 +33,35 @@
           ]
         }
       }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:128169786412:android:553f258ca8dcba7898e589",
+        "android_client_info": {
+          "package_name": "com.voxlink.host"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "128169786412-amg5rqkn00omvk2c96rcgji6gh9eku00.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA2N7xylXRUUtUFKd-UsP3xQTSW6PaeCrY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "128169786412-amg5rqkn00omvk2c96rcgji6gh9eku00.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
     }
   ],
   "configuration_version": "1"
