@@ -1,6 +1,6 @@
 kind = "mobile"
-previewPath = "/"
-title = "VoxLink - Voice & Video Connection"
+previewPath = "/voxlink-host/"
+title = "VoxLink Host App"
 version = "1.0.0"
 id = "artifacts/voxlink"
 router = "expo-domain"
@@ -12,16 +12,16 @@ version = "1.0.0"
 [[services]]
 ensurePreviewReachable = "/status"
 name = "expo"
-paths = [ "/" ]
-localPort = 8080
+paths = [ "/voxlink-host/" ]
+localPort = 8099
 
 [services.development]
-run = "pnpm --filter @workspace/voxlink run dev"
+run = "pnpm --filter @workspace/voxlink-host run dev"
 
 [services.production]
-build = [ "pnpm", "--filter", "@workspace/voxlink", "run", "build" ]
-run = [ "pnpm", "--filter", "@workspace/voxlink", "run", "serve" ]
+build = [ "pnpm", "--filter", "@workspace/voxlink-host", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/voxlink-host", "run", "serve" ]
 
 [services.env]
-PORT = "8080"
-BASE_PATH = "/"
+PORT = "8099"
+BASE_PATH = "/voxlink-host/"
