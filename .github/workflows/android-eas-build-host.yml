@@ -1,0 +1,204 @@
+name: Host Android Build (GitHub Local + EAS Cloud)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'voxlink-host/**'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/android-eas-build-host.yml'
+  workflow_dispatch:
+
+jobs:
+  # ─────────────────────────────────────────────
+  # JOB 1: GitHub runner pe local APK build (FREE)
+  # ─────────────────────────────────────────────
+  build-local-apk:
+    name: 📱 GitHub Local APK (Free Runner)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Accept Android SDK Licenses
+        run: yes | sdkmanager --licenses || true
+
+      - name: Install Android build tools
+        run: |
+          sdkmanager \
+            "platforms;android-35" \
+            "build-tools;35.0.0" \
+            "ndk;27.1.12297006"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Expo prebuild (generate Android project)
+        working-directory: voxlink-host
+        run: |
+          pnpm exec expo prebuild \
+            --platform android \
+            --clean \
+            --non-interactive \
+            --no-install
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_PUBLIC_API_URL: ${{ vars.EXPO_PUBLIC_API_URL }}
+          EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: "128169786412"
+          EXPO_PUBLIC_FIREBASE_PROJECT_ID: "connectme-80909"
+          EXPO_PUBLIC_FIREBASE_APP_ID: "1:128169786412:android:6afbab51b285c0eb98e589"
+
+      - name: Build APK via Gradle
+        working-directory: voxlink-host/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon --stacktrace || \
+          ./gradlew assembleDebug --no-daemon --stacktrace
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+          JAVA_HOME: ${{ env.JAVA_HOME }}
+
+      - name: Find and stage APK
+        run: |
+          APK=$(find voxlink-host/android -name "*.apk" | head -1)
+          echo "APK found: $APK"
+          cp "$APK" VoxLink-Host-GitHub-${{ github.run_number }}.apk
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoxLink-Host-GitHub-APK-${{ github.run_number }}
+          path: VoxLink-Host-GitHub-${{ github.run_number }}.apk
+          retention-days: 30
+
+      - name: Summary
+        run: |
+          echo "## ✅ VoxLink Host APK Ready!" >> $GITHUB_STEP_SUMMARY
+          echo "**Download:** Actions → This run → Artifacts → VoxLink-Host-GitHub-APK-${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+
+  # ─────────────────────────────────────────────
+  # JOB 2: EAS Cloud — Preview APK
+  # ─────────────────────────────────────────────
+  build-eas-preview:
+    name: ☁️ EAS Preview APK (Cloud)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Setup EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Submit Preview APK to EAS
+        working-directory: voxlink-host
+        run: |
+          eas build \
+            --platform android \
+            --profile preview \
+            --non-interactive \
+            --no-wait
+        env:
+          EXPO_PUBLIC_API_URL: ${{ vars.EXPO_PUBLIC_API_URL }}
+          EXPO_PUBLIC_FIREBASE_VAPID_KEY: ${{ vars.EXPO_PUBLIC_FIREBASE_VAPID_KEY }}
+          EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: "128169786412"
+          EXPO_PUBLIC_FIREBASE_PROJECT_ID: "connectme-80909"
+          EXPO_PUBLIC_FIREBASE_APP_ID: "1:128169786412:android:6afbab51b285c0eb98e589"
+
+      - name: Summary
+        run: |
+          echo "## ☁️ EAS Host Preview APK Submitted!" >> $GITHUB_STEP_SUMMARY
+          echo "Track at: https://expo.dev/accounts/voxcall/projects/voxlink-host/builds" >> $GITHUB_STEP_SUMMARY
+
+  # ─────────────────────────────────────────────
+  # JOB 3: EAS Cloud — Production AAB
+  # ─────────────────────────────────────────────
+  build-eas-production:
+    name: 🚀 EAS Production AAB (Cloud)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Setup EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Submit Production AAB to EAS
+        working-directory: voxlink-host
+        run: |
+          eas build \
+            --platform android \
+            --profile production \
+            --non-interactive \
+            --no-wait
+        env:
+          EXPO_PUBLIC_API_URL: ${{ vars.EXPO_PUBLIC_API_URL }}
+          EXPO_PUBLIC_FIREBASE_VAPID_KEY: ${{ vars.EXPO_PUBLIC_FIREBASE_VAPID_KEY }}
+          EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: "128169786412"
+          EXPO_PUBLIC_FIREBASE_PROJECT_ID: "connectme-80909"
+          EXPO_PUBLIC_FIREBASE_APP_ID: "1:128169786412:android:6afbab51b285c0eb98e589"
+
+      - name: Summary
+        run: |
+          echo "## 🚀 EAS Host Production AAB Submitted!" >> $GITHUB_STEP_SUMMARY
+          echo "Track at: https://expo.dev/accounts/voxcall/projects/voxlink-host/builds" >> $GITHUB_STEP_SUMMARY
