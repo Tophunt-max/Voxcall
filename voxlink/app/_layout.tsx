@@ -9,11 +9,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack, router } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
+import { Platform } from "react-native";
 import { configurePushNotifications } from "@/services/NotificationService";
 import { setupGlobalErrorHandler } from "@/services/ErrorReporter";
-import * as Notifications from "expo-notifications";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -26,19 +25,60 @@ import { SocketProvider, useSocketEvent } from "@/context/SocketContext";
 import { SocketEvents } from "@/constants/events";
 import { useCall } from "@/context/CallContext";
 
+// Only import Notifications and KeyboardProvider on native platforms
+// to avoid crashes on web (expo-notifications has no web support)
+let Notifications: any = null;
+if (Platform.OS !== "web") {
+  try { Notifications = require("expo-notifications"); } catch {}
+}
+
+let KeyboardProvider: React.ComponentType<{ children: React.ReactNode }> | null = null;
+if (Platform.OS !== "web") {
+  try { KeyboardProvider = require("react-native-keyboard-controller").KeyboardProvider; } catch {}
+}
+
 SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient();
 
+// ─── NotificationTapBridge ───────────────────────────────────────────────────
+// Handles push notification taps. NATIVE ONLY — not rendered on web.
+// Uses useLastNotificationResponse hook (not available on web).
+function NotificationTapBridge() {
+  const { receiveCall, activeCall } = useCall();
+  const lastResponse = Notifications!.useLastNotificationResponse();
+
+  useEffect(() => {
+    if (!lastResponse) return;
+    const data = lastResponse.notification.request.content.data as Record<string, unknown>;
+    if (!data) return;
+
+    if (data.type === "incoming_call") {
+      if (!activeCall) {
+        const body = lastResponse.notification.request.content.body ?? "";
+        const callerName = body.replace(" is calling you", "").trim() || "Caller";
+        receiveCall(
+          { id: String(data.caller_id ?? ""), name: callerName, role: "host" },
+          (data.call_type as "audio" | "video") ?? "audio",
+          String(data.session_id ?? "")
+        );
+      }
+      router.push("/shared/call/incoming");
+    } else if (data.type === "chat_message" && data.room_id) {
+      router.push({ pathname: "/shared/chat/[id]", params: { id: String(data.room_id) } });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastResponse]);
+
+  return null;
+}
+
 // ─── AppBridge ───────────────────────────────────────────────────────────────
-// Handles all real-time → UI bridging. Must be inside all providers.
-// 1. CALL_INCOMING via WebSocket (foreground)
-// 2. Notification taps (background / killed app)
-// 3. Notification received in foreground (incoming call only)
+// Handles WebSocket CALL_INCOMING → CallContext on all platforms.
+// Renders NotificationTapBridge only on native (requires push notification APIs).
 function AppBridge() {
   const { receiveCall, activeCall } = useCall();
 
-  // Bridge: WebSocket CALL_INCOMING → CallContext.receiveCall
   useSocketEvent(
     SocketEvents.CALL_INCOMING,
     (data: any) => {
@@ -57,36 +97,8 @@ function AppBridge() {
     [activeCall]
   );
 
-  // Bridge: Push notification tap → navigate + set up CallContext
-  const lastResponse = Notifications.useLastNotificationResponse();
-  useEffect(() => {
-    if (!lastResponse) return;
-    const data = lastResponse.notification.request.content.data as Record<string, unknown>;
-    if (!data) return;
-
-    if (data.type === "incoming_call") {
-      if (!activeCall) {
-        // Extract caller info from notification body: "<name> is calling you"
-        const body = lastResponse.notification.request.content.body ?? "";
-        const callerName = body.replace(" is calling you", "").trim() || "Caller";
-        receiveCall(
-          {
-            id: String(data.caller_id ?? ""),
-            name: callerName,
-            role: "host",
-          },
-          (data.call_type as "audio" | "video") ?? "audio",
-          String(data.session_id ?? "")
-        );
-      }
-      router.push("/shared/call/incoming");
-    } else if (data.type === "chat_message" && data.room_id) {
-      router.push({ pathname: "/shared/chat/[id]", params: { id: String(data.room_id) } });
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lastResponse]);
-
-  return null;
+  if (Platform.OS === "web" || !Notifications) return null;
+  return <NotificationTapBridge />;
 }
 
 function RootLayoutNav() {
@@ -150,6 +162,12 @@ function RootLayoutNav() {
   );
 }
 
+// KeyboardProvider wrapper — skips the provider on web to avoid native module crash
+function MaybeKeyboardProvider({ children }: { children: React.ReactNode }) {
+  if (Platform.OS === "web" || !KeyboardProvider) return <>{children}</>;
+  return <KeyboardProvider>{children}</KeyboardProvider>;
+}
+
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
     Poppins_400Regular,
@@ -176,7 +194,7 @@ export default function RootLayout() {
       <ErrorBoundary>
         <QueryClientProvider client={queryClient}>
           <GestureHandlerRootView style={{ flex: 1 }}>
-            <KeyboardProvider>
+            <MaybeKeyboardProvider>
               <LanguageProvider>
                 <AuthProvider>
                   <SocketProvider>
@@ -188,7 +206,7 @@ export default function RootLayout() {
                   </SocketProvider>
                 </AuthProvider>
               </LanguageProvider>
-            </KeyboardProvider>
+            </MaybeKeyboardProvider>
           </GestureHandlerRootView>
         </QueryClientProvider>
       </ErrorBoundary>
