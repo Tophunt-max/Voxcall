@@ -36,7 +36,8 @@ const STATUS_LABELS: Record<string, string> = {
 
 function mapStatus(s: string): "completed" | "missed" | "cancelled" {
   if (s === "ended") return "completed";
-  if (s === "rejected") return "cancelled";
+  if (s === "declined" || s === "rejected") return "cancelled";
+  if (s === "missed" || s === "pending") return "missed";
   return "missed";
 }
 

@@ -30,7 +30,7 @@ export default function CallingHistoryScreen() {
         setCallHistory(data.map((c: any) => ({
           id: c.id,
           hostId: c.host_id,
-          hostName: c.host_display_name || "Host",
+          hostName: c.host_name || c.host_display_name || "Host",
           hostAvatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${c.host_id}`,
           type: c.type || "audio",
           duration: c.duration_seconds || 0,

@@ -36,6 +36,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Apply D1 Migrations
+        working-directory: api-server
+        run: pnpm exec wrangler d1 migrations apply voxlink-db
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
       - name: Deploy to Cloudflare Workers
         working-directory: api-server
         run: pnpm exec wrangler deploy
