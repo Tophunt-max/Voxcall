@@ -22,7 +22,7 @@ export default function CallSummaryScreen() {
     participantName,
     participantId,
     sessionId,
-    coinsSpent,
+    coinsEarned,
     autoEnded,
   } = useLocalSearchParams<{
     duration: string;
@@ -30,19 +30,19 @@ export default function CallSummaryScreen() {
     participantName: string;
     participantId: string;
     sessionId: string;
-    coinsSpent: string;
+    coinsEarned: string;
     autoEnded: string;
   }>();
 
-  const durationSec  = parseInt(duration  ?? "0", 10);
-  const coinsUsed    = parseInt(coinsSpent ?? "0", 10);
-  const isAutoEnded  = autoEnded === "1";
-  const isVideo      = type === "video";
-  const hostName     = participantName ?? "Host";
-  const sid          = sessionId ?? "";
+  const durationSec   = parseInt(duration    ?? "0", 10);
+  const coinsGained   = parseInt(coinsEarned ?? "0", 10);
+  const isAutoEnded   = autoEnded === "1";
+  const isVideo       = type === "video";
+  const userName      = participantName ?? "User";
+  const sid           = sessionId ?? "";
 
-  const [rating, setRating]     = useState(0);
-  const [rated, setRated]       = useState(false);
+  const [rating, setRating]         = useState(0);
+  const [rated, setRated]           = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const handleSubmitRating = async () => {
@@ -66,28 +66,24 @@ export default function CallSummaryScreen() {
       paddingTop: insets.top + 20,
       paddingBottom: insets.bottom + 20,
     }]}>
-      {/* Main card */}
       <View style={[s.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
 
-        {/* Auto-ended banner */}
         {isAutoEnded && (
           <View style={s.autoEndedBanner}>
-            <Feather name="alert-circle" size={14} color="#FF6B6B" />
-            <Text style={s.autoEndedText}>Coins khatam ho gaye — call auto-disconnect hua</Text>
+            <Feather name="info" size={14} color="#60B8FF" />
+            <Text style={s.autoEndedText}>User ke coins khatam ho gaye — call auto-disconnect hua</Text>
           </View>
         )}
 
-        {/* Icon */}
         <View style={[s.iconCircle, { backgroundColor: colors.primary + "18" }]}>
           <Feather name={isVideo ? "video" : "phone"} size={36} color={colors.primary} />
         </View>
 
         <Text style={[s.title, { color: colors.foreground }]}>
-          {isAutoEnded ? "Call Auto-Ended" : "Call Ended"}
+          {isAutoEnded ? "Call Auto-Ended" : "Call Completed"}
         </Text>
-        <Text style={[s.hostName, { color: colors.mutedForeground }]}>with {hostName}</Text>
+        <Text style={[s.hostName, { color: colors.mutedForeground }]}>with {userName}</Text>
 
-        {/* Stats row */}
         <View style={[s.statsRow, { borderColor: colors.border }]}>
           <View style={s.stat}>
             <Text style={[s.statValue, { color: colors.foreground }]}>
@@ -99,10 +95,10 @@ export default function CallSummaryScreen() {
           <View style={[s.statDiv, { backgroundColor: colors.border }]} />
 
           <View style={s.stat}>
-            <Text style={[s.statValue, { color: colors.coinGold }]}>
-              {coinsUsed} 🪙
+            <Text style={[s.statValue, { color: "#0BAF23" }]}>
+              +{coinsGained} 🪙
             </Text>
-            <Text style={[s.statLabel, { color: colors.mutedForeground }]}>Coins Spent</Text>
+            <Text style={[s.statLabel, { color: colors.mutedForeground }]}>Coins Earned</Text>
           </View>
 
           <View style={[s.statDiv, { backgroundColor: colors.border }]} />
@@ -120,14 +116,13 @@ export default function CallSummaryScreen() {
           </View>
         </View>
 
-        {/* Rating section */}
         {!rated ? (
           <View style={s.ratingSection}>
             <Text style={[s.ratingPrompt, { color: colors.foreground }]}>
-              {hostName} ko rate karo
+              {userName} ko rate karo
             </Text>
             <Text style={[s.ratingSubtitle, { color: colors.mutedForeground }]}>
-              Aapka feedback host ko improve karne mein help karta hai
+              Is call ke baare mein aapka experience share karo
             </Text>
             <StarRating
               rating={rating}
@@ -163,8 +158,8 @@ export default function CallSummaryScreen() {
           </View>
         ) : (
           <View style={s.thankYou}>
-            <View style={[s.thankYouIconCircle, { backgroundColor: colors.online + "20" }]}>
-              <Feather name="check-circle" size={36} color={colors.online} />
+            <View style={[s.thankYouIconCircle, { backgroundColor: "#0BAF2320" }]}>
+              <Feather name="check-circle" size={36} color="#0BAF23" />
             </View>
             <Text style={[s.thankYouTitle, { color: colors.foreground }]}>
               Shukriya! 🙏
@@ -176,28 +171,22 @@ export default function CallSummaryScreen() {
         )}
       </View>
 
-      {/* Recharge button if auto-ended */}
-      {isAutoEnded && (
-        <TouchableOpacity
-          onPress={() => router.replace("/dashboard/wallet")}
-          style={[s.actionBtn, { backgroundColor: "#A00EE7" }]}
-          activeOpacity={0.85}
-        >
-          <Feather name="zap" size={16} color="#fff" />
-          <Text style={s.actionBtnText}>Coins Recharge Karo</Text>
-        </TouchableOpacity>
-      )}
-
-      {/* Back to home */}
       <TouchableOpacity
-        onPress={() => router.replace("/dashboard")}
-        style={[s.actionBtn, { backgroundColor: isAutoEnded ? colors.surface : colors.primary, borderWidth: isAutoEnded ? 1 : 0, borderColor: colors.border }]}
+        onPress={() => router.replace("/(tabs)/wallet")}
+        style={[s.actionBtn, { backgroundColor: "#0BAF23" }]}
         activeOpacity={0.85}
       >
-        <Feather name="home" size={16} color={isAutoEnded ? colors.foreground : "#fff"} />
-        <Text style={[s.actionBtnText, isAutoEnded && { color: colors.foreground }]}>
-          Home Wapas Jao
-        </Text>
+        <Feather name="trending-up" size={16} color="#fff" />
+        <Text style={s.actionBtnText}>Earnings Dekho</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        onPress={() => router.replace("/(tabs)")}
+        style={[s.actionBtn, { backgroundColor: colors.primary }]}
+        activeOpacity={0.85}
+      >
+        <Feather name="home" size={16} color="#fff" />
+        <Text style={s.actionBtnText}>Home Par Wapas Jao</Text>
       </TouchableOpacity>
     </View>
   );
@@ -223,16 +212,16 @@ const s = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    backgroundColor: "rgba(255,107,107,0.1)",
+    backgroundColor: "rgba(96,184,255,0.1)",
     borderWidth: 1,
-    borderColor: "rgba(255,107,107,0.3)",
+    borderColor: "rgba(96,184,255,0.3)",
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 8,
     width: "100%",
   },
   autoEndedText: {
-    color: "#FF6B6B",
+    color: "#60B8FF",
     fontSize: 12,
     fontFamily: "Poppins_500Medium",
     flex: 1,

@@ -149,7 +149,7 @@ export default function VideoCallScreen() {
     endCall(true);
   }, [endCall, webrtc.cleanup]);
 
-  const { elapsed, remaining, showLowCoinWarning, showRechargePopup, dismissRechargePopup } = useCallTimer({
+  const { elapsed, remaining, showLowCoinWarning } = useCallTimer({
     isActive: status === "active",
     maxSeconds: activeCall?.maxSeconds,
     onAutoEnd: handleAutoEnd,
@@ -315,7 +315,7 @@ export default function VideoCallScreen() {
         {showLowCoinWarning && (
           <View style={styles.warningBanner}>
             <Feather name="alert-triangle" size={13} color="#FFD166" />
-            <Text style={styles.warningText}>Low coins — {remainingLabel}</Text>
+            <Text style={styles.warningText}>Call jaldi khatam hoga — {remainingLabel}</Text>
           </View>
         )}
 
@@ -404,27 +404,6 @@ export default function VideoCallScreen() {
         </View>
       </View>
 
-      <Modal visible={showRechargePopup} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.rechargeCard}>
-            <Text style={styles.rechargeEmoji}>💰</Text>
-            <Text style={styles.rechargeTitle}>Coins Khatam Ho Rahe Hain!</Text>
-            <Text style={styles.rechargeSubtitle}>
-              {remaining != null ? `${remaining} second` : "Kuch second"}
-              {remaining === 1 ? "" : "s"} mein call auto-disconnect hoga
-            </Text>
-            <TouchableOpacity
-              style={styles.rechargeBtn}
-              onPress={() => { dismissRechargePopup(); handleEndCall(); router.push("/earnings"); }}
-            >
-              <Text style={styles.rechargeBtnText}>Abhi Recharge Karo</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.continueBtn} onPress={dismissRechargePopup}>
-              <Text style={styles.continueBtnText}>Continue Karo</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 }
@@ -525,13 +504,4 @@ const styles = StyleSheet.create({
   ctrlLabel: { color: "rgba(255,255,255,0.7)", fontSize: 10, fontFamily: "Poppins_400Regular", textAlign: "center" },
   endBtn: { width: 64, height: 64, borderRadius: 32, backgroundColor: "#E84855", alignItems: "center", justifyContent: "center", elevation: 4, shadowColor: "#E84855", shadowOpacity: 0.5, shadowRadius: 12, shadowOffset: { width: 0, height: 4 } },
 
-  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.75)", alignItems: "center", justifyContent: "flex-end", paddingBottom: 40, paddingHorizontal: 20 },
-  rechargeCard: { backgroundColor: "#fff", borderRadius: 24, padding: 28, width: "100%", alignItems: "center", gap: 12, shadowColor: "#000", shadowOpacity: 0.3, shadowRadius: 20, elevation: 10 },
-  rechargeEmoji: { fontSize: 48 },
-  rechargeTitle: { fontSize: 20, fontFamily: "Poppins_700Bold", color: "#1a1a2e", textAlign: "center" },
-  rechargeSubtitle: { fontSize: 14, fontFamily: "Poppins_400Regular", color: "#666", textAlign: "center", lineHeight: 20 },
-  rechargeBtn: { backgroundColor: "#A00EE7", borderRadius: 16, paddingVertical: 14, paddingHorizontal: 32, width: "100%", alignItems: "center", marginTop: 4 },
-  rechargeBtnText: { color: "#fff", fontSize: 16, fontFamily: "Poppins_700Bold" },
-  continueBtn: { paddingVertical: 8, paddingHorizontal: 16 },
-  continueBtnText: { color: "#888", fontSize: 14, fontFamily: "Poppins_400Regular" },
 });

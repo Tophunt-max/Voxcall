@@ -161,7 +161,7 @@ export default function HostStatusScreen() {
             style={s.ctaBtn}
             onPress={async () => {
               await AsyncStorage.removeItem("hostAppPending");
-              router.replace("/dashboard");
+              router.replace("/(tabs)");
             }}
             activeOpacity={0.85}
           >

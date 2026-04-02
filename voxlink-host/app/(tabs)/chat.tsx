@@ -1,29 +1,51 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, Image,
-  FlatList, Platform, TextInput
+  FlatList, TextInput, RefreshControl,
 } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { Feather } from "@expo/vector-icons";
-
-const MOCK_USER_CHATS = [
-  { id: "u1", name: "Sarah M.", avatar: "sarah", lastMsg: "Thank you so much for the session!", time: "2m", unread: 2, online: true },
-  { id: "u2", name: "John D.", avatar: "john", lastMsg: "Can we schedule another call?", time: "15m", unread: 1, online: true },
-  { id: "u3", name: "Priya K.", avatar: "priya", lastMsg: "That was really helpful, thanks!", time: "1h", unread: 0, online: false },
-  { id: "u4", name: "Marcus L.", avatar: "marcus", lastMsg: "I'll try the techniques you suggested", time: "3h", unread: 0, online: false },
-];
+import { useChat } from "@/context/ChatContext";
+import { useAuth } from "@/context/AuthContext";
+import { resolveMediaUrl } from "@/services/api";
 
 const ACCENT = "#A00EE7";
+
+function formatTime(ts?: number): string {
+  if (!ts) return "";
+  const d = new Date(ts);
+  const now = new Date();
+  const diffMs = now.getTime() - d.getTime();
+  if (diffMs < 60000) return "now";
+  if (diffMs < 3600000) return `${Math.floor(diffMs / 60000)}m`;
+  if (diffMs < 86400000) return `${Math.floor(diffMs / 3600000)}h`;
+  return d.toLocaleDateString([], { month: "short", day: "numeric" });
+}
 
 export default function HostChatScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
+  const { conversations, loadConversations } = useChat();
   const [search, setSearch] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
   const topPad = insets.top;
 
-  const filtered = MOCK_USER_CHATS.filter(c => c.name.toLowerCase().includes(search.toLowerCase()));
+  useEffect(() => {
+    if (user?.id) loadConversations(user.id);
+  }, [user?.id]);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    if (user?.id) await loadConversations(user.id);
+    setRefreshing(false);
+  };
+
+  const filtered = conversations.filter(c =>
+    c.participantName.toLowerCase().includes(search.toLowerCase())
+  );
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
@@ -31,7 +53,6 @@ export default function HostChatScreen() {
         <Text style={[styles.title, { color: colors.text }]}>Messages</Text>
       </View>
 
-      {/* Search */}
       <View
         accessible={false}
         style={[styles.searchWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}
@@ -52,6 +73,7 @@ export default function HostChatScreen() {
         data={filtered}
         keyExtractor={c => c.id}
         contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 8, gap: 2 }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={ACCENT} />}
         ListEmptyComponent={
           <View style={styles.empty}>
             <Image source={require("@/assets/images/empty_chat.png")} style={styles.emptyImg} resizeMode="contain" />
@@ -60,23 +82,29 @@ export default function HostChatScreen() {
         }
         renderItem={({ item }) => (
           <TouchableOpacity
-            onPress={() => router.push({ pathname: "/chat/[id]", params: { id: item.id } })}
+            onPress={() => router.push({ pathname: "/chat/[id]", params: { id: item.id, name: item.participantName } })}
             style={[styles.chatRow, { borderBottomColor: colors.border }]}
             activeOpacity={0.7}
           >
             <View style={{ position: "relative" }}>
-              <Image source={{ uri: `https://api.dicebear.com/7.x/avataaars/svg?seed=${item.avatar}` }} style={styles.avatar} />
-              {item.online && <View style={styles.onlineDot} />}
+              <Image
+                source={{ uri: resolveMediaUrl(item.participantAvatar) ?? `https://api.dicebear.com/7.x/avataaars/svg?seed=${item.participantId}` }}
+                style={styles.avatar}
+              />
             </View>
             <View style={{ flex: 1, gap: 3 }}>
-              <Text style={[styles.chatName, { color: colors.text }]}>{item.name}</Text>
-              <Text style={[styles.chatLast, { color: colors.mutedForeground }]} numberOfLines={1}>{item.lastMsg}</Text>
+              <Text style={[styles.chatName, { color: colors.text }]}>{item.participantName}</Text>
+              <Text style={[styles.chatLast, { color: colors.mutedForeground }]} numberOfLines={1}>
+                {item.lastMessage || "No messages yet"}
+              </Text>
             </View>
             <View style={{ alignItems: "flex-end", gap: 6 }}>
-              <Text style={[styles.chatTime, { color: colors.mutedForeground }]}>{item.time}</Text>
-              {item.unread > 0 && (
-                <View style={[styles.badge, { backgroundColor: colors.accent }]}>
-                  <Text style={styles.badgeText}>{item.unread}</Text>
+              <Text style={[styles.chatTime, { color: colors.mutedForeground }]}>
+                {formatTime(item.lastMessageTime)}
+              </Text>
+              {item.unreadCount > 0 && (
+                <View style={[styles.badge, { backgroundColor: ACCENT }]}>
+                  <Text style={styles.badgeText}>{item.unreadCount}</Text>
                 </View>
               )}
             </View>
@@ -94,7 +122,6 @@ const styles = StyleSheet.create({
   searchInput: { flex: 1, fontSize: 14, fontFamily: "Poppins_400Regular", backgroundColor: "transparent", borderWidth: 0 },
   chatRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 14, borderBottomWidth: StyleSheet.hairlineWidth },
   avatar: { width: 48, height: 48, borderRadius: 24 },
-  onlineDot: { position: "absolute", bottom: 2, right: 2, width: 12, height: 12, borderRadius: 6, backgroundColor: "#0BAF23", borderWidth: 2, borderColor: "#fff" },
   chatName: { fontSize: 15, fontFamily: "Poppins_600SemiBold" },
   chatLast: { fontSize: 13, fontFamily: "Poppins_400Regular" },
   chatTime: { fontSize: 11, fontFamily: "Poppins_400Regular" },

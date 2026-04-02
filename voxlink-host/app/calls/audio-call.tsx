@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import {
   View, Text, StyleSheet, Image, TouchableOpacity,
-  Animated, Easing, Modal,
+  Animated, Easing,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -89,7 +89,7 @@ export default function AudioCallScreen() {
     endCall(true);
   }, [endCall, webrtc.cleanup]);
 
-  const { elapsed, remaining, showLowCoinWarning, showRechargePopup, dismissRechargePopup } = useCallTimer({
+  const { elapsed, remaining, showLowCoinWarning } = useCallTimer({
     isActive: status === "active",
     maxSeconds: activeCall?.maxSeconds,
     onAutoEnd: handleAutoEnd,
@@ -156,7 +156,7 @@ export default function AudioCallScreen() {
         <View style={styles.warningBanner}>
           <Feather name="alert-triangle" size={14} color="#FFD166" />
           <Text style={styles.warningText}>
-            Coins khatam hone wale hain — {remainingLabel}
+            Call jaldi khatam hoga — {remainingLabel}
           </Text>
         </View>
       )}
@@ -184,8 +184,8 @@ export default function AudioCallScreen() {
         <View style={styles.badgeRow}>
           {activeCall?.coinsPerMinute ? (
             <View style={styles.costBadge}>
-              <Text style={styles.coinEmoji}>🪙</Text>
-              <Text style={styles.costText}>{activeCall.coinsPerMinute} coins / min</Text>
+              <Text style={styles.coinEmoji}>💰</Text>
+              <Text style={styles.costText}>+{activeCall.coinsPerMinute} coins / min</Text>
             </View>
           ) : null}
           {remainingLabel && status === "active" && (
@@ -230,31 +230,6 @@ export default function AudioCallScreen() {
         </View>
       </View>
 
-      <Modal visible={showRechargePopup} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.rechargeCard}>
-            <Text style={styles.rechargeEmoji}>💰</Text>
-            <Text style={styles.rechargeTitle}>Coins Khatam Ho Rahe Hain!</Text>
-            <Text style={styles.rechargeSubtitle}>
-              {remaining != null ? `${remaining} second` : "Kuch "}
-              {remaining === 1 ? "" : "s"} mein call auto-disconnect hoga
-            </Text>
-            <TouchableOpacity
-              style={styles.rechargeBtn}
-              onPress={() => {
-                dismissRechargePopup();
-                handleEndCall();
-                router.push("/earnings");
-              }}
-            >
-              <Text style={styles.rechargeBtnText}>Abhi Recharge Karo</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.continueBtn} onPress={dismissRechargePopup}>
-              <Text style={styles.continueBtnText}>Continue Karo</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
     </LinearGradient>
   );
 }
@@ -334,26 +309,4 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.5, shadowRadius: 12, shadowOffset: { width: 0, height: 4 },
   },
 
-  modalOverlay: {
-    flex: 1, backgroundColor: "rgba(0,0,0,0.75)",
-    alignItems: "center", justifyContent: "center", paddingHorizontal: 24,
-  },
-  rechargeCard: {
-    backgroundColor: "#fff", borderRadius: 24,
-    padding: 28, width: "100%",
-    alignItems: "center", gap: 12,
-    shadowColor: "#000", shadowOpacity: 0.3, shadowRadius: 20, elevation: 10,
-  },
-  rechargeEmoji: { fontSize: 48 },
-  rechargeTitle: { fontSize: 20, fontFamily: "Poppins_700Bold", color: "#1a1a2e", textAlign: "center" },
-  rechargeSubtitle: { fontSize: 14, fontFamily: "Poppins_400Regular", color: "#666", textAlign: "center", lineHeight: 20 },
-  rechargeBtn: {
-    backgroundColor: "#A00EE7", borderRadius: 16,
-    paddingVertical: 14, paddingHorizontal: 32,
-    width: "100%", alignItems: "center",
-    marginTop: 4,
-  },
-  rechargeBtnText: { color: "#fff", fontSize: 16, fontFamily: "Poppins_700Bold" },
-  continueBtn: { paddingVertical: 8, paddingHorizontal: 16 },
-  continueBtnText: { color: "#888", fontSize: 14, fontFamily: "Poppins_400Regular" },
 });

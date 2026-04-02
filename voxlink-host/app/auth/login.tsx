@@ -45,7 +45,7 @@ export default function HostLoginScreen() {
         bio: userData.bio,
       });
       if (userData.role === "host") {
-        router.replace("/dashboard");
+        router.replace("/(tabs)");
       } else {
         router.replace("/auth/status");
       }

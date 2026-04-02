@@ -49,7 +49,7 @@ export default function HostRegisterScreen() {
         name: data.user.name,
         email: data.user.email,
         coins: data.user.coins ?? 0,
-        role: "user",
+        role: "host",
       });
       router.push("/auth/profile-setup");
     } catch (err: any) {

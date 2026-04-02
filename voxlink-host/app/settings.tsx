@@ -108,7 +108,7 @@ export default function HostSettingsScreen() {
         <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Earnings</Text>
         <View style={[styles.card, { backgroundColor: colors.card }]}>
           <Row icon="trending-up" label="Payout Method" value="Bank Account" onPress={() => Alert.alert("Coming Soon", "Payout settings coming soon.")} />
-          <Row icon="file-text" label="Withdraw Earnings" onPress={() => router.push("/earnings")} />
+          <Row icon="file-text" label="Withdraw Earnings" onPress={() => router.push("/(tabs)/wallet")} />
         </View>
 
         <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Account</Text>
