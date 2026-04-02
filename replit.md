@@ -426,3 +426,20 @@ Merges socket + notification tap handling. Lives inside all providers so it can 
 
 ### Admin Panel — 1 Fix
 7. **`Hosts.tsx` Audio Rate Input Cap Too Low** — HTML input had `max="200"` but backend allows up to 500 coins/min. Changed to `max="500"` to match backend cap.
+
+## Bug Fix Log (Round 5 — 7 Bugs Fixed 2026-04-02)
+
+### User App — 2 Fixes
+1. **`forgot-password.tsx` Never Called API** — `handleSendOTP()` was doing `setTimeout(1000)` and navigating to OTP screen without calling `POST /api/auth/forgot-password`. OTP was never generated or sent. Now calls `API.forgotPassword()` first, shows error if email not found.
+2. **`api.ts` Missing `forgotPassword` Method** — Added `forgotPassword(email)` calling `POST /api/auth/forgot-password`.
+
+### Host App — 2 Fixes
+3. **`forgot-password.tsx` Never Called API** — Same critical bug: `handleSend()` was doing `setTimeout(1200)`, showing fake "Email Sent" success — but never calling any API. Host could never reset their password. Now calls `API.forgotPassword()` properly.
+4. **`voxlink-host/services/api.ts` Missing `forgotPassword` Method** — Added `forgotPassword(email)` method.
+
+### Admin Panel — 2 Fixes
+5. **`Analytics.tsx` Range Toggle Did Nothing** — `useEffect` had no dependency on `range`, so switching between 7d/30d re-rendered state but never re-fetched data. Added `range` to the dependency array and pass `days` to the API call.
+6. **`api.ts` analytics() Missing Range Param** — `api.analytics()` called backend with no range param. Updated to `api.analytics(days)` which appends `?days=7` or `?days=30`.
+
+### API Server — 1 Fix
+7. **`admin.ts` Analytics Endpoint Hardcoded 7 Days** — Backend always returned 7 days regardless. Now reads `?days=N` query param (validated: only 7 or 30 allowed), builds the correct date range, and uses "Mon/Tue" labels for 7 days vs "Jan 5" labels for 30 days.

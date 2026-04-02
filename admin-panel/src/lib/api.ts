@@ -62,7 +62,7 @@ export const api = {
   deleteTalkTopic: (id: string) => req('DELETE', `/admin/talk-topics/${id}`),
   coinTransactions: () => req<any[]>('GET', '/admin/coin-transactions'),
   ratings: () => req<any[]>('GET', '/admin/ratings'),
-  analytics: () => req<any>('GET', '/admin/analytics'),
+  analytics: (days?: number) => req<any>('GET', `/admin/analytics${days ? `?days=${days}` : ''}`),
   notifications: () => req<any[]>('GET', '/admin/notifications'),
   sendNotification: (data: any) => req<any>('POST', '/admin/notifications/send', data),
   post: (path: string, data: any) => req<any>('POST', path.replace('/api/admin/', '/admin/').replace('/api/', '/'), data),

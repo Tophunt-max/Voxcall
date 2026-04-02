@@ -8,6 +8,7 @@ import { showErrorToast } from "@/components/Toast";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
+import { API } from "@/services/api";
 
 export default function ForgotPasswordScreen() {
   const colors = useColors();
@@ -21,9 +22,14 @@ export default function ForgotPasswordScreen() {
       return;
     }
     setLoading(true);
-    await new Promise(r => setTimeout(r, 1000));
-    setLoading(false);
-    router.push({ pathname: "/user/auth/verify-otp", params: { email, mode: "forgot" } });
+    try {
+      await API.forgotPassword(email.trim().toLowerCase());
+      router.push({ pathname: "/user/auth/verify-otp", params: { email: email.trim().toLowerCase(), mode: "forgot" } });
+    } catch (err: any) {
+      showErrorToast(err?.message || "Email not found. Please check and try again.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (

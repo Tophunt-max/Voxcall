@@ -90,6 +90,8 @@ export const API = {
     apiRequest<{ token: string; user: any; is_returning?: boolean }>('POST', '/api/auth/quick-login', { device_id: device_id ?? null }, false),
   googleLogin: (email: string, name: string, google_id: string, avatar_url?: string | null) =>
     apiRequest<{ token: string; user: any }>('POST', '/api/auth/google-login', { email, name, google_id, avatar_url }, false),
+  forgotPassword: (email: string) =>
+    apiRequest<{ success: boolean }>('POST', '/api/auth/forgot-password', { email }, false),
   verifyOtp: (email: string, otp: string) =>
     apiRequest<{ success: boolean; bonus_coins?: number }>('POST', '/api/auth/verify-otp', { email, otp }, false),
   resetPassword: (email: string, otp: string, new_password: string) =>

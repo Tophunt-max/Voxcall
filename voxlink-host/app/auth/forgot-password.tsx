@@ -9,6 +9,7 @@ import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { Feather } from "@expo/vector-icons";
+import { API } from "@/services/api";
 
 export default function ForgotPasswordScreen() {
   const colors = useColors();
@@ -23,10 +24,15 @@ export default function ForgotPasswordScreen() {
       return;
     }
     setLoading(true);
-    await new Promise(r => setTimeout(r, 1200));
-    setLoading(false);
-    setSent(true);
-    showSuccessToast("Check your email for reset instructions.", "Email Sent");
+    try {
+      await API.forgotPassword(email.trim().toLowerCase());
+      setSent(true);
+      showSuccessToast("OTP sent to your email.", "Email Sent");
+    } catch (err: any) {
+      showErrorToast(err?.message || "Email not found. Please check and try again.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (

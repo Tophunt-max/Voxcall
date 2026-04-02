@@ -18,23 +18,25 @@ admin.get('/dashboard', async (c) => {
   return c.json({ total_users: users?.count, total_hosts: hosts?.count, calls_today: calls?.count, total_revenue_coins: revenue?.total });
 });
 
-// GET /api/admin/analytics — last 7 days chart data
+// GET /api/admin/analytics — daily chart data (supports ?days=7 or ?days=30)
 admin.get('/analytics', async (c) => {
   const dbA = c.env.DB;
-  // Last 7 days daily revenue + calls
+  const daysParam = parseInt(c.req.query('days') || '7');
+  const days = [7, 30].includes(daysParam) ? daysParam : 7;
+  // Daily revenue + calls for requested range
   const callRows = await dbA.prepare(`
     SELECT DATE(created_at,'unixepoch') as day,
            COUNT(*) as calls,
            COALESCE(SUM(coins_charged),0) as revenue
     FROM call_sessions
-    WHERE created_at > unixepoch('now','-7 days')
+    WHERE created_at > unixepoch('now','-${days} days')
     GROUP BY day ORDER BY day ASC
   `).all<any>();
-  // Last 7 days new users per day
+  // New users per day for requested range
   const userRows = await dbA.prepare(`
     SELECT DATE(created_at,'unixepoch') as day, COUNT(*) as users
     FROM users
-    WHERE created_at > unixepoch('now','-7 days')
+    WHERE created_at > unixepoch('now','-${days} days')
     GROUP BY day ORDER BY day ASC
   `).all<any>();
   // Role distribution
@@ -46,11 +48,11 @@ admin.get('/analytics', async (c) => {
     SELECT COALESCE(AVG(duration_seconds),0) as avg_duration FROM call_sessions WHERE status='ended'
   `).first<any>();
 
-  // Build a 7-day map
-  const days: string[] = [];
-  for (let i = 6; i >= 0; i--) {
+  // Build a date range map (7 or 30 days)
+  const dateRange: string[] = [];
+  for (let i = days - 1; i >= 0; i--) {
     const dt = new Date(Date.now() - i * 86400000);
-    days.push(dt.toISOString().slice(0, 10));
+    dateRange.push(dt.toISOString().slice(0, 10));
   }
   const callMap: Record<string, { calls: number; revenue: number }> = {};
   (callRows.results || []).forEach((r: any) => { callMap[r.day] = { calls: r.calls, revenue: r.revenue }; });
@@ -58,8 +60,12 @@ admin.get('/analytics', async (c) => {
   (userRows.results || []).forEach((r: any) => { userMap[r.day] = r.users; });
 
   const DAY_LABELS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-  const weekly = days.map(day => {
-    const label = DAY_LABELS[new Date(day).getDay()];
+  const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const weekly = dateRange.map(day => {
+    const d = new Date(day);
+    const label = days <= 7
+      ? DAY_LABELS[d.getDay()]
+      : `${MONTH_LABELS[d.getMonth()]} ${d.getDate()}`;
     return { day: label, date: day, revenue: callMap[day]?.revenue ?? 0, calls: callMap[day]?.calls ?? 0, users: userMap[day] ?? 0 };
   });
 

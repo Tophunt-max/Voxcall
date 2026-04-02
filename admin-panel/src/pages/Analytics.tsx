@@ -34,14 +34,16 @@ export default function Analytics() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    setLoading(true);
+    const days = range === '30d' ? 30 : 7;
     Promise.all([
-      api.analytics().catch(() => null),
+      api.analytics(days).catch(() => null),
       api.hosts().catch(() => []),
     ]).then(([a, h]) => {
       setAnalytics(a);
       setHosts(Array.isArray(h) ? h.slice(0, 5) : []);
     }).finally(() => setLoading(false));
-  }, []);
+  }, [range]);
 
   const weekly: any[] = analytics?.weekly ?? [];
   const avgDuration = analytics?.avg_call_duration ?? 0;
