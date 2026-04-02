@@ -105,7 +105,7 @@ coin.post('/withdraw', async (c) => {
   await db.batch([
     db.prepare('INSERT INTO withdrawal_requests (id, host_id, coins, amount, payment_method, account_details) VALUES (?, ?, ?, ?, ?, ?)')
       .bind(withdrawId, h.id, coins_requested, usdAmount, method ?? 'bank', account_info ?? ''),
-    db.prepare('UPDATE users SET coins = coins - ?, updated_at = unixepoch() WHERE id = ?').bind(coins_requested, sub),
+    db.prepare('UPDATE users SET coins = coins - ?, updated_at = unixepoch() WHERE id = ? AND coins >= ?').bind(coins_requested, sub, coins_requested),
     db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
       .bind(crypto.randomUUID(), sub, 'withdrawal', -coins_requested, `Withdrawal request — ${coins_requested} coins`, withdrawId),
   ]);

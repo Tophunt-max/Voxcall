@@ -1,8 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
-
-const API_URL = import.meta.env.VITE_API_URL || "https://voxlink-api.ssunilkumarmohanta3.workers.dev";
-const ADMIN_TOKEN_KEY = "voxlink_admin_token";
-function getToken() { return localStorage.getItem(ADMIN_TOKEN_KEY) || ""; }
+import { req } from "@/lib/api";
 
 type AppStatus = "pending" | "under_review" | "approved" | "rejected";
 interface HostApp {
@@ -41,22 +38,6 @@ const FILTER_TABS: Array<{ label: string; value: string }> = [
   { label: "Rejected", value: "rejected" },
 ];
 
-async function apiCall(method: string, path: string, body?: any) {
-  const res = await fetch(`${API_URL}${path}`, {
-    method,
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${getToken()}`,
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: "Unknown error" }));
-    throw new Error((err as any).error || res.statusText);
-  }
-  return res.json();
-}
-
 export default function HostApplicationsPage() {
   const [apps, setApps] = useState<HostApp[]>([]);
   const [loading, setLoading] = useState(true);
@@ -70,8 +51,8 @@ export default function HostApplicationsPage() {
   const fetchApps = useCallback(async () => {
     setLoading(true);
     try {
-      const path = filter ? `/api/admin/host-applications?status=${filter}` : "/api/admin/host-applications";
-      const data = await apiCall("GET", path);
+      const path = filter ? `/admin/host-applications?status=${filter}` : "/admin/host-applications";
+      const data = await req<any[]>("GET", path);
       setApps(Array.isArray(data) ? data : []);
     } catch (e) {
       console.error(e);
@@ -90,7 +71,7 @@ export default function HostApplicationsPage() {
     }
     setReviewing(true);
     try {
-      await apiCall("PATCH", `/api/admin/host-applications/${selected.id}/review`, {
+      await req("PATCH", `/admin/host-applications/${selected.id}/review`, {
         action,
         rejection_reason: action === "reject" ? rejectReason.trim() : undefined,
       });

@@ -280,7 +280,7 @@ admin.get('/talk-topics', async (c) => {
 });
 admin.post('/talk-topics', async (c) => {
   const body = await c.req.json() as any;
-  const id = 'topic-' + Date.now();
+  const id = crypto.randomUUID();
   await db(c).prepare('INSERT INTO talk_topics (id, name, icon, is_active) VALUES (?, ?, ?, 1)')
     .bind(id, body.name, body.icon || '💬').run();
   return c.json({ id, ...body });
@@ -498,7 +498,9 @@ async function auditLog(d: D1Database, adminId: string, adminName: string, admin
   const id = crypto.randomUUID();
   await d.prepare(
     'INSERT INTO audit_logs (id, admin_id, admin_name, admin_email, action, target_type, target, detail, ip) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
-  ).bind(id, adminId, adminName, adminEmail, action, targetType, target, detail, ip).run().catch(() => {});
+  ).bind(id, adminId, adminName, adminEmail, action, targetType, target, detail, ip).run().catch((err: any) => {
+    console.error('[AuditLog] Failed to write audit log:', err?.message ?? err);
+  });
 }
 
 // ─── Payouts (alias for withdrawals with enriched field names) ────────────────

@@ -98,11 +98,18 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const acceptCall = useCallback(async () => {
     const curr = activeCallRef.current;
     if (!curr) return;
+    if (curr.sessionId) {
+      try {
+        await API.answerCall(curr.sessionId, true);
+      } catch (e) {
+        console.warn("acceptCall API error:", e);
+        updateCall(null);
+        router.back();
+        return;
+      }
+    }
     const updated = { ...curr, status: "active" as CallStatus, startTime: Date.now() };
     updateCall(updated);
-    if (curr.sessionId) {
-      try { await API.answerCall(curr.sessionId, true); } catch {}
-    }
     router.replace(curr.type === "audio" ? "/user/call/audio-call" : "/user/call/video-call");
   }, []);
 

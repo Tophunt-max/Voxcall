@@ -99,6 +99,14 @@ call.post('/end', async (c) => {
     return c.json({ error: 'Call already ended' }, 400);
   }
 
+  // BUG 1 FIX: Atomic status update — prevents double charging on concurrent /end calls
+  const atomicUpdate = await db.prepare(
+    "UPDATE call_sessions SET status = 'processing' WHERE id = ? AND status IN ('active', 'pending')"
+  ).bind(session_id).run();
+  if (!atomicUpdate.meta?.changes || atomicUpdate.meta.changes === 0) {
+    return c.json({ error: 'Call already ended' }, 400);
+  }
+
   const now = Math.floor(Date.now() / 1000);
   const durationSec = duration_seconds ?? (session.started_at ? now - session.started_at : 0);
   const durationMin = Math.max(1, Math.ceil(durationSec / 60));
@@ -341,8 +349,14 @@ call.post('/:id/end', async (c) => {
 
   const session = await db.prepare('SELECT * FROM call_sessions WHERE id = ?').bind(sessionId).first<any>();
   if (!session) return c.json({ error: 'Session not found' }, 404);
-  // Bug 14 fix: also allow ending pending calls (e.g. host declined or caller cancelled)
   if (session.status !== 'active' && session.status !== 'pending') return c.json({ error: 'Call already ended' }, 400);
+
+  const atomicUpdate = await db.prepare(
+    "UPDATE call_sessions SET status = 'processing' WHERE id = ? AND status IN ('active', 'pending')"
+  ).bind(sessionId).run();
+  if (!atomicUpdate.meta?.changes || atomicUpdate.meta.changes === 0) {
+    return c.json({ error: 'Call already ended' }, 400);
+  }
 
   const now = Math.floor(Date.now() / 1000);
   const durationSec = now - (session.started_at || now);

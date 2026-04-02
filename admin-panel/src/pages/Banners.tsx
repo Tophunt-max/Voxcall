@@ -27,9 +27,11 @@ export default function Banners() {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState('');
 
-  useEffect(() => {
+  const loadBanners = () => {
     api.banners().then(setRows).catch(() => {}).finally(() => setLoading(false));
-  }, []);
+  };
+
+  useEffect(() => { loadBanners(); }, []);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 2500); };
 
@@ -39,16 +41,15 @@ export default function Banners() {
     try {
       if (editing) {
         await api.updateBanner(editing.id, form);
-        setRows(rows.map(r => r.id === editing.id ? { ...r, ...form } : r));
         showToast('Banner updated');
         setEditing(null);
       } else {
-        const res = await api.createBanner(form);
-        setRows([{ ...form, id: res.id, created_at: Math.floor(Date.now() / 1000) }, ...rows]);
+        await api.createBanner(form);
         showToast('Banner created');
         setCreating(false);
       }
       setForm(blank());
+      loadBanners();
     } catch { showToast('Failed to save banner'); }
     finally { setSaving(false); }
   };
@@ -58,15 +59,15 @@ export default function Banners() {
     if (!banner) return;
     try {
       await api.updateBanner(id, { active: !banner.active });
-      setRows(rows.map(r => r.id === id ? { ...r, active: !r.active } : r));
+      loadBanners();
     } catch { showToast('Failed to update banner'); }
   };
 
   const remove = async (id: string) => {
     try {
       await api.deleteBanner(id);
-      setRows(rows.filter(r => r.id !== id));
       showToast('Banner deleted');
+      loadBanners();
     } catch { showToast('Failed to delete banner'); }
   };
 

@@ -159,6 +159,12 @@ user.post('/become-host', async (c) => {
   const db = c.env.DB;
   const existing = await db.prepare('SELECT id FROM hosts WHERE user_id = ?').bind(sub).first();
   if (existing) return c.json({ error: 'Already a host' }, 409);
+  const approvedApp = await db.prepare(
+    "SELECT id FROM host_applications WHERE user_id = ? AND status = 'approved'"
+  ).bind(sub).first();
+  if (!approvedApp) {
+    return c.json({ error: 'Please complete KYC verification and wait for admin approval before becoming a host.' }, 403);
+  }
   const hostId = `host_${sub}`;
   await db.batch([
     db.prepare('INSERT INTO hosts (id, user_id, display_name, specialties, languages) VALUES (?, ?, ?, ?, ?)')

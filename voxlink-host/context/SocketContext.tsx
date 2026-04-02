@@ -13,6 +13,7 @@ import socketService from "@/services/SocketService";
 import { SocketEvents } from "@/constants/events";
 import { useAuth } from "@/context/AuthContext";
 import { API } from "@/services/api";
+import { getItem, StorageKeys } from "@/utils/storage";
 
 interface SocketContextValue {
   isConnected: boolean;
@@ -35,7 +36,9 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!isLoggedIn || !user?.id) return;
 
-    socketService.connect(user.id);
+    getItem(StorageKeys.AUTH_TOKEN).then((token) => {
+      socketService.connect(user.id, token ?? undefined);
+    });
 
     const offConnect = socketService.on(SocketEvents.CONNECT, () => setIsConnected(true));
     const offDisconnect = socketService.on(SocketEvents.DISCONNECT, () => setIsConnected(false));

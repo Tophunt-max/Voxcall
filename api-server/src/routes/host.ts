@@ -13,12 +13,17 @@ const LEVELS: Record<number, { name: string; badge: string; color: string }> = {
   5: { name: 'Elite',    badge: '👑', color: '#D97706' },
 };
 
+function safeParse(json: string | null | undefined, fallback: any = []) {
+  if (!json) return fallback;
+  try { return JSON.parse(json); } catch { return fallback; }
+}
+
 function enrichHost(h: any) {
   const lvl = h.level ?? 1;
   return {
     ...h,
-    specialties: JSON.parse(h.specialties || '[]'),
-    languages: JSON.parse(h.languages || '[]'),
+    specialties: safeParse(h.specialties, []),
+    languages: safeParse(h.languages, []),
     level_info: LEVELS[lvl] ?? LEVELS[1],
     audio_coins_per_minute: h.audio_coins_per_minute ?? h.coins_per_minute ?? 5,
     video_coins_per_minute: h.video_coins_per_minute ?? (h.coins_per_minute ?? 5) + 5,

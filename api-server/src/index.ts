@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { prettyJSON } from 'hono/pretty-json';
+import { jwtVerify } from 'jose';
 import type { Env } from './types';
 import authRouter from './routes/auth';
 import userRouter from './routes/user';
@@ -68,20 +69,47 @@ app.route('/api/host-app', hostappRouter);
 app.route('/api/upload', uploadRouter);
 app.route('/api/errors', errorsRouter);
 app.route('/api', publicRouter);
-app.route('/api', uploadRouter);
 
-// WebSocket: notification hub per user
+// ─── WebSocket Auth Helper ─────────────────────────────────────────────────
+async function verifyWsToken(token: string | null, secret: string): Promise<string | null> {
+  if (!token) return null;
+  try {
+    const key = new TextEncoder().encode(secret);
+    const { payload } = await jwtVerify(token, key);
+    return (payload as any).sub as string;
+  } catch {
+    return null;
+  }
+}
+
+// WebSocket: notification hub per user — BUG 3 FIX: require JWT auth
 app.get('/api/ws/notifications', async (c) => {
+  const token = c.req.query('token') || c.req.header('Authorization')?.replace('Bearer ', '') || null;
   const userId = c.req.query('userId');
   if (!userId) return c.json({ error: 'userId required' }, 400);
+  const verifiedUserId = await verifyWsToken(token, c.env.JWT_SECRET);
+  if (!verifiedUserId || verifiedUserId !== userId) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
   const id = c.env.NOTIFICATION_HUB.idFromName(userId);
   const stub = c.env.NOTIFICATION_HUB.get(id);
   return stub.fetch(c.req.raw);
 });
 
-// WebSocket: call signaling per session
+// WebSocket: call signaling per session — BUG 3 FIX: require JWT auth
 app.get('/api/ws/call/:sessionId', async (c) => {
   const { sessionId } = c.req.param();
+  const token = c.req.query('token') || c.req.header('Authorization')?.replace('Bearer ', '') || null;
+  const verifiedUserId = await verifyWsToken(token, c.env.JWT_SECRET);
+  if (!verifiedUserId) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+  const session = await c.env.DB.prepare(
+    `SELECT cs.caller_id, h.user_id as host_user_id FROM call_sessions cs LEFT JOIN hosts h ON h.id = cs.host_id WHERE cs.id = ?`
+  ).bind(sessionId).first<any>();
+  if (!session || (session.caller_id !== verifiedUserId && session.host_user_id !== verifiedUserId)) {
+    return c.json({ error: 'Access denied to this call session' }, 403);
+  }
   const id = c.env.CALL_SIGNALING.idFromName(sessionId);
   const stub = c.env.CALL_SIGNALING.get(id);
   return stub.fetch(c.req.raw);

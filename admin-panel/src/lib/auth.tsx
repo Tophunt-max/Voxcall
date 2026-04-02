@@ -18,9 +18,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     api.dashboard().then(() => {
       try { setUser(JSON.parse(u)); } catch {}
-    }).catch(() => {
-      localStorage.removeItem('voxlink_admin_token');
-      localStorage.removeItem('voxlink_admin_user');
+    }).catch((err: any) => {
+      const msg = err?.message ?? '';
+      const isAuthError = msg.includes('Session expired') || msg.includes('401') || msg.includes('Unauthorized');
+      if (isAuthError) {
+        localStorage.removeItem('voxlink_admin_token');
+        localStorage.removeItem('voxlink_admin_user');
+      } else {
+        try { setUser(JSON.parse(u)); } catch {}
+      }
     }).finally(() => setLoading(false));
   }, []);
 

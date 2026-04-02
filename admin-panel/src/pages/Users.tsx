@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { api } from '@/lib/api';
 import { Table } from '@/components/ui/Table';
 import { Badge } from '@/components/ui/Badge';
@@ -24,11 +24,18 @@ export default function Users() {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState('');
 
-  const load = () => {
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const load = (searchVal: string) => {
     setLoading(true);
-    api.users('1', search).then(setUsers).catch(console.error).finally(() => setLoading(false));
+    api.users('1', searchVal).then(setUsers).catch(console.error).finally(() => setLoading(false));
   };
-  useEffect(load, [search]);
+
+  useEffect(() => {
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => load(search), 400);
+    return () => { if (searchTimer.current) clearTimeout(searchTimer.current); };
+  }, [search]);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 2500); };
 
@@ -39,7 +46,7 @@ export default function Users() {
       await api.updateUser(editing.id, { coins: parseInt(coins) });
       showToast('User updated successfully');
       setEditing(null);
-      load();
+      load(search);
     } catch (e: any) { showToast('Error: ' + e.message); }
     finally { setSaving(false); }
   };

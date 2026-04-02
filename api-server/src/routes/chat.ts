@@ -51,8 +51,15 @@ chat.post('/rooms', async (c) => {
 
 // GET /api/chat/rooms/:id/messages
 chat.get('/rooms/:id/messages', async (c) => {
+  const { sub } = c.get('user');
   const { id } = c.req.param();
   const { before, limit = '50' } = c.req.query();
+  const room = await c.env.DB.prepare(
+    `SELECT cr.id FROM chat_rooms cr
+     JOIN hosts h ON h.id = cr.host_id
+     WHERE cr.id = ? AND (cr.user_id = ? OR h.user_id = ?)`
+  ).bind(id, sub, sub).first<any>();
+  if (!room) return c.json({ error: 'Access denied or room not found' }, 403);
   let query = 'SELECT m.*, u.name as sender_name, u.avatar_url as sender_avatar FROM messages m JOIN users u ON u.id = m.sender_id WHERE m.room_id = ?';
   const params: any[] = [id];
   if (before) { query += ' AND m.created_at < ?'; params.push(parseInt(before)); }
