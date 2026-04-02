@@ -80,17 +80,15 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         maxSeconds: res.max_seconds,
       };
       updateCall(updated);
-
-      if (sessionId) {
-        try { await API.answerCall(sessionId, true); } catch {}
-      }
+      // Fix C1: Caller should NOT call answerCall — only the HOST answers
     } catch (e) {
       console.warn("initiateCall API error:", e);
     }
   }, []);
 
   const receiveCall = useCallback((participant: CallParticipant, type: CallType, callId: string) => {
-    const call: ActiveCall = { callId, type, status: "incoming", participant, isMuted: false, isCameraOn: false, isSpeakerOn: false };
+    // Fix C3: also set sessionId = callId so acceptCall/declineCall can call the backend
+    const call: ActiveCall = { callId, sessionId: callId, type, status: "incoming", participant, isMuted: false, isCameraOn: false, isSpeakerOn: false };
     updateCall(call);
     router.push("/shared/call/incoming");
   }, []);
@@ -113,7 +111,12 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const declineCall = useCallback(() => {
+    const curr = activeCallRef.current;
     updateCall(null);
+    // Fix M3: notify backend that host declined
+    if (curr?.sessionId) {
+      try { API.answerCall(curr.sessionId, false); } catch {}
+    }
     router.back();
   }, []);
 

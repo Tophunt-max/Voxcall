@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, Image,
   Animated, Easing,
@@ -7,9 +7,16 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRingtone } from "@/hooks/useRingtone";
 import { resolveMediaUrl } from "@/services/api";
+import { useCall } from "@/context/CallContext";
+import { useSocket } from "@/context/SocketContext";
+import { SocketEvents } from "@/constants/events";
+
+const RING_TIMEOUT_MS = 45000;
 
 export default function OutgoingCallScreen() {
   const insets = useSafeAreaInsets();
+  const { activeCall, endCall } = useCall();
+  const { onEvent } = useSocket();
   const params = useLocalSearchParams<{
     hostId: string;
     callType: string;
@@ -21,17 +28,32 @@ export default function OutgoingCallScreen() {
   const hostId    = params.hostId   ?? "host";
   const callType  = params.callType ?? "audio";
   const hostName  = params.hostName ?? "Host";
-  // Bug 9 fix: use resolveMediaUrl so relative /api/files/... paths are also handled
   const hostAvatar = resolveMediaUrl(params.hostAvatar) ?? `https://api.dicebear.com/7.x/avataaars/svg?seed=${hostId}`;
   const specialty = params.specialty ?? "";
 
-  const [status, setStatus] = useState<"connecting" | "ringing">("connecting");
+  const [status, setStatus] = useState<"connecting" | "ringing" | "declined" | "no_answer">("connecting");
+  const navigated = useRef(false);
 
   const { stop: stopRing } = useRingtone("outgoing", true);
 
   const ripple1 = useRef(new Animated.Value(0)).current;
   const ripple2 = useRef(new Animated.Value(0)).current;
   const ripple3 = useRef(new Animated.Value(0)).current;
+
+  const goToCallScreen = useCallback(async () => {
+    if (navigated.current) return;
+    navigated.current = true;
+    await stopRing();
+    router.replace(callType === "video" ? "/shared/call/video-call" : "/shared/call/audio-call");
+  }, [callType, stopRing]);
+
+  const cancelCall = useCallback(async () => {
+    if (navigated.current) return;
+    navigated.current = true;
+    await stopRing();
+    // Fix M1: end call on backend when user cancels
+    endCall(false);
+  }, [stopRing, endCall]);
 
   useEffect(() => {
     const animateRipple = (val: Animated.Value, delay: number) =>
@@ -47,17 +69,49 @@ export default function OutgoingCallScreen() {
     animateRipple(ripple3, 1200);
 
     const t1 = setTimeout(() => setStatus("ringing"), 1500);
+
+    // Fix C2: no-answer timeout — end call after 45s if host doesn't respond
     const t2 = setTimeout(async () => {
-      await stopRing();
-      router.replace(callType === "video" ? "/shared/call/video-call" : "/shared/call/audio-call");
-    }, 5000);
+      if (!navigated.current) {
+        setStatus("no_answer");
+        await stopRing();
+        setTimeout(() => endCall(false), 1500);
+      }
+    }, RING_TIMEOUT_MS);
+
     return () => { clearTimeout(t1); clearTimeout(t2); };
   }, []);
+
+  // Fix C2 + H1: listen for call_accepted / call_declined socket events
+  useEffect(() => {
+    const offAccept = onEvent(SocketEvents.CALL_ACCEPT, () => {
+      goToCallScreen();
+    });
+    const offReject = onEvent(SocketEvents.CALL_REJECT, async () => {
+      if (!navigated.current) {
+        setStatus("declined");
+        await stopRing();
+        setTimeout(() => {
+          if (!navigated.current) {
+            navigated.current = true;
+            router.back();
+          }
+        }, 2000);
+      }
+    });
+    return () => { offAccept(); offReject(); };
+  }, [onEvent, goToCallScreen, stopRing]);
 
   const makeRipple = (val: Animated.Value, size: number) => ({
     transform: [{ scale: val.interpolate({ inputRange: [0, 1], outputRange: [1, size] }) }],
     opacity: val.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.4, 0.2, 0] }),
   });
+
+  const statusLabel =
+    status === "declined"  ? "Call Declined" :
+    status === "no_answer" ? "No Answer" :
+    status === "ringing"   ? "Ringing..." :
+                             "Connecting...";
 
   return (
     <View style={[s.container, { backgroundColor: "#1A1040" }]}>
@@ -79,8 +133,8 @@ export default function OutgoingCallScreen() {
         <View style={{ alignItems: "center", gap: 8 }}>
           <Text style={s.hostName}>{hostName}</Text>
           {!!specialty && <Text style={s.hostMeta}>{specialty}</Text>}
-          <Text style={s.statusText}>
-            {status === "connecting" ? "Connecting..." : "Ringing..."}
+          <Text style={[s.statusText, (status === "declined" || status === "no_answer") && { color: "#FF6B6B" }]}>
+            {statusLabel}
           </Text>
         </View>
       </View>
@@ -88,7 +142,7 @@ export default function OutgoingCallScreen() {
       <View style={[s.bottomControls, { paddingBottom: insets.bottom + 40 }]}>
         <TouchableOpacity
           style={s.endBtn}
-          onPress={async () => { await stopRing(); router.back(); }}
+          onPress={cancelCall}
           activeOpacity={0.85}
         >
           <Image source={require("@/assets/icons/ic_call_end.png")} style={s.endIcon} resizeMode="contain" />

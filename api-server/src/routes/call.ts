@@ -45,12 +45,13 @@ call.post('/initiate', async (c) => {
   ).bind(sessionId, sub, body.host_id, callType, 'pending', cfCallerSessionId, cfHostSessionId, ratePerMin).run();
 
   // WebSocket notification (foreground/background)
+  // Fix H2: include caller_name so host sees caller's name instead of "Incoming Call"
   try {
     const notifId = c.env.NOTIFICATION_HUB.idFromName(host.user_id);
     const notifStub = c.env.NOTIFICATION_HUB.get(notifId);
     await notifStub.fetch('https://dummy/notify', {
       method: 'POST',
-      body: JSON.stringify({ type: 'incoming_call', session_id: sessionId, caller_id: sub, call_type: callType }),
+      body: JSON.stringify({ type: 'incoming_call', session_id: sessionId, caller_id: sub, call_type: callType, caller_name: caller.name ?? 'Caller' }),
     });
   } catch {}
 

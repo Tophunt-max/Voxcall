@@ -102,6 +102,21 @@ class SocketService {
           sessionId: msg.session_id,
           type: msg.call_type ?? "audio",
           callerId: msg.caller_id,
+          callerName: msg.caller_name ?? "Caller",
+          callerAvatar: msg.caller_avatar ?? undefined,
+          timestamp: Date.now(),
+        });
+        break;
+      // Fix H1: handle call_accepted and call_declined from backend
+      case "call_accepted":
+        this.emit(SocketEvents.CALL_ACCEPT, {
+          sessionId: msg.session_id,
+          timestamp: Date.now(),
+        });
+        break;
+      case "call_declined":
+        this.emit(SocketEvents.CALL_REJECT, {
+          sessionId: msg.session_id,
           timestamp: Date.now(),
         });
         break;

@@ -138,9 +138,10 @@ function AppBridge() {
       receiveCall(
         {
           id: data.callerId ?? data.caller_id ?? "",
-          name: data.hostName ?? data.callerName ?? "Incoming Call",
-          avatar: data.hostAvatar ?? data.callerAvatar,
-          role: "host",
+          // Fix H2: callerName comes from backend WS message
+          name: data.callerName ?? data.hostName ?? data.caller_name ?? "Caller",
+          avatar: data.callerAvatar ?? data.hostAvatar,
+          role: "user",
         },
         data.type ?? data.call_type ?? "audio",
         data.callId ?? data.sessionId ?? data.session_id ?? ""
