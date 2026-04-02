@@ -13,7 +13,7 @@ import * as Application from "expo-application";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAuth } from "@/context/AuthContext";
 import { API, resolveMediaUrl } from "@/services/api";
-import { getRandomAvatarKey } from "@/utils/randomAvatar";
+import { getRandomAvatarUri } from "@/utils/randomAvatar";
 import { showErrorToast, showSuccessToast } from "@/components/Toast";
 
 WebBrowser.maybeCompleteAuthSession();
@@ -155,7 +155,7 @@ export default function LoginScreen() {
     try {
       const deviceId = await getDeviceId();
       const data = await API.quickLogin(deviceId);
-      const avatarKey = resolveMediaUrl(data.user.avatar_url) || getRandomAvatarKey();
+      const avatarKey = resolveMediaUrl(data.user.avatar_url) || getRandomAvatarUri();
       const profile = {
         id: data.user.id,
         name: data.user.name || "VoxLink User",

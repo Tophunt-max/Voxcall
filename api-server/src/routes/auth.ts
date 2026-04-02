@@ -269,7 +269,9 @@ async function quickLoginHandler(c: any, deviceId: string | null) {
 
   const quickId = 'q_' + generateId().slice(0, 12);
   const quickEmail = `${quickId}@quick.voxlink.app`;
-  const quickName = 'VoxLink User';
+  const _adj = ['Happy','Bright','Cool','Swift','Bold','Brave','Calm','Witty','Smart','Lucky'];
+  const _ani = ['Fox','Bear','Wolf','Lion','Tiger','Eagle','Panda','Koala','Hawk','Lynx'];
+  const quickName = `${_adj[Math.floor(Math.random()*_adj.length)]}${_ani[Math.floor(Math.random()*_ani.length)]}${String(Math.floor(Math.random()*900)+100)}`;
 
   // Bug fix: 0 coins for guest accounts (was 50) — prevents Sybil attack of creating
   // unlimited guest accounts to farm free coins.

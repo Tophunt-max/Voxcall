@@ -236,7 +236,10 @@ export default function ProfileScreen() {
 
   const resolvedAvatar =
     avatarUri ??
-    resolveMediaUrl(user?.avatar) ??
+    (user?.avatar?.startsWith('http') || user?.avatar?.startsWith('file') || user?.avatar?.startsWith('asset')
+      ? user.avatar
+      : resolveMediaUrl(user?.avatar)
+    ) ??
     `https://api.dicebear.com/7.x/avataaars/png?seed=${user?.id ?? "me"}`;
 
   return (
