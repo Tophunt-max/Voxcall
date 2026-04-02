@@ -3,7 +3,7 @@ previewPath = "/"
 title = "VoxLink - Voice & Video Connection"
 version = "1.0.0"
 id = "artifacts/voxlink"
-router = "expo-domain"
+router = "path"
 
 [[integratedSkills]]
 name = "expo"
@@ -13,7 +13,7 @@ version = "1.0.0"
 ensurePreviewReachable = "/status"
 name = "expo"
 paths = [ "/" ]
-localPort = 8080
+localPort = 5000
 
 [services.development]
 run = "pnpm --filter @workspace/voxlink run dev"

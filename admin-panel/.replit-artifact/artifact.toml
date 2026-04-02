@@ -27,5 +27,5 @@ from = "/*"
 to = "/index.html"
 
 [services.env]
-PORT = "5000"
+PORT = "5001"
 BASE_PATH = "/admin-panel/"

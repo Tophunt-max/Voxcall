@@ -2,9 +2,9 @@ const http = require('http');
 const net = require('net');
 const { URL } = require('url');
 
-const ADMIN_PORT = 5000;
+const ADMIN_PORT = 5001;
 const MOBILE_PORT = 8080;
-const PROXY_PORT = parseInt(process.env.PROXY_PORT || '3000');
+const PROXY_PORT = parseInt(process.env.PROXY_PORT || '5000');
 
 function getTargetPort(url) {
   return (url || '/').startsWith('/admin-panel') ? ADMIN_PORT : MOBILE_PORT;
