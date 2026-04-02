@@ -26,6 +26,10 @@ author = "agent"
 task = "workflow.run"
 args = "voxlink-host: expo"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "VoxLink Gateway"
+
 [[workflows.workflow]]
 name = "voxlink-host: expo"
 author = "agent"
@@ -37,6 +41,18 @@ outputType = "webview"
 task = "shell.exec"
 args = "PORT=8099 pnpm --filter @workspace/voxlink-host run dev"
 waitForPort = 8099
+
+[[workflows.workflow]]
+name = "VoxLink Gateway"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "PROXY_PORT=3000 node proxy-server.js"
+waitForPort = 3000
+
+[workflows.workflow.metadata]
+outputType = "webview"
 
 [agent]
 stack = "PNPM_WORKSPACE"

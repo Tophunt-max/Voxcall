@@ -1,13 +1,15 @@
 const http = require('http');
 const net = require('net');
-const { URL } = require('url');
 
-const ADMIN_PORT = 5001;
-const MOBILE_PORT = 8080;
-const PROXY_PORT = parseInt(process.env.PROXY_PORT || '5000');
+const ADMIN_PORT = 5000;
+const USER_APP_PORT = 8080;
+const HOST_APP_PORT = 8099;
+const PROXY_PORT = parseInt(process.env.PROXY_PORT || '3000');
 
 function getTargetPort(url) {
-  return (url || '/').startsWith('/admin-panel') ? ADMIN_PORT : MOBILE_PORT;
+  const path = url || '/';
+  if (path.startsWith('/admin-panel')) return ADMIN_PORT;
+  return USER_APP_PORT;
 }
 
 const server = http.createServer((req, res) => {
@@ -55,5 +57,6 @@ server.on('upgrade', (req, socket, head) => {
 server.listen(PROXY_PORT, '0.0.0.0', () => {
   console.log(`VoxLink Proxy running on port ${PROXY_PORT}`);
   console.log(`  /admin-panel/* -> localhost:${ADMIN_PORT} (Admin Panel)`);
-  console.log(`  /*             -> localhost:${MOBILE_PORT} (Mobile App)`);
+  console.log(`  /*             -> localhost:${USER_APP_PORT} (User App)`);
+  console.log(`  Host App at    -> localhost:${HOST_APP_PORT} (separate preview)`);
 });
