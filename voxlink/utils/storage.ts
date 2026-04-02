@@ -21,6 +21,7 @@ export const StorageKeys = {
   COIN_HISTORY: "coin_history",
   CHAT_DRAFTS: "chat_drafts",
   NOTIFICATION_SETTINGS: "notification_settings",
+  NOTIFICATION_LIST: "notification_list",
   HOST_AVAILABILITY: "host_availability",
   PAYOUT_METHOD: "payout_method",
   RECENT_SEARCHES: "recent_searches",

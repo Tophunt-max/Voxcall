@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { authMiddleware, adminMiddleware } from '../middleware/auth';
+import { sendExpoPush, getPushTokens } from '../lib/expoPush';
 import type { Env, JWTPayload } from '../types';
 
 const admin = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
@@ -345,13 +346,33 @@ admin.post('/notifications/send', async (c) => {
     targetUsers = [{ id: userId }];
   }
   if (targetUsers.length === 0) return c.json({ sent: 0 });
+
+  // Save to D1 notifications table
   const stmts = targetUsers.map((u: any) => {
     const id = 'notif-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
     return db(c).prepare('INSERT INTO notifications (id, user_id, type, title, body, created_at) VALUES (?, ?, ?, ?, ?, ?)')
       .bind(id, u.id, type, title, msgBody, now);
   });
   await db(c).batch(stmts);
-  return c.json({ sent: targetUsers.length });
+
+  // Send actual Expo Push Notifications in batches of 100
+  try {
+    const userIds = targetUsers.map((u: any) => u.id);
+    const batchSize = 100;
+    let totalPushed = 0;
+    for (let i = 0; i < userIds.length; i += batchSize) {
+      const batch = userIds.slice(i, i + batchSize);
+      const tokens = await getPushTokens(db(c), batch);
+      if (tokens.length > 0) {
+        const result = await sendExpoPush(tokens, title, msgBody, { type, notif_type: type });
+        totalPushed += result.sent;
+      }
+    }
+    return c.json({ sent: targetUsers.length, pushed: totalPushed });
+  } catch (err) {
+    console.error('[Push] admin send error:', err);
+    return c.json({ sent: targetUsers.length, pushed: 0 });
+  }
 });
 
 // Call sessions

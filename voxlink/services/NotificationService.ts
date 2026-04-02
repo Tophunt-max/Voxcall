@@ -3,6 +3,7 @@
 
 import { Platform } from "react-native";
 import { appendToArray, getItem, setItem, StorageKeys } from "@/utils/storage";
+import Constants from "expo-constants";
 
 let Notifications: any = null;
 try { Notifications = require("expo-notifications"); } catch {}
@@ -28,14 +29,26 @@ function generateNotifId() {
 export async function configurePushNotifications(): Promise<void> {
   if (!Notifications || Platform.OS === "web") return;
   try {
-    await Notifications.setNotificationChannelAsync?.("default", {
-      name: "Default",
-      importance: Notifications.AndroidImportance?.HIGH ?? 4,
-      vibrationPattern: [0, 250, 250, 250],
-      lightColor: "#A00EE7",
-    });
+    if (Platform.OS === "android") {
+      await Notifications.setNotificationChannelAsync("default", {
+        name: "Default",
+        importance: Notifications.AndroidImportance.HIGH,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: "#A00EE7",
+        sound: "default",
+      });
+      await Notifications.setNotificationChannelAsync("calls", {
+        name: "Incoming Calls",
+        importance: Notifications.AndroidImportance.MAX,
+        vibrationPattern: [0, 500, 250, 500],
+        lightColor: "#A00EE7",
+        sound: "default",
+        enableLights: true,
+        enableVibrate: true,
+      });
+    }
 
-    Notifications.setNotificationHandler?.({
+    Notifications.setNotificationHandler({
       handleNotification: async () => ({
         shouldShowAlert: true,
         shouldPlaySound: true,
@@ -57,7 +70,10 @@ export async function registerForPushNotifications(): Promise<string | null> {
       finalStatus = status;
     }
     if (finalStatus !== "granted") return null;
-    const { data } = await Notifications.getExpoPushTokenAsync();
+    const projectId =
+      Constants.expoConfig?.extra?.eas?.projectId ??
+      "0e529a27-fcf1-4850-a306-971ef07dd2ac";
+    const { data } = await Notifications.getExpoPushTokenAsync({ projectId });
     await setItem(StorageKeys.PUSH_TOKEN, data);
     return data;
   } catch (err) {
@@ -108,31 +124,31 @@ export async function addNotification(
     isRead: false,
     ...notif,
   };
-  await appendToArray<InAppNotification>(StorageKeys.NOTIFICATION_SETTINGS, full, 200);
+  await appendToArray<InAppNotification>(StorageKeys.NOTIFICATION_LIST, full, 200);
   return full;
 }
 
 export async function getNotifications(): Promise<InAppNotification[]> {
-  const notifs = await getItem<InAppNotification[]>(StorageKeys.NOTIFICATION_SETTINGS);
+  const notifs = await getItem<InAppNotification[]>(StorageKeys.NOTIFICATION_LIST);
   return (notifs ?? []).sort((a, b) => b.timestamp - a.timestamp);
 }
 
 export async function markNotificationRead(id: string): Promise<void> {
   const all = await getNotifications();
   const updated = all.map((n) => (n.id === id ? { ...n, isRead: true } : n));
-  await setItem(StorageKeys.NOTIFICATION_SETTINGS, updated);
+  await setItem(StorageKeys.NOTIFICATION_LIST, updated);
 }
 
 export async function markAllNotificationsRead(): Promise<void> {
   const all = await getNotifications();
   await setItem(
-    StorageKeys.NOTIFICATION_SETTINGS,
+    StorageKeys.NOTIFICATION_LIST,
     all.map((n) => ({ ...n, isRead: true }))
   );
 }
 
 export async function clearNotifications(): Promise<void> {
-  await setItem(StorageKeys.NOTIFICATION_SETTINGS, []);
+  await setItem(StorageKeys.NOTIFICATION_LIST, []);
 }
 
 export async function getUnreadCount(): Promise<number> {

@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { authMiddleware } from '../middleware/auth';
 import { createCFCalls } from '../lib/cf-calls';
+import { sendExpoPush } from '../lib/expoPush';
 import type { Env, JWTPayload } from '../types';
 
 const call = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
@@ -19,7 +20,7 @@ call.post('/initiate', async (c) => {
     ? (host.video_coins_per_minute ?? host.coins_per_minute ?? 5)
     : (host.audio_coins_per_minute ?? host.coins_per_minute ?? 5);
 
-  const caller = await db.prepare('SELECT coins FROM users WHERE id = ?').bind(sub).first<any>();
+  const caller = await db.prepare('SELECT coins, name FROM users WHERE id = ?').bind(sub).first<any>();
   if (!caller || caller.coins < ratePerMin) {
     return c.json({ error: 'Insufficient coins' }, 402);
   }
@@ -43,6 +44,7 @@ call.post('/initiate', async (c) => {
     'INSERT INTO call_sessions (id, caller_id, host_id, type, status, cf_session_id, cf_host_session_id, rate_per_minute) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
   ).bind(sessionId, sub, body.host_id, callType, 'pending', cfCallerSessionId, cfHostSessionId, ratePerMin).run();
 
+  // WebSocket notification (foreground/background)
   try {
     const notifId = c.env.NOTIFICATION_HUB.idFromName(host.user_id);
     const notifStub = c.env.NOTIFICATION_HUB.get(notifId);
@@ -50,6 +52,23 @@ call.post('/initiate', async (c) => {
       method: 'POST',
       body: JSON.stringify({ type: 'incoming_call', session_id: sessionId, caller_id: sub, call_type: callType }),
     });
+  } catch {}
+
+  // Expo Push Notification (app killed / background)
+  try {
+    const hostUser = await db
+      .prepare('SELECT fcm_token FROM users WHERE id = ?')
+      .bind(host.user_id)
+      .first<{ fcm_token: string }>();
+    if (hostUser?.fcm_token) {
+      const callLabel = callType === 'video' ? 'Video Call' : 'Audio Call';
+      await sendExpoPush(
+        hostUser.fcm_token,
+        `Incoming ${callLabel}`,
+        `${caller.name || 'Someone'} is calling you`,
+        { type: 'incoming_call', session_id: sessionId, call_type: callType, caller_id: sub }
+      );
+    }
   } catch {}
 
   const maxSeconds = Math.floor((caller.coins / ratePerMin) * 60);

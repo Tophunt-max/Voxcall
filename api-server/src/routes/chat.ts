@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { authMiddleware } from '../middleware/auth';
+import { sendExpoPush } from '../lib/expoPush';
 import type { Env, JWTPayload } from '../types';
 
 const chat = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
@@ -63,18 +64,44 @@ chat.get('/rooms/:id/messages', async (c) => {
 
 // POST /api/chat/rooms/:id/messages — send message (REST fallback)
 chat.post('/rooms/:id/messages', async (c) => {
-  const { sub } = c.get('user');
+  const { sub, name: senderName } = c.get('user');
   const { id } = c.req.param();
   const { content, media_url, media_type } = await c.req.json();
   const db = c.env.DB;
   const msgId = crypto.randomUUID();
   const now = Math.floor(Date.now() / 1000);
+
   await db.batch([
     db.prepare('INSERT INTO messages (id, room_id, sender_id, content, media_url, media_type) VALUES (?, ?, ?, ?, ?, ?)')
       .bind(msgId, id, sub, content ?? null, media_url ?? null, media_type ?? null),
     db.prepare('UPDATE chat_rooms SET last_message = ?, last_message_at = ? WHERE id = ?')
       .bind(content ?? '[media]', now, id),
   ]);
+
+  // Push notification to the other party in the room
+  try {
+    const room = await db
+      .prepare('SELECT cr.user_id, h.user_id as host_user_id FROM chat_rooms cr JOIN hosts h ON h.id = cr.host_id WHERE cr.id = ?')
+      .bind(id)
+      .first<{ user_id: string; host_user_id: string }>();
+    if (room) {
+      const recipientId = room.user_id === sub ? room.host_user_id : room.user_id;
+      const recipient = await db
+        .prepare('SELECT fcm_token FROM users WHERE id = ?')
+        .bind(recipientId)
+        .first<{ fcm_token: string }>();
+      if (recipient?.fcm_token) {
+        const pushBody = media_url ? '[Media]' : (content ?? '');
+        await sendExpoPush(
+          recipient.fcm_token,
+          senderName || 'New Message',
+          pushBody,
+          { type: 'chat_message', room_id: id }
+        );
+      }
+    }
+  } catch {}
+
   return c.json({ id: msgId, room_id: id, sender_id: sub, content, created_at: now });
 });
 
