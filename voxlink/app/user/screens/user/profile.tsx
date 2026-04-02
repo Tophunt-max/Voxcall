@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -52,7 +52,7 @@ function MenuItem({
   const colors = useColors();
   return (
     <TouchableOpacity
-      onPress={onPress}
+      onPress={isSwitch ? undefined : onPress}
       style={[styles.menuItem, { borderBottomColor: colors.border }]}
       activeOpacity={0.75}
     >
@@ -67,10 +67,8 @@ function MenuItem({
         {iconSource ? (
           <Image
             source={iconSource}
-            style={[
-              styles.menuIconImg,
-              { tintColor: danger ? colors.destructive : colors.text },
-            ]}
+            style={styles.menuIconImg}
+            tintColor={danger ? colors.destructive : colors.text}
             resizeMode="contain"
           />
         ) : (
@@ -127,6 +125,7 @@ export default function ProfileScreen() {
   const [showMediaDialog, setShowMediaDialog] = useState(false);
   const [avatarUri, setAvatarUri] = useState<string | null>(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [callCount, setCallCount] = useState<number>(0);
 
   const topPad = insets.top;
   const bottomPad = insets.bottom;
@@ -142,6 +141,17 @@ export default function ProfileScreen() {
     permissions.mediaLibrary.status === "blocked" ||
     (permissions.mediaLibrary.status === "denied" &&
       !permissions.mediaLibrary.canAskAgain);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const history = await API.callAPI.getCallHistory();
+        setCallCount(Array.isArray(history) ? history.length : 0);
+      } catch {
+        setCallCount(0);
+      }
+    })();
+  }, []);
 
   const handleLogout = () => {
     Alert.alert("Sign Out", "Are you sure you want to sign out?", [
@@ -162,7 +172,6 @@ export default function ProfileScreen() {
     showSuccessToast("Your unique ID has been copied.", "Copied");
   };
 
-  // Avatar picker
   const handleAvatarPress = async () => {
     if (permissions.mediaLibrary.status !== "granted") {
       setShowMediaDialog(true);
@@ -183,7 +192,6 @@ export default function ProfileScreen() {
     const asset = result.assets[0];
     setAvatarUri(asset.uri);
 
-    // Upload avatar
     try {
       setUploadingAvatar(true);
       const formData = new FormData();
@@ -206,7 +214,6 @@ export default function ProfileScreen() {
     }
   };
 
-  // Notifications toggle
   const handleNotifToggle = async (value: boolean) => {
     if (value) {
       if (notifBlocked) {
@@ -229,7 +236,7 @@ export default function ProfileScreen() {
   const resolvedAvatar =
     avatarUri ??
     user?.avatar ??
-    `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.id ?? "me"}`;
+    `https://api.dicebear.com/7.x/avataaars/png?seed=${user?.id ?? "me"}`;
 
   return (
     <ScrollView
@@ -237,7 +244,6 @@ export default function ProfileScreen() {
       contentContainerStyle={{ paddingBottom: bottomPad + 90 }}
       showsVerticalScrollIndicator={false}
     >
-      {/* Notification Permission Dialog */}
       <PermissionDialog
         visible={showNotifDialog}
         config={{ ...PERMISSION_CONFIGS.notifications, isBlocked: notifBlocked }}
@@ -252,7 +258,6 @@ export default function ProfileScreen() {
         onDeny={() => setShowNotifDialog(false)}
       />
 
-      {/* Media Library Permission Dialog */}
       <PermissionDialog
         visible={showMediaDialog}
         config={{ ...PERMISSION_CONFIGS.mediaLibrary, isBlocked: mediaBlocked }}
@@ -314,7 +319,7 @@ export default function ProfileScreen() {
           {/* Edit overlay */}
           <View style={[styles.avatarEditBadge, { backgroundColor: colors.primary }]}>
             {uploadingAvatar ? (
-              <Feather name="loader" size={11} color="#fff" />
+              <ActivityIndicator size={12} color="#fff" />
             ) : (
               <Feather name="camera" size={11} color="#fff" />
             )}
@@ -324,6 +329,7 @@ export default function ProfileScreen() {
               <Image
                 source={require("@/assets/icons/ic_available.png")}
                 style={styles.hostBadgeIcon}
+                tintColor="#fff"
                 resizeMode="contain"
               />
             </View>
@@ -370,7 +376,7 @@ export default function ProfileScreen() {
           </View>
           <View style={[styles.statDiv, { backgroundColor: colors.border }]} />
           <View style={styles.stat}>
-            <Text style={[styles.statValue, { color: colors.text }]}>0</Text>
+            <Text style={[styles.statValue, { color: colors.text }]}>{callCount}</Text>
             <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>Calls</Text>
           </View>
           <View style={[styles.statDiv, { backgroundColor: colors.border }]} />
@@ -538,7 +544,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  hostBadgeIcon: { width: 12, height: 12, tintColor: "#fff" },
+  hostBadgeIcon: { width: 12, height: 12 },
   name: { fontSize: 18, fontFamily: "Poppins_700Bold", marginTop: 4 },
   email: { fontSize: 12, fontFamily: "Poppins_400Regular" },
   idBadge: {

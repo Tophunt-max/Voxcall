@@ -9,7 +9,10 @@ user.use('*', authMiddleware);
 user.get('/me', async (c) => {
   const { sub } = c.get('user');
   const me = await c.env.DB.prepare(
-    'SELECT id, name, email, phone, avatar_url, gender, bio, coins, role, is_verified, created_at FROM users WHERE id = ?'
+    `SELECT u.id, u.name, u.email, u.phone, u.avatar_url, u.gender, u.bio,
+       u.coins, u.role, u.is_verified, u.created_at,
+       (SELECT COUNT(*) FROM call_sessions WHERE caller_id = u.id AND status = 'ended') as total_calls
+     FROM users u WHERE u.id = ?`
   ).bind(sub).first();
   if (!me) return c.json({ error: 'User not found' }, 404);
   return c.json(me);
