@@ -59,9 +59,9 @@ function FCMNotificationTapBridge() {
             String(data.session_id ?? "")
           );
         }
-        router.push("/shared/call/incoming");
+        router.push("/user/call/incoming");
       } else if (data.type === "chat_message" && data.room_id) {
-        router.push({ pathname: "/shared/chat/[id]", params: { id: String(data.room_id) } });
+        router.push({ pathname: "/user/chat/[id]", params: { id: String(data.room_id) } });
       }
     }
 
@@ -111,9 +111,9 @@ function WebNotificationBridge() {
             String(data.session_id ?? "")
           );
         }
-        router.push("/shared/call/incoming");
+        router.push("/user/call/incoming");
       } else if (data.type === "chat_message" && data.room_id) {
-        router.push({ pathname: "/shared/chat/[id]", params: { id: String(data.room_id) } });
+        router.push({ pathname: "/user/chat/[id]", params: { id: String(data.room_id) } });
       }
     }
 
@@ -195,23 +195,24 @@ function RootLayoutNav() {
         <Stack.Screen name="user/payment/success" options={{ gestureEnabled: false }} />
         <Stack.Screen name="user/profile/edit" />
 
-        {/* Shared screens */}
-        <Stack.Screen name="shared/auth/onboarding" />
-        <Stack.Screen name="shared/chat/[id]" />
-        <Stack.Screen name="shared/call/audio-call" options={{ presentation: "fullScreenModal" }} />
-        <Stack.Screen name="shared/call/video-call" options={{ presentation: "fullScreenModal" }} />
-        <Stack.Screen name="shared/call/incoming" options={{ presentation: "fullScreenModal" }} />
-        <Stack.Screen name="shared/call/outgoing" options={{ presentation: "fullScreenModal" }} />
-        <Stack.Screen name="shared/call/summary" />
-        <Stack.Screen name="shared/call/history" />
-        <Stack.Screen name="shared/notifications" />
-        <Stack.Screen name="shared/settings" />
-        <Stack.Screen name="shared/help-center" />
-        <Stack.Screen name="shared/language" />
-        <Stack.Screen name="shared/search-hosts" />
-        <Stack.Screen name="shared/coin-history" />
-        <Stack.Screen name="shared/privacy" />
-        <Stack.Screen name="shared/about" />
+        {/* User utility screens */}
+        <Stack.Screen name="user/auth/onboarding" />
+        <Stack.Screen name="user/chat/[id]" />
+        <Stack.Screen name="user/call/audio-call" options={{ presentation: "fullScreenModal" }} />
+        <Stack.Screen name="user/call/video-call" options={{ presentation: "fullScreenModal" }} />
+        <Stack.Screen name="user/call/incoming" options={{ presentation: "fullScreenModal" }} />
+        <Stack.Screen name="user/call/outgoing" options={{ presentation: "fullScreenModal" }} />
+        <Stack.Screen name="user/call/summary" />
+        <Stack.Screen name="user/call/history" />
+        <Stack.Screen name="user/notifications" />
+        <Stack.Screen name="user/settings" />
+        <Stack.Screen name="user/help-center" />
+        <Stack.Screen name="user/language" />
+        <Stack.Screen name="user/search-hosts" />
+        <Stack.Screen name="user/coin-history" />
+        <Stack.Screen name="user/privacy" />
+        <Stack.Screen name="user/about" />
+        <Stack.Screen name="user/referral" />
       </Stack>
       <ToastContainer />
     </>

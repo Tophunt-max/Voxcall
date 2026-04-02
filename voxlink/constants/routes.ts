@@ -3,7 +3,7 @@
 
 const Routes = {
   // Auth
-  ONBOARDING: "/shared/auth/onboarding",
+  ONBOARDING: "/user/auth/onboarding",
   LOGIN: "/user/auth/login",
   REGISTER: "/user/auth/register",
   VERIFY_OTP: "/user/auth/verify-otp",
@@ -27,15 +27,15 @@ const Routes = {
   HOST_PROFILE: "/(host-tabs)/profile",
 
   // Call
-  OUTGOING_CALL: "/shared/call/outgoing",
-  INCOMING_CALL: "/shared/call/incoming",
-  AUDIO_CALL: "/shared/call/audio-call",
-  VIDEO_CALL: "/shared/call/video-call",
-  CALL_SUMMARY: "/shared/call/summary",
-  CALL_HISTORY: "/shared/call/history",
+  OUTGOING_CALL: "/user/call/outgoing",
+  INCOMING_CALL: "/user/call/incoming",
+  AUDIO_CALL: "/user/call/audio-call",
+  VIDEO_CALL: "/user/call/video-call",
+  CALL_SUMMARY: "/user/call/summary",
+  CALL_HISTORY: "/user/call/history",
 
   // Chat
-  CHAT_ROOM: (id: string) => `/shared/chat/${id}`,
+  CHAT_ROOM: (id: string) => `/user/chat/${id}`,
 
   // Hosts
   HOST_PROFILE_PAGE: (id: string) => `/hosts/${id}`,
@@ -55,16 +55,16 @@ const Routes = {
   EDIT_PROFILE: "/user/profile/edit",
 
   // Info
-  SEARCH_HOSTS: "/shared/search-hosts",
-  COIN_HISTORY: "/shared/coin-history",
-  NOTIFICATIONS: "/shared/notifications",
-  SETTINGS: "/shared/settings",
-  HELP_CENTER: "/shared/help-center",
-  LANGUAGE: "/shared/language",
-  PRIVACY: "/shared/privacy",
-  ABOUT: "/shared/about",
-  BECOME_HOST: "/shared/become-host",
-  BECOME_HOST_SUCCESS: "/shared/become-host-success",
+  SEARCH_HOSTS: "/user/search-hosts",
+  COIN_HISTORY: "/user/coin-history",
+  NOTIFICATIONS: "/user/notifications",
+  SETTINGS: "/user/settings",
+  HELP_CENTER: "/user/help-center",
+  LANGUAGE: "/user/language",
+  PRIVACY: "/user/privacy",
+  ABOUT: "/user/about",
+  BECOME_HOST: "/user/become-host",
+  BECOME_HOST_SUCCESS: "/user/become-host-success",
 } as const;
 
 export default Routes;

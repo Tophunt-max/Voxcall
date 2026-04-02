@@ -183,7 +183,7 @@ export default function HostDetailScreen() {
     if (!checkCoins(audioRate)) return;
     const topics = Array.isArray(host.topics) ? host.topics : (host.topics ? String(host.topics).split(",") : []);
     initiateCall({ id: host.id, name: hostName, avatar: hostAvatar, role: "host" }, "audio", audioRate);
-    router.push({ pathname: "/shared/call/outgoing", params: { hostId: host.id, callType: "audio", hostName, hostAvatar, specialty: topics[0] ?? "" } });
+    router.push({ pathname: "/user/call/outgoing", params: { hostId: host.id, callType: "audio", hostName, hostAvatar, specialty: topics[0] ?? "" } });
   };
 
   const handleVideo = () => {
@@ -191,7 +191,7 @@ export default function HostDetailScreen() {
     if (!checkCoins(videoRate)) return;
     const topics = Array.isArray(host.topics) ? host.topics : (host.topics ? String(host.topics).split(",") : []);
     initiateCall({ id: host.id, name: hostName, avatar: hostAvatar, role: "host" }, "video", videoRate);
-    router.push({ pathname: "/shared/call/outgoing", params: { hostId: host.id, callType: "video", hostName, hostAvatar, specialty: topics[0] ?? "" } });
+    router.push({ pathname: "/user/call/outgoing", params: { hostId: host.id, callType: "video", hostName, hostAvatar, specialty: topics[0] ?? "" } });
   };
 
   const handleChat = async () => {
@@ -215,13 +215,13 @@ export default function HostDetailScreen() {
     try {
       const room = await API.createChatRoom(host.id);
       getOrCreateConversation(host.id, hostName, hostAvatar, room.id);
-      router.push(`/shared/chat/${room.id}`);
+      router.push(`/user/chat/${room.id}`);
     } catch (e: any) {
       if (e.message?.includes("CHAT_LOCKED") || e.message?.includes("locked")) {
         Alert.alert("🔒 Chat Locked", "Pehle call karo, phir chat unlock hogi!");
       } else {
         getOrCreateConversation(host.id, hostName, hostAvatar);
-        router.push(`/shared/chat/${host.id}`);
+        router.push(`/user/chat/${host.id}`);
       }
     }
   };

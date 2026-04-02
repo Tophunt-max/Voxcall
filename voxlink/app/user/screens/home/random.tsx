@@ -354,7 +354,7 @@ export default function RandomScreen() {
       adminCoinRate
     );
     router.push({
-      pathname: "/shared/call/outgoing",
+      pathname: "/user/call/outgoing",
       params: {
         hostId: matchedHost.id,
         callType,

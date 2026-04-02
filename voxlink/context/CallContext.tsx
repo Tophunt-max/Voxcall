@@ -90,7 +90,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     // Fix C3: also set sessionId = callId so acceptCall/declineCall can call the backend
     const call: ActiveCall = { callId, sessionId: callId, type, status: "incoming", participant, isMuted: false, isCameraOn: false, isSpeakerOn: false };
     updateCall(call);
-    router.push("/shared/call/incoming");
+    router.push("/user/call/incoming");
   }, []);
 
   const acceptCall = useCallback(async () => {
@@ -101,7 +101,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     if (curr.sessionId) {
       try { await API.answerCall(curr.sessionId, true); } catch {}
     }
-    router.replace(curr.type === "audio" ? "/shared/call/audio-call" : "/shared/call/video-call");
+    router.replace(curr.type === "audio" ? "/user/call/audio-call" : "/user/call/video-call");
   }, []);
 
   const markCallActive = useCallback(() => {
@@ -143,7 +143,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
     if (call) {
       router.replace({
-        pathname: "/shared/call/summary",
+        pathname: "/user/call/summary",
         params: {
           duration: String(duration),
           type: call.type,

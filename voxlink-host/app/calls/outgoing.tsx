@@ -44,7 +44,7 @@ export default function OutgoingCallScreen() {
     if (navigated.current) return;
     navigated.current = true;
     await stopRing();
-    router.replace(callType === "video" ? "/shared/call/video-call" : "/shared/call/audio-call");
+    router.replace(callType === "video" ? "/calls/video-call" : "/calls/audio-call");
   }, [callType, stopRing]);
 
   const cancelCall = useCallback(async () => {

@@ -134,7 +134,7 @@ export default function SettingsScreen() {
 
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
-          <TouchableOpacity style={styles.menuRow} onPress={() => router.push("/shared/language")}>
+          <TouchableOpacity style={styles.menuRow} onPress={() => router.push("/user/language")}>
             <View style={[styles.menuIconWrap, { backgroundColor: colors.surface }]}>
               <Image source={require("@/assets/images/lang_setting.png")} style={styles.menuIcon} resizeMode="contain" />
             </View>
@@ -147,7 +147,7 @@ export default function SettingsScreen() {
         {/* Info */}
         <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Information</Text>
         <View style={[styles.card, { backgroundColor: colors.card }]}>
-          <TouchableOpacity style={styles.menuRow} onPress={() => router.push("/shared/help-center")}>
+          <TouchableOpacity style={styles.menuRow} onPress={() => router.push("/user/help-center")}>
             <View style={[styles.menuIconWrap, { backgroundColor: colors.surface }]}>
               <Image source={require("@/assets/icons/ic_guaranteed.png")} style={styles.menuIcon} resizeMode="contain" />
             </View>
@@ -157,7 +157,7 @@ export default function SettingsScreen() {
 
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
-          <TouchableOpacity style={styles.menuRow} onPress={() => router.push("/shared/privacy")}>
+          <TouchableOpacity style={styles.menuRow} onPress={() => router.push("/user/privacy")}>
             <View style={[styles.menuIconWrap, { backgroundColor: colors.surface }]}>
               <Image source={require("@/assets/icons/ic_secure.png")} style={styles.menuIcon} resizeMode="contain" />
             </View>
@@ -167,7 +167,7 @@ export default function SettingsScreen() {
 
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
-          <TouchableOpacity style={styles.menuRow} onPress={() => router.push("/shared/about")}>
+          <TouchableOpacity style={styles.menuRow} onPress={() => router.push("/user/about")}>
             <View style={[styles.menuIconWrap, { backgroundColor: colors.surface }]}>
               <Image source={require("@/assets/icons/ic_flag.png")} style={styles.menuIcon} resizeMode="contain" />
             </View>

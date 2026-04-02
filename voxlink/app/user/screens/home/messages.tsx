@@ -84,7 +84,7 @@ export default function MessagesScreen() {
           ItemSeparatorComponent={() => <View style={[styles.separator, { backgroundColor: colors.border }]} />}
           renderItem={({ item }) => (
             <TouchableOpacity
-              onPress={() => router.push(`/shared/chat/${item.id}`)}
+              onPress={() => router.push(`/user/chat/${item.id}`)}
               style={styles.convoRow}
               activeOpacity={0.75}
             >

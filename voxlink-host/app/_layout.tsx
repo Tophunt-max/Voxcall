@@ -131,9 +131,11 @@ function RootLayoutNav() {
         <Stack.Screen name="auth/become" />
         <Stack.Screen name="auth/kyc" />
         <Stack.Screen name="auth/status" />
+        <Stack.Screen name="auth/onboarding" />
         <Stack.Screen name="calls/incoming" options={{ presentation: "fullScreenModal" }} />
         <Stack.Screen name="calls/audio-call" options={{ presentation: "fullScreenModal" }} />
         <Stack.Screen name="calls/video-call" options={{ presentation: "fullScreenModal" }} />
+        <Stack.Screen name="calls/outgoing" options={{ presentation: "fullScreenModal" }} />
         <Stack.Screen name="calls/summary" />
         <Stack.Screen name="calls/history" />
         <Stack.Screen name="chat/[id]" />
@@ -146,6 +148,7 @@ function RootLayoutNav() {
         <Stack.Screen name="privacy" />
         <Stack.Screen name="about" />
         <Stack.Screen name="referral" />
+        <Stack.Screen name="earnings-history" />
       </Stack>
       <ToastContainer />
     </>

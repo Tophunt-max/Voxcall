@@ -426,12 +426,12 @@ export default function ProfileScreen() {
           iconSource={require("@/assets/icons/ic_language.png")}
           label="Language"
           value={currentLangLabel}
-          onPress={() => router.push("/shared/language")}
+          onPress={() => router.push("/user/language")}
         />
         <MenuItem
           iconName="settings"
           label="Settings"
-          onPress={() => router.push("/shared/settings")}
+          onPress={() => router.push("/user/settings")}
         />
       </View>
 
@@ -442,27 +442,27 @@ export default function ProfileScreen() {
           iconName="gift"
           label="Refer Friends & Earn"
           subLabel="Share your code, earn free coins"
-          onPress={() => router.push("/shared/referral")}
+          onPress={() => router.push("/user/referral")}
         />
         <MenuItem
           iconName="clock"
           label="Call History"
-          onPress={() => router.push("/shared/call/history")}
+          onPress={() => router.push("/user/call/history")}
         />
         <MenuItem
           iconName="help-circle"
           label="Help & FAQ"
-          onPress={() => router.push("/shared/help-center")}
+          onPress={() => router.push("/user/help-center")}
         />
         <MenuItem
           iconName="shield"
           label="Privacy Policy"
-          onPress={() => router.push("/shared/privacy")}
+          onPress={() => router.push("/user/privacy")}
         />
         <MenuItem
           iconName="info"
           label="About VoxLink"
-          onPress={() => router.push("/shared/about")}
+          onPress={() => router.push("/user/about")}
         />
         <MenuItem
           iconName="star"

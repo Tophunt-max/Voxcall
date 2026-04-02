@@ -155,7 +155,7 @@ export default function ListenerScreen() {
       return;
     }
     initiateCall({ id: host.id, name: host.name, avatar: host.avatar, role: "host" }, type, rate);
-    router.push({ pathname: "/shared/call/outgoing", params: { hostId: host.id, callType: type, hostName: host.name, hostAvatar: host.avatar, specialty: host.specialties?.[0] ?? "" } });
+    router.push({ pathname: "/user/call/outgoing", params: { hostId: host.id, callType: type, hostName: host.name, hostAvatar: host.avatar, specialty: host.specialties?.[0] ?? "" } });
   }, [user?.coins, initiateCall]);
 
   const loadHosts = useCallback(async () => {

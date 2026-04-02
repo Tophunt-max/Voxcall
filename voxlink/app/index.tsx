@@ -99,7 +99,7 @@ export default function Index() {
       return <Redirect href="/user/screens/home" />;
     }
     if (seenOnboarding) return <Redirect href="/user/auth/login" />;
-    return <Redirect href="/shared/auth/onboarding" />;
+    return <Redirect href="/user/auth/onboarding" />;
   }
 
   /* ─── Splash UI ─── */

@@ -171,7 +171,7 @@ export function notifyNewMessage(senderName: string, message: string, chatId: st
     type: "message",
     title: senderName,
     body: message,
-    actionUrl: `/shared/chat/${chatId}`,
+    actionUrl: `/user/chat/${chatId}`,
   });
 }
 
@@ -199,6 +199,6 @@ export function notifyPurchaseSuccess(coins: number) {
     type: "payment",
     title: "Purchase Successful",
     body: `${coins.toLocaleString()} coins added to your wallet!`,
-    actionUrl: "/shared/coin-history",
+    actionUrl: "/user/coin-history",
   });
 }

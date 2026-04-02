@@ -116,11 +116,11 @@ export default function AboutScreen() {
 
         {/* Legal */}
         <View style={styles.legalRow}>
-          <TouchableOpacity onPress={() => router.push("/shared/privacy")}>
+          <TouchableOpacity onPress={() => router.push("/user/privacy")}>
             <Text style={[styles.legalLink, { color: colors.primary }]}>Privacy Policy</Text>
           </TouchableOpacity>
           <Text style={[styles.legalSep, { color: colors.border }]}>|</Text>
-          <TouchableOpacity onPress={() => router.push("/shared/help-center")}>
+          <TouchableOpacity onPress={() => router.push("/user/help-center")}>
             <Text style={[styles.legalLink, { color: colors.primary }]}>Help Center</Text>
           </TouchableOpacity>
         </View>

@@ -183,7 +183,7 @@ export default function HomeScreen() {
     }
     const avatar = host.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${host.id}`;
     initiateCall({ id: host.id, name: host.name, avatar, role: "host" }, type, rate);
-    router.push({ pathname: "/shared/call/outgoing", params: { hostId: host.id, callType: type, hostName: host.name, hostAvatar: avatar, specialty: host.specialties?.[0] ?? "" } });
+    router.push({ pathname: "/user/call/outgoing", params: { hostId: host.id, callType: type, hostName: host.name, hostAvatar: avatar, specialty: host.specialties?.[0] ?? "" } });
   }, [user?.coins, initiateCall]);
 
   const topPad = insets.top;
@@ -301,14 +301,14 @@ export default function HomeScreen() {
           </TouchableOpacity>
 
           <TouchableOpacity
-            onPress={() => router.push("/shared/search-hosts")}
+            onPress={() => router.push("/user/search-hosts")}
             style={[styles.bellBtn, { backgroundColor: colors.muted }]}
           >
             <Image source={require("@/assets/icons/ic_search.png")} style={{ width: 18, height: 18 }} tintColor={colors.text} resizeMode="contain" />
           </TouchableOpacity>
 
           <TouchableOpacity
-            onPress={() => router.push("/shared/notifications")}
+            onPress={() => router.push("/user/notifications")}
             style={[styles.bellBtn, { backgroundColor: colors.muted }]}
           >
             <Feather name="bell" size={18} color={colors.text} />
