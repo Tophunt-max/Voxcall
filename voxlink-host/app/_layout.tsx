@@ -11,7 +11,7 @@ import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
 import { Platform } from "react-native";
 import { configurePushNotifications } from "@/services/NotificationService";
-import { onForegroundMessage } from "@/services/fcm";
+import { onForegroundMessage, setupBackgroundMessageHandler } from "@/services/fcm";
 import { setupGlobalErrorHandler } from "@/services/ErrorReporter";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -57,6 +57,8 @@ function FCMNotificationTapBridge() {
           );
         }
         router.push("/calls/incoming");
+      } else if (data.type === "chat_message" && data.room_id) {
+        router.push({ pathname: "/chat/[id]", params: { id: String(data.room_id) } });
       }
     }
 
@@ -72,10 +74,43 @@ function FCMNotificationTapBridge() {
       console.log("[FCM Foreground]", title, body, data);
     });
 
+    setupBackgroundMessageHandler();
+
     return () => {
       unsubBackground();
       if (typeof unsubForeground === "function") unsubForeground();
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return null;
+}
+
+function WebNotificationBridge() {
+  const { receiveCall, activeCall } = useCall();
+
+  useEffect(() => {
+    if (Platform.OS !== "web" || typeof navigator === "undefined") return;
+
+    function handleMessage(event: MessageEvent) {
+      if (event.data?.type !== "NOTIFICATION_CLICK") return;
+      const data = event.data?.data ?? {};
+      if (data.type === "incoming_call") {
+        if (!activeCall) {
+          receiveCall(
+            { id: String(data.caller_id ?? ""), name: data.caller_name ?? "Caller", role: "user" },
+            (data.call_type as "audio" | "video") ?? "audio",
+            String(data.session_id ?? "")
+          );
+        }
+        router.push("/calls/incoming");
+      } else if (data.type === "chat_message" && data.room_id) {
+        router.push({ pathname: "/chat/[id]", params: { id: String(data.room_id) } });
+      }
+    }
+
+    navigator.serviceWorker?.addEventListener("message", handleMessage);
+    return () => navigator.serviceWorker?.removeEventListener("message", handleMessage);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -115,7 +150,12 @@ function AppBridge() {
     [activeCall, endCall]
   );
 
-  return Platform.OS !== "web" ? <FCMNotificationTapBridge /> : null;
+  return (
+    <>
+      {Platform.OS !== "web" && <FCMNotificationTapBridge />}
+      {Platform.OS === "web" && <WebNotificationBridge />}
+    </>
+  );
 }
 
 function RootLayoutNav() {

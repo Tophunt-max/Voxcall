@@ -13,7 +13,7 @@ version = "1.0.0"
 ensurePreviewReachable = "/status"
 name = "expo"
 paths = [ "/" ]
-localPort = 5000
+localPort = 8080
 
 [services.development]
 run = "pnpm --filter @workspace/voxlink run dev"

@@ -72,7 +72,7 @@ export default function CallHistoryScreen() {
   const renderItem = ({ item }: { item: CallHistoryItem }) => (
     <TouchableOpacity
       style={[styles.item, { backgroundColor: colors.card, borderBottomColor: colors.border }]}
-      onPress={() => router.push(`/calls/history{item.hostId}`)}
+      onPress={() => {}}
       activeOpacity={0.8}
     >
       <Image source={{ uri: item.hostAvatar }} style={styles.avatar} />

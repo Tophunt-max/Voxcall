@@ -1,9 +1,11 @@
 const Routes = {
   // Auth (Host-specific 5-step flow)
+  ONBOARDING: "/auth/onboarding",
   LOGIN: "/auth/login",
   REGISTER: "/auth/register",
-  BECOME_HOST: "/auth/become",
+  FORGOT_PASSWORD: "/auth/forgot-password",
   PROFILE_SETUP: "/auth/profile-setup",
+  BECOME_HOST: "/auth/become",
   KYC: "/auth/kyc",
   HOST_STATUS: "/auth/status",
 
@@ -15,6 +17,7 @@ const Routes = {
   PROFILE: "/(tabs)/profile",
 
   // Call Screens
+  OUTGOING_CALL: "/calls/outgoing",
   INCOMING_CALL: "/calls/incoming",
   AUDIO_CALL: "/calls/audio-call",
   VIDEO_CALL: "/calls/video-call",
@@ -24,9 +27,18 @@ const Routes = {
   // Chat
   CHAT_ROOM: (id: string) => `/chat/${id}`,
 
-  // Other Screens
+  // Profile
+  EDIT_PROFILE: "/profile/edit",
+
+  // Info / Utility
   NOTIFICATIONS: "/notifications",
   SETTINGS: "/settings",
+  EARNINGS_HISTORY: "/earnings-history",
+  REFERRAL: "/referral",
+  HELP_CENTER: "/help-center",
+  LANGUAGE: "/language",
+  PRIVACY: "/privacy",
+  ABOUT: "/about",
 } as const;
 
 export default Routes;
