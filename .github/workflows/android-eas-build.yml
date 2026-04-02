@@ -62,11 +62,11 @@ jobs:
           pnpm exec expo prebuild \
             --platform android \
             --clean \
-            --non-interactive
+            --non-interactive \
+            --no-install
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           EXPO_PUBLIC_API_URL: ${{ vars.EXPO_PUBLIC_API_URL }}
-          EXPO_PUBLIC_FIREBASE_VAPID_KEY: ${{ vars.EXPO_PUBLIC_FIREBASE_VAPID_KEY }}
           EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: "128169786412"
           EXPO_PUBLIC_FIREBASE_PROJECT_ID: "connectme-80909"
           EXPO_PUBLIC_FIREBASE_APP_ID: "1:128169786412:android:6afbab51b285c0eb98e589"
