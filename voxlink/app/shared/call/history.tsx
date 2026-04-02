@@ -55,7 +55,7 @@ export default function CallHistoryScreen() {
           id: c.id,
           hostId: c.host_id || "",
           hostName: c.host_name || c.host_display_name || "Host",
-          hostAvatar: c.host_avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${c.host_id || c.id}`,
+          hostAvatar: c.host_avatar || `https://api.dicebear.com/7.x/avataaars/png?seed=${c.host_id || c.id}`,
           type: (c.type || "audio") as "audio" | "video",
           status: mapStatus(c.status || ""),
           durationSecs: c.duration_seconds || 0,

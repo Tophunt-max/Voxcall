@@ -1,8 +1,10 @@
 import React, { useState } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform, Image } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform, Image, Alert } from "react-native";
+import * as ImagePicker from "expo-image-picker";
 import AppInput from "@/components/AppInput";
 import { showSuccessToast } from "@/components/Toast";
 import { router } from "expo-router";
+import { API } from "@/services/api";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
@@ -16,16 +18,53 @@ export default function EditProfileScreen() {
   const [name, setName] = useState(user?.name ?? "");
   const [bio, setBio] = useState(user?.bio ?? "");
   const [loading, setLoading] = useState(false);
+  const [avatarUri, setAvatarUri] = useState<string | null>(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   const topPad = insets.top;
 
   const handleSave = async () => {
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 800));
-    await updateProfile({ name, bio });
-    setLoading(false);
-    showSuccessToast("Your profile has been updated.", "Profile Saved");
-    router.back();
+    try {
+      await updateProfile({ name, bio });
+      showSuccessToast("Your profile has been updated.", "Profile Saved");
+      router.back();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAvatarPress = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== "granted") {
+      Alert.alert("Permission Required", "Please allow access to your photo library to change your avatar.");
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.85,
+    });
+    if (result.canceled) return;
+    const asset = result.assets[0];
+    setAvatarUri(asset.uri);
+    try {
+      setUploadingAvatar(true);
+      const formData = new FormData();
+      const ext = asset.uri.split(".").pop() || "jpg";
+      formData.append("file", { uri: asset.uri, name: `avatar_${user?.id ?? "user"}.${ext}`, type: `image/${ext}` } as any);
+      formData.append("path", `avatars/${user?.id ?? "user"}/avatar.${ext}`);
+      const uploadData = await API.uploadFile(formData);
+      if (uploadData?.url) {
+        await updateProfile({ avatar: uploadData.url });
+      }
+    } catch {
+      Alert.alert("Upload Failed", "Could not upload avatar. Please try again.");
+      setAvatarUri(null);
+    } finally {
+      setUploadingAvatar(false);
+    }
   };
 
   return (
@@ -39,12 +78,19 @@ export default function EditProfileScreen() {
       </View>
 
       <View style={styles.content}>
-        <View style={styles.avatarSection}>
-          <Image source={{ uri: `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.id ?? "user"}` }} style={[styles.avatar, { borderColor: colors.border }]} />
-          <TouchableOpacity style={[styles.changeAvatarBtn, { backgroundColor: colors.primary }]}>
-            <Feather name="camera" size={16} color="#fff" />
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity onPress={handleAvatarPress} activeOpacity={0.85} style={styles.avatarSection}>
+          <Image
+            source={{ uri: avatarUri ?? user?.avatar ?? `https://api.dicebear.com/7.x/avataaars/png?seed=${user?.id ?? "user"}` }}
+            style={[styles.avatar, { borderColor: colors.border }]}
+          />
+          <View style={[styles.changeAvatarBtn, { backgroundColor: colors.primary }]}>
+            {uploadingAvatar ? (
+              <Feather name="refresh-cw" size={14} color="#fff" />
+            ) : (
+              <Feather name="camera" size={16} color="#fff" />
+            )}
+          </View>
+        </TouchableOpacity>
 
         <View style={styles.form}>
           <View>

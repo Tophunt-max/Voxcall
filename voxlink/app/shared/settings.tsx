@@ -49,7 +49,7 @@ export default function SettingsScreen() {
   const handleLogout = () => {
     Alert.alert("Sign Out", "Are you sure you want to sign out?", [
       { text: "Cancel", style: "cancel" },
-      { text: "Sign Out", style: "destructive", onPress: async () => { await logout(); router.replace("/user/auth/login"); } }
+      { text: "Sign Out", style: "destructive", onPress: async () => { await logout(); router.replace("/shared/auth/role-select"); } }
     ]);
   };
 

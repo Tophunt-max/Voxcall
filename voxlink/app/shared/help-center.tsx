@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, Image,
-  ScrollView, Platform, Animated
+  ScrollView, Platform, Animated, Linking
 } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -63,7 +63,7 @@ export default function HelpCenterScreen() {
         </View>
 
         {/* Contact Support */}
-        <TouchableOpacity style={[styles.contactCard, { backgroundColor: colors.card }]} activeOpacity={0.8}>
+        <TouchableOpacity style={[styles.contactCard, { backgroundColor: colors.card }]} activeOpacity={0.8} onPress={() => Linking.openURL("mailto:support@voxlink.app")}>
           <Image source={require("@/assets/images/help_person.png")} style={styles.contactImg} resizeMode="contain" />
           <View style={{ flex: 1, gap: 4 }}>
             <Text style={[styles.contactTitle, { color: colors.text }]}>Have an Issue?</Text>

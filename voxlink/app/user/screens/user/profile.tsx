@@ -145,7 +145,7 @@ export default function ProfileScreen() {
   useEffect(() => {
     (async () => {
       try {
-        const history = await API.callAPI.getCallHistory();
+        const history = await API.getCallHistory();
         setCallCount(Array.isArray(history) ? history.length : 0);
       } catch {
         setCallCount(0);
