@@ -39,11 +39,15 @@ function startService(name, cmd, args, env = {}) {
 }
 
 function startAllServices() {
-  const expoEnv = {
-    EXPO_PACKAGER_PROXY_URL: `https://${process.env.REPLIT_EXPO_DEV_DOMAIN || 'localhost'}`,
-    EXPO_PUBLIC_DOMAIN: process.env.REPLIT_DEV_DOMAIN || 'localhost',
+  const domain = process.env.REPLIT_DEV_DOMAIN || 'localhost';
+  const expoDomain = process.env.REPLIT_EXPO_DEV_DOMAIN || 'localhost';
+  const apiUrl = `https://${domain}`;
+
+  const commonExpoEnv = {
+    EXPO_PUBLIC_DOMAIN: domain,
     EXPO_PUBLIC_REPL_ID: process.env.REPL_ID || '',
-    REACT_NATIVE_PACKAGER_HOSTNAME: process.env.REPLIT_DEV_DOMAIN || 'localhost',
+    REACT_NATIVE_PACKAGER_HOSTNAME: domain,
+    EXPO_PUBLIC_API_URL: apiUrl,
   };
 
   // Admin Panel (Vite on port 5000)
@@ -52,15 +56,17 @@ function startAllServices() {
     PORT: String(ADMIN_PORT),
   });
 
-  // User App (Expo/Metro on port 8080)
+  // User App (Expo/Metro on port 8080) — uses expo domain for QR code
   startService('voxlink-user', 'pnpm', ['--filter', '@workspace/voxlink', 'run', 'dev'], {
-    ...expoEnv,
+    ...commonExpoEnv,
+    EXPO_PACKAGER_PROXY_URL: `https://${expoDomain}`,
     PORT: String(USER_APP_PORT),
   });
 
-  // Host App (Expo/Metro on port 8099)
+  // Host App (Expo/Metro on port 8099) — no expo domain to avoid conflict with user app
+  // Access via Gateway: https://[domain]/host/
   startService('voxlink-host', 'pnpm', ['--filter', '@workspace/voxlink-host', 'run', 'dev'], {
-    ...expoEnv,
+    ...commonExpoEnv,
     PORT: String(HOST_APP_PORT),
   });
 
@@ -73,6 +79,7 @@ function getTargetPort(url) {
   const p = url || '/';
   if (p.startsWith('/admin-panel')) return ADMIN_PORT;
   if (p.startsWith('/host')) return HOST_APP_PORT;
+  if (p.startsWith('/api')) return API_PORT;
   return USER_APP_PORT;
 }
 
