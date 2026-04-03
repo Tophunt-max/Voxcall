@@ -4,7 +4,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity,
   ScrollView, Image, ActivityIndicator, TextInput,
 } from "react-native";
-import { showErrorToast, showSuccessToast } from "@/components/Toast";
+import { showErrorToast } from "@/components/Toast";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -102,7 +102,7 @@ export default function HostKYCScreen() {
     }
 
     if (!dob.trim()) {
-      showErrorToast("Please enter your date of birth (YYYY-MM-DD).", "Missing DOB");
+      showErrorToast("Date of birth is missing. Please go back to Step 2 and select your DOB.", "Missing DOB");
       return;
     }
 
@@ -192,16 +192,26 @@ export default function HostKYCScreen() {
         </View>
 
         <Text style={s.fieldLabel}>Date of Birth</Text>
-        <TextInput
-          style={s.dobInput}
-          placeholder="YYYY-MM-DD (e.g. 1998-05-22)"
-          placeholderTextColor="#aaa"
-          value={dob}
-          onChangeText={setDob}
-          keyboardType="numbers-and-punctuation"
-          maxLength={10}
-          autoCorrect={false}
-        />
+        {dob ? (
+          <View style={s.dobReview}>
+            <Feather name="calendar" size={16} color={ACCENT} />
+            <Text style={s.dobReviewTxt}>{dob}</Text>
+            <View style={s.dobBadge}>
+              <Text style={s.dobBadgeTxt}>From Step 2</Text>
+            </View>
+          </View>
+        ) : (
+          <TextInput
+            style={s.dobInput}
+            placeholder="DD/MM/YYYY (e.g. 22/05/1998)"
+            placeholderTextColor="#aaa"
+            value={dob}
+            onChangeText={setDob}
+            keyboardType="numbers-and-punctuation"
+            maxLength={10}
+            autoCorrect={false}
+          />
+        )}
 
         {DOCS.map((doc) => {
           const picked = files[doc.key];
@@ -286,6 +296,10 @@ const s = StyleSheet.create({
   noticeTxt: { flex: 1, fontSize: 12, fontFamily: "Poppins_400Regular", color: "#111329", lineHeight: 18 },
   fieldLabel: { fontSize: 13, fontFamily: "Poppins_600SemiBold", color: "#111329", marginBottom: 6 },
   dobInput: { borderWidth: 1, borderColor: "#E8EAF0", borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, fontFamily: "Poppins_400Regular", color: "#111329", backgroundColor: "#F8F9FC" },
+  dobReview: { flexDirection: "row", alignItems: "center", gap: 10, borderRadius: 12, borderWidth: 1, borderColor: "#D1F0DA", backgroundColor: "#F0FDF4", paddingHorizontal: 14, paddingVertical: 12 },
+  dobReviewTxt: { flex: 1, fontSize: 14, fontFamily: "Poppins_500Medium", color: "#111329" },
+  dobBadge: { backgroundColor: "#22C55E", borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
+  dobBadgeTxt: { fontSize: 10, fontFamily: "Poppins_500Medium", color: "#fff" },
   docCard: { flexDirection: "row", alignItems: "center", gap: 14, borderRadius: 16, borderWidth: 1, borderColor: "#E8EAF0", padding: 16, backgroundColor: "#F8F9FC" },
   docCardDone: { borderColor: "#22C55E", backgroundColor: "#F0FDF4" },
   docIconBg: { width: 46, height: 46, borderRadius: 23, backgroundColor: "#F0E6FC", alignItems: "center", justifyContent: "center" },

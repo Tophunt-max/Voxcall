@@ -7,7 +7,7 @@ import {
 import { showErrorToast } from "@/components/Toast";
 import AppInput from "@/components/AppInput";
 import { LinearGradient } from "expo-linear-gradient";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { useAuth } from "@/context/AuthContext";
@@ -25,6 +25,7 @@ const LANGUAGE_OPTIONS = ["Hindi", "English", "Tamil", "Telugu", "Kannada", "Ben
 
 export default function HostBecomeScreen() {
   const insets = useSafeAreaInsets();
+  const params = useLocalSearchParams<{ dob?: string }>();
   const [specialties, setSpecialties] = useState<string[]>([]);
   const [languages, setLanguages] = useState<string[]>(["Hindi"]);
   const [bio, setBio] = useState("");
@@ -48,7 +49,7 @@ export default function HostBecomeScreen() {
       showErrorToast("Please write a bio of at least 20 characters.", "Bio Too Short");
       return;
     }
-    // Pass data via router params to KYC step
+    // Pass data via router params to KYC step (including DOB from profile-setup)
     router.push({
       pathname: "/auth/kyc",
       params: {
@@ -58,6 +59,7 @@ export default function HostBecomeScreen() {
         audioRate,
         videoRate,
         experience: experience.trim(),
+        dob: params.dob ?? "",
       },
     });
   };

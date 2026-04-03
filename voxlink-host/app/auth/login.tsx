@@ -1,7 +1,7 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  ScrollView, Image,
+  ScrollView, Image, Platform, Alert, ActivityIndicator,
 } from "react-native";
 import AppInput from "@/components/AppInput";
 import { showErrorToast, showInfoToast } from "@/components/Toast";
@@ -12,9 +12,19 @@ import { Feather } from "@expo/vector-icons";
 import { useAuth } from "@/context/AuthContext";
 import { PrimaryButton } from "@/components/PrimaryButton";
 import { API } from "@/services/api";
+import * as WebBrowser from "expo-web-browser";
+import * as Google from "expo-auth-session/providers/google";
+
+WebBrowser.maybeCompleteAuthSession();
 
 const DARK = "#111329";
 const ACCENT = "#A00EE7";
+const GOOGLE_WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || "";
+
+function isNetworkError(err: any): boolean {
+  const msg = (err?.message || "").toLowerCase();
+  return msg.includes("network") || msg.includes("fetch") || msg.includes("connection") || msg.includes("timeout");
+}
 
 export default function HostLoginScreen() {
   const insets = useSafeAreaInsets();
@@ -23,6 +33,33 @@ export default function HostLoginScreen() {
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+
+  const [, response, promptAsync] = Google.useAuthRequest({
+    webClientId: GOOGLE_WEB_CLIENT_ID || "not-configured",
+    selectAccount: true,
+  });
+
+  useEffect(() => {
+    if (!response) return;
+    if (response.type === "success") {
+      const accessToken = response.authentication?.accessToken;
+      if (accessToken) {
+        handleGoogleToken(accessToken);
+      } else {
+        setGoogleLoading(false);
+        showErrorToast("Google sign-in failed. Try again.");
+      }
+    } else if (response.type === "error") {
+      setGoogleLoading(false);
+      const msg = response.error?.message || "";
+      if (!msg.toLowerCase().includes("cancel")) {
+        showErrorToast(msg || "Google sign-in failed", "Sign In Failed");
+      }
+    } else if (response.type === "dismiss") {
+      setGoogleLoading(false);
+    }
+  }, [response]);
 
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
@@ -52,7 +89,6 @@ export default function HostLoginScreen() {
       if (userData.role === "host") {
         router.replace("/(tabs)");
       } else {
-        // Regular user — redirect to status page (not a host yet)
         showInfoToast(
           "Your account is not a host account. If you applied, check your application status below.",
           "Not a Host"
@@ -66,8 +102,94 @@ export default function HostLoginScreen() {
     }
   };
 
-  const handleGoogleLogin = () => {
-    showInfoToast("Google Sign-In will be available in the next update.", "Coming Soon");
+  const handleGoogleLogin = async () => {
+    setGoogleLoading(true);
+    try {
+      if (Platform.OS === "web") {
+        const { GoogleAuthProvider, signInWithPopup } = await import("firebase/auth");
+        const { auth } = await import("@/services/firebase");
+        const provider = new GoogleAuthProvider();
+        const result = await signInWithPopup(auth, provider);
+        const u = result.user;
+        await handleGoogleProfileData(u.uid, u.displayName || "User", u.email || "", u.photoURL);
+      } else {
+        if (!GOOGLE_WEB_CLIENT_ID) {
+          setGoogleLoading(false);
+          Alert.alert(
+            "Setup Required",
+            "Google Sign-In is not configured yet.\n\nPlease use email/password to continue.",
+            [{ text: "OK" }]
+          );
+          return;
+        }
+        await promptAsync();
+      }
+    } catch (err: any) {
+      setGoogleLoading(false);
+      if (isNetworkError(err)) {
+        showErrorToast("No internet connection. Please check your network.", "Connection Error");
+      } else if (!err?.message?.toLowerCase().includes("cancel")) {
+        showErrorToast(err?.message || "Google sign-in failed", "Sign In Failed");
+      }
+    }
+  };
+
+  const handleGoogleToken = async (accessToken: string) => {
+    try {
+      const res = await fetch("https://www.googleapis.com/userinfo/v2/me", {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!res.ok) throw new Error("Failed to get Google profile");
+      const gUser = await res.json() as { id: string; name: string; email: string; picture?: string };
+      await handleGoogleProfileData(gUser.id, gUser.name, gUser.email, gUser.picture ?? null);
+    } catch (err: any) {
+      if (isNetworkError(err)) {
+        showErrorToast("No internet connection. Please check your network.", "Connection Error");
+      } else {
+        showErrorToast(err?.message || "Google sign-in failed", "Sign In Failed");
+      }
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
+
+  const handleGoogleProfileData = async (
+    id: string, name: string, email: string, photo?: string | null
+  ) => {
+    try {
+      const data = await API.googleLogin(email, name, id, photo ?? null);
+      const userData = data.user;
+      await loginWithToken(data.token, {
+        id: userData.id,
+        name: userData.name,
+        email: userData.email,
+        avatar: photo || userData.avatar_url || undefined,
+        coins: userData.coins ?? 0,
+        role: userData.role ?? "user",
+        gender: userData.gender,
+        phone: userData.phone,
+        bio: userData.bio,
+      });
+      if (userData.role === "host") {
+        // Existing approved host → go to dashboard
+        router.replace("/(tabs)");
+      } else {
+        // New or unapproved user → redirect to complete host profile & KYC
+        showInfoToast(
+          "Welcome! Please complete your host profile and KYC to start earning.",
+          "Almost There"
+        );
+        router.replace("/auth/profile-setup");
+      }
+    } catch (err: any) {
+      if (isNetworkError(err)) {
+        showErrorToast("No internet connection. Please check your network.", "Connection Error");
+      } else {
+        showErrorToast(err?.message || "Sign-in failed. Please try again.", "Sign In Failed");
+      }
+    } finally {
+      setGoogleLoading(false);
+    }
   };
 
   return (
@@ -124,11 +246,22 @@ export default function HostLoginScreen() {
           <View style={s.divLine} />
         </View>
 
-        <TouchableOpacity onPress={handleGoogleLogin} style={s.googleBtn} activeOpacity={0.8}>
-          <View style={s.googleIco}>
-            <Text style={{ fontSize: 16, fontFamily: "Poppins_700Bold" }}>G</Text>
-          </View>
-          <Text style={s.googleTxt}>Continue with Google</Text>
+        <TouchableOpacity
+          onPress={handleGoogleLogin}
+          style={[s.googleBtn, googleLoading && { opacity: 0.6 }]}
+          activeOpacity={0.8}
+          disabled={googleLoading}
+        >
+          {googleLoading ? (
+            <ActivityIndicator size="small" color={DARK} />
+          ) : (
+            <View style={s.googleIco}>
+              <Text style={{ fontSize: 16, fontFamily: "Poppins_700Bold" }}>G</Text>
+            </View>
+          )}
+          <Text style={s.googleTxt}>
+            {googleLoading ? "Signing in..." : "Continue with Google"}
+          </Text>
         </TouchableOpacity>
 
         <View style={s.infoBanner}>

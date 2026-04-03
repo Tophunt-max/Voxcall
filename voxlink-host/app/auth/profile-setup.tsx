@@ -1,8 +1,8 @@
 // Host Registration — Step 2: Profile Info
 import React, { useState } from "react";
 import {
-  View, Text, StyleSheet, TouchableOpacity,
-  ScrollView, Platform, Modal, FlatList,
+  View, Text, StyleSheet, TouchableOpacity, Image,
+  ScrollView, Platform, Modal, FlatList, ActivityIndicator,
 } from "react-native";
 import { showErrorToast } from "@/components/Toast";
 import AppInput from "@/components/AppInput";
@@ -13,6 +13,9 @@ import { Feather } from "@expo/vector-icons";
 import { useAuth } from "@/context/AuthContext";
 import { PrimaryButton } from "@/components/PrimaryButton";
 import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
+import * as ImagePicker from "expo-image-picker";
+import { appendFileToFormData } from "@/utils/fileUpload";
+import { API } from "@/services/api";
 
 const DARK = "#111329";
 const ACCENT = "#A00EE7";
@@ -163,6 +166,11 @@ export default function HostProfileSetupScreen() {
   const [phone, setPhone] = useState(user?.phone ?? "");
   const [loading, setLoading] = useState(false);
 
+  // Avatar upload state
+  const [avatarUri, setAvatarUri] = useState<string | null>(user?.avatar ?? null);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+
   // iOS / Android native picker
   const [showNativePicker, setShowNativePicker] = useState(false);
   // Web custom picker
@@ -184,6 +192,32 @@ export default function HostProfileSetupScreen() {
     }
   };
 
+  const handlePickAvatar = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+    if (result.canceled) return;
+    const asset = result.assets[0];
+    setAvatarUri(asset.uri);
+    setAvatarUploading(true);
+    try {
+      const ext = asset.uri.split(".").pop()?.split("?")[0] || "jpg";
+      const formData = new FormData();
+      await appendFileToFormData(formData, "file", asset.uri, `avatar_${user?.id ?? "host"}.${ext}`, `image/${ext}`);
+      formData.append("path", `avatars/${user?.id ?? "host"}.${ext}`);
+      const uploaded = await API.uploadFile(formData);
+      setAvatarUrl(uploaded.url);
+    } catch {
+      showErrorToast("Could not upload photo. Please try again.", "Upload Failed");
+      setAvatarUri(null);
+    } finally {
+      setAvatarUploading(false);
+    }
+  };
+
   const handleNext = async () => {
     if (!displayName.trim() || !dob.trim() || !gender || !phone.trim()) {
       showErrorToast("Please fill in all required fields.", "Missing Fields");
@@ -194,9 +228,17 @@ export default function HostProfileSetupScreen() {
       return;
     }
     setLoading(true);
-    await updateProfile({ name: displayName.trim(), gender: gender as any, phone: phone.trim(), dob: dob.trim() });
+    await updateProfile({
+      name: displayName.trim(),
+      gender: gender as any,
+      phone: phone.trim(),
+      ...(avatarUrl ? { avatar: avatarUrl } : {}),
+    });
     setLoading(false);
-    router.push("/auth/become");
+    router.push({
+      pathname: "/auth/become",
+      params: { dob: dob.trim() },
+    });
   };
 
   return (
@@ -231,6 +273,34 @@ export default function HostProfileSetupScreen() {
       >
         <Text style={s.sectionTitle}>Your Profile Info</Text>
         <Text style={s.sectionSub}>This will be visible to users calling you</Text>
+
+        {/* ── Profile Photo ── */}
+        <View style={s.avatarSection}>
+          <TouchableOpacity
+            onPress={handlePickAvatar}
+            style={s.avatarWrap}
+            activeOpacity={0.8}
+            disabled={avatarUploading}
+          >
+            {avatarUri ? (
+              <Image source={{ uri: avatarUri }} style={s.avatarImg} />
+            ) : (
+              <View style={s.avatarPlaceholder}>
+                <Feather name="user" size={36} color="#B0B3C7" />
+              </View>
+            )}
+            <View style={s.cameraBtn}>
+              {avatarUploading ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Feather name="camera" size={14} color="#fff" />
+              )}
+            </View>
+          </TouchableOpacity>
+          <Text style={s.avatarHint}>
+            {avatarUploading ? "Uploading..." : "Tap to add profile photo"}
+          </Text>
+        </View>
 
         <AppInput
           icon={<Feather name="user" size={18} color="#84889F" />}
@@ -309,7 +379,7 @@ export default function HostProfileSetupScreen() {
           ))}
         </View>
 
-        <PrimaryButton title="Continue →  Host Info" onPress={handleNext} loading={loading} />
+        <PrimaryButton title="Continue →  Host Info" onPress={handleNext} loading={loading || avatarUploading} />
       </ScrollView>
     </View>
   );
@@ -334,6 +404,12 @@ const s = StyleSheet.create({
   form: { paddingHorizontal: 24, paddingTop: 28, gap: 14 },
   sectionTitle: { fontSize: 18, fontFamily: "Poppins_700Bold", color: "#111329" },
   sectionSub: { fontSize: 13, fontFamily: "Poppins_400Regular", color: "#84889F", marginTop: -8, marginBottom: 4 },
+  avatarSection: { alignItems: "center", gap: 10, marginBottom: 8 },
+  avatarWrap: { position: "relative", width: 96, height: 96 },
+  avatarImg: { width: 96, height: 96, borderRadius: 48, borderWidth: 3, borderColor: ACCENT },
+  avatarPlaceholder: { width: 96, height: 96, borderRadius: 48, backgroundColor: "#F0E9FD", borderWidth: 2, borderColor: "#E0CDFB", alignItems: "center", justifyContent: "center" },
+  cameraBtn: { position: "absolute", bottom: 0, right: 0, width: 28, height: 28, borderRadius: 14, backgroundColor: ACCENT, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: "#fff" },
+  avatarHint: { fontSize: 12, fontFamily: "Poppins_400Regular", color: "#84889F" },
   dobField: {
     flexDirection: "row", alignItems: "center", gap: 12,
     borderRadius: 14, borderWidth: 1, borderColor: "#E8EAF0",
