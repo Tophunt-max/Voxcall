@@ -5,7 +5,6 @@ const Routes = {
   // Auth
   ONBOARDING: "/user/auth/onboarding",
   LOGIN: "/user/auth/login",
-  REGISTER: "/user/auth/register",
   VERIFY_OTP: "/user/auth/verify-otp",
   FILL_PROFILE: "/user/auth/fill-profile",
   SELECT_GENDER: "/user/auth/select-gender",

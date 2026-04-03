@@ -200,8 +200,8 @@ export default function LoginScreen() {
       </LinearGradient>
 
       <View style={[s.card, { paddingBottom: insets.bottom + 32 }]}>
-        <Text style={s.welcomeTitle}>Welcome Back</Text>
-        <Text style={s.welcomeSub}>Sign in to continue browsing hosts and chatting</Text>
+        <Text style={s.welcomeTitle}>Welcome to VoxLink</Text>
+        <Text style={s.welcomeSub}>New user? We'll create your account automatically on first login</Text>
 
         <TouchableOpacity
           style={[s.googleBtn, isLoading && s.btnDisabled]}
