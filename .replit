@@ -18,29 +18,17 @@ env = { "CI" = "true" }
 runButton = "Project"
 
 [[workflows.workflow]]
-name = "Project"
-mode = "parallel"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "voxlink-host: expo"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "VoxLink Gateway"
-
-[[workflows.workflow]]
 name = "voxlink-host: expo"
 author = "agent"
-
-[workflows.workflow.metadata]
-outputType = "webview"
+mode = "sequential"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "PORT=8099 pnpm --filter @workspace/voxlink-host run dev"
 waitForPort = 8099
+
+[workflows.workflow.metadata]
+outputType = "webview"
 
 [[workflows.workflow]]
 name = "VoxLink Gateway"
@@ -53,6 +41,65 @@ waitForPort = 3000
 
 [workflows.workflow.metadata]
 outputType = "webview"
+
+[[workflows.workflow]]
+name = "admin-panel: web"
+author = "agent"
+mode = "sequential"
+
+[workflows.workflow.metadata]
+outputType = "webview"
+artifactId = "artifacts/admin-panel"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pnpm --filter @workspace/admin-panel run dev"
+cwd = "./admin-panel"
+waitForPort = 5000
+router = "path"
+
+[workflows.workflow.tasks.env]
+PORT = "5000"
+BASE_PATH = "/admin-panel/"
+
+[[workflows.workflow]]
+name = "voxlink: expo"
+author = "agent"
+mode = "sequential"
+
+[workflows.workflow.metadata]
+outputType = "webview"
+artifactId = "artifacts/voxlink"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pnpm --filter @workspace/voxlink run dev"
+cwd = "./voxlink"
+waitForPort = 8080
+ensurePreviewReachable = "/status"
+router = "path"
+
+[workflows.workflow.tasks.env]
+PORT = "8080"
+BASE_PATH = "/"
+
+[[workflows.workflow]]
+name = "api-server: API Server"
+author = "agent"
+mode = "sequential"
+
+[workflows.workflow.metadata]
+outputType = "webview"
+artifactId = "3B4_FFSkEVBkAeYMFRJ2e"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pnpm --filter @workspace/api-server run dev"
+cwd = "./api-server"
+waitForPort = 8787
+
+[workflows.workflow.tasks.env]
+PORT = "8787"
 
 [agent]
 stack = "PNPM_WORKSPACE"

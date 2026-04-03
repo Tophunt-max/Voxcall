@@ -1,0 +1,26 @@
+kind = "mobile"
+previewPath = "/host/"
+title = "VoxLink Host App"
+version = "1.0.0"
+id = "artifacts/voxlink-host"
+router = "path"
+
+[[integratedSkills]]
+name = "expo"
+version = "1.0.0"
+
+[[services]]
+name = "expo"
+paths = [ "/host/" ]
+localPort = 8099
+
+[services.development]
+run = "PORT=8099 pnpm --filter @workspace/voxlink-host run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/voxlink-host", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/voxlink-host", "run", "serve" ]
+
+[services.env]
+PORT = "8099"
+BASE_PATH = "/host/"
