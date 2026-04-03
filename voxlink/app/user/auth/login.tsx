@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity,
   Image, ActivityIndicator, Platform, Alert,
@@ -6,7 +6,6 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Feather } from "@expo/vector-icons";
 import * as WebBrowser from "expo-web-browser";
 import * as Google from "expo-auth-session/providers/google";
 import * as Application from "expo-application";
@@ -21,8 +20,6 @@ WebBrowser.maybeCompleteAuthSession();
 const ACCENT = "#A00EE7";
 const DEVICE_ID_KEY = "@voxlink_device_id";
 
-// Web Client ID from Firebase Console → Authentication → Sign-in method → Google → Web client ID
-// Set this in .env as EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID
 const GOOGLE_WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || "";
 
 async function getDeviceId(): Promise<string> {
@@ -34,12 +31,17 @@ async function getDeviceId(): Promise<string> {
       const vendorId = await Application.getIosIdForVendorAsync();
       if (vendorId) return `ios_${vendorId}`;
     }
-  } catch { /* Intentional: platform API may not be available, fallback to generated ID below */ }
+  } catch {}
   const stored = await AsyncStorage.getItem(DEVICE_ID_KEY);
   if (stored) return stored;
   const generated = `dev_${Math.random().toString(36).slice(2)}_${Date.now()}`;
   await AsyncStorage.setItem(DEVICE_ID_KEY, generated);
   return generated;
+}
+
+function isNetworkError(err: any): boolean {
+  const msg = (err?.message || "").toLowerCase();
+  return msg.includes("network") || msg.includes("fetch") || msg.includes("connection") || msg.includes("timeout");
 }
 
 export default function LoginScreen() {
@@ -48,7 +50,6 @@ export default function LoginScreen() {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [quickLoading, setQuickLoading] = useState(false);
 
-  // expo-auth-session for native Google Sign-In
   const [, response, promptAsync] = Google.useAuthRequest({
     webClientId: GOOGLE_WEB_CLIENT_ID || "not-configured",
     selectAccount: true,
@@ -79,7 +80,6 @@ export default function LoginScreen() {
     setGoogleLoading(true);
     try {
       if (Platform.OS === "web") {
-        // Web: use Firebase signInWithPopup (auto-handles OAuth, no extra client ID needed)
         const { GoogleAuthProvider, signInWithPopup } = await import("firebase/auth");
         const { auth } = await import("@/services/firebase");
         const provider = new GoogleAuthProvider();
@@ -87,12 +87,11 @@ export default function LoginScreen() {
         const u = result.user;
         await handleGoogleProfileData(u.uid, u.displayName || "User", u.email || "", u.photoURL);
       } else {
-        // Native: use expo-auth-session (works in Expo Go + custom builds)
         if (!GOOGLE_WEB_CLIENT_ID) {
           setGoogleLoading(false);
           Alert.alert(
             "Setup Required",
-            "To enable Google Sign-In:\n\n1. Firebase Console → connectme-80909\n2. Authentication → Sign-in method\n3. Enable Google provider\n4. Copy the Web Client ID\n5. Add to .env:\nEXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=your_client_id\n\nFor now, use Quick Login to continue.",
+            "Google Sign-In is not configured yet.\n\nPlease use Quick Login to continue.",
             [{ text: "OK" }]
           );
           return;
@@ -102,10 +101,12 @@ export default function LoginScreen() {
     } catch (err: any) {
       setGoogleLoading(false);
       const msg = err?.message || "";
-      if (msg.includes("CONFIGURATION_NOT_FOUND") || msg.includes("configuration-not-found")) {
+      if (isNetworkError(err)) {
+        showErrorToast("No internet connection. Please check your network.", "Connection Error");
+      } else if (msg.includes("CONFIGURATION_NOT_FOUND") || msg.includes("configuration-not-found")) {
         Alert.alert(
-          "Firebase Setup Required",
-          "Google Sign-In is not enabled in your Firebase project.\n\nSteps to fix:\n1. Go to Firebase Console\n2. Authentication → Sign-in method\n3. Enable Google provider\n4. Add your app domain to authorized domains\n\nUse Quick Login for now.",
+          "Google Sign-In Unavailable",
+          "Google Sign-In is not enabled for this app.\n\nPlease use Quick Login to continue.",
           [{ text: "OK" }]
         );
       } else if (!msg.toLowerCase().includes("cancel")) {
@@ -123,7 +124,11 @@ export default function LoginScreen() {
       const gUser = await res.json() as { id: string; name: string; email: string; picture?: string };
       await handleGoogleProfileData(gUser.id, gUser.name, gUser.email, gUser.picture ?? null);
     } catch (err: any) {
-      showErrorToast(err?.message || "Google sign-in failed", "Sign In Failed");
+      if (isNetworkError(err)) {
+        showErrorToast("No internet connection. Please check your network.", "Connection Error");
+      } else {
+        showErrorToast(err?.message || "Google sign-in failed", "Sign In Failed");
+      }
     } finally {
       setGoogleLoading(false);
     }
@@ -145,6 +150,12 @@ export default function LoginScreen() {
       await loginWithToken(data.token, profile);
       showSuccessToast(`Welcome, ${profile.name}!`);
       router.replace("/user/screens/home");
+    } catch (err: any) {
+      if (isNetworkError(err)) {
+        showErrorToast("No internet connection. Please check your network.", "Connection Error");
+      } else {
+        showErrorToast(err?.message || "Sign-in failed. Please try again.", "Sign In Failed");
+      }
     } finally {
       setGoogleLoading(false);
     }
@@ -168,10 +179,16 @@ export default function LoginScreen() {
       await loginWithToken(data.token, profile);
       if (data.is_returning) {
         showSuccessToast("Welcome back!", "Quick Login");
+      } else {
+        showSuccessToast("Account created! Welcome to VoxLink.", "Welcome");
       }
       router.replace("/user/screens/home");
-    } catch {
-      showErrorToast("Quick Login failed. Please try again.");
+    } catch (err: any) {
+      if (isNetworkError(err)) {
+        showErrorToast("No internet connection. Please check your network.", "Connection Error");
+      } else {
+        showErrorToast("Quick Login failed. Please try again.");
+      }
     } finally {
       setQuickLoading(false);
     }
@@ -185,9 +202,6 @@ export default function LoginScreen() {
         colors={["#A00EE7", "#6A00B8"]}
         style={[s.headerGradient, { paddingTop: insets.top + 16 }]}
       >
-        <TouchableOpacity onPress={() => router.back()} style={s.backBtn} activeOpacity={0.8}>
-          <Feather name="arrow-left" size={22} color="#fff" />
-        </TouchableOpacity>
         <View style={s.logoWrap}>
           <Image
             source={require("@/assets/images/app_logo.png")}
@@ -264,14 +278,6 @@ const s = StyleSheet.create({
     paddingBottom: 40,
     alignItems: "center",
   },
-  backBtn: {
-    alignSelf: "flex-start",
-    width: 36,
-    height: 36,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 8,
-  },
   logoWrap: {
     width: 80,
     height: 80,
@@ -280,6 +286,7 @@ const s = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 12,
+    marginTop: 8,
   },
   logo: { width: 56, height: 56 },
   appName: {

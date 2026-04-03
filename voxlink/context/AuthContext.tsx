@@ -45,12 +45,14 @@ interface AuthContextValue extends AuthState {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-async function fetchFreshBalance(): Promise<number | null> {
+async function fetchFreshBalance(): Promise<{ coins: number | null; tokenExpired: boolean }> {
   try {
     const bal = await apiRequest<{ coins: number }>("GET", "/api/coins/balance");
-    return bal?.coins ?? null;
-  } catch {
-    return null;
+    return { coins: bal?.coins ?? null, tokenExpired: false };
+  } catch (err: any) {
+    const msg = (err?.message || "").toLowerCase();
+    const tokenExpired = msg.includes("unauthorized") || msg.includes("401") || msg.includes("invalid token") || msg.includes("token expired");
+    return { coins: null, tokenExpired };
   }
 }
 
@@ -77,14 +79,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (user) {
           setState({ user, isLoggedIn: true, isLoading: false });
           // Silently refresh balance + push token in parallel
-          const [freshCoins] = await Promise.all([
+          const [balResult] = await Promise.all([
             fetchFreshBalance(),
             syncPushToken(),
           ]);
-          if (freshCoins !== null) {
+          // If token is expired and refresh also failed, auto-logout
+          if (balResult.tokenExpired) {
+            await Promise.all([
+              removeItem(StorageKeys.AUTH_TOKEN),
+              removeItem(StorageKeys.USER),
+            ]);
+            setState({ user: null, isLoggedIn: false, isLoading: false });
+            return;
+          }
+          if (balResult.coins !== null) {
             setState((prev) => {
               if (!prev.user) return prev;
-              const updated = { ...prev.user, coins: freshCoins };
+              const updated = { ...prev.user, coins: balResult.coins! };
               setItem(StorageKeys.USER, updated);
               return { ...prev, user: updated };
             });
@@ -104,11 +115,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (nextState === "active") {
         setState((prev) => {
           if (!prev.isLoggedIn || !prev.user) return prev;
-          fetchFreshBalance().then((freshCoins) => {
-            if (freshCoins !== null) {
+          fetchFreshBalance().then((balResult) => {
+            if (balResult.coins !== null) {
               setState((p) => {
                 if (!p.user) return p;
-                const updated = { ...p.user, coins: freshCoins };
+                const updated = { ...p.user, coins: balResult.coins! };
                 setItem(StorageKeys.USER, updated);
                 return { ...p, user: updated };
               });
@@ -197,11 +208,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const refreshBalance = useCallback(async () => {
-    const freshCoins = await fetchFreshBalance();
-    if (freshCoins !== null) {
+    const balResult = await fetchFreshBalance();
+    if (balResult.coins !== null) {
       setState((prev) => {
         if (!prev.user) return prev;
-        const updated = { ...prev.user, coins: freshCoins };
+        const updated = { ...prev.user, coins: balResult.coins! };
         setItem(StorageKeys.USER, updated);
         return { ...prev, user: updated };
       });

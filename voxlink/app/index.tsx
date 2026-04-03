@@ -15,7 +15,7 @@ const { width: SW, height: SH } = Dimensions.get("window");
 
 const SUBTITLE_COLOR = "#757396";
 const DOTS_COUNT = 5;
-const SPLASH_DURATION = 2800; // ms
+const SPLASH_DURATION = 1500; // ms
 
 /* ─── Staggered dots wave animation (exact Flutter LoadingAnimationWidget.staggeredDotsWave) ─── */
 function StaggeredDotsWave() {
