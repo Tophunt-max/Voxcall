@@ -138,7 +138,8 @@ export default function LoginScreen() {
     id: string, name: string, email: string, photo?: string | null
   ) => {
     try {
-      const data = await API.googleLogin(email, name, id, photo ?? null);
+      const deviceId = await getDeviceId();
+      const data = await API.googleLogin(email, name, id, photo ?? null, deviceId);
       const profile = {
         id: data.user.id || id,
         name: data.user.name || name,

@@ -194,8 +194,8 @@ auth.post('/logout', async (c) => {
 // POST /api/auth/google-login — sign in or register via Google OAuth
 auth.post('/google-login', async (c) => {
   const body = await c.req.json();
-  const { email, name, google_id, avatar_url } = body as {
-    email: string; name: string; google_id: string; avatar_url?: string | null;
+  const { email, name, google_id, avatar_url, device_id } = body as {
+    email: string; name: string; google_id: string; avatar_url?: string | null; device_id?: string | null;
   };
   if (!email || !google_id) return c.json({ error: 'Missing required fields' }, 400);
   const db = c.env.DB;
@@ -209,16 +209,32 @@ auth.post('/google-login', async (c) => {
     const av = avatar_url || null;
     // Google login: start with 0 coins — no OTP verification so no registration bonus
     // This prevents Sybil attacks where many Google accounts farm signup coins
+    // Also save device_id so Quick Login on same device returns this account (no duplicate accounts)
     await db.prepare(
-      `INSERT INTO users (id, name, email, password_hash, role, coins, is_verified, avatar_url, google_id)
-       VALUES (?, ?, ?, '', 'user', 0, 1, ?, ?)`
-    ).bind(id, name, email, av, google_id).run();
+      `INSERT INTO users (id, name, email, password_hash, role, coins, is_verified, avatar_url, google_id, device_id)
+       VALUES (?, ?, ?, '', 'user', 0, 1, ?, ?, ?)`
+    ).bind(id, name, email, av, google_id, device_id ?? null).run();
     user = { id, name, email, role: 'user', coins: 0, avatar_url: av };
   } else {
+    // Update avatar, google_id and device_id if not already set
+    const updates: string[] = [];
+    const bindings: any[] = [];
     if (avatar_url && !user.avatar_url) {
-      await db.prepare('UPDATE users SET avatar_url = ?, google_id = ? WHERE id = ?')
-        .bind(avatar_url, google_id, user.id).run();
+      updates.push('avatar_url = ?');
+      bindings.push(avatar_url);
       user.avatar_url = avatar_url;
+    }
+    updates.push('google_id = ?');
+    bindings.push(google_id);
+    // Link device_id to this Google account so Quick Login on same device returns this account
+    if (device_id) {
+      updates.push('device_id = ?');
+      bindings.push(device_id);
+    }
+    if (updates.length > 0) {
+      bindings.push(user.id);
+      await db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`)
+        .bind(...bindings).run();
     }
   }
 
