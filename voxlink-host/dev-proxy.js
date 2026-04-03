@@ -13,6 +13,7 @@ function stripBase(url) {
 }
 
 let metroReady = false;
+let metroProcess = null;
 
 function pollMetro() {
   const sock = net.connect(METRO_PORT, '127.0.0.1', () => {
@@ -27,28 +28,36 @@ function pollMetro() {
   });
 }
 
+function shutdown(code) {
+  if (metroProcess) {
+    try { metroProcess.kill('SIGKILL'); } catch (_) {}
+  }
+  process.exit(code || 0);
+}
+
 const server = http.createServer((req, res) => {
   const url = req.url || '/';
 
-  // Metro packager status - always return immediately (this is the health check)
   if (url === '/status' || url === BASE + '/status') {
     res.writeHead(200, {
       'Content-Type': 'text/plain',
-      'X-Content-Type-Options': 'nosniff',
       'Cache-Control': 'no-store, no-cache, must-revalidate',
     });
     res.end('packager-status:running');
     return;
   }
 
-  // Proxy everything else to Metro (or return loading page if Metro not ready)
   const target = stripBase(url);
+  const forwardHeaders = { ...req.headers, host: `localhost:${METRO_PORT}` };
+  if (forwardHeaders.origin) forwardHeaders.origin = `http://localhost:${METRO_PORT}`;
+  if (forwardHeaders.referer) forwardHeaders.referer = `http://localhost:${METRO_PORT}/`;
+
   const opts = {
     hostname: '127.0.0.1',
     port: METRO_PORT,
     path: target,
     method: req.method,
-    headers: { ...req.headers, host: `localhost:${METRO_PORT}` },
+    headers: forwardHeaders,
   };
   const proxy = http.request(opts, (metroRes) => {
     res.writeHead(metroRes.statusCode, metroRes.headers);
@@ -63,7 +72,6 @@ const server = http.createServer((req, res) => {
   req.pipe(proxy, { end: true });
 });
 
-// WebSocket proxying for Metro HMR
 server.on('upgrade', (req, socket, head) => {
   const target = stripBase(req.url);
   const metroSocket = net.connect(METRO_PORT, '127.0.0.1', () => {
@@ -82,13 +90,22 @@ server.on('upgrade', (req, socket, head) => {
   socket.on('error', () => metroSocket.destroy());
 });
 
-server.listen(PORT, '::', () => {
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.log(`[proxy] Port ${PORT} in use, retrying in 2s...`);
+    setTimeout(() => server.listen(PORT, '0.0.0.0'), 2000);
+  } else {
+    console.error('[proxy] Server error:', err.message);
+    process.exit(1);
+  }
+});
+
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`[proxy] VoxLink Host proxy on port ${PORT} -> Metro on ${METRO_PORT}`);
-  console.log(`[proxy] /status returns packager-status:running immediately`);
 
   setTimeout(pollMetro, 1000);
 
-  const metro = spawn(
+  metroProcess = spawn(
     'pnpm',
     ['exec', 'expo', 'start', '--localhost', '--port', String(METRO_PORT)],
     {
@@ -105,10 +122,11 @@ server.listen(PORT, '::', () => {
     }
   );
 
-  metro.on('exit', (code) => {
+  metroProcess.on('exit', (code) => {
     console.log(`[proxy] Metro exited with code ${code}`);
-    process.exit(code || 0);
+    shutdown(code || 0);
   });
 });
 
-process.on('SIGTERM', () => server.close(() => process.exit(0)));
+process.on('SIGTERM', () => shutdown(0));
+process.on('SIGINT', () => shutdown(0));

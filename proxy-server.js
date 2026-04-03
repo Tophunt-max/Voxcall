@@ -9,6 +9,7 @@ const PROXY_PORT = parseInt(process.env.PROXY_PORT || '3000');
 function getTargetPort(url) {
   const path = url || '/';
   if (path.startsWith('/admin-panel')) return ADMIN_PORT;
+  if (path.startsWith('/host')) return HOST_APP_PORT;
   return USER_APP_PORT;
 }
 
