@@ -31,18 +31,6 @@ waitForPort = 8099
 outputType = "webview"
 
 [[workflows.workflow]]
-name = "VoxLink Gateway"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "PROXY_PORT=3000 node proxy-server.js"
-waitForPort = 3000
-
-[workflows.workflow.metadata]
-outputType = "webview"
-
-[[workflows.workflow]]
 name = "admin-panel: web"
 author = "agent"
 mode = "sequential"
@@ -100,6 +88,27 @@ waitForPort = 8787
 
 [workflows.workflow.tasks.env]
 PORT = "8787"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "VoxLink Gateway"
+
+[[workflows.workflow]]
+name = "VoxLink Gateway"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "PROXY_PORT=3000 node proxy-server.js"
+waitForPort = 3000
+
+[workflows.workflow.metadata]
+outputType = "webview"
 
 [agent]
 stack = "PNPM_WORKSPACE"

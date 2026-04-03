@@ -4,15 +4,23 @@
 
 VoxLink is a production-grade social audio/video calling mobile app + admin panel. Users connect with professional hosts via audio/video calls and chat using a coin-based payment system.
 
-## Artifacts
+## Artifacts & Services
 
-| Artifact | Port | Path | Description |
+| Artifact | Internal Port | External Path | Description |
 |---|---|---|---|
-| `voxlink` | 20426 | `/` | Expo 54 Mobile App — User App (`com.voxlink.app`) |
-| `voxlink-host` | – | – | Expo 54 Mobile App — Host App (`com.voxlink.host`) |
-| `api-server` | 8080 | – | Cloudflare Workers backend |
-| `admin-panel` | 20130 | `/admin-panel/` | React + Vite Admin Panel |
-| `mockup-sandbox` | 8081 | `/__mockup` | UI Component Preview Server |
+| `VoxLink Gateway` | 3000 (ext 80) | `/` | Master proxy — starts all services, routes traffic |
+| `voxlink` | 8080 | `/*` (via Gateway) | Expo 54 Mobile App — User App (`com.voxlink.app`) |
+| `voxlink-host` | 8099 | `/host/*` (via Gateway) | Expo 54 Mobile App — Host App (`com.voxlink.host`) |
+| `api-server` | 8787 | – | Cloudflare Workers backend (Wrangler) |
+| `admin-panel` | 5000 | `/admin-panel/*` (via Gateway) | React + Vite Admin Panel |
+
+### Gateway Architecture (proxy-server.js)
+- **Single external port**: Gateway runs on port 3000 (mapped to external port 80)
+- **All services started as children**: Gateway spawns admin-panel, voxlink, voxlink-host, api-server on startup
+- **Routing**: `/admin-panel/*` → 5000, `/host/*` → 8099 (strips prefix), `/*` → 8080
+- **CORS fix**: Origin/Referer headers rewritten to `localhost:PORT` for host app requests
+- **Logs**: `/tmp/admin-panel.log`, `/tmp/voxlink-user.log`, `/tmp/voxlink-host.log`, `/tmp/api-server.log`
+- **Note**: Artifact-managed workflows (admin-panel, voxlink, voxlink-host) show FAILED in Replit UI because port detection checks externally but only port 3000 is externally mapped — apps ARE running and accessible via Gateway
 
 ## Architecture
 
