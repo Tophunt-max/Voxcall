@@ -44,7 +44,12 @@ export default function HostRegisterScreen() {
 
   useEffect(() => {
     if (isLoggedIn && user) {
-      router.replace("/auth/profile-setup");
+      // If already an approved host, go to dashboard; otherwise continue KYC setup
+      if (user.role === "host") {
+        router.replace("/(tabs)");
+      } else {
+        router.replace("/auth/profile-setup");
+      }
     }
   }, [isLoggedIn]);
 

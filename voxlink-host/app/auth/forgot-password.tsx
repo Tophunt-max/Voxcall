@@ -138,7 +138,7 @@ export default function ForgotPasswordScreen() {
               value={password}
               onChangeText={setPassword}
               secureTextEntry={!showPass}
-              rightIcon={
+              right={
                 <TouchableOpacity onPress={() => setShowPass((v) => !v)}>
                   <Feather name={showPass ? "eye-off" : "eye"} size={18} color={colors.mutedForeground} />
                 </TouchableOpacity>
@@ -156,7 +156,7 @@ export default function ForgotPasswordScreen() {
               value={confirm}
               onChangeText={setConfirm}
               secureTextEntry={!showConfirm}
-              rightIcon={
+              right={
                 <TouchableOpacity onPress={() => setShowConfirm((v) => !v)}>
                   <Feather name={showConfirm ? "eye-off" : "eye"} size={18} color={colors.mutedForeground} />
                 </TouchableOpacity>

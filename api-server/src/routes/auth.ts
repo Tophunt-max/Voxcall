@@ -106,7 +106,7 @@ auth.post('/login', rateLimit, zValidator('json', loginSchema), async (c) => {
   const { email, password } = c.req.valid('json');
   const db = c.env.DB;
   const user = await db.prepare(
-    'SELECT id, name, email, password_hash, role, coins, avatar_url, gender, bio FROM users WHERE email = ?'
+    'SELECT id, name, email, password_hash, role, coins, avatar_url, gender, phone, bio FROM users WHERE email = ?'
   ).bind(email).first<any>();
   if (!user) return c.json({ error: 'Invalid email or password' }, 401);
   const valid = await verifyPassword(password, user.password_hash);
@@ -222,7 +222,7 @@ auth.post('/google-login', rateLimit, async (c) => {
   const db = c.env.DB;
 
   let user = await db.prepare(
-    'SELECT id, name, email, role, coins, avatar_url, gender, bio FROM users WHERE email = ?'
+    'SELECT id, name, email, role, coins, avatar_url, gender, phone, bio FROM users WHERE email = ?'
   ).bind(email).first<any>();
 
   if (!user) {
@@ -269,6 +269,8 @@ auth.post('/google-login', rateLimit, async (c) => {
       role: user.role,
       coins: user.coins,
       avatar_url: user.avatar_url,
+      phone: user.phone ?? null,
+      gender: user.gender ?? null,
       bio: user.bio,
     }
   });
