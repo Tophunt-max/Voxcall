@@ -65,9 +65,12 @@ function startAllServices() {
 
   // Host App (Expo/Metro on port 8099) — no expo domain to avoid conflict with user app
   // Access via Gateway: https://[domain]/host/
+  // EXPO_BASE_URL is inlined into the bundle by Metro → Expo Router strips /host from URL at runtime
+  // Gateway strips /host prefix before forwarding, then rewrites HTML response asset paths back
   startService('voxlink-host', 'pnpm', ['--filter', '@workspace/voxlink-host', 'run', 'dev'], {
     ...commonExpoEnv,
     PORT: String(HOST_APP_PORT),
+    EXPO_BASE_URL: '/host',
   });
 
   // API Server (Wrangler on port 8787)
@@ -85,8 +88,12 @@ function getTargetPort(url) {
 
 function rewritePath(url, targetPort) {
   if (targetPort === HOST_APP_PORT) {
+    // Strip /host prefix so Metro receives the original path
     const stripped = url.replace(/^\/host/, '') || '/';
     return stripped.startsWith('/') ? stripped : '/' + stripped;
+  }
+  if (targetPort === ADMIN_PORT) {
+    return url;
   }
   return url;
 }
@@ -100,6 +107,44 @@ function buildHeaders(original, targetPort) {
   return h;
 }
 
+// Rewrite absolute asset paths in HTML so they include /host/ prefix.
+// Metro generates paths like src="/node_modules/..." — we rewrite to src="/host/node_modules/..."
+// so the Gateway correctly forwards them back to port 8099 (not user app on 8080).
+//
+// Also inject a base-path fix script: Expo Router v6 intentionally disables stripBaseUrl
+// in development mode (process.env.NODE_ENV === 'development'), so we must fix routing
+// ourselves via history.replaceState before the app bundle initialises.
+const HOST_BASE_PATH_SCRIPT = `<script>
+(function() {
+  var base = '/host';
+  var p = window.location.pathname;
+  if (p === base || p.startsWith(base + '/')) {
+    var newPath = p.slice(base.length) || '/';
+    history.replaceState(null, '', newPath + window.location.search + window.location.hash);
+  }
+  var _push = history.pushState.bind(history);
+  var _replace = history.replaceState.bind(history);
+  function rebase(url) {
+    if (typeof url === 'string' && url.startsWith('/') && !url.startsWith(base)) {
+      return base + url;
+    }
+    return url;
+  }
+  history.pushState = function(s,t,u) { return _push(s, t, rebase(u)); };
+  history.replaceState = function(s,t,u) { return _replace(s, t, rebase(u)); };
+})();
+</script>`;
+
+function rewriteHostHtml(html) {
+  // 1. Inject base-path fix script as FIRST script in <head>
+  let result = html.replace('<head>', '<head>' + HOST_BASE_PATH_SCRIPT);
+  // 2. Rewrite absolute asset src/href paths to include /host/ prefix
+  result = result
+    .replace(/src="\/(?!host\/|\/)/g, 'src="/host/')
+    .replace(/href="\/(?!host\/|\/)/g, 'href="/host/');
+  return result;
+}
+
 // ── HTTP proxy ─────────────────────────────────────────────────────────────
 const server = http.createServer((req, res) => {
   const targetPort = getTargetPort(req.url);
@@ -109,9 +154,27 @@ const server = http.createServer((req, res) => {
   const proxyReq = http.request(
     { hostname: '127.0.0.1', port: targetPort, path: targetPath, method: req.method, headers },
     (proxyRes) => {
+      const contentType = proxyRes.headers['content-type'] || '';
+      const isHostApp = targetPort === HOST_APP_PORT;
+      const isHtml = contentType.includes('text/html');
+
       const resHeaders = { ...proxyRes.headers, 'access-control-allow-origin': '*' };
-      res.writeHead(proxyRes.statusCode, resHeaders);
-      proxyRes.pipe(res);
+
+      if (isHostApp && isHtml) {
+        // Buffer HTML response and rewrite asset paths
+        delete resHeaders['content-length']; // length will change after rewrite
+        res.writeHead(proxyRes.statusCode, resHeaders);
+        const chunks = [];
+        proxyRes.on('data', (chunk) => chunks.push(chunk));
+        proxyRes.on('end', () => {
+          const original = Buffer.concat(chunks).toString('utf8');
+          const rewritten = rewriteHostHtml(original);
+          res.end(rewritten);
+        });
+      } else {
+        res.writeHead(proxyRes.statusCode, resHeaders);
+        proxyRes.pipe(res);
+      }
     }
   );
 
@@ -156,6 +219,7 @@ startAllServices();
 server.listen(PROXY_PORT, '0.0.0.0', () => {
   console.log(`VoxLink Gateway running on port ${PROXY_PORT}`);
   console.log(`  /admin-panel/* -> localhost:${ADMIN_PORT} (Admin Panel)`);
-  console.log(`  /host/*        -> localhost:${HOST_APP_PORT} (Host App)`);
+  console.log(`  /host/*        -> localhost:${HOST_APP_PORT} (Host App, HTML assets rewritten)`);
+  console.log(`  /api/*         -> localhost:${API_PORT} (API Server)`);
   console.log(`  /*             -> localhost:${USER_APP_PORT} (User App)`);
 });
