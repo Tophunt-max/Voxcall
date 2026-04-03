@@ -29,6 +29,11 @@ export default function HostLoginScreen() {
       showErrorToast("Please enter both email and password.", "Missing Fields");
       return;
     }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.trim())) {
+      showErrorToast("Please enter a valid email address.", "Invalid Email");
+      return;
+    }
     setLoading(true);
     try {
       const data = await API.login(email.trim(), password);
@@ -47,6 +52,11 @@ export default function HostLoginScreen() {
       if (userData.role === "host") {
         router.replace("/(tabs)");
       } else {
+        // Regular user — redirect to status page (not a host yet)
+        showInfoToast(
+          "Your account is not a host account. If you applied, check your application status below.",
+          "Not a Host"
+        );
         router.replace("/auth/status");
       }
     } catch (err: any) {

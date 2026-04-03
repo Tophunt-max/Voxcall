@@ -1,10 +1,14 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
 import { AppState } from "react-native";
 import { setItem, getItem, removeItem, StorageKeys } from "@/utils/storage";
 import { apiRequest, API } from "@/services/api";
 import { registerForPushNotifications } from "@/services/NotificationService";
 
-export type UserRole = "host";
+// Module-level logout callback so fetchFreshProfile can trigger auto-logout
+// when the token has permanently expired (SESSION_EXPIRED).
+let _onSessionExpired: (() => void) | null = null;
+
+export type UserRole = "host" | "user";
 
 export interface UserProfile {
   id: string;
@@ -52,7 +56,10 @@ async function fetchFreshProfile(): Promise<Partial<UserProfile> | null> {
       "/api/host/me"
     );
     return profile ?? null;
-  } catch {
+  } catch (err: any) {
+    if (err?.message === "SESSION_EXPIRED") {
+      _onSessionExpired?.();
+    }
     return null;
   }
 }
@@ -73,13 +80,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isLoading: true,
   });
 
+  const logoutRef = useRef<() => Promise<void>>();
+
+  // Register session-expired callback so fetchFreshProfile can trigger auto-logout
+  useEffect(() => {
+    _onSessionExpired = () => { logoutRef.current?.(); };
+    return () => { _onSessionExpired = null; };
+  }, []);
+
   useEffect(() => {
     (async () => {
       try {
         const user = await getItem<UserProfile>(StorageKeys.USER);
         if (user) {
-          const hostUser: UserProfile = { ...user, role: "host" };
-          setState({ user: hostUser, isLoggedIn: true, isLoading: false });
+          setState({ user, isLoggedIn: true, isLoading: false });
           const [freshProfile] = await Promise.all([
             fetchFreshProfile(),
             syncPushToken(),
@@ -124,19 +138,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const loginWithToken = useCallback(async (token: string, user: UserProfile) => {
-    const hostUser: UserProfile = { ...user, role: "host" };
     await Promise.all([
       setItem(StorageKeys.AUTH_TOKEN, token),
-      setItem(StorageKeys.USER, hostUser),
+      setItem(StorageKeys.USER, user),
     ]);
-    setState({ user: hostUser, isLoggedIn: true, isLoading: false });
+    setState({ user, isLoggedIn: true, isLoading: false });
     syncPushToken().catch(() => {});
   }, []);
 
   const login = useCallback(async (user: UserProfile) => {
-    const hostUser: UserProfile = { ...user, role: "host" };
-    await setItem(StorageKeys.USER, hostUser);
-    setState({ user: hostUser, isLoggedIn: true, isLoading: false });
+    await setItem(StorageKeys.USER, user);
+    setState({ user, isLoggedIn: true, isLoading: false });
   }, []);
 
   const logout = useCallback(async () => {
@@ -154,6 +166,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     ]);
     setState({ user: null, isLoggedIn: false, isLoading: false });
   }, []);
+
+  // Keep ref in sync so the session-expired callback always calls the latest logout
+  useEffect(() => { logoutRef.current = logout; }, [logout]);
 
   const updateProfile = useCallback(async (updates: Partial<UserProfile>) => {
     const backendUpdates: Record<string, unknown> = {};

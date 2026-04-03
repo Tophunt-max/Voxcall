@@ -71,8 +71,8 @@ auth.post('/register', rateLimit, zValidator('json', registerSchema), async (c) 
   const otp = generateOTP();
   const otpExp = Math.floor(Date.now() / 1000) + 600;
   await db.prepare(
-    `INSERT INTO users (id, name, email, password_hash, gender, phone, otp, otp_expires_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO users (id, name, email, password_hash, gender, phone, otp, otp_expires_at, is_verified)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`
   ).bind(id, name, email, hash, gender ?? null, phone ?? null, otp, otpExp).run();
   // Bug 3 Fix: Record referral as pending (coins_given=0) — coins awarded only after OTP verification
   // This prevents Sybil attacks where fake accounts are created to farm referral coins.
@@ -192,7 +192,7 @@ auth.post('/logout', async (c) => {
 });
 
 // POST /api/auth/google-login — sign in or register via Google OAuth
-auth.post('/google-login', async (c) => {
+auth.post('/google-login', rateLimit, async (c) => {
   const body = await c.req.json();
   const { email, name, google_id, avatar_url, device_id } = body as {
     email: string; name: string; google_id: string; avatar_url?: string | null; device_id?: string | null;
@@ -254,13 +254,13 @@ auth.post('/google-login', async (c) => {
 });
 
 // POST /api/auth/guest-login — legacy alias for quick-login
-auth.post('/guest-login', async (c) => {
+auth.post('/guest-login', rateLimit, async (c) => {
   const body = await c.req.json().catch(() => ({}));
   return quickLoginHandler(c, (body as any).device_id ?? null);
 });
 
 // POST /api/auth/quick-login — persistent device-based login (same device = same account)
-auth.post('/quick-login', async (c) => {
+auth.post('/quick-login', rateLimit, async (c) => {
   const body = await c.req.json().catch(() => ({}));
   return quickLoginHandler(c, (body as any).device_id ?? null);
 });

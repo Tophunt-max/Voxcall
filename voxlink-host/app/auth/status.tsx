@@ -10,7 +10,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { useAuth } from "@/context/AuthContext";
 import { API } from "@/services/api";
-import { showErrorToast } from "@/components/Toast";
+import { showErrorToast, showSuccessToast } from "@/components/Toast";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const DARK = "#111329";
@@ -58,7 +58,7 @@ const STATUS_CONFIG: Record<Status, { icon: string; color: string; bg: string; t
 
 export default function HostStatusScreen() {
   const insets = useSafeAreaInsets();
-  const { user, updateProfile } = useAuth();
+  const { user, logout } = useAuth();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -68,10 +68,14 @@ export default function HostStatusScreen() {
     try {
       const res = await API.getHostAppStatus();
       setData(res);
-      // If approved, update local user role and clear pending flag
+      // If approved but token still has "user" role, logout so user can
+      // log back in and get a fresh "host" token from the backend.
       if (res?.status === "approved" && user?.role !== "host") {
-        await updateProfile({ role: "host" });
         await AsyncStorage.removeItem("hostAppPending");
+        showSuccessToast("Your host account is ready! Please sign in again to continue.", "Approved!");
+        await logout();
+        router.replace("/auth/login");
+        return;
       }
     } catch {
       setData(null);

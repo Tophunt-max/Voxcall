@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity,
   Image, KeyboardAvoidingView, Platform, ScrollView, Alert
@@ -22,6 +22,26 @@ export default function ForgotPasswordScreen() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, []);
+
+  const startCooldown = () => {
+    setCooldown(60);
+    timerRef.current = setInterval(() => {
+      setCooldown((prev) => {
+        if (prev <= 1) {
+          clearInterval(timerRef.current!);
+          timerRef.current = null;
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  };
 
   const handleSend = async () => {
     if (!email.trim()) {
@@ -32,6 +52,7 @@ export default function ForgotPasswordScreen() {
     try {
       await API.forgotPassword(email.trim().toLowerCase());
       setSent(true);
+      startCooldown();
       showSuccessToast("OTP sent to your email.", "Email Sent");
     } catch (err: any) {
       showErrorToast(err?.message || "Email not found. Please check and try again.");
@@ -41,7 +62,7 @@ export default function ForgotPasswordScreen() {
   };
 
   const handleReset = async () => {
-    if (!otp.trim() || otp.trim().length < 4) {
+    if (!otp.trim() || otp.trim().length < 6) {
       showErrorToast("Please enter the OTP sent to your email.");
       return;
     }
@@ -152,10 +173,24 @@ export default function ForgotPasswordScreen() {
               <Text style={styles.btnText}>{loading ? "Resetting..." : "Reset Password"}</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity onPress={handleSend} style={styles.resendWrap} disabled={loading}>
+            <TouchableOpacity
+              onPress={() => {
+                if (cooldown > 0 || loading) return;
+                startCooldown();
+                handleSend();
+              }}
+              style={styles.resendWrap}
+              disabled={loading || cooldown > 0}
+            >
               <Text style={[styles.resendText, { color: colors.mutedForeground }]}>
                 Didn't receive it?{" "}
-                <Text style={{ color: colors.accent, fontFamily: "Poppins_600SemiBold" }}>Resend OTP</Text>
+                {cooldown > 0 ? (
+                  <Text style={{ color: colors.mutedForeground, fontFamily: "Poppins_600SemiBold" }}>
+                    Resend in {cooldown}s
+                  </Text>
+                ) : (
+                  <Text style={{ color: colors.accent, fontFamily: "Poppins_600SemiBold" }}>Resend OTP</Text>
+                )}
               </Text>
             </TouchableOpacity>
           </>
