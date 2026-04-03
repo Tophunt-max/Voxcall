@@ -10,7 +10,17 @@ export const authMiddleware = createMiddleware<{ Bindings: Env; Variables: Varia
     if (!token) return c.json({ error: 'Unauthorized' }, 401);
     try {
       const payload = await verifyToken(token, c.env.JWT_SECRET);
-      c.set('user', payload);
+      // Fetch latest user status + role from DB on every request:
+      // - Detects banned/deleted accounts immediately (no 7-day token grace period)
+      // - Uses current role from DB so KYC approvals take effect without re-login
+      const dbUser = await c.env.DB.prepare(
+        'SELECT role, status FROM users WHERE id = ?'
+      ).bind(payload.sub).first<{ role: 'user' | 'host' | 'admin'; status: string | null }>();
+      if (!dbUser) return c.json({ error: 'User not found' }, 401);
+      if (dbUser.status === 'banned' || dbUser.status === 'deleted') {
+        return c.json({ error: 'Account suspended. Contact support if you believe this is an error.' }, 403);
+      }
+      c.set('user', { ...payload, role: dbUser.role });
       await next();
     } catch {
       return c.json({ error: 'Invalid or expired token' }, 401);

@@ -9,49 +9,59 @@ import type { Env } from '../types';
 const auth = new Hono<{ Bindings: Env }>();
 
 // ─── Rate Limiting ───────────────────────────────────────────────────────────
-// Limits: 10 attempts / 60s per IP per route — uses D1 for persistence
-async function rateLimit(c: Context<{ Bindings: Env }>, next: Next) {
-  const ip =
-    c.req.header('cf-connecting-ip') ||
-    c.req.header('x-forwarded-for')?.split(',')[0].trim() ||
-    'unknown';
-  const routeKey = c.req.path.split('/').slice(-1)[0]; // e.g. "login"
-  const windowSecs = 60;
-  const maxAttempts = 10;
-  const now = Math.floor(Date.now() / 1000);
-  const windowSlot = Math.floor(now / windowSecs);
-  const key = `rl:${routeKey}:${ip}:${windowSlot}`;
+// Standard: 10 attempts / 60s per IP per route
+// Strict:   3 attempts / 600s (10 min) — for OTP/password-reset endpoints
+function makeRateLimit(maxAttempts: number, windowSecs: number) {
+  return async function rateLimitFn(c: Context<{ Bindings: Env }>, next: Next) {
+    const ip =
+      c.req.header('cf-connecting-ip') ||
+      c.req.header('x-forwarded-for')?.split(',')[0].trim() ||
+      'unknown';
+    const routeKey = c.req.path.split('/').slice(-1)[0];
+    const now = Math.floor(Date.now() / 1000);
+    const windowSlot = Math.floor(now / windowSecs);
+    const key = `rl:${routeKey}:${ip}:${windowSlot}`;
 
-  try {
-    const row = await c.env.DB.prepare(
-      'SELECT attempts, window_reset FROM rate_limits WHERE id = ?'
-    ).bind(key).first<{ attempts: number; window_reset: number }>();
-
-    if (row && row.window_reset > now) {
-      if (row.attempts >= maxAttempts) {
-        return c.json({ error: 'Too many requests. Please try again in a minute.' }, 429);
+    try {
+      // Periodically clean up expired rows (1% chance per request keeps table lean)
+      if (Math.random() < 0.01) {
+        await c.env.DB.prepare('DELETE FROM rate_limits WHERE window_reset < ?').bind(now).run();
       }
-      await c.env.DB.prepare(
-        'UPDATE rate_limits SET attempts = attempts + 1 WHERE id = ?'
-      ).bind(key).run();
-    } else {
-      await c.env.DB.prepare(
-        'INSERT OR REPLACE INTO rate_limits (id, attempts, window_reset) VALUES (?, 1, ?)'
-      ).bind(key, now + windowSecs).run();
-    }
-  } catch {
-    // Rate limit table may not exist yet — don't block legitimate requests
-  }
 
-  return next();
+      const row = await c.env.DB.prepare(
+        'SELECT attempts, window_reset FROM rate_limits WHERE id = ?'
+      ).bind(key).first<{ attempts: number; window_reset: number }>();
+
+      if (row && row.window_reset > now) {
+        if (row.attempts >= maxAttempts) {
+          const waitMins = Math.ceil((row.window_reset - now) / 60);
+          return c.json({ error: `Too many requests. Please try again in ${waitMins} minute${waitMins > 1 ? 's' : ''}.` }, 429);
+        }
+        await c.env.DB.prepare(
+          'UPDATE rate_limits SET attempts = attempts + 1 WHERE id = ?'
+        ).bind(key).run();
+      } else {
+        await c.env.DB.prepare(
+          'INSERT OR REPLACE INTO rate_limits (id, attempts, window_reset) VALUES (?, 1, ?)'
+        ).bind(key, now + windowSecs).run();
+      }
+    } catch {
+      // Rate limit table may not exist yet — don't block legitimate requests
+    }
+
+    return next();
+  };
 }
 
+const rateLimit = makeRateLimit(10, 60);
+const strictRateLimit = makeRateLimit(3, 600);
+
 const registerSchema = z.object({
-  name: z.string().min(2),
+  name: z.string().min(2).max(60),
   email: z.string().email(),
-  password: z.string().min(8),
+  password: z.string().min(8).max(128),
   gender: z.enum(['male', 'female', 'other']).optional(),
-  phone: z.string().optional(),
+  phone: z.string().max(20).optional(),
   referral_code: z.string().optional(),
 });
 
@@ -142,11 +152,16 @@ auth.post('/verify-otp', async (c) => {
 });
 
 // POST /api/auth/forgot-password
-auth.post('/forgot-password', rateLimit, async (c) => {
+auth.post('/forgot-password', strictRateLimit, async (c) => {
   const { email } = await c.req.json();
+  if (!email || typeof email !== 'string') return c.json({ error: 'Email required' }, 400);
   const db = c.env.DB;
-  const user = await db.prepare('SELECT id FROM users WHERE email = ?').bind(email).first<any>();
+  const user = await db.prepare('SELECT id, password_hash FROM users WHERE email = ?').bind(email.trim().toLowerCase()).first<any>();
   if (!user) return c.json({ error: 'Email not found' }, 404);
+  // Block Google-only users — they have no password to reset
+  if (!user.password_hash) {
+    return c.json({ error: 'This account uses Google Sign-In. Please log in with Google.' }, 400);
+  }
   const otp = generateOTP();
   const otpExp = Math.floor(Date.now() / 1000) + 600;
   await db.prepare('UPDATE users SET otp = ?, otp_expires_at = ? WHERE id = ?').bind(otp, otpExp, user.id).run();
@@ -154,8 +169,14 @@ auth.post('/forgot-password', rateLimit, async (c) => {
 });
 
 // POST /api/auth/reset-password
-auth.post('/reset-password', rateLimit, async (c) => {
+auth.post('/reset-password', strictRateLimit, async (c) => {
   const { email, otp, new_password } = await c.req.json();
+  if (!new_password || typeof new_password !== 'string' || new_password.length < 8) {
+    return c.json({ error: 'Password must be at least 8 characters' }, 400);
+  }
+  if (new_password.length > 128) {
+    return c.json({ error: 'Password is too long' }, 400);
+  }
   const db = c.env.DB;
   const now = Math.floor(Date.now() / 1000);
   const user = await db.prepare(
@@ -266,6 +287,10 @@ auth.post('/quick-login', rateLimit, async (c) => {
 });
 
 async function quickLoginHandler(c: any, deviceId: string | null) {
+  if (!deviceId || deviceId.trim().length < 4) {
+    return c.json({ error: 'device_id is required for Quick Login' }, 400);
+  }
+
   const db = c.env.DB;
 
   if (deviceId) {

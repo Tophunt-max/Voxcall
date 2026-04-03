@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
+import { apiRequest } from "@/services/api";
 import { usePermissions } from "@/hooks/usePermissions";
 import { PermissionDialog, PERMISSION_CONFIGS } from "@/components/PermissionDialog";
 import { useLanguage } from "@/context/LanguageContext";
@@ -128,16 +129,31 @@ export default function HostSettingsScreen() {
   const handleDeleteAccount = () => {
     Alert.alert(
       "Delete Account",
-      "This action is permanent. Your host profile, earnings history, and all data will be deleted.",
+      "This action is permanent. Your host profile, earnings history, and all data will be erased.",
       [
         { text: "Cancel", style: "cancel" },
         {
           text: "Delete Account", style: "destructive",
-          onPress: () => Alert.alert(
-            "Request Submitted",
-            "Your account deletion request has been submitted. Our team will process it within 7 days."
-          )
-        }
+          onPress: () => {
+            Alert.alert(
+              "Final Confirmation",
+              "This cannot be undone. Are you absolutely sure?",
+              [
+                { text: "Cancel", style: "cancel" },
+                {
+                  text: "Yes, Delete", style: "destructive",
+                  onPress: async () => {
+                    try {
+                      await apiRequest("DELETE", "/api/user/me", undefined);
+                    } catch {}
+                    await logout();
+                    router.replace("/auth/login");
+                  },
+                },
+              ]
+            );
+          },
+        },
       ]
     );
   };

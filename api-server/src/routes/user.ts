@@ -163,6 +163,30 @@ user.post('/report', async (c) => {
   return c.json({ success: true, id });
 });
 
+// DELETE /api/user/me — soft-delete the caller's account
+user.delete('/me', async (c) => {
+  const { sub } = c.get('user');
+  const db = c.env.DB;
+  // Anonymize personal data and mark as deleted so referential integrity is preserved
+  const deletedEmail = `deleted_${sub}@deleted.voxlink`;
+  await db.prepare(`
+    UPDATE users SET
+      name        = 'Deleted User',
+      email       = ?,
+      password_hash = '',
+      phone       = NULL,
+      bio         = NULL,
+      avatar_url  = NULL,
+      google_id   = NULL,
+      device_id   = NULL,
+      fcm_token   = NULL,
+      status      = 'deleted',
+      updated_at  = unixepoch()
+    WHERE id = ?
+  `).bind(deletedEmail, sub).run();
+  return c.json({ success: true, message: 'Account deleted successfully' });
+});
+
 // POST /api/user/become-host
 user.post('/become-host', async (c) => {
   const { sub, name } = c.get('user');

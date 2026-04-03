@@ -109,13 +109,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     })();
   }, []);
 
-  // Refresh balance when app comes back to foreground
+  // Refresh balance when app comes back to foreground; also detect token expiry
   useEffect(() => {
     const sub = AppState.addEventListener("change", (nextState) => {
       if (nextState === "active") {
         setState((prev) => {
           if (!prev.isLoggedIn || !prev.user) return prev;
           fetchFreshBalance().then((balResult) => {
+            if (balResult.tokenExpired) {
+              // Token expired while app was backgrounded — auto-logout
+              Promise.all([
+                removeItem(StorageKeys.AUTH_TOKEN),
+                removeItem(StorageKeys.USER),
+              ]).then(() => {
+                setState({ user: null, isLoggedIn: false, isLoading: false });
+              });
+              return;
+            }
             if (balResult.coins !== null) {
               setState((p) => {
                 if (!p.user) return p;

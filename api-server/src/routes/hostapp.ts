@@ -67,6 +67,18 @@ hostapp.post('/submit', async (c) => {
     return c.json({ error: 'Aadhar front and back photos required' }, 400);
   }
 
+  // Validate age — must be 18 or older
+  if (date_of_birth) {
+    const dob = new Date(
+      date_of_birth.includes('/') ? date_of_birth.split('/').reverse().join('-') : date_of_birth
+    );
+    const ageCutoff = new Date();
+    ageCutoff.setFullYear(ageCutoff.getFullYear() - 18);
+    if (isNaN(dob.getTime()) || dob > ageCutoff) {
+      return c.json({ error: 'You must be at least 18 years old to become a host' }, 400);
+    }
+  }
+
   // Validate rates: must be positive numbers, not too large
   const audioRateNum = Number(audio_rate ?? 5);
   const videoRateNum = Number(video_rate ?? 8);

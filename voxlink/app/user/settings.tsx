@@ -7,6 +7,7 @@ import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
+import { apiRequest } from "@/services/api";
 import { usePermissions } from "@/hooks/usePermissions";
 import { PermissionDialog, PERMISSION_CONFIGS } from "@/components/PermissionDialog";
 import { useLanguage } from "@/context/LanguageContext";
@@ -60,10 +61,31 @@ export default function SettingsScreen() {
   const handleDeleteAccount = () => {
     Alert.alert(
       "Delete Account",
-      "This action is permanent. All your data will be deleted.",
+      "This action is permanent. All your data will be erased and cannot be recovered.",
       [
         { text: "Cancel", style: "cancel" },
-        { text: "Delete", style: "destructive", onPress: () => Alert.alert("Account Deleted", "Your account has been deleted.") }
+        {
+          text: "Delete", style: "destructive",
+          onPress: () => {
+            Alert.alert(
+              "Are you sure?",
+              "Type 'DELETE' to confirm. This cannot be undone.",
+              [
+                { text: "Cancel", style: "cancel" },
+                {
+                  text: "Yes, Delete My Account", style: "destructive",
+                  onPress: async () => {
+                    try {
+                      await apiRequest("DELETE", "/api/user/me", undefined);
+                    } catch {}
+                    await logout();
+                    router.replace("/user/auth/login");
+                  },
+                },
+              ]
+            );
+          },
+        },
       ]
     );
   };

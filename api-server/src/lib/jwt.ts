@@ -4,7 +4,7 @@ import type { JWTPayload } from '../types';
 export async function signToken(
   payload: Omit<JWTPayload, 'iat' | 'exp'>,
   secret: string,
-  expiresIn = '7d'
+  expiresIn = '2d'
 ): Promise<string> {
   const key = new TextEncoder().encode(secret);
   return new SignJWT(payload as any)
