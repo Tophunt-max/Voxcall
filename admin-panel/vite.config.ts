@@ -29,6 +29,19 @@ if (!basePath) {
 export default defineConfig({
   base: basePath,
   plugins: [
+    {
+      name: "health-check",
+      configureServer(server) {
+        server.middlewares.use((req, res, next) => {
+          if (req.url === "/" || req.url === "/health") {
+            res.writeHead(200, { "Content-Type": "text/plain" });
+            res.end("OK");
+            return;
+          }
+          next();
+        });
+      },
+    },
     react(),
     tailwindcss(),
     runtimeErrorOverlay(),
@@ -68,7 +81,7 @@ export default defineConfig({
     },
     proxy: {
       [`${basePath}api`]: {
-        target: 'http://localhost:8080',
+        target: 'http://localhost:8787',
         rewrite: (path: string) => path.replace(new RegExp(`^${basePath}api`), '/api'),
         changeOrigin: true,
       },
