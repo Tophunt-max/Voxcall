@@ -5,9 +5,6 @@ const Routes = {
   // Auth
   ONBOARDING: "/user/auth/onboarding",
   LOGIN: "/user/auth/login",
-  VERIFY_OTP: "/user/auth/verify-otp",
-  FORGOT_PASSWORD: "/user/auth/forgot-password",
-  CREATE_PASSWORD: "/user/auth/create-password",
 
   // User Tabs
   HOME: "/(tabs)/",
