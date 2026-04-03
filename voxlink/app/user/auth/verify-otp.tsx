@@ -50,7 +50,7 @@ export default function VerifyOtpScreen() {
       } else {
         // For registration: verify OTP with backend to activate account and earn bonus coins
         await API.verifyOtp(params.email || "", code);
-        router.push({ pathname: "/user/auth/fill-profile" });
+        router.replace("/user/screens/home");
       }
     } catch (err: any) {
       Alert.alert("Invalid OTP", err?.message || "The OTP you entered is incorrect or has expired. Please try again.");

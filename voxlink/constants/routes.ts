@@ -6,8 +6,6 @@ const Routes = {
   ONBOARDING: "/user/auth/onboarding",
   LOGIN: "/user/auth/login",
   VERIFY_OTP: "/user/auth/verify-otp",
-  FILL_PROFILE: "/user/auth/fill-profile",
-  SELECT_GENDER: "/user/auth/select-gender",
   FORGOT_PASSWORD: "/user/auth/forgot-password",
   CREATE_PASSWORD: "/user/auth/create-password",
 
