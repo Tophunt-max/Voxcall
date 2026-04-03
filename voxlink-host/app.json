@@ -83,7 +83,8 @@
     ],
     "experiments": {
       "typedRoutes": true,
-      "reactCompiler": true
+      "reactCompiler": true,
+      "baseUrl": "/host/"
     },
     "extra": {
       "appRole": "host",

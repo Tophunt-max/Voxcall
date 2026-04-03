@@ -10,6 +10,7 @@ name = "expo"
 version = "1.0.0"
 
 [[services]]
+ensurePreviewReachable = "/status"
 name = "expo"
 paths = [ "/host/" ]
 localPort = 8099
