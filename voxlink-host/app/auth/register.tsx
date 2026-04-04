@@ -60,9 +60,17 @@ export default function HostRegisterScreen() {
         id: data.user.id, name: data.user.name, email: data.user.email,
         coins: data.user.coins ?? 0, role: data.user.role ?? "user",
       });
+      if (data.signup_incomplete) {
+        showInfoToast("Resuming your incomplete registration.", "Welcome Back");
+      }
       router.push("/auth/profile-setup");
     } catch (err: any) {
-      showErrorToast(err?.message || "Could not create account. Email may already be in use.");
+      const msg: string = err?.message || "";
+      if (msg.toLowerCase().includes("already registered")) {
+        showErrorToast("This email is already registered. Please sign in instead.", "Already Registered");
+      } else {
+        showErrorToast(msg || "Could not create account. Please try again.");
+      }
     } finally { setLoading(false); }
   };
 

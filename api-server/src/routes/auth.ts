@@ -74,8 +74,27 @@ const loginSchema = z.object({
 auth.post('/register', rateLimit, zValidator('json', registerSchema), async (c) => {
   const { name, email, password, gender, phone, referral_code } = c.req.valid('json');
   const db = c.env.DB;
-  const existing = await db.prepare('SELECT id FROM users WHERE email = ?').bind(email).first();
-  if (existing) return c.json({ error: 'Email already registered' }, 409);
+  const existing = await db.prepare(
+    'SELECT id, name, email, password_hash, role, coins FROM users WHERE email = ?'
+  ).bind(email).first<any>();
+
+  if (existing) {
+    // If the user exists but hasn't completed host signup (role = 'user'), let them continue
+    // by verifying their password and issuing a fresh token.
+    const passwordOk = await verifyPassword(password, existing.password_hash);
+    if (passwordOk && existing.role !== 'host') {
+      const token = await signToken(
+        { sub: existing.id, role: existing.role, name: existing.name },
+        c.env.JWT_SECRET
+      );
+      return c.json({
+        token,
+        signup_incomplete: true,
+        user: { id: existing.id, name: existing.name, email: existing.email, role: existing.role, coins: existing.coins ?? 0 },
+      }, 200);
+    }
+    return c.json({ error: 'Email already registered' }, 409);
+  }
   const id = generateId();
   const hash = await hashPassword(password);
   const otp = generateOTP();
