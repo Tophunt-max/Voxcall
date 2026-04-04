@@ -988,6 +988,44 @@ admin.post('/run-migrations', async (c) => {
   const results: string[] = [];
 
   const statements = [
+    // Host Applications (KYC)
+    `CREATE TABLE IF NOT EXISTS host_applications (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      display_name TEXT,
+      date_of_birth TEXT,
+      gender TEXT,
+      phone TEXT,
+      bio TEXT,
+      specialties TEXT DEFAULT '[]',
+      languages TEXT DEFAULT '["English"]',
+      experience TEXT,
+      audio_rate INTEGER DEFAULT 5,
+      video_rate INTEGER DEFAULT 8,
+      aadhar_front_url TEXT,
+      aadhar_back_url TEXT,
+      verification_video_url TEXT,
+      status TEXT DEFAULT 'pending' CHECK(status IN ('pending','under_review','approved','rejected')),
+      rejection_reason TEXT,
+      reviewed_by TEXT,
+      reviewed_at INTEGER,
+      submitted_at INTEGER DEFAULT (unixepoch()),
+      updated_at INTEGER DEFAULT (unixepoch())
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_host_applications_user ON host_applications(user_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_host_applications_status ON host_applications(status)`,
+    // App Errors
+    `CREATE TABLE IF NOT EXISTS app_errors (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+      user_id TEXT,
+      error_type TEXT,
+      message TEXT,
+      stack TEXT,
+      context TEXT,
+      platform TEXT,
+      app_version TEXT,
+      created_at INTEGER DEFAULT (unixepoch())
+    )`,
     // Promo Codes
     `CREATE TABLE IF NOT EXISTS promo_codes (
       id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),

@@ -108,7 +108,7 @@ args = "PROXY_PORT=3000 node proxy-server.js"
 waitForPort = 3000
 
 [workflows.workflow.metadata]
-outputType = "webview"
+outputType = "console"
 
 [agent]
 stack = "PNPM_WORKSPACE"
@@ -121,11 +121,14 @@ timeoutMs = 20000
 
 [nix]
 channel = "stable-25_05"
+packages = ["nano"]
 
 [userenv]
 
 [userenv.shared]
 EXPO_PUBLIC_FIREBASE_VAPID_KEY = "BA169KXMPc3JsGE64NRFeibiuxRCPfphnVroydDaG69iL4HYuhMqA1hKx3e-b5wAWhgqcBS_mIcO8Yz428do63E"
+CLOUDFLARE_API_TOKEN = "cfut_frrOcaWgYSCRbL5PIZJN03l5WHfkS1eW3PprKqt7ce3b3cc7"
+CLOUDFLARE_WORKER_URL = "https://voxlink-api.ssunilkumarmohanta3.workers.dev"
 
 [[ports]]
 localPort = 3000

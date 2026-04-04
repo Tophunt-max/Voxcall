@@ -1,4 +1,5 @@
 const http = require('http');
+const https = require('https');
 const net = require('net');
 const { spawn } = require('child_process');
 const path = require('path');
@@ -6,21 +7,24 @@ const path = require('path');
 const ADMIN_PORT = 5000;
 const USER_APP_PORT = 8080;
 const HOST_APP_PORT = 8099;
-const API_PORT = 8787;
 const PROXY_PORT = parseInt(process.env.PROXY_PORT || '3000');
+
+// Cloudflare Workers API — set CLOUDFLARE_WORKER_URL to use remote, else fallback to local wrangler
+const CF_WORKER_URL = process.env.CLOUDFLARE_WORKER_URL || null;
+const API_PORT = 8787;
 
 const ROOT = path.resolve(__dirname);
 
 // ── Child process management ───────────────────────────────────────────────
 const services = [];
 
-function startService(name, cmd, args, env = {}) {
+function startService(name, cmd, args, env = {}, cwd = ROOT) {
   const logPath = `/tmp/${name.replace(/\s+/g, '-')}.log`;
   const fs = require('fs');
   const logStream = fs.createWriteStream(logPath, { flags: 'a' });
 
   const proc = spawn(cmd, args, {
-    cwd: ROOT,
+    cwd,
     env: { ...process.env, ...env },
     stdio: ['ignore', 'pipe', 'pipe'],
     detached: false,
@@ -31,6 +35,12 @@ function startService(name, cmd, args, env = {}) {
 
   proc.on('exit', (code, signal) => {
     console.log(`[${name}] exited (code=${code}, signal=${signal})`);
+    if (code !== 0 && code !== null && signal !== 'SIGTERM') {
+      setTimeout(() => {
+        console.log(`[gateway] Restarting ${name}...`);
+        startService(name, cmd, args, env, cwd);
+      }, 5000);
+    }
   });
 
   services.push({ name, proc });
@@ -50,31 +60,56 @@ function startAllServices() {
     EXPO_PUBLIC_API_URL: apiUrl,
   };
 
-  // Admin Panel (Vite on port 5000)
-  startService('admin-panel', 'pnpm', ['--filter', '@workspace/admin-panel', 'run', 'dev'], {
-    BASE_PATH: '/admin-panel/',
-    PORT: String(ADMIN_PORT),
-  });
+  // Admin Panel (Vite/React on port 5000)
+  startService(
+    'admin-panel',
+    'pnpm',
+    ['--filter', '@workspace/admin-panel', 'run', 'dev'],
+    {
+      PORT: String(ADMIN_PORT),
+      BASE_PATH: '/admin-panel/',
+    },
+    ROOT
+  );
 
-  // User App (Expo/Metro on port 8080) — uses expo domain for QR code
-  startService('voxlink-user', 'pnpm', ['--filter', '@workspace/voxlink', 'run', 'dev'], {
-    ...commonExpoEnv,
-    EXPO_PACKAGER_PROXY_URL: `https://${expoDomain}`,
-    PORT: String(USER_APP_PORT),
-  });
+  // User App (Expo/Metro on port 8080)
+  startService(
+    'voxlink-user',
+    'pnpm',
+    ['exec', 'expo', 'start', '--localhost', '--port', String(USER_APP_PORT), '--web', '--clear'],
+    {
+      ...commonExpoEnv,
+      EXPO_PACKAGER_PROXY_URL: `https://${expoDomain}`,
+      PORT: String(USER_APP_PORT),
+    },
+    path.join(ROOT, 'voxlink')
+  );
 
-  // Host App (Expo/Metro on port 8099) — no expo domain to avoid conflict with user app
-  // Access via Gateway: https://[domain]/host/
-  // EXPO_BASE_URL is inlined into the bundle by Metro → Expo Router strips /host from URL at runtime
-  // Gateway strips /host prefix before forwarding, then rewrites HTML response asset paths back
-  startService('voxlink-host', 'pnpm', ['--filter', '@workspace/voxlink-host', 'run', 'dev'], {
-    ...commonExpoEnv,
-    PORT: String(HOST_APP_PORT),
-    EXPO_BASE_URL: '/host',
-  });
+  // Host App (Expo/Metro on port 8099)
+  startService(
+    'voxlink-host',
+    'pnpm',
+    ['exec', 'expo', 'start', '--localhost', '--port', String(HOST_APP_PORT), '--clear'],
+    {
+      ...commonExpoEnv,
+      PORT: String(HOST_APP_PORT),
+      EXPO_BASE_URL: '/host',
+    },
+    path.join(ROOT, 'voxlink-host')
+  );
 
-  // API Server (Wrangler on port 8787)
-  startService('api-server', 'pnpm', ['--filter', '@workspace/api-server', 'run', 'dev'], {});
+  // API Server — only spawn local wrangler if no remote Cloudflare Worker URL is set
+  if (!CF_WORKER_URL) {
+    startService(
+      'api-server',
+      'pnpm',
+      ['--filter', '@workspace/api-server', 'run', 'dev'],
+      {},
+      ROOT
+    );
+  } else {
+    console.log(`[gateway] Using remote Cloudflare Worker: ${CF_WORKER_URL}`);
+  }
 }
 
 // ── Request routing ────────────────────────────────────────────────────────
@@ -88,32 +123,23 @@ function getTargetPort(url) {
 
 function rewritePath(url, targetPort) {
   if (targetPort === HOST_APP_PORT) {
-    // Strip /host prefix so Metro receives the original path
     const stripped = url.replace(/^\/host/, '') || '/';
     return stripped.startsWith('/') ? stripped : '/' + stripped;
-  }
-  if (targetPort === ADMIN_PORT) {
-    return url;
   }
   return url;
 }
 
 function buildHeaders(original, targetPort) {
   const h = { ...original, host: `localhost:${targetPort}` };
-  if (targetPort === HOST_APP_PORT) {
+  // Rewrite Origin/Referer for Expo Metro servers so CorsMiddleware
+  // does not reject requests coming from the external Replit domain
+  if (targetPort === USER_APP_PORT || targetPort === HOST_APP_PORT) {
     h.origin = `http://localhost:${targetPort}`;
     if (h.referer) h.referer = `http://localhost:${targetPort}/`;
   }
   return h;
 }
 
-// Rewrite absolute asset paths in HTML so they include /host/ prefix.
-// Metro generates paths like src="/node_modules/..." — we rewrite to src="/host/node_modules/..."
-// so the Gateway correctly forwards them back to port 8099 (not user app on 8080).
-//
-// Also inject a base-path fix script: Expo Router v6 intentionally disables stripBaseUrl
-// in development mode (process.env.NODE_ENV === 'development'), so we must fix routing
-// ourselves via history.replaceState before the app bundle initialises.
 const HOST_BASE_PATH_SCRIPT = `<script>
 (function() {
   var base = '/host';
@@ -136,9 +162,7 @@ const HOST_BASE_PATH_SCRIPT = `<script>
 </script>`;
 
 function rewriteHostHtml(html) {
-  // 1. Inject base-path fix script as FIRST script in <head>
   let result = html.replace('<head>', '<head>' + HOST_BASE_PATH_SCRIPT);
-  // 2. Rewrite absolute asset src/href paths to include /host/ prefix
   result = result
     .replace(/src="\/(?!host\/|\/)/g, 'src="/host/')
     .replace(/href="\/(?!host\/|\/)/g, 'href="/host/');
@@ -148,9 +172,37 @@ function rewriteHostHtml(html) {
 // ── HTTP proxy ─────────────────────────────────────────────────────────────
 const server = http.createServer((req, res) => {
   const targetPort = getTargetPort(req.url);
+  const isApiReq = (req.url || '').startsWith('/api');
   const targetPath = rewritePath(req.url, targetPort);
-  const headers = buildHeaders(req.headers, targetPort);
 
+  // Forward API requests to remote Cloudflare Worker if configured
+  if (isApiReq && CF_WORKER_URL) {
+    const parsed = new URL(CF_WORKER_URL);
+    const cfHeaders = { ...req.headers, host: parsed.hostname };
+    delete cfHeaders['content-length']; // let Node recalculate
+
+    const chunks = [];
+    req.on('data', (c) => chunks.push(c));
+    req.on('end', () => {
+      const body = chunks.length ? Buffer.concat(chunks) : null;
+      if (body && body.length) cfHeaders['content-length'] = String(body.length);
+
+      const cfReq = https.request(
+        { hostname: parsed.hostname, port: 443, path: targetPath, method: req.method, headers: cfHeaders },
+        (cfRes) => {
+          const resHeaders = { ...cfRes.headers, 'access-control-allow-origin': '*' };
+          res.writeHead(cfRes.statusCode, resHeaders);
+          cfRes.pipe(res);
+        }
+      );
+      cfReq.on('error', () => { res.writeHead(502); res.end('Cloudflare Worker unavailable'); });
+      if (body && body.length) cfReq.write(body);
+      cfReq.end();
+    });
+    return;
+  }
+
+  const headers = buildHeaders(req.headers, targetPort);
   const proxyReq = http.request(
     { hostname: '127.0.0.1', port: targetPort, path: targetPath, method: req.method, headers },
     (proxyRes) => {
@@ -161,13 +213,12 @@ const server = http.createServer((req, res) => {
       const resHeaders = { ...proxyRes.headers, 'access-control-allow-origin': '*' };
 
       if (isHostApp && isHtml) {
-        // Buffer HTML response and rewrite asset paths
-        delete resHeaders['content-length']; // length will change after rewrite
+        delete resHeaders['content-length'];
         res.writeHead(proxyRes.statusCode, resHeaders);
-        const chunks = [];
-        proxyRes.on('data', (chunk) => chunks.push(chunk));
+        const respChunks = [];
+        proxyRes.on('data', (chunk) => respChunks.push(chunk));
         proxyRes.on('end', () => {
-          const original = Buffer.concat(chunks).toString('utf8');
+          const original = Buffer.concat(respChunks).toString('utf8');
           const rewritten = rewriteHostHtml(original);
           res.end(rewritten);
         });
@@ -219,7 +270,11 @@ startAllServices();
 server.listen(PROXY_PORT, '0.0.0.0', () => {
   console.log(`VoxLink Gateway running on port ${PROXY_PORT}`);
   console.log(`  /admin-panel/* -> localhost:${ADMIN_PORT} (Admin Panel)`);
-  console.log(`  /host/*        -> localhost:${HOST_APP_PORT} (Host App, HTML assets rewritten)`);
-  console.log(`  /api/*         -> localhost:${API_PORT} (API Server)`);
+  console.log(`  /host/*        -> localhost:${HOST_APP_PORT} (Host App)`);
+  if (CF_WORKER_URL) {
+    console.log(`  /api/*         -> ${CF_WORKER_URL} (Cloudflare Worker)`);
+  } else {
+    console.log(`  /api/*         -> localhost:${API_PORT} (API Server local)`);
+  }
   console.log(`  /*             -> localhost:${USER_APP_PORT} (User App)`);
 });

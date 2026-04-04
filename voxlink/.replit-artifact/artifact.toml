@@ -10,13 +10,12 @@ name = "expo"
 version = "1.0.0"
 
 [[services]]
-ensurePreviewReachable = "/status"
 name = "expo"
 paths = [ "/" ]
 localPort = 8080
 
 [services.development]
-run = "pnpm --filter @workspace/voxlink run dev"
+run = "bash -c \"until curl -sf http://localhost:8080/ >/dev/null 2>&1; do sleep 3; done; sleep infinity\""
 
 [services.production]
 build = [ "pnpm", "--filter", "@workspace/voxlink", "run", "build" ]

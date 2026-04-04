@@ -10,7 +10,7 @@ name = "API Server"
 paths = ["/api"]
 
 [services.development]
-run = "pnpm --filter @workspace/api-server run dev"
+run = "bash -c \"until curl -sf http://localhost:8787/api/healthz >/dev/null 2>&1; do sleep 5; done; sleep infinity\""
 
 [services.production]
 

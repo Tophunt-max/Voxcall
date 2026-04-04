@@ -81,9 +81,10 @@ export default defineConfig({
     },
     proxy: {
       [`${basePath}api`]: {
-        target: 'http://localhost:8787',
+        target: process.env.CLOUDFLARE_WORKER_URL ?? 'https://voxlink-api.ssunilkumarmohanta3.workers.dev',
         rewrite: (path: string) => path.replace(new RegExp(`^${basePath}api`), '/api'),
         changeOrigin: true,
+        secure: false,
       },
     },
   },
