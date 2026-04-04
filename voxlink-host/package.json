@@ -5,7 +5,7 @@
   "main": "expo-router/entry",
   "scripts": {
     "dev": "bash -c 'until curl -sf http://localhost:${PORT:-8099}/status > /dev/null 2>&1; do echo \"Waiting for VoxLink-Host on port ${PORT:-8099}...\"; sleep 3; done; echo \"VoxLink-Host ready\"; sleep infinity'",
-    "build": "expo export --platform web",
+    "build": "expo export --platform web --output-dir static-build",
     "serve": "node server/serve.js",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
