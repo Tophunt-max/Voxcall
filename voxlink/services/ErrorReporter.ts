@@ -5,7 +5,7 @@
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 
-const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8080';
+const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://voxlink-api.ssunilkumarmohanta3.workers.dev';
 const IS_PROD = !__DEV__;
 
 export interface ErrorReport {

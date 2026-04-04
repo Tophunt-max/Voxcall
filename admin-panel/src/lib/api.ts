@@ -1,5 +1,5 @@
-// Use VITE_API_URL env var for direct connection to production API,
-// or fall back to Vite proxy (localhost:8080) for local dev
+// Use VITE_API_URL env var for production API URL (e.g. https://voxlink-api.*.workers.dev).
+// Falls back to BASE_URL-relative path, which Vite proxies to the Worker in local dev.
 const API = import.meta.env.VITE_API_URL
   ? `${import.meta.env.VITE_API_URL}/api`
   : `${import.meta.env.BASE_URL.replace(/\/$/, '')}/api`;
