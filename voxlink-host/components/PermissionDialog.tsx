@@ -2,16 +2,18 @@ import React from "react";
 import {
   View,
   Text,
+  Image,
   StyleSheet,
   Modal,
   TouchableOpacity,
   Platform,
+  ImageSourcePropType,
 } from "react-native";
-import { Feather } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
 
 export type PermissionDialogConfig = {
   icon: string;
+  iconImage: ImageSourcePropType;
   iconColor: string;
   iconBg: string;
   title: string;
@@ -31,6 +33,7 @@ interface PermissionDialogProps {
 export const PERMISSION_CONFIGS: Record<string, PermissionDialogConfig> = {
   camera: {
     icon: "camera",
+    iconImage: require("@/assets/icons/ic_video.png"),
     iconColor: "#A00EE7",
     iconBg: "#F3E6FF",
     title: "Camera Access",
@@ -41,6 +44,7 @@ export const PERMISSION_CONFIGS: Record<string, PermissionDialogConfig> = {
   },
   microphone: {
     icon: "mic",
+    iconImage: require("@/assets/icons/ic_mic.png"),
     iconColor: "#0BAF23",
     iconBg: "#E6F9EA",
     title: "Microphone Access",
@@ -51,6 +55,7 @@ export const PERMISSION_CONFIGS: Record<string, PermissionDialogConfig> = {
   },
   mediaLibrary: {
     icon: "image",
+    iconImage: require("@/assets/icons/ic_photo.png"),
     iconColor: "#F39C12",
     iconBg: "#FEF3E0",
     title: "Photo Library Access",
@@ -61,13 +66,14 @@ export const PERMISSION_CONFIGS: Record<string, PermissionDialogConfig> = {
   },
   notifications: {
     icon: "bell",
+    iconImage: require("@/assets/icons/ic_notify.png"),
     iconColor: "#E74C3C",
     iconBg: "#FDEDED",
     title: "Enable Notifications",
     description:
       "Stay updated with incoming call alerts, new messages, and coin rewards. You can change this anytime in Settings.",
     allowText: "Enable Notifications",
-    settingsText: "Open Settings",
+    settingsText: "Enable in Browser",
   },
 };
 
@@ -92,10 +98,10 @@ export function PermissionDialog({
           <View
             style={[styles.iconCircle, { backgroundColor: config.iconBg }]}
           >
-            <Feather
-              name={config.icon as any}
-              size={32}
-              color={config.iconColor}
+            <Image
+              source={config.iconImage}
+              style={[styles.iconImg, { tintColor: config.iconColor }]}
+              resizeMode="contain"
             />
           </View>
 
@@ -109,6 +115,15 @@ export function PermissionDialog({
             {config.description}
           </Text>
 
+          {/* Web blocked hint */}
+          {config.isBlocked && Platform.OS === "web" && (
+            <View style={[styles.hintBox, { backgroundColor: colors.surface }]}>
+              <Text style={[styles.hintText, { color: colors.mutedForeground }]}>
+                Tap the lock icon in your browser address bar → Site settings → Notifications → Allow
+              </Text>
+            </View>
+          )}
+
           {/* Divider */}
           <View
             style={[styles.divider, { backgroundColor: colors.border }]}
@@ -120,7 +135,11 @@ export function PermissionDialog({
             style={[styles.allowBtn, { backgroundColor: config.iconColor }]}
             activeOpacity={0.85}
           >
-            <Feather name={config.icon as any} size={18} color="#fff" />
+            <Image
+              source={config.iconImage}
+              style={[styles.btnIcon, { tintColor: "#fff" }]}
+              resizeMode="contain"
+            />
             <Text style={styles.allowBtnText}>
               {config.isBlocked
                 ? config.settingsText ?? "Open Settings"
@@ -134,13 +153,13 @@ export function PermissionDialog({
             activeOpacity={0.75}
           >
             <Text style={[styles.denyBtnText, { color: colors.mutedForeground }]}>
-              {config.isBlocked ? "Not Now" : "Not Now"}
+              Not Now
             </Text>
           </TouchableOpacity>
 
           {/* Privacy note */}
           <View style={styles.privacyRow}>
-            <Feather name="shield" size={12} color={colors.mutedForeground} />
+            <Text style={[styles.shieldChar, { color: colors.mutedForeground }]}>🔒</Text>
             <Text style={[styles.privacyText, { color: colors.mutedForeground }]}>
               Your privacy is important. We never share your data.
             </Text>
@@ -174,6 +193,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginBottom: 20,
   },
+  iconImg: {
+    width: 34,
+    height: 34,
+  },
   title: {
     fontSize: 20,
     fontFamily: "Poppins_700Bold",
@@ -185,7 +208,19 @@ const styles = StyleSheet.create({
     fontFamily: "Poppins_400Regular",
     textAlign: "center",
     lineHeight: 22,
-    marginBottom: 24,
+    marginBottom: 16,
+  },
+  hintBox: {
+    width: "100%",
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 12,
+  },
+  hintText: {
+    fontSize: 12,
+    fontFamily: "Poppins_400Regular",
+    textAlign: "center",
+    lineHeight: 18,
   },
   divider: {
     width: "100%",
@@ -201,6 +236,10 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderRadius: 16,
     marginBottom: 12,
+  },
+  btnIcon: {
+    width: 18,
+    height: 18,
   },
   allowBtnText: {
     color: "#fff",
@@ -224,6 +263,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
+  },
+  shieldChar: {
+    fontSize: 12,
   },
   privacyText: {
     fontSize: 11,

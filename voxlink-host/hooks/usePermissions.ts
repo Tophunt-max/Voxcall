@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Platform, Linking } from "react-native";
+import { Platform, Linking, Alert } from "react-native";
 import { registerForPushNotifications } from "@/services/NotificationService";
 import { apiRequest } from "@/services/api";
 
@@ -267,7 +267,11 @@ export function usePermissions() {
 
   const openSettings = useCallback(() => {
     if (Platform.OS === "web") {
-      // Browser has no programmatic settings opener
+      Alert.alert(
+        "Enable in Browser Settings",
+        "To allow this permission:\n\n1. Tap the lock icon 🔒 in your browser's address bar\n2. Tap \"Site settings\" or \"Permissions\"\n3. Find the permission and set it to \"Allow\"\n4. Refresh the page",
+        [{ text: "OK" }]
+      );
       return;
     }
     if (Platform.OS === "ios") {
