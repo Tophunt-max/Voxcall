@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, Platform, RefreshControl } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Feather } from "@expo/vector-icons";
+import { IconView } from "@/components/IconView";
 import { useColors } from "@/hooks/useColors";
 import { formatRelativeTime } from "@/utils/format";
 import { API } from "@/services/api";
@@ -69,7 +69,7 @@ export default function NotificationsScreen() {
       <View style={[styles.iconCircle, { backgroundColor: colors.secondary }]}>
         {item.avatar_url
           ? <Image source={{ uri: item.avatar_url }} style={styles.notifAvatar} />
-          : <Feather name={ICONS[item.type] as any ?? "bell"} size={18} color={colors.primary} />
+          : <IconView name={ICONS[item.type] ?? "bell"} size={18} color={colors.primary} />
         }
       </View>
       <View style={styles.textArea}>
@@ -103,7 +103,7 @@ export default function NotificationsScreen() {
         ListEmptyComponent={
           !loading ? (
             <View style={styles.empty}>
-              <Feather name="bell-off" size={40} color={colors.mutedForeground} />
+              <IconView name="bell-off" size={40} color={colors.mutedForeground} />
               <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>No notifications yet</Text>
             </View>
           ) : null

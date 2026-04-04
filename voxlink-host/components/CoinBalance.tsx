@@ -1,6 +1,6 @@
 import React from "react";
 import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
-import { Feather } from "@expo/vector-icons";
+import { IconView } from "@/components/IconView";
 import { useColors } from "@/hooks/useColors";
 
 interface Props {
@@ -18,7 +18,7 @@ export function CoinBalance({ balance, onPress, size = "md" }: Props) {
     <TouchableOpacity onPress={onPress} disabled={!onPress} style={[styles.container, { backgroundColor: colors.coinGold + "20", paddingHorizontal: s.pad, paddingVertical: s.pad / 2 }]} activeOpacity={0.7}>
       <Text style={{ fontSize: s.icon }}>🪙</Text>
       <Text style={[styles.text, { color: colors.coinGold, fontSize: s.text }]}>{balance.toLocaleString()}</Text>
-      {onPress && <Feather name="plus" size={s.icon} color={colors.coinGold} />}
+      {onPress && <IconView name="plus" size={s.icon} color={colors.coinGold} />}
     </TouchableOpacity>
   );
 }

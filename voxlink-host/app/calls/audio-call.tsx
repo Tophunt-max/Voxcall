@@ -5,7 +5,7 @@ import {
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Feather } from "@expo/vector-icons";
+import { SvgIcon } from "@/components/SvgIcon";
 import { router } from "expo-router";
 import { useCall } from "@/context/CallContext";
 import { useCallTimer } from "@/hooks/useCallTimer";
@@ -141,14 +141,14 @@ export default function AudioCallScreen() {
 
       {micChecked && permissions.microphone.status !== "granted" && !showMicDialog && (
         <TouchableOpacity onPress={() => setShowMicDialog(true)} style={styles.permBanner}>
-          <Feather name="mic-off" size={14} color="#FFD166" />
+          <SvgIcon name="mic-off" size={14} color="#FFD166" />
           <Text style={styles.permBannerText}>Microphone access needed — Tap to fix</Text>
         </TouchableOpacity>
       )}
 
       {showLowCoinWarning && (
         <View style={styles.warningBanner}>
-          <Feather name="alert-triangle" size={14} color="#FFD166" />
+          <SvgIcon name="alert-triangle" size={14} color="#FFD166" />
           <Text style={styles.warningText}>
             Call ending soon — {remainingLabel}
           </Text>
@@ -157,7 +157,7 @@ export default function AudioCallScreen() {
 
       {webrtc.error && (
         <View style={styles.warningBanner}>
-          <Feather name="wifi-off" size={14} color="#FF6B6B" />
+          <SvgIcon name="wifi-off" size={14} color="#FF6B6B" />
           <Text style={styles.warningText}>Connection issue — trying to reconnect</Text>
         </View>
       )}
@@ -184,7 +184,7 @@ export default function AudioCallScreen() {
           ) : null}
           {remainingLabel && status === "active" && (
             <View style={[styles.costBadge, remaining != null && remaining <= 60 ? styles.warningBadge : {}]}>
-              <Feather name="clock" size={12} color={remaining != null && remaining <= 60 ? "#FF6B6B" : "rgba(255,255,255,0.7)"} />
+              <SvgIcon name="clock" size={12} color={remaining != null && remaining <= 60 ? "#FF6B6B" : "rgba(255,255,255,0.7)"} />
               <Text style={[styles.costText, remaining != null && remaining <= 60 && { color: "#FF6B6B" }]}>
                 {remainingLabel}
               </Text>

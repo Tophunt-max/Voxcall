@@ -3,7 +3,8 @@ import {
   View, Text, StyleSheet, TouchableOpacity,
   Modal, FlatList, Platform,
 } from "react-native";
-import { Feather } from "@expo/vector-icons";
+import { SvgIcon } from "@/components/SvgIcon";
+import { IconView } from "@/components/IconView";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 
@@ -187,11 +188,11 @@ export function DatePickerField({
   return (
     <View>
       <TouchableOpacity onPress={openPicker} activeOpacity={0.8} style={[c.field, fieldStyle]}>
-        <Feather name="calendar" size={18} color={value ? ACCENT : "#84889F"} />
+        <IconView name="calendar" size={18} color={value ? ACCENT : "#84889F"} />
         <Text style={[c.fieldTxt, !value && c.fieldPlaceholder]}>
           {value || placeholder}
         </Text>
-        <Feather name="chevron-down" size={16} color="#84889F" />
+        <SvgIcon name="chevron-down" size={16} color="#84889F" />
       </TouchableOpacity>
 
       {!isWeb && showNative && (

@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity, Image, Platform, KeyboardAvoidingView, ActivityIndicator } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Feather } from "@expo/vector-icons";
+import { SvgIcon } from "@/components/SvgIcon";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { useChat, Message } from "@/context/ChatContext";
@@ -87,7 +87,7 @@ export default function ChatScreen() {
           <Text style={[styles.headerName, { color: colors.foreground }]}>{participantName}</Text>
           <Text style={[styles.headerStatus, { color: colors.online }]}>Online</Text>
         </View>
-        <Feather name="info" size={20} color={colors.mutedForeground} />
+        <SvgIcon name="info" size={20} color={colors.mutedForeground} />
       </View>
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={0}>

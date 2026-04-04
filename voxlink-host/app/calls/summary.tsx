@@ -5,7 +5,7 @@ import {
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Feather } from "@expo/vector-icons";
+import { SvgIcon } from "@/components/SvgIcon";
 import { useColors } from "@/hooks/useColors";
 import { formatDuration } from "@/utils/format";
 import { StarRating } from "@/components/StarRating";
@@ -70,7 +70,7 @@ export default function CallSummaryScreen() {
 
         {isAutoEnded && (
           <View style={s.autoEndedBanner}>
-            <Feather name="info" size={14} color="#60B8FF" />
+            <SvgIcon name="info" size={14} color="#60B8FF" />
             <Text style={s.autoEndedText}>User ran out of coins — call was auto-disconnected</Text>
           </View>
         )}
@@ -164,7 +164,7 @@ export default function CallSummaryScreen() {
         ) : (
           <View style={s.thankYou}>
             <View style={[s.thankYouIconCircle, { backgroundColor: "#0BAF2320" }]}>
-              <Feather name="check-circle" size={36} color="#0BAF23" />
+              <SvgIcon name="check-circle" size={36} color="#0BAF23" />
             </View>
             <Text style={[s.thankYouTitle, { color: colors.foreground }]}>
               Shukriya! 🙏

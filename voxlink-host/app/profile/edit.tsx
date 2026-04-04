@@ -10,7 +10,7 @@ import { showSuccessToast, showErrorToast } from "@/components/Toast";
 import { router } from "expo-router";
 import { API, resolveMediaUrl } from "@/services/api";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Feather } from "@expo/vector-icons";
+import { SvgIcon } from "@/components/SvgIcon";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { PrimaryButton } from "@/components/PrimaryButton";
@@ -104,7 +104,7 @@ export default function EditHostProfileScreen() {
             {uploadingAvatar ? (
               <ActivityIndicator size="small" color="#fff" />
             ) : (
-              <Feather name="camera" size={16} color="#fff" />
+              <SvgIcon name="camera" size={16} color="#fff" />
             )}
           </View>
           <Text style={[styles.changeAvatarLabel, { color: colors.mutedForeground }]}>
@@ -159,7 +159,7 @@ export default function EditHostProfileScreen() {
           </View>
 
           <View style={[styles.infoBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Feather name="info" size={14} color={colors.mutedForeground} />
+            <SvgIcon name="info" size={14} color={colors.mutedForeground} />
             <Text style={[styles.infoText, { color: colors.mutedForeground }]}>
               To update your hourly rate or specialties, please contact host support.
             </Text>

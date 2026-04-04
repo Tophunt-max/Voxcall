@@ -6,7 +6,7 @@ import {
 import * as ClipboardModule from "expo-clipboard";
 import { crossShare } from "@/utils/fileUpload";
 import { router } from "expo-router";
-import { Feather } from "@expo/vector-icons";
+import { IconView } from "@/components/IconView";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { useColors } from "@/hooks/useColors";
@@ -54,7 +54,7 @@ export default function ReferralScreen() {
         style={[styles.header, { paddingTop: insets.top + 12 }]}
       >
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Feather name="arrow-left" size={22} color="#fff" />
+          <IconView name="arrow-left" size={22} color="#fff" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Refer & Earn</Text>
         <View style={{ width: 40 }} />
@@ -81,7 +81,7 @@ export default function ReferralScreen() {
               onPress={handleCopy}
               style={[styles.copyBtn, { backgroundColor: copied ? "#0BAF23" : "#A00EE7" }]}
             >
-              <Feather name={copied ? "check" : "copy"} size={16} color="#fff" />
+              <IconView name={copied ? "check" : "copy"} size={16} color="#fff" />
               <Text style={styles.copyBtnText}>{copied ? "Copied!" : "Copy"}</Text>
             </TouchableOpacity>
           </View>
@@ -92,7 +92,7 @@ export default function ReferralScreen() {
           style={[styles.shareBtn, { backgroundColor: "#A00EE7" }]}
           activeOpacity={0.88}
         >
-          <Feather name="share-2" size={18} color="#fff" />
+          <IconView name="share-2" size={18} color="#fff" />
           <Text style={styles.shareBtnText}>Share with Other Hosts</Text>
         </TouchableOpacity>
 
@@ -123,7 +123,7 @@ export default function ReferralScreen() {
               <View style={[styles.stepNum, { backgroundColor: "#A00EE7" }]}>
                 <Text style={styles.stepNumText}>{item.step}</Text>
               </View>
-              <Feather name={item.icon as any} size={20} color="#A00EE7" style={styles.stepIcon} />
+              <IconView name={item.icon} size={20} color="#A00EE7" />
               <Text style={[styles.stepText, { color: colors.text }]}>{item.text}</Text>
             </View>
           ))}

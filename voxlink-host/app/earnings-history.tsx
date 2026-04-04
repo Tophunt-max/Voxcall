@@ -5,7 +5,7 @@ import {
 } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Feather } from "@expo/vector-icons";
+import { IconView } from "@/components/IconView";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { API } from "@/services/api";
@@ -105,7 +105,7 @@ export default function EarningsHistoryScreen() {
     return (
       <View style={[styles.item, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
         <View style={[styles.iconCircle, { backgroundColor: cfg.bg }]}>
-          <Feather name={cfg.icon as any} size={18} color={cfg.color} />
+          <IconView name={cfg.icon} size={18} color={cfg.color} />
         </View>
         <View style={styles.info}>
           <Text style={[styles.itemTitle, { color: colors.text }]}>{item.title}</Text>
@@ -173,7 +173,7 @@ export default function EarningsHistoryScreen() {
         </View>
       ) : filtered.length === 0 ? (
         <View style={styles.empty}>
-          <Feather name="inbox" size={64} color={colors.border} />
+          <IconView name="inbox" size={64} color={colors.border} />
           <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>No transactions found</Text>
         </View>
       ) : (

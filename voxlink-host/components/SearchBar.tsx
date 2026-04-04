@@ -1,6 +1,6 @@
 import React from "react";
 import { View, TextInput, StyleSheet, TouchableOpacity } from "react-native";
-import { Feather } from "@expo/vector-icons";
+import { IconView } from "@/components/IconView";
 import { useColors } from "@/hooks/useColors";
 
 interface Props {
@@ -14,7 +14,7 @@ export function SearchBar({ value, onChange, placeholder = "Search hosts...", on
   const colors = useColors();
   return (
     <View style={[styles.wrapper, { backgroundColor: colors.muted, borderRadius: 14 }]}>
-      <Feather name="search" size={18} color={colors.mutedForeground} />
+      <IconView name="search" size={18} color={colors.mutedForeground} />
       <TextInput
         value={value}
         onChangeText={onChange}
@@ -26,7 +26,7 @@ export function SearchBar({ value, onChange, placeholder = "Search hosts...", on
       />
       {value.length > 0 && (
         <TouchableOpacity onPress={() => onChange("")}>
-          <Feather name="x" size={16} color={colors.mutedForeground} />
+          <IconView name="x" size={16} color={colors.mutedForeground} />
         </TouchableOpacity>
       )}
     </View>

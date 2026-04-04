@@ -6,7 +6,7 @@ import {
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
-import { Feather } from "@expo/vector-icons";
+import { IconView } from "@/components/IconView";
 import { useChat } from "@/context/ChatContext";
 import { useAuth } from "@/context/AuthContext";
 import { resolveMediaUrl } from "@/services/api";
@@ -57,7 +57,7 @@ export default function HostChatScreen() {
         accessible={false}
         style={[styles.searchWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}
       >
-        <Feather name="search" size={16} color={colors.mutedForeground} />
+        <IconView name="search" size={16} color={colors.mutedForeground} />
         <TextInput
           style={[styles.searchInput, { color: colors.text }]}
           placeholder="Search conversations..."

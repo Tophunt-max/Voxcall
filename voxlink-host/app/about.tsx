@@ -5,7 +5,7 @@ import {
 } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Feather } from "@expo/vector-icons";
+import { IconView } from "@/components/IconView";
 import { useColors } from "@/hooks/useColors";
 
 const APP_VERSION = "1.0.0";
@@ -86,7 +86,7 @@ export default function AboutScreen() {
           ].map((f) => (
             <View key={f.text} style={styles.featureRow}>
               <View style={[styles.featureIcon, { backgroundColor: colors.primary + "15" }]}>
-                <Feather name={f.icon as any} size={16} color={colors.primary} />
+                <IconView name={f.icon} size={16} color={colors.primary} />
               </View>
               <Text style={[styles.featureText, { color: colors.text }]}>{f.text}</Text>
             </View>
@@ -102,10 +102,10 @@ export default function AboutScreen() {
               onPress={() => Linking.openURL(l.url)}
             >
               <View style={[styles.linkIcon, { backgroundColor: colors.surface }]}>
-                <Feather name={l.icon as any} size={17} color={colors.primary} />
+                <IconView name={l.icon} size={17} color={colors.primary} />
               </View>
               <Text style={[styles.linkLabel, { color: colors.text }]}>{l.label}</Text>
-              <Feather name="external-link" size={14} color={colors.mutedForeground} />
+              <IconView name="external-link" size={14} color={colors.mutedForeground} />
             </TouchableOpacity>
           ))}
         </View>

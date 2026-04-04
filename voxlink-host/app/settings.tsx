@@ -5,7 +5,8 @@ import {
 } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Feather } from "@expo/vector-icons";
+import { IconView } from "@/components/IconView";
+import { SvgIcon } from "@/components/SvgIcon";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { apiRequest } from "@/services/api";
@@ -17,12 +18,10 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const SETTINGS_KEY = "host_settings_v1";
 
-type FeatherIconName = React.ComponentProps<typeof Feather>["name"];
-
 function Row({
   icon, iconImg, label, value, onPress, isSwitch, switchVal, onSwitch, danger
 }: {
-  icon: FeatherIconName; iconImg?: ImageSourcePropType; label: string; value?: string; onPress: () => void;
+  icon: string; iconImg?: ImageSourcePropType; label: string; value?: string; onPress: () => void;
   isSwitch?: boolean; switchVal?: boolean; onSwitch?: (v: boolean) => void; danger?: boolean;
 }) {
   const colors = useColors();
@@ -36,7 +35,7 @@ function Row({
         {iconImg ? (
           <Image source={iconImg} style={styles.rowIconImg} tintColor={danger ? "#F44336" : colors.primary} resizeMode="contain" />
         ) : (
-          <Feather name={icon} size={17} color={danger ? "#F44336" : colors.primary} />
+          <IconView name={icon} size={17} color={danger ? "#F44336" : colors.primary} />
         )}
       </View>
       <Text style={[styles.rowLabel, { color: danger ? "#F44336" : colors.text }]}>{label}</Text>
@@ -50,7 +49,7 @@ function Row({
       ) : (
         <View style={styles.rowRight}>
           {value ? <Text style={[styles.rowValue, { color: colors.mutedForeground }]}>{value}</Text> : null}
-          <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+          <SvgIcon name="chevron-right" size={16} color={colors.mutedForeground} />
         </View>
       )}
     </TouchableOpacity>

@@ -6,7 +6,7 @@ import {
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
-import { Feather } from "@expo/vector-icons";
+import { SvgIcon } from "@/components/SvgIcon";
 
 const FAQS = [
   { q: "How do I start receiving calls?", a: "Make sure your profile is complete and you've set your status to Online from the Profile tab. Users will then be able to see your profile and initiate calls with you." },
@@ -31,7 +31,7 @@ function FAQItem({ q, a }: { q: string; a: string }) {
     >
       <View style={styles.faqRow}>
         <Text style={[styles.faqQ, { color: colors.text }]}>{q}</Text>
-        <Feather name={open ? "chevron-up" : "chevron-down"} size={18} color={colors.mutedForeground} />
+        <SvgIcon name={open ? "chevron-up" : "chevron-down"} size={18} color={colors.mutedForeground} />
       </View>
       {open && <Text style={[styles.faqA, { color: colors.mutedForeground }]}>{a}</Text>}
     </TouchableOpacity>

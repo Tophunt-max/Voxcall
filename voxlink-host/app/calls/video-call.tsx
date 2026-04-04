@@ -4,7 +4,8 @@ import {
   Modal, Animated, Easing, Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Feather } from "@expo/vector-icons";
+import { SvgIcon } from "@/components/SvgIcon";
+import { IconView } from "@/components/IconView";
 import { router } from "expo-router";
 import { useCall } from "@/context/CallContext";
 import { useCallTimer } from "@/hooks/useCallTimer";
@@ -270,11 +271,7 @@ export default function VideoCallScreen() {
           ) : null
         ) : (
           <View style={styles.selfCameraOff}>
-            <Feather
-              name={!cameraGranted ? "slash" : "camera-off"}
-              size={22}
-              color="rgba(255,255,255,0.6)"
-            />
+            <SvgIcon name="camera-off" size={22} color="rgba(255,255,255,0.6)" />
             <Text style={styles.selfCameraOffText}>
               {!cameraGranted ? "No Permission" : "Camera Off"}
             </Text>
@@ -289,13 +286,13 @@ export default function VideoCallScreen() {
         <View style={[styles.permMissingBar, { top: insets.top + 8 }]}>
           {!cameraGranted && (
             <TouchableOpacity onPress={() => setPermStep("camera")} style={styles.permChip}>
-              <Feather name="camera-off" size={12} color="#FFD166" />
+              <SvgIcon name="camera-off" size={12} color="#FFD166" />
               <Text style={styles.permChipText}>Camera off</Text>
             </TouchableOpacity>
           )}
           {!micGranted && (
             <TouchableOpacity onPress={() => setPermStep("microphone")} style={styles.permChip}>
-              <Feather name="mic-off" size={12} color="#FFD166" />
+              <SvgIcon name="mic-off" size={12} color="#FFD166" />
               <Text style={styles.permChipText}>No mic</Text>
             </TouchableOpacity>
           )}
@@ -308,14 +305,14 @@ export default function VideoCallScreen() {
       >
         {showLowCoinWarning && (
           <View style={styles.warningBanner}>
-            <Feather name="alert-triangle" size={13} color="#FFD166" />
+            <SvgIcon name="alert-triangle" size={13} color="#FFD166" />
             <Text style={styles.warningText}>Call ending soon — {remainingLabel}</Text>
           </View>
         )}
 
         {webrtc.error && !showLowCoinWarning && (
           <View style={styles.warningBanner}>
-            <Feather name="wifi-off" size={13} color="#FF6B6B" />
+            <SvgIcon name="wifi-off" size={13} color="#FF6B6B" />
             <Text style={styles.warningText}>Connection issue</Text>
           </View>
         )}
@@ -333,7 +330,7 @@ export default function VideoCallScreen() {
               <Text style={styles.timerText}>{formatTime(elapsed)}</Text>
               {remainingLabel && (
                 <View style={[styles.remainingBadge, remaining != null && remaining <= 60 && styles.remainingBadgeLow]}>
-                  <Feather name="clock" size={10} color={remaining != null && remaining <= 60 ? "#FF6B6B" : "rgba(255,255,255,0.7)"} />
+                  <SvgIcon name="clock" size={10} color={remaining != null && remaining <= 60 ? "#FF6B6B" : "rgba(255,255,255,0.7)"} />
                   <Text style={[styles.remainingText, remaining != null && remaining <= 60 && { color: "#FF6B6B" }]}>
                     {remainingLabel}
                   </Text>
@@ -354,7 +351,7 @@ export default function VideoCallScreen() {
               onPress={() => { Haptics?.impactAsync?.(Haptics?.ImpactFeedbackStyle?.Light); toggleCamera(); }}
               style={[styles.ctrlBtn, !activeCall?.isCameraOn && styles.ctrlBtnOff]}
             >
-              <Feather name={activeCall?.isCameraOn ? "camera" : "camera-off"} size={22} color="#fff" />
+              <SvgIcon name={activeCall?.isCameraOn ? "camera" : "camera-off"} size={22} color="#fff" />
             </TouchableOpacity>
             <Text style={styles.ctrlLabel}>{activeCall?.isCameraOn ? "Camera" : "Cam Off"}</Text>
           </View>
@@ -364,7 +361,7 @@ export default function VideoCallScreen() {
               onPress={() => { Haptics?.impactAsync?.(Haptics?.ImpactFeedbackStyle?.Light); toggleMute(); }}
               style={[styles.ctrlBtn, activeCall?.isMuted && styles.ctrlBtnOff]}
             >
-              <Feather name={activeCall?.isMuted ? "mic-off" : "mic"} size={22} color="#fff" />
+              <IconView name={activeCall?.isMuted ? "mic-off" : "mic"} size={22} color="#fff" />
             </TouchableOpacity>
             <Text style={styles.ctrlLabel}>{activeCall?.isMuted ? "Unmute" : "Mute"}</Text>
           </View>
@@ -374,14 +371,14 @@ export default function VideoCallScreen() {
               onPress={() => { Haptics?.notificationAsync?.(Haptics?.NotificationFeedbackType?.Warning); handleEndCall(); }}
               style={styles.endBtn}
             >
-              <Feather name="phone-off" size={26} color="#fff" />
+              <SvgIcon name="phone-off" size={26} color="#fff" />
             </TouchableOpacity>
             <Text style={styles.ctrlLabel}>End</Text>
           </View>
 
           <View style={styles.ctrlItem}>
             <TouchableOpacity onPress={handleFlip} style={styles.ctrlBtn}>
-              <Feather name="refresh-cw" size={22} color="#fff" />
+              <SvgIcon name="refresh" size={22} color="#fff" />
             </TouchableOpacity>
             <Text style={styles.ctrlLabel}>Flip</Text>
           </View>
@@ -391,7 +388,7 @@ export default function VideoCallScreen() {
               onPress={() => { Haptics?.impactAsync?.(Haptics?.ImpactFeedbackStyle?.Light); toggleSpeaker(); }}
               style={[styles.ctrlBtn, activeCall?.isSpeakerOn && styles.ctrlBtnActive]}
             >
-              <Feather name={activeCall?.isSpeakerOn ? "volume-2" : "volume-x"} size={22} color="#fff" />
+              <IconView name={activeCall?.isSpeakerOn ? "volume-2" : "volume-x"} size={22} color="#fff" />
             </TouchableOpacity>
             <Text style={styles.ctrlLabel}>{activeCall?.isSpeakerOn ? "Speaker" : "Earpiece"}</Text>
           </View>

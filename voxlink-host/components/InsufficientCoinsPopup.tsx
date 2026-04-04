@@ -6,7 +6,7 @@ import {
   TouchableOpacity,
   Modal,
 } from "react-native";
-import { Feather } from "@expo/vector-icons";
+import { SvgIcon } from "@/components/SvgIcon";
 import { useColors } from "@/hooks/useColors";
 
 interface Props {
@@ -28,7 +28,7 @@ export function InsufficientCoinsPopup({ visible, onClose, onGoOnline }: Props) 
           <View style={[st.handle, { backgroundColor: colors.border }]} />
 
           <View style={[st.iconBg, { backgroundColor: colors.accentLight }]}>
-            <Feather name="wifi-off" size={28} color={colors.accent} />
+            <SvgIcon name="wifi-off" size={28} color={colors.accent} />
           </View>
 
           <Text style={[st.title, { color: colors.text }]}>You're Offline</Text>
@@ -42,7 +42,7 @@ export function InsufficientCoinsPopup({ visible, onClose, onGoOnline }: Props) 
               style={[st.primaryBtn, { backgroundColor: colors.accent }]}
               activeOpacity={0.85}
             >
-              <Feather name="radio" size={16} color="#fff" />
+              <SvgIcon name="radio" size={16} color="#fff" />
               <Text style={st.primaryBtnTxt}>Go Online Now</Text>
             </TouchableOpacity>
           )}

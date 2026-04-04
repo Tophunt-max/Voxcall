@@ -4,7 +4,7 @@ import {
   FlatList, ImageBackground, TextInput, ActivityIndicator, RefreshControl
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Feather } from "@expo/vector-icons";
+import { SvgIcon } from "@/components/SvgIcon";
 import { router } from "expo-router";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
@@ -270,7 +270,7 @@ export default function HostWalletScreen() {
 
           <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Bank Account / UPI ID</Text>
           <View accessible={false} style={[styles.inputWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Feather name="credit-card" size={18} color={colors.mutedForeground} style={{ marginLeft: 12 }} />
+            <SvgIcon name="credit-card" size={18} color={colors.mutedForeground} />
             <TextInput
               style={[styles.input, { color: colors.text }]}
               placeholder="Enter bank account no. or UPI ID"

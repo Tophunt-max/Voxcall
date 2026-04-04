@@ -1,4 +1,5 @@
-import { Feather } from "@expo/vector-icons";
+import { SvgIcon } from "@/components/SvgIcon";
+import { IconView } from "@/components/IconView";
 import { reloadAppAsync } from "expo";
 import React, { useState } from "react";
 import {
@@ -64,7 +65,7 @@ export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
             },
           ]}
         >
-          <Feather name="alert-circle" size={20} color={colors.foreground} />
+          <SvgIcon name="alert-circle" size={20} color={colors.foreground} />
         </Pressable>
       ) : null}
 
@@ -131,7 +132,7 @@ export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
                     { opacity: pressed ? 0.6 : 1 },
                   ]}
                 >
-                  <Feather name="x" size={24} color={colors.foreground} />
+                  <IconView name="x" size={24} color={colors.foreground} />
                 </Pressable>
               </View>
 
