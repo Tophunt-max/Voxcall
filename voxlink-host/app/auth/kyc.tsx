@@ -8,32 +8,40 @@ import { showErrorToast } from "@/components/Toast";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Feather } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { appendFileToFormData } from "@/utils/fileUpload";
 import { useAuth } from "@/context/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
 import { PermissionDialog, PERMISSION_CONFIGS } from "@/components/PermissionDialog";
 import { PrimaryButton } from "@/components/PrimaryButton";
+import { SvgIcon } from "@/components/SvgIcon";
 import { API } from "@/services/api";
 
-const DARK = "#111329";
+const BG     = "#0A0B1E";
+const DARK   = "#111329";
 const ACCENT = "#A00EE7";
-const STEPS = ["Account", "Profile", "Host Info", "KYC Docs"];
+const STEPS  = ["Account", "Profile", "Host Info", "KYC Docs"];
 
 type DocItem = {
   key: "aadhar_front" | "aadhar_back" | "verification_video";
   label: string;
   sublabel: string;
-  icon: string;
+  icon: "credit-card" | "video";
   accept: "image" | "video";
 };
 
 const DOCS: DocItem[] = [
-  { key: "aadhar_front", label: "Aadhar Front", sublabel: "Photo of front side of Aadhar card", icon: "credit-card", accept: "image" },
-  { key: "aadhar_back", label: "Aadhar Back", sublabel: "Photo of back side of Aadhar card", icon: "credit-card", accept: "image" },
-  { key: "verification_video", label: "Verification Video", sublabel: "Short video (5–15 sec) of yourself holding the Aadhar", icon: "video", accept: "video" },
+  { key: "aadhar_front",       label: "Aadhar Front",       sublabel: "Photo of front side of Aadhar card",                          icon: "credit-card", accept: "image" },
+  { key: "aadhar_back",        label: "Aadhar Back",        sublabel: "Photo of back side of Aadhar card",                           icon: "credit-card", accept: "image" },
+  { key: "verification_video", label: "Verification Video", sublabel: "Short video (5–15 sec) of yourself holding the Aadhar", icon: "video",        accept: "video" },
 ];
+
+function DocIcon({ icon, size }: { icon: "credit-card" | "video"; size: number }) {
+  if (icon === "video") {
+    return <Image source={require("@/assets/icons/ic_video.png")} style={{ width: size, height: size }} tintColor={ACCENT} resizeMode="contain" />;
+  }
+  return <SvgIcon name="credit-card" size={size} color={ACCENT} />;
+}
 
 export default function HostKYCScreen() {
   const insets = useSafeAreaInsets();
@@ -45,8 +53,8 @@ export default function HostKYCScreen() {
     dob: string;
   }>();
 
-  const [dob, setDob] = useState(params.dob ?? "");
-  const [files, setFiles] = useState<Record<string, { uri: string; uploaded?: string }>>({});
+  const [dob, setDob]           = useState(params.dob ?? "");
+  const [files, setFiles]       = useState<Record<string, { uri: string; uploaded?: string }>>({});
   const [uploading, setUploading] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [pendingDoc, setPendingDoc] = useState<DocItem | null>(null);
@@ -58,9 +66,7 @@ export default function HostKYCScreen() {
 
   const pickMedia = async (doc: DocItem) => {
     if (permissions.mediaLibrary.status !== "granted") {
-      setPendingDoc(doc);
-      setShowMediaDialog(true);
-      return;
+      setPendingDoc(doc); setShowMediaDialog(true); return;
     }
     await launchPicker(doc);
   };
@@ -71,10 +77,8 @@ export default function HostKYCScreen() {
       quality: 0.8,
       allowsEditing: doc.accept === "image",
     });
-
     if (result.canceled) return;
     const asset = result.assets[0];
-
     setUploading(doc.key);
     try {
       const formData = new FormData();
@@ -82,10 +86,9 @@ export default function HostKYCScreen() {
       const mimeType = doc.accept === "image" ? `image/${ext}` : `video/${ext}`;
       await appendFileToFormData(formData, "file", asset.uri, `kyc_${doc.key}.${ext}`, mimeType);
       formData.append("path", `kyc/${user?.id ?? "unknown"}/${doc.key}.${ext}`);
-
       const uploadData = await API.uploadFile(formData);
       setFiles((prev) => ({ ...prev, [doc.key]: { uri: asset.uri, uploaded: uploadData.url } }));
-    } catch (err) {
+    } catch {
       showErrorToast("Could not upload file. Please try again.", "Upload Failed");
     } finally {
       setUploading(null);
@@ -94,18 +97,13 @@ export default function HostKYCScreen() {
 
   const handleSubmit = async () => {
     const aadharFront = files["aadhar_front"]?.uploaded;
-    const aadharBack = files["aadhar_back"]?.uploaded;
-
+    const aadharBack  = files["aadhar_back"]?.uploaded;
     if (!aadharFront || !aadharBack) {
-      showErrorToast("Please upload both Aadhar front and back photos.", "Missing Documents");
-      return;
+      showErrorToast("Please upload both Aadhar front and back photos.", "Missing Documents"); return;
     }
-
     if (!dob.trim()) {
-      showErrorToast("Date of birth is missing. Please go back to Step 2 and select your DOB.", "Missing DOB");
-      return;
+      showErrorToast("Date of birth is missing. Please go back to Step 2 and select your DOB.", "Missing DOB"); return;
     }
-
     setSubmitting(true);
     try {
       await API.submitHostApp({
@@ -133,42 +131,43 @@ export default function HostKYCScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: "#fff" }}>
-      {/* Media Library Permission Dialog */}
       <PermissionDialog
         visible={showMediaDialog}
         config={{ ...PERMISSION_CONFIGS.mediaLibrary, isBlocked: mediaBlocked }}
         onAllow={async () => {
           if (mediaBlocked) {
-            openSettings();
-            setShowMediaDialog(false);
+            openSettings(); setShowMediaDialog(false);
           } else {
             const granted = await requestMediaLibrary();
             setShowMediaDialog(false);
-            if (granted && pendingDoc) {
-              await launchPicker(pendingDoc);
-              setPendingDoc(null);
-            }
+            if (granted && pendingDoc) { await launchPicker(pendingDoc); setPendingDoc(null); }
           }
         }}
         onDeny={() => { setShowMediaDialog(false); setPendingDoc(null); }}
       />
 
-      <LinearGradient colors={[DARK, "#2D3057"]} style={[s.header, { paddingTop: insets.top + 10 }]}>
+      {/* ── Dark gradient header ── */}
+      <LinearGradient colors={[BG, "#1A1C3A"]} style={[s.header, { paddingTop: insets.top + 10 }]}>
         <TouchableOpacity onPress={() => router.back()} style={s.backBtn} activeOpacity={0.8}>
-          <Feather name="arrow-left" size={22} color="#fff" />
+          <Image source={require("@/assets/icons/ic_back.png")} style={s.backIcon} tintColor="#fff" resizeMode="contain" />
         </TouchableOpacity>
-        <Text style={s.headerTitle}>Become a Host</Text>
-        <Text style={s.headerSub}>Step 4 of 4 — KYC Documents</Text>
+
+        <View style={s.headerCenter}>
+          <Image source={require("@/assets/images/app_logo.png")} style={s.headerLogo} resizeMode="contain" />
+          <Text style={s.headerTitle}>Become a Host</Text>
+          <Text style={s.headerSub}>Step 4 of 4 — KYC Documents</Text>
+        </View>
+
         <View style={s.steps}>
           {STEPS.map((step, i) => (
             <View key={step} style={s.stepItem}>
-              <View style={[s.stepDot, s.stepDotActive]}>
+              <LinearGradient colors={[ACCENT, "#6A00B8"]} style={s.stepCircle}>
                 {i < 3 ? (
-                  <Feather name="check" size={14} color="#fff" />
+                  <Image source={require("@/assets/icons/ic_check.png")} style={s.stepCheck} tintColor="#fff" resizeMode="contain" />
                 ) : (
                   <Text style={s.stepNumActive}>4</Text>
                 )}
-              </View>
+              </LinearGradient>
               <Text style={s.stepLabelActive}>{step}</Text>
             </View>
           ))}
@@ -185,7 +184,7 @@ export default function HostKYCScreen() {
         <Text style={s.sectionSub}>Required to start hosting. Your documents are securely stored.</Text>
 
         <View style={s.noticeBanner}>
-          <Feather name="shield" size={16} color={ACCENT} />
+          <Image source={require("@/assets/icons/ic_secure.png")} style={s.noticeIcon} tintColor={ACCENT} resizeMode="contain" />
           <Text style={s.noticeTxt}>
             KYC is mandatory per Indian regulations. Documents are reviewed only by admin and never shared with users.
           </Text>
@@ -194,11 +193,9 @@ export default function HostKYCScreen() {
         <Text style={s.fieldLabel}>Date of Birth</Text>
         {dob ? (
           <View style={s.dobReview}>
-            <Feather name="calendar" size={16} color={ACCENT} />
+            <Image source={require("@/assets/icons/ic_calendar.png")} style={s.dobIcon} tintColor={ACCENT} resizeMode="contain" />
             <Text style={s.dobReviewTxt}>{dob}</Text>
-            <View style={s.dobBadge}>
-              <Text style={s.dobBadgeTxt}>From Step 2</Text>
-            </View>
+            <View style={s.dobBadge}><Text style={s.dobBadgeTxt}>From Step 2</Text></View>
           </View>
         ) : (
           <TextInput
@@ -214,9 +211,8 @@ export default function HostKYCScreen() {
         )}
 
         {DOCS.map((doc) => {
-          const picked = files[doc.key];
+          const picked     = files[doc.key];
           const isUploading = uploading === doc.key;
-
           return (
             <TouchableOpacity
               key={doc.key}
@@ -229,9 +225,9 @@ export default function HostKYCScreen() {
                 {isUploading ? (
                   <ActivityIndicator color={picked?.uploaded ? "#fff" : ACCENT} size="small" />
                 ) : picked?.uploaded ? (
-                  <Feather name="check-circle" size={22} color="#fff" />
+                  <SvgIcon name="check-circle" size={22} color="#fff" />
                 ) : (
-                  <Feather name={doc.icon as any} size={22} color={ACCENT} />
+                  <DocIcon icon={doc.icon} size={22} />
                 )}
               </View>
               <View style={s.docInfo}>
@@ -245,7 +241,7 @@ export default function HostKYCScreen() {
               )}
               {!picked && !isUploading && (
                 <View style={s.uploadBadge}>
-                  <Feather name="upload" size={14} color={ACCENT} />
+                  <SvgIcon name="upload" size={14} color={ACCENT} />
                 </View>
               )}
             </TouchableOpacity>
@@ -279,25 +275,30 @@ export default function HostKYCScreen() {
 
 const s = StyleSheet.create({
   header: { paddingHorizontal: 20, paddingBottom: 24 },
-  backBtn: { marginBottom: 12, width: 36, height: 36, alignItems: "center", justifyContent: "center" },
-  headerTitle: { fontSize: 22, fontFamily: "Poppins_700Bold", color: "#fff", marginBottom: 4 },
-  headerSub: { fontSize: 13, fontFamily: "Poppins_400Regular", color: "rgba(255,255,255,0.7)", marginBottom: 20 },
-  steps: { flexDirection: "row" },
-  stepItem: { flex: 1, alignItems: "center", gap: 4 },
-  stepDot: { width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center" },
-  stepDotActive: { backgroundColor: "#A00EE7" },
-  stepNumActive: { fontSize: 13, fontFamily: "Poppins_600SemiBold", color: "#fff" },
+  backBtn: { width: 36, height: 36, alignItems: "center", justifyContent: "center", marginBottom: 12 },
+  backIcon: { width: 20, height: 20 },
+  headerCenter: { alignItems: "center", gap: 6, marginBottom: 20 },
+  headerLogo: { width: 52, height: 52, borderRadius: 14, marginBottom: 4 },
+  headerTitle: { fontSize: 22, fontFamily: "Poppins_700Bold", color: "#fff" },
+  headerSub: { fontSize: 12, fontFamily: "Poppins_400Regular", color: "rgba(255,255,255,0.6)" },
+  steps: { flexDirection: "row", justifyContent: "space-between" },
+  stepItem: { alignItems: "center", gap: 5 },
+  stepCircle: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center" },
+  stepCheck: { width: 14, height: 14 },
+  stepNumActive: { fontSize: 13, fontFamily: "Poppins_700Bold", color: "#fff" },
   stepLabel: { fontSize: 10, fontFamily: "Poppins_400Regular", textAlign: "center" },
-  stepLabelActive: { color: "#fff", fontSize: 10, fontFamily: "Poppins_400Regular", textAlign: "center" },
+  stepLabelActive: { color: "rgba(200,140,255,0.9)", fontSize: 10, fontFamily: "Poppins_600SemiBold", textAlign: "center" },
   form: { paddingHorizontal: 24, paddingTop: 28, gap: 16 },
-  sectionTitle: { fontSize: 18, fontFamily: "Poppins_700Bold", color: "#111329" },
+  sectionTitle: { fontSize: 18, fontFamily: "Poppins_700Bold", color: DARK },
   sectionSub: { fontSize: 13, fontFamily: "Poppins_400Regular", color: "#84889F", marginTop: -8 },
-  noticeBanner: { flexDirection: "row", gap: 10, backgroundColor: "#F4E8FD", borderRadius: 12, padding: 14 },
-  noticeTxt: { flex: 1, fontSize: 12, fontFamily: "Poppins_400Regular", color: "#111329", lineHeight: 18 },
-  fieldLabel: { fontSize: 13, fontFamily: "Poppins_600SemiBold", color: "#111329", marginBottom: 6 },
-  dobInput: { borderWidth: 1, borderColor: "#E8EAF0", borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, fontFamily: "Poppins_400Regular", color: "#111329", backgroundColor: "#F8F9FC" },
+  noticeBanner: { flexDirection: "row", gap: 10, backgroundColor: "#F4E8FD", borderRadius: 12, padding: 14, alignItems: "flex-start" },
+  noticeIcon: { width: 18, height: 18, marginTop: 1 },
+  noticeTxt: { flex: 1, fontSize: 12, fontFamily: "Poppins_400Regular", color: DARK, lineHeight: 18 },
+  fieldLabel: { fontSize: 13, fontFamily: "Poppins_600SemiBold", color: DARK, marginBottom: 6 },
+  dobInput: { borderWidth: 1, borderColor: "#E8EAF0", borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, fontFamily: "Poppins_400Regular", color: DARK, backgroundColor: "#F8F9FC" },
   dobReview: { flexDirection: "row", alignItems: "center", gap: 10, borderRadius: 12, borderWidth: 1, borderColor: "#D1F0DA", backgroundColor: "#F0FDF4", paddingHorizontal: 14, paddingVertical: 12 },
-  dobReviewTxt: { flex: 1, fontSize: 14, fontFamily: "Poppins_500Medium", color: "#111329" },
+  dobIcon: { width: 18, height: 18 },
+  dobReviewTxt: { flex: 1, fontSize: 14, fontFamily: "Poppins_500Medium", color: DARK },
   dobBadge: { backgroundColor: "#22C55E", borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
   dobBadgeTxt: { fontSize: 10, fontFamily: "Poppins_500Medium", color: "#fff" },
   docCard: { flexDirection: "row", alignItems: "center", gap: 14, borderRadius: 16, borderWidth: 1, borderColor: "#E8EAF0", padding: 16, backgroundColor: "#F8F9FC" },
@@ -305,12 +306,12 @@ const s = StyleSheet.create({
   docIconBg: { width: 46, height: 46, borderRadius: 23, backgroundColor: "#F0E6FC", alignItems: "center", justifyContent: "center" },
   docIconBgDone: { backgroundColor: "#22C55E" },
   docInfo: { flex: 1 },
-  docLabel: { fontSize: 14, fontFamily: "Poppins_600SemiBold", color: "#111329" },
+  docLabel: { fontSize: 14, fontFamily: "Poppins_600SemiBold", color: DARK },
   docSub: { fontSize: 12, fontFamily: "Poppins_400Regular", color: "#84889F", marginTop: 2 },
   docThumb: { width: 44, height: 44, borderRadius: 8 },
-  uploadBadge: { width: 32, height: 32, borderRadius: 16, borderWidth: 1, borderColor: "#A00EE7", alignItems: "center", justifyContent: "center" },
+  uploadBadge: { width: 32, height: 32, borderRadius: 16, borderWidth: 1, borderColor: ACCENT, alignItems: "center", justifyContent: "center" },
   tipsBanner: { backgroundColor: "#F8F9FC", borderRadius: 14, padding: 16, gap: 6 },
-  tipsTitle: { fontSize: 14, fontFamily: "Poppins_600SemiBold", color: "#111329", marginBottom: 4 },
+  tipsTitle: { fontSize: 14, fontFamily: "Poppins_600SemiBold", color: DARK, marginBottom: 4 },
   tipRow: { flexDirection: "row", gap: 8 },
   tipBullet: { fontSize: 13, color: "#84889F" },
   tipTxt: { flex: 1, fontSize: 13, fontFamily: "Poppins_400Regular", color: "#84889F", lineHeight: 20 },

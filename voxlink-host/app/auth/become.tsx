@@ -2,19 +2,20 @@
 import React, { useState } from "react";
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity,
-  ScrollView,
+  ScrollView, Image,
 } from "react-native";
 import { showErrorToast } from "@/components/Toast";
 import AppInput from "@/components/AppInput";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Feather } from "@expo/vector-icons";
 import { PrimaryButton } from "@/components/PrimaryButton";
+import { SvgIcon } from "@/components/SvgIcon";
 
-const DARK = "#111329";
+const BG     = "#0A0B1E";
+const DARK   = "#111329";
 const ACCENT = "#A00EE7";
-const STEPS = ["Account", "Profile", "Host Info", "KYC Docs"];
+const STEPS  = ["Account", "Profile", "Host Info", "KYC Docs"];
 
 const SPECIALTY_OPTIONS = [
   "Motivation", "Astrology", "Relationship", "Comedy",
@@ -26,29 +27,24 @@ export default function HostBecomeScreen() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ dob?: string }>();
   const [specialties, setSpecialties] = useState<string[]>([]);
-  const [languages, setLanguages] = useState<string[]>(["Hindi"]);
-  const [bio, setBio] = useState("");
-  const [audioRate, setAudioRate] = useState("5");
-  const [videoRate, setVideoRate] = useState("8");
-  const [experience, setExperience] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [languages, setLanguages]     = useState<string[]>(["Hindi"]);
+  const [bio, setBio]                 = useState("");
+  const [audioRate, setAudioRate]     = useState("5");
+  const [videoRate, setVideoRate]     = useState("8");
+  const [experience, setExperience]   = useState("");
+  const [loading, setLoading]         = useState(false);
 
   const toggle = (list: string[], setList: Function, val: string) => {
-    setList((prev: string[]) =>
-      prev.includes(val) ? prev.filter((x: string) => x !== val) : [...prev, val]
-    );
+    setList((prev: string[]) => prev.includes(val) ? prev.filter((x: string) => x !== val) : [...prev, val]);
   };
 
   const handleNext = () => {
     if (specialties.length === 0) {
-      showErrorToast("Choose at least one specialty.", "Select Specialty");
-      return;
+      showErrorToast("Choose at least one specialty.", "Select Specialty"); return;
     }
     if (!bio.trim() || bio.trim().length < 20) {
-      showErrorToast("Please write a bio of at least 20 characters.", "Bio Too Short");
-      return;
+      showErrorToast("Please write a bio of at least 20 characters.", "Bio Too Short"); return;
     }
-    // Pass data via router params to KYC step (including DOB from profile-setup)
     router.push({
       pathname: "/auth/kyc",
       params: {
@@ -65,23 +61,32 @@ export default function HostBecomeScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: "#fff" }}>
-      <LinearGradient colors={[DARK, "#2D3057"]} style={[s.header, { paddingTop: insets.top + 10 }]}>
+      {/* ── Dark gradient header ── */}
+      <LinearGradient colors={[BG, "#1A1C3A"]} style={[s.header, { paddingTop: insets.top + 10 }]}>
         <TouchableOpacity onPress={() => router.back()} style={s.backBtn} activeOpacity={0.8}>
-          <Feather name="arrow-left" size={22} color="#fff" />
+          <Image source={require("@/assets/icons/ic_back.png")} style={s.backIcon} tintColor="#fff" resizeMode="contain" />
         </TouchableOpacity>
-        <Text style={s.headerTitle}>Become a Host</Text>
-        <Text style={s.headerSub}>Step 3 of 4 — Host Info</Text>
+
+        <View style={s.headerCenter}>
+          <Image source={require("@/assets/images/app_logo.png")} style={s.headerLogo} resizeMode="contain" />
+          <Text style={s.headerTitle}>Become a Host</Text>
+          <Text style={s.headerSub}>Step 3 of 4 — Host Info</Text>
+        </View>
+
         <View style={s.steps}>
           {STEPS.map((step, i) => (
             <View key={step} style={s.stepItem}>
-              <View style={[s.stepDot, i <= 2 ? s.stepDotActive : s.stepDotInactive]}>
+              <LinearGradient
+                colors={i <= 2 ? [ACCENT, "#6A00B8"] : ["rgba(255,255,255,0.12)", "rgba(255,255,255,0.12)"]}
+                style={s.stepCircle}
+              >
                 {i < 2 ? (
-                  <Feather name="check" size={14} color="#fff" />
+                  <Image source={require("@/assets/icons/ic_check.png")} style={s.stepCheck} tintColor="#fff" resizeMode="contain" />
                 ) : (
-                  <Text style={[s.stepNum, i === 2 ? s.stepNumActive : s.stepNumInactive]}>{i + 1}</Text>
+                  <Text style={[s.stepNum, i <= 2 && s.stepNumActive]}>{i + 1}</Text>
                 )}
-              </View>
-              <Text style={[s.stepLabel, i <= 2 ? s.stepLabelActive : s.stepLabelInactive]}>{step}</Text>
+              </LinearGradient>
+              <Text style={[s.stepLabel, i <= 2 && s.stepLabelActive]}>{step}</Text>
             </View>
           ))}
         </View>
@@ -137,7 +142,7 @@ export default function HostBecomeScreen() {
 
         <Text style={s.fieldLabel}>Experience (optional)</Text>
         <AppInput
-          icon={<Feather name="briefcase" size={18} color="#84889F" />}
+          icon={<SvgIcon name="briefcase" size={18} color="#84889F" />}
           placeholder="e.g. 3 years as life coach"
           value={experience}
           onChangeText={setExperience}
@@ -145,8 +150,9 @@ export default function HostBecomeScreen() {
 
         <Text style={s.fieldLabel}>Your Call Rates (coins/min)</Text>
         <View style={s.ratesRow}>
+          {/* Audio rate */}
           <View style={s.rateCard}>
-            <Feather name="mic" size={18} color={DARK} />
+            <Image source={require("@/assets/icons/ic_mic.png")} style={s.rateIcon} tintColor={DARK} resizeMode="contain" />
             <Text style={s.rateLabel}>Audio</Text>
             <View style={s.rateInputWrap}>
               <TextInput
@@ -154,14 +160,15 @@ export default function HostBecomeScreen() {
                 onChangeText={setAudioRate}
                 style={s.rateInput}
                 keyboardType="numeric"
-                selectionColor="#A00EE7"
+                selectionColor={ACCENT}
                 underlineColorAndroid="transparent"
               />
               <Text style={s.rateSuffix}>coins/min</Text>
             </View>
           </View>
+          {/* Video rate */}
           <View style={s.rateCard}>
-            <Feather name="video" size={18} color={DARK} />
+            <Image source={require("@/assets/icons/ic_video.png")} style={s.rateIcon} tintColor={DARK} resizeMode="contain" />
             <Text style={s.rateLabel}>Video</Text>
             <View style={s.rateInputWrap}>
               <TextInput
@@ -169,7 +176,7 @@ export default function HostBecomeScreen() {
                 onChangeText={setVideoRate}
                 style={s.rateInput}
                 keyboardType="numeric"
-                selectionColor="#A00EE7"
+                selectionColor={ACCENT}
                 underlineColorAndroid="transparent"
               />
               <Text style={s.rateSuffix}>coins/min</Text>
@@ -178,7 +185,7 @@ export default function HostBecomeScreen() {
         </View>
 
         <View style={s.noteBanner}>
-          <Feather name="info" size={14} color="#84889F" />
+          <SvgIcon name="info" size={14} color="#84889F" />
           <Text style={s.noteTxt}>Rates are suggestions. Admin may adjust them after approval.</Text>
         </View>
 
@@ -190,38 +197,35 @@ export default function HostBecomeScreen() {
 
 const s = StyleSheet.create({
   header: { paddingHorizontal: 20, paddingBottom: 24 },
-  backBtn: { marginBottom: 12, width: 36, height: 36, alignItems: "center", justifyContent: "center" },
-  headerTitle: { fontSize: 22, fontFamily: "Poppins_700Bold", color: "#fff", marginBottom: 4 },
-  headerSub: { fontSize: 13, fontFamily: "Poppins_400Regular", color: "rgba(255,255,255,0.7)", marginBottom: 20 },
-  steps: { flexDirection: "row" },
-  stepItem: { flex: 1, alignItems: "center", gap: 4 },
-  stepDot: { width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center" },
-  stepDotActive: { backgroundColor: "#A00EE7" },
-  stepDotInactive: { backgroundColor: "rgba(255,255,255,0.15)" },
-  stepNum: { fontSize: 13, fontFamily: "Poppins_600SemiBold" },
+  backBtn: { width: 36, height: 36, alignItems: "center", justifyContent: "center", marginBottom: 12 },
+  backIcon: { width: 20, height: 20 },
+  headerCenter: { alignItems: "center", gap: 6, marginBottom: 20 },
+  headerLogo: { width: 52, height: 52, borderRadius: 14, marginBottom: 4 },
+  headerTitle: { fontSize: 22, fontFamily: "Poppins_700Bold", color: "#fff" },
+  headerSub: { fontSize: 12, fontFamily: "Poppins_400Regular", color: "rgba(255,255,255,0.6)" },
+  steps: { flexDirection: "row", justifyContent: "space-between" },
+  stepItem: { alignItems: "center", gap: 5 },
+  stepCircle: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center" },
+  stepCheck: { width: 14, height: 14 },
+  stepNum: { fontSize: 13, fontFamily: "Poppins_700Bold", color: "rgba(255,255,255,0.5)" },
   stepNumActive: { color: "#fff" },
-  stepNumInactive: { color: "rgba(255,255,255,0.5)" },
-  stepLabel: { fontSize: 10, fontFamily: "Poppins_400Regular", textAlign: "center" },
-  stepLabelActive: { color: "#fff" },
-  stepLabelInactive: { color: "rgba(255,255,255,0.4)" },
+  stepLabel: { fontSize: 10, fontFamily: "Poppins_400Regular", color: "rgba(255,255,255,0.45)" },
+  stepLabelActive: { color: "rgba(200,140,255,0.9)", fontFamily: "Poppins_600SemiBold" },
   form: { paddingHorizontal: 24, paddingTop: 28, gap: 14 },
-  sectionTitle: { fontSize: 18, fontFamily: "Poppins_700Bold", color: "#111329" },
+  sectionTitle: { fontSize: 18, fontFamily: "Poppins_700Bold", color: DARK },
   sectionSub: { fontSize: 13, fontFamily: "Poppins_400Regular", color: "#84889F", marginTop: -8, marginBottom: 4 },
-  fieldLabel: { fontSize: 14, fontFamily: "Poppins_500Medium", color: "#111329", marginBottom: -6 },
+  fieldLabel: { fontSize: 14, fontFamily: "Poppins_500Medium", color: DARK, marginBottom: -6 },
   chipWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: "#E8EAF0", backgroundColor: "#F8F9FC" },
   chipActive: { borderColor: ACCENT, backgroundColor: "#F4E8FD" },
   chipTxt: { fontSize: 13, fontFamily: "Poppins_400Regular", color: "#84889F" },
   chipTxtActive: { color: ACCENT, fontFamily: "Poppins_500Medium" },
-  inputWrap: { flexDirection: "row", alignItems: "center", borderRadius: 14, borderWidth: 1, borderColor: "#E8EAF0", backgroundColor: "#F8F9FC", paddingHorizontal: 16, paddingVertical: 14, gap: 12 },
-  textareaWrap: { alignItems: "flex-start", paddingVertical: 12 },
-  input: { flex: 1, fontSize: 14, fontFamily: "Poppins_400Regular", padding: 0, color: "#111329" },
-  textarea: { minHeight: 80, textAlignVertical: "top" },
   ratesRow: { flexDirection: "row", gap: 12 },
   rateCard: { flex: 1, backgroundColor: "#F8F9FC", borderRadius: 14, borderWidth: 1, borderColor: "#E8EAF0", padding: 14, gap: 4 },
+  rateIcon: { width: 20, height: 20 },
   rateLabel: { fontSize: 12, fontFamily: "Poppins_500Medium", color: "#84889F" },
   rateInputWrap: { flexDirection: "row", alignItems: "center", gap: 6 },
-  rateInput: { fontSize: 20, fontFamily: "Poppins_700Bold", color: "#111329", padding: 0, minWidth: 40 },
+  rateInput: { fontSize: 20, fontFamily: "Poppins_700Bold", color: DARK, padding: 0, minWidth: 40 },
   rateSuffix: { fontSize: 11, fontFamily: "Poppins_400Regular", color: "#84889F" },
   noteBanner: { flexDirection: "row", alignItems: "flex-start", gap: 8, backgroundColor: "#FFF8E7", borderRadius: 10, padding: 12 },
   noteTxt: { flex: 1, fontSize: 12, fontFamily: "Poppins_400Regular", color: "#84889F" },
