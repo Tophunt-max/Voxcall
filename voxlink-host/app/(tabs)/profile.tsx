@@ -247,7 +247,7 @@ export default function HostProfileScreen() {
 
         <TouchableOpacity style={[styles.menuItem, { borderBottomColor: colors.border }]} onPress={() => router.push("/help-center")} activeOpacity={0.75}>
           <View style={[styles.menuIcon, { backgroundColor: colors.surface }]}>
-            <Image source={require("@/assets/icons/ic_users.png")} style={styles.menuIconImg} tintColor={colors.text} resizeMode="contain" />
+            <Image source={require("@/assets/icons/ic_listener.png")} style={styles.menuIconImg} tintColor={colors.text} resizeMode="contain" />
           </View>
           <Text style={[styles.menuLabel, { color: colors.text }]}>Help Center</Text>
           <Image source={require("@/assets/icons/ic_back.png")} style={[styles.chevron, CHEVRON_ROTATE]} tintColor={colors.mutedForeground} resizeMode="contain" />
