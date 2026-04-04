@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { StatCard } from '@/components/ui/StatCard';
 import {
@@ -21,54 +21,81 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   );
 };
 
+function StatsSkeleton() {
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      {[...Array(4)].map((_, i) => (
+        <div key={i} className="h-28 rounded-2xl bg-muted animate-pulse" />
+      ))}
+    </div>
+  );
+}
+
 export default function Dashboard() {
-  const [data, setData] = useState<any>(null);
-  const [analytics, setAnalytics] = useState<any>(null);
-  const [settings, setSettings] = useState<Record<string, string>>({});
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState('');
+  // OPTIMIZATION #14: useQuery replaces manual useEffect+useState
+  //   - Automatic background refetch every 30 s (live dashboard feel — optimization #17)
+  //   - Deduplicates concurrent requests on the same page
+  //   - Automatic retry on network failure (3 attempts)
+  //   - Cached in React Query's in-memory store so navigating back is instant
+  const { data, isLoading: loadingDash, error } = useQuery({
+    queryKey: ['dashboard'],
+    queryFn: () => api.dashboard(),
+    refetchInterval: 30_000,
+    staleTime: 20_000,
+  });
 
-  useEffect(() => {
-    Promise.all([
-      api.dashboard().then(setData).catch(e => setErr(e.message)),
-      api.analytics().then(setAnalytics).catch(() => {}),
-      api.settings().then(setSettings).catch(() => {}),
-    ]).finally(() => setLoading(false));
-  }, []);
+  const { data: analytics, isLoading: loadingAnalytics } = useQuery({
+    queryKey: ['analytics'],
+    queryFn: () => api.analytics(),
+    refetchInterval: 60_000,
+    staleTime: 50_000,
+  });
 
-  const weekly = analytics?.weekly ?? [];
-  const roleData = analytics?.role_distribution ?? [];
-  const avgDuration = analytics?.avg_call_duration ?? 0;
+  const { data: settings = {} as Record<string, string> } = useQuery({
+    queryKey: ['settings'],
+    queryFn: () => api.settings(),
+    staleTime: 5 * 60_000,
+  });
+
+  const weekly = (analytics as any)?.weekly ?? [];
+  const roleData = (analytics as any)?.role_distribution ?? [];
+  const avgDuration = (analytics as any)?.avg_call_duration ?? 0;
   const avgDurationMin = avgDuration > 0 ? `${(avgDuration / 60).toFixed(1)} min` : '—';
 
-  const payoutRate = settings['host_revenue_share']
-    ? `${parseFloat(settings['host_revenue_share']) * 100}%`
+  const payoutRate = (settings as any)['host_revenue_share']
+    ? `${parseFloat((settings as any)['host_revenue_share']) * 100}%`
     : '70%';
-  const coinValue = settings['coin_value_inr']
-    ? `₹${settings['coin_value_inr']}`
+  const coinValue = (settings as any)['coin_value_inr']
+    ? `₹${(settings as any)['coin_value_inr']}`
     : '₹0.01';
+
+  const loading = loadingDash || loadingAnalytics;
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64 text-sm text-muted-foreground">
-        Loading dashboard…
+      <div className="space-y-6">
+        <StatsSkeleton />
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+          <div className="xl:col-span-2 h-72 rounded-2xl bg-muted animate-pulse" />
+          <div className="h-72 rounded-2xl bg-muted animate-pulse" />
+        </div>
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
-      {err && (
+      {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm flex items-center gap-2">
-          <span className="font-medium">API Error:</span> {err}
+          <span className="font-medium">API Error:</span> {(error as Error).message}
         </div>
       )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        <StatCard icon={Users} label="Total Users" value={data?.total_users?.toLocaleString() ?? '–'} gradient="gradient-purple" />
-        <StatCard icon={Mic2} label="Total Hosts" value={data?.total_hosts?.toLocaleString() ?? '–'} gradient="gradient-blue" />
-        <StatCard icon={PhoneCall} label="Calls Today" value={data?.calls_today?.toLocaleString() ?? '0'} gradient="gradient-green" />
-        <StatCard icon={Coins} label="Revenue (Coins)" value={data?.total_revenue_coins?.toLocaleString() ?? '0'} gradient="gradient-orange" />
+        <StatCard icon={Users} label="Total Users" value={(data as any)?.total_users?.toLocaleString() ?? '–'} gradient="gradient-purple" />
+        <StatCard icon={Mic2} label="Total Hosts" value={(data as any)?.total_hosts?.toLocaleString() ?? '–'} gradient="gradient-blue" />
+        <StatCard icon={PhoneCall} label="Calls Today" value={(data as any)?.calls_today?.toLocaleString() ?? '0'} gradient="gradient-green" />
+        <StatCard icon={Coins} label="Revenue (Coins)" value={(data as any)?.total_revenue_coins?.toLocaleString() ?? '0'} gradient="gradient-orange" />
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
@@ -78,107 +105,72 @@ export default function Dashboard() {
               <h3 className="font-bold text-base">Revenue Trend</h3>
               <p className="text-xs text-muted-foreground">Coins earned — last 7 days</p>
             </div>
-            <div className="flex items-center gap-1.5 text-xs text-violet-600 bg-violet-50 px-2.5 py-1 rounded-full font-semibold">
-              <TrendingUp size={12} /> Live
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted px-2.5 py-1 rounded-full">
+              <TrendingUp className="w-3 h-3" />
+              Live · auto-refreshes
             </div>
           </div>
-          {weekly.length === 0 ? (
-            <div className="h-[200px] flex items-center justify-center text-sm text-muted-foreground">
-              No data yet — charts populate once calls happen
-            </div>
-          ) : (
-            <ResponsiveContainer width="100%" height={200}>
-              <LineChart data={weekly}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis dataKey="day" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                <Tooltip content={<CustomTooltip />} />
-                <Line type="monotone" dataKey="revenue" stroke="#7C3AED" strokeWidth={2.5} dot={{ fill: '#7C3AED', r: 3 }} name="Revenue (Coins)" />
-              </LineChart>
-            </ResponsiveContainer>
-          )}
+          <ResponsiveContainer width="100%" height={220}>
+            <LineChart data={weekly}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
+              <XAxis dataKey="date" tick={{ fontSize: 11 }} tickFormatter={d => d?.slice(5)} />
+              <YAxis tick={{ fontSize: 11 }} />
+              <Tooltip content={<CustomTooltip />} />
+              <Line type="monotone" dataKey="revenue_coins" stroke="#7C3AED" strokeWidth={2} dot={false} name="Coins" />
+            </LineChart>
+          </ResponsiveContainer>
         </div>
 
         <div className="bg-card border border-border rounded-2xl p-5">
-          <div className="mb-5">
-            <h3 className="font-bold text-base">User Breakdown</h3>
-            <p className="text-xs text-muted-foreground">Users vs Hosts vs Admins</p>
-          </div>
-          {roleData.every((r: any) => r.value === 0) ? (
-            <div className="h-[160px] flex items-center justify-center text-sm text-muted-foreground">No users yet</div>
-          ) : (
-            <ResponsiveContainer width="100%" height={160}>
-              <PieChart>
-                <Pie data={roleData} cx="50%" cy="50%" innerRadius={40} outerRadius={65} dataKey="value" paddingAngle={3}>
-                  {roleData.map((_: any, i: number) => <Cell key={i} fill={COLORS[i]} />)}
-                </Pie>
-                <Legend iconSize={10} wrapperStyle={{ fontSize: 11 }} />
-                <Tooltip formatter={(v: any, n: any) => [v, n]} />
-              </PieChart>
-            </ResponsiveContainer>
-          )}
+          <h3 className="font-bold text-base mb-5">User Roles</h3>
+          <ResponsiveContainer width="100%" height={200}>
+            <PieChart>
+              <Pie data={roleData} dataKey="count" nameKey="role" cx="50%" cy="50%" outerRadius={70} label={({ role, percent }) => `${role} ${(percent * 100).toFixed(0)}%`} labelLine={false}>
+                {roleData.map((_: any, i: number) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+              </Pie>
+              <Tooltip />
+            </PieChart>
+          </ResponsiveContainer>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-        <div className="bg-card border border-border rounded-2xl p-5">
-          <div className="mb-5">
-            <h3 className="font-bold text-base">Daily Calls</h3>
-            <p className="text-xs text-muted-foreground">Call count — last 7 days</p>
-          </div>
-          {weekly.length === 0 ? (
-            <div className="h-[160px] flex items-center justify-center text-sm text-muted-foreground">No calls yet</div>
-          ) : (
-            <ResponsiveContainer width="100%" height={160}>
-              <BarChart data={weekly} barSize={22}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
-                <XAxis dataKey="day" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                <Tooltip content={<CustomTooltip />} />
-                <Bar dataKey="calls" fill="#7C3AED" radius={[4, 4, 0, 0]} name="Calls" />
-              </BarChart>
-            </ResponsiveContainer>
-          )}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+        <div className="xl:col-span-2 bg-card border border-border rounded-2xl p-5">
+          <h3 className="font-bold text-base mb-5">Daily Calls</h3>
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={weekly}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
+              <XAxis dataKey="date" tick={{ fontSize: 11 }} tickFormatter={d => d?.slice(5)} />
+              <YAxis tick={{ fontSize: 11 }} />
+              <Tooltip content={<CustomTooltip />} />
+              <Bar dataKey="calls" fill="#06B6D4" radius={[4, 4, 0, 0]} name="Calls" />
+            </BarChart>
+          </ResponsiveContainer>
         </div>
 
-        <div className="bg-card border border-border rounded-2xl p-5">
-          <div className="mb-5">
-            <h3 className="font-bold text-base">New Registrations</h3>
-            <p className="text-xs text-muted-foreground">Sign-ups — last 7 days</p>
+        <div className="bg-card border border-border rounded-2xl p-5 space-y-4">
+          <h3 className="font-bold text-base">Quick Stats</h3>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between py-2 border-b border-border">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Clock className="w-4 h-4" /> Avg Call Duration
+              </div>
+              <span className="font-semibold text-sm">{avgDurationMin}</span>
+            </div>
+            <div className="flex items-center justify-between py-2 border-b border-border">
+              <span className="text-sm text-muted-foreground">Host Payout Rate</span>
+              <span className="font-semibold text-sm">{payoutRate}</span>
+            </div>
+            <div className="flex items-center justify-between py-2 border-b border-border">
+              <span className="text-sm text-muted-foreground">Coin Value</span>
+              <span className="font-semibold text-sm">{coinValue}</span>
+            </div>
+            <div className="flex items-center justify-between py-2">
+              <span className="text-sm text-muted-foreground">Active Hosts</span>
+              <span className="font-semibold text-sm">{(data as any)?.online_hosts ?? '—'}</span>
+            </div>
           </div>
-          {weekly.length === 0 ? (
-            <div className="h-[160px] flex items-center justify-center text-sm text-muted-foreground">No registrations yet</div>
-          ) : (
-            <ResponsiveContainer width="100%" height={160}>
-              <BarChart data={weekly} barSize={22}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
-                <XAxis dataKey="day" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                <Tooltip content={<CustomTooltip />} />
-                <Bar dataKey="users" fill="#06B6D4" radius={[4, 4, 0, 0]} name="New Users" />
-              </BarChart>
-            </ResponsiveContainer>
-          )}
         </div>
-      </div>
-
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        {[
-          { label: 'Avg. Call Duration', value: avgDurationMin, icon: Clock, color: 'text-violet-600 bg-violet-50' },
-          { label: 'Host Payout Rate', value: payoutRate, icon: Coins, color: 'text-green-600 bg-green-50' },
-          { label: 'Coin → INR', value: coinValue, icon: TrendingUp, color: 'text-blue-600 bg-blue-50' },
-          { label: 'Active Hosts', value: `${data?.total_hosts ?? 0}`, icon: Mic2, color: 'text-orange-600 bg-orange-50' },
-        ].map(s => (
-          <div key={s.label} className="bg-card border border-border rounded-xl p-4 flex items-center gap-3">
-            <div className={`w-9 h-9 rounded-lg ${s.color} flex items-center justify-center flex-shrink-0`}>
-              <s.icon size={17} />
-            </div>
-            <div className="min-w-0">
-              <p className="font-bold text-sm">{s.value}</p>
-              <p className="text-xs text-muted-foreground truncate">{s.label}</p>
-            </div>
-          </div>
-        ))}
       </div>
     </div>
   );

@@ -31,6 +31,7 @@ function enrichHost(h: any) {
 }
 
 // GET /api/hosts/featured — top-rated/featured hosts (must be before /:id)
+// OPTIMIZATION #3: Cache-Control lets Cloudflare CDN cache this for 2 min (featured rarely changes)
 host.get('/featured', async (c) => {
   const result = await c.env.DB.prepare(
     `SELECT h.*, u.name, u.avatar_url, u.gender, u.bio FROM hosts h
@@ -38,23 +39,84 @@ host.get('/featured', async (c) => {
      WHERE h.is_active = 1 AND h.rating >= 4.0
      ORDER BY h.is_top_rated DESC, h.rating DESC, h.total_minutes DESC LIMIT 10`
   ).all();
-  return c.json(result.results.map(enrichHost));
+  return new Response(JSON.stringify(result.results.map(enrichHost)), {
+    headers: {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'public, s-maxage=120, stale-while-revalidate=300',
+    },
+  });
 });
 
-// GET /api/hosts — public list
+// GET /api/hosts — public list with cursor-based pagination
+// OPTIMIZATION #2: Cursor pagination — avoids expensive OFFSET scan on large datasets.
+//   - First page: no cursor → ORDER BY ... LIMIT n
+//   - Next pages:  ?cursor=<opaque> → keyset WHERE clause → no OFFSET needed
+//   Response includes `nextCursor` field; null means no more results.
+// OPTIMIZATION #3: Cache-Control 30 s + stale-while-revalidate 60 s for unfiltered listing.
 host.get('/', async (c) => {
-  const { search, topic, online, page = '1', limit = '20' } = c.req.query();
-  const offset = (parseInt(page) - 1) * parseInt(limit);
+  const { search, topic, online, cursor, limit = '20' } = c.req.query();
+  const lim = Math.min(parseInt(limit) || 20, 100);
+
   let query = `SELECT h.*, u.name, u.avatar_url, u.gender, u.bio FROM hosts h
     JOIN users u ON u.id = h.user_id WHERE h.is_active = 1`;
   const params: any[] = [];
+
   if (online === '1') { query += ' AND h.is_online = 1'; }
   if (search) { query += ' AND (u.name LIKE ? OR h.display_name LIKE ?)'; params.push(`%${search}%`, `%${search}%`); }
   if (topic) { query += ' AND h.specialties LIKE ?'; params.push(`%${topic}%`); }
-  query += ' ORDER BY h.is_online DESC, h.rating DESC, h.total_minutes DESC LIMIT ? OFFSET ?';
-  params.push(parseInt(limit), offset);
+
+  // Keyset cursor: encoded as base64(JSON({is_online,rating,total_minutes,id}))
+  if (cursor) {
+    try {
+      const prev = JSON.parse(atob(cursor)) as {
+        is_online: number; rating: number; total_minutes: number; id: string;
+      };
+      query += ` AND (
+        h.is_online < ? OR
+        (h.is_online = ? AND h.rating < ?) OR
+        (h.is_online = ? AND h.rating = ? AND h.total_minutes < ?) OR
+        (h.is_online = ? AND h.rating = ? AND h.total_minutes = ? AND h.id > ?)
+      )`;
+      params.push(
+        prev.is_online,
+        prev.is_online, prev.rating,
+        prev.is_online, prev.rating, prev.total_minutes,
+        prev.is_online, prev.rating, prev.total_minutes, prev.id,
+      );
+    } catch {
+      // Invalid cursor — ignore and return first page
+    }
+  }
+
+  query += ' ORDER BY h.is_online DESC, h.rating DESC, h.total_minutes DESC, h.id ASC LIMIT ?';
+  params.push(lim);
+
   const result = await c.env.DB.prepare(query).bind(...params).all();
-  return c.json(result.results.map(enrichHost));
+  const rows = result.results.map(enrichHost);
+
+  // Build next cursor from last row
+  let nextCursor: string | null = null;
+  if (rows.length === lim) {
+    const last = result.results[result.results.length - 1] as any;
+    nextCursor = btoa(JSON.stringify({
+      is_online: last.is_online,
+      rating: last.rating,
+      total_minutes: last.total_minutes,
+      id: last.id,
+    }));
+  }
+
+  const body = JSON.stringify({ hosts: rows, nextCursor });
+  const isFiltered = !!(search || topic || online);
+  return new Response(body, {
+    headers: {
+      'Content-Type': 'application/json',
+      // Filtered queries are not cached (dynamic); unfiltered get 30s CDN cache
+      'Cache-Control': isFiltered
+        ? 'no-store'
+        : 'public, s-maxage=30, stale-while-revalidate=60',
+    },
+  });
 });
 
 // GET /api/hosts/:id — single host

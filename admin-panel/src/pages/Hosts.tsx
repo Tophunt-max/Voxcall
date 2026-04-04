@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useState, useRef } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { Table } from '@/components/ui/Table';
 import { Badge } from '@/components/ui/Badge';
-import { Star, CheckCircle, Circle, RefreshCw, Save } from 'lucide-react';
+import { Star, CheckCircle, Circle, RefreshCw, Save, Search } from 'lucide-react';
 
 const LEVELS: Record<number, { name: string; badge: string; color: string; bg: string }> = {
   1: { name: 'Newcomer', badge: '🌱', color: 'text-gray-600', bg: 'bg-gray-100' },
@@ -140,45 +141,63 @@ function HostAvatar({ name, level }: { name: string; level: number }) {
 }
 
 export default function Hosts() {
-  const [hosts, setHosts] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState('');
+  const queryClient = useQueryClient();
   const [toast, setToast] = useState('');
   const [editHost, setEditHost] = useState<any>(null);
-  const [recalculating, setRecalculating] = useState(false);
-  // Bug 16 Fix: Track which host+field is being toggled to disable button during request
   const [toggling, setToggling] = useState<string | null>(null);
-
-  const load = () => {
-    setLoading(true);
-    setLoadError('');
-    // Bug 17 Fix: Add .catch() so load failures show an error instead of silent empty state
-    api.hosts().then(setHosts).catch((e: any) => setLoadError(e.message || 'Failed to load hosts')).finally(() => setLoading(false));
-  };
-  useEffect(load, []);
+  const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 2500); };
 
-  const toggle = async (id: string, field: string, cur: boolean) => {
-    const key = `${id}:${field}`;
-    if (toggling === key) return; // Bug 16 Fix: Prevent duplicate requests on double-click
-    setToggling(key);
-    try {
-      await api.updateHost(id, { [field]: !cur ? 1 : 0 });
-      load();
-      showToast('Host updated');
-    } catch (e: any) { showToast('Error: ' + e.message); }
-    finally { setToggling(null); }
+  // OPTIMIZATION #14: useQuery for hosts — deduped, cached, auto-retry
+  // OPTIMIZATION #16: debounced search input
+  const { data: allHosts = [], isLoading, error } = useQuery<any[]>({
+    queryKey: ['admin-hosts'],
+    queryFn: () => api.hosts() as Promise<any[]>,
+    staleTime: 30_000,
+  });
+
+  const hosts = debouncedSearch
+    ? allHosts.filter((h: any) =>
+        (h.display_name || h.name || '').toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+        (h.email || '').toLowerCase().includes(debouncedSearch.toLowerCase())
+      )
+    : allHosts;
+
+  const handleSearch = (val: string) => {
+    setSearch(val);
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => setDebouncedSearch(val), 300);
   };
 
-  const recalculateLevels = async () => {
-    setRecalculating(true);
-    try {
-      await api.recalculateHostLevels();
-      load();
+  // OPTIMIZATION #9: useMutation invalidates cache on success — no manual reload needed
+  const toggleMutation = useMutation({
+    mutationFn: ({ id, field, cur }: { id: string; field: string; cur: boolean }) =>
+      api.updateHost(id, { [field]: !cur ? 1 : 0 }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-hosts'] });
+      showToast('Host updated');
+    },
+    onError: (e: any) => showToast('Error: ' + e.message),
+    onSettled: () => setToggling(null),
+  });
+
+  const recalcMutation = useMutation({
+    mutationFn: () => api.recalculateHostLevels(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-hosts'] });
       showToast('All host levels recalculated!');
-    } catch (e: any) { showToast('Error: ' + e.message); }
-    finally { setRecalculating(false); }
+    },
+    onError: (e: any) => showToast('Error: ' + e.message),
+  });
+
+  const toggle = (id: string, field: string, cur: boolean) => {
+    const key = `${id}:${field}`;
+    if (toggling === key) return;
+    setToggling(key);
+    toggleMutation.mutate({ id, field, cur });
   };
 
   const cols = [
@@ -269,9 +288,9 @@ export default function Hosts() {
           {toast}
         </div>
       )}
-      {loadError && (
+      {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3">
-          Failed to load hosts: {loadError} — <button className="underline font-semibold" onClick={load}>Retry</button>
+          Failed to load hosts: {(error as Error).message}
         </div>
       )}
 
@@ -279,23 +298,34 @@ export default function Hosts() {
         <EditRateModal
           host={editHost}
           onClose={() => setEditHost(null)}
-          onSaved={() => { load(); showToast('Host updated successfully!'); }}
+          onSaved={() => { queryClient.invalidateQueries({ queryKey: ['admin-hosts'] }); showToast('Host updated successfully!'); }}
         />
       )}
 
-      <div className="flex items-start justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h2 className="font-bold text-lg">Hosts</h2>
           <p className="text-sm text-muted-foreground">{hosts.length} registered hosts — manage levels, rates & status</p>
         </div>
-        <button
-          onClick={recalculateLevels}
-          disabled={recalculating}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-violet-600 text-white text-sm font-semibold hover:bg-violet-700 disabled:opacity-60 transition-colors"
-        >
-          <RefreshCw size={14} className={recalculating ? 'animate-spin' : ''} />
-          {recalculating ? 'Calculating…' : 'Auto Level'}
-        </button>
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input
+              className="pl-8 pr-4 py-2 text-sm border border-border rounded-xl bg-card focus:outline-none focus:ring-2 focus:ring-primary/30 w-48"
+              placeholder="Search hosts..."
+              value={search}
+              onChange={e => handleSearch(e.target.value)}
+            />
+          </div>
+          <button
+            onClick={() => recalcMutation.mutate()}
+            disabled={recalcMutation.isPending}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-violet-600 text-white text-sm font-semibold hover:bg-violet-700 disabled:opacity-60 transition-colors"
+          >
+            <RefreshCw size={14} className={recalcMutation.isPending ? 'animate-spin' : ''} />
+            {recalcMutation.isPending ? 'Calculating…' : 'Auto Level'}
+          </button>
+        </div>
       </div>
 
       {/* Level legend */}
@@ -307,7 +337,7 @@ export default function Hosts() {
         ))}
       </div>
 
-      <Table columns={cols} data={hosts} loading={loading} empty="No hosts registered yet" keyFn={h => h.id} />
+      <Table columns={cols} data={hosts} loading={isLoading} empty="No hosts registered yet" keyFn={h => h.id} />
     </div>
   );
 }

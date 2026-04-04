@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useCallback, useRef } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   View,
   Text,
@@ -17,6 +18,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useCall } from "@/context/CallContext";
 import { HostCard } from "@/components/HostCard";
 import { InsufficientCoinsPopup } from "@/components/InsufficientCoinsPopup";
+import { SkeletonHostCard, SkeletonHostCardCompact } from "@/components/SkeletonCard";
 import { Host } from "@/data/mockData";
 import { API, resolveMediaUrl } from "@/services/api";
 import { showErrorToast } from "@/components/Toast";
@@ -163,12 +165,9 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const { initiateCall } = useCall();
+  const queryClient = useQueryClient();
   const [selectedSpecialty, setSelectedSpecialty] = useState("All");
   const [refreshing, setRefreshing] = useState(false);
-  const [hosts, setHosts] = useState<Host[]>([]);
-  const [specialties, setSpecialties] = useState<string[]>(["All"]);
-  const [loading, setLoading] = useState(true);
-  const [banners, setBanners] = useState<any[]>([]);
   const [coinPopup, setCoinPopup] = useState(false);
   const [coinPopupRequired, setCoinPopupRequired] = useState(0);
 
@@ -188,34 +187,43 @@ export default function HomeScreen() {
   const topPad = insets.top;
   const bottomPad = insets.bottom;
 
-  const loadHosts = useCallback(async () => {
-    try {
-      const data = await API.getHosts();
-      setHosts(data.map(mapApiHost));
-    } catch {
-      setHosts([]);
-      showErrorToast("Failed to load hosts. Pull down to retry.");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  // OPTIMIZATION #7: useQuery replaces manual loadHosts + useEffect
+  //   - Automatic background refetch every 2 min (online status changes frequently)
+  //   - Cached in React Query store: navigating back to home is INSTANT (no re-fetch if fresh)
+  //   - staleTime=60s: won't re-fetch within 60s of last fetch even on component remount
+  const { data: hostsData, isLoading: hostsLoading, refetch: refetchHosts } = useQuery({
+    queryKey: ['hosts'],
+    queryFn: async () => {
+      const res = await API.getHosts({ limit: 50 });
+      return res.hosts.map(mapApiHost);
+    },
+    staleTime: 60_000,
+    refetchInterval: 2 * 60_000,
+    retry: 2,
+  });
 
-  const loadTopics = useCallback(async () => {
-    try {
-      const topics = await API.getTalkTopics();
-      const unique = Array.from(new Map(topics.map((t: any) => [t.name.toLowerCase(), t.name])).values());
-      setSpecialties(["All", ...unique]);
-    } catch {
-      setSpecialties(["All", "Life Coaching", "Relationships", "Career", "Wellness", "Mental Health", "Music", "Travel"]);
-      showErrorToast("Failed to load topics. Using defaults.");
-    }
-  }, []);
+  // OPTIMIZATION #7: Topics — cached 10 min (topics rarely change)
+  const { data: topicsData } = useQuery({
+    queryKey: ['talk-topics'],
+    queryFn: () => API.getTalkTopics(),
+    staleTime: 10 * 60_000,
+  });
 
-  useEffect(() => {
-    loadHosts();
-    loadTopics();
-    API.getBanners('home').then(setBanners).catch(() => {});
-  }, []);
+  // OPTIMIZATION #7: Banners — cached 5 min
+  const { data: bannersData = [] } = useQuery({
+    queryKey: ['banners', 'home'],
+    queryFn: () => API.getBanners('home'),
+    staleTime: 5 * 60_000,
+  });
+
+  const hosts: Host[] = hostsData ?? [];
+  const banners: any[] = bannersData as any[];
+
+  const specialties = (() => {
+    if (!topicsData) return ["All", "Life Coaching", "Relationships", "Career", "Wellness", "Mental Health"];
+    const unique = Array.from(new Map((topicsData as any[]).map((t: any) => [t.name.toLowerCase(), t.name])).values());
+    return ["All", ...unique];
+  })();
 
   const slides: SlideItem[] = [
     ...banners.map((b): SlideItem => ({
@@ -241,11 +249,22 @@ export default function HomeScreen() {
         );
   const onlineHosts = filteredHosts.filter((h) => h.isOnline);
 
+  // OPTIMIZATION #10: Prefetch host detail page when host is tapped (before navigation)
+  const prefetchHost = useCallback((hostId: string) => {
+    queryClient.prefetchQuery({
+      queryKey: ['host', hostId],
+      queryFn: () => API.getHost(hostId),
+      staleTime: 30_000,
+    });
+  }, [queryClient]);
+
+  // Pull-to-refresh invalidates all home screen queries
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await loadHosts();
+    await queryClient.invalidateQueries({ queryKey: ['hosts'] });
+    await refetchHosts();
     setRefreshing(false);
-  }, [loadHosts]);
+  }, [queryClient, refetchHosts]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -325,8 +344,15 @@ export default function HomeScreen() {
         {/* Unified Auto/Manual Banner Slider */}
         <BannerSlider slides={slides} />
 
-        {/* Top Listeners section */}
-        {topHosts.length > 0 && (
+        {/* Top Listeners section — OPTIMIZATION #8: skeleton cards while loading */}
+        {hostsLoading ? (
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Top Listeners</Text>
+            <View style={{ flexDirection: "row" }}>
+              {[1, 2, 3].map((i) => <SkeletonHostCardCompact key={i} />)}
+            </View>
+          </View>
+        ) : topHosts.length > 0 ? (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <Text style={[styles.sectionTitle, { color: colors.text }]}>Top Listeners</Text>
@@ -343,13 +369,16 @@ export default function HomeScreen() {
                 <HostCard
                   host={item}
                   compact
-                  onPress={() => router.push(`/user/hosts/${item.id}`)}
+                  onPress={() => {
+                    prefetchHost(item.id);
+                    router.push(`/user/hosts/${item.id}`);
+                  }}
                 />
               )}
               contentContainerStyle={{ paddingRight: 16, paddingLeft: 2 }}
             />
           </View>
-        )}
+        ) : null}
 
         {/* Filter chips */}
         <View style={styles.section}>
@@ -388,23 +417,30 @@ export default function HomeScreen() {
           />
         </View>
 
-        {/* Listener list */}
+        {/* Listener list — OPTIMIZATION #8: skeleton while loading, #10: prefetch on press */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>
               {selectedSpecialty === "All" ? "Available Now" : selectedSpecialty}
             </Text>
-            <Text style={[styles.countText, { color: colors.mutedForeground }]}>
-              {onlineHosts.length} online
-            </Text>
+            {!hostsLoading && (
+              <Text style={[styles.countText, { color: colors.mutedForeground }]}>
+                {onlineHosts.length} online
+              </Text>
+            )}
           </View>
 
-          {onlineHosts.length > 0 ? (
+          {hostsLoading ? (
+            [1, 2, 3, 4].map((i) => <SkeletonHostCard key={i} />)
+          ) : onlineHosts.length > 0 ? (
             onlineHosts.map((host) => (
               <HostCard
                 key={host.id}
                 host={host}
-                onPress={() => router.push(`/user/hosts/${host.id}`)}
+                onPress={() => {
+                  prefetchHost(host.id);
+                  router.push(`/user/hosts/${host.id}`);
+                }}
                 onAudioCall={() => startCall(host, "audio")}
                 onVideoCall={() => startCall(host, "video")}
               />
@@ -422,7 +458,7 @@ export default function HomeScreen() {
             </View>
           )}
 
-          {filteredHosts.filter((h) => !h.isOnline).length > 0 && (
+          {!hostsLoading && filteredHosts.filter((h) => !h.isOnline).length > 0 && (
             <>
               <Text style={[styles.offlineLabel, { color: colors.mutedForeground }]}>
                 Offline Listeners
@@ -433,7 +469,10 @@ export default function HomeScreen() {
                   <HostCard
                     key={host.id}
                     host={host}
-                    onPress={() => router.push(`/user/hosts/${host.id}`)}
+                    onPress={() => {
+                      prefetchHost(host.id);
+                      router.push(`/user/hosts/${host.id}`);
+                    }}
                   />
                 ))}
             </>

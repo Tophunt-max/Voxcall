@@ -139,14 +139,15 @@ export const API = {
     return res.json();
   },
 
-  // Hosts
-  getHosts: (params?: { search?: string; topic?: string; online?: boolean; page?: number }) => {
+  // Hosts — OPTIMIZATION #2: cursor-based pagination response: { hosts[], nextCursor }
+  getHosts: (params?: { search?: string; topic?: string; online?: boolean; cursor?: string; limit?: number }) => {
     const q = new URLSearchParams();
     if (params?.search) q.set('search', params.search);
     if (params?.topic) q.set('topic', params.topic);
     if (params?.online) q.set('online', '1');
-    if (params?.page) q.set('page', String(params.page));
-    return apiRequest<any[]>('GET', `/api/hosts?${q}`);
+    if (params?.cursor) q.set('cursor', params.cursor);
+    if (params?.limit) q.set('limit', String(params.limit));
+    return apiRequest<{ hosts: any[]; nextCursor: string | null }>('GET', `/api/hosts?${q}`);
   },
   getHost: (id: string) => apiRequest<any>('GET', `/api/hosts/${id}`),
   getHostReviews: (id: string) => apiRequest<any[]>('GET', `/api/hosts/${id}/reviews`),

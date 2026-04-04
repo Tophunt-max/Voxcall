@@ -1,10 +1,12 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, Image,
   ScrollView, Switch
 } from "react-native";
 import { router } from "expo-router";
 import { useFocusEffect } from "expo-router";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCallback } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
@@ -12,11 +14,13 @@ import { API, resolveMediaUrl } from "@/services/api";
 import { showErrorToast } from "@/components/Toast";
 import { usePermissions } from "@/hooks/usePermissions";
 import { PermissionDialog, PERMISSION_CONFIGS } from "@/components/PermissionDialog";
+import { SkeletonStatsCard } from "@/components/SkeletonCard";
 
 export default function HostHomeScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { user, setOnlineStatus } = useAuth();
+  const queryClient = useQueryClient();
   const {
     permissions, isBlocked,
     requestMicrophone, requestCamera, requestNotifications,
@@ -24,7 +28,6 @@ export default function HostHomeScreen() {
   } = usePermissions();
 
   const [isOnline, setIsOnline] = useState(user?.isOnline ?? false);
-  const [stats, setStats] = useState({ calls: "…", hours: "…h", earnings: "…" });
   const [permDialog, setPermDialog] = useState<"microphone" | "camera" | "notifications" | null>(null);
   const topPad = insets.top;
 
@@ -33,26 +36,32 @@ export default function HostHomeScreen() {
     setIsOnline(user?.isOnline ?? false);
   }, [user?.isOnline]);
 
-  const loadEarnings = useCallback(() => {
-    API.getEarnings()
-      .then((data: any) => {
-        const h = data.host ?? {};
-        const minutes = Number(h.total_minutes) || 0;
-        const sessions = Number(h.total_calls) || (data.transactions || []).length;
-        const earnings = Number(h.total_earnings) || 0;
-        setStats({
-          calls: String(sessions),
-          hours: `${Math.floor(minutes / 60)}h ${minutes % 60}m`,
-          earnings: earnings.toLocaleString(),
-        });
-      })
-      .catch(() => { setStats({ calls: "0", hours: "0h", earnings: "0" }); showErrorToast("Failed to load dashboard data."); });
-  }, []);
+  // OPTIMIZATION #7 (voxlink-host): useQuery for earnings — cached 2 min, skeleton while loading
+  const { data: earningsData, isLoading: earningsLoading } = useQuery({
+    queryKey: ['host-earnings'],
+    queryFn: () => API.getEarnings(),
+    staleTime: 2 * 60_000,
+    retry: 2,
+  });
 
-  // Refresh earnings every time this screen comes into focus (e.g. after a call ends)
+  const stats = (() => {
+    if (!earningsData) return { calls: "—", hours: "—", earnings: "—" };
+    const d = earningsData as any;
+    const h = d.host ?? {};
+    const minutes = Number(h.total_minutes) || 0;
+    const sessions = Number(h.total_calls) || (d.transactions || []).length;
+    const earnings = Number(h.total_earnings) || 0;
+    return {
+      calls: String(sessions),
+      hours: `${Math.floor(minutes / 60)}h ${minutes % 60}m`,
+      earnings: earnings.toLocaleString(),
+    };
+  })();
+
+  // Invalidate earnings query each time screen comes into focus (e.g. after a call ends)
   useFocusEffect(useCallback(() => {
-    loadEarnings();
-  }, [loadEarnings]));
+    queryClient.invalidateQueries({ queryKey: ['host-earnings'] });
+  }, [queryClient]));
 
   return (
     <ScrollView
@@ -114,22 +123,26 @@ export default function HostHomeScreen() {
         />
       </View>
 
-      {/* Stats */}
-      <View style={[styles.statsCard, { backgroundColor: colors.card, marginHorizontal: 16 }]}>
-        {[
-          { label: "Total Calls", value: stats.calls },
-          { label: "Total Hours", value: stats.hours },
-          { label: "Earnings", value: stats.earnings },
-        ].map((s, i) => (
-          <React.Fragment key={s.label}>
-            {i > 0 && <View style={[styles.statDiv, { backgroundColor: colors.border }]} />}
-            <View style={styles.stat}>
-              <Text style={[styles.statValue, { color: colors.text }]}>{s.value}</Text>
-              <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>{s.label}</Text>
-            </View>
-          </React.Fragment>
-        ))}
-      </View>
+      {/* Stats — OPTIMIZATION #8: skeleton while earnings are loading */}
+      {earningsLoading ? (
+        <SkeletonStatsCard />
+      ) : (
+        <View style={[styles.statsCard, { backgroundColor: colors.card, marginHorizontal: 16 }]}>
+          {[
+            { label: "Total Calls", value: stats.calls },
+            { label: "Total Hours", value: stats.hours },
+            { label: "Earnings", value: stats.earnings },
+          ].map((s, i) => (
+            <React.Fragment key={s.label}>
+              {i > 0 && <View style={[styles.statDiv, { backgroundColor: colors.border }]} />}
+              <View style={styles.stat}>
+                <Text style={[styles.statValue, { color: colors.text }]}>{s.value}</Text>
+                <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>{s.label}</Text>
+              </View>
+            </React.Fragment>
+          ))}
+        </View>
+      )}
 
       {/* Host image / promo */}
       <Image

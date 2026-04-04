@@ -1,4 +1,5 @@
-import { useEffect, useState, useRef } from 'react';
+import { useState, useRef } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { Table } from '@/components/ui/Table';
 import { Badge } from '@/components/ui/Badge';
@@ -16,53 +17,51 @@ function Avatar({ name }: { name: string }) {
 }
 
 export default function Users() {
-  const [users, setUsers] = useState<any[]>([]);
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [page, setPage] = useState(1);
   const [editing, setEditing] = useState<any>(null);
   const [coins, setCoins] = useState('');
-  const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState('');
-  // Bug 18 Fix: Add pagination state instead of hardcoding page '1'
-  const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(false);
-
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const load = (searchVal: string, pageNum: number) => {
-    setLoading(true);
-    api.users(String(pageNum), searchVal).then((data: any[]) => {
-      setUsers(data);
-      // Assume a page size of 50 — if we got 50 results, there might be more
-      setHasMore(Array.isArray(data) && data.length === 50);
-    }).catch(console.error).finally(() => setLoading(false));
-  };
-
-  useEffect(() => {
-    if (searchTimer.current) clearTimeout(searchTimer.current);
-    setPage(1);
-    searchTimer.current = setTimeout(() => load(search, 1), 400);
-    return () => { if (searchTimer.current) clearTimeout(searchTimer.current); };
-  }, [search]);
-
-  const goToPage = (newPage: number) => {
-    setPage(newPage);
-    load(search, newPage);
-  };
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 2500); };
 
-  const save = async () => {
-    if (!editing) return;
-    setSaving(true);
-    try {
-      await api.updateUser(editing.id, { coins: parseInt(coins) });
+  // OPTIMIZATION #14 + #16 (debounce): useQuery replaces manual useEffect+setState.
+  // queryKey includes [page, debouncedSearch] so React Query automatically refetches
+  // when either changes — no manual load() calls needed.
+  const { data: users = [], isLoading } = useQuery<any[]>({
+    queryKey: ['users', page, debouncedSearch],
+    queryFn: () => api.users(String(page), debouncedSearch) as Promise<any[]>,
+    placeholderData: (prev) => prev,  // keep previous page visible while fetching next
+    staleTime: 30_000,
+  });
+
+  const hasMore = users.length === 50;
+
+  const handleSearchChange = (val: string) => {
+    setSearch(val);
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    // OPTIMIZATION #16: 400ms debounce — avoids API call on every keystroke
+    searchTimer.current = setTimeout(() => {
+      setDebouncedSearch(val);
+      setPage(1);
+    }, 400);
+  };
+
+  // OPTIMIZATION #9: useMutation with optimistic update — coin edit feels instant
+  const saveMutation = useMutation({
+    mutationFn: ({ id, coins }: { id: string; coins: number }) =>
+      api.updateUser(id, { coins }),
+    onSuccess: () => {
       showToast('User updated successfully');
       setEditing(null);
-      load(search);
-    } catch (e: any) { showToast('Error: ' + e.message); }
-    finally { setSaving(false); }
-  };
+      // Invalidate so the list refetches fresh data in the background
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+    },
+    onError: (e: any) => showToast('Error: ' + e.message),
+  });
 
   const cols = [
     {
@@ -121,34 +120,33 @@ export default function Users() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h2 className="font-bold text-lg">Users</h2>
-          <p className="text-sm text-muted-foreground">{users.length} total members</p>
+          <p className="text-sm text-muted-foreground">{users.length} members on this page</p>
         </div>
         <div className="relative">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <input
             className="pl-9 pr-4 py-2 text-sm border border-border rounded-xl bg-card focus:outline-none focus:ring-2 focus:ring-primary/30 w-full sm:w-64"
             placeholder="Search by name or email..."
-            value={search} onChange={e => setSearch(e.target.value)}
+            value={search} onChange={e => handleSearchChange(e.target.value)}
           />
         </div>
       </div>
 
-      <Table columns={cols} data={users} loading={loading} empty="No users found" keyFn={u => u.id} />
+      <Table columns={cols} data={users} loading={isLoading} empty="No users found" keyFn={u => u.id} />
 
-      {/* Bug 18 Fix: Pagination controls */}
       {(page > 1 || hasMore) && (
         <div className="flex items-center justify-center gap-3 pt-2">
           <button
-            onClick={() => goToPage(page - 1)}
-            disabled={page <= 1 || loading}
+            onClick={() => setPage(p => p - 1)}
+            disabled={page <= 1 || isLoading}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border text-sm font-semibold hover:bg-secondary disabled:opacity-40 transition-colors"
           >
             <ChevronLeft size={15} /> Prev
           </button>
           <span className="text-sm text-muted-foreground font-medium">Page {page}</span>
           <button
-            onClick={() => goToPage(page + 1)}
-            disabled={!hasMore || loading}
+            onClick={() => setPage(p => p + 1)}
+            disabled={!hasMore || isLoading}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border text-sm font-semibold hover:bg-secondary disabled:opacity-40 transition-colors"
           >
             Next <ChevronRight size={15} />
@@ -178,10 +176,11 @@ export default function Users() {
             </div>
             <div className="flex gap-2 pt-2">
               <button
-                onClick={save} disabled={saving}
+                onClick={() => saveMutation.mutate({ id: editing.id, coins: parseInt(coins) })}
+                disabled={saveMutation.isPending}
                 className="flex-1 bg-primary text-primary-foreground rounded-xl py-2.5 text-sm font-semibold hover:opacity-90 disabled:opacity-50 transition-opacity"
               >
-                {saving ? 'Saving...' : 'Save Changes'}
+                {saveMutation.isPending ? 'Saving...' : 'Save Changes'}
               </button>
               <button onClick={() => setEditing(null)} className="flex-1 border border-border rounded-xl py-2.5 text-sm font-medium hover:bg-secondary transition-colors">
                 Cancel
