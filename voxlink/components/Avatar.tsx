@@ -1,9 +1,9 @@
 // VoxLink Avatar Component
 // Reusable user/host avatar with online status ring, size variants
-// FIX #6: Use expo-image for persistent memory+disk caching and WebP support
-// FIX #7: Wrapped in React.memo to prevent unnecessary re-renders in lists
+// FIX #6: expo-image for persistent memory+disk caching and WebP support
+// React Compiler (enabled in app.json) auto-memoizes — no manual memo() needed
 
-import React, { memo } from "react";
+import React from "react";
 import { View, StyleSheet, ViewStyle } from "react-native";
 import { Image } from "expo-image";
 import { useColors } from "@/hooks/useColors";
@@ -38,7 +38,7 @@ const BADGE_SIZE_MAP: Record<AvatarSize, number> = {
   xxl: 20,
 };
 
-const Avatar = memo(function Avatar({
+function Avatar({
   uri,
   size = "md",
   status = "none",
@@ -96,7 +96,7 @@ const Avatar = memo(function Avatar({
       )}
     </View>
   );
-});
+}
 
 export default Avatar;
 

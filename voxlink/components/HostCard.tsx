@@ -1,6 +1,6 @@
-// FIX #6: Use expo-image instead of RN Image — better caching, WebP, faster decoding
-// FIX #7: React.memo on StatusBadge and HostCard — prevents re-renders on parent state changes
-import React, { memo } from "react";
+// FIX #6: expo-image instead of RN Image — better caching, WebP, faster decoding
+// React Compiler (enabled in app.json) auto-memoizes components — no manual memo() needed
+import React from "react";
 import {
   View,
   Text,
@@ -21,7 +21,7 @@ interface Props {
   onVideoCall?: () => void;
 }
 
-const StatusBadge = memo(function StatusBadge({ isOnline, isBusy }: { isOnline: boolean; isBusy?: boolean }) {
+function StatusBadge({ isOnline, isBusy }: { isOnline: boolean; isBusy?: boolean }) {
   const colors = useColors();
   const label = isBusy ? "Busy" : isOnline ? "Available" : "Offline";
   const bg = isBusy ? colors.coinGoldBg : isOnline ? "#E6F9EA" : "#F2F2F2";
@@ -34,9 +34,9 @@ const StatusBadge = memo(function StatusBadge({ isOnline, isBusy }: { isOnline: 
       <Text style={[styles.statusText, { color: txtColor }]}>{label}</Text>
     </View>
   );
-});
+}
 
-export const HostCard = memo(function HostCard({ host, onPress, compact = false, onTalkNow, onAudioCall, onVideoCall }: Props) {
+export function HostCard({ host, onPress, compact = false, onTalkNow, onAudioCall, onVideoCall }: Props) {
   const colors = useColors();
 
   if (compact) {
@@ -160,7 +160,7 @@ export const HostCard = memo(function HostCard({ host, onPress, compact = false,
       )}
     </TouchableOpacity>
   );
-});
+}
 
 const styles = StyleSheet.create({
   card: {
@@ -177,7 +177,7 @@ const styles = StyleSheet.create({
       android: { elevation: 4 },
       web: {
         boxShadow: "0 0 18px rgba(0,0,0,0.10)",
-      } as any,
+      },
     }),
   },
   cardInner: { flexDirection: "row", padding: 12, gap: 10 },
