@@ -10,15 +10,22 @@ export const authMiddleware = createMiddleware<{ Bindings: Env; Variables: Varia
     if (!token) return c.json({ error: 'Unauthorized' }, 401);
     try {
       const payload = await verifyToken(token, c.env.JWT_SECRET);
-      // Fetch latest user status + role from DB on every request:
+      // Fetch latest user status + role + token_invalidated_at from DB on every request:
       // - Detects banned/deleted accounts immediately (no 7-day token grace period)
       // - Uses current role from DB so KYC approvals take effect without re-login
+      // FIX #12: token_invalidated_at allows server-side token revocation (logout, password change)
       const dbUser = await c.env.DB.prepare(
-        'SELECT role, status FROM users WHERE id = ?'
-      ).bind(payload.sub).first<{ role: 'user' | 'host' | 'admin'; status: string | null }>();
+        'SELECT role, status, token_invalidated_at FROM users WHERE id = ?'
+      ).bind(payload.sub).first<{ role: 'user' | 'host' | 'admin'; status: string | null; token_invalidated_at: number | null }>();
       if (!dbUser) return c.json({ error: 'User not found' }, 401);
       if (dbUser.status === 'banned' || dbUser.status === 'deleted') {
         return c.json({ error: 'Account suspended. Contact support if you believe this is an error.' }, 403);
+      }
+      // FIX #12: Reject tokens issued before the invalidation timestamp (e.g. after logout or password change)
+      const issuedAt = payload.iat ?? 0;
+      const invalidatedAt = dbUser.token_invalidated_at ?? 0;
+      if (issuedAt < invalidatedAt) {
+        return c.json({ error: 'Token has been revoked. Please log in again.' }, 401);
       }
       c.set('user', { ...payload, role: dbUser.role });
       await next();

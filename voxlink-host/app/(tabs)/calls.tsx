@@ -1,8 +1,10 @@
+// FIX #7: FlashList replaces FlatList for performant virtualized rendering
 import React, { useState, useEffect, useCallback } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, Image,
-  FlatList, ActivityIndicator, RefreshControl,
+  ActivityIndicator, RefreshControl,
 } from "react-native";
+import { FlashList } from "@shopify/flash-list";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { API, resolveMediaUrl } from "@/services/api";
@@ -137,10 +139,11 @@ export default function HostCallsScreen() {
           <ActivityIndicator color="#A00EE7" size="large" />
         </View>
       ) : (
-        <FlatList
+        <FlashList
           data={filtered}
           keyExtractor={c => c.id}
-          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 100, gap: 10, paddingTop: 8 }}
+          estimatedItemSize={90}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 100, paddingTop: 8 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor="#A00EE7" />}
           ListEmptyComponent={
             <View style={styles.empty}>

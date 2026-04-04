@@ -1,12 +1,14 @@
-import React from "react";
+// FIX #6: Use expo-image instead of RN Image — better caching, WebP, faster decoding
+// FIX #7: React.memo on StatusBadge and HostCard — prevents re-renders on parent state changes
+import React, { memo } from "react";
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
-  Image,
   Platform,
 } from "react-native";
+import { Image } from "expo-image";
 import { useColors } from "@/hooks/useColors";
 import { Host } from "@/data/mockData";
 
@@ -19,7 +21,7 @@ interface Props {
   onVideoCall?: () => void;
 }
 
-function StatusBadge({ isOnline, isBusy }: { isOnline: boolean; isBusy?: boolean }) {
+const StatusBadge = memo(function StatusBadge({ isOnline, isBusy }: { isOnline: boolean; isBusy?: boolean }) {
   const colors = useColors();
   const label = isBusy ? "Busy" : isOnline ? "Available" : "Offline";
   const bg = isBusy ? colors.coinGoldBg : isOnline ? "#E6F9EA" : "#F2F2F2";
@@ -32,9 +34,9 @@ function StatusBadge({ isOnline, isBusy }: { isOnline: boolean; isBusy?: boolean
       <Text style={[styles.statusText, { color: txtColor }]}>{label}</Text>
     </View>
   );
-}
+});
 
-export function HostCard({ host, onPress, compact = false, onTalkNow, onAudioCall, onVideoCall }: Props) {
+export const HostCard = memo(function HostCard({ host, onPress, compact = false, onTalkNow, onAudioCall, onVideoCall }: Props) {
   const colors = useColors();
 
   if (compact) {
@@ -48,7 +50,8 @@ export function HostCard({ host, onPress, compact = false, onTalkNow, onAudioCal
           <Image
             source={{ uri: host.avatar }}
             style={styles.compactAvatar}
-            resizeMode="cover"
+            contentFit="cover"
+            cachePolicy="memory-disk"
           />
           {host.isOnline && (
             <View style={[styles.compactOnlineDot, { backgroundColor: colors.online, borderColor: colors.card }]} />
@@ -61,7 +64,7 @@ export function HostCard({ host, onPress, compact = false, onTalkNow, onAudioCal
           {host.languages[0]}
         </Text>
         <View style={styles.compactCoinRow}>
-          <Image source={require("@/assets/icons/ic_coin.png")} style={styles.compactCoinIcon} resizeMode="contain" />
+          <Image source={require("@/assets/icons/ic_coin.png")} style={styles.compactCoinIcon} contentFit="contain" cachePolicy="memory" />
           <Text style={[styles.compactCoinText, { color: colors.coinGold }]}>{host.coinsPerMinute}/min</Text>
         </View>
       </TouchableOpacity>
@@ -75,11 +78,12 @@ export function HostCard({ host, onPress, compact = false, onTalkNow, onAudioCal
       style={[styles.card, { backgroundColor: colors.card }]}
     >
       <View style={styles.cardInner}>
-        {/* Avatar */}
+        {/* Avatar — expo-image provides persistent disk+memory cache */}
         <Image
           source={{ uri: host.avatar }}
           style={styles.avatar}
-          resizeMode="cover"
+          contentFit="cover"
+          cachePolicy="memory-disk"
         />
 
         {/* Info */}
@@ -97,7 +101,8 @@ export function HostCard({ host, onPress, compact = false, onTalkNow, onAudioCal
               source={require("@/assets/icons/ic_language.png")}
               style={styles.langIcon}
               tintColor={colors.mutedForeground}
-              resizeMode="contain"
+              contentFit="contain"
+              cachePolicy="memory"
             />
             <Text style={[styles.langText, { color: colors.mutedForeground }]}>
               {host.languages.slice(0, 2).join(", ")}
@@ -116,7 +121,7 @@ export function HostCard({ host, onPress, compact = false, onTalkNow, onAudioCal
           {/* Call rate + Talk Now button */}
           <View style={styles.bottomRow}>
             <View style={styles.rateRow}>
-              <Image source={require("@/assets/icons/ic_coin.png")} style={styles.coinIcon} resizeMode="contain" />
+              <Image source={require("@/assets/icons/ic_coin.png")} style={styles.coinIcon} contentFit="contain" cachePolicy="memory" />
               <Text style={[styles.rateText, { color: colors.coinGoldText }]}>
                 {host.coinsPerMinute} coins/min
               </Text>
@@ -124,18 +129,8 @@ export function HostCard({ host, onPress, compact = false, onTalkNow, onAudioCal
             <View style={styles.callIcons}>
               {host.isOnline && (
                 <>
-                  <Image
-                    source={require("@/assets/icons/ic_call.png")}
-                    style={styles.callIcon}
-                    tintColor={colors.primary}
-                    resizeMode="contain"
-                  />
-                  <Image
-                    source={require("@/assets/icons/ic_video.png")}
-                    style={styles.callIcon}
-                    tintColor={colors.primary}
-                    resizeMode="contain"
-                  />
+                  <Image source={require("@/assets/icons/ic_call.png")} style={styles.callIcon} tintColor={colors.primary} contentFit="contain" cachePolicy="memory" />
+                  <Image source={require("@/assets/icons/ic_video.png")} style={styles.callIcon} tintColor={colors.primary} contentFit="contain" cachePolicy="memory" />
                 </>
               )}
             </View>
@@ -150,12 +145,7 @@ export function HostCard({ host, onPress, compact = false, onTalkNow, onAudioCal
             style={[styles.callBtn, { backgroundColor: colors.primary }]}
             activeOpacity={0.85}
           >
-            <Image
-              source={require("@/assets/icons/ic_call.png")}
-              style={styles.callBtnIcon}
-              tintColor="#fff"
-              resizeMode="contain"
-            />
+            <Image source={require("@/assets/icons/ic_call.png")} style={styles.callBtnIcon} tintColor="#fff" contentFit="contain" cachePolicy="memory" />
             <Text style={styles.callBtnText}>Audio Call</Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -163,19 +153,14 @@ export function HostCard({ host, onPress, compact = false, onTalkNow, onAudioCal
             style={[styles.callBtn, { backgroundColor: "#111329" }]}
             activeOpacity={0.85}
           >
-            <Image
-              source={require("@/assets/icons/ic_video.png")}
-              style={styles.callBtnIcon}
-              tintColor="#fff"
-              resizeMode="contain"
-            />
+            <Image source={require("@/assets/icons/ic_video.png")} style={styles.callBtnIcon} tintColor="#fff" contentFit="contain" cachePolicy="memory" />
             <Text style={styles.callBtnText}>Video Call</Text>
           </TouchableOpacity>
         </View>
       )}
     </TouchableOpacity>
   );
-}
+});
 
 const styles = StyleSheet.create({
   card: {

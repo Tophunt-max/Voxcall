@@ -1,39 +1,53 @@
+// FIX #13: Route-level lazy loading — all 30+ pages now load on demand
+// Reduces initial JS bundle size dramatically, improving first-load performance
+import { Suspense, lazy } from 'react';
 import { Switch, Route, Router as WouterRouter, Redirect } from 'wouter';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider, useAuth } from '@/lib/auth';
 import { Layout } from '@/components/Layout';
 import { Toaster } from '@/components/ui/sonner';
 import Login from '@/pages/Login';
-import Dashboard from '@/pages/Dashboard';
-import Users from '@/pages/Users';
-import Hosts from '@/pages/Hosts';
-import Withdrawals from '@/pages/Withdrawals';
-import CoinPlans from '@/pages/CoinPlans';
-import CallSessions from '@/pages/CallSessions';
-import FAQs from '@/pages/FAQs';
-import TalkTopics from '@/pages/TalkTopics';
-import CoinTransactions from '@/pages/CoinTransactions';
-import Ratings from '@/pages/Ratings';
-import Notifications from '@/pages/Notifications';
-import SettingsPage from '@/pages/SettingsPage';
-import LevelConfig from '@/pages/LevelConfig';
-import HostApplications from '@/pages/HostApplications';
-import Analytics from '@/pages/Analytics';
-import PromoCodes from '@/pages/PromoCodes';
-import PayoutManagement from '@/pages/PayoutManagement';
-import SupportTickets from '@/pages/SupportTickets';
-import ContentModeration from '@/pages/ContentModeration';
-import BanManagement from '@/pages/BanManagement';
-import BulkNotifications from '@/pages/BulkNotifications';
-import AuditLogs from '@/pages/AuditLogs';
-import Banners from '@/pages/Banners';
-import ReferralSystem from '@/pages/ReferralSystem';
-import LiveCalls from '@/pages/LiveCalls';
-import AppConfig from '@/pages/AppConfig';
-import PaymentGateways from '@/pages/PaymentGateways';
-import Deposits from '@/pages/Deposits';
 
-const queryClient = new QueryClient();
+const Dashboard = lazy(() => import('@/pages/Dashboard'));
+const Users = lazy(() => import('@/pages/Users'));
+const Hosts = lazy(() => import('@/pages/Hosts'));
+const Withdrawals = lazy(() => import('@/pages/Withdrawals'));
+const CoinPlans = lazy(() => import('@/pages/CoinPlans'));
+const CallSessions = lazy(() => import('@/pages/CallSessions'));
+const FAQs = lazy(() => import('@/pages/FAQs'));
+const TalkTopics = lazy(() => import('@/pages/TalkTopics'));
+const CoinTransactions = lazy(() => import('@/pages/CoinTransactions'));
+const Ratings = lazy(() => import('@/pages/Ratings'));
+const Notifications = lazy(() => import('@/pages/Notifications'));
+const SettingsPage = lazy(() => import('@/pages/SettingsPage'));
+const LevelConfig = lazy(() => import('@/pages/LevelConfig'));
+const HostApplications = lazy(() => import('@/pages/HostApplications'));
+const Analytics = lazy(() => import('@/pages/Analytics'));
+const PromoCodes = lazy(() => import('@/pages/PromoCodes'));
+const PayoutManagement = lazy(() => import('@/pages/PayoutManagement'));
+const SupportTickets = lazy(() => import('@/pages/SupportTickets'));
+const ContentModeration = lazy(() => import('@/pages/ContentModeration'));
+const BanManagement = lazy(() => import('@/pages/BanManagement'));
+const BulkNotifications = lazy(() => import('@/pages/BulkNotifications'));
+const AuditLogs = lazy(() => import('@/pages/AuditLogs'));
+const Banners = lazy(() => import('@/pages/Banners'));
+const ReferralSystem = lazy(() => import('@/pages/ReferralSystem'));
+const LiveCalls = lazy(() => import('@/pages/LiveCalls'));
+const AppConfig = lazy(() => import('@/pages/AppConfig'));
+const PaymentGateways = lazy(() => import('@/pages/PaymentGateways'));
+const Deposits = lazy(() => import('@/pages/Deposits'));
+
+function PageLoader() {
+  return (
+    <div className="flex items-center justify-center h-64">
+      <div className="animate-spin w-8 h-8 border-2 border-primary border-t-transparent rounded-full" />
+    </div>
+  );
+}
+
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { staleTime: 30_000, retry: 1 } },
+});
 const base = import.meta.env.BASE_URL.replace(/\/$/, '');
 
 function ProtectedApp() {
@@ -51,8 +65,9 @@ function ProtectedApp() {
 
   return (
     <Layout>
-      <Switch>
-        <Route path="/" component={() => <Redirect to="/dashboard" />} />
+      <Suspense fallback={<PageLoader />}>
+        <Switch>
+          <Route path="/" component={() => <Redirect to="/dashboard" />} />
         <Route path="/dashboard" component={Dashboard} />
         <Route path="/users" component={Users} />
         <Route path="/hosts" component={Hosts} />
@@ -81,8 +96,9 @@ function ProtectedApp() {
         <Route path="/deposits" component={Deposits} />
         <Route path="/payment-gateways" component={PaymentGateways} />
         <Route path="/settings" component={SettingsPage} />
-        <Route component={() => <Redirect to="/dashboard" />} />
-      </Switch>
+          <Route component={() => <Redirect to="/dashboard" />} />
+        </Switch>
+      </Suspense>
     </Layout>
   );
 }

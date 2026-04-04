@@ -27,7 +27,9 @@ class SocketService {
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
   private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempts = 0;
-  private maxReconnectAttempts = 8;
+  // FIX #16: Increased from 8 to 50 to match user app — hosts on poor networks
+  // need many more retries so they don't miss incoming calls
+  private maxReconnectAttempts = 50;
 
   static getInstance(): SocketService {
     if (!SocketService.instance) {

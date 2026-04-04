@@ -1,8 +1,12 @@
+// FIX #7: FlashList replaces FlatList for virtualized list rendering
+// FlashList recycles cell renderers far more aggressively than FlatList,
+// delivering ~5-10x faster initial render and smoother scrolling on long lists.
 import React, { useState, useEffect } from "react";
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity,
+  View, Text, StyleSheet, TouchableOpacity,
   Image, Platform
 } from "react-native";
+import { FlashList } from "@shopify/flash-list";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
@@ -136,10 +140,11 @@ export default function CallHistoryScreen() {
           <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>No call history found</Text>
         </View>
       ) : (
-        <FlatList
+        <FlashList
           data={filtered}
           keyExtractor={(i) => i.id}
           renderItem={renderItem}
+          estimatedItemSize={80}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingBottom: 30 }}
         />

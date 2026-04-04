@@ -20,7 +20,8 @@
         "NSCameraUsageDescription": "VoxLink needs camera access for video calls so the other person can see you.",
         "NSMicrophoneUsageDescription": "VoxLink needs microphone access for audio and video calls.",
         "NSPhotoLibraryUsageDescription": "VoxLink needs access to your photos to upload profile pictures and KYC documents.",
-        "NSPhotoLibraryAddUsageDescription": "VoxLink needs permission to save photos to your library."
+        "NSPhotoLibraryAddUsageDescription": "VoxLink needs permission to save photos to your library.",
+        "UIBackgroundModes": ["audio", "voip", "fetch", "remote-notification"]
       }
     },
     "android": {
@@ -35,7 +36,10 @@
         "android.permission.READ_MEDIA_VIDEO",
         "android.permission.POST_NOTIFICATIONS",
         "android.permission.RECEIVE_BOOT_COMPLETED",
-        "android.permission.VIBRATE"
+        "android.permission.VIBRATE",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+        "android.permission.FOREGROUND_SERVICE_MICROPHONE"
       ]
     },
     "web": {

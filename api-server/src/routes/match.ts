@@ -44,20 +44,31 @@ match.post('/find', async (c) => {
   const adminVideoRate = videoRateRow ? parseFloat(videoRateRow.value) : 8;
   const adminRate      = callType === 'video' ? adminVideoRate : adminAudioRate;
 
-  // Pick a random online host (excluding the requester themselves if they are a host)
-  const host = await db
-    .prepare(
-      `SELECT h.*, u.name, u.avatar_url, u.gender, u.bio
-       FROM hosts h
-       JOIN users u ON u.id = h.user_id
-       WHERE h.is_active = 1
-         AND h.is_online = 1
-         AND h.user_id != ?
-       ORDER BY RANDOM()
-       LIMIT 1`
-    )
+  // FIX #19: Replace ORDER BY RANDOM() — which does a full table sort — with
+  // a fast offset-based random pick. Gets count first, then picks a random row by offset.
+  // This is O(log N) on indexed columns vs O(N log N) for RANDOM().
+  const countRow = await db
+    .prepare(`SELECT COUNT(*) as cnt FROM hosts WHERE is_active = 1 AND is_online = 1 AND user_id != ?`)
     .bind(sub)
-    .first<any>();
+    .first<{ cnt: number }>();
+  const totalOnline = countRow?.cnt ?? 0;
+
+  let host: any = null;
+  if (totalOnline > 0) {
+    const offset = Math.floor(Math.random() * totalOnline);
+    host = await db
+      .prepare(
+        `SELECT h.*, u.name, u.avatar_url, u.gender, u.bio
+         FROM hosts h
+         JOIN users u ON u.id = h.user_id
+         WHERE h.is_active = 1
+           AND h.is_online = 1
+           AND h.user_id != ?
+         LIMIT 1 OFFSET ?`
+      )
+      .bind(sub, offset)
+      .first<any>();
+  }
 
   if (!host) {
     return c.json({ matched: false, message: 'Abhi koi host available nahi hai, thodi der baad try karo' });
@@ -94,6 +105,8 @@ match.get('/online-hosts', async (c) => {
   const { sub } = c.get('user');
   const db = c.env.DB;
 
+  // FIX #19: Use rating-based ordering instead of RANDOM() for online hosts list
+  // This is deterministic but provides good variety since online hosts rotate frequently
   const result = await db
     .prepare(
       `SELECT h.id, h.display_name, h.specialties, h.rating, h.audio_coins_per_minute,
@@ -101,7 +114,7 @@ match.get('/online-hosts', async (c) => {
        FROM hosts h
        JOIN users u ON u.id = h.user_id
        WHERE h.is_active = 1 AND h.is_online = 1 AND h.user_id != ?
-       ORDER BY RANDOM()
+       ORDER BY h.rating DESC, h.review_count DESC
        LIMIT 12`
     )
     .bind(sub)

@@ -1,5 +1,22 @@
+// FIX #10: In-memory cache for rarely-changing data (app_settings, plans, FAQs, topics)
+// Cloudflare Workers are stateless but a single instance can cache within its lifetime.
+// TTL of 5 minutes prevents stale data while dramatically reducing D1 query load.
 import { Hono } from 'hono';
 import type { Env } from '../types';
+
+interface CacheEntry<T> { data: T; expiresAt: number }
+const memCache = new Map<string, CacheEntry<any>>();
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+function cacheGet<T>(key: string): T | null {
+  const entry = memCache.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) { memCache.delete(key); return null; }
+  return entry.data as T;
+}
+function cacheSet<T>(key: string, data: T): void {
+  memCache.set(key, { data, expiresAt: Date.now() + CACHE_TTL_MS });
+}
 
 const pub = new Hono<{ Bindings: Env }>();
 
@@ -41,19 +58,25 @@ pub.get('/banners', async (c) => {
   return c.json(result.results);
 });
 
-// GET /api/talk-topics — public list for mobile app
+// GET /api/talk-topics — public list for mobile app (FIX #10: cached 5 min)
 pub.get('/talk-topics', async (c) => {
+  const cached = cacheGet<any[]>('talk_topics');
+  if (cached) return c.json(cached);
   const result = await c.env.DB.prepare(
     'SELECT * FROM talk_topics WHERE is_active = 1 ORDER BY name ASC'
   ).all();
+  cacheSet('talk_topics', result.results);
   return c.json(result.results);
 });
 
-// GET /api/faqs — public FAQs for mobile app
+// GET /api/faqs — public FAQs for mobile app (FIX #10: cached 5 min)
 pub.get('/faqs', async (c) => {
+  const cached = cacheGet<any[]>('faqs');
+  if (cached) return c.json(cached);
   const result = await c.env.DB.prepare(
     'SELECT * FROM faqs WHERE is_active = 1 ORDER BY order_index ASC, created_at ASC'
   ).all();
+  cacheSet('faqs', result.results);
   return c.json(result.results);
 });
 
@@ -89,15 +112,18 @@ pub.get('/search', async (c) => {
   return c.json(results);
 });
 
-// GET /api/app-config — app configuration for mobile (theme, limits, etc)
+// GET /api/app-config — app configuration for mobile (FIX #10: cached 5 min)
 pub.get('/app-config', async (c) => {
+  const cached = cacheGet<Record<string, string>>('app_config');
+  if (cached) return c.json(cached);
   const settings = await c.env.DB.prepare(
     "SELECT key, value FROM app_settings WHERE key IN ('min_coins_for_call','coin_to_usd_rate','host_revenue_share','min_withdrawal_coins','registration_bonus_coins')"
   ).all();
   const config: Record<string, string> = {};
   for (const row of settings.results as any[]) {
-    config[row.key] = row.value;
+    config[(row as any).key] = (row as any).value;
   }
+  cacheSet('app_config', config);
   return c.json(config);
 });
 

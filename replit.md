@@ -435,6 +435,34 @@ Merges socket + notification tap handling. Lives inside all providers so it can 
 ### Admin Panel — 1 Fix
 7. **`Hosts.tsx` Audio Rate Input Cap Too Low** — HTML input had `max="200"` but backend allows up to 500 coins/min. Changed to `max="500"` to match backend cap.
 
+## Production Security & Performance Audit (21-Point Hardening — April 2026)
+
+### Completed Fixes (All 21 Points)
+
+| # | Fix | Status | Files Changed |
+|---|-----|--------|---------------|
+| 1 | iOS UIBackgroundModes + Android FOREGROUND_SERVICE permissions | ✅ | voxlink/app.json, voxlink-host/app.json |
+| 2 | Stale call cron job (`*/5 * * * *`) + `reapStaleCalls` handler | ✅ | api-server/wrangler.toml, api-server/src/index.ts |
+| 3 | DB performance indexes (missing 12 indexes) | ✅ | api-server/migrations/0012_performance_indexes.sql |
+| 4 | File upload magic byte validation | ✅ | api-server/src/routes/upload.ts |
+| 5 | CF_CALLS_APP_ID documented as required secret | ✅ | api-server/wrangler.toml |
+| 6 | expo-image with memory-disk caching on HostCard/Avatar | ✅ | voxlink & voxlink-host components |
+| 7 | FlashList replacing FlatList (call history + host calls tab) | ✅ | @shopify/flash-list installed, history.tsx, calls.tsx |
+| 8 | Offline detection banner (SocketContext proxy) | ✅ | voxlink/components/OfflineBanner.tsx, voxlink-host/components/OfflineBanner.tsx |
+| 9 | Admin panel global ErrorBoundary | ✅ | admin-panel/src/components/ErrorBoundary.tsx, main.tsx |
+| 10 | app_settings/talk-topics/FAQs in-memory cache (5min TTL) | ✅ | api-server/src/routes/public.ts |
+| 11 | Error monitoring (custom ErrorReporter → D1 storage) | ✅ | Already existed: voxlink/services/ErrorReporter.ts |
+| 12 | Token rotation / server-side revocation via token_invalidated_at | ✅ | api-server/migrations/0013_token_rotation.sql, middleware/auth.ts, routes/auth.ts |
+| 13 | Admin panel route lazy loading (all 30+ pages) | ✅ | admin-panel/src/App.tsx |
+| 14 | Audit log middleware for all admin write actions | ✅ | api-server/src/middleware/auditLog.ts, index.ts |
+| 15 | Zustand global store (coin balance, profile, host status) | ✅ | voxlink/store/useUserStore.ts, voxlink-host/store/useHostStore.ts |
+| 16 | Host app reconnect attempts 8→50 | ✅ | voxlink-host/services/SocketService.ts |
+| 17 | USD stored as integer cents (not float dollars) | ✅ | api-server/migrations (prior session) |
+| 18 | Specialties/languages relational tables + indexes | ✅ | api-server/migrations/0014_specialties_relational.sql |
+| 19 | RANDOM() matchmaking replaced with offset-based query | ✅ | api-server/src/routes/match.ts |
+| 20 | PostgreSQL migration plan documentation | ✅ | POSTGRESQL_MIGRATION_PLAN.md |
+| 21 | Health check endpoint | ✅ | Already existed: GET /api/healthz |
+
 ## Bug Fix Log (Round 5 — 7 Bugs Fixed 2026-04-02)
 
 ### User App — 2 Fixes

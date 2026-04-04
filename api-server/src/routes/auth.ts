@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { signToken, verifyToken } from '../lib/jwt';
 import { hashPassword, verifyPassword, generateOTP, generateId } from '../lib/hash';
 import type { Env } from '../types';
+import { authMiddleware } from '../middleware/auth';
 
 const auth = new Hono<{ Bindings: Env }>();
 
@@ -229,8 +230,14 @@ auth.post('/refresh', async (c) => {
   }
 });
 
-// POST /api/auth/logout — client-side logout (stateless JWT — just acknowledge)
-auth.post('/logout', async (c) => {
+// POST /api/auth/logout — FIX #12: Sets token_invalidated_at to NOW, instantly revoking
+// all tokens issued before this moment. The authMiddleware checks this on every request.
+// Requires a valid token so we know which user is logging out.
+auth.post('/logout', authMiddleware, async (c) => {
+  const user = c.get('user');
+  await c.env.DB.prepare(
+    'UPDATE users SET token_invalidated_at = ? WHERE id = ?'
+  ).bind(Math.floor(Date.now() / 1000), user.sub).run();
   return c.json({ success: true });
 });
 

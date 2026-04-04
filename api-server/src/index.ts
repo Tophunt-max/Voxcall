@@ -11,6 +11,7 @@ import coinRouter from './routes/coin';
 import chatRouter from './routes/chat';
 import callRouter from './routes/call';
 import adminRouter from './routes/admin';
+import { auditLogMiddleware } from './middleware/auditLog';
 import uploadRouter from './routes/upload';
 import publicRouter from './routes/public';
 import matchRouter from './routes/match';
@@ -63,6 +64,8 @@ app.route('/api/host', hostRouter);
 app.route('/api/coins', coinRouter);
 app.route('/api/chat', chatRouter);
 app.route('/api/calls', callRouter);
+// FIX #14: Audit log middleware intercepts all mutating admin requests (POST/PUT/PATCH/DELETE)
+app.use('/api/admin/*', auditLogMiddleware);
 app.route('/api/admin', adminRouter);
 app.route('/api/match', matchRouter);
 app.route('/api/host-app', hostappRouter);
@@ -118,4 +121,79 @@ app.get('/api/ws/call/:sessionId', async (c) => {
 // 404 handler
 app.notFound((c) => c.json({ error: 'Not found', path: c.req.path }, 404));
 
-export default app;
+// FIX #2: Stale call reaper — scheduled via Cloudflare Cron (every 5 min)
+// Ends calls stuck in 'active' or 'pending' for >30 minutes (crash/disconnect scenario)
+// This prevents coins from being permanently frozen when neither party calls /end
+async function reapStaleCalls(env: Env): Promise<void> {
+  const db = env.DB;
+  const staleThresholdSec = 30 * 60; // 30 minutes
+  const cutoff = Math.floor(Date.now() / 1000) - staleThresholdSec;
+
+  try {
+    // Find stale active calls (started but never ended)
+    const staleCalls = await db
+      .prepare(
+        `SELECT cs.id, cs.caller_id, cs.host_id, cs.started_at, cs.rate_per_minute, cs.type,
+                h.user_id as host_user_id, h.user_id as host_coins_user_id,
+                cs.status
+         FROM call_sessions cs
+         JOIN hosts h ON h.id = cs.host_id
+         WHERE cs.status IN ('active', 'pending')
+           AND cs.created_at < ?
+         LIMIT 50`
+      )
+      .bind(cutoff)
+      .all<any>();
+
+    if (!staleCalls.results.length) return;
+
+    const now = Math.floor(Date.now() / 1000);
+    const ops: any[] = [];
+
+    for (const call of staleCalls.results) {
+      // Atomic guard — only process if still in stale status
+      const guard = await db
+        .prepare(`UPDATE call_sessions SET status = 'processing' WHERE id = ? AND status IN ('active', 'pending')`)
+        .bind(call.id)
+        .run();
+      if (!guard.meta.changes) continue; // already processed
+
+      const durationSec = call.started_at ? now - call.started_at : 0;
+      const durationMin = Math.max(0, Math.ceil(durationSec / 60));
+      const effectiveRate = call.rate_per_minute ?? 5;
+      const coinsCharged = call.status === 'active' ? durationMin * effectiveRate : 0;
+
+      // Batch: end the call, deduct caller coins if active, add host earnings
+      const batchOps = [
+        db.prepare(
+          `UPDATE call_sessions SET status = 'ended', ended_at = ?, duration_seconds = ?, coins_charged = ?, notes = 'reaped_by_cron' WHERE id = ?`
+        ).bind(now, durationSec, coinsCharged, call.id),
+      ];
+
+      if (coinsCharged > 0) {
+        const hostEarnings = Math.floor(coinsCharged * 0.7);
+        batchOps.push(
+          db.prepare(`UPDATE users SET coins = MAX(0, coins - ?) WHERE id = ?`).bind(coinsCharged, call.caller_id),
+          db.prepare(`UPDATE users SET coins = coins + ? WHERE id = ?`).bind(hostEarnings, call.host_coins_user_id),
+          db.prepare(`INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?,?,?,?,?,?)`)
+            .bind(crypto.randomUUID(), call.caller_id, 'spend', -coinsCharged, `${call.type || 'audio'} call (auto-reaped)`, call.id),
+          db.prepare(`INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?,?,?,?,?,?)`)
+            .bind(crypto.randomUUID(), call.host_coins_user_id, 'earn', hostEarnings, `${call.type || 'audio'} call earnings (auto-reaped)`, call.id),
+        );
+      }
+
+      await db.batch(batchOps);
+    }
+
+    console.log(`[Cron] Reaped ${staleCalls.results.length} stale call(s)`);
+  } catch (err) {
+    console.error('[Cron] Stale call reaper error:', err);
+  }
+}
+
+export default {
+  fetch: app.fetch,
+  async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
+    ctx.waitUntil(reapStaleCalls(env));
+  },
+};

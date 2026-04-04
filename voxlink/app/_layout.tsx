@@ -18,6 +18,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ToastContainer } from "@/components/Toast";
+import { OfflineBanner } from "@/components/OfflineBanner";
 import { AuthProvider } from "@/context/AuthContext";
 import { CallProvider } from "@/context/CallContext";
 import { ChatProvider } from "@/context/ChatContext";
@@ -209,6 +210,7 @@ function RootLayoutNav() {
         <Stack.Screen name="user/referral" />
       </Stack>
       <ToastContainer />
+      <OfflineBanner />
     </>
   );
 }
