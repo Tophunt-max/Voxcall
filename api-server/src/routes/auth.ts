@@ -4,6 +4,7 @@ import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { signToken, verifyToken } from '../lib/jwt';
 import { hashPassword, verifyPassword, generateOTP, generateId } from '../lib/hash';
+import { sendEmail, otpEmailHtml } from '../lib/email';
 import type { Env } from '../types';
 import { authMiddleware } from '../middleware/auth';
 
@@ -117,8 +118,15 @@ auth.post('/register', rateLimit, zValidator('json', registerSchema), async (c) 
       }
     } catch { /* ignore referral errors — don't block registration */ }
   }
+  // Send OTP via email
+  await sendEmail({
+    apiKey: c.env.RESEND_API_KEY,
+    to: email,
+    subject: 'Verify your VoxLink account',
+    html: otpEmailHtml(otp, 'verify'),
+  });
+
   const token = await signToken({ sub: id, role: 'user', name }, c.env.JWT_SECRET);
-  // Fix NEW-3: coins start at 0; 100 bonus coins are added after OTP verification
   return c.json({ token, user: { id, name, email, role: 'user', coins: 0 } }, 201);
 });
 
@@ -144,7 +152,7 @@ auth.post('/login', rateLimit, zValidator('json', loginSchema), async (c) => {
 });
 
 // POST /api/auth/verify-otp
-auth.post('/verify-otp', async (c) => {
+auth.post('/verify-otp', strictRateLimit, async (c) => {
   const { email, otp } = await c.req.json();
   const db = c.env.DB;
   const now = Math.floor(Date.now() / 1000);
@@ -180,14 +188,23 @@ auth.post('/forgot-password', strictRateLimit, async (c) => {
   if (!email || typeof email !== 'string') return c.json({ error: 'Email required' }, 400);
   const db = c.env.DB;
   const user = await db.prepare('SELECT id, password_hash FROM users WHERE email = ?').bind(email).first<any>();
-  if (!user) return c.json({ error: 'Email not found' }, 404);
+  // Security: always return 200 to prevent email enumeration attacks
+  if (!user) return c.json({ success: true });
   // Block Google-only users — they have no password to reset
   if (!user.password_hash) {
-    return c.json({ error: 'This account uses Google Sign-In. Please log in with Google.' }, 400);
+    // Still return 200 to prevent enumeration; user will not receive an email
+    return c.json({ success: true });
   }
   const otp = generateOTP();
   const otpExp = Math.floor(Date.now() / 1000) + 600;
   await db.prepare('UPDATE users SET otp = ?, otp_expires_at = ? WHERE id = ?').bind(otp, otpExp, user.id).run();
+  // Send OTP via email
+  await sendEmail({
+    apiKey: c.env.RESEND_API_KEY,
+    to: email,
+    subject: 'Reset your VoxLink password',
+    html: otpEmailHtml(otp, 'reset'),
+  });
   return c.json({ success: true });
 });
 

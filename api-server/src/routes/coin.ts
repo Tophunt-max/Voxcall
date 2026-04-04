@@ -83,23 +83,16 @@ coin.post('/purchase', async (c) => {
       if (gw?.name) gatewayName = gw.name;
     } catch {}
   }
-  const batchOps: any[] = [
-    db.prepare('UPDATE users SET coins = coins + ?, updated_at = unixepoch() WHERE id = ?').bind(total, sub),
-    db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
-      .bind(crypto.randomUUID(), sub, 'purchase', total, `Purchased ${plan.name} — ${total} coins`, plan_id),
-    db.prepare(`INSERT INTO coin_purchases (id, user_id, plan_id, plan_name, coins, bonus_coins, amount, currency, payment_method, gateway_id, gateway_name, payment_ref, utr_id, promo_code, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'success')`)
-      .bind(purchaseId, sub, plan_id, plan.name, plan.coins, (plan.bonus_coins || 0) + promoBonus, plan.price, plan.currency || 'USD', payment_method || 'unknown', gateway_id || null, gatewayName, payment_ref || null, utr_id || null, promo_code || null),
-  ];
-  // Bug fix: increment promo used_count so max_uses limit works correctly
-  if (promoRow) {
-    batchOps.push(
-      db.prepare('UPDATE promo_codes SET used_count = used_count + 1 WHERE id = ?').bind(promoRow.id)
-    );
-  }
-  await db.batch(batchOps);
+  // Security fix: coins are NOT credited immediately. Purchase is created with status='pending'.
+  // Admin must verify the payment (UTR ID / payment proof) and mark it 'approved' via the
+  // Admin Panel → Deposits → Approve. Only then are coins credited to the user's wallet.
+  await db.prepare(
+    `INSERT INTO coin_purchases (id, user_id, plan_id, plan_name, coins, bonus_coins, amount, currency, payment_method, gateway_id, gateway_name, payment_ref, utr_id, promo_code, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`
+  ).bind(purchaseId, sub, plan_id, plan.name, plan.coins, (plan.bonus_coins || 0) + promoBonus, plan.price, plan.currency || 'USD', payment_method || 'unknown', gateway_id || null, gatewayName, payment_ref || null, utr_id || null, promo_code || null).run();
+
   const user = await db.prepare('SELECT coins FROM users WHERE id = ?').bind(sub).first<any>();
-  return c.json({ success: true, coins_added: total, new_balance: user?.coins, purchase_id: purchaseId });
+  return c.json({ success: true, pending: true, coins_to_add: total, current_balance: user?.coins, purchase_id: purchaseId });
 });
 
 // POST /api/coins/withdraw — host withdrawal request

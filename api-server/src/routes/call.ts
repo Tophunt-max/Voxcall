@@ -115,7 +115,6 @@ call.post('/end', async (c) => {
     return c.json({ error: 'Call already ended' }, 400);
   }
 
-  // BUG 1 FIX: Atomic status update — prevents double charging on concurrent /end calls
   const atomicUpdate = await db.prepare(
     "UPDATE call_sessions SET status = 'processing' WHERE id = ? AND status IN ('active', 'pending')"
   ).bind(session_id).run();
@@ -124,7 +123,21 @@ call.post('/end', async (c) => {
   }
 
   const now = Math.floor(Date.now() / 1000);
-  const durationSec = duration_seconds ?? (session.started_at ? now - session.started_at : 0);
+  // Security fix: always use server-side duration when started_at is available.
+  // If the client sends duration_seconds and started_at exists, cap the client value
+  // to server-calculated duration + 30s tolerance (network jitter). This prevents
+  // a malicious client from sending 0 to avoid charges or a huge value to inflate time.
+  let durationSec: number;
+  if (session.started_at) {
+    const serverDuration = now - session.started_at;
+    if (duration_seconds !== undefined && duration_seconds >= 0) {
+      durationSec = Math.min(duration_seconds, serverDuration + 30);
+    } else {
+      durationSec = Math.max(0, serverDuration);
+    }
+  } else {
+    durationSec = Math.max(0, duration_seconds ?? 0);
+  }
   const durationMin = Math.max(1, Math.ceil(durationSec / 60));
 
   const hostRow = await db.prepare('SELECT coins_per_minute, audio_coins_per_minute, video_coins_per_minute, user_id, total_minutes, total_earnings FROM hosts WHERE id = ?').bind(session.host_id).first<any>();
@@ -132,9 +145,9 @@ call.post('/end', async (c) => {
     ?? (session.type === 'video'
         ? (hostRow?.video_coins_per_minute ?? hostRow?.coins_per_minute ?? 5)
         : (hostRow?.audio_coins_per_minute ?? hostRow?.coins_per_minute ?? 5));
-  const coinsCharged = (session.status === 'active' || (session.status === 'pending' && durationSec > 0))
-    ? durationMin * effectiveRate
-    : 0;
+  // Security fix: only charge if call was actually accepted (status was 'active').
+  // Pending calls (never answered) must not be charged — consistent with /:id/end.
+  const coinsCharged = session.status === 'active' ? durationMin * effectiveRate : 0;
   const hostShare = Math.floor(coinsCharged * 0.7);
 
   const txs: any[] = [
