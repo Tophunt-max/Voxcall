@@ -7,7 +7,7 @@ import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SvgIcon } from "@/components/SvgIcon";
 import { useColors } from "@/hooks/useColors";
-import { API } from "@/services/api";
+import { API, resolveMediaUrl } from "@/services/api";
 import { showErrorToast } from "@/components/Toast";
 import { formatDuration, formatTimestamp } from "@/utils/format";
 
@@ -56,7 +56,7 @@ export default function CallHistoryScreen() {
           id: c.id,
           hostId: c.host_id || "",
           hostName: c.host_name || c.host_display_name || "Host",
-          hostAvatar: c.host_avatar || `https://api.dicebear.com/7.x/avataaars/png?seed=${c.host_id || c.id}`,
+          hostAvatar: resolveMediaUrl(c.host_avatar) || `https://api.dicebear.com/7.x/avataaars/png?seed=${c.host_id || c.id}`,
           type: (c.type || "audio") as "audio" | "video",
           status: mapStatus(c.status || ""),
           durationSecs: c.duration_seconds || 0,

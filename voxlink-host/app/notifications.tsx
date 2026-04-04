@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { IconView } from "@/components/IconView";
 import { useColors } from "@/hooks/useColors";
 import { formatRelativeTime } from "@/utils/format";
-import { API } from "@/services/api";
+import { API, resolveMediaUrl } from "@/services/api";
 import { showErrorToast } from "@/components/Toast";
 
 interface Notification {
@@ -68,7 +68,7 @@ export default function NotificationsScreen() {
     >
       <View style={[styles.iconCircle, { backgroundColor: colors.secondary }]}>
         {item.avatar_url
-          ? <Image source={{ uri: item.avatar_url }} style={styles.notifAvatar} />
+          ? <Image source={{ uri: resolveMediaUrl(item.avatar_url) }} style={styles.notifAvatar} />
           : <IconView name={ICONS[item.type] ?? "bell"} size={18} color={colors.primary} />
         }
       </View>

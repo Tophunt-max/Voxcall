@@ -5,7 +5,7 @@ import { router } from "expo-router";
 import { useColors } from "@/hooks/useColors";
 import { HostCard } from "@/components/HostCard";
 import { SearchBar } from "@/components/SearchBar";
-import { API } from "@/services/api";
+import { API, resolveMediaUrl } from "@/services/api";
 import { showErrorToast } from "@/components/Toast";
 
 export default function AllHostsScreen() {
@@ -16,7 +16,13 @@ export default function AllHostsScreen() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    API.getHosts().then(setHosts).catch(() => { setHosts([]); showErrorToast("Failed to load hosts."); }).finally(() => setLoading(false));
+    API.getHosts().then((data) => {
+      const mapped = (data || []).map((h: any) => ({
+        ...h,
+        avatar: resolveMediaUrl(h.avatar_url || h.avatar) || `https://api.dicebear.com/7.x/avataaars/svg?seed=${h.id}`,
+      }));
+      setHosts(mapped);
+    }).catch(() => { setHosts([]); showErrorToast("Failed to load hosts."); }).finally(() => setLoading(false));
   }, []);
 
   const filtered = hosts.filter((h) =>

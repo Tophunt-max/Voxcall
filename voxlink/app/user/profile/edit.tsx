@@ -5,9 +5,9 @@ import { appendFileToFormData } from "@/utils/fileUpload";
 import AppInput from "@/components/AppInput";
 import { showSuccessToast } from "@/components/Toast";
 import { router } from "expo-router";
-import { API } from "@/services/api";
+import { API, resolveMediaUrl } from "@/services/api";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Feather } from "@expo/vector-icons";
+
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { PrimaryButton } from "@/components/PrimaryButton";
@@ -73,7 +73,7 @@ export default function EditProfileScreen() {
     <ScrollView style={{ flex: 1, backgroundColor: colors.background }} keyboardShouldPersistTaps="handled">
       <View style={[styles.header, { paddingTop: topPad + 16, borderBottomColor: colors.border }]}>
         <TouchableOpacity onPress={() => router.back()}>
-          <Feather name="x" size={22} color={colors.foreground} />
+          <Image source={require("@/assets/icons/ic_close.png")} style={{ width: 22, height: 22 }} tintColor={colors.foreground} resizeMode="contain" />
         </TouchableOpacity>
         <Text style={[styles.title, { color: colors.foreground }]}>Edit Profile</Text>
         <View style={{ width: 22 }} />
@@ -82,15 +82,16 @@ export default function EditProfileScreen() {
       <View style={styles.content}>
         <TouchableOpacity onPress={handleAvatarPress} activeOpacity={0.85} style={styles.avatarSection}>
           <Image
-            source={{ uri: avatarUri ?? user?.avatar ?? `https://api.dicebear.com/7.x/avataaars/png?seed=${user?.id ?? "user"}` }}
+            source={{ uri: avatarUri ?? resolveMediaUrl(user?.avatar) ?? `https://api.dicebear.com/7.x/avataaars/png?seed=${user?.id ?? "user"}` }}
             style={[styles.avatar, { borderColor: colors.border }]}
           />
           <View style={[styles.changeAvatarBtn, { backgroundColor: colors.primary }]}>
-            {uploadingAvatar ? (
-              <Feather name="refresh-cw" size={14} color="#fff" />
-            ) : (
-              <Feather name="camera" size={16} color="#fff" />
-            )}
+            <Image
+              source={require("@/assets/icons/ic_photo.png")}
+              style={{ width: uploadingAvatar ? 14 : 16, height: uploadingAvatar ? 14 : 16, opacity: uploadingAvatar ? 0.5 : 1 }}
+              tintColor="#fff"
+              resizeMode="contain"
+            />
           </View>
         </TouchableOpacity>
 

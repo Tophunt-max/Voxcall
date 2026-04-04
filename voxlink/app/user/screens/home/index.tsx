@@ -259,7 +259,7 @@ export default function HomeScreen() {
           >
             <View style={[styles.avatarBorder, { borderColor: colors.primary }]}>
               <Image
-                source={{ uri: user?.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.id ?? "me"}` }}
+                source={{ uri: resolveMediaUrl(user?.avatar) || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.id ?? "me"}` }}
                 style={styles.headerAvatar}
                 onError={() => {}}
                 defaultSource={require("@/assets/images/home_call_person.png")}

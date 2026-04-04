@@ -6,7 +6,7 @@ import { Feather } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { useChat, Message } from "@/context/ChatContext";
-import { API } from "@/services/api";
+import { API, resolveMediaUrl } from "@/services/api";
 import { showErrorToast } from "@/components/Toast";
 import * as Haptics from "expo-haptics";
 
@@ -35,7 +35,7 @@ export default function ChatScreen() {
     if (!id) return;
     if (convo) {
       setParticipantName(convo.participantName);
-      if (convo.participantAvatar) setParticipantAvatar(convo.participantAvatar);
+      if (convo.participantAvatar) setParticipantAvatar(resolveMediaUrl(convo.participantAvatar) ?? convo.participantAvatar);
       markRead(convo.id);
       if (convo.messages.length === 0) {
         setLoading(true);
