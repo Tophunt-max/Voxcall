@@ -200,7 +200,7 @@ export default function AudioCallScreen() {
               onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); toggleMute(); }}
               style={[styles.ctrlBtn, activeCall?.isMuted && styles.ctrlBtnActive]}
             >
-              <Feather name={activeCall?.isMuted ? "mic-off" : "mic"} size={26} color="#fff" />
+              <Image source={require("@/assets/icons/ic_mic.png")} style={styles.ctrlIcon} tintColor={activeCall?.isMuted ? "#FFD166" : "#fff"} resizeMode="contain" />
             </TouchableOpacity>
             <Text style={styles.ctrlLabel}>{activeCall?.isMuted ? "Unmute" : "Mute"}</Text>
           </View>
@@ -209,7 +209,7 @@ export default function AudioCallScreen() {
             onPress={() => { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning); handleEndCall(); }}
             style={styles.endBtn}
           >
-            <Feather name="phone-off" size={30} color="#fff" />
+            <Image source={require("@/assets/icons/ic_call_end.png")} style={styles.endIcon} tintColor="#fff" resizeMode="contain" />
           </TouchableOpacity>
 
           <View style={styles.ctrlItem}>
@@ -217,7 +217,12 @@ export default function AudioCallScreen() {
               onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); toggleSpeaker(); }}
               style={[styles.ctrlBtn, activeCall?.isSpeakerOn && styles.ctrlBtnActive]}
             >
-              <Feather name="volume-2" size={26} color="#fff" />
+              <Image
+                source={activeCall?.isSpeakerOn ? require("@/assets/icons/ic_speaker_on.png") : require("@/assets/icons/ic_speaker_off.png")}
+                style={styles.ctrlIcon}
+                tintColor="#fff"
+                resizeMode="contain"
+              />
             </TouchableOpacity>
             <Text style={styles.ctrlLabel}>{activeCall?.isSpeakerOn ? "Speaker On" : "Speaker"}</Text>
           </View>
@@ -294,7 +299,9 @@ const styles = StyleSheet.create({
     alignItems: "center", justifyContent: "center",
   },
   ctrlBtnActive: { backgroundColor: "rgba(255,255,255,0.35)" },
+  ctrlIcon: { width: 26, height: 26 },
   ctrlLabel: { color: "rgba(255,255,255,0.7)", fontSize: 12, fontFamily: "Poppins_400Regular" },
+  endIcon: { width: 30, height: 30 },
   endBtn: {
     width: 76, height: 76, borderRadius: 38,
     backgroundColor: "#E84855",

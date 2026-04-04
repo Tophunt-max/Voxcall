@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  ActivityIndicator,
+  ActivityIndicator, Image,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -76,7 +76,12 @@ export default function CallSummaryScreen() {
         )}
 
         <View style={[s.iconCircle, { backgroundColor: colors.primary + "18" }]}>
-          <Feather name={isVideo ? "video" : "phone"} size={36} color={colors.primary} />
+          <Image
+            source={isVideo ? require("@/assets/icons/ic_video_gradient.png") : require("@/assets/icons/ic_call_gradient.png")}
+            style={s.mainIcon}
+            tintColor={colors.primary}
+            resizeMode="contain"
+          />
         </View>
 
         <Text style={[s.title, { color: colors.foreground }]}>
@@ -104,11 +109,11 @@ export default function CallSummaryScreen() {
           <View style={[s.statDiv, { backgroundColor: colors.border }]} />
 
           <View style={s.stat}>
-            <Feather
-              name={isVideo ? "video" : "mic"}
-              size={18}
-              color={colors.primary}
-              style={{ marginBottom: 2 }}
+            <Image
+              source={isVideo ? require("@/assets/icons/ic_video.png") : require("@/assets/icons/ic_mic.png")}
+              style={[s.statTypeIcon, { marginBottom: 2 }]}
+              tintColor={colors.primary}
+              resizeMode="contain"
             />
             <Text style={[s.statLabel, { color: colors.mutedForeground }]}>
               {isVideo ? "Video" : "Audio"}
@@ -176,7 +181,7 @@ export default function CallSummaryScreen() {
         style={[s.actionBtn, { backgroundColor: "#0BAF23" }]}
         activeOpacity={0.85}
       >
-        <Feather name="trending-up" size={16} color="#fff" />
+        <Image source={require("@/assets/icons/ic_arrow_up.png")} style={s.actionBtnIcon} tintColor="#fff" resizeMode="contain" />
         <Text style={s.actionBtnText}>Earnings Dekho</Text>
       </TouchableOpacity>
 
@@ -185,7 +190,7 @@ export default function CallSummaryScreen() {
         style={[s.actionBtn, { backgroundColor: colors.primary }]}
         activeOpacity={0.85}
       >
-        <Feather name="home" size={16} color="#fff" />
+        <Image source={require("@/assets/icons/ic_home.png")} style={s.actionBtnIcon} tintColor="#fff" resizeMode="contain" />
         <Text style={s.actionBtnText}>Home Par Wapas Jao</Text>
       </TouchableOpacity>
     </View>
@@ -233,6 +238,8 @@ const s = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  mainIcon: { width: 40, height: 40 },
+  statTypeIcon: { width: 18, height: 18 },
   title: { fontSize: 22, fontFamily: "Poppins_700Bold" },
   hostName: { fontSize: 14, fontFamily: "Poppins_400Regular" },
   statsRow: {
@@ -281,5 +288,6 @@ const s = StyleSheet.create({
     paddingVertical: 15,
     borderRadius: 16,
   },
+  actionBtnIcon: { width: 18, height: 18 },
   actionBtnText: { color: "#fff", fontSize: 15, fontFamily: "Poppins_600SemiBold" },
 });

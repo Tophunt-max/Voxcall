@@ -115,7 +115,7 @@ export default function ChatScreen() {
 
         <View style={[styles.inputBar, { borderTopColor: colors.border, backgroundColor: colors.background, paddingBottom: insets.bottom + 8 }]}>
           <TouchableOpacity style={[styles.iconBtn, { backgroundColor: colors.muted }]}>
-            <Feather name="image" size={18} color={colors.mutedForeground} />
+            <Image source={require("@/assets/icons/ic_photo.png")} style={styles.inputIcon} tintColor={colors.mutedForeground} resizeMode="contain" />
           </TouchableOpacity>
           <View style={[styles.inputWrap, { backgroundColor: colors.muted }]}>
             <TextInput
@@ -136,7 +136,7 @@ export default function ChatScreen() {
             disabled={!text.trim()}
             style={[styles.sendBtn, { backgroundColor: text.trim() ? colors.primary : colors.muted }]}
           >
-            <Feather name="send" size={18} color={text.trim() ? "#fff" : colors.mutedForeground} />
+            <Image source={require("@/assets/icons/ic_send.png")} style={styles.inputIcon} tintColor={text.trim() ? "#fff" : colors.mutedForeground} resizeMode="contain" />
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -166,4 +166,5 @@ const styles = StyleSheet.create({
   inputWrap: { flex: 1, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 10, maxHeight: 100 },
   input: { fontSize: 14, fontFamily: "Poppins_400Regular", padding: 0 },
   sendBtn: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
+  inputIcon: { width: 18, height: 18 },
 });

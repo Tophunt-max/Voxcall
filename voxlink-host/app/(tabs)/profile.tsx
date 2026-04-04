@@ -7,7 +7,6 @@ import * as ImagePicker from "expo-image-picker";
 import { appendFileToFormData } from "@/utils/fileUpload";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
-import { Feather } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -240,7 +239,7 @@ export default function HostProfileScreen() {
 
         <TouchableOpacity style={[styles.menuItem, { borderBottomColor: colors.border }]} onPress={() => router.push("/referral")} activeOpacity={0.75}>
           <View style={[styles.menuIcon, { backgroundColor: colors.surface }]}>
-            <Feather name="gift" size={18} color={colors.text} />
+            <Image source={require("@/assets/icons/ic_bonus.png")} style={styles.menuIconImg} tintColor={colors.text} resizeMode="contain" />
           </View>
           <Text style={[styles.menuLabel, { color: colors.text }]}>Refer & Earn</Text>
           <Image source={require("@/assets/icons/ic_back.png")} style={[styles.chevron, CHEVRON_ROTATE]} tintColor={colors.mutedForeground} resizeMode="contain" />
@@ -248,7 +247,7 @@ export default function HostProfileScreen() {
 
         <TouchableOpacity style={[styles.menuItem, { borderBottomColor: colors.border }]} onPress={() => router.push("/help-center")} activeOpacity={0.75}>
           <View style={[styles.menuIcon, { backgroundColor: colors.surface }]}>
-            <Image source={require("@/assets/images/help_graphic.png")} style={styles.menuIconImg} tintColor={colors.text} resizeMode="contain" />
+            <Image source={require("@/assets/icons/ic_users.png")} style={styles.menuIconImg} tintColor={colors.text} resizeMode="contain" />
           </View>
           <Text style={[styles.menuLabel, { color: colors.text }]}>Help Center</Text>
           <Image source={require("@/assets/icons/ic_back.png")} style={[styles.chevron, CHEVRON_ROTATE]} tintColor={colors.mutedForeground} resizeMode="contain" />
@@ -256,7 +255,7 @@ export default function HostProfileScreen() {
 
         <TouchableOpacity style={[styles.menuItem, { borderBottomColor: colors.border }]} onPress={() => router.push("/privacy")} activeOpacity={0.75}>
           <View style={[styles.menuIcon, { backgroundColor: colors.surface }]}>
-            <Feather name="shield" size={18} color={colors.text} />
+            <Image source={require("@/assets/icons/ic_secure.png")} style={styles.menuIconImg} tintColor={colors.text} resizeMode="contain" />
           </View>
           <Text style={[styles.menuLabel, { color: colors.text }]}>Privacy Policy</Text>
           <Image source={require("@/assets/icons/ic_back.png")} style={[styles.chevron, CHEVRON_ROTATE]} tintColor={colors.mutedForeground} resizeMode="contain" />
@@ -264,7 +263,7 @@ export default function HostProfileScreen() {
 
         <TouchableOpacity style={[styles.menuItem, { borderBottomColor: colors.border }]} onPress={() => router.push("/about")} activeOpacity={0.75}>
           <View style={[styles.menuIcon, { backgroundColor: colors.surface }]}>
-            <Feather name="info" size={18} color={colors.text} />
+            <Image source={require("@/assets/icons/ic_id_badge.png")} style={styles.menuIconImg} tintColor={colors.text} resizeMode="contain" />
           </View>
           <Text style={[styles.menuLabel, { color: colors.text }]}>About VoxLink</Text>
           <Image source={require("@/assets/icons/ic_back.png")} style={[styles.chevron, CHEVRON_ROTATE]} tintColor={colors.mutedForeground} resizeMode="contain" />

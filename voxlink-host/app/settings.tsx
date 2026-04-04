@@ -18,9 +18,9 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 const SETTINGS_KEY = "host_settings_v1";
 
 function Row({
-  icon, label, value, onPress, isSwitch, switchVal, onSwitch, danger
+  icon, iconImg, label, value, onPress, isSwitch, switchVal, onSwitch, danger
 }: {
-  icon: string; label: string; value?: string; onPress: () => void;
+  icon: string; iconImg?: any; label: string; value?: string; onPress: () => void;
   isSwitch?: boolean; switchVal?: boolean; onSwitch?: (v: boolean) => void; danger?: boolean;
 }) {
   const colors = useColors();
@@ -31,7 +31,11 @@ function Row({
       activeOpacity={isSwitch ? 1 : 0.75}
     >
       <View style={[styles.rowIcon, { backgroundColor: danger ? "#FDECEA" : colors.surface }]}>
-        <Feather name={icon as any} size={17} color={danger ? "#F44336" : colors.primary} />
+        {iconImg ? (
+          <Image source={iconImg} style={styles.rowIconImg} tintColor={danger ? "#F44336" : colors.primary} resizeMode="contain" />
+        ) : (
+          <Feather name={icon as any} size={17} color={danger ? "#F44336" : colors.primary} />
+        )}
       </View>
       <Text style={[styles.rowLabel, { color: danger ? "#F44336" : colors.text }]}>{label}</Text>
       {isSwitch ? (
@@ -176,7 +180,7 @@ export default function HostSettingsScreen() {
 
       <View style={[styles.header, { paddingTop: topPad + 8, backgroundColor: colors.background, borderBottomColor: colors.border }]}>
         <TouchableOpacity onPress={() => router.back()} style={[styles.backBtn, { backgroundColor: colors.surface }]}>
-          <Feather name="arrow-left" size={20} color={colors.text} />
+          <Image source={require("@/assets/icons/ic_back.png")} style={styles.backIconImg} tintColor={colors.text} resizeMode="contain" />
         </TouchableOpacity>
         <Text style={[styles.title, { color: colors.text }]}>Host Settings</Text>
         <View style={{ width: 40 }} />
@@ -186,14 +190,15 @@ export default function HostSettingsScreen() {
         <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Availability</Text>
         <View style={[styles.card, { backgroundColor: colors.card }]}>
           <Row icon="clock" label="Auto Go Online on App Open" isSwitch switchVal={autoOnline} onSwitch={handleAutoOnline} onPress={() => {}} />
-          <Row icon="phone-off" label="Do Not Disturb Mode" onPress={() => Alert.alert("Coming Soon", "DND mode will be available in a future update.")} />
-          <Row icon="calendar" label="Availability Schedule" onPress={() => Alert.alert("Coming Soon", "Schedule settings coming soon.")} />
+          <Row icon="phone-off" iconImg={require("@/assets/icons/ic_call_end.png")} label="Do Not Disturb Mode" onPress={() => Alert.alert("Coming Soon", "DND mode will be available in a future update.")} />
+          <Row icon="calendar" iconImg={require("@/assets/icons/ic_calendar.png")} label="Availability Schedule" onPress={() => Alert.alert("Coming Soon", "Schedule settings coming soon.")} />
         </View>
 
         <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Push Notifications</Text>
         <View style={[styles.card, { backgroundColor: colors.card }]}>
           <Row
             icon="bell"
+            iconImg={require("@/assets/icons/ic_notify.png")}
             label="Push Notifications"
             value={notificationsGranted ? "On" : "Off"}
             isSwitch
@@ -205,28 +210,28 @@ export default function HostSettingsScreen() {
 
         <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Notification Preferences</Text>
         <View style={[styles.card, { backgroundColor: colors.card }]}>
-          <Row icon="phone" label="Incoming Call Alerts" isSwitch switchVal={callNotif} onSwitch={handleCallNotif} onPress={() => {}} />
-          <Row icon="message-circle" label="Chat Notifications" isSwitch switchVal={chatNotif} onSwitch={handleChatNotif} onPress={() => {}} />
-          <Row icon="dollar-sign" label="Coin Earned Alerts" isSwitch switchVal={coinNotif} onSwitch={handleCoinNotif} onPress={() => {}} />
+          <Row icon="phone" iconImg={require("@/assets/icons/ic_call.png")} label="Incoming Call Alerts" isSwitch switchVal={callNotif} onSwitch={handleCallNotif} onPress={() => {}} />
+          <Row icon="message-circle" iconImg={require("@/assets/icons/ic_chat.png")} label="Chat Notifications" isSwitch switchVal={chatNotif} onSwitch={handleChatNotif} onPress={() => {}} />
+          <Row icon="dollar-sign" iconImg={require("@/assets/icons/ic_coin.png")} label="Coin Earned Alerts" isSwitch switchVal={coinNotif} onSwitch={handleCoinNotif} onPress={() => {}} />
         </View>
 
         <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Earnings</Text>
         <View style={[styles.card, { backgroundColor: colors.card }]}>
-          <Row icon="trending-up" label="Payout Method" value="Bank Account" onPress={() => Alert.alert("Coming Soon", "Payout settings coming soon.")} />
-          <Row icon="file-text" label="Withdraw Earnings" onPress={() => router.push("/(tabs)/wallet")} />
-          <Row icon="gift" label="Refer & Earn" onPress={() => router.push("/referral")} />
+          <Row icon="trending-up" iconImg={require("@/assets/icons/ic_arrow_up.png")} label="Payout Method" value="Bank Account" onPress={() => Alert.alert("Coming Soon", "Payout settings coming soon.")} />
+          <Row icon="file-text" iconImg={require("@/assets/icons/ic_withdraw.png")} label="Withdraw Earnings" onPress={() => router.push("/(tabs)/wallet")} />
+          <Row icon="gift" iconImg={require("@/assets/icons/ic_bonus.png")} label="Refer & Earn" onPress={() => router.push("/referral")} />
         </View>
 
         <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Preferences</Text>
         <View style={[styles.card, { backgroundColor: colors.card }]}>
-          <Row icon="globe" label="App Language" value={currentLangLabel} onPress={() => router.push("/language")} />
+          <Row icon="globe" iconImg={require("@/assets/icons/ic_language.png")} label="App Language" value={currentLangLabel} onPress={() => router.push("/language")} />
         </View>
 
         <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Support</Text>
         <View style={[styles.card, { backgroundColor: colors.card }]}>
           <Row icon="help-circle" label="Help & Support" onPress={() => router.push("/help-center")} />
-          <Row icon="shield" label="Privacy Policy" onPress={() => router.push("/privacy")} />
-          <Row icon="info" label="About VoxLink Host" onPress={() => router.push("/about")} />
+          <Row icon="shield" iconImg={require("@/assets/icons/ic_secure.png")} label="Privacy Policy" onPress={() => router.push("/privacy")} />
+          <Row icon="info" iconImg={require("@/assets/icons/ic_id_badge.png")} label="About VoxLink Host" onPress={() => router.push("/about")} />
         </View>
 
         <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Account</Text>
@@ -245,6 +250,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16, paddingBottom: 12, borderBottomWidth: 1,
   },
   backBtn: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
+  backIconImg: { width: 20, height: 20 },
   title: { fontSize: 17, fontFamily: "Poppins_600SemiBold" },
   sectionLabel: {
     fontSize: 11, fontFamily: "Poppins_500Medium",
@@ -257,6 +263,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14, paddingVertical: 14, gap: 12, borderBottomWidth: 1,
   },
   rowIcon: { width: 36, height: 36, borderRadius: 10, alignItems: "center", justifyContent: "center" },
+  rowIconImg: { width: 18, height: 18 },
   rowLabel: { flex: 1, fontSize: 14, fontFamily: "Poppins_500Medium" },
   rowRight: { flexDirection: "row", alignItems: "center", gap: 6 },
   rowValue: { fontSize: 13, fontFamily: "Poppins_400Regular" },
