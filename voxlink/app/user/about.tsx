@@ -5,7 +5,6 @@ import {
 } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Feather } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
 
 const APP_VERSION = "1.0.0";
@@ -18,10 +17,19 @@ const STATS = [
 ];
 
 const LINKS = [
-  { icon: "globe",        label: "Website",       url: "https://voxlink.app" },
-  { icon: "twitter",      label: "Twitter / X",   url: "https://twitter.com/voxlink" },
-  { icon: "instagram",    label: "Instagram",     url: "https://instagram.com/voxlink" },
-  { icon: "mail",         label: "Contact Us",    url: "mailto:hello@voxlink.app" },
+  { icon: require("@/assets/icons/ic_search.png"),   label: "Website",       url: "https://voxlink.app" },
+  { icon: require("@/assets/icons/ic_arrow_up.png"), label: "Twitter / X",   url: "https://twitter.com/voxlink" },
+  { icon: require("@/assets/icons/ic_photo.png"),    label: "Instagram",     url: "https://instagram.com/voxlink" },
+  { icon: require("@/assets/icons/ic_mail.png"),     label: "Contact Us",    url: "mailto:hello@voxlink.app" },
+];
+
+const FEATURE_ICONS: any[] = [
+  require("@/assets/icons/ic_call.png"),
+  require("@/assets/icons/ic_secure.png"),
+  require("@/assets/icons/ic_users.png"),
+  require("@/assets/icons/ic_coin.png"),
+  require("@/assets/icons/ic_chat.png"),
+  require("@/assets/icons/ic_star.png"),
 ];
 
 export default function AboutScreen() {
@@ -80,18 +88,18 @@ export default function AboutScreen() {
         <View style={[styles.featuresCard, { backgroundColor: colors.card }]}>
           <Text style={[styles.featuresTitle, { color: colors.text }]}>Key Features</Text>
           {[
-            { icon: "phone", text: "HD Audio & Video Calls" },
-            { icon: "shield", text: "End-to-End Encrypted" },
-            { icon: "users", text: "1,200+ Verified Hosts" },
-            { icon: "dollar-sign", text: "Coin-Based Fair Pricing" },
-            { icon: "message-circle", text: "In-App Chat" },
-            { icon: "star", text: "Rated Reviews System" },
-          ].map((f) => (
-            <View key={f.text} style={styles.featureRow}>
+            "HD Audio & Video Calls",
+            "End-to-End Encrypted",
+            "1,200+ Verified Hosts",
+            "Coin-Based Fair Pricing",
+            "In-App Chat",
+            "Rated Reviews System",
+          ].map((text, idx) => (
+            <View key={text} style={styles.featureRow}>
               <View style={[styles.featureIcon, { backgroundColor: colors.primary + "15" }]}>
-                <Feather name={f.icon as any} size={16} color={colors.primary} />
+                <Image source={FEATURE_ICONS[idx]} style={{ width: 16, height: 16, tintColor: colors.primary }} resizeMode="contain" />
               </View>
-              <Text style={[styles.featureText, { color: colors.text }]}>{f.text}</Text>
+              <Text style={[styles.featureText, { color: colors.text }]}>{text}</Text>
             </View>
           ))}
         </View>
@@ -106,10 +114,10 @@ export default function AboutScreen() {
               onPress={() => Linking.openURL(l.url)}
             >
               <View style={[styles.linkIcon, { backgroundColor: colors.surface }]}>
-                <Feather name={l.icon as any} size={17} color={colors.primary} />
+                <Image source={l.icon} style={{ width: 17, height: 17, tintColor: colors.primary }} resizeMode="contain" />
               </View>
               <Text style={[styles.linkLabel, { color: colors.text }]}>{l.label}</Text>
-              <Feather name="external-link" size={14} color={colors.mutedForeground} />
+              <Image source={require("@/assets/icons/ic_back.png")} style={{ width: 14, height: 14, tintColor: colors.mutedForeground, transform: [{ rotate: "180deg" }] }} resizeMode="contain" />
             </TouchableOpacity>
           ))}
         </View>

@@ -1,7 +1,6 @@
 import React, { useEffect, useCallback } from "react";
 import { View, Text, StyleSheet, Image, TouchableOpacity } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Feather } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
 import { useCall } from "@/context/CallContext";
 import { resolveMediaUrl } from "@/services/api";
@@ -55,13 +54,13 @@ export default function IncomingCallScreen() {
         <View style={styles.actionRow}>
           <View style={styles.actionItem}>
             <TouchableOpacity onPress={handleDecline} style={styles.declineBtn}>
-              <Feather name="phone-off" size={28} color="#fff" />
+              <Image source={require("@/assets/icons/ic_call_end.png")} style={{ width: 28, height: 28, tintColor: "#fff" }} resizeMode="contain" />
             </TouchableOpacity>
             <Text style={styles.actionLabel}>Decline</Text>
           </View>
           <View style={styles.actionItem}>
             <TouchableOpacity onPress={handleAccept} style={styles.acceptBtn}>
-              <Feather name="phone" size={28} color="#fff" />
+              <Image source={require("@/assets/icons/ic_call.png")} style={{ width: 28, height: 28, tintColor: "#fff" }} resizeMode="contain" />
             </TouchableOpacity>
             <Text style={styles.actionLabel}>Accept</Text>
           </View>

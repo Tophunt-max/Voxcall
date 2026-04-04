@@ -1,11 +1,10 @@
 import React, { useState } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  ActivityIndicator,
+  ActivityIndicator, Image,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Feather } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
 import { formatDuration } from "@/utils/format";
 import { StarRating } from "@/components/StarRating";
@@ -72,14 +71,14 @@ export default function CallSummaryScreen() {
         {/* Auto-ended banner */}
         {isAutoEnded && (
           <View style={s.autoEndedBanner}>
-            <Feather name="alert-circle" size={14} color="#FF6B6B" />
+            <Image source={require("@/assets/icons/ic_close_fill.png")} style={{ width: 14, height: 14, tintColor: "#FF6B6B" }} resizeMode="contain" />
             <Text style={s.autoEndedText}>You ran out of coins — call was auto-disconnected</Text>
           </View>
         )}
 
         {/* Icon */}
         <View style={[s.iconCircle, { backgroundColor: colors.primary + "18" }]}>
-          <Feather name={isVideo ? "video" : "phone"} size={36} color={colors.primary} />
+          <Image source={isVideo ? require("@/assets/icons/ic_video.png") : require("@/assets/icons/ic_call.png")} style={{ width: 36, height: 36, tintColor: colors.primary }} resizeMode="contain" />
         </View>
 
         <Text style={[s.title, { color: colors.foreground }]}>
@@ -108,12 +107,7 @@ export default function CallSummaryScreen() {
           <View style={[s.statDiv, { backgroundColor: colors.border }]} />
 
           <View style={s.stat}>
-            <Feather
-              name={isVideo ? "video" : "mic"}
-              size={18}
-              color={colors.primary}
-              style={{ marginBottom: 2 }}
-            />
+            <Image source={isVideo ? require("@/assets/icons/ic_video.png") : require("@/assets/icons/ic_mic.png")} style={{ width: 18, height: 18, tintColor: colors.primary, marginBottom: 2 }} resizeMode="contain" />
             <Text style={[s.statLabel, { color: colors.mutedForeground }]}>
               {isVideo ? "Video" : "Audio"}
             </Text>
@@ -164,7 +158,7 @@ export default function CallSummaryScreen() {
         ) : (
           <View style={s.thankYou}>
             <View style={[s.thankYouIconCircle, { backgroundColor: colors.online + "20" }]}>
-              <Feather name="check-circle" size={36} color={colors.online} />
+              <Image source={require("@/assets/icons/ic_check.png")} style={{ width: 36, height: 36, tintColor: colors.online }} resizeMode="contain" />
             </View>
             <Text style={[s.thankYouTitle, { color: colors.foreground }]}>
               Shukriya! 🙏
@@ -183,7 +177,7 @@ export default function CallSummaryScreen() {
           style={[s.actionBtn, { backgroundColor: "#A00EE7" }]}
           activeOpacity={0.85}
         >
-          <Feather name="zap" size={16} color="#fff" />
+          <Image source={require("@/assets/icons/ic_coin.png")} style={{ width: 16, height: 16, tintColor: "#fff" }} resizeMode="contain" />
           <Text style={s.actionBtnText}>Coins Recharge Karo</Text>
         </TouchableOpacity>
       )}
@@ -194,7 +188,7 @@ export default function CallSummaryScreen() {
         style={[s.actionBtn, { backgroundColor: isAutoEnded ? colors.surface : colors.primary, borderWidth: isAutoEnded ? 1 : 0, borderColor: colors.border }]}
         activeOpacity={0.85}
       >
-        <Feather name="home" size={16} color={isAutoEnded ? colors.foreground : "#fff"} />
+        <Image source={require("@/assets/icons/ic_home.png")} style={{ width: 16, height: 16, tintColor: isAutoEnded ? colors.foreground : "#fff" }} resizeMode="contain" />
         <Text style={[s.actionBtnText, isAutoEnded && { color: colors.foreground }]}>
           Home Wapas Jao
         </Text>

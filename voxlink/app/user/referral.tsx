@@ -12,7 +12,6 @@ import {
 import * as ClipboardModule from "expo-clipboard";
 import { crossShare } from "@/utils/fileUpload";
 import { router } from "expo-router";
-import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { useColors } from "@/hooks/useColors";
@@ -61,7 +60,7 @@ export default function ReferralScreen() {
         style={[styles.header, { paddingTop: insets.top + 12 }]}
       >
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Feather name="arrow-left" size={22} color="#fff" />
+          <Image source={require("@/assets/icons/ic_back.png")} style={{ width: 22, height: 22, tintColor: "#fff" }} resizeMode="contain" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Refer & Earn</Text>
         <View style={{ width: 40 }} />
@@ -90,7 +89,7 @@ export default function ReferralScreen() {
               onPress={handleCopy}
               style={[styles.copyBtn, { backgroundColor: copied ? "#0BAF23" : "#A00EE7" }]}
             >
-              <Feather name={copied ? "check" : "copy"} size={16} color="#fff" />
+              <Image source={copied ? require("@/assets/icons/ic_check.png") : require("@/assets/icons/ic_copy.png")} style={{ width: 16, height: 16, tintColor: "#fff" }} resizeMode="contain" />
               <Text style={styles.copyBtnText}>{copied ? "Copied!" : "Copy"}</Text>
             </TouchableOpacity>
           </View>
@@ -102,7 +101,7 @@ export default function ReferralScreen() {
           style={[styles.shareBtn, { backgroundColor: "#A00EE7" }]}
           activeOpacity={0.88}
         >
-          <Feather name="share-2" size={18} color="#fff" />
+          <Image source={require("@/assets/icons/ic_arrow_up.png")} style={{ width: 18, height: 18, tintColor: "#fff" }} resizeMode="contain" />
           <Text style={styles.shareBtnText}>Share with Friends</Text>
         </TouchableOpacity>
 
@@ -126,15 +125,15 @@ export default function ReferralScreen() {
         <Text style={[styles.sectionTitle, { color: colors.text }]}>How it Works</Text>
         <View style={[styles.stepsCard, { backgroundColor: colors.card }]}>
           {[
-            { step: "1", icon: "share-2", text: "Share your unique referral code with friends" },
-            { step: "2", icon: "user-plus", text: "Friend signs up using your code" },
-            { step: "3", icon: "gift", text: "You both receive bonus coins instantly!" },
+            { step: "1", icon: require("@/assets/icons/ic_arrow_up.png"), text: "Share your unique referral code with friends" },
+            { step: "2", icon: require("@/assets/icons/ic_profile.png"), text: "Friend signs up using your code" },
+            { step: "3", icon: require("@/assets/icons/ic_bonus.png"), text: "You both receive bonus coins instantly!" },
           ].map((item) => (
             <View key={item.step} style={styles.stepRow}>
               <View style={[styles.stepNum, { backgroundColor: "#A00EE7" }]}>
                 <Text style={styles.stepNumText}>{item.step}</Text>
               </View>
-              <Feather name={item.icon as any} size={20} color="#A00EE7" style={styles.stepIcon} />
+              <Image source={item.icon} style={[styles.stepIcon, { height: 20, tintColor: "#A00EE7" }]} resizeMode="contain" />
               <Text style={[styles.stepText, { color: colors.text }]}>{item.text}</Text>
             </View>
           ))}

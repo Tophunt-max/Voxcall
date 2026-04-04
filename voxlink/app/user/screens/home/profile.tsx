@@ -15,7 +15,6 @@ import { crossShare, appendFileToFormData } from "@/utils/fileUpload";
 import * as ClipboardModule from "expo-clipboard";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
-import { Feather } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
@@ -73,13 +72,7 @@ function MenuItem({
             tintColor={danger ? colors.destructive : colors.text}
             resizeMode="contain"
           />
-        ) : (
-          <Feather
-            name={iconName as any}
-            size={18}
-            color={danger ? colors.destructive : colors.text}
-          />
-        )}
+        ) : null}
       </View>
       <View style={{ flex: 1 }}>
         <Text
@@ -110,7 +103,7 @@ function MenuItem({
               {value}
             </Text>
           ) : null}
-          <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+          <Image source={require("@/assets/icons/ic_back.png")} style={{ width: 16, height: 16, tintColor: colors.mutedForeground, transform: [{ rotate: "180deg" }] }} resizeMode="contain" />
         </View>
       )}
     </TouchableOpacity>
@@ -325,7 +318,7 @@ export default function ProfileScreen() {
             {uploadingAvatar ? (
               <ActivityIndicator size={12} color="#fff" />
             ) : (
-              <Feather name="camera" size={11} color="#fff" />
+              <Image source={require("@/assets/icons/ic_photo.png")} style={{ width: 11, height: 11, tintColor: "#fff" }} resizeMode="contain" />
             )}
           </View>
           {user?.role === "host" && (

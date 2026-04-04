@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback } from "react";
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, Platform, RefreshControl } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Feather } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
 import { formatRelativeTime } from "@/utils/format";
 import { API, resolveMediaUrl } from "@/services/api";
@@ -18,7 +17,12 @@ interface Notification {
   avatar_url?: string;
 }
 
-const ICONS: Record<string, string> = { call: "phone", message: "message-circle", promo: "gift", system: "info" };
+const PNG_ICONS: Record<string, any> = {
+  call: require("@/assets/icons/ic_call.png"),
+  message: require("@/assets/icons/ic_chat.png"),
+  promo: require("@/assets/icons/ic_bonus.png"),
+  system: require("@/assets/icons/ic_settings.png"),
+};
 
 export default function NotificationsScreen() {
   const colors = useColors();
@@ -69,7 +73,7 @@ export default function NotificationsScreen() {
       <View style={[styles.iconCircle, { backgroundColor: colors.secondary }]}>
         {item.avatar_url
           ? <Image source={{ uri: resolveMediaUrl(item.avatar_url) }} style={styles.notifAvatar} />
-          : <Feather name={ICONS[item.type] as any ?? "bell"} size={18} color={colors.primary} />
+          : <Image source={PNG_ICONS[item.type] ?? PNG_ICONS.system} style={{ width: 18, height: 18, tintColor: colors.primary }} resizeMode="contain" />
         }
       </View>
       <View style={styles.textArea}>
@@ -103,7 +107,7 @@ export default function NotificationsScreen() {
         ListEmptyComponent={
           !loading ? (
             <View style={styles.empty}>
-              <Feather name="bell-off" size={40} color={colors.mutedForeground} />
+              <Image source={require("@/assets/icons/ic_notify.png")} style={{ width: 40, height: 40, tintColor: colors.mutedForeground }} resizeMode="contain" />
               <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>No notifications yet</Text>
             </View>
           ) : null

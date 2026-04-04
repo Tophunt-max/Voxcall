@@ -12,7 +12,6 @@ import {
 } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Feather } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { useCall } from "@/context/CallContext";
@@ -311,7 +310,7 @@ export default function HomeScreen() {
             onPress={() => router.push("/user/notifications")}
             style={[styles.bellBtn, { backgroundColor: colors.muted }]}
           >
-            <Feather name="bell" size={18} color={colors.text} />
+            <Image source={require("@/assets/icons/ic_notify.png")} style={{ width: 18, height: 18, tintColor: colors.text }} resizeMode="contain" />
           </TouchableOpacity>
         </View>
       </View>

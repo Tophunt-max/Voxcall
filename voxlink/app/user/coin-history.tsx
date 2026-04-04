@@ -5,7 +5,6 @@ import {
 } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Feather } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { API } from "@/services/api";
@@ -22,13 +21,13 @@ interface Transaction {
   date: string;
 }
 
-const TYPE_CONFIG: Record<string, { color: string; bg: string; icon: string }> = {
-  purchase:   { color: "#0BAF23", bg: "#E8F8EC", icon: "arrow-down-circle" },
-  spend:      { color: "#F44336", bg: "#FDE8E8", icon: "arrow-up-circle" },
-  bonus:      { color: "#FFA100", bg: "#FFF3D6", icon: "gift" },
-  refund:     { color: "#0078CC", bg: "#D5EEFF", icon: "rotate-ccw" },
-  earn:       { color: "#0BAF23", bg: "#E8F8EC", icon: "trending-up" },
-  withdrawal: { color: "#9333EA", bg: "#F3E8FF", icon: "upload" },
+const TYPE_CONFIG: Record<string, { color: string; bg: string; icon: any }> = {
+  purchase:   { color: "#0BAF23", bg: "#E8F8EC", icon: require("@/assets/icons/ic_incoming.png") },
+  spend:      { color: "#F44336", bg: "#FDE8E8", icon: require("@/assets/icons/ic_arrow_up.png") },
+  bonus:      { color: "#FFA100", bg: "#FFF3D6", icon: require("@/assets/icons/ic_bonus.png") },
+  refund:     { color: "#0078CC", bg: "#D5EEFF", icon: require("@/assets/icons/ic_cam_flip.png") },
+  earn:       { color: "#0BAF23", bg: "#E8F8EC", icon: require("@/assets/icons/ic_arrow_up.png") },
+  withdrawal: { color: "#9333EA", bg: "#F3E8FF", icon: require("@/assets/icons/ic_withdraw.png") },
 };
 
 const TABS = ["All", "Purchase", "Spent", "Bonus"] as const;
@@ -100,7 +99,7 @@ export default function CoinHistoryScreen() {
     return (
       <View style={[styles.item, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
         <View style={[styles.iconCircle, { backgroundColor: cfg.bg }]}>
-          <Feather name={cfg.icon as any} size={18} color={cfg.color} />
+          <Image source={cfg.icon} style={{ width: 18, height: 18, tintColor: cfg.color }} resizeMode="contain" />
         </View>
         <View style={styles.info}>
           <Text style={[styles.itemTitle, { color: colors.text }]}>{item.title}</Text>
@@ -166,7 +165,7 @@ export default function CoinHistoryScreen() {
         </View>
       ) : filtered.length === 0 ? (
         <View style={styles.empty}>
-          <Feather name="inbox" size={64} color={colors.border} />
+          <Image source={require("@/assets/icons/ic_download.png")} style={{ width: 64, height: 64, tintColor: colors.border }} resizeMode="contain" />
           <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>No transactions found</Text>
         </View>
       ) : (

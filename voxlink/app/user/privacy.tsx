@@ -5,7 +5,6 @@ import {
 } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Feather } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
 
 const SECTIONS = [
@@ -71,7 +70,7 @@ export default function PrivacyScreen() {
         {/* Banner */}
         <View style={[styles.banner, { backgroundColor: "#F3E6FF" }]}>
           <View style={[styles.bannerIcon, { backgroundColor: "#A00EE7" }]}>
-            <Feather name="shield" size={28} color="#fff" />
+            <Image source={require("@/assets/icons/ic_secure.png")} style={{ width: 28, height: 28, tintColor: "#fff" }} resizeMode="contain" />
           </View>
           <Text style={[styles.bannerTitle, { color: "#111329" }]}>Your Privacy Matters</Text>
           <Text style={[styles.bannerSub, { color: "#757396" }]}>
@@ -90,7 +89,7 @@ export default function PrivacyScreen() {
             >
               <View style={styles.accordionHeader}>
                 <Text style={[styles.accordionTitle, { color: colors.text }]}>{s.title}</Text>
-                <Feather name={expanded === i ? "chevron-up" : "chevron-down"} size={16} color={colors.mutedForeground} />
+                <Image source={require("@/assets/icons/ic_back.png")} style={{ width: 16, height: 16, tintColor: colors.mutedForeground, transform: [{ rotate: expanded === i ? "90deg" : "-90deg" }] }} resizeMode="contain" />
               </View>
               {expanded === i && (
                 <Text style={[styles.accordionBody, { color: colors.mutedForeground }]}>{s.body}</Text>
@@ -100,7 +99,7 @@ export default function PrivacyScreen() {
         </View>
 
         <View style={[styles.contactBox, { backgroundColor: colors.surface, marginHorizontal: 16, marginTop: 20 }]}>
-          <Feather name="mail" size={20} color={colors.primary} />
+          <Image source={require("@/assets/icons/ic_mail.png")} style={{ width: 20, height: 20, tintColor: colors.primary }} resizeMode="contain" />
           <View style={{ flex: 1 }}>
             <Text style={[styles.contactTitle, { color: colors.text }]}>Questions about Privacy?</Text>
             <Text style={[styles.contactSub, { color: colors.mutedForeground }]}>privacy@voxlink.app</Text>

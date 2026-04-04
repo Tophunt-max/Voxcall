@@ -5,7 +5,6 @@ import {
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useCall } from "@/context/CallContext";
 import { useCallTimer } from "@/hooks/useCallTimer";
@@ -142,14 +141,14 @@ export default function AudioCallScreen() {
 
       {micChecked && permissions.microphone.status !== "granted" && !showMicDialog && (
         <TouchableOpacity onPress={() => setShowMicDialog(true)} style={styles.permBanner}>
-          <Feather name="mic-off" size={14} color="#FFD166" />
+          <Image source={require("@/assets/icons/ic_mic.png")} style={{ width: 14, height: 14, tintColor: "#FFD166" }} resizeMode="contain" />
           <Text style={styles.permBannerText}>Microphone access needed — Tap to fix</Text>
         </TouchableOpacity>
       )}
 
       {showLowCoinWarning && (
         <View style={styles.warningBanner}>
-          <Feather name="alert-triangle" size={14} color="#FFD166" />
+          <Image source={require("@/assets/icons/ic_notify.png")} style={{ width: 14, height: 14, tintColor: "#FFD166" }} resizeMode="contain" />
           <Text style={styles.warningText}>
             Coins running low — {remainingLabel}
           </Text>
@@ -158,7 +157,7 @@ export default function AudioCallScreen() {
 
       {webrtc.error && (
         <View style={styles.warningBanner}>
-          <Feather name="wifi-off" size={14} color="#FF6B6B" />
+          <Image source={require("@/assets/icons/ic_close.png")} style={{ width: 14, height: 14, tintColor: "#FF6B6B" }} resizeMode="contain" />
           <Text style={styles.warningText}>Connection issue — trying to reconnect</Text>
         </View>
       )}
@@ -185,7 +184,7 @@ export default function AudioCallScreen() {
           ) : null}
           {remainingLabel && status === "active" && (
             <View style={[styles.costBadge, remaining != null && remaining <= 60 ? styles.warningBadge : {}]}>
-              <Feather name="clock" size={12} color={remaining != null && remaining <= 60 ? "#FF6B6B" : "rgba(255,255,255,0.7)"} />
+              <Image source={require("@/assets/icons/ic_calendar.png")} style={{ width: 12, height: 12, tintColor: remaining != null && remaining <= 60 ? "#FF6B6B" : "rgba(255,255,255,0.7)" }} resizeMode="contain" />
               <Text style={[styles.costText, remaining != null && remaining <= 60 && { color: "#FF6B6B" }]}>
                 {remainingLabel}
               </Text>
@@ -201,7 +200,7 @@ export default function AudioCallScreen() {
               onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); toggleMute(); }}
               style={[styles.ctrlBtn, activeCall?.isMuted && styles.ctrlBtnActive]}
             >
-              <Feather name={activeCall?.isMuted ? "mic-off" : "mic"} size={26} color="#fff" />
+              <Image source={require("@/assets/icons/ic_mic.png")} style={{ width: 26, height: 26, tintColor: "#fff", opacity: activeCall?.isMuted ? 0.4 : 1 }} resizeMode="contain" />
             </TouchableOpacity>
             <Text style={styles.ctrlLabel}>{activeCall?.isMuted ? "Unmute" : "Mute"}</Text>
           </View>
@@ -210,7 +209,7 @@ export default function AudioCallScreen() {
             onPress={() => { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning); handleEndCall(); }}
             style={styles.endBtn}
           >
-            <Feather name="phone-off" size={30} color="#fff" />
+            <Image source={require("@/assets/icons/ic_call_end.png")} style={{ width: 30, height: 30, tintColor: "#fff" }} resizeMode="contain" />
           </TouchableOpacity>
 
           <View style={styles.ctrlItem}>
@@ -218,7 +217,7 @@ export default function AudioCallScreen() {
               onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); toggleSpeaker(); }}
               style={[styles.ctrlBtn, activeCall?.isSpeakerOn && styles.ctrlBtnActive]}
             >
-              <Feather name="volume-2" size={26} color="#fff" />
+              <Image source={activeCall?.isSpeakerOn ? require("@/assets/icons/ic_speaker_on.png") : require("@/assets/icons/ic_speaker_off.png")} style={{ width: 26, height: 26, tintColor: "#fff" }} resizeMode="contain" />
             </TouchableOpacity>
             <Text style={styles.ctrlLabel}>{activeCall?.isSpeakerOn ? "Speaker On" : "Speaker"}</Text>
           </View>

@@ -6,8 +6,6 @@ import {
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
-import { Feather } from "@expo/vector-icons";
-
 const FAQS = [
   { q: "What is VoxLink?", a: "VoxLink is a social platform where you can connect with professional listeners and hosts via audio or video calls. Get personalized support on topics like relationships, career, life coaching, and more." },
   { q: "Who are Hosts/Listeners?", a: "Hosts are verified professionals or experienced individuals who provide support and conversation. They specialize in various topics and are available for audio and video calls." },
@@ -30,7 +28,7 @@ function FAQItem({ q, a }: { q: string; a: string }) {
     >
       <View style={styles.faqRow}>
         <Text style={[styles.faqQ, { color: colors.text }]}>{q}</Text>
-        <Feather name={open ? "chevron-up" : "chevron-down"} size={18} color={colors.mutedForeground} />
+        <Image source={require("@/assets/icons/ic_back.png")} style={{ width: 18, height: 18, tintColor: colors.mutedForeground, transform: [{ rotate: open ? "90deg" : "-90deg" }] }} resizeMode="contain" />
       </View>
       {open && <Text style={[styles.faqA, { color: colors.mutedForeground }]}>{a}</Text>}
     </TouchableOpacity>

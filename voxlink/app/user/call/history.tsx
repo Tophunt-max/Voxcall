@@ -5,7 +5,6 @@ import {
 } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Feather } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
 import { API, resolveMediaUrl } from "@/services/api";
 import { showErrorToast } from "@/components/Toast";
@@ -83,7 +82,7 @@ export default function CallHistoryScreen() {
         </View>
         <View style={styles.detailRow}>
           <View style={[styles.typeBadge, { backgroundColor: item.type === "video" ? "#E8D5FF" : "#D5F0FF" }]}>
-            <Feather name={item.type === "video" ? "video" : "phone"} size={10} color={item.type === "video" ? "#7B2FF7" : "#0078CC"} />
+            <Image source={item.type === "video" ? require("@/assets/icons/ic_video.png") : require("@/assets/icons/ic_call.png")} style={{ width: 10, height: 10, tintColor: item.type === "video" ? "#7B2FF7" : "#0078CC" }} resizeMode="contain" />
             <Text style={[styles.typeText, { color: item.type === "video" ? "#7B2FF7" : "#0078CC" }]}>
               {item.type === "video" ? "Video" : "Audio"}
             </Text>

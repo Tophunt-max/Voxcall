@@ -5,7 +5,6 @@ import {
 } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Feather } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
 import { API } from "@/services/api";
 import { showErrorToast } from "@/components/Toast";
@@ -70,7 +69,7 @@ export default function SearchHostsScreen() {
           <View style={styles.nameRow}>
             <Text style={[styles.name, { color: colors.text }]}>{name}</Text>
             <View style={styles.ratingRow}>
-              <Feather name="star" size={11} color="#FFA100" />
+              <Image source={require("@/assets/icons/ic_star.png")} style={{ width: 11, height: 11, tintColor: "#FFA100" }} resizeMode="contain" />
               <Text style={[styles.rating, { color: colors.mutedForeground }]}>{rating}</Text>
             </View>
           </View>
@@ -93,7 +92,7 @@ export default function SearchHostsScreen() {
           style={[styles.talkBtn, { backgroundColor: colors.primary }]}
           onPress={() => router.push(`/user/hosts/${item.id}`)}
         >
-          <Feather name="phone" size={13} color="#fff" />
+          <Image source={require("@/assets/icons/ic_call.png")} style={{ width: 13, height: 13, tintColor: "#fff" }} resizeMode="contain" />
           <Text style={styles.talkTxt}>Talk</Text>
         </TouchableOpacity>
       </TouchableOpacity>
@@ -113,7 +112,7 @@ export default function SearchHostsScreen() {
             { backgroundColor: colors.surface, borderColor: colors.border }
           ]}
         >
-          <Feather name="search" size={16} color={colors.mutedForeground} />
+          <Image source={require("@/assets/icons/ic_search.png")} style={{ width: 16, height: 16, tintColor: colors.mutedForeground }} resizeMode="contain" />
           <TextInput
             style={[styles.searchInput, { color: colors.text }]}
             placeholder="Search hosts by name..."
@@ -126,7 +125,7 @@ export default function SearchHostsScreen() {
           />
           {query.length > 0 && (
             <TouchableOpacity onPress={() => setQuery("")}>
-              <Feather name="x" size={16} color={colors.mutedForeground} />
+              <Image source={require("@/assets/icons/ic_close.png")} style={{ width: 16, height: 16, tintColor: colors.mutedForeground }} resizeMode="contain" />
             </TouchableOpacity>
           )}
         </View>
@@ -134,7 +133,7 @@ export default function SearchHostsScreen() {
           style={[styles.filterBtn, { backgroundColor: showFilters ? colors.primary : colors.surface }]}
           onPress={() => setShowFilters(!showFilters)}
         >
-          <Feather name="sliders" size={16} color={showFilters ? "#fff" : colors.text} />
+          <Image source={require("@/assets/icons/ic_settings.png")} style={{ width: 16, height: 16, tintColor: showFilters ? "#fff" : colors.text }} resizeMode="contain" />
         </TouchableOpacity>
       </View>
 
@@ -179,7 +178,7 @@ export default function SearchHostsScreen() {
         </View>
       ) : filtered.length === 0 ? (
         <View style={styles.empty}>
-          <Feather name="users" size={64} color={colors.border} />
+          <Image source={require("@/assets/icons/ic_users.png")} style={{ width: 64, height: 64, tintColor: colors.border }} resizeMode="contain" />
           <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>No hosts found matching your search</Text>
         </View>
       ) : (

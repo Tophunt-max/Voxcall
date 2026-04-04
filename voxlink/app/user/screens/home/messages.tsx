@@ -11,7 +11,6 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
-import { Feather } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { useChat } from "@/context/ChatContext";
@@ -40,7 +39,7 @@ export default function MessagesScreen() {
       <View style={[styles.header, { paddingTop: insets.top + 14, backgroundColor: "#F3E4FF" }]}>
         {showSearch ? (
           <View accessible={false} style={styles.searchBar}>
-            <Feather name="search" size={18} color={colors.mutedForeground} />
+            <Image source={require("@/assets/icons/ic_search.png")} style={{ width: 18, height: 18, tintColor: colors.mutedForeground }} resizeMode="contain" />
             <TextInput
               style={styles.searchInput}
               value={search}
@@ -52,14 +51,14 @@ export default function MessagesScreen() {
               underlineColorAndroid="transparent"
             />
             <TouchableOpacity onPress={() => { setShowSearch(false); setSearch(""); }}>
-              <Feather name="x" size={18} color={colors.mutedForeground} />
+              <Image source={require("@/assets/icons/ic_close.png")} style={{ width: 18, height: 18, tintColor: colors.mutedForeground }} resizeMode="contain" />
             </TouchableOpacity>
           </View>
         ) : (
           <View style={styles.headerRow}>
             <Text style={styles.headerTitle}>Chats</Text>
             <TouchableOpacity onPress={() => setShowSearch(true)} style={styles.searchBtn}>
-              <Feather name="search" size={20} color="#111329" />
+              <Image source={require("@/assets/icons/ic_search.png")} style={{ width: 20, height: 20, tintColor: "#111329" }} resizeMode="contain" />
             </TouchableOpacity>
           </View>
         )}

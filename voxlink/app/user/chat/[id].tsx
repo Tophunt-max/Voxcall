@@ -2,7 +2,6 @@ import React, { useState, useRef, useEffect } from "react";
 import { View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity, Image, Platform, KeyboardAvoidingView, ActivityIndicator } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Feather } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { useChat, Message } from "@/context/ChatContext";
@@ -87,7 +86,7 @@ export default function ChatScreen() {
           <Text style={[styles.headerName, { color: colors.foreground }]}>{participantName}</Text>
           <Text style={[styles.headerStatus, { color: colors.online }]}>Online</Text>
         </View>
-        <Feather name="info" size={20} color={colors.mutedForeground} />
+        <Image source={require("@/assets/icons/ic_notify.png")} style={{ width: 20, height: 20, tintColor: colors.mutedForeground }} resizeMode="contain" />
       </View>
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={0}>
@@ -115,7 +114,7 @@ export default function ChatScreen() {
 
         <View style={[styles.inputBar, { borderTopColor: colors.border, backgroundColor: colors.background, paddingBottom: insets.bottom + 8 }]}>
           <TouchableOpacity style={[styles.iconBtn, { backgroundColor: colors.muted }]}>
-            <Feather name="image" size={18} color={colors.mutedForeground} />
+            <Image source={require("@/assets/icons/ic_photo.png")} style={{ width: 18, height: 18, tintColor: colors.mutedForeground }} resizeMode="contain" />
           </TouchableOpacity>
           <View style={[styles.inputWrap, { backgroundColor: colors.muted }]}>
             <TextInput
@@ -136,7 +135,7 @@ export default function ChatScreen() {
             disabled={!text.trim()}
             style={[styles.sendBtn, { backgroundColor: text.trim() ? colors.primary : colors.muted }]}
           >
-            <Feather name="send" size={18} color={text.trim() ? "#fff" : colors.mutedForeground} />
+            <Image source={require("@/assets/icons/ic_send.png")} style={{ width: 18, height: 18, tintColor: text.trim() ? "#fff" : colors.mutedForeground }} resizeMode="contain" />
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>

@@ -13,7 +13,6 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { Feather } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/context/AuthContext";
@@ -271,7 +270,7 @@ export default function HostDetailScreen() {
               style={s.reportBtn}
               activeOpacity={0.85}
             >
-              <Feather name="flag" size={18} color="#fff" />
+              <Image source={require("@/assets/icons/ic_flag.png")} style={{ width: 18, height: 18, tintColor: "#fff" }} resizeMode="contain" />
             </TouchableOpacity>
           </View>
 
@@ -457,7 +456,7 @@ export default function HostDetailScreen() {
                 activeOpacity={0.7}
               >
                 <Text style={s.reportOptionTxt}>{opt.label}</Text>
-                <Feather name="chevron-right" size={16} color="#9CA3AF" />
+                <Image source={require("@/assets/icons/ic_back.png")} style={{ width: 16, height: 16, tintColor: "#9CA3AF", transform: [{ rotate: "180deg" }] }} resizeMode="contain" />
               </TouchableOpacity>
             ))}
             <TouchableOpacity onPress={() => setReportModal(false)} style={s.reportCancel} activeOpacity={0.8}>
