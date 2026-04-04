@@ -84,7 +84,7 @@ call.post('/initiate', async (c) => {
         hostUser.fcm_token,
         `Incoming ${callLabel}`,
         `${caller.name || 'Someone'} is calling you`,
-        { type: 'incoming_call', session_id: sessionId, call_type: callType, caller_id: sub }
+        { type: 'incoming_call', session_id: sessionId, call_type: callType, caller_id: sub, caller_name: caller.name ?? 'Caller' }
       );
     }
   } catch {}

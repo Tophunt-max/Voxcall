@@ -6,11 +6,13 @@ import { SocketEvents } from "@/constants/events";
 
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL || "http://localhost:8080";
 
-function getWsUrl(userId: string): string {
+function getWsUrl(userId: string, token?: string): string {
   const wsBase = BASE_URL.replace(/^https?:\/\//, (match) =>
     match === "https://" ? "wss://" : "ws://"
   );
-  return `${wsBase}/api/ws/notifications?userId=${encodeURIComponent(userId)}`;
+  const params = new URLSearchParams({ userId });
+  if (token) params.set("token", token);
+  return `${wsBase}/api/ws/notifications?${params.toString()}`;
 }
 
 type EventHandler = (...args: any[]) => void;
@@ -20,6 +22,7 @@ class SocketService {
   private listeners: Map<string, Set<EventHandler>> = new Map();
   private _connected = false;
   private _userId: string | null = null;
+  private _token: string | undefined = undefined;
   private ws: WebSocket | null = null;
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
   private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -43,20 +46,21 @@ class SocketService {
 
   // ─── Connection Management ────────────────────────────────────────────────
 
-  connect(userId: string): void {
+  connect(userId: string, token?: string): void {
     if (this._connected && this._userId === userId) return;
     this._userId = userId;
-    this._openWebSocket(userId);
+    this._token = token;
+    this._openWebSocket(userId, token);
   }
 
-  private _openWebSocket(userId: string): void {
+  private _openWebSocket(userId: string, token?: string): void {
     if (this.ws) {
       try { this.ws.close(); } catch {}
       this.ws = null;
     }
 
     try {
-      const url = getWsUrl(userId);
+      const url = getWsUrl(userId, token ?? this._token);
       const ws = new WebSocket(url);
       this.ws = ws;
 
@@ -178,13 +182,13 @@ class SocketService {
     const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
     console.log(`[Socket] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`);
     this.reconnectTimeout = setTimeout(() => {
-      if (this._userId) this._openWebSocket(this._userId);
+      if (this._userId) this._openWebSocket(this._userId, this._token);
     }, delay);
   }
 
   reconnect(): void {
     if (this._connected) return;
-    if (this._userId) this._openWebSocket(this._userId);
+    if (this._userId) this._openWebSocket(this._userId, this._token);
   }
 
   private startHeartbeat(): void {

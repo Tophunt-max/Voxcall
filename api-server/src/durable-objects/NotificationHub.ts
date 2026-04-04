@@ -1,4 +1,7 @@
 // NotificationHub Durable Object — real-time notifications per user
+// NOTE: Durable Objects are NOT publicly routable in Cloudflare — they can only
+// be reached from the same-account Worker via binding. No additional auth is
+// needed on the /notify endpoint.
 export class NotificationHub {
   private state: DurableObjectState;
   private connections: Set<WebSocket> = new Set();
@@ -10,27 +13,19 @@ export class NotificationHub {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
 
-    // Internal call from Worker to push notification — requires internal secret header
+    // Internal push from Worker — broadcast to all connected WebSocket clients
     if (url.pathname === '/notify' && request.method === 'POST') {
-      const secret = url.searchParams.get('internal_key');
-      const expectedSecret = url.searchParams.get('expected_key');
-      // Verify the caller is our own Worker by checking a shared token in the URL
-      // (Durable Objects are not publicly routable, but this adds defence-in-depth)
-      if (!secret || secret !== expectedSecret) {
-        // Accept from same-origin Worker calls only (no external secret means internal DO-to-DO call)
-        const cfWorker = request.headers.get('X-CF-Worker-Internal');
-        if (cfWorker !== '1') {
-          return new Response('Forbidden', { status: 403 });
-        }
-      }
       const data = await request.json() as any;
       const msg = JSON.stringify(data);
+      let sent = 0;
       for (const ws of this.connections) {
         if (ws.readyState === WebSocket.READY_STATE_OPEN) {
-          try { ws.send(msg); } catch {}
+          try { ws.send(msg); sent++; } catch {}
         }
       }
-      return new Response(JSON.stringify({ pushed: this.connections.size }), { headers: { 'Content-Type': 'application/json' } });
+      return new Response(JSON.stringify({ pushed: sent, total: this.connections.size }), {
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
     // WebSocket upgrade from client
