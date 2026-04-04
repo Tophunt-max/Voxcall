@@ -49,7 +49,7 @@
       [
         "expo-router",
         {
-          "origin": "https://voxlink-host-mobile.pages.dev/"
+          "origin": "https://voxcallhost.pages.dev/"
         }
       ],
       "expo-font",
