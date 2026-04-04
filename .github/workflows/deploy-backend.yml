@@ -6,6 +6,9 @@ on:
       - main
     paths:
       - 'api-server/**'
+      - 'pnpm-lock.yaml'
+      - 'package.json'
+      - 'pnpm-workspace.yaml'
       - '.github/workflows/deploy-backend.yml'
   workflow_dispatch:
 
@@ -34,7 +37,7 @@ jobs:
           cache: 'pnpm'
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --no-frozen-lockfile
 
       - name: Apply D1 Migrations
         working-directory: api-server
