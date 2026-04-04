@@ -45,7 +45,7 @@
       [
         "expo-router",
         {
-          "origin": "https://replit.com/"
+          "origin": "https://voxlink-host-mobile.pages.dev/"
         }
       ],
       "expo-font",
@@ -84,7 +84,7 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true,
-      "baseUrl": "/host"
+      "baseUrl": "/"
     },
     "extra": {
       "appRole": "host",
