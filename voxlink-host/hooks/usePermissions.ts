@@ -284,7 +284,8 @@ export function usePermissions() {
 
   const isBlocked = useCallback(
     (type: PermissionType) =>
-      permissions[type].status === "blocked" || permissions[type].status === "denied",
+      permissions[type].status === "blocked" ||
+      (permissions[type].status === "denied" && !permissions[type].canAskAgain),
     [permissions]
   );
 

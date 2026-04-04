@@ -10,14 +10,22 @@ import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { API, resolveMediaUrl } from "@/services/api";
 import { showErrorToast } from "@/components/Toast";
+import { usePermissions } from "@/hooks/usePermissions";
+import { PermissionDialog, PERMISSION_CONFIGS } from "@/components/PermissionDialog";
 
 export default function HostHomeScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { user, setOnlineStatus } = useAuth();
-  // Sync isOnline from AuthContext (not a local false default)
+  const {
+    permissions, isBlocked,
+    requestMicrophone, requestCamera, requestNotifications,
+    openSettings,
+  } = usePermissions();
+
   const [isOnline, setIsOnline] = useState(user?.isOnline ?? false);
   const [stats, setStats] = useState({ calls: "…", hours: "…h", earnings: "…" });
+  const [permDialog, setPermDialog] = useState<"microphone" | "camera" | "notifications" | null>(null);
   const topPad = insets.top;
 
   // Keep local toggle in sync when AuthContext updates (e.g. on foreground refresh)
@@ -130,15 +138,62 @@ export default function HostHomeScreen() {
         resizeMode="contain"
       />
 
+      {/* Permission dialog */}
+      {permDialog && (
+        <PermissionDialog
+          visible
+          config={{
+            ...PERMISSION_CONFIGS[permDialog],
+            isBlocked: isBlocked(permDialog as any),
+          }}
+          onAllow={async () => {
+            if (isBlocked(permDialog as any)) {
+              openSettings();
+            } else if (permDialog === "microphone") {
+              await requestMicrophone();
+            } else if (permDialog === "camera") {
+              await requestCamera();
+            } else if (permDialog === "notifications") {
+              await requestNotifications();
+            }
+            setPermDialog(null);
+          }}
+          onDeny={() => setPermDialog(null)}
+        />
+      )}
+
       {/* Permission reminders */}
       <View style={styles.permSection}>
         <Text style={[styles.permTitle, { color: colors.text }]}>Permissions Required</Text>
-        {[
-          { icon: require("@/assets/icons/ic_mic.png"), label: "Microphone", desc: "Required for audio calls", granted: true },
-          { icon: require("@/assets/icons/ic_video.png"), label: "Camera", desc: "Required for video calls", granted: false },
-          { icon: require("@/assets/images/icon_bluetooth.png"), label: "Bluetooth", desc: "For bluetooth headsets", granted: true },
-        ].map((p, i) => (
-          <View key={i} style={[styles.permRow, { backgroundColor: colors.card }]}>
+        {([
+          {
+            icon: require("@/assets/icons/ic_mic.png"),
+            label: "Microphone",
+            desc: "Required for audio calls",
+            granted: permissions.microphone.status === "granted",
+            key: "microphone" as const,
+          },
+          {
+            icon: require("@/assets/icons/ic_video.png"),
+            label: "Camera",
+            desc: "Required for video calls",
+            granted: permissions.camera.status === "granted",
+            key: "camera" as const,
+          },
+          {
+            icon: require("@/assets/icons/ic_notify.png"),
+            label: "Notifications",
+            desc: "For incoming call alerts",
+            granted: permissions.notifications.status === "granted",
+            key: "notifications" as const,
+          },
+        ] as const).map((p) => (
+          <TouchableOpacity
+            key={p.key}
+            style={[styles.permRow, { backgroundColor: colors.card }]}
+            onPress={() => { if (!p.granted) setPermDialog(p.key); }}
+            activeOpacity={p.granted ? 1 : 0.75}
+          >
             <View style={[styles.permIconWrap, { backgroundColor: p.granted ? "#E8F5E9" : "#FFF3F3" }]}>
               <Image source={p.icon} style={styles.permIcon} tintColor={p.granted ? "#0BAF23" : "#E84855"} resizeMode="contain" />
             </View>
@@ -147,9 +202,9 @@ export default function HostHomeScreen() {
               <Text style={[styles.permDesc, { color: colors.mutedForeground }]}>{p.desc}</Text>
             </View>
             <Text style={[styles.permStatus, { color: p.granted ? "#0BAF23" : "#E84855" }]}>
-              {p.granted ? "Granted" : "Required"}
+              {p.granted ? "Granted" : "Tap to allow"}
             </Text>
-          </View>
+          </TouchableOpacity>
         ))}
       </View>
 
