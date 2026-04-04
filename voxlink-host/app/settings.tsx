@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, Image,
-  ScrollView, Switch, Alert
+  ScrollView, Switch, Alert, ImageSourcePropType
 } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -20,7 +20,7 @@ const SETTINGS_KEY = "host_settings_v1";
 function Row({
   icon, iconImg, label, value, onPress, isSwitch, switchVal, onSwitch, danger
 }: {
-  icon: string; iconImg?: any; label: string; value?: string; onPress: () => void;
+  icon: string; iconImg?: ImageSourcePropType; label: string; value?: string; onPress: () => void;
   isSwitch?: boolean; switchVal?: boolean; onSwitch?: (v: boolean) => void; danger?: boolean;
 }) {
   const colors = useColors();

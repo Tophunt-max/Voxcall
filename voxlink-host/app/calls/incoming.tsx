@@ -46,7 +46,6 @@ export default function IncomingCallScreen() {
           />
         </View>
         <Text style={styles.callerName}>{activeCall?.participant.name ?? "Unknown"}</Text>
-        {/* Fix M2: show correct role — "user" callers are Users, not Hosts */}
         <Text style={styles.callerRole}>{activeCall?.participant.role === "host" ? "VoxLink Host" : "VoxLink User"}</Text>
       </View>
 
