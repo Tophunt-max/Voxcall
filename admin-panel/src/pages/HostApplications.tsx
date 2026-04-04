@@ -140,11 +140,12 @@ export default function HostApplicationsPage() {
         </div>
       ) : (
         <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #E5E7EB", overflow: "hidden" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" } as React.CSSProperties}>
+          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 780 }}>
             <thead>
               <tr style={{ background: "#F9FAFB" }}>
                 {["Name", "Email", "Gender", "Specialties", "Rates", "Status", "Submitted", "Actions"].map((h) => (
-                  <th key={h} style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, color: "#6B7280", borderBottom: "1px solid #E5E7EB" }}>{h}</th>
+                  <th key={h} style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, color: "#6B7280", borderBottom: "1px solid #E5E7EB", whiteSpace: "nowrap" }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -153,8 +154,8 @@ export default function HostApplicationsPage() {
                 const sc = STATUS_COLORS[app.status] ?? STATUS_COLORS.pending;
                 return (
                   <tr key={app.id} style={{ borderBottom: "1px solid #F3F4F6" }}>
-                    <td style={{ padding: "14px 16px", fontWeight: 600, color: "#111329" }}>{app.display_name || "—"}</td>
-                    <td style={{ padding: "14px 16px", color: "#6B7280", fontSize: 13 }}>{app.email}</td>
+                    <td style={{ padding: "14px 16px", fontWeight: 600, color: "#111329", whiteSpace: "nowrap" }}>{app.display_name || "—"}</td>
+                    <td style={{ padding: "14px 16px", color: "#6B7280", fontSize: 13, whiteSpace: "nowrap" }}>{app.email}</td>
                     <td style={{ padding: "14px 16px", color: "#6B7280", fontSize: 13, textTransform: "capitalize" }}>{app.gender || "—"}</td>
                     <td style={{ padding: "14px 16px" }}>
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
@@ -186,6 +187,7 @@ export default function HostApplicationsPage() {
               })}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
