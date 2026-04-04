@@ -53,6 +53,12 @@
       "@react-native-firebase/app",
       "@react-native-firebase/messaging",
       [
+        "@react-native-google-signin/google-signin",
+        {
+          "googleServicesFile": "./google-services.json"
+        }
+      ],
+      [
         "expo-camera",
         {
           "cameraPermission": "VoxLink needs camera access for video calls so the other person can see you.",

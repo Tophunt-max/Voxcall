@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  ScrollView, Platform, Alert, ActivityIndicator, Image,
+  ScrollView, Platform, ActivityIndicator, Image,
 } from "react-native";
 import AppInput from "@/components/AppInput";
 import { showErrorToast, showInfoToast } from "@/components/Toast";
@@ -10,15 +10,19 @@ import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/context/AuthContext";
 import { API } from "@/services/api";
-import * as WebBrowser from "expo-web-browser";
-import * as Google from "expo-auth-session/providers/google";
-
-WebBrowser.maybeCompleteAuthSession();
+import { GoogleSignin, isErrorWithCode, statusCodes } from "@react-native-google-signin/google-signin";
 
 const BG      = "#0A0B1E";
 const ACCENT  = "#A00EE7";
 const ACCENT2 = "#7B0FBF";
-const GOOGLE_WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || "";
+const GOOGLE_WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || "128169786412-amg5rqkn00omvk2c96rcgji6gh9eku00.apps.googleusercontent.com";
+
+if (Platform.OS !== "web") {
+  GoogleSignin.configure({
+    webClientId: GOOGLE_WEB_CLIENT_ID,
+    offlineAccess: true,
+  });
+}
 
 function isNetworkError(err: any) {
   const msg = (err?.message || "").toLowerCase();
@@ -33,27 +37,6 @@ export default function HostLoginScreen() {
   const [showPw, setShowPw]     = useState(false);
   const [loading, setLoading]   = useState(false);
   const [gLoading, setGLoading] = useState(false);
-
-  const [, response, promptAsync] = Google.useAuthRequest({
-    webClientId: GOOGLE_WEB_CLIENT_ID || "not-configured",
-    selectAccount: true,
-  });
-
-  useEffect(() => {
-    if (!response) return;
-    if (response.type === "success") {
-      const tok = response.authentication?.accessToken;
-      if (tok) handleGoogleToken(tok);
-      else { setGLoading(false); showErrorToast("Google sign-in failed. Try again."); }
-    } else if (response.type === "error") {
-      setGLoading(false);
-      const msg = response.error?.message || "";
-      if (!msg.toLowerCase().includes("cancel"))
-        showErrorToast(msg || "Google sign-in failed", "Sign In Failed");
-    } else if (response.type === "dismiss") {
-      setGLoading(false);
-    }
-  }, [response]);
 
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
@@ -88,31 +71,29 @@ export default function HostLoginScreen() {
         const u = result.user;
         await handleGoogleProfileData(u.uid, u.displayName || "User", u.email || "", u.photoURL);
       } else {
-        if (!GOOGLE_WEB_CLIENT_ID) {
-          setGLoading(false);
-          Alert.alert("Setup Required", "Google Sign-In is not configured yet.\n\nPlease use email/password to continue.", [{ text: "OK" }]);
-          return;
-        }
-        await promptAsync();
+        await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+        const signInResult = await GoogleSignin.signIn();
+        const googleUser = signInResult.data?.user;
+        if (!googleUser?.email) throw new Error("Could not retrieve Google account info.");
+        await handleGoogleProfileData(
+          googleUser.id,
+          googleUser.name || "User",
+          googleUser.email,
+          googleUser.photo ?? null,
+        );
       }
     } catch (err: any) {
       setGLoading(false);
-      if (isNetworkError(err)) showErrorToast("No internet connection.", "Connection Error");
-      else if (!err?.message?.toLowerCase().includes("cancel"))
-        showErrorToast(err?.message || "Google sign-in failed", "Sign In Failed");
-    }
-  };
-
-  const handleGoogleToken = async (accessToken: string) => {
-    try {
-      const res = await fetch("https://www.googleapis.com/userinfo/v2/me", { headers: { Authorization: `Bearer ${accessToken}` } });
-      if (!res.ok) throw new Error("Failed to get Google profile");
-      const g = await res.json() as { id: string; name: string; email: string; picture?: string };
-      await handleGoogleProfileData(g.id, g.name, g.email, g.picture ?? null);
-    } catch (err: any) {
+      if (isErrorWithCode(err)) {
+        if (err.code === statusCodes.SIGN_IN_CANCELLED) return;
+        if (err.code === statusCodes.IN_PROGRESS) return;
+        if (err.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
+          showErrorToast("Google Play Services not available.", "Not Supported"); return;
+        }
+      }
       if (isNetworkError(err)) showErrorToast("No internet connection.", "Connection Error");
       else showErrorToast(err?.message || "Google sign-in failed", "Sign In Failed");
-    } finally { setGLoading(false); }
+    }
   };
 
   const handleGoogleProfileData = async (id: string, name: string, email: string, photo?: string | null) => {
