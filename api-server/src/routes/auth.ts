@@ -72,7 +72,8 @@ const loginSchema = z.object({
 
 // POST /api/auth/register
 auth.post('/register', rateLimit, zValidator('json', registerSchema), async (c) => {
-  const { name, email, password, gender, phone, referral_code } = c.req.valid('json');
+  const { name, password, gender, phone, referral_code } = c.req.valid('json');
+  const email = c.req.valid('json').email.trim().toLowerCase();
   const db = c.env.DB;
   const existing = await db.prepare(
     'SELECT id, name, email, password_hash, role, coins FROM users WHERE email = ?'
@@ -122,7 +123,8 @@ auth.post('/register', rateLimit, zValidator('json', registerSchema), async (c) 
 
 // POST /api/auth/login
 auth.post('/login', rateLimit, zValidator('json', loginSchema), async (c) => {
-  const { email, password } = c.req.valid('json');
+  const { password } = c.req.valid('json');
+  const email = c.req.valid('json').email.trim().toLowerCase();
   const db = c.env.DB;
   const user = await db.prepare(
     'SELECT id, name, email, password_hash, role, coins, avatar_url, gender, phone, bio FROM users WHERE email = ?'
@@ -172,10 +174,11 @@ auth.post('/verify-otp', async (c) => {
 
 // POST /api/auth/forgot-password
 auth.post('/forgot-password', strictRateLimit, async (c) => {
-  const { email } = await c.req.json();
+  const body = await c.req.json();
+  const email = (body.email as string)?.trim().toLowerCase();
   if (!email || typeof email !== 'string') return c.json({ error: 'Email required' }, 400);
   const db = c.env.DB;
-  const user = await db.prepare('SELECT id, password_hash FROM users WHERE email = ?').bind(email.trim().toLowerCase()).first<any>();
+  const user = await db.prepare('SELECT id, password_hash FROM users WHERE email = ?').bind(email).first<any>();
   if (!user) return c.json({ error: 'Email not found' }, 404);
   // Block Google-only users — they have no password to reset
   if (!user.password_hash) {
@@ -234,48 +237,66 @@ auth.post('/logout', async (c) => {
 // POST /api/auth/google-login — sign in or register via Google OAuth
 auth.post('/google-login', rateLimit, async (c) => {
   const body = await c.req.json();
-  const { email, name, google_id, avatar_url, device_id } = body as {
+  const { name, google_id, avatar_url, device_id } = body as {
     email: string; name: string; google_id: string; avatar_url?: string | null; device_id?: string | null;
   };
+  const email = (body.email as string)?.trim().toLowerCase();
   if (!email || !google_id) return c.json({ error: 'Missing required fields' }, 400);
   const db = c.env.DB;
 
+  // 1. Look up by google_id first (handles email changes in Google account)
   let user = await db.prepare(
-    'SELECT id, name, email, role, coins, avatar_url, gender, phone, bio FROM users WHERE email = ?'
-  ).bind(email).first<any>();
+    'SELECT id, name, email, role, coins, avatar_url, gender, phone, bio FROM users WHERE google_id = ?'
+  ).bind(google_id).first<any>();
+
+  // 2. Fall back to email lookup
+  if (!user) {
+    user = await db.prepare(
+      'SELECT id, name, email, role, coins, avatar_url, gender, phone, bio FROM users WHERE email = ?'
+    ).bind(email).first<any>();
+  }
+
+  // 3. Fall back to device_id — merge with existing Quick Login account on same device
+  //    This prevents creating a second account when user switches from Quick Login to Google
+  if (!user && device_id) {
+    const deviceUser = await db.prepare(
+      "SELECT id, name, email, role, coins, avatar_url, gender, phone, bio FROM users WHERE device_id = ? AND (google_id IS NULL OR google_id = '') LIMIT 1"
+    ).bind(device_id).first<any>();
+    if (deviceUser) {
+      // Merge: upgrade the quick-login account to a full Google account
+      const av = avatar_url || deviceUser.avatar_url || null;
+      await db.prepare(
+        'UPDATE users SET email = ?, name = ?, google_id = ?, avatar_url = ?, is_verified = 1 WHERE id = ?'
+      ).bind(email, name, google_id, av, deviceUser.id).run();
+      user = { ...deviceUser, email, name, google_id, avatar_url: av };
+    }
+  }
 
   if (!user) {
+    // 4. New user — create account
     const id = 'g_' + generateId().slice(0, 12);
     const av = avatar_url || null;
-    // Google login: start with 0 coins — no OTP verification so no registration bonus
-    // This prevents Sybil attacks where many Google accounts farm signup coins
-    // Also save device_id so Quick Login on same device returns this account (no duplicate accounts)
     await db.prepare(
       `INSERT INTO users (id, name, email, password_hash, role, coins, is_verified, avatar_url, google_id, device_id)
        VALUES (?, ?, ?, '', 'user', 0, 1, ?, ?, ?)`
     ).bind(id, name, email, av, google_id, device_id ?? null).run();
     user = { id, name, email, role: 'user', coins: 0, avatar_url: av };
   } else {
-    // Update avatar, google_id and device_id if not already set
-    const updates: string[] = [];
-    const bindings: any[] = [];
+    // 5. Existing user — update google_id, avatar, device_id as needed
+    const updates: string[] = ['google_id = ?'];
+    const bindings: any[] = [google_id];
     if (avatar_url && !user.avatar_url) {
       updates.push('avatar_url = ?');
       bindings.push(avatar_url);
       user.avatar_url = avatar_url;
     }
-    updates.push('google_id = ?');
-    bindings.push(google_id);
-    // Link device_id to this Google account so Quick Login on same device returns this account
     if (device_id) {
       updates.push('device_id = ?');
       bindings.push(device_id);
     }
-    if (updates.length > 0) {
-      bindings.push(user.id);
-      await db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`)
-        .bind(...bindings).run();
-    }
+    bindings.push(user.id);
+    await db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`)
+      .bind(...bindings).run();
   }
 
   const token = await signToken({ sub: user.id, role: user.role, name: user.name }, c.env.JWT_SECRET);
