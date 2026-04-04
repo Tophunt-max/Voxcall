@@ -17,10 +17,12 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const SETTINGS_KEY = "host_settings_v1";
 
+type FeatherIconName = React.ComponentProps<typeof Feather>["name"];
+
 function Row({
   icon, iconImg, label, value, onPress, isSwitch, switchVal, onSwitch, danger
 }: {
-  icon: string; iconImg?: ImageSourcePropType; label: string; value?: string; onPress: () => void;
+  icon: FeatherIconName; iconImg?: ImageSourcePropType; label: string; value?: string; onPress: () => void;
   isSwitch?: boolean; switchVal?: boolean; onSwitch?: (v: boolean) => void; danger?: boolean;
 }) {
   const colors = useColors();
@@ -34,7 +36,7 @@ function Row({
         {iconImg ? (
           <Image source={iconImg} style={styles.rowIconImg} tintColor={danger ? "#F44336" : colors.primary} resizeMode="contain" />
         ) : (
-          <Feather name={icon as any} size={17} color={danger ? "#F44336" : colors.primary} />
+          <Feather name={icon} size={17} color={danger ? "#F44336" : colors.primary} />
         )}
       </View>
       <Text style={[styles.rowLabel, { color: danger ? "#F44336" : colors.text }]}>{label}</Text>
