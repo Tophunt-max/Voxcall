@@ -1,66 +1,70 @@
-// KYC Application Status Screen
 import React, { useEffect, useState, useCallback } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  ScrollView, ActivityIndicator, RefreshControl,
+  ScrollView, ActivityIndicator, RefreshControl, Image,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Feather } from "@expo/vector-icons";
 import { useAuth } from "@/context/AuthContext";
 import { API } from "@/services/api";
 import { showErrorToast, showSuccessToast } from "@/components/Toast";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-const DARK = "#111329";
+const BG     = "#0A0B1E";
 const ACCENT = "#A00EE7";
+const DARK   = "#111329";
 
 type Status = "pending" | "under_review" | "approved" | "rejected" | "not_applied";
 
-const STATUS_CONFIG: Record<Status, { icon: string; color: string; bg: string; title: string; message: string }> = {
+const STATUS_CONFIG: Record<Status, {
+  icon: any; color: string; bgColor: string; glowColor: string;
+  title: string; message: string;
+}> = {
   pending: {
-    icon: "clock",
-    color: "#F59E0B",
-    bg: "#FFFBEB",
+    icon: require("@/assets/icons/ic_calendar.png"),
+    color: "#F59E0B", bgColor: "#FFF8E6", glowColor: "#F59E0B30",
     title: "Application Submitted",
     message: "Your application is in the queue. Our team will review it within 24–48 hours.",
   },
   under_review: {
-    icon: "search",
-    color: "#3B82F6",
-    bg: "#EFF6FF",
+    icon: require("@/assets/icons/ic_search.png"),
+    color: "#3B82F6", bgColor: "#EFF6FF", glowColor: "#3B82F630",
     title: "Under Review",
-    message: "Great news! Our team is actively reviewing your application. You'll hear back soon.",
+    message: "Our team is actively reviewing your application. You'll hear back soon.",
   },
   approved: {
-    icon: "check-circle",
-    color: "#22C55E",
-    bg: "#F0FDF4",
-    title: "Application Approved! 🎉",
+    icon: require("@/assets/icons/ic_check.png"),
+    color: "#22C55E", bgColor: "#F0FDF4", glowColor: "#22C55E30",
+    title: "Application Approved!",
     message: "Congratulations! You are now a host on VoxLink. Start accepting calls and earning coins.",
   },
   rejected: {
-    icon: "x-circle",
-    color: "#EF4444",
-    bg: "#FEF2F2",
+    icon: require("@/assets/icons/ic_close.png"),
+    color: "#EF4444", bgColor: "#FEF2F2", glowColor: "#EF444430",
     title: "Application Rejected",
     message: "Unfortunately, your application was not approved. Please see the reason below and re-apply.",
   },
   not_applied: {
-    icon: "file-text",
-    color: "#84889F",
-    bg: "#F8F9FC",
+    icon: require("@/assets/icons/ic_id_badge.png"),
+    color: "#84889F", bgColor: "#F8F9FC", glowColor: "#84889F20",
     title: "No Application Found",
     message: "You haven't submitted a host application yet.",
   },
 };
 
+const TIMELINE_STEPS = [
+  { label: "Account Created",       icon: require("@/assets/icons/ic_profile.png"),  doneKey: "always" },
+  { label: "Application Submitted", icon: require("@/assets/icons/ic_id_badge.png"), doneKey: "applied" },
+  { label: "Under Review",          icon: require("@/assets/icons/ic_search.png"),   doneKey: "review" },
+  { label: "Decision Made",         icon: require("@/assets/icons/ic_check.png"),    doneKey: "decision" },
+];
+
 export default function HostStatusScreen() {
   const insets = useSafeAreaInsets();
   const { user, logout } = useAuth();
-  const [data, setData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const [data, setData]           = useState<any>(null);
+  const [loading, setLoading]     = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const fetchStatus = useCallback(async (isRefresh = false) => {
@@ -68,11 +72,9 @@ export default function HostStatusScreen() {
     try {
       const res = await API.getHostAppStatus();
       setData(res);
-      // If approved but token still has "user" role, logout so user can
-      // log back in and get a fresh "host" token from the backend.
       if (res?.status === "approved" && user?.role !== "host") {
         await AsyncStorage.removeItem("hostAppPending");
-        showSuccessToast("Your host account is ready! Please sign in again to continue.", "Approved!");
+        showSuccessToast("Your host account is ready! Please sign in again.", "Approved!");
         await logout();
         router.replace("/auth/login");
         return;
@@ -86,15 +88,13 @@ export default function HostStatusScreen() {
     }
   }, [user]);
 
-  useEffect(() => {
-    fetchStatus();
-  }, []);
+  useEffect(() => { fetchStatus(); }, []);
 
   if (loading) {
     return (
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#fff" }}>
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: BG }}>
         <ActivityIndicator color={ACCENT} size="large" />
-        <Text style={s.loadingTxt}>Loading status...</Text>
+        <Text style={s.loadingTxt}>Checking application status...</Text>
       </View>
     );
   }
@@ -102,35 +102,51 @@ export default function HostStatusScreen() {
   const status: Status = !data?.applied ? "not_applied" : (data.status ?? "pending");
   const cfg = STATUS_CONFIG[status];
 
+  const stepDone = (key: string) => {
+    if (key === "always") return true;
+    if (key === "applied") return !!data?.applied;
+    if (key === "review")  return ["under_review", "approved", "rejected"].includes(status);
+    if (key === "decision") return ["approved", "rejected"].includes(status);
+    return false;
+  };
+
   return (
-    <View style={{ flex: 1, backgroundColor: "#fff" }}>
-      <LinearGradient colors={[DARK, "#2D3057"]} style={[s.header, { paddingTop: insets.top + 10 }]}>
-        <TouchableOpacity onPress={() => router.canGoBack() ? router.back() : router.replace("/auth/login")} style={s.backBtn}>
-          <Feather name="arrow-left" size={22} color="#fff" />
+    <View style={{ flex: 1, backgroundColor: BG }}>
+      {/* ── Header ── */}
+      <View style={[s.header, { paddingTop: insets.top + 10 }]}>
+        <TouchableOpacity
+          onPress={() => router.canGoBack() ? router.back() : router.replace("/auth/login")}
+          style={s.backBtn}
+          activeOpacity={0.8}
+        >
+          <Image source={require("@/assets/icons/ic_back.png")} style={s.backIcon} tintColor="#fff" resizeMode="contain" />
         </TouchableOpacity>
         <Text style={s.headerTitle}>Host Application</Text>
         <Text style={s.headerSub}>Track your KYC verification status</Text>
-      </LinearGradient>
+      </View>
 
+      {/* ── Body ── */}
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={[s.body, { paddingBottom: insets.bottom + 30 }]}
+        showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => fetchStatus(true)} tintColor={ACCENT} />}
       >
-        {/* Status Card */}
-        <View style={[s.statusCard, { backgroundColor: cfg.bg }]}>
-          <View style={[s.statusIconBg, { backgroundColor: cfg.color + "20" }]}>
-            <Feather name={cfg.icon as any} size={32} color={cfg.color} />
+        {/* Status card */}
+        <View style={[s.statusCard, { backgroundColor: cfg.bgColor }]}>
+          <View style={[s.statusIconBg, { backgroundColor: cfg.glowColor }]}>
+            <Image source={cfg.icon} style={s.statusIcon} tintColor={cfg.color} resizeMode="contain" />
           </View>
           <Text style={[s.statusTitle, { color: cfg.color }]}>{cfg.title}</Text>
+          {status === "approved" && <Text style={s.statusEmoji}>🎉</Text>}
           <Text style={s.statusMsg}>{cfg.message}</Text>
         </View>
 
-        {/* Rejection Reason */}
+        {/* Rejection reason */}
         {status === "rejected" && data?.rejection_reason && (
           <View style={s.rejectionCard}>
             <View style={s.rejectionHeader}>
-              <Feather name="alert-circle" size={16} color="#EF4444" />
+              <Image source={require("@/assets/icons/ic_close_fill.png")} style={s.rejIcon} tintColor="#EF4444" resizeMode="contain" />
               <Text style={s.rejectionLabel}>Reason for Rejection</Text>
             </View>
             <Text style={s.rejectionReason}>{data.rejection_reason}</Text>
@@ -140,50 +156,41 @@ export default function HostStatusScreen() {
         {/* Timeline */}
         <View style={s.timeline}>
           <Text style={s.timelineTitle}>Application Timeline</Text>
-
-          {[
-            { label: "Account Created", done: true, icon: "user-check" },
-            { label: "Application Submitted", done: !!data?.applied, icon: "file-text" },
-            { label: "Under Review", done: ["under_review", "approved"].includes(status), active: status === "under_review", icon: "search" },
-            { label: "Decision Made", done: ["approved", "rejected"].includes(status), icon: "clipboard" },
-          ].map((step, i) => (
-            <View key={i} style={s.tlRow}>
-              <View style={s.tlLeft}>
-                <View style={[s.tlDot, step.done ? s.tlDotDone : step.active ? s.tlDotActive : s.tlDotPending]}>
-                  <Feather name={step.icon as any} size={12} color={step.done || step.active ? "#fff" : "#84889F"} />
+          {TIMELINE_STEPS.map((step, i) => {
+            const done = stepDone(step.doneKey);
+            const isActive = step.doneKey === "review" && status === "under_review";
+            return (
+              <View key={i} style={s.tlRow}>
+                <View style={s.tlLeft}>
+                  <View style={[s.tlDot, done ? s.tlDotDone : isActive ? s.tlDotActive : s.tlDotPending]}>
+                    <Image source={step.icon} style={s.tlIcon} tintColor={done || isActive ? "#fff" : "#A0A3B5"} resizeMode="contain" />
+                  </View>
+                  {i < TIMELINE_STEPS.length - 1 && <View style={[s.tlLine, done && s.tlLineDone]} />}
                 </View>
-                {i < 3 && <View style={[s.tlLine, step.done && s.tlLineDone]} />}
+                <Text style={[s.tlLabel, done ? s.tlLabelDone : s.tlLabelPending]}>{step.label}</Text>
               </View>
-              <Text style={[s.tlLabel, step.done ? s.tlLabelDone : s.tlLabelPending]}>{step.label}</Text>
-            </View>
-          ))}
+            );
+          })}
         </View>
 
         {/* Actions */}
         {status === "approved" && (
           <TouchableOpacity
-            style={s.ctaBtn}
-            onPress={async () => {
-              await AsyncStorage.removeItem("hostAppPending");
-              router.replace("/(tabs)");
-            }}
+            style={s.ctaBtnWrap}
+            onPress={async () => { await AsyncStorage.removeItem("hostAppPending"); router.replace("/(tabs)"); }}
             activeOpacity={0.85}
           >
-            <LinearGradient colors={["#A00EE7", "#6A00B8"]} style={s.ctaBtnGrad}>
-              <Feather name="star" size={18} color="#fff" />
+            <LinearGradient colors={[ACCENT, "#6A00B8"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={s.ctaBtn}>
+              <Image source={require("@/assets/icons/ic_star.png")} style={s.ctaIcon} tintColor="#fff" resizeMode="contain" />
               <Text style={s.ctaBtnTxt}>Go to Host Dashboard</Text>
             </LinearGradient>
           </TouchableOpacity>
         )}
 
         {(status === "rejected" || status === "not_applied") && (
-          <TouchableOpacity
-            style={s.ctaBtn}
-            onPress={() => router.push("/auth/profile-setup")}
-            activeOpacity={0.85}
-          >
-            <LinearGradient colors={[DARK, "#2D3057"]} style={s.ctaBtnGrad}>
-              <Feather name="refresh-cw" size={18} color="#fff" />
+          <TouchableOpacity style={s.ctaBtnWrap} onPress={() => router.push("/auth/profile-setup")} activeOpacity={0.85}>
+            <LinearGradient colors={[DARK, "#2D3057"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={s.ctaBtn}>
+              <Image source={require("@/assets/icons/ic_edit.png")} style={s.ctaIcon} tintColor="#fff" resizeMode="contain" />
               <Text style={s.ctaBtnTxt}>{status === "rejected" ? "Re-apply" : "Start Application"}</Text>
             </LinearGradient>
           </TouchableOpacity>
@@ -191,7 +198,7 @@ export default function HostStatusScreen() {
 
         {(status === "pending" || status === "under_review") && (
           <View style={s.waitBanner}>
-            <Feather name="refresh-cw" size={14} color="#84889F" />
+            <Image source={require("@/assets/icons/ic_calendar.png")} style={s.waitIcon} tintColor="rgba(255,255,255,0.4)" resizeMode="contain" />
             <Text style={s.waitTxt}>Pull down to refresh status</Text>
           </View>
         )}
@@ -201,36 +208,53 @@ export default function HostStatusScreen() {
 }
 
 const s = StyleSheet.create({
-  header: { paddingHorizontal: 20, paddingBottom: 28 },
-  backBtn: { marginBottom: 16, width: 36, height: 36, alignItems: "center", justifyContent: "center" },
-  headerTitle: { fontSize: 22, fontFamily: "Poppins_700Bold", color: "#fff", marginBottom: 4 },
-  headerSub: { fontSize: 13, fontFamily: "Poppins_400Regular", color: "rgba(255,255,255,0.7)" },
-  body: { padding: 24, gap: 20 },
-  loadingTxt: { marginTop: 12, fontSize: 14, fontFamily: "Poppins_400Regular", color: "#84889F" },
-  statusCard: { borderRadius: 20, padding: 24, alignItems: "center", gap: 12 },
-  statusIconBg: { width: 72, height: 72, borderRadius: 36, alignItems: "center", justifyContent: "center" },
-  statusTitle: { fontSize: 18, fontFamily: "Poppins_700Bold", textAlign: "center" },
+  header: { paddingHorizontal: 20, paddingBottom: 24 },
+  backBtn: { width: 40, height: 40, alignItems: "center", justifyContent: "center", marginBottom: 12 },
+  backIcon: { width: 20, height: 20 },
+  headerTitle: { fontSize: 22, fontFamily: "Poppins_700Bold", color: "#fff" },
+  headerSub: { fontSize: 13, fontFamily: "Poppins_400Regular", color: "rgba(255,255,255,0.55)", marginTop: 3 },
+
+  body: { paddingHorizontal: 20, paddingTop: 4, gap: 16 },
+  loadingTxt: { marginTop: 12, fontSize: 14, fontFamily: "Poppins_400Regular", color: "rgba(255,255,255,0.5)" },
+
+  statusCard: { borderRadius: 24, padding: 28, alignItems: "center", gap: 10 },
+  statusIconBg: { width: 80, height: 80, borderRadius: 40, alignItems: "center", justifyContent: "center" },
+  statusIcon: { width: 36, height: 36 },
+  statusTitle: { fontSize: 19, fontFamily: "Poppins_700Bold", textAlign: "center" },
+  statusEmoji: { fontSize: 28 },
   statusMsg: { fontSize: 14, fontFamily: "Poppins_400Regular", color: "#84889F", textAlign: "center", lineHeight: 22 },
-  rejectionCard: { backgroundColor: "#FEF2F2", borderRadius: 16, padding: 16, gap: 8 },
+
+  rejectionCard: { backgroundColor: "#FEF2F2", borderRadius: 16, padding: 16, gap: 10 },
   rejectionHeader: { flexDirection: "row", alignItems: "center", gap: 8 },
+  rejIcon: { width: 16, height: 16 },
   rejectionLabel: { fontSize: 14, fontFamily: "Poppins_600SemiBold", color: "#EF4444" },
-  rejectionReason: { fontSize: 14, fontFamily: "Poppins_400Regular", color: "#111329", lineHeight: 22 },
-  timeline: { backgroundColor: "#F8F9FC", borderRadius: 16, padding: 20, gap: 0 },
-  timelineTitle: { fontSize: 15, fontFamily: "Poppins_600SemiBold", color: "#111329", marginBottom: 16 },
-  tlRow: { flexDirection: "row", alignItems: "flex-start", gap: 14, minHeight: 44 },
-  tlLeft: { alignItems: "center", width: 24 },
-  tlDot: { width: 24, height: 24, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  rejectionReason: { fontSize: 14, fontFamily: "Poppins_400Regular", color: DARK, lineHeight: 22 },
+
+  timeline: { backgroundColor: "#fff", borderRadius: 20, padding: 20, gap: 0 },
+  timelineTitle: { fontSize: 15, fontFamily: "Poppins_600SemiBold", color: DARK, marginBottom: 18 },
+  tlRow: { flexDirection: "row", alignItems: "flex-start", gap: 14, minHeight: 48 },
+  tlLeft: { alignItems: "center", width: 28 },
+  tlDot: { width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center" },
   tlDotDone: { backgroundColor: "#22C55E" },
   tlDotActive: { backgroundColor: "#3B82F6" },
   tlDotPending: { backgroundColor: "#E8EAF0" },
-  tlLine: { width: 2, flex: 1, backgroundColor: "#E8EAF0", minHeight: 16 },
+  tlLine: { width: 2, flex: 1, backgroundColor: "#E8EAF0", minHeight: 18 },
   tlLineDone: { backgroundColor: "#22C55E" },
-  tlLabel: { fontSize: 14, fontFamily: "Poppins_400Regular", paddingTop: 4 },
-  tlLabelDone: { color: "#111329", fontFamily: "Poppins_500Medium" },
+  tlIcon: { width: 13, height: 13 },
+  tlLabel: { fontSize: 14, fontFamily: "Poppins_400Regular", paddingTop: 5 },
+  tlLabelDone: { color: DARK, fontFamily: "Poppins_500Medium" },
   tlLabelPending: { color: "#84889F" },
-  ctaBtn: { borderRadius: 16, overflow: "hidden" },
-  ctaBtnGrad: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, paddingVertical: 16 },
-  ctaBtnTxt: { fontSize: 16, fontFamily: "Poppins_600SemiBold", color: "#fff" },
+
+  ctaBtnWrap: {
+    borderRadius: 18, overflow: "hidden",
+    shadowColor: ACCENT, shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35, shadowRadius: 14, elevation: 8,
+  },
+  ctaBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, paddingVertical: 17, borderRadius: 18 },
+  ctaIcon: { width: 18, height: 18 },
+  ctaBtnTxt: { fontSize: 16, fontFamily: "Poppins_700Bold", color: "#fff" },
+
   waitBanner: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
-  waitTxt: { fontSize: 13, fontFamily: "Poppins_400Regular", color: "#84889F" },
+  waitIcon: { width: 14, height: 14 },
+  waitTxt: { fontSize: 13, fontFamily: "Poppins_400Regular", color: "rgba(255,255,255,0.45)" },
 });
