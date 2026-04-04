@@ -3,6 +3,20 @@ import type { Env } from '../types';
 
 const pub = new Hono<{ Bindings: Env }>();
 
+// GET /api/files/:key* — public R2 file serving (avatars, KYC docs, media)
+// URLs stored in DB use this path; must be unauthenticated so <img src> works in browsers
+pub.get('/files/:key{.+}', async (c) => {
+  const key = c.req.param('key');
+  const obj = await c.env.STORAGE.get(key);
+  if (!obj) return c.json({ error: 'File not found' }, 404);
+  const headers = new Headers();
+  obj.writeHttpMetadata(headers);
+  headers.set('etag', obj.httpEtag);
+  headers.set('Cache-Control', 'public, max-age=31536000');
+  headers.set('Access-Control-Allow-Origin', '*');
+  return new Response(obj.body, { headers });
+});
+
 // GET /api/payment-gateways — active payment gateways ordered by priority (position ASC)
 // Primary = first in list, others are automatic fallbacks
 pub.get('/payment-gateways', async (c) => {
