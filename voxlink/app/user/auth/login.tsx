@@ -1,26 +1,32 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  Image, ActivityIndicator, Platform, Alert,
+  Image, ActivityIndicator, Platform,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import * as WebBrowser from "expo-web-browser";
-import * as Google from "expo-auth-session/providers/google";
 import * as Application from "expo-application";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { GoogleSignin, isErrorWithCode, statusCodes } from "@react-native-google-signin/google-signin";
 import { useAuth } from "@/context/AuthContext";
 import { API, resolveMediaUrl } from "@/services/api";
 import { getRandomAvatarUri } from "@/utils/randomAvatar";
 import { showErrorToast, showSuccessToast } from "@/components/Toast";
 
-WebBrowser.maybeCompleteAuthSession();
-
 const ACCENT = "#A00EE7";
 const DEVICE_ID_KEY = "@voxlink_device_id";
 
-const GOOGLE_WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || "";
+const GOOGLE_WEB_CLIENT_ID =
+  process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ||
+  "128169786412-amg5rqkn00omvk2c96rcgji6gh9eku00.apps.googleusercontent.com";
+
+if (Platform.OS !== "web") {
+  GoogleSignin.configure({
+    webClientId: GOOGLE_WEB_CLIENT_ID,
+    offlineAccess: true,
+  });
+}
 
 async function getDeviceId(): Promise<string> {
   try {
@@ -50,32 +56,6 @@ export default function LoginScreen() {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [quickLoading, setQuickLoading] = useState(false);
 
-  const [, response, promptAsync] = Google.useAuthRequest({
-    webClientId: GOOGLE_WEB_CLIENT_ID || "not-configured",
-    selectAccount: true,
-  });
-
-  useEffect(() => {
-    if (!response) return;
-    if (response.type === "success") {
-      const accessToken = response.authentication?.accessToken;
-      if (accessToken) {
-        handleGoogleToken(accessToken);
-      } else {
-        setGoogleLoading(false);
-        showErrorToast("Google sign-in failed. Try again.");
-      }
-    } else if (response.type === "error") {
-      setGoogleLoading(false);
-      const msg = response.error?.message || "";
-      if (!msg.toLowerCase().includes("cancel")) {
-        showErrorToast(msg || "Google sign-in failed", "Sign In Failed");
-      }
-    } else if (response.type === "dismiss") {
-      setGoogleLoading(false);
-    }
-  }, [response]);
-
   const handleGoogleLogin = async () => {
     setGoogleLoading(true);
     try {
@@ -87,50 +67,32 @@ export default function LoginScreen() {
         const u = result.user;
         await handleGoogleProfileData(u.uid, u.displayName || "User", u.email || "", u.photoURL);
       } else {
-        if (!GOOGLE_WEB_CLIENT_ID) {
-          setGoogleLoading(false);
-          Alert.alert(
-            "Setup Required",
-            "Google Sign-In is not configured yet.\n\nPlease use Quick Login to continue.",
-            [{ text: "OK" }]
-          );
-          return;
-        }
-        await promptAsync();
+        await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+        const signInResult = await GoogleSignin.signIn();
+        const googleUser = signInResult.data?.user;
+        if (!googleUser?.email) throw new Error("Could not retrieve Google account info.");
+        await handleGoogleProfileData(
+          googleUser.id,
+          googleUser.name || "User",
+          googleUser.email,
+          googleUser.photo ?? null,
+        );
       }
     } catch (err: any) {
       setGoogleLoading(false);
-      const msg = err?.message || "";
-      if (isNetworkError(err)) {
-        showErrorToast("No internet connection. Please check your network.", "Connection Error");
-      } else if (msg.includes("CONFIGURATION_NOT_FOUND") || msg.includes("configuration-not-found")) {
-        Alert.alert(
-          "Google Sign-In Unavailable",
-          "Google Sign-In is not enabled for this app.\n\nPlease use Quick Login to continue.",
-          [{ text: "OK" }]
-        );
-      } else if (!msg.toLowerCase().includes("cancel")) {
-        showErrorToast(msg || "Google sign-in failed", "Sign In Failed");
+      if (isErrorWithCode(err)) {
+        if (err.code === statusCodes.SIGN_IN_CANCELLED) return;
+        if (err.code === statusCodes.IN_PROGRESS) return;
+        if (err.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
+          showErrorToast("Google Play Services not available.", "Not Supported");
+          return;
+        }
       }
-    }
-  };
-
-  const handleGoogleToken = async (accessToken: string) => {
-    try {
-      const res = await fetch("https://www.googleapis.com/userinfo/v2/me", {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      if (!res.ok) throw new Error("Failed to get Google profile");
-      const gUser = await res.json() as { id: string; name: string; email: string; picture?: string };
-      await handleGoogleProfileData(gUser.id, gUser.name, gUser.email, gUser.picture ?? null);
-    } catch (err: any) {
       if (isNetworkError(err)) {
         showErrorToast("No internet connection. Please check your network.", "Connection Error");
       } else {
         showErrorToast(err?.message || "Google sign-in failed", "Sign In Failed");
       }
-    } finally {
-      setGoogleLoading(false);
     }
   };
 
@@ -267,7 +229,6 @@ export default function LoginScreen() {
         <Text style={s.noteText}>
           Quick Login saves your account to this device — reinstall and it's still yours
         </Text>
-
       </View>
     </View>
   );
