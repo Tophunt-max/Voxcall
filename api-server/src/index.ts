@@ -30,6 +30,8 @@ const ALLOWED_ORIGINS = [
   /\.replit\.dev$/,
   /^https:\/\/voxlink/i,
   /^https:\/\/connectme/i,
+  /^https:\/\/voxcall/i,
+  /\.pages\.dev$/,
 ];
 
 function isOriginAllowed(origin: string): boolean {
