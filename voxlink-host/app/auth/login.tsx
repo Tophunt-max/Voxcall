@@ -90,10 +90,6 @@ export default function HostLoginScreen() {
       if (userData.role === "host") {
         router.replace("/(tabs)");
       } else {
-        showInfoToast(
-          "Your account is not a host account. If you applied, check your application status below.",
-          "Not a Host"
-        );
         router.replace("/auth/status");
       }
     } catch (err: any) {

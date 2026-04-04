@@ -51,11 +51,39 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 async function fetchFreshProfile(): Promise<Partial<UserProfile> | null> {
   try {
-    const profile = await apiRequest<{ earnings: number; rating: number; totalCalls: number; isOnline: boolean }>(
-      "GET",
-      "/api/host/me"
-    );
-    return profile ?? null;
+    // Always fetch /api/user/me so the role is kept up-to-date.
+    // This ensures that when an admin approves a pending host, the stored
+    // "user" role is immediately upgraded to "host" on next app launch.
+    const me = await apiRequest<any>("GET", "/api/user/me");
+    if (!me) return null;
+
+    const base: Partial<UserProfile> = {
+      role: me.role,
+      coins: me.coins,
+      name: me.name,
+      phone: me.phone,
+      bio: me.bio,
+      gender: me.gender,
+      avatar: me.avatar_url,
+    };
+
+    // For approved hosts, also merge host-specific stats
+    if (me.role === "host") {
+      try {
+        const host = await apiRequest<any>("GET", "/api/host/me");
+        if (host) {
+          return {
+            ...base,
+            isOnline: host.is_online,
+            rating: host.rating,
+            totalCalls: host.total_calls,
+            earnings: host.total_earnings,
+          };
+        }
+      } catch {}
+    }
+
+    return base;
   } catch (err: any) {
     if (err?.message === "SESSION_EXPIRED") {
       _onSessionExpired?.();
@@ -93,19 +121,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         const user = await getItem<UserProfile>(StorageKeys.USER);
         if (user) {
-          setState({ user, isLoggedIn: true, isLoading: false });
+          // Fetch fresh profile (including role) BEFORE clearing isLoading.
+          // This prevents the router from redirecting to the wrong screen
+          // based on a stale cached role (e.g. pending host who was just approved).
           const [freshProfile] = await Promise.all([
             fetchFreshProfile(),
             syncPushToken(),
           ]);
-          if (freshProfile) {
-            setState((prev) => {
-              if (!prev.user) return prev;
-              const updated = { ...prev.user, ...freshProfile };
-              setItem(StorageKeys.USER, updated);
-              return { ...prev, user: updated };
-            });
-          }
+          const updatedUser = freshProfile ? { ...user, ...freshProfile } : user;
+          if (freshProfile) await setItem(StorageKeys.USER, updatedUser);
+          setState({ user: updatedUser, isLoggedIn: true, isLoading: false });
         } else {
           setState((s) => ({ ...s, isLoading: false }));
         }

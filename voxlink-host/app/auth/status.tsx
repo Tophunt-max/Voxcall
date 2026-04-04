@@ -179,7 +179,7 @@ export default function HostStatusScreen() {
         {(status === "rejected" || status === "not_applied") && (
           <TouchableOpacity
             style={s.ctaBtn}
-            onPress={() => router.push("/auth/register")}
+            onPress={() => router.push("/auth/profile-setup")}
             activeOpacity={0.85}
           >
             <LinearGradient colors={[DARK, "#2D3057"]} style={s.ctaBtnGrad}>
