@@ -29,8 +29,8 @@ const ALLOWED_ORIGINS = [
   /\.replit\.app$/,
   /\.replit\.dev$/,
   /^https:\/\/voxlink/i,
-  /^https:\/\/connectme/i,
   /^https:\/\/voxcall/i,
+  /^https:\/\/connectme/i,
   /\.pages\.dev$/,
 ];
 
@@ -56,7 +56,7 @@ app.use('*', logger());
 app.use('*', prettyJSON());
 
 // Health check
-app.get('/api/healthz', (c) => c.json({ status: 'ok', ts: Date.now(), service: 'voxlink-api', v: '1.1.0' }));
+app.get('/api/healthz', (c) => c.json({ status: 'ok', ts: Date.now(), service: 'voxlink-api' }));
 
 // Routes
 app.route('/api/auth', authRouter);
