@@ -71,11 +71,31 @@ export async function apiRequest<T>(
     if (newToken) return apiRequest<T>(method, path, body, auth, false);
   }
 
+  // Read body as text first so we can safely detect HTML (e.g. Cloudflare Access
+  // login page returned as 200 OK with text/html instead of JSON).
+  const text = await res.text();
+  const isHtml = text.trimStart().startsWith('<');
+
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error((err as any).error || res.statusText);
+    if (isHtml) throw new Error('API is currently unavailable. Please check your connection and try again.');
+    try {
+      const err = JSON.parse(text) as { error?: string };
+      throw new Error(err.error || res.statusText);
+    } catch (parseErr) {
+      if (parseErr instanceof Error && parseErr.message !== res.statusText) throw parseErr;
+      throw new Error(res.statusText);
+    }
   }
-  return res.json() as Promise<T>;
+
+  if (isHtml) {
+    throw new Error('API is currently unavailable. Please check your connection and try again.');
+  }
+
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error('Received invalid response from server.');
+  }
 }
 
 export const API = {
