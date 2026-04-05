@@ -4,9 +4,27 @@ import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
 
-const rawPort = process.env.PORT ?? '3000';
+const rawPort = process.env.PORT;
+
+if (!rawPort) {
+  throw new Error(
+    "PORT environment variable is required but was not provided.",
+  );
+}
+
 const port = Number(rawPort);
-const basePath = process.env.BASE_PATH ?? '/admin-panel/';
+
+if (Number.isNaN(port) || port <= 0) {
+  throw new Error(`Invalid PORT value: "${rawPort}"`);
+}
+
+const basePath = process.env.BASE_PATH;
+
+if (!basePath) {
+  throw new Error(
+    "BASE_PATH environment variable is required but was not provided.",
+  );
+}
 
 export default defineConfig({
   base: basePath,
@@ -15,7 +33,8 @@ export default defineConfig({
       name: "health-check",
       configureServer(server) {
         server.middlewares.use((req, res, next) => {
-          if (req.url === "/" || req.url === "/health") {
+          const url = req.url ?? "";
+          if (url === "/" || url === "/health" || url === "/admin-panel/" || url === "/admin-panel/health") {
             res.writeHead(200, { "Content-Type": "text/plain" });
             res.end("OK");
             return;

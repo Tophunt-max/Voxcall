@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "BASE_PATH=${BASE_PATH:-/admin-panel/} PORT=${PORT:-5001} vite --config vite.config.ts --host 0.0.0.0",
     "build": "vite build --config vite.config.ts",
+    "build:cloudflare": "BASE_PATH=/ NODE_ENV=production vite build --config vite.config.ts",
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
