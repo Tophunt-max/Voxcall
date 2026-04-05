@@ -1,8 +1,11 @@
 // Use VITE_API_URL env var for production API URL (e.g. https://voxlink-api.*.workers.dev).
-// Falls back to BASE_URL-relative path, which Vite proxies to the Worker in local dev.
+// Falls back to the hardcoded production Worker URL so deployed Pages builds always work.
+const PROD_API = 'https://voxlink-api.ssunilkumarmohanta3.workers.dev';
 const API = import.meta.env.VITE_API_URL
   ? `${import.meta.env.VITE_API_URL}/api`
-  : `${import.meta.env.BASE_URL.replace(/\/$/, '')}/api`;
+  : import.meta.env.DEV
+    ? `${import.meta.env.BASE_URL.replace(/\/$/, '')}/api`
+    : `${PROD_API}/api`;
 
 export function getToken() { return localStorage.getItem('voxlink_admin_token') || ''; }
 

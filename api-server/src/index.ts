@@ -56,7 +56,7 @@ app.use('*', logger());
 app.use('*', prettyJSON());
 
 // Health check
-app.get('/api/healthz', (c) => c.json({ status: 'ok', ts: Date.now(), service: 'voxlink-api' }));
+app.get('/api/healthz', (c) => c.json({ status: 'ok', ts: Date.now(), service: 'voxlink-api', v: '1.1.0' }));
 
 // Routes
 app.route('/api/auth', authRouter);
