@@ -11,6 +11,8 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { PermissionDialog, PERMISSION_CONFIGS } from "@/components/PermissionDialog";
 import { useWebRTC } from "@/hooks/useWebRTC";
 
+const useNativeDriverValue = Platform.OS !== "web";
+
 let RTCView: any = null;
 let CameraView: any = null;
 let Haptics: any = null;
@@ -85,8 +87,8 @@ export default function VideoCallScreen() {
   useEffect(() => {
     const anim = Animated.loop(
       Animated.sequence([
-        Animated.timing(pulse, { toValue: 1.04, duration: 1200, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 1, duration: 1200, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 1.04, duration: 1200, easing: Easing.inOut(Easing.ease), useNativeDriver: useNativeDriverValue }),
+        Animated.timing(pulse, { toValue: 1, duration: 1200, easing: Easing.inOut(Easing.ease), useNativeDriver: useNativeDriverValue }),
       ])
     );
     anim.start();

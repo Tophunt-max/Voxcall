@@ -21,7 +21,12 @@
         "NSMicrophoneUsageDescription": "VoxLink needs microphone access for audio and video calls.",
         "NSPhotoLibraryUsageDescription": "VoxLink needs access to your photos to upload profile pictures and KYC documents.",
         "NSPhotoLibraryAddUsageDescription": "VoxLink needs permission to save photos to your library.",
-        "UIBackgroundModes": ["audio", "voip", "fetch", "remote-notification"]
+        "UIBackgroundModes": [
+          "audio",
+          "voip",
+          "fetch",
+          "remote-notification"
+        ]
       }
     },
     "android": {
@@ -49,7 +54,7 @@
       [
         "expo-router",
         {
-          "origin": "https://replit.com/"
+          "origin": "https://voxcall.pages.dev/"
         }
       ],
       "expo-font",

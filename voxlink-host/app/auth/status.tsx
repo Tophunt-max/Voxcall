@@ -1,8 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
-import {
-  View, Text, StyleSheet, TouchableOpacity,
-  ScrollView, ActivityIndicator, RefreshControl, Image, Animated,
-} from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity,
+  ScrollView, ActivityIndicator, RefreshControl, Image, Animated, Platform } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -10,6 +8,8 @@ import { useAuth } from "@/context/AuthContext";
 import { API } from "@/services/api";
 import { showErrorToast } from "@/components/Toast";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+
+const useNativeDriverValue = Platform.OS !== "web";
 
 const BG     = "#0A0B1E";
 const ACCENT = "#A00EE7";
@@ -79,8 +79,8 @@ export default function HostStatusScreen() {
 
   const animateApproval = () => {
     Animated.parallel([
-      Animated.spring(scaleAnim,   { toValue: 1, useNativeDriver: true, tension: 60, friction: 7 }),
-      Animated.timing(opacityAnim, { toValue: 1, duration: 400, useNativeDriver: true }),
+      Animated.spring(scaleAnim,   { toValue: 1, useNativeDriver: useNativeDriverValue, tension: 60, friction: 7 }),
+      Animated.timing(opacityAnim, { toValue: 1, duration: 400, useNativeDriver: useNativeDriverValue }),
     ]).start();
   };
 

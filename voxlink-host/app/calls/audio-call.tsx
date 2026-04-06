@@ -1,8 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
-import {
-  View, Text, StyleSheet, Image, TouchableOpacity,
-  Animated, Easing,
-} from "react-native";
+import { View, Text, StyleSheet, Image, TouchableOpacity,
+  Animated, Easing, Platform } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SvgIcon } from "@/components/SvgIcon";
@@ -15,6 +13,8 @@ import { useWebRTC } from "@/hooks/useWebRTC";
 import { useSocket } from "@/context/SocketContext";
 import { SocketEvents } from "@/constants/events";
 import * as Haptics from "expo-haptics";
+
+const useNativeDriverValue = Platform.OS !== "web";
 
 export default function AudioCallScreen() {
   const insets = useSafeAreaInsets();
@@ -60,8 +60,8 @@ export default function AudioCallScreen() {
   useEffect(() => {
     Animated.loop(
       Animated.sequence([
-        Animated.timing(pulse, { toValue: 1.08, duration: 900, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 1, duration: 900, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 1.08, duration: 900, easing: Easing.inOut(Easing.ease), useNativeDriver: useNativeDriverValue }),
+        Animated.timing(pulse, { toValue: 1, duration: 900, easing: Easing.inOut(Easing.ease), useNativeDriver: useNativeDriverValue }),
       ])
     ).start();
     const t1 = setTimeout(() => {

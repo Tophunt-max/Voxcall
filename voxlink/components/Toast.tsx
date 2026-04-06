@@ -12,6 +12,8 @@ import {
 } from "react-native";
 import { useColors } from "@/hooks/useColors";
 
+const useNativeDriverValue = Platform.OS !== "web";
+
 type ToastType = "success" | "error" | "warning" | "info";
 
 interface ToastMessage {
@@ -48,7 +50,7 @@ function ToastItem({ toast, onDismiss }: ToastProps) {
   useEffect(() => {
     Animated.spring(anim, {
       toValue: 1,
-      useNativeDriver: true,
+      useNativeDriver: useNativeDriverValue,
       tension: 100,
       friction: 10,
     }).start();
@@ -64,7 +66,7 @@ function ToastItem({ toast, onDismiss }: ToastProps) {
     Animated.timing(anim, {
       toValue: 0,
       duration: 200,
-      useNativeDriver: true,
+      useNativeDriver: useNativeDriverValue,
     }).start(() => onDismiss(toast.id));
   }
 

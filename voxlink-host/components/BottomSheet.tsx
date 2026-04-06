@@ -14,7 +14,10 @@ import {
   Platform,
   Dimensions,
 } from "react-native";
+
 import { useColors } from "@/hooks/useColors";
+
+const useNativeDriverValue = Platform.OS !== "web";
 
 const { height: SCREEN_H } = Dimensions.get("window");
 
@@ -46,14 +49,14 @@ export default function BottomSheet({
       Animated.parallel([
         Animated.spring(slideAnim, {
           toValue: 0,
-          useNativeDriver: true,
+          useNativeDriver: useNativeDriverValue,
           tension: 80,
           friction: 12,
         }),
         Animated.timing(backdropAnim, {
           toValue: 1,
           duration: 200,
-          useNativeDriver: true,
+          useNativeDriver: useNativeDriverValue,
         }),
       ]).start();
     } else {
@@ -61,12 +64,12 @@ export default function BottomSheet({
         Animated.timing(slideAnim, {
           toValue: 300,
           duration: 200,
-          useNativeDriver: true,
+          useNativeDriver: useNativeDriverValue,
         }),
         Animated.timing(backdropAnim, {
           toValue: 0,
           duration: 200,
-          useNativeDriver: true,
+          useNativeDriver: useNativeDriverValue,
         }),
       ]).start();
     }
@@ -77,12 +80,12 @@ export default function BottomSheet({
       Animated.timing(slideAnim, {
         toValue: 300,
         duration: 200,
-        useNativeDriver: true,
+        useNativeDriver: useNativeDriverValue,
       }),
       Animated.timing(backdropAnim, {
         toValue: 0,
         duration: 200,
-        useNativeDriver: true,
+        useNativeDriver: useNativeDriverValue,
       }),
     ]).start(onClose);
   }, [onClose]);

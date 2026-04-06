@@ -2,7 +2,11 @@
 // a blank screen or spinner. This dramatically improves perceived performance because
 // the layout feels ready before data arrives.
 import React, { useEffect, useRef } from "react";
-import { View, Animated, StyleSheet, Dimensions } from "react-native";
+import { View, Animated, StyleSheet, Dimensions } Platform,
+
+const useNativeDriverValue = Platform.OS !== "web";
+  Platform,
+} from "react-native";
 
 const SCREEN_W = Dimensions.get("window").width;
 
@@ -11,8 +15,8 @@ function Pulse({ style }: { style?: object }) {
   useEffect(() => {
     Animated.loop(
       Animated.sequence([
-        Animated.timing(anim, { toValue: 1, duration: 900, useNativeDriver: true }),
-        Animated.timing(anim, { toValue: 0.4, duration: 900, useNativeDriver: true }),
+        Animated.timing(anim, { toValue: 1, duration: 900, useNativeDriver: useNativeDriverValue }),
+        Animated.timing(anim, { toValue: 0.4, duration: 900, useNativeDriver: useNativeDriverValue }),
       ])
     ).start();
   }, [anim]);

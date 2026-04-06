@@ -1,8 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
-import {
-  View, Text, StyleSheet, TouchableOpacity, Image,
-  Animated, Easing,
-} from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, Image,
+  Animated, Easing, Platform } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRingtone } from "@/hooks/useRingtone";
@@ -10,6 +8,8 @@ import { resolveMediaUrl } from "@/services/api";
 import { useCall } from "@/context/CallContext";
 import { useSocket } from "@/context/SocketContext";
 import { SocketEvents } from "@/constants/events";
+
+const useNativeDriverValue = Platform.OS !== "web";
 
 const RING_TIMEOUT_MS = 45000;
 
@@ -60,8 +60,8 @@ export default function OutgoingCallScreen() {
       Animated.loop(
         Animated.sequence([
           Animated.delay(delay),
-          Animated.timing(val, { toValue: 1, duration: 2000, easing: Easing.out(Easing.ease), useNativeDriver: true }),
-          Animated.timing(val, { toValue: 0, duration: 0, useNativeDriver: true }),
+          Animated.timing(val, { toValue: 1, duration: 2000, easing: Easing.out(Easing.ease), useNativeDriver: useNativeDriverValue }),
+          Animated.timing(val, { toValue: 0, duration: 0, useNativeDriver: useNativeDriverValue }),
         ])
       ).start();
     animateRipple(ripple1, 0);

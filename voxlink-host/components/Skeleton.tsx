@@ -2,8 +2,10 @@
 // Animated loading placeholders (shimmer effect)
 
 import React, { useEffect, useRef } from "react";
-import { View, Animated, StyleSheet, ViewStyle } from "react-native";
+import { View, Animated, Platform, StyleSheet, ViewStyle } from "react-native";
 import { useColors } from "@/hooks/useColors";
+
+const useNativeDriverValue = Platform.OS !== "web";
 
 interface SkeletonProps {
   width?: number | string;
@@ -27,12 +29,12 @@ export default function Skeleton({
         Animated.timing(anim, {
           toValue: 1,
           duration: 900,
-          useNativeDriver: true,
+          useNativeDriver: useNativeDriverValue,
         }),
         Animated.timing(anim, {
           toValue: 0,
           duration: 900,
-          useNativeDriver: true,
+          useNativeDriver: useNativeDriverValue,
         }),
       ])
     ).start();

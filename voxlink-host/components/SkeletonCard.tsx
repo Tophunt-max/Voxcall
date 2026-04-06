@@ -1,6 +1,8 @@
 import React, { useEffect, useRef } from "react";
-import { Animated, View, StyleSheet } from "react-native";
+import { Animated, View, StyleSheet, Platform } from "react-native";
 import { useColors } from "@/hooks/useColors";
+
+const useNativeDriverValue = Platform.OS !== "web";
 
 function Pulse({ style }: { style: any }) {
   const opacity = useRef(new Animated.Value(0.4)).current;
@@ -8,8 +10,8 @@ function Pulse({ style }: { style: any }) {
   useEffect(() => {
     const anim = Animated.loop(
       Animated.sequence([
-        Animated.timing(opacity, { toValue: 1, duration: 700, useNativeDriver: true }),
-        Animated.timing(opacity, { toValue: 0.4, duration: 700, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 1, duration: 700, useNativeDriver: useNativeDriverValue }),
+        Animated.timing(opacity, { toValue: 0.4, duration: 700, useNativeDriver: useNativeDriverValue }),
       ])
     );
     anim.start();

@@ -3,8 +3,10 @@
 // Shows a prominent banner after 5s of disconnection to inform the user.
 
 import React, { useEffect, useState, useRef } from "react";
-import { View, Text, StyleSheet, Animated, AppState } from "react-native";
+import { View, Text, StyleSheet, Animated, AppState, Platform } from "react-native";
 import { useSocket } from "@/context/SocketContext";
+
+const useNativeDriverValue = Platform.OS !== "web";
 
 const SHOW_DELAY_MS = 5000;
 
@@ -30,7 +32,7 @@ export function OfflineBanner() {
     Animated.timing(slideAnim, {
       toValue: showBanner ? 0 : -60,
       duration: 280,
-      useNativeDriver: true,
+      useNativeDriver: useNativeDriverValue,
     }).start();
   }, [showBanner]);
 

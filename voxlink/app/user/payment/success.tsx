@@ -1,10 +1,12 @@
 // VoxLink Payment Success Screen
 
 import React, { useEffect, useRef } from "react";
-import { View, Text, StyleSheet, Animated, TouchableOpacity, Image } from "react-native";
+import { View, Text, StyleSheet, Animated, TouchableOpacity, Image, Platform } from "react-native";
 import { router } from "expo-router";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
+
+const useNativeDriverValue = Platform.OS !== "web";
 
 export default function PaymentSuccessScreen() {
   const colors = useColors();
@@ -16,14 +18,14 @@ export default function PaymentSuccessScreen() {
     Animated.sequence([
       Animated.spring(scaleAnim, {
         toValue: 1,
-        useNativeDriver: true,
+        useNativeDriver: useNativeDriverValue,
         tension: 60,
         friction: 7,
       }),
       Animated.timing(fadeAnim, {
         toValue: 1,
         duration: 400,
-        useNativeDriver: true,
+        useNativeDriver: useNativeDriverValue,
       }),
     ]).start();
   }, []);
