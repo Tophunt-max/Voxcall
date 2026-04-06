@@ -223,7 +223,7 @@ export default function Users() {
     staleTime: 30_000,
   });
 
-  const hasMore = users.length === 50;
+  const hasMore = users.length === 20;
 
   const handleSearchChange = (val: string) => {
     setSearch(val);
