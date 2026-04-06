@@ -16,12 +16,16 @@ const TYPE_COLORS: Record<string, string> = {
 export default function CoinTransactions() {
   const [txns, setTxns] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
 
-  useEffect(() => {
-    api.coinTransactions().then(setTxns).catch(console.error).finally(() => setLoading(false));
-  }, []);
+  const load = () => {
+    setLoading(true);
+    setLoadError('');
+    api.coinTransactions().then(setTxns).catch((e: any) => setLoadError(e.message || 'Failed to load transactions')).finally(() => setLoading(false));
+  };
+  useEffect(load, []);
 
   const filtered = txns.filter(t => {
     const matchType = typeFilter === 'all' || t.type === typeFilter;
@@ -65,6 +69,12 @@ export default function CoinTransactions() {
         <h2 className="font-bold text-lg">Coin Transactions</h2>
         <p className="text-sm text-muted-foreground">Full transaction history for all users</p>
       </div>
+
+      {loadError && (
+        <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3">
+          Failed to load transactions: {loadError} — <button className="underline font-semibold" onClick={load}>Retry</button>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
         <StatCard icon={ArrowRightLeft} label="Total Transactions" value={txns.length} gradient="gradient-purple" />
