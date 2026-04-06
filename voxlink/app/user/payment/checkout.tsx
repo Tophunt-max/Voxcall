@@ -157,6 +157,7 @@ async function tryProcessPayment(
   const promo = promoCode?.trim() || undefined;
 
   if (platform === "android" || platform === "ios") {
+    // On mobile: use native Google Play / Apple Pay via existing purchaseCoins route
     const result = await API.purchaseCoins(plan.id, platform === "android" ? "googlepay" : "applepay", undefined, undefined, undefined, promo) as any;
     if (result?.new_balance != null) {
       updateCoins(result.new_balance);
@@ -169,26 +170,28 @@ async function tryProcessPayment(
     return;
   }
 
+  // Web: use initiatePayment to create a server-side pending purchase, then redirect.
+  // The gateway should send a webhook to auto-approve. The purchase_id is embedded in the redirect URL.
   for (let i = 0; i < gateways.length; i++) {
     const gw = gateways[i];
     try {
-      if (gw.redirect_url && gw.redirect_url.startsWith("http")) {
-        const params = new URLSearchParams({ plan_id: plan.id, currency: getCurrencyCode(), gateway: gw.type, source: "voxlink" });
-        const url = `${gw.redirect_url}?${params.toString()}`;
+      // Create a server-side pending purchase (enables webhook auto-matching)
+      const initiated = await API.initiatePayment({ plan_id: plan.id, gateway_id: gw.id, promo_code: promo }) as any;
+      if (initiated?.redirect_url) {
         setLoading(false);
-        await Linking.openURL(url);
+        await Linking.openURL(initiated.redirect_url);
         return;
-      } else {
-        const result = await API.purchaseCoins(plan.id, gw.type, undefined, undefined, (gw as any).id, promo) as any;
-        if (result?.new_balance != null) {
-          updateCoins(result.new_balance);
-          await notifyPurchaseSuccess(totalCoins);
-          showSuccessToast(`${totalCoins.toLocaleString()} coins added!`, "Purchase Successful");
-          router.replace("/user/payment/success");
-          return;
-        }
-        throw new Error("Gateway did not process payment");
       }
+      // If gateway has no redirect URL, try direct API processing
+      const result = await API.purchaseCoins(plan.id, gw.type, undefined, undefined, gw.id, promo) as any;
+      if (result?.new_balance != null) {
+        updateCoins(result.new_balance);
+        await notifyPurchaseSuccess(totalCoins);
+        showSuccessToast(`${totalCoins.toLocaleString()} coins added!`, "Purchase Successful");
+        router.replace("/user/payment/success");
+        return;
+      }
+      throw new Error("Gateway did not process payment");
     } catch (err) {
       if (i === gateways.length - 1) throw err;
     }
@@ -236,24 +239,32 @@ function ManualPayModal({ visible, plan, totalCoins, promoCode, onClose, onSucce
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [visible, qrData?.rotate_interval_min]);
 
+  const [autoApproved, setAutoApproved] = useState(false);
+  const { refreshProfile } = useAuth();
+
   const handleSubmit = useCallback(async () => {
     if (!utr.trim()) { Alert.alert("Required", "Please enter the UTR / transaction reference number."); return; }
     if (!plan) return;
     setSubmitting(true);
     try {
-      await API.submitManualDeposit({
+      const result = await API.submitManualDeposit({
         plan_id: plan.id,
         utr_id: utr.trim(),
         qr_code_id: qrData?.current?.id,
         promo_code: promoCode || undefined,
-      });
+      }) as any;
+      if (result?.status === 'success' && result?.coins_added) {
+        // Auto-approved!
+        setAutoApproved(true);
+        await refreshProfile();
+      }
       setSubmitted(true);
     } catch (err: any) {
       Alert.alert("Submission Failed", err?.message || "Could not submit payment. Please try again.");
     } finally {
       setSubmitting(false);
     }
-  }, [utr, plan, qrData, promoCode]);
+  }, [utr, plan, qrData, promoCode, refreshProfile]);
 
   const currentQR = qrData?.current;
 
@@ -273,12 +284,21 @@ function ManualPayModal({ visible, plan, totalCoins, promoCode, onClose, onSucce
           {submitted ? (
             // ── Success State ──────────────────────────────────────────────
             <View style={mStyles.successWrap}>
-              <View style={[mStyles.successIcon, { backgroundColor: "#E8F5E9" }]}>
-                <Text style={{ fontSize: 44 }}>✅</Text>
+              <View style={[mStyles.successIcon, { backgroundColor: autoApproved ? "#E8F5E9" : "#EDE7F6" }]}>
+                <Text style={{ fontSize: 44 }}>{autoApproved ? "🎉" : "✅"}</Text>
               </View>
-              <Text style={[mStyles.successTitle, { color: colors.text }]}>Payment Submitted!</Text>
+              {autoApproved && (
+                <View style={[mStyles.autoBadge, { backgroundColor: "#4CAF50" }]}>
+                  <Text style={mStyles.autoBadgeText}>⚡ Auto-Approved!</Text>
+                </View>
+              )}
+              <Text style={[mStyles.successTitle, { color: colors.text }]}>
+                {autoApproved ? "Coins Added!" : "Payment Submitted!"}
+              </Text>
               <Text style={[mStyles.successSub, { color: colors.mutedForeground }]}>
-                Your payment is under review. Coins will be added to your account once the admin approves it (usually within a few hours).
+                {autoApproved
+                  ? `${totalCoins.toLocaleString()} coins have been instantly added to your account!`
+                  : "Your payment is under review. Coins will be added once the admin approves it (usually within a few hours)."}
               </Text>
               <View style={[mStyles.infoCard, { backgroundColor: colors.card }]}>
                 <Text style={[mStyles.infoLabel, { color: colors.mutedForeground }]}>Package</Text>
@@ -466,6 +486,8 @@ const mStyles = StyleSheet.create({
   infoValue: { fontSize: 14, fontFamily: "Poppins_600SemiBold" },
   doneBtn: { height: 52, borderRadius: 14, alignItems: "center", justifyContent: "center", width: "100%" },
   doneBtnText: { color: "#fff", fontSize: 15, fontFamily: "Poppins_700Bold" },
+  autoBadge: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20 },
+  autoBadgeText: { color: "#fff", fontSize: 13, fontFamily: "Poppins_700Bold" },
 });
 
 // ─── Main CheckoutScreen ──────────────────────────────────────────────────────

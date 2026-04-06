@@ -17,6 +17,7 @@ import publicRouter from './routes/public';
 import matchRouter from './routes/match';
 import hostappRouter from './routes/hostapp';
 import errorsRouter from './routes/errors';
+import paymentRouter from './routes/payment';
 import { ChatRoom } from './durable-objects/ChatRoom';
 import { CallSignaling } from './durable-objects/CallSignaling';
 import { NotificationHub } from './durable-objects/NotificationHub';
@@ -73,6 +74,7 @@ app.route('/api/match', matchRouter);
 app.route('/api/host-app', hostappRouter);
 app.route('/api/upload', uploadRouter);
 app.route('/api/errors', errorsRouter);
+app.route('/api/payment', paymentRouter);
 app.route('/api', publicRouter);
 
 // ─── WebSocket Auth Helper ─────────────────────────────────────────────────

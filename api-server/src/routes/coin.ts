@@ -135,6 +135,23 @@ coin.post('/manual-deposit', async (c) => {
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'manual', ?, ?, ?, ?, 'pending', ?)`
   ).bind(purchaseId, sub, plan_id, plan.name, plan.coins, (plan.bonus_coins || 0) + promoBonus, plan.price, plan.currency || 'USD', qr_code_id || null, qrName, String(utr_id).trim(), promo_code || null, screenshot_url || null).run();
 
+  // Check auto-approve setting
+  const autoApproveSetting = await db.prepare("SELECT value FROM app_settings WHERE key = 'auto_approve_manual'").first<any>();
+  const autoApproveMaxSetting = await db.prepare("SELECT value FROM app_settings WHERE key = 'auto_approve_manual_max_amount'").first<any>();
+  const autoApprove = autoApproveSetting?.value === 'true' || autoApproveSetting?.value === '1';
+  const autoApproveMax = parseFloat(autoApproveMaxSetting?.value || '0');
+  if (autoApprove && (autoApproveMax <= 0 || plan.price <= autoApproveMax)) {
+    const totalCoins = (plan.coins || 0) + (plan.bonus_coins || 0) + promoBonus;
+    await db.batch([
+      db.prepare("UPDATE coin_purchases SET status = 'success', updated_at = unixepoch() WHERE id = ?").bind(purchaseId),
+      db.prepare('UPDATE users SET coins = coins + ?, updated_at = unixepoch() WHERE id = ?').bind(totalCoins, sub),
+      db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)').bind(
+        crypto.randomUUID(), sub, 'purchase', totalCoins, 'Manual payment auto-approved', purchaseId
+      ),
+    ]);
+    return c.json({ success: true, purchase_id: purchaseId, status: 'success', coins_added: totalCoins, message: 'Payment auto-approved! Coins added to your account.' });
+  }
+
   return c.json({ success: true, purchase_id: purchaseId, status: 'pending', message: 'Payment submitted for admin review. Coins will be added once approved.' });
 });
 

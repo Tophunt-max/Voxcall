@@ -1278,6 +1278,11 @@ admin.post('/run-migrations', async (c) => {
       updated_at INTEGER DEFAULT (unixepoch())
     )`,
     `ALTER TABLE coin_purchases ADD COLUMN screenshot_url TEXT`,
+    `ALTER TABLE coin_purchases ADD COLUMN gateway_order_id TEXT`,
+    `CREATE INDEX IF NOT EXISTS idx_coin_purchases_gateway_order ON coin_purchases(gateway_order_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_coin_purchases_utr ON coin_purchases(utr_id)`,
+    `ALTER TABLE payment_gateways ADD COLUMN webhook_secret TEXT`,
+    // Webhook settings in app_settings are stored as key/value rows (razorpay_webhook_secret, stripe_webhook_secret, etc.)
     // Coin Purchases (deposit tracking)
     `CREATE TABLE IF NOT EXISTS coin_purchases (
       id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),

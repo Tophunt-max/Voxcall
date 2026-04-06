@@ -232,5 +232,11 @@ export const API = {
   getManualQR: () =>
     apiRequest<{ qr_codes: any[]; current: any | null; rotate_interval_min: number }>('GET', '/api/payment/active-qr', undefined, false),
   submitManualDeposit: (data: { plan_id: string; utr_id: string; screenshot_url?: string; qr_code_id?: string; promo_code?: string }) =>
-    apiRequest<{ success: boolean; purchase_id: string; status: string; message: string }>('POST', '/api/coins/manual-deposit', data),
+    apiRequest<{ success: boolean; purchase_id: string; status: string; coins_added?: number; message: string }>('POST', '/api/coins/manual-deposit', data),
+
+  // Automatic Payment Matching
+  initiatePayment: (data: { plan_id: string; gateway_id?: string; promo_code?: string }) =>
+    apiRequest<{ purchase_id: string; redirect_url: string | null; amount: number; coins: number; currency: string }>('POST', '/api/payment/initiate', data),
+  verifyGooglePlay: (data: { purchase_token: string; product_id: string; package_name?: string; plan_id?: string; promo_code?: string }) =>
+    apiRequest<{ success: boolean; purchase_id: string; coins_added?: number; already_credited?: boolean; pending?: boolean; message?: string }>('POST', '/api/payment/verify-google-play', data),
 };

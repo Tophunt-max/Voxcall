@@ -13,7 +13,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { Plus, Pencil, Trash2, CreditCard, ArrowUp, ArrowDown, Star, AlertTriangle, QrCode, Clock, RefreshCw } from 'lucide-react';
+import { Plus, Pencil, Trash2, CreditCard, ArrowUp, ArrowDown, Star, AlertTriangle, QrCode, Clock, RefreshCw, Webhook, Copy, CheckCircle2, Settings, ShieldCheck, Zap } from 'lucide-react';
 
 const GATEWAY_TYPES = [
   { value: 'googlepay',  label: 'Google Pay',   emoji: '🟢' },
@@ -528,34 +528,262 @@ function ManualQRTab() {
   );
 }
 
+// ─── Webhook & Settings Tab ───────────────────────────────────────────────────
+const WEBHOOK_BASE = 'https://voxlink-api.ssunilkumarmohanta3.workers.dev/api/payment/webhook';
+const WEBHOOKS = [
+  { key: 'razorpay', label: 'Razorpay', emoji: '🔵', url: `${WEBHOOK_BASE}/razorpay`, secretKey: 'razorpay_webhook_secret', hint: 'Razorpay Dashboard → Settings → Webhooks → Events: payment.captured' },
+  { key: 'phonepe', label: 'PhonePe', emoji: '📱', url: `${WEBHOOK_BASE}/phonepe`, secretKey: 'phonepe_webhook_secret', hint: 'PhonePe Business → API → Webhook URL. Event: PAYMENT_SUCCESS' },
+  { key: 'stripe', label: 'Stripe', emoji: '💳', url: `${WEBHOOK_BASE}/stripe`, secretKey: 'stripe_webhook_secret', hint: 'Stripe Dashboard → Developers → Webhooks → Events: checkout.session.completed' },
+  { key: 'paytm', label: 'Paytm', emoji: '💰', url: `${WEBHOOK_BASE}/paytm`, secretKey: null, hint: 'Paytm Dashboard → Payments → Webhooks' },
+  { key: 'generic', label: 'Generic / Custom', emoji: '⚙️', url: `${WEBHOOK_BASE}/generic`, secretKey: 'generic_webhook_secret', hint: 'Your custom gateway can POST { purchase_id, status: "success", secret } to this URL' },
+];
+
+function WebhookSettingsTab() {
+  const qc = useQueryClient();
+  const { data: config = {}, isLoading } = useQuery({ queryKey: ['app-config'], queryFn: api.appConfig });
+  const [secrets, setSecrets] = useState<Record<string, string>>({});
+  const [saved, setSaved] = useState<Record<string, boolean>>({});
+  const [copied, setCopied] = useState<Record<string, boolean>>({});
+  // Auto-approve settings
+  const [autoApprove, setAutoApprove] = useState(false);
+  const [autoApproveMax, setAutoApproveMax] = useState('');
+  const [autoSaving, setAutoSaving] = useState(false);
+  const [gpKey, setGpKey] = useState('');
+  const [gpSaving, setGpSaving] = useState(false);
+
+  // Sync local state from loaded config
+  const configRef = useState<any>(null);
+  if (!isLoading && config && configRef[0] !== config) {
+    configRef[0] = config;
+    const c = config as any;
+    setAutoApprove(c.auto_approve_manual === 'true' || c.auto_approve_manual === '1');
+    setAutoApproveMax(c.auto_approve_manual_max_amount || '');
+    WEBHOOKS.forEach(w => {
+      if (w.secretKey && c[w.secretKey]) setSecrets(s => ({ ...s, [w.secretKey!]: c[w.secretKey!] }));
+    });
+  }
+
+  const saveMutation = useMutation({ mutationFn: api.updateAppConfig, onSuccess: () => qc.invalidateQueries({ queryKey: ['app-config'] }) });
+
+  function copyUrl(url: string, key: string) {
+    navigator.clipboard?.writeText(url).then(() => { setCopied(s => ({ ...s, [key]: true })); setTimeout(() => setCopied(s => ({ ...s, [key]: false })), 2000); });
+  }
+
+  async function saveSecret(w: typeof WEBHOOKS[0]) {
+    if (!w.secretKey) return;
+    await saveMutation.mutateAsync({ [w.secretKey]: secrets[w.secretKey] || '' });
+    setSaved(s => ({ ...s, [w.secretKey!]: true })); setTimeout(() => setSaved(s => ({ ...s, [w.secretKey!]: false })), 2000);
+    toast.success(`${w.label} webhook secret saved!`);
+  }
+
+  async function saveAutoApprove() {
+    setAutoSaving(true);
+    await saveMutation.mutateAsync({ auto_approve_manual: autoApprove ? 'true' : 'false', auto_approve_manual_max_amount: autoApproveMax });
+    setAutoSaving(false);
+    toast.success('Auto-approve settings saved!');
+  }
+
+  async function saveGPKey() {
+    setGpSaving(true);
+    await saveMutation.mutateAsync({ google_play_service_account_note: gpKey ? 'configured' : '' });
+    setGpSaving(false);
+    toast.success('Note saved — add GOOGLE_PLAY_SERVICE_ACCOUNT_JSON as environment variable in Cloudflare Workers dashboard');
+  }
+
+  if (isLoading) return <div className="flex items-center justify-center h-40"><div className="animate-spin w-6 h-6 border-2 border-primary border-t-transparent rounded-full" /></div>;
+
+  return (
+    <div className="space-y-8">
+      {/* How it works */}
+      <div className="rounded-xl border bg-blue-50 dark:bg-blue-950/20 p-4 space-y-2">
+        <div className="flex items-center gap-2 font-semibold text-blue-800 dark:text-blue-300 text-sm"><Zap size={16} /> How Auto-Matching Works</div>
+        <ul className="text-xs text-blue-700 dark:text-blue-400 space-y-1 list-disc list-inside">
+          <li><strong>Web Auto Gateway:</strong> User pays → gateway sends webhook to VoxLink → coins auto-credited instantly.</li>
+          <li><strong>Web Manual UPI:</strong> User submits UTR → admin approves (or auto-approved if enabled below).</li>
+          <li><strong>Android Google Play:</strong> User pays in Play Store → app sends purchase token → VoxLink verifies with Google → coins auto-credited.</li>
+        </ul>
+      </div>
+
+      {/* Gateway Webhooks */}
+      <div className="space-y-4">
+        <div className="flex items-center gap-2">
+          <Webhook size={16} className="text-primary" />
+          <h3 className="font-semibold text-sm">Gateway Webhook URLs & Secrets</h3>
+        </div>
+        <p className="text-xs text-muted-foreground">Configure these webhook URLs in each payment gateway's dashboard. When a payment succeeds, the gateway calls this URL and VoxLink automatically credits the coins.</p>
+        <div className="space-y-4">
+          {WEBHOOKS.map(w => (
+            <div key={w.key} className="rounded-xl border bg-card p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">{w.emoji}</span>
+                <span className="font-semibold text-sm">{w.label}</span>
+              </div>
+              {/* Webhook URL */}
+              <div className="space-y-1.5">
+                <Label className="text-xs">Webhook URL (copy & paste into {w.label} dashboard)</Label>
+                <div className="flex gap-2">
+                  <div className="flex-1 flex items-center gap-2 bg-muted rounded-lg px-3 py-2 min-w-0">
+                    <code className="text-xs text-muted-foreground truncate flex-1">{w.url}</code>
+                  </div>
+                  <Button size="sm" variant="outline" className="gap-2 shrink-0" onClick={() => copyUrl(w.url, w.key)}>
+                    {copied[w.key] ? <CheckCircle2 size={13} className="text-green-500" /> : <Copy size={13} />}
+                    {copied[w.key] ? 'Copied!' : 'Copy'}
+                  </Button>
+                </div>
+                <p className="text-[10px] text-muted-foreground">{w.hint}</p>
+              </div>
+              {/* Secret */}
+              {w.secretKey && (
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Webhook Secret (from {w.label} dashboard)</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      type="password"
+                      placeholder={`Paste ${w.label} webhook signing secret`}
+                      value={secrets[w.secretKey] || ''}
+                      onChange={e => setSecrets(s => ({ ...s, [w.secretKey!]: e.target.value }))}
+                      className="flex-1"
+                    />
+                    <Button size="sm" variant="outline" className="gap-2 shrink-0" onClick={() => saveSecret(w)}>
+                      {saved[w.secretKey] ? <CheckCircle2 size={13} className="text-green-500" /> : <ShieldCheck size={13} />}
+                      {saved[w.secretKey] ? 'Saved!' : 'Save'}
+                    </Button>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">Used to verify webhook authenticity. Never share this publicly.</p>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Auto-Approve Manual Payments */}
+      <div className="rounded-xl border bg-card p-5 space-y-4">
+        <div className="flex items-center gap-2">
+          <Zap size={16} className="text-amber-500" />
+          <h3 className="font-semibold text-sm">Auto-Approve Manual (UPI) Payments</h3>
+          <Badge variant="secondary" className="text-[10px]">Manual QR</Badge>
+        </div>
+        <p className="text-xs text-muted-foreground">When enabled, manual UPI deposits are automatically approved as soon as the user submits their UTR — without admin review. Use only if you trust your users or have verified your UPI account receives funds properly.</p>
+        <div className="flex items-center gap-4 flex-wrap">
+          <div className="flex items-center gap-3">
+            <Switch checked={autoApprove} onCheckedChange={setAutoApprove} />
+            <Label className="text-sm font-medium">{autoApprove ? 'Auto-approve ON' : 'Auto-approve OFF (requires admin approval)'}</Label>
+          </div>
+        </div>
+        {autoApprove && (
+          <div className="space-y-1.5">
+            <Label className="text-xs">Max Amount for Auto-Approve (leave 0 for no limit)</Label>
+            <div className="flex gap-2 items-center">
+              <Input type="number" min={0} placeholder="0 = no limit" value={autoApproveMax} onChange={e => setAutoApproveMax(e.target.value)} className="max-w-48" />
+              <span className="text-xs text-muted-foreground">Deposits above this amount still require manual review.</span>
+            </div>
+          </div>
+        )}
+        <div className={`flex items-center gap-3 rounded-lg p-3 text-xs ${autoApprove ? 'bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300 border border-amber-200' : 'bg-muted text-muted-foreground'}`}>
+          <AlertTriangle size={14} className="shrink-0" />
+          {autoApprove
+            ? 'Warning: Auto-approve trusts that every UTR submission is legitimate. Users could potentially submit fake UTRs. Enable only for trusted audiences or low-risk amounts.'
+            : 'Auto-approve is off. Every manual deposit requires admin review in the Deposits section.'}
+        </div>
+        <Button onClick={saveAutoApprove} disabled={autoSaving} size="sm" className="gap-2">
+          {autoSaving ? 'Saving...' : <><CheckCircle2 size={13} /> Save Auto-Approve Settings</>}
+        </Button>
+      </div>
+
+      {/* Android / Google Play */}
+      <div className="rounded-xl border bg-card p-5 space-y-4">
+        <div className="flex items-center gap-2">
+          <span className="text-lg">🤖</span>
+          <h3 className="font-semibold text-sm">Android — Google Play Auto-Verification</h3>
+        </div>
+        <p className="text-xs text-muted-foreground">Android app purchases via Google Play are verified server-side using the Google Play Developer API. Setup requires a Google Cloud Service Account with Android Publisher API access.</p>
+        <div className="space-y-3">
+          <div className="rounded-lg bg-muted p-3 space-y-1.5 text-xs text-muted-foreground">
+            <p className="font-semibold text-foreground">Setup Steps:</p>
+            <ol className="list-decimal list-inside space-y-1">
+              <li>Go to <strong>Google Cloud Console</strong> → Create Service Account with role "Android Publisher"</li>
+              <li>Download the service account JSON key file</li>
+              <li>Link the service account in <strong>Google Play Console</strong> → Setup → API access</li>
+              <li>Base64-encode the JSON: <code className="bg-background px-1 rounded">base64 service-account.json</code></li>
+              <li>Add it as env var <code className="bg-background px-1 rounded">GOOGLE_PLAY_SERVICE_ACCOUNT_JSON</code> in Cloudflare Workers dashboard</li>
+            </ol>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Verification Endpoint (for reference)</Label>
+            <div className="flex gap-2">
+              <div className="flex-1 flex items-center gap-2 bg-muted rounded-lg px-3 py-2">
+                <code className="text-xs text-muted-foreground truncate">POST https://voxlink-api.ssunilkumarmohanta3.workers.dev/api/payment/verify-google-play</code>
+              </div>
+              <Button size="sm" variant="outline" onClick={() => copyUrl('https://voxlink-api.ssunilkumarmohanta3.workers.dev/api/payment/verify-google-play', 'gp')}>
+                {copied['gp'] ? 'Copied!' : <Copy size={13} />}
+              </Button>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <CheckCircle2 size={12} className="text-green-500 shrink-0" />
+            If service account is not configured, Google Play purchases go to pending (manual review) automatically.
+          </div>
+        </div>
+      </div>
+
+      {/* Payment Initiation API */}
+      <div className="rounded-xl border bg-card p-5 space-y-3">
+        <div className="flex items-center gap-2">
+          <Settings size={16} className="text-primary" />
+          <h3 className="font-semibold text-sm">Payment Initiation Endpoint</h3>
+        </div>
+        <p className="text-xs text-muted-foreground">Use this endpoint to create a pending purchase order server-side before redirecting users to a payment gateway. The gateway should embed the <code className="bg-muted px-1 rounded text-[10px]">purchase_id</code> in payment metadata/notes so the webhook can auto-match it.</p>
+        <div className="space-y-2">
+          <div className="flex gap-2">
+            <div className="flex-1 bg-muted rounded-lg px-3 py-2">
+              <code className="text-xs">POST /api/payment/initiate — Body: &#123; plan_id, gateway_id, promo_code &#125;</code>
+            </div>
+            <Button size="sm" variant="outline" onClick={() => copyUrl('POST /api/payment/initiate — { plan_id, gateway_id, promo_code }', 'init')}>
+              <Copy size={13} />
+            </Button>
+          </div>
+          <p className="text-[10px] text-muted-foreground">Returns: <code>&#123; purchase_id, redirect_url, amount, coins, currency &#125;</code> — Redirect user to <code>redirect_url</code>; webhook auto-credits coins on payment success.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main PaymentGateways Page ────────────────────────────────────────────────
 export default function PaymentGateways() {
-  const [activeTab, setActiveTab] = useState<'auto' | 'manual'>('manual');
+  const [activeTab, setActiveTab] = useState<'manual' | 'auto' | 'settings'>('manual');
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Payment Gateways</h1>
-        <p className="text-muted-foreground text-sm mt-1">Manage payment methods. Manual QR for UPI payments (admin approval required). Auto Gateways for web redirects.</p>
+        <p className="text-muted-foreground text-sm mt-1">Manage payment methods. Manual QR for UPI. Auto gateways for web. Webhook config for automatic deposit matching.</p>
       </div>
 
       {/* Tab Bar */}
-      <div className="flex border-b gap-1">
+      <div className="flex border-b gap-1 overflow-x-auto">
         <button
           onClick={() => setActiveTab('manual')}
-          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${activeTab === 'manual' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === 'manual' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
         >
           <QrCode size={15} /> Manual QR / UPI
         </button>
         <button
           onClick={() => setActiveTab('auto')}
-          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${activeTab === 'auto' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === 'auto' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
         >
           <CreditCard size={15} /> Auto Gateways
         </button>
+        <button
+          onClick={() => setActiveTab('settings')}
+          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === 'settings' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+        >
+          <Webhook size={15} /> Webhooks & Auto-Match
+        </button>
       </div>
 
-      {activeTab === 'manual' ? <ManualQRTab /> : <AutoGatewaysTab />}
+      {activeTab === 'manual' ? <ManualQRTab /> : activeTab === 'auto' ? <AutoGatewaysTab /> : <WebhookSettingsTab />}
     </div>
   );
 }
