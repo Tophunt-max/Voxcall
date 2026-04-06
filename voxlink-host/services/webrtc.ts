@@ -244,6 +244,13 @@ export class WebRTCService {
           throw new Error('Remote tracks not ready yet');
         }
 
+        // CF Calls returns a valid offer even when tracks have errors (a=inactive).
+        // Detect this and retry rather than processing a bad SDP.
+        const hasTrackErrors = result.tracks?.some((t: any) => t.errorCode);
+        if (hasTrackErrors) {
+          throw new Error('Remote tracks not ready yet (track unavailable)');
+        }
+
         if (RTC.RTCSessionDescription) {
           const offerDesc = new RTC.RTCSessionDescription(result.offer);
           await this.pc.setRemoteDescription(offerDesc);

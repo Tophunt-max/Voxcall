@@ -277,8 +277,22 @@ call.post('/:id/sdp/push', async (c) => {
   const cfCalls = createCFCalls(c.env);
   if (!cfCalls) return c.json({ error: 'CF Calls not configured' }, 500);
 
-  const cfSessionId = role === 'host' ? session.cf_host_session_id : session.cf_session_id;
-  if (!cfSessionId) return c.json({ error: 'No CF session for this role' }, 400);
+  let cfSessionId = role === 'host' ? session.cf_host_session_id : session.cf_session_id;
+
+  // Lazy session creation: if no CF session ID stored (e.g. call was created before
+  // CF_CALLS_APP_ID was configured), create one now and persist it.
+  if (!cfSessionId) {
+    try {
+      const newSess = await cfCalls.createSession();
+      cfSessionId = newSess.sessionId;
+      const field = role === 'host' ? 'cf_host_session_id' : 'cf_session_id';
+      await db.prepare(`UPDATE call_sessions SET ${field} = ? WHERE id = ?`)
+        .bind(cfSessionId, sessionId).run();
+    } catch (e) {
+      console.error('Lazy CF session creation error:', e);
+      return c.json({ error: 'Failed to create CF session' }, 500);
+    }
+  }
 
   try {
     const pushResult = await cfCalls.pushTracks(
@@ -329,10 +343,24 @@ call.post('/:id/sdp/pull', async (c) => {
   const mySessionId = role === 'host' ? session.cf_host_session_id : session.cf_session_id;
   const remoteSessionId = role === 'host' ? session.cf_session_id : session.cf_host_session_id;
 
-  if (!mySessionId || !remoteSessionId) return c.json({ error: 'Missing CF session IDs' }, 400);
+  // If my session is missing, remote hasn't been set up yet — retry signal
+  if (!mySessionId) return c.json({ offer: null, tracks: [], role, retryable: true });
+  if (!remoteSessionId) return c.json({ offer: null, tracks: [], role, retryable: true });
 
   try {
     const pullResult = await cfCalls.pullTracks(mySessionId, remoteSessionId, body.trackNames);
+
+    // If ALL requested tracks have errors, remote hasn't pushed yet — tell client to retry.
+    // CF Calls returns a valid offer SDP even when tracks are unavailable (a=inactive),
+    // so we must explicitly detect this and signal "not ready" instead of returning the bad offer.
+    const allTracksErrored =
+      pullResult.tracks?.length > 0 &&
+      pullResult.tracks.every((t: any) => t.errorCode);
+
+    if (allTracksErrored) {
+      return c.json({ offer: null, tracks: [], role, retryable: true });
+    }
+
     return c.json({
       offer: pullResult.offer,
       tracks: pullResult.tracks,
