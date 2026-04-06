@@ -1,7 +1,11 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { req } from "@/lib/api";
+import { Badge } from "@/components/ui/Badge";
+import { Modal } from "@/components/ui/Modal";
+import { CheckCircle, XCircle, RefreshCw, Clock, FileText, Video } from "lucide-react";
 
 type AppStatus = "pending" | "under_review" | "approved" | "rejected";
+
 interface HostApp {
   id: string;
   user_id: string;
@@ -23,11 +27,11 @@ interface HostApp {
   reviewed_at: number | null;
 }
 
-const STATUS_COLORS: Record<AppStatus, { bg: string; text: string; label: string }> = {
-  pending:      { bg: "#FEF3C7", text: "#D97706", label: "Pending" },
-  under_review: { bg: "#DBEAFE", text: "#1D4ED8", label: "Under Review" },
-  approved:     { bg: "#D1FAE5", text: "#059669", label: "Approved" },
-  rejected:     { bg: "#FEE2E2", text: "#DC2626", label: "Rejected" },
+const STATUS_VARIANT: Record<AppStatus, string> = {
+  pending: "pending",
+  under_review: "info",
+  approved: "active",
+  rejected: "banned",
 };
 
 const FILTER_TABS: Array<{ label: string; value: string }> = [
@@ -38,24 +42,38 @@ const FILTER_TABS: Array<{ label: string; value: string }> = [
   { label: "Rejected", value: "rejected" },
 ];
 
+function InfoField({ label, value }: { label: string; value?: string | null }) {
+  return (
+    <div className="bg-secondary rounded-xl p-3">
+      <p className="text-xs text-muted-foreground mb-0.5">{label}</p>
+      <p className="text-sm font-semibold text-foreground capitalize">{value || "—"}</p>
+    </div>
+  );
+}
+
 export default function HostApplicationsPage() {
   const [apps, setApps] = useState<HostApp[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [filter, setFilter] = useState("");
   const [selected, setSelected] = useState<HostApp | null>(null);
   const [reviewing, setReviewing] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const [showRejectInput, setShowRejectInput] = useState(false);
   const [imageModal, setImageModal] = useState<string | null>(null);
+  const [toast, setToast] = useState("");
+
+  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(""), 2500); };
 
   const fetchApps = useCallback(async () => {
     setLoading(true);
+    setLoadError("");
     try {
       const path = filter ? `/admin/host-applications?status=${filter}` : "/admin/host-applications";
-      const data = await req<any[]>("GET", path);
+      const data = await req<HostApp[]>("GET", path);
       setApps(Array.isArray(data) ? data : []);
-    } catch (e) {
-      console.error(e);
+    } catch (e: any) {
+      setLoadError(e.message || "Failed to load applications");
     } finally {
       setLoading(false);
     }
@@ -66,7 +84,7 @@ export default function HostApplicationsPage() {
   const handleReview = async (action: "approve" | "reject") => {
     if (!selected) return;
     if (action === "reject" && !rejectReason.trim()) {
-      alert("Please enter a rejection reason.");
+      showToast("Please enter a rejection reason.");
       return;
     }
     setReviewing(true);
@@ -75,259 +93,283 @@ export default function HostApplicationsPage() {
         action,
         rejection_reason: action === "reject" ? rejectReason.trim() : undefined,
       });
-      await fetchApps();
+      showToast(action === "approve" ? "Application approved!" : "Application rejected.");
       setSelected(null);
       setRejectReason("");
       setShowRejectInput(false);
+      await fetchApps();
     } catch (e: any) {
-      alert(`Error: ${e.message}`);
+      showToast("Error: " + (e.message || "Something went wrong"));
     } finally {
       setReviewing(false);
     }
   };
 
-  const pending = apps.filter((a) => a.status === "pending" || a.status === "under_review").length;
+  const pendingCount = apps.filter((a) => a.status === "pending" || a.status === "under_review").length;
 
   return (
-    <div style={{ padding: 28 }}>
-      {/* Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24 }}>
+    <div className="space-y-5">
+      {toast && <div className="fixed bottom-5 right-5 z-50 bg-foreground text-background text-sm px-4 py-2.5 rounded-xl shadow-xl">{toast}</div>}
+
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700, color: "#111329" }}>Host KYC Applications</h1>
-          <p style={{ margin: "4px 0 0", fontSize: 14, color: "#84889F" }}>
-            Review and approve host verification requests
-          </p>
+          <h2 className="font-bold text-lg">Host KYC Applications</h2>
+          <p className="text-sm text-muted-foreground">Review and approve host verification requests</p>
         </div>
-        {pending > 0 && (
-          <div style={{ backgroundColor: "#FEF3C7", color: "#D97706", fontWeight: 700, padding: "8px 16px", borderRadius: 20, fontSize: 14 }}>
-            {pending} Pending Review
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          {pendingCount > 0 && (
+            <span className="bg-amber-100 text-amber-700 font-bold px-3 py-1.5 rounded-full text-sm">
+              {pendingCount} Pending
+            </span>
+          )}
+          <button
+            onClick={fetchApps}
+            className="flex items-center gap-1.5 border border-border rounded-xl px-3 py-2 text-sm hover:bg-secondary transition-colors"
+          >
+            <RefreshCw size={14} /> Refresh
+          </button>
+        </div>
       </div>
 
-      {/* Filter Tabs */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 24, flexWrap: "wrap" }}>
+      {loadError && (
+        <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3">
+          Failed to load: {loadError} — <button className="underline font-semibold" onClick={fetchApps}>Retry</button>
+        </div>
+      )}
+
+      <div className="flex gap-2 flex-wrap">
         {FILTER_TABS.map((tab) => (
           <button
             key={tab.value}
             onClick={() => setFilter(tab.value)}
-            style={{
-              padding: "8px 18px",
-              borderRadius: 20,
-              border: "1.5px solid",
-              borderColor: filter === tab.value ? "#A00EE7" : "#E5E7EB",
-              backgroundColor: filter === tab.value ? "#F4E8FD" : "#fff",
-              color: filter === tab.value ? "#A00EE7" : "#6B7280",
-              fontWeight: filter === tab.value ? 700 : 400,
-              cursor: "pointer",
-              fontSize: 14,
-            }}
+            className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-colors ${
+              filter === tab.value
+                ? "bg-primary/10 border-primary text-primary font-semibold"
+                : "border-border text-muted-foreground hover:bg-secondary"
+            }`}
           >
             {tab.label}
           </button>
         ))}
-        <button onClick={fetchApps} style={{ marginLeft: "auto", padding: "8px 16px", borderRadius: 20, border: "1.5px solid #E5E7EB", background: "#fff", cursor: "pointer", fontSize: 14 }}>
-          ↻ Refresh
-        </button>
       </div>
 
-      {/* Table */}
       {loading ? (
-        <div style={{ textAlign: "center", padding: 60, color: "#84889F" }}>Loading applications...</div>
+        <div className="flex items-center justify-center py-16 text-muted-foreground text-sm">
+          Loading applications...
+        </div>
       ) : apps.length === 0 ? (
-        <div style={{ textAlign: "center", padding: 60, color: "#84889F", background: "#F8F9FC", borderRadius: 16 }}>
+        <div className="flex items-center justify-center py-16 bg-secondary rounded-2xl text-muted-foreground text-sm">
           No applications found.
         </div>
       ) : (
-        <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #E5E7EB", overflow: "hidden" }}>
-          <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" } as React.CSSProperties}>
-          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 780 }}>
-            <thead>
-              <tr style={{ background: "#F9FAFB" }}>
-                {["Name", "Email", "Gender", "Specialties", "Rates", "Status", "Submitted", "Actions"].map((h) => (
-                  <th key={h} style={{ padding: "12px 16px", textAlign: "left", fontSize: 12, fontWeight: 600, color: "#6B7280", borderBottom: "1px solid #E5E7EB", whiteSpace: "nowrap" }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {apps.map((app) => {
-                const sc = STATUS_COLORS[app.status] ?? STATUS_COLORS.pending;
-                return (
-                  <tr key={app.id} style={{ borderBottom: "1px solid #F3F4F6" }}>
-                    <td style={{ padding: "14px 16px", fontWeight: 600, color: "#111329", whiteSpace: "nowrap" }}>{app.display_name || "—"}</td>
-                    <td style={{ padding: "14px 16px", color: "#6B7280", fontSize: 13, whiteSpace: "nowrap" }}>{app.email}</td>
-                    <td style={{ padding: "14px 16px", color: "#6B7280", fontSize: 13, textTransform: "capitalize" }}>{app.gender || "—"}</td>
-                    <td style={{ padding: "14px 16px" }}>
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                        {(app.specialties || []).slice(0, 3).map((s) => (
-                          <span key={s} style={{ background: "#F4E8FD", color: "#A00EE7", padding: "2px 8px", borderRadius: 10, fontSize: 12 }}>{s}</span>
+        <div className="bg-card border border-border rounded-2xl overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse min-w-[700px]">
+              <thead>
+                <tr className="bg-secondary border-b border-border">
+                  {["Name", "Email", "Specialties", "Rates", "Status", "Submitted", ""].map((h) => (
+                    <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {apps.map((app) => (
+                  <tr key={app.id} className="border-b border-border/50 hover:bg-secondary/40 transition-colors">
+                    <td className="px-4 py-3">
+                      <p className="font-semibold text-sm text-foreground">{app.display_name || "—"}</p>
+                      <p className="text-xs text-muted-foreground capitalize">{app.gender || ""}</p>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-muted-foreground">{app.email}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap gap-1">
+                        {(app.specialties || []).slice(0, 2).map((s) => (
+                          <span key={s} className="bg-primary/10 text-primary px-2 py-0.5 rounded-full text-xs">{s}</span>
                         ))}
-                        {app.specialties?.length > 3 && <span style={{ fontSize: 12, color: "#84889F" }}>+{app.specialties.length - 3}</span>}
+                        {app.specialties?.length > 2 && (
+                          <span className="text-xs text-muted-foreground">+{app.specialties.length - 2}</span>
+                        )}
                       </div>
                     </td>
-                    <td style={{ padding: "14px 16px", fontSize: 13, color: "#6B7280" }}>
-                      🎤 {app.audio_rate}/min &nbsp; 🎥 {app.video_rate}/min
+                    <td className="px-4 py-3 text-xs text-muted-foreground">
+                      <div>🎤 {app.audio_rate}/min</div>
+                      <div>🎥 {app.video_rate}/min</div>
                     </td>
-                    <td style={{ padding: "14px 16px" }}>
-                      <span style={{ background: sc.bg, color: sc.text, padding: "4px 10px", borderRadius: 12, fontSize: 12, fontWeight: 600 }}>{sc.label}</span>
+                    <td className="px-4 py-3">
+                      <Badge variant={STATUS_VARIANT[app.status] || "default"}>
+                        {app.status.replace("_", " ")}
+                      </Badge>
                     </td>
-                    <td style={{ padding: "14px 16px", fontSize: 13, color: "#84889F" }}>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">
                       {app.submitted_at ? new Date(app.submitted_at * 1000).toLocaleDateString() : "—"}
                     </td>
-                    <td style={{ padding: "14px 16px" }}>
+                    <td className="px-4 py-3">
                       <button
                         onClick={() => { setSelected(app); setShowRejectInput(false); setRejectReason(""); }}
-                        style={{ padding: "6px 14px", borderRadius: 8, border: "1.5px solid #A00EE7", background: "#F4E8FD", color: "#A00EE7", fontWeight: 600, cursor: "pointer", fontSize: 13 }}
+                        className="text-xs font-semibold text-primary hover:underline whitespace-nowrap"
                       >
-                        Review
+                        Review →
                       </button>
                     </td>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
 
-      {/* Review Modal */}
-      {selected && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={(e) => { if (e.target === e.currentTarget) setSelected(null); }}>
-          <div style={{ background: "#fff", borderRadius: 20, padding: 32, maxWidth: 680, width: "100%", maxHeight: "90vh", overflowY: "auto" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-              <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: "#111329" }}>Review Application</h2>
-              <button onClick={() => setSelected(null)} style={{ border: "none", background: "none", fontSize: 22, cursor: "pointer", color: "#84889F" }}>×</button>
-            </div>
-
-            {/* Basic Info */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 20 }}>
-              {[
-                { label: "Name", value: selected.display_name },
-                { label: "Email", value: selected.email },
-                { label: "Gender", value: selected.gender },
-                { label: "Phone", value: selected.phone },
-                { label: "Audio Rate", value: `${selected.audio_rate} coins/min` },
-                { label: "Video Rate", value: `${selected.video_rate} coins/min` },
-                { label: "Status", value: STATUS_COLORS[selected.status]?.label },
-                { label: "Submitted", value: selected.submitted_at ? new Date(selected.submitted_at * 1000).toLocaleString() : "—" },
-              ].map(({ label, value }) => (
-                <div key={label} style={{ background: "#F8F9FC", padding: 12, borderRadius: 10 }}>
-                  <div style={{ fontSize: 11, color: "#84889F", marginBottom: 2 }}>{label}</div>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: "#111329" }}>{value || "—"}</div>
+      <Modal open={!!selected} onClose={() => { setSelected(null); setShowRejectInput(false); setRejectReason(""); }} title="Review Application">
+        {selected && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-2">
+              <InfoField label="Name" value={selected.display_name} />
+              <InfoField label="Email" value={selected.email} />
+              <InfoField label="Gender" value={selected.gender} />
+              <InfoField label="Phone" value={selected.phone} />
+              <InfoField label="Audio Rate" value={`${selected.audio_rate} coins/min`} />
+              <InfoField label="Video Rate" value={`${selected.video_rate} coins/min`} />
+              <InfoField label="Submitted" value={selected.submitted_at ? new Date(selected.submitted_at * 1000).toLocaleString() : "—"} />
+              <div className="bg-secondary rounded-xl p-3 flex items-center gap-2">
+                <div>
+                  <p className="text-xs text-muted-foreground mb-0.5">Status</p>
+                  <Badge variant={STATUS_VARIANT[selected.status] || "default"}>
+                    {selected.status.replace("_", " ")}
+                  </Badge>
                 </div>
-              ))}
-            </div>
-
-            {/* Specialties */}
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: "#111329", marginBottom: 8 }}>Specialties</div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                {(selected.specialties || []).map((sp) => (
-                  <span key={sp} style={{ background: "#F4E8FD", color: "#A00EE7", padding: "4px 12px", borderRadius: 12, fontSize: 13 }}>{sp}</span>
-                ))}
               </div>
             </div>
 
-            {/* Bio */}
-            {selected.bio && (
-              <div style={{ marginBottom: 20 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: "#111329", marginBottom: 6 }}>Bio</div>
-                <p style={{ margin: 0, fontSize: 14, color: "#84889F", lineHeight: 1.6, background: "#F8F9FC", padding: 12, borderRadius: 10 }}>{selected.bio}</p>
+            {(selected.specialties || []).length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-foreground mb-2">Specialties</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {selected.specialties.map((sp) => (
+                    <span key={sp} className="bg-primary/10 text-primary px-2.5 py-1 rounded-full text-xs">{sp}</span>
+                  ))}
+                </div>
               </div>
             )}
 
-            {/* KYC Documents */}
-            <div style={{ marginBottom: 20 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: "#111329", marginBottom: 12 }}>KYC Documents</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+            {(selected.languages || []).length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-foreground mb-2">Languages</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {selected.languages.map((l) => (
+                    <span key={l} className="bg-secondary border border-border px-2.5 py-1 rounded-full text-xs text-muted-foreground">{l}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {selected.bio && (
+              <div>
+                <p className="text-xs font-semibold text-foreground mb-1.5">Bio</p>
+                <p className="text-sm text-muted-foreground bg-secondary rounded-xl p-3 leading-relaxed">{selected.bio}</p>
+              </div>
+            )}
+
+            <div>
+              <p className="text-xs font-semibold text-foreground mb-2">KYC Documents</p>
+              <div className="grid grid-cols-3 gap-2">
                 {[
-                  { label: "Aadhar Front", url: selected.aadhar_front_url },
-                  { label: "Aadhar Back", url: selected.aadhar_back_url },
+                  { label: "Aadhar Front", url: selected.aadhar_front_url, isVideo: false },
+                  { label: "Aadhar Back", url: selected.aadhar_back_url, isVideo: false },
                   { label: "Video", url: selected.verification_video_url, isVideo: true },
                 ].map(({ label, url, isVideo }) => (
-                  <div key={label} style={{ background: "#F8F9FC", borderRadius: 12, overflow: "hidden", border: "1px solid #E5E7EB" }}>
+                  <div key={label} className="bg-secondary border border-border rounded-xl overflow-hidden">
                     {url ? (
                       isVideo ? (
-                        <video src={url} controls style={{ width: "100%", height: 100, objectFit: "cover" }} />
+                        <video src={url} controls className="w-full h-24 object-cover" />
                       ) : (
                         <img
-                          src={url}
-                          alt={label}
-                          style={{ width: "100%", height: 100, objectFit: "cover", cursor: "pointer" }}
+                          src={url} alt={label}
+                          className="w-full h-24 object-cover cursor-zoom-in hover:opacity-90 transition-opacity"
                           onClick={() => setImageModal(url)}
                         />
                       )
                     ) : (
-                      <div style={{ height: 100, display: "flex", alignItems: "center", justifyContent: "center", color: "#84889F", fontSize: 12 }}>Not uploaded</div>
+                      <div className="h-24 flex flex-col items-center justify-center gap-1 text-muted-foreground">
+                        {isVideo ? <Video size={18} /> : <FileText size={18} />}
+                        <span className="text-xs">Not uploaded</span>
+                      </div>
                     )}
-                    <div style={{ padding: "8px 10px", fontSize: 12, fontWeight: 600, color: "#6B7280" }}>{label}</div>
+                    <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">{label}</div>
                   </div>
                 ))}
               </div>
             </div>
 
-            {/* Rejection reason (if previously rejected) */}
             {selected.rejection_reason && (
-              <div style={{ background: "#FEE2E2", borderRadius: 10, padding: 12, marginBottom: 16 }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: "#DC2626", marginBottom: 4 }}>Previous Rejection Reason</div>
-                <div style={{ fontSize: 14, color: "#6B7280" }}>{selected.rejection_reason}</div>
+              <div className="bg-red-50 border border-red-100 rounded-xl p-3">
+                <p className="text-xs font-bold text-red-600 mb-1">Previous Rejection Reason</p>
+                <p className="text-sm text-red-700">{selected.rejection_reason}</p>
               </div>
             )}
 
-            {/* Action Buttons */}
             {(selected.status === "pending" || selected.status === "under_review") && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div className="space-y-3">
                 {showRejectInput && (
-                  <div>
-                    <textarea
-                      value={rejectReason}
-                      onChange={(e) => setRejectReason(e.target.value)}
-                      placeholder="Enter rejection reason (required)..."
-                      style={{ width: "100%", borderRadius: 10, border: "1.5px solid #EF4444", padding: 12, fontSize: 14, fontFamily: "inherit", resize: "vertical", minHeight: 80, boxSizing: "border-box" }}
-                    />
-                  </div>
+                  <textarea
+                    value={rejectReason}
+                    onChange={(e) => setRejectReason(e.target.value)}
+                    placeholder="Enter rejection reason (required)..."
+                    rows={3}
+                    className="w-full border border-red-300 rounded-xl px-3 py-2.5 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-red-300 resize-none"
+                  />
                 )}
-                <div style={{ display: "flex", gap: 12 }}>
+                <div className="grid grid-cols-2 gap-2">
                   <button
                     onClick={() => handleReview("approve")}
                     disabled={reviewing}
-                    style={{ flex: 1, padding: "14px 0", borderRadius: 12, border: "none", background: "#22C55E", color: "#fff", fontWeight: 700, fontSize: 15, cursor: "pointer" }}
+                    className="flex items-center justify-center gap-1.5 bg-green-500 text-white rounded-xl py-3 text-sm font-semibold hover:bg-green-600 disabled:opacity-50 transition-colors"
                   >
-                    {reviewing ? "Processing..." : "✓ Approve"}
+                    <CheckCircle size={15} /> {reviewing ? "Processing..." : "Approve"}
                   </button>
                   {showRejectInput ? (
                     <button
                       onClick={() => handleReview("reject")}
                       disabled={reviewing || !rejectReason.trim()}
-                      style={{ flex: 1, padding: "14px 0", borderRadius: 12, border: "none", background: "#EF4444", color: "#fff", fontWeight: 700, fontSize: 15, cursor: "pointer", opacity: !rejectReason.trim() ? 0.5 : 1 }}
+                      className="flex items-center justify-center gap-1.5 bg-red-500 text-white rounded-xl py-3 text-sm font-semibold hover:bg-red-600 disabled:opacity-50 transition-colors"
                     >
-                      {reviewing ? "Processing..." : "✗ Confirm Reject"}
+                      <XCircle size={15} /> {reviewing ? "Processing..." : "Confirm Reject"}
                     </button>
                   ) : (
                     <button
                       onClick={() => setShowRejectInput(true)}
-                      style={{ flex: 1, padding: "14px 0", borderRadius: 12, border: "2px solid #EF4444", background: "#fff", color: "#EF4444", fontWeight: 700, fontSize: 15, cursor: "pointer" }}
+                      className="flex items-center justify-center gap-1.5 border-2 border-red-400 text-red-500 rounded-xl py-3 text-sm font-semibold hover:bg-red-50 transition-colors"
                     >
-                      ✗ Reject
+                      <XCircle size={15} /> Reject
                     </button>
                   )}
                 </div>
               </div>
             )}
+
             {selected.status === "approved" && (
-              <div style={{ background: "#D1FAE5", borderRadius: 12, padding: 16, textAlign: "center", color: "#059669", fontWeight: 700, fontSize: 15 }}>
-                ✓ This application is approved
+              <div className="bg-green-50 border border-green-100 rounded-xl p-4 text-center">
+                <p className="text-green-700 font-semibold text-sm flex items-center justify-center gap-2">
+                  <CheckCircle size={16} /> This application is approved
+                </p>
+              </div>
+            )}
+
+            {selected.status === "rejected" && (
+              <div className="bg-red-50 border border-red-100 rounded-xl p-4 text-center">
+                <p className="text-red-700 font-semibold text-sm flex items-center justify-center gap-2">
+                  <XCircle size={16} /> This application was rejected
+                </p>
               </div>
             )}
           </div>
-        </div>
-      )}
+        )}
+      </Modal>
 
-      {/* Image lightbox */}
       {imageModal && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 2000, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setImageModal(null)}>
-          <img src={imageModal} alt="Document" style={{ maxWidth: "90vw", maxHeight: "90vh", borderRadius: 12 }} />
+        <div
+          className="fixed inset-0 bg-black/85 z-[2000] flex items-center justify-center p-5"
+          onClick={() => setImageModal(null)}
+        >
+          <img src={imageModal} alt="Document" className="max-w-full max-h-[90vh] rounded-xl object-contain" />
         </div>
       )}
     </div>
