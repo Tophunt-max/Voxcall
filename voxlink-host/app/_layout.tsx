@@ -8,7 +8,7 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack, router } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 import { Platform } from "react-native";
 import { configurePushNotifications } from "@/services/NotificationService";
 import { onForegroundMessage, setupBackgroundMessageHandler } from "@/services/fcm";
@@ -26,6 +26,8 @@ import { LanguageProvider } from "@/context/LanguageContext";
 import { SocketProvider, useSocketEvent } from "@/context/SocketContext";
 import { SocketEvents } from "@/constants/events";
 import { useCall } from "@/context/CallContext";
+import { useAuth } from "@/context/AuthContext";
+import { API } from "@/services/api";
 
 let RNMessaging: any = null;
 if (Platform.OS !== "web") {
@@ -130,11 +132,50 @@ function WebNotificationBridge() {
 
 function AppBridge() {
   const { receiveCall, endCall, activeCall } = useCall();
+  const { user, isLoggedIn } = useAuth();
+  const activeCallRef = useRef(activeCall);
+  const seenCallIds = useRef(new Set<string>());
+
+  useEffect(() => { activeCallRef.current = activeCall; }, [activeCall]);
+
+  // Polling fallback — fires every 4 s while logged in.
+  // Catches incoming calls even when WebSocket is disconnected.
+  // seenCallIds deduplicates so the same call is never shown twice.
+  useEffect(() => {
+    if (!isLoggedIn || !user?.id) return;
+
+    const poll = async () => {
+      if (activeCallRef.current) return;
+      try {
+        const pending = await API.getPendingCall();
+        if (pending?.id && !seenCallIds.current.has(pending.id)) {
+          seenCallIds.current.add(pending.id);
+          receiveCall(
+            {
+              id: pending.caller_id,
+              name: pending.caller_name ?? "Caller",
+              avatar: pending.caller_avatar,
+              role: "user",
+            },
+            (pending.call_type as "audio" | "video") ?? "audio",
+            pending.id
+          );
+          router.push("/calls/incoming");
+        }
+      } catch {}
+    };
+
+    const interval = setInterval(poll, 4000);
+    return () => clearInterval(interval);
+  }, [isLoggedIn, user?.id]);
 
   useSocketEvent(
     SocketEvents.CALL_INCOMING,
     (data: any) => {
-      if (activeCall) return;
+      if (activeCallRef.current) return;
+      const callId = data.callId ?? data.sessionId ?? data.session_id ?? "";
+      if (callId && seenCallIds.current.has(callId)) return;
+      if (callId) seenCallIds.current.add(callId);
       receiveCall(
         {
           id: data.callerId ?? data.caller_id ?? "",
@@ -143,11 +184,11 @@ function AppBridge() {
           role: "user",
         },
         data.type ?? data.call_type ?? "audio",
-        data.callId ?? data.sessionId ?? data.session_id ?? ""
+        callId
       );
       router.push("/calls/incoming");
     },
-    [activeCall]
+    []
   );
 
   useSocketEvent(
