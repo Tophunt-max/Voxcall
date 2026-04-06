@@ -179,7 +179,7 @@ export const API = {
   pushTracks: (sessionId: string, sdp: string, type: string, tracks: Array<{ mid: string; trackName: string }>) =>
     apiRequest<{ answer: { type: string; sdp: string }; tracks: any[]; role: string }>('POST', `/api/calls/${sessionId}/sdp/push`, { sdp, type, tracks }),
   pullTracks: (sessionId: string, trackNames: string[]) =>
-    apiRequest<{ offer: { type: string; sdp: string }; tracks: any[]; role: string }>('POST', `/api/calls/${sessionId}/sdp/pull`, { trackNames }),
+    apiRequest<{ offer: { type: string; sdp: string } | null; tracks: Array<{ mid?: string; trackName?: string; errorCode?: string }>; role: string; retryable?: boolean }>('POST', `/api/calls/${sessionId}/sdp/pull`, { trackNames }),
   sendPullAnswer: (sessionId: string, sdp: string, type: string) =>
     apiRequest<{ success: boolean }>('POST', `/api/calls/${sessionId}/sdp/answer`, { sdp, type }),
 

@@ -10,7 +10,7 @@ export async function sendEmail(opts: {
   html: string;
 }): Promise<void> {
   if (!opts.apiKey) {
-    console.warn(`[email] RESEND_API_KEY not set. OTP for ${opts.to} — subject: "${opts.subject}"`);
+    console.warn(`[email] RESEND_API_KEY not set — email not sent to ${opts.to} (subject: "${opts.subject}"). Set RESEND_API_KEY in Worker secrets to enable email delivery.`);
     return;
   }
 
