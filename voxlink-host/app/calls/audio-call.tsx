@@ -77,6 +77,20 @@ export default function AudioCallScreen() {
   }, [activeCall?.isMuted]);
 
   useEffect(() => {
+    if (webrtc.error) {
+      const isPermissionError =
+        /permission/i.test(webrtc.error) ||
+        /NotAllowed/i.test(webrtc.error) ||
+        /not allowed/i.test(webrtc.error);
+      if (isPermissionError) {
+        webrtc.clearError();
+        setWebrtcReady(false);
+        setShowMicDialog(true);
+      }
+    }
+  }, [webrtc.error, webrtc.clearError]);
+
+  useEffect(() => {
     const off = onEvent(SocketEvents.PEER_TRACKS_READY, () => {
       webrtc.triggerPull();
     });

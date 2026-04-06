@@ -136,6 +136,20 @@ export default function VideoCallScreen() {
     }
   }, [activeCall?.isCameraOn]);
 
+  useEffect(() => {
+    if (webrtc.error) {
+      const isPermissionError =
+        /permission/i.test(webrtc.error) ||
+        /NotAllowed/i.test(webrtc.error) ||
+        /not allowed/i.test(webrtc.error);
+      if (isPermissionError) {
+        webrtc.clearError();
+        setWebrtcReady(false);
+        setPermStep("microphone");
+      }
+    }
+  }, [webrtc.error, webrtc.clearError]);
+
   const handleEndCall = useCallback(() => {
     webrtc.cleanup();
     endCall();

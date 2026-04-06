@@ -18,6 +18,7 @@ export interface UseWebRTCReturn {
   toggleCamera: (enabled: boolean) => void;
   switchCamera: () => void;
   triggerPull: () => void;
+  clearError: () => void;
   cleanup: () => void;
 }
 
@@ -46,6 +47,7 @@ export function useWebRTC(options: UseWebRTCOptions): UseWebRTCReturn {
   useEffect(() => {
     if (!enabled || !sessionId || startedRef.current || !available) return;
     startedRef.current = true;
+    setError(null);
 
     const service = new WebRTCService(sessionId, isVideo, {
       onRemoteStream: (stream) => {
@@ -91,6 +93,10 @@ export function useWebRTC(options: UseWebRTCOptions): UseWebRTCReturn {
     serviceRef.current?.triggerPull();
   }, []);
 
+  const clearError = useCallback(() => {
+    setError(null);
+  }, []);
+
   return {
     localStream,
     remoteStream,
@@ -102,6 +108,7 @@ export function useWebRTC(options: UseWebRTCOptions): UseWebRTCReturn {
     toggleCamera,
     switchCamera,
     triggerPull,
+    clearError,
     cleanup,
   };
 }
