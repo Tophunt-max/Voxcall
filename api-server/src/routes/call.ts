@@ -286,6 +286,20 @@ call.post('/:id/sdp/push', async (c) => {
       { type: body.type, sdp: body.sdp },
       body.tracks.map(t => ({ location: 'local' as const, mid: t.mid, trackName: t.trackName }))
     );
+
+    // Notify the other party that our tracks are ready for pulling
+    try {
+      const otherUserId = role === 'host' ? session.caller_id : session.host_user_id;
+      if (otherUserId) {
+        const notifId = c.env.NOTIFICATION_HUB.idFromName(otherUserId);
+        const notifStub = c.env.NOTIFICATION_HUB.get(notifId);
+        await notifStub.fetch('https://dummy/notify', {
+          method: 'POST',
+          body: JSON.stringify({ type: 'peer_tracks_ready', session_id: sessionId }),
+        });
+      }
+    } catch {}
+
     return c.json({
       answer: pushResult.answer,
       tracks: pushResult.tracks,

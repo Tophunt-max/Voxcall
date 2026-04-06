@@ -7,14 +7,12 @@ let MediaStreamClass: any = null;
 
 try {
   if (Platform.OS === 'web') {
-    // Browser native WebRTC — available in all modern browsers
     if (typeof window !== 'undefined' && (window as any).RTCPeerConnection) {
       RTC = {
         RTCPeerConnection: (window as any).RTCPeerConnection,
         RTCSessionDescription: (window as any).RTCSessionDescription,
       };
       mediaDevicesRef = (navigator as any).mediaDevices;
-      // MediaStream is global on web
     }
   } else {
     const webrtc = require('react-native-webrtc');
@@ -53,6 +51,11 @@ export class WebRTCService {
   private isVideo: boolean;
   private destroyed = false;
 
+  private pushCompleted = false;
+  private pullStarted = false;
+  private triggerPullPending = false;
+  private pullTimer: ReturnType<typeof setTimeout> | null = null;
+
   constructor(
     sessionId: string,
     isVideo: boolean,
@@ -68,14 +71,19 @@ export class WebRTCService {
       if (!this.pc) { resolve(); return; }
       if (this.pc.iceGatheringState === 'complete') { resolve(); return; }
 
-      const timeout = setTimeout(() => resolve(), 3000);
+      const timeout = setTimeout(() => {
+        this.pc?.removeEventListener('icegatheringstatechange', handler);
+        resolve();
+      }, 3000);
 
-      this.pc.addEventListener('icegatheringstatechange', () => {
+      const handler = () => {
         if (this.pc?.iceGatheringState === 'complete') {
           clearTimeout(timeout);
+          this.pc.removeEventListener('icegatheringstatechange', handler);
           resolve();
         }
-      });
+      };
+      this.pc.addEventListener('icegatheringstatechange', handler);
     });
   }
 
@@ -86,7 +94,6 @@ export class WebRTCService {
       this.pc = new RTC.RTCPeerConnection({ iceServers: ICE_SERVERS });
 
       try {
-        // Web uses global MediaStream; native uses react-native-webrtc MediaStream
         const MS = MediaStreamClass ?? (typeof MediaStream !== 'undefined' ? MediaStream : null);
         if (MS) this.remoteStream = new MS();
       } catch {
@@ -124,7 +131,20 @@ export class WebRTCService {
 
       await this.pushLocalTracks();
 
-      setTimeout(() => this.pullRemoteTracks(), 2000);
+      // Mark push as complete; start pull via event signal or fallback timer
+      this.pushCompleted = true;
+      if (this.triggerPullPending) {
+        this.triggerPullPending = false;
+        this._startPull();
+      } else {
+        // Fallback: pull after 5 seconds if no peer_tracks_ready event arrives
+        this.pullTimer = setTimeout(() => {
+          if (!this.pullStarted) {
+            this.pullStarted = true;
+            this.pullRemoteTracks();
+          }
+        }, 5000);
+      }
 
       return this.localStream;
     } catch (error: any) {
@@ -132,6 +152,26 @@ export class WebRTCService {
       this.callbacks.onError?.(error);
       return null;
     }
+  }
+
+  public triggerPull(): void {
+    if (this.pullStarted) return;
+    if (!this.pushCompleted) {
+      // Push not done yet — schedule pull to run immediately after push finishes
+      this.triggerPullPending = true;
+      return;
+    }
+    this._startPull();
+  }
+
+  private _startPull(): void {
+    if (this.pullStarted) return;
+    this.pullStarted = true;
+    if (this.pullTimer) {
+      clearTimeout(this.pullTimer);
+      this.pullTimer = null;
+    }
+    this.pullRemoteTracks();
   }
 
   private async pushLocalTracks(): Promise<void> {
@@ -191,14 +231,20 @@ export class WebRTCService {
       trackNames.push('video-1');
     }
 
-    const maxRetries = 10;
+    const maxRetries = 15;
     let attempt = 0;
+    let lastError: Error | null = null;
 
     while (attempt < maxRetries && !this.destroyed) {
       try {
         const result = await API.pullTracks(this.sessionId, trackNames);
 
-        if (result.offer && RTC.RTCSessionDescription) {
+        if (!result.offer) {
+          // Remote tracks not published yet — treat as retriable error
+          throw new Error('Remote tracks not ready yet');
+        }
+
+        if (RTC.RTCSessionDescription) {
           const offerDesc = new RTC.RTCSessionDescription(result.offer);
           await this.pc.setRemoteDescription(offerDesc);
 
@@ -218,11 +264,15 @@ export class WebRTCService {
         }
         return;
       } catch (error: any) {
+        lastError = error;
         attempt++;
         if (attempt < maxRetries && !this.destroyed) {
           await new Promise(r => setTimeout(r, 2000));
         } else {
-          console.error('Pull tracks failed after retries:', error);
+          console.error('Pull tracks failed after all retries:', error);
+          if (lastError) {
+            this.callbacks.onError?.(lastError);
+          }
         }
       }
     }
@@ -260,6 +310,11 @@ export class WebRTCService {
 
   destroy(): void {
     this.destroyed = true;
+
+    if (this.pullTimer) {
+      clearTimeout(this.pullTimer);
+      this.pullTimer = null;
+    }
 
     if (this.localStream) {
       this.localStream.getTracks().forEach((track: any) => track.stop());

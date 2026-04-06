@@ -17,6 +17,7 @@ export interface UseWebRTCReturn {
   toggleMute: (muted: boolean) => void;
   toggleCamera: (enabled: boolean) => void;
   switchCamera: () => void;
+  triggerPull: () => void;
   cleanup: () => void;
 }
 
@@ -86,6 +87,10 @@ export function useWebRTC(options: UseWebRTCOptions): UseWebRTCReturn {
     serviceRef.current?.switchCamera();
   }, []);
 
+  const triggerPull = useCallback(() => {
+    serviceRef.current?.triggerPull();
+  }, []);
+
   return {
     localStream,
     remoteStream,
@@ -96,6 +101,7 @@ export function useWebRTC(options: UseWebRTCOptions): UseWebRTCReturn {
     toggleMute,
     toggleCamera,
     switchCamera,
+    triggerPull,
     cleanup,
   };
 }

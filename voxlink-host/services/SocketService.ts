@@ -150,6 +150,12 @@ class SocketService {
           timestamp: Date.now(),
         });
         break;
+      case "peer_tracks_ready":
+        this.emit(SocketEvents.PEER_TRACKS_READY, {
+          sessionId: msg.session_id,
+          timestamp: Date.now(),
+        });
+        break;
       case "presence":
         this.emit(SocketEvents.PRESENCE_UPDATE, {
           userId: msg.user_id,

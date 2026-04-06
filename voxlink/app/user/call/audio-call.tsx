@@ -11,6 +11,8 @@ import { useCallTimer } from "@/hooks/useCallTimer";
 import { usePermissions } from "@/hooks/usePermissions";
 import { PermissionDialog, PERMISSION_CONFIGS } from "@/components/PermissionDialog";
 import { useWebRTC } from "@/hooks/useWebRTC";
+import { useSocket } from "@/context/SocketContext";
+import { SocketEvents } from "@/constants/events";
 import * as Haptics from "expo-haptics";
 
 export default function AudioCallScreen() {
@@ -21,6 +23,7 @@ export default function AudioCallScreen() {
   const [micChecked, setMicChecked] = useState(false);
 
   const { permissions, requestMicrophone, openSettings, refresh } = usePermissions();
+  const { onEvent } = useSocket();
   const pulse = useRef(new Animated.Value(1)).current;
 
   const [webrtcReady, setWebrtcReady] = useState(false);
@@ -72,6 +75,13 @@ export default function AudioCallScreen() {
       webrtc.toggleMute(activeCall.isMuted);
     }
   }, [activeCall?.isMuted]);
+
+  useEffect(() => {
+    const off = onEvent(SocketEvents.PEER_TRACKS_READY, () => {
+      webrtc.triggerPull();
+    });
+    return off;
+  }, [onEvent, webrtc.triggerPull]);
 
   const handleEndCall = useCallback(() => {
     webrtc.cleanup();
@@ -158,7 +168,7 @@ export default function AudioCallScreen() {
       {webrtc.error && (
         <View style={styles.warningBanner}>
           <Image source={require("@/assets/icons/ic_close.png")} style={{ width: 14, height: 14, tintColor: "#FF6B6B" }} resizeMode="contain" />
-          <Text style={styles.warningText}>Connection issue — trying to reconnect</Text>
+          <Text style={styles.warningText} numberOfLines={2}>{webrtc.error}</Text>
         </View>
       )}
 

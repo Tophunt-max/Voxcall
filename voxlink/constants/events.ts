@@ -31,6 +31,7 @@ export const SocketEvents = {
   CALL_DURATION_TICK: "call:duration_tick",
   CALL_COIN_DEDUCT: "call:coin_deduct",
   CALL_LOW_COINS: "call:low_coins",
+  PEER_TRACKS_READY: "webrtc:peer_tracks_ready",
 
   // Chat Events
   MESSAGE_SEND: "message:send",
