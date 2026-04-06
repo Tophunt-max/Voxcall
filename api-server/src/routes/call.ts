@@ -106,6 +106,7 @@ call.post('/end', async (c) => {
   const { session_id, duration_seconds } = await c.req.json<{ session_id: string; duration_seconds?: number }>();
   const db = c.env.DB;
 
+  try {
   const session = await db.prepare(
     'SELECT * FROM call_sessions WHERE id = ? AND (caller_id = ? OR host_id IN (SELECT id FROM hosts WHERE user_id = ?))'
   ).bind(session_id, sub, sub).first<any>();
@@ -115,15 +116,16 @@ call.post('/end', async (c) => {
     return c.json({ error: 'Call already ended' }, 400);
   }
 
-  // BUG 1 FIX: Atomic status update — prevents double charging on concurrent /end calls
+  const now = Math.floor(Date.now() / 1000);
+  // Atomic guard: set ended_at to claim this end operation.
+  // 'processing' was previously used but is not a valid CHECK value — using ended_at IS NULL instead.
   const atomicUpdate = await db.prepare(
-    "UPDATE call_sessions SET status = 'processing' WHERE id = ? AND status IN ('active', 'pending')"
-  ).bind(session_id).run();
+    "UPDATE call_sessions SET ended_at = ? WHERE id = ? AND status IN ('active', 'pending') AND ended_at IS NULL"
+  ).bind(now, session_id).run();
   if (!atomicUpdate.meta?.changes || atomicUpdate.meta.changes === 0) {
     return c.json({ error: 'Call already ended' }, 400);
   }
 
-  const now = Math.floor(Date.now() / 1000);
   const durationSec = duration_seconds ?? (session.started_at ? now - session.started_at : 0);
   const durationMin = Math.max(1, Math.ceil(durationSec / 60));
 
@@ -138,8 +140,9 @@ call.post('/end', async (c) => {
   const hostShare = Math.floor(coinsCharged * 0.7);
 
   const txs: any[] = [
-    db.prepare('UPDATE call_sessions SET status = ?, ended_at = ?, duration_seconds = ?, coins_charged = ? WHERE id = ?')
-      .bind('ended', now, durationSec, coinsCharged, session_id),
+    // ended_at already set by atomic guard above; update the rest of the fields
+    db.prepare('UPDATE call_sessions SET status = ?, duration_seconds = ?, coins_charged = ? WHERE id = ?')
+      .bind('ended', durationSec, coinsCharged, session_id),
   ];
   if (coinsCharged > 0) {
     txs.push(
@@ -177,6 +180,10 @@ call.post('/end', async (c) => {
   }
 
   return c.json({ success: true, duration_seconds: durationSec, coins_charged: coinsCharged, host_earnings: hostShare });
+  } catch (e: any) {
+    console.error('[/end] error:', e);
+    return c.json({ error: e.message || 'Failed to end call' }, 500);
+  }
 });
 
 call.post('/rate', async (c) => {
@@ -367,6 +374,12 @@ call.post('/:id/sdp/pull', async (c) => {
       role,
     });
   } catch (e: any) {
+    // CF Calls returns 410 with session_error when the remote PeerConnection isn't established yet.
+    // This is equivalent to "remote hasn't pushed yet" — tell the client to retry.
+    const isSessionError = e.message?.includes('session_error') || e.message?.includes('410');
+    if (isSessionError) {
+      return c.json({ offer: null, tracks: [], role, retryable: true });
+    }
     console.error('pullTracks error:', e);
     return c.json({ error: e.message || 'Failed to pull tracks' }, 500);
   }
@@ -405,19 +418,21 @@ call.post('/:id/end', async (c) => {
   const sessionId = c.req.param('id');
   const db = c.env.DB;
 
+  try {
   const session = await db.prepare('SELECT * FROM call_sessions WHERE id = ?').bind(sessionId).first<any>();
   if (!session) return c.json({ error: 'Session not found' }, 404);
   if (session.status !== 'active' && session.status !== 'pending') return c.json({ error: 'Call already ended' }, 400);
 
+  const now = Math.floor(Date.now() / 1000);
+  // Atomic guard using ended_at IS NULL — avoids violating the status CHECK constraint.
   const atomicUpdate = await db.prepare(
-    "UPDATE call_sessions SET status = 'processing' WHERE id = ? AND status IN ('active', 'pending')"
-  ).bind(sessionId).run();
+    "UPDATE call_sessions SET ended_at = ? WHERE id = ? AND status IN ('active', 'pending') AND ended_at IS NULL"
+  ).bind(now, sessionId).run();
   if (!atomicUpdate.meta?.changes || atomicUpdate.meta.changes === 0) {
     return c.json({ error: 'Call already ended' }, 400);
   }
 
-  const now = Math.floor(Date.now() / 1000);
-  const durationSec = now - (session.started_at || now);
+  const durationSec = session.started_at ? now - session.started_at : 0;
   const durationMin = Math.max(1, Math.ceil(durationSec / 60));
   const hostRow = await db.prepare('SELECT coins_per_minute, audio_coins_per_minute, video_coins_per_minute, user_id, total_minutes, total_earnings FROM hosts WHERE id = ?').bind(session.host_id).first<any>();
   const effectiveRate = session.rate_per_minute ?? (session.type === 'video'
@@ -428,8 +443,9 @@ call.post('/:id/end', async (c) => {
   const hostShare = Math.floor(coinsCharged * 0.7);
 
   const batchOps: any[] = [
-    db.prepare('UPDATE call_sessions SET status = ?, ended_at = ?, duration_seconds = ?, coins_charged = ? WHERE id = ?')
-      .bind('ended', now, durationSec, coinsCharged, sessionId),
+    // ended_at already set by atomic guard above
+    db.prepare('UPDATE call_sessions SET status = ?, duration_seconds = ?, coins_charged = ? WHERE id = ?')
+      .bind('ended', durationSec, coinsCharged, sessionId),
   ];
   if (coinsCharged > 0) {
     batchOps.push(
@@ -467,6 +483,10 @@ call.post('/:id/end', async (c) => {
   }
 
   return c.json({ success: true, duration_seconds: durationSec, coins_charged: coinsCharged, host_earnings: hostShare });
+  } catch (e: any) {
+    console.error('[/:id/end] error:', e);
+    return c.json({ error: e.message || 'Failed to end call' }, 500);
+  }
 });
 
 // Polling fallback: host checks if there's a pending incoming call for them
