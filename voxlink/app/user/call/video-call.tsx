@@ -147,9 +147,19 @@ export default function VideoCallScreen() {
         webrtc.clearError();
         setWebrtcReady(false);
         setPermStep("microphone");
+        return;
+      }
+      // FIX BUG-4: Fatal WebRTC/CF session error — auto-end call
+      const isFatalError =
+        /session_error/i.test(webrtc.error) ||
+        /410/i.test(webrtc.error) ||
+        /session.*expired/i.test(webrtc.error);
+      if (isFatalError) {
+        webrtc.cleanup();
+        endCall(false);
       }
     }
-  }, [webrtc.error, webrtc.clearError]);
+  }, [webrtc.error, webrtc.clearError, webrtc.cleanup, endCall]);
 
   useEffect(() => {
     const off = onEvent(SocketEvents.PEER_TRACKS_READY, () => {

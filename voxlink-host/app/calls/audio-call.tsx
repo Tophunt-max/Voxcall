@@ -64,10 +64,8 @@ export default function AudioCallScreen() {
         Animated.timing(pulse, { toValue: 1, duration: 900, easing: Easing.inOut(Easing.ease), useNativeDriver: useNativeDriverValue }),
       ])
     ).start();
-    const t1 = setTimeout(() => {
-      if (status === "connecting") setStatus("ringing");
-    }, 2000);
-    return () => { clearTimeout(t1); };
+    // FIX BUG-3: Host navigates to audio-call AFTER accepting — no point showing "Ringing..."
+    return () => {};
   }, []);
 
   useEffect(() => {
@@ -86,9 +84,19 @@ export default function AudioCallScreen() {
         webrtc.clearError();
         setWebrtcReady(false);
         setShowMicDialog(true);
+        return;
+      }
+      // FIX BUG-4: Fatal WebRTC/CF session error — auto-end call
+      const isFatalError =
+        /session_error/i.test(webrtc.error) ||
+        /410/i.test(webrtc.error) ||
+        /session.*expired/i.test(webrtc.error);
+      if (isFatalError) {
+        webrtc.cleanup();
+        endCall(false);
       }
     }
-  }, [webrtc.error, webrtc.clearError]);
+  }, [webrtc.error, webrtc.clearError, webrtc.cleanup, endCall]);
 
   useEffect(() => {
     const off = onEvent(SocketEvents.PEER_TRACKS_READY, () => {

@@ -41,24 +41,14 @@ call.post('/initiate', async (c) => {
     return c.json({ error: 'Insufficient coins' }, 402);
   }
 
-  const cfCalls = createCFCalls(c.env);
-  let cfCallerSessionId: string | null = null;
-  let cfHostSessionId: string | null = null;
-  if (cfCalls) {
-    try {
-      const callerSession = await cfCalls.createSession();
-      cfCallerSessionId = callerSession.sessionId;
-      const hostSession = await cfCalls.createSession();
-      cfHostSessionId = hostSession.sessionId;
-    } catch (e) {
-      console.error('CF Calls session creation error:', e);
-    }
-  }
-
+  // FIX BUG-1: Do NOT pre-create CF sessions at initiation time.
+  // CF Calls sessions idle-timeout in ~30-60s. Pre-creating them means by the time
+  // the host accepts and WebRTC negotiation starts, they are already expired (→ 410 session_error).
+  // Sessions are created lazily in /sdp/push when each party actually starts negotiating.
   const sessionId = crypto.randomUUID();
   await db.prepare(
     'INSERT INTO call_sessions (id, caller_id, host_id, type, status, cf_session_id, cf_host_session_id, rate_per_minute) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-  ).bind(sessionId, sub, body.host_id, callType, 'pending', cfCallerSessionId, cfHostSessionId, ratePerMin).run();
+  ).bind(sessionId, sub, body.host_id, callType, 'pending', null, null, ratePerMin).run();
 
   // WebSocket notification (foreground/background)
   // Fix H2: include caller_name so host sees caller's name instead of "Incoming Call"
@@ -92,8 +82,8 @@ call.post('/initiate', async (c) => {
   const maxSeconds = Math.floor((caller.coins / ratePerMin) * 60);
   return c.json({
     session_id: sessionId,
-    cf_session_id: cfCallerSessionId,
-    cf_host_session_id: cfHostSessionId,
+    cf_session_id: null,
+    cf_host_session_id: null,
     host_coins_per_minute: ratePerMin,
     rate_per_minute: ratePerMin,
     call_type: callType,
@@ -312,14 +302,12 @@ call.post('/:id/sdp/push', async (c) => {
     }
   }
 
-  try {
-    const pushResult = await cfCalls.pushTracks(
-      cfSessionId,
-      { type: body.type, sdp: body.sdp },
-      body.tracks.map(t => ({ location: 'local' as const, mid: t.mid, trackName: t.trackName }))
-    );
+  const sessionField = role === 'host' ? 'cf_host_session_id' : 'cf_session_id';
+  const trackField   = role === 'host' ? 'cf_host_track_names' : 'cf_caller_track_names';
+  const trackList    = body.tracks.map(t => ({ location: 'local' as const, mid: t.mid, trackName: t.trackName }));
 
-    // Notify the other party that our tracks are ready for pulling
+  // Helper: notify other party + persist track names after a successful push
+  const afterPush = async (tracks: any[]) => {
     try {
       const otherUserId = role === 'host' ? session.caller_id : session.host_user_id;
       if (otherUserId) {
@@ -331,22 +319,49 @@ call.post('/:id/sdp/push', async (c) => {
         });
       }
     } catch {}
-
-    // FIX: persist the track names so the remote side can pull using exact names
     try {
-      const field = role === 'host' ? 'cf_host_track_names' : 'cf_caller_track_names';
       const trackNamesJson = JSON.stringify(body.tracks.map((t: any) => t.trackName));
-      await db.prepare(`UPDATE call_sessions SET ${field} = ? WHERE id = ?`)
+      await db.prepare(`UPDATE call_sessions SET ${trackField} = ? WHERE id = ?`)
         .bind(trackNamesJson, sessionId).run();
     } catch {}
+  };
 
-    return c.json({
-      answer: pushResult.answer,
-      tracks: pushResult.tracks,
-      role,
-    });
+  try {
+    const pushResult = await cfCalls.pushTracks(
+      cfSessionId!,
+      { type: body.type, sdp: body.sdp },
+      trackList
+    );
+    await afterPush(pushResult.tracks);
+    return c.json({ answer: pushResult.answer, tracks: pushResult.tracks, role });
   } catch (e: any) {
     console.error('pushTracks error:', e);
+
+    // FIX BUG-1 safety net: if the CF session expired (410 session_error) — which can happen
+    // if the lazy-created session also aged out — recreate a fresh session and retry once.
+    const isSessionExpired = e.message && (
+      e.message.includes('410') || e.message.toLowerCase().includes('session_error')
+    );
+    if (isSessionExpired) {
+      try {
+        const newSess = await cfCalls.createSession();
+        cfSessionId = newSess.sessionId;
+        await db.prepare(`UPDATE call_sessions SET ${sessionField} = ? WHERE id = ?`)
+          .bind(cfSessionId, sessionId).run();
+
+        const retryResult = await cfCalls.pushTracks(
+          cfSessionId,
+          { type: body.type, sdp: body.sdp },
+          trackList
+        );
+        await afterPush(retryResult.tracks);
+        return c.json({ answer: retryResult.answer, tracks: retryResult.tracks, role });
+      } catch (retryE: any) {
+        console.error('pushTracks retry failed:', retryE);
+        return c.json({ error: 'session_error', message: 'CF session expired, please retry the call' }, 410);
+      }
+    }
+
     return c.json({ error: e.message || 'Failed to push tracks' }, 500);
   }
 });

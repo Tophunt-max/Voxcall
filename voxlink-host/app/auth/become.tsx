@@ -26,13 +26,14 @@ const LANGUAGE_OPTIONS = ["Hindi", "English", "Tamil", "Telugu", "Kannada", "Ben
 export default function HostBecomeScreen() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ dob?: string }>();
-  const [specialties, setSpecialties] = useState<string[]>([]);
-  const [languages, setLanguages]     = useState<string[]>(["Hindi"]);
-  const [bio, setBio]                 = useState("");
-  const [audioRate, setAudioRate]     = useState("5");
-  const [videoRate, setVideoRate]     = useState("8");
-  const [experience, setExperience]   = useState("");
-  const [loading, setLoading]         = useState(false);
+  const [specialties, setSpecialties]   = useState<string[]>([]);
+  const [languages, setLanguages]       = useState<string[]>(["Hindi"]);
+  const [bio, setBio]                   = useState("");
+  const [applicationType, setAppType]   = useState<"audio" | "video" | "both">("both");
+  const [audioRate, setAudioRate]       = useState("5");
+  const [videoRate, setVideoRate]       = useState("8");
+  const [experience, setExperience]     = useState("");
+  const [loading, setLoading]           = useState(false);
 
   const toggle = (list: string[], setList: Function, val: string) => {
     setList((prev: string[]) => prev.includes(val) ? prev.filter((x: string) => x !== val) : [...prev, val]);
@@ -51,8 +52,9 @@ export default function HostBecomeScreen() {
         specialties: JSON.stringify(specialties),
         languages: JSON.stringify(languages),
         bio: bio.trim(),
-        audioRate,
-        videoRate,
+        applicationType,
+        audioRate: applicationType !== "video" ? audioRate : "0",
+        videoRate: applicationType !== "audio" ? videoRate : "0",
         experience: experience.trim(),
         dob: params.dob ?? "",
       },
@@ -148,9 +150,29 @@ export default function HostBecomeScreen() {
           onChangeText={setExperience}
         />
 
+        <Text style={s.fieldLabel}>Call Type Offered</Text>
+        <View style={s.typeRow}>
+          {([
+            { key: "audio", label: "🎤 Audio Only" },
+            { key: "video", label: "🎥 Video Only" },
+            { key: "both",  label: "🎤🎥 Both" },
+          ] as const).map(opt => (
+            <TouchableOpacity
+              key={opt.key}
+              onPress={() => setAppType(opt.key)}
+              style={[s.typeBtn, applicationType === opt.key && s.typeBtnActive]}
+            >
+              <Text style={[s.typeBtnTxt, applicationType === opt.key && s.typeBtnTxtActive]}>
+                {opt.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
         <Text style={s.fieldLabel}>Your Call Rates (coins/min)</Text>
         <View style={s.ratesRow}>
-          {/* Audio rate */}
+          {/* Audio rate — hidden for video-only */}
+          {applicationType !== "video" && (
           <View style={s.rateCard}>
             <Image source={require("@/assets/icons/ic_mic.png")} style={s.rateIcon} tintColor={DARK} resizeMode="contain" />
             <Text style={s.rateLabel}>Audio</Text>
@@ -166,7 +188,9 @@ export default function HostBecomeScreen() {
               <Text style={s.rateSuffix}>coins/min</Text>
             </View>
           </View>
-          {/* Video rate */}
+          )}
+          {/* Video rate — hidden for audio-only */}
+          {applicationType !== "audio" && (
           <View style={s.rateCard}>
             <Image source={require("@/assets/icons/ic_video.png")} style={s.rateIcon} tintColor={DARK} resizeMode="contain" />
             <Text style={s.rateLabel}>Video</Text>
@@ -182,6 +206,7 @@ export default function HostBecomeScreen() {
               <Text style={s.rateSuffix}>coins/min</Text>
             </View>
           </View>
+          )}
         </View>
 
         <View style={s.noteBanner}>
@@ -220,6 +245,11 @@ const s = StyleSheet.create({
   chipActive: { borderColor: ACCENT, backgroundColor: "#F4E8FD" },
   chipTxt: { fontSize: 13, fontFamily: "Poppins_400Regular", color: "#84889F" },
   chipTxtActive: { color: ACCENT, fontFamily: "Poppins_500Medium" },
+  typeRow: { flexDirection: "row", gap: 8 },
+  typeBtn: { flex: 1, paddingVertical: 10, borderRadius: 12, borderWidth: 1.5, borderColor: "#E8EAF0", backgroundColor: "#F8F9FC", alignItems: "center" },
+  typeBtnActive: { borderColor: ACCENT, backgroundColor: "#F4E8FD" },
+  typeBtnTxt: { fontSize: 12, fontFamily: "Poppins_500Medium", color: "#84889F" },
+  typeBtnTxtActive: { color: ACCENT, fontFamily: "Poppins_700Bold" },
   ratesRow: { flexDirection: "row", gap: 12 },
   rateCard: { flex: 1, backgroundColor: "#F8F9FC", borderRadius: 14, borderWidth: 1, borderColor: "#E8EAF0", padding: 14, gap: 4 },
   rateIcon: { width: 20, height: 20 },

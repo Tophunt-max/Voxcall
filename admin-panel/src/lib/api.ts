@@ -105,4 +105,5 @@ export const api = {
   createManualQRCode: (data: any) => req<any>('POST', '/admin/manual-qr-codes', data),
   updateManualQRCode: (id: string, data: any) => req('PATCH', `/admin/manual-qr-codes/${id}`, data),
   deleteManualQRCode: (id: string) => req('DELETE', `/admin/manual-qr-codes/${id}`),
+  runMigrations: () => req<any>('POST', '/admin/run-migrations', {}),
 };

@@ -59,9 +59,12 @@ hostapp.post('/submit', async (c) => {
   const {
     display_name, date_of_birth, gender, phone, bio,
     specialties, languages, experience,
+    application_type,
     audio_rate, video_rate,
     aadhar_front_url, aadhar_back_url, verification_video_url,
   } = body;
+
+  const safeAppType = ['audio', 'video', 'both'].includes(application_type) ? application_type : 'both';
 
   if (!aadhar_front_url || !aadhar_back_url) {
     return c.json({ error: 'Aadhar front and back photos required' }, 400);
@@ -81,12 +84,13 @@ hostapp.post('/submit', async (c) => {
   }
 
   // Validate rates: must be positive numbers, not too large
+  // Allow 0 when call type doesn't include that mode
   const audioRateNum = Number(audio_rate ?? 5);
   const videoRateNum = Number(video_rate ?? 8);
-  if (isNaN(audioRateNum) || audioRateNum < 1 || audioRateNum > 500) {
+  if (safeAppType !== 'video' && (isNaN(audioRateNum) || audioRateNum < 1 || audioRateNum > 500)) {
     return c.json({ error: 'audio_rate must be between 1 and 500' }, 400);
   }
-  if (isNaN(videoRateNum) || videoRateNum < 1 || videoRateNum > 500) {
+  if (safeAppType !== 'audio' && (isNaN(videoRateNum) || videoRateNum < 1 || videoRateNum > 500)) {
     return c.json({ error: 'video_rate must be between 1 and 500' }, 400);
   }
 
@@ -99,7 +103,7 @@ hostapp.post('/submit', async (c) => {
       `UPDATE host_applications SET
         display_name=?, date_of_birth=?, gender=?, phone=?, bio=?,
         specialties=?, languages=?, experience=?,
-        audio_rate=?, video_rate=?,
+        application_type=?, audio_rate=?, video_rate=?,
         aadhar_front_url=?, aadhar_back_url=?, verification_video_url=?,
         status='pending', rejection_reason=NULL,
         submitted_at=unixepoch(), updated_at=unixepoch()
@@ -107,7 +111,7 @@ hostapp.post('/submit', async (c) => {
     ).bind(
       display_name ?? null, date_of_birth ?? null, gender ?? null, phone ?? null, bio ?? null,
       JSON.stringify(safeSpecialties), JSON.stringify(safeLanguages), experience ?? null,
-      audioRateNum, videoRateNum,
+      safeAppType, audioRateNum, videoRateNum,
       aadhar_front_url, aadhar_back_url, verification_video_url ?? null,
       id
     ).run();
@@ -115,14 +119,14 @@ hostapp.post('/submit', async (c) => {
     await db.prepare(
       `INSERT INTO host_applications
         (id, user_id, display_name, date_of_birth, gender, phone, bio,
-         specialties, languages, experience, audio_rate, video_rate,
+         specialties, languages, experience, application_type, audio_rate, video_rate,
          aadhar_front_url, aadhar_back_url, verification_video_url)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
     ).bind(
       id, sub,
       display_name ?? null, date_of_birth ?? null, gender ?? null, phone ?? null, bio ?? null,
       JSON.stringify(safeSpecialties), JSON.stringify(safeLanguages), experience ?? null,
-      audioRateNum, videoRateNum,
+      safeAppType, audioRateNum, videoRateNum,
       aadhar_front_url, aadhar_back_url, verification_video_url ?? null
     ).run();
   }

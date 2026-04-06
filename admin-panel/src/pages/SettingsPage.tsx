@@ -515,6 +515,58 @@ export default function SettingsPage() {
           </p>
         </div>
       </div>
+
+      {/* Database Maintenance */}
+      <MigrationsCard />
+    </div>
+  );
+}
+
+function MigrationsCard() {
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  const run = async () => {
+    setRunning(true);
+    setResult(null);
+    try {
+      const res = await api.runMigrations();
+      const total = res?.total ?? 0;
+      const skipped = (res?.results as string[] ?? []).filter((r: string) => r.startsWith('SKIP')).length;
+      const applied = total - skipped;
+      setResult({ ok: true, msg: `Done — ${applied} new columns/tables applied, ${skipped} already existed.` });
+    } catch (e: any) {
+      setResult({ ok: false, msg: e.message || 'Migration failed.' });
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  return (
+    <div className="bg-card border border-border rounded-2xl overflow-hidden">
+      <div className="px-5 py-4 border-b border-border bg-secondary/20">
+        <h3 className="font-bold text-base">Database Maintenance</h3>
+        <p className="text-xs text-muted-foreground mt-0.5">Apply missing DB columns and tables to the production database</p>
+      </div>
+      <div className="px-5 py-5 space-y-3">
+        <p className="text-sm text-muted-foreground leading-relaxed">
+          Run this after every backend update to ensure all new columns (e.g. <code className="bg-secondary px-1 rounded text-xs">cf_caller_track_names</code>, <code className="bg-secondary px-1 rounded text-xs">reported_type</code>, <code className="bg-secondary px-1 rounded text-xs">application_type</code>) exist in the production database.
+          Safe to run multiple times — existing tables/columns are never overwritten.
+        </p>
+        {result && (
+          <div className={`text-sm px-4 py-2.5 rounded-xl ${result.ok ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+            {result.msg}
+          </div>
+        )}
+        <button
+          onClick={run}
+          disabled={running}
+          className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors"
+        >
+          <RefreshCw size={14} className={running ? 'animate-spin' : ''} />
+          {running ? 'Running migrations…' : 'Run Migrations'}
+        </button>
+      </div>
     </div>
   );
 }

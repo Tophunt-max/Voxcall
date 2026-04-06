@@ -1247,6 +1247,13 @@ admin.post('/run-migrations', async (c) => {
     `ALTER TABLE users ADD COLUMN status TEXT DEFAULT 'active'`,
     `ALTER TABLE content_reports ADD COLUMN reported_type TEXT DEFAULT 'user'`,
     `ALTER TABLE call_sessions ADD COLUMN cf_host_session_id TEXT`,
+    // Track names for WebRTC pull (lazy CF session model)
+    `ALTER TABLE call_sessions ADD COLUMN cf_caller_track_names TEXT`,
+    `ALTER TABLE call_sessions ADD COLUMN cf_host_track_names TEXT`,
+    // Server start time for call timer sync
+    `ALTER TABLE call_sessions ADD COLUMN server_start_time INTEGER`,
+    // Application type for host applications (audio/video/both)
+    `ALTER TABLE host_applications ADD COLUMN application_type TEXT DEFAULT 'both'`,
     // Index for device_id
     `CREATE INDEX IF NOT EXISTS idx_users_device_id ON users(device_id) WHERE device_id IS NOT NULL`,
     // Seed promo codes

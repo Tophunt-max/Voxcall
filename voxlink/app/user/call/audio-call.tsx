@@ -64,10 +64,10 @@ export default function AudioCallScreen() {
       ])
     );
     anim.start();
-    const t1 = setTimeout(() => {
-      if (status === "connecting") setStatus("ringing");
-    }, 2000);
-    return () => { anim.stop(); clearTimeout(t1); };
+    // FIX BUG-3: Never show "Ringing..." on the in-call screen — the host has already
+    // accepted before we navigate here. Showing "Connecting..." until WebRTC is ready
+    // is accurate and avoids user confusion.
+    return () => { anim.stop(); };
   }, []);
 
   useEffect(() => {
@@ -86,9 +86,20 @@ export default function AudioCallScreen() {
         webrtc.clearError();
         setWebrtcReady(false);
         setShowMicDialog(true);
+        return;
+      }
+      // FIX BUG-4: If the CF session expired or any fatal WebRTC error, auto-end the call
+      // with a user-friendly message instead of staying stuck on "Connecting..."
+      const isFatalError =
+        /session_error/i.test(webrtc.error) ||
+        /410/i.test(webrtc.error) ||
+        /session.*expired/i.test(webrtc.error);
+      if (isFatalError) {
+        webrtc.cleanup();
+        endCall(false);
       }
     }
-  }, [webrtc.error, webrtc.clearError]);
+  }, [webrtc.error, webrtc.clearError, webrtc.cleanup, endCall]);
 
   useEffect(() => {
     const off = onEvent(SocketEvents.PEER_TRACKS_READY, () => {

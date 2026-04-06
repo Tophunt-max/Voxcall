@@ -86,6 +86,13 @@ export default function CallSummaryScreen() {
         </Text>
         <Text style={[s.hostName, { color: colors.mutedForeground }]}>with {hostName}</Text>
 
+        {/* FIX BUG-5: Minimum billing notice — shown when actual call was < 1 min */}
+        {durationSec > 0 && durationSec < 60 && (
+          <View style={s.minBillingBanner}>
+            <Text style={s.minBillingText}>⏱ Min. 1 min billing applied</Text>
+          </View>
+        )}
+
         {/* Stats row */}
         <View style={[s.statsRow, { borderColor: colors.border }]}>
           <View style={s.stat}>
@@ -230,6 +237,23 @@ const s = StyleSheet.create({
     fontSize: 12,
     fontFamily: "Poppins_500Medium",
     flex: 1,
+  },
+  minBillingBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,165,0,0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(255,165,0,0.25)",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    width: "100%",
+  },
+  minBillingText: {
+    color: "#B87700",
+    fontSize: 12,
+    fontFamily: "Poppins_500Medium",
   },
   iconCircle: {
     width: 80,

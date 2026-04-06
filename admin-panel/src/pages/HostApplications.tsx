@@ -18,6 +18,7 @@ interface HostApp {
   languages: string[];
   audio_rate: number;
   video_rate: number;
+  application_type: "audio" | "video" | "both" | null;
   status: AppStatus;
   rejection_reason: string | null;
   aadhar_front_url: string | null;
@@ -26,6 +27,12 @@ interface HostApp {
   submitted_at: number;
   reviewed_at: number | null;
 }
+
+const APP_TYPE_LABELS: Record<string, { label: string; color: string }> = {
+  audio: { label: "🎤 Audio Only", color: "bg-blue-100 text-blue-700" },
+  video: { label: "🎥 Video Only", color: "bg-purple-100 text-purple-700" },
+  both:  { label: "🎤🎥 Audio + Video", color: "bg-violet-100 text-violet-700" },
+};
 
 const STATUS_VARIANT: Record<AppStatus, string> = {
   pending: "pending",
@@ -167,7 +174,7 @@ export default function HostApplicationsPage() {
             <table className="w-full border-collapse min-w-[700px]">
               <thead>
                 <tr className="bg-secondary border-b border-border">
-                  {["Name", "Email", "Specialties", "Rates", "Status", "Submitted", ""].map((h) => (
+                  {["Name", "Email", "Specialties", "Type", "Rates", "Status", "Submitted", ""].map((h) => (
                     <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -190,9 +197,16 @@ export default function HostApplicationsPage() {
                         )}
                       </div>
                     </td>
+                    <td className="px-4 py-3">
+                      {(() => {
+                        const t = app.application_type || 'both';
+                        const info = APP_TYPE_LABELS[t] || APP_TYPE_LABELS['both'];
+                        return <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${info.color}`}>{info.label}</span>;
+                      })()}
+                    </td>
                     <td className="px-4 py-3 text-xs text-muted-foreground">
-                      <div>🎤 {app.audio_rate}/min</div>
-                      <div>🎥 {app.video_rate}/min</div>
+                      {(app.application_type !== 'video') && <div>🎤 {app.audio_rate}/min</div>}
+                      {(app.application_type !== 'audio') && <div>🎥 {app.video_rate}/min</div>}
                     </td>
                     <td className="px-4 py-3">
                       <Badge variant={STATUS_VARIANT[app.status] || "default"}>
@@ -226,8 +240,16 @@ export default function HostApplicationsPage() {
               <InfoField label="Email" value={selected.email} />
               <InfoField label="Gender" value={selected.gender} />
               <InfoField label="Phone" value={selected.phone} />
-              <InfoField label="Audio Rate" value={`${selected.audio_rate} coins/min`} />
-              <InfoField label="Video Rate" value={`${selected.video_rate} coins/min`} />
+              <div className="bg-secondary rounded-xl p-3 col-span-2">
+                <p className="text-xs text-muted-foreground mb-1">Application Type</p>
+                {(() => {
+                  const t = selected.application_type || 'both';
+                  const info = APP_TYPE_LABELS[t] || APP_TYPE_LABELS['both'];
+                  return <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${info.color}`}>{info.label}</span>;
+                })()}
+              </div>
+              {(selected.application_type !== 'video') && <InfoField label="Audio Rate" value={`${selected.audio_rate} coins/min`} />}
+              {(selected.application_type !== 'audio') && <InfoField label="Video Rate" value={`${selected.video_rate} coins/min`} />}
               <InfoField label="Submitted" value={selected.submitted_at ? new Date(selected.submitted_at * 1000).toLocaleString() : "—"} />
               <div className="bg-secondary rounded-xl p-3 flex items-center gap-2">
                 <div>

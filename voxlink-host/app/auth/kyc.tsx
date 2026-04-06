@@ -49,7 +49,7 @@ export default function HostKYCScreen() {
   const { permissions, requestMediaLibrary, openSettings } = usePermissions();
   const params = useLocalSearchParams<{
     specialties: string; languages: string; bio: string;
-    audioRate: string; videoRate: string; experience: string;
+    applicationType: string; audioRate: string; videoRate: string; experience: string;
     dob: string;
   }>();
 
@@ -115,6 +115,7 @@ export default function HostKYCScreen() {
         specialties: JSON.parse(params.specialties || "[]"),
         languages: JSON.parse(params.languages || '["Hindi"]'),
         experience: params.experience,
+        application_type: (params.applicationType as "audio" | "video" | "both") || "both",
         audio_rate: parseInt(params.audioRate) || 5,
         video_rate: parseInt(params.videoRate) || 8,
         aadhar_front_url: aadharFront,
