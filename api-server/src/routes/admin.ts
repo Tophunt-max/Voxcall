@@ -87,7 +87,7 @@ admin.get('/analytics', async (c) => {
 admin.get('/users', async (c) => {
   const { page = '1', limit = '20', search } = c.req.query();
   const offset = (parseInt(page) - 1) * parseInt(limit);
-  let q = 'SELECT id, name, email, role, coins, is_verified, created_at FROM users';
+  let q = 'SELECT id, name, email, phone, gender, avatar_url, role, coins, is_verified, status, referral_code, created_at FROM users';
   const params: any[] = [];
   if (search) { q += ' WHERE name LIKE ? OR email LIKE ?'; params.push(`%${search}%`, `%${search}%`); }
   q += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
@@ -101,12 +101,14 @@ function db(c: any) { return c.env.DB as D1Database; }
 // PATCH /api/admin/users/:id
 admin.patch('/users/:id', async (c) => {
   const { id } = c.req.param();
-  const { coins, role, is_verified } = await c.req.json();
+  const { coins, role, is_verified, status } = await c.req.json();
   const sets: string[] = []; const vals: any[] = [];
   if (coins !== undefined) { sets.push('coins = ?'); vals.push(coins); }
   if (role !== undefined) { sets.push('role = ?'); vals.push(role); }
   if (is_verified !== undefined) { sets.push('is_verified = ?'); vals.push(is_verified); }
+  if (status !== undefined) { sets.push('status = ?'); vals.push(status); }
   if (!sets.length) return c.json({ error: 'Nothing to update' }, 400);
+  sets.push('updated_at = unixepoch()');
   vals.push(id);
   await db(c).prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`).bind(...vals).run();
   return c.json({ success: true });
@@ -571,34 +573,11 @@ admin.patch('/deposits/:id', async (c) => {
   if (sets.length === 0) return c.json({ error: 'Nothing to update' }, 400);
   sets.push('updated_at = unixepoch()');
   vals.push(id);
-
-  const purchase = await db(c).prepare('SELECT user_id, coins, bonus_coins, status, promo_code FROM coin_purchases WHERE id = ?').bind(id).first<any>();
-  if (!purchase) return c.json({ error: 'Deposit not found' }, 404);
-
-  if (body.status === 'approved') {
-    // Security fix: coins are credited ONLY when admin explicitly approves the deposit
-    if (purchase.status !== 'pending') return c.json({ error: `Cannot approve a deposit with status '${purchase.status}'` }, 400);
-    const total = (purchase.coins || 0) + (purchase.bonus_coins || 0);
-    const batchOps: any[] = [
-      db(c).prepare(`UPDATE coin_purchases SET ${sets.join(', ')} WHERE id = ?`).bind(...vals),
-      db(c).prepare('UPDATE users SET coins = coins + ?, updated_at = unixepoch() WHERE id = ?').bind(total, purchase.user_id),
-      db(c).prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)').bind(
-        crypto.randomUUID(), purchase.user_id, 'purchase', total, `Deposit approved by admin — ${total} coins`, id
-      ),
-    ];
-    // Increment promo used_count on approval (not on submission) to prevent abuse
-    if (purchase.promo_code) {
-      batchOps.push(
-        db(c).prepare('UPDATE promo_codes SET used_count = used_count + 1 WHERE UPPER(code) = UPPER(?)').bind(purchase.promo_code)
-      );
-    }
-    await db(c).batch(batchOps);
-  } else if (body.status === 'rejected') {
-    if (purchase.status !== 'pending') return c.json({ error: `Cannot reject a deposit with status '${purchase.status}'` }, 400);
-    await db(c).prepare(`UPDATE coin_purchases SET ${sets.join(', ')} WHERE id = ?`).bind(...vals).run();
-  } else if (body.status === 'refunded') {
+  if (body.status === 'refunded') {
+    const purchase = await db(c).prepare('SELECT user_id, coins, bonus_coins, status FROM coin_purchases WHERE id = ?').bind(id).first<any>();
+    if (!purchase) return c.json({ error: 'Deposit not found' }, 404);
     if (purchase.status === 'refunded') return c.json({ error: 'Deposit already refunded' }, 400);
-    if (purchase.status !== 'approved' && purchase.status !== 'success') return c.json({ error: 'Only approved deposits can be refunded' }, 400);
+    if (purchase.status !== 'success') return c.json({ error: 'Only successful deposits can be refunded' }, 400);
     const totalRefund = (purchase.coins || 0) + (purchase.bonus_coins || 0);
     await db(c).batch([
       db(c).prepare(`UPDATE coin_purchases SET ${sets.join(', ')} WHERE id = ?`).bind(...vals),
