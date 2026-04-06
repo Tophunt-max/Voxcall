@@ -69,12 +69,12 @@ export default function Withdrawals() {
       render: (w: any) => <Badge variant={w.status}>{w.status}</Badge>
     },
     { key: 'actions', header: '',
-      render: (w: any) => w.status === 'pending' ? (
+      render: (w: any) => ['pending', 'approved'].includes(w.status) ? (
         <button
           onClick={() => { setSelected(w); setNote(w.admin_note || ''); }}
           className="text-xs font-semibold text-primary hover:underline"
         >
-          Review →
+          {w.status === 'approved' ? 'Mark Paid →' : 'Review →'}
         </button>
       ) : null
     },
