@@ -67,7 +67,7 @@ call.post('/initiate', async (c) => {
     const notifStub = c.env.NOTIFICATION_HUB.get(notifId);
     await notifStub.fetch('https://dummy/notify', {
       method: 'POST',
-      body: JSON.stringify({ type: 'incoming_call', session_id: sessionId, caller_id: sub, call_type: callType, caller_name: caller.name ?? 'Caller' }),
+      body: JSON.stringify({ type: 'incoming_call', session_id: sessionId, caller_id: sub, call_type: callType, caller_name: caller.name ?? 'Caller', rate_per_minute: ratePerMin }),
     });
   } catch {}
 
@@ -498,7 +498,7 @@ call.get('/pending-for-host', async (c) => {
   if (!host) return c.json(null);
   const cutoff = Math.floor(Date.now() / 1000) - 90;
   const session = await db.prepare(
-    `SELECT cs.id, cs.caller_id, cs.type as call_type, u.name as caller_name, u.avatar_url as caller_avatar
+    `SELECT cs.id, cs.caller_id, cs.type as call_type, cs.rate_per_minute, u.name as caller_name, u.avatar_url as caller_avatar
      FROM call_sessions cs
      JOIN users u ON u.id = cs.caller_id
      WHERE cs.host_id = ? AND cs.status = 'pending' AND cs.created_at > ?

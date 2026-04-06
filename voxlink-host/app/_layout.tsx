@@ -158,7 +158,8 @@ function AppBridge() {
               role: "user",
             },
             (pending.call_type as "audio" | "video") ?? "audio",
-            pending.id
+            pending.id,
+            pending.rate_per_minute
           );
           router.push("/calls/incoming");
         }
@@ -184,7 +185,8 @@ function AppBridge() {
           role: "user",
         },
         data.type ?? data.call_type ?? "audio",
-        callId
+        callId,
+        data.coinsPerMinute
       );
       router.push("/calls/incoming");
     },

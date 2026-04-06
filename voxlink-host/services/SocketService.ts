@@ -110,6 +110,7 @@ class SocketService {
           callerId: msg.caller_id,
           callerName: msg.caller_name ?? "Caller",
           callerAvatar: msg.caller_avatar ?? undefined,
+          coinsPerMinute: msg.rate_per_minute,
           timestamp: Date.now(),
         });
         break;

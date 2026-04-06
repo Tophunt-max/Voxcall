@@ -176,7 +176,7 @@ export const API = {
   rateCall: (session_id: string, rating: number, comment?: string) =>
     apiRequest('POST', '/api/calls/rate', { session_id, rating, comment }),
   getCallHistory: () => apiRequest<any[]>('GET', '/api/calls/history'),
-  getPendingCall: () => apiRequest<{ id: string; caller_id: string; call_type: string; caller_name: string; caller_avatar?: string } | null>('GET', '/api/calls/pending-for-host'),
+  getPendingCall: () => apiRequest<{ id: string; caller_id: string; call_type: string; caller_name: string; caller_avatar?: string; rate_per_minute?: number } | null>('GET', '/api/calls/pending-for-host'),
 
   pushTracks: (sessionId: string, sdp: string, type: string, tracks: Array<{ mid: string; trackName: string }>) =>
     apiRequest<{ answer: { type: string; sdp: string }; tracks: any[]; role: string }>('POST', `/api/calls/${sessionId}/sdp/push`, { sdp, type, tracks }),

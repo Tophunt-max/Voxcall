@@ -30,7 +30,7 @@ export interface ActiveCall {
 
 interface CallContextValue {
   activeCall: ActiveCall | null;
-  receiveCall: (participant: CallParticipant, type: CallType, callId: string) => void;
+  receiveCall: (participant: CallParticipant, type: CallType, callId: string, coinsPerMinute?: number) => void;
   acceptCall: () => void;
   markCallActive: () => void;
   declineCall: () => void;
@@ -52,7 +52,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     setActiveCall(call);
   };
 
-  const receiveCall = useCallback((participant: CallParticipant, type: CallType, callId: string) => {
+  const receiveCall = useCallback((participant: CallParticipant, type: CallType, callId: string, coinsPerMinute?: number) => {
     const call: ActiveCall = {
       callId,
       sessionId: callId,
@@ -62,6 +62,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       isMuted: false,
       isCameraOn: false,
       isSpeakerOn: false,
+      coinsPerMinute,
     };
     updateCall(call);
     router.push("/calls/incoming");
@@ -113,8 +114,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     if (call?.sessionId) {
       try {
         const res = await API.endCall(call.sessionId, duration);
-        if (res?.coins_earned != null) {
-          coinsEarned = res.coins_earned;
+        if (res?.host_earnings != null) {
+          coinsEarned = res.host_earnings;
         }
       } catch (e) {
         console.warn("endCall API error:", e);
