@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useCall } from "@/context/CallContext";
 import { resolveMediaUrl } from "@/services/api";
+import { router } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { useRingtone } from "@/hooks/useRingtone";
 
@@ -15,6 +16,12 @@ export default function IncomingCallScreen() {
   const bottomPad = insets.bottom;
 
   const { stop: stopRing } = useRingtone("incoming", true);
+
+  useEffect(() => {
+    if (!activeCall) {
+      router.back();
+    }
+  }, [activeCall]);
 
   const handleAccept = useCallback(async () => {
     await stopRing();

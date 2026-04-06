@@ -66,8 +66,8 @@ function FCMNotificationTapBridge() {
             (data.call_type as "audio" | "video") ?? "audio",
             String(data.session_id ?? "")
           );
+          router.push("/calls/incoming");
         }
-        router.push("/calls/incoming");
       } else if (data.type === "chat_message" && data.room_id) {
         router.push({ pathname: "/chat/[id]", params: { id: String(data.room_id) } });
       }
@@ -113,8 +113,8 @@ function WebNotificationBridge() {
             (data.call_type as "audio" | "video") ?? "audio",
             String(data.session_id ?? "")
           );
+          router.push("/calls/incoming");
         }
-        router.push("/calls/incoming");
       } else if (data.type === "chat_message" && data.room_id) {
         router.push({ pathname: "/chat/[id]", params: { id: String(data.room_id) } });
       }

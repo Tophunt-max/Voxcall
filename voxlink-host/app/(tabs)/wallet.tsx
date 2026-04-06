@@ -65,7 +65,7 @@ function weeklyCoins(txs: EarningTx[]): number {
 export default function HostWalletScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { user, updateCoins, refreshBalance } = useAuth();
+  const { user, refreshProfile } = useAuth();
   const [tab, setTab] = useState<"history" | "withdraw">("history");
   const [withdrawAmt, setWithdrawAmt] = useState("");
   const [bankAccount, setBankAccount] = useState("");
@@ -83,7 +83,7 @@ export default function HostWalletScreen() {
     try {
       const data = await API.getEarnings() as any;
       const txList = (data.transactions || []).map(mapTxToEarning);
-      const withdrawalsDone = (data.withdrawals || []).filter((w: any) => w.status === "completed");
+      const withdrawalsDone = (data.withdrawals || []).filter((w: any) => w.status === "paid" || w.status === "completed");
       const totalWithdrawn = withdrawalsDone.reduce((s: number, w: any) => s + (w.coins || 0), 0);
       setEarnings(txList);
       setStats({
@@ -92,7 +92,7 @@ export default function HostWalletScreen() {
         withdrawn: totalWithdrawn,
         totalEarnings: data.host?.total_earnings ?? txList.reduce((s: number, t: EarningTx) => s + t.coins, 0),
       });
-      await refreshBalance();
+      await refreshProfile();
     } catch {
       setEarnings([]);
       showErrorToast("Failed to load earnings data.");

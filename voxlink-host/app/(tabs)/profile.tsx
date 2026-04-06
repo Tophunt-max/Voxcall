@@ -19,12 +19,12 @@ import { showErrorToast, showSuccessToast } from "@/components/Toast";
 export default function HostProfileScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { user, logout, updateProfile } = useAuth();
+  const { user, logout, updateProfile, setOnlineStatus } = useAuth();
   const { permissions, requestNotifications, openSettings } = usePermissions();
   const { language } = useLanguage();
   const currentLangLabel = LANGUAGES.find((l) => l.code === language)?.name ?? "English";
 
-  const [isOnline, setIsOnline] = useState(false);
+  const [isOnline, setIsOnline] = useState(user?.isOnline ?? false);
   const [hostStats, setHostStats] = useState({ calls: "—", rating: "—" });
   const [avatarUri, setAvatarUri] = useState<string | null>(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
@@ -38,6 +38,12 @@ export default function HostProfileScreen() {
   const notifBlocked =
     permissions.notifications.status === "blocked" ||
     (permissions.notifications.status === "denied" && !permissions.notifications.canAskAgain);
+
+  useEffect(() => {
+    if (user?.isOnline !== undefined) {
+      setIsOnline(user.isOnline);
+    }
+  }, [user?.isOnline]);
 
   useEffect(() => {
     API.getEarnings()
@@ -194,7 +200,7 @@ export default function HostProfileScreen() {
             value={isOnline}
             onValueChange={async (v) => {
               setIsOnline(v);
-              try { await API.setHostOnline(v); } catch { setIsOnline(!v); showErrorToast("Failed to update online status."); }
+              try { await setOnlineStatus(v); } catch { setIsOnline(!v); showErrorToast("Failed to update online status."); }
             }}
             trackColor={{ false: colors.border, true: "#0BAF23" }}
             thumbColor="#fff"
