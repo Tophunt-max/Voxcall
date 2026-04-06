@@ -10,6 +10,8 @@ import { useCallTimer } from "@/hooks/useCallTimer";
 import { usePermissions } from "@/hooks/usePermissions";
 import { PermissionDialog, PERMISSION_CONFIGS } from "@/components/PermissionDialog";
 import { useWebRTC } from "@/hooks/useWebRTC";
+import { useSocket } from "@/context/SocketContext";
+import { SocketEvents } from "@/constants/events";
 
 const useNativeDriverValue = Platform.OS !== "web";
 
@@ -69,6 +71,7 @@ export default function VideoCallScreen() {
   const [webrtcReady, setWebrtcReady] = useState(false);
 
   const { permissions, requestCamera, requestMicrophone, openSettings, refresh } = usePermissions();
+  const { onEvent } = useSocket();
 
   const webrtc = useWebRTC({
     sessionId: activeCall?.sessionId,
@@ -147,6 +150,13 @@ export default function VideoCallScreen() {
       }
     }
   }, [webrtc.error, webrtc.clearError]);
+
+  useEffect(() => {
+    const off = onEvent(SocketEvents.PEER_TRACKS_READY, () => {
+      webrtc.triggerPull();
+    });
+    return off;
+  }, [onEvent, webrtc.triggerPull]);
 
   const handleEndCall = useCallback(() => {
     webrtc.cleanup();

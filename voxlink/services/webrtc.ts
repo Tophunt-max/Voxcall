@@ -60,6 +60,7 @@ export class WebRTCService {
 
   private pushCompleted = false;
   private pullStarted = false;
+  private pullRunning = false;
   private triggerPullPending = false;
   private pullTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -138,7 +139,6 @@ export class WebRTCService {
 
       await this.pushLocalTracks();
 
-      // Mark push as complete; start pull via event signal or fallback timer
       this.pushCompleted = true;
       if (this.triggerPullPending) {
         this.triggerPullPending = false;
@@ -148,6 +148,7 @@ export class WebRTCService {
         this.pullTimer = setTimeout(() => {
           if (!this.pullStarted) {
             this.pullStarted = true;
+            this.pullRunning = true;
             this.pullRemoteTracks();
           }
         }, 5000);
@@ -161,19 +162,29 @@ export class WebRTCService {
     }
   }
 
+  // triggerPull: called by socket PEER_TRACKS_READY event.
+  // If pull hasn't started yet → start immediately.
+  // If pull already ran and finished (not currently running) → restart.
+  // If pull is currently running → it will succeed on next retry.
   public triggerPull(): void {
-    if (this.pullStarted) return;
+    if (this.destroyed) return;
     if (!this.pushCompleted) {
-      // Push not done yet — schedule pull to run immediately after push finishes
       this.triggerPullPending = true;
       return;
     }
+    if (this.pullRunning) {
+      // Pull loop is active — it will pick up the remote tracks on next retry
+      return;
+    }
+    // Either never started or previously finished — (re)start
+    this.pullStarted = false;
     this._startPull();
   }
 
   private _startPull(): void {
     if (this.pullStarted) return;
     this.pullStarted = true;
+    this.pullRunning = true;
     if (this.pullTimer) {
       clearTimeout(this.pullTimer);
       this.pullTimer = null;
@@ -238,24 +249,27 @@ export class WebRTCService {
       trackNames.push('video-1');
     }
 
-    const maxRetries = 15;
+    // Keep retrying until success or destroyed.
+    // No hard limit — peer_tracks_ready event will restart if needed.
+    // Use exponential-ish backoff capped at 3s so we don't spam CF Calls.
     let attempt = 0;
-    let lastError: Error | null = null;
 
-    while (attempt < maxRetries && !this.destroyed) {
+    while (!this.destroyed) {
       try {
         const result = await API.pullTracks(this.sessionId, trackNames);
 
         if (!result.offer) {
-          // Remote tracks not published yet — treat as retriable error
-          throw new Error('Remote tracks not ready yet');
+          // retryable: remote tracks not published yet
+          attempt++;
+          await new Promise(r => setTimeout(r, Math.min(2000 + attempt * 200, 3000)));
+          continue;
         }
 
-        // CF Calls returns a valid offer even when tracks have errors (a=inactive).
-        // Detect this and retry rather than processing a bad SDP.
         const hasTrackErrors = (result.tracks as CFPullTrack[])?.some((t) => t.errorCode);
         if (hasTrackErrors) {
-          throw new Error('Remote tracks not ready yet (track unavailable)');
+          attempt++;
+          await new Promise(r => setTimeout(r, Math.min(2000 + attempt * 200, 3000)));
+          continue;
         }
 
         if (RTC.RTCSessionDescription) {
@@ -276,20 +290,18 @@ export class WebRTCService {
             );
           }
         }
+
+        this.pullRunning = false;
         return;
       } catch (error: any) {
-        lastError = error;
         attempt++;
-        if (attempt < maxRetries && !this.destroyed) {
-          await new Promise(r => setTimeout(r, 2000));
-        } else {
-          console.error('Pull tracks failed after all retries:', error);
-          if (lastError) {
-            this.callbacks.onError?.(lastError);
-          }
+        if (!this.destroyed) {
+          await new Promise(r => setTimeout(r, Math.min(2000 + attempt * 200, 3000)));
         }
       }
     }
+
+    this.pullRunning = false;
   }
 
   toggleMute(muted: boolean): void {
@@ -324,6 +336,7 @@ export class WebRTCService {
 
   destroy(): void {
     this.destroyed = true;
+    this.pullRunning = false;
 
     if (this.pullTimer) {
       clearTimeout(this.pullTimer);
