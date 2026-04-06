@@ -196,7 +196,7 @@ user.post('/become-host', async (c) => {
   if (existing) return c.json({ error: 'Already a host' }, 409);
   // Only the most recent application counts — prevents using an old approval after a new rejection
   const latestApp = await db.prepare(
-    "SELECT id, status FROM host_applications WHERE user_id = ? ORDER BY created_at DESC LIMIT 1"
+    "SELECT id, status FROM host_applications WHERE user_id = ? ORDER BY submitted_at DESC LIMIT 1"
   ).bind(sub).first<any>();
   if (!latestApp || latestApp.status !== 'approved') {
     return c.json({ error: 'Please complete KYC verification and wait for admin approval before becoming a host.' }, 403);
