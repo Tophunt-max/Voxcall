@@ -2,11 +2,9 @@
 // a blank screen or spinner. This dramatically improves perceived performance because
 // the layout feels ready before data arrives.
 import React, { useEffect, useRef } from "react";
-import { View, Animated, StyleSheet, Dimensions } Platform,
+import { View, Animated, StyleSheet, Dimensions, Platform } from "react-native";
 
 const useNativeDriverValue = Platform.OS !== "web";
-  Platform,
-} from "react-native";
 
 const SCREEN_W = Dimensions.get("window").width;
 
