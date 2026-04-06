@@ -18,6 +18,7 @@ function UserAvatar({ name, avatar }: { name: string; avatar?: string }) {
 export default function SupportTickets() {
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
   const [selected, setSelected] = useState<any>(null);
@@ -25,9 +26,12 @@ export default function SupportTickets() {
   const [sending, setSending] = useState(false);
   const [toast, setToast] = useState('');
 
-  useEffect(() => {
-    api.supportTickets().then(setRows).catch(() => {}).finally(() => setLoading(false));
-  }, []);
+  const load = () => {
+    setLoading(true);
+    setLoadError('');
+    api.supportTickets().then(setRows).catch((e: any) => setLoadError(e.message || 'Failed to load tickets')).finally(() => setLoading(false));
+  };
+  useEffect(load, []);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 2500); };
 
@@ -116,6 +120,12 @@ export default function SupportTickets() {
   return (
     <div className="space-y-5">
       {toast && <div className="fixed bottom-5 right-5 z-50 bg-foreground text-background text-sm px-4 py-2.5 rounded-xl shadow-xl">{toast}</div>}
+
+      {loadError && (
+        <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3">
+          Failed to load tickets: {loadError} — <button className="underline font-semibold" onClick={load}>Retry</button>
+        </div>
+      )}
 
       <div className="grid grid-cols-3 gap-4">
         {[
