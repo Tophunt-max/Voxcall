@@ -1,3 +1,4 @@
+"use no memo";
 import React, { useState, useCallback, useEffect, useRef } from "react";
 import {
   View,
