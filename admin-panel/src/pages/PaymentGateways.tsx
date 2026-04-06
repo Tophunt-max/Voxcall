@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
@@ -540,28 +540,25 @@ const WEBHOOKS = [
 
 function WebhookSettingsTab() {
   const qc = useQueryClient();
-  const { data: config = {}, isLoading } = useQuery({ queryKey: ['app-config'], queryFn: api.appConfig });
+  const { data: config, isLoading } = useQuery({ queryKey: ['app-config'], queryFn: api.appConfig });
   const [secrets, setSecrets] = useState<Record<string, string>>({});
   const [saved, setSaved] = useState<Record<string, boolean>>({});
   const [copied, setCopied] = useState<Record<string, boolean>>({});
-  // Auto-approve settings
   const [autoApprove, setAutoApprove] = useState(false);
   const [autoApproveMax, setAutoApproveMax] = useState('');
   const [autoSaving, setAutoSaving] = useState(false);
-  const [gpKey, setGpKey] = useState('');
   const [gpSaving, setGpSaving] = useState(false);
 
-  // Sync local state from loaded config
-  const configRef = useState<any>(null);
-  if (!isLoading && config && configRef[0] !== config) {
-    configRef[0] = config;
+  // Sync state from loaded config (use useEffect — never set state during render)
+  useEffect(() => {
+    if (!config) return;
     const c = config as any;
     setAutoApprove(c.auto_approve_manual === 'true' || c.auto_approve_manual === '1');
     setAutoApproveMax(c.auto_approve_manual_max_amount || '');
-    WEBHOOKS.forEach(w => {
-      if (w.secretKey && c[w.secretKey]) setSecrets(s => ({ ...s, [w.secretKey!]: c[w.secretKey!] }));
-    });
-  }
+    const newSecrets: Record<string, string> = {};
+    WEBHOOKS.forEach(w => { if (w.secretKey && c[w.secretKey]) newSecrets[w.secretKey] = c[w.secretKey]; });
+    setSecrets(newSecrets);
+  }, [config]);
 
   const saveMutation = useMutation({ mutationFn: api.updateAppConfig, onSuccess: () => qc.invalidateQueries({ queryKey: ['app-config'] }) });
 
