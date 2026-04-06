@@ -2,7 +2,7 @@
 import { getItem, setItem } from '@/utils/storage';
 import { StorageKeys } from '@/utils/storage';
 
-const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://voxlink-api.ssunilkumarmohanta3.workers.dev';
+const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8080';
 
 export function resolveMediaUrl(path?: string | null): string | undefined {
   if (!path) return undefined;
@@ -71,31 +71,11 @@ export async function apiRequest<T>(
     if (newToken) return apiRequest<T>(method, path, body, auth, false);
   }
 
-  // Read body as text first so we can safely detect HTML (e.g. Cloudflare Access
-  // login page returned as 200 OK with text/html instead of JSON).
-  const text = await res.text();
-  const isHtml = text.trimStart().startsWith('<');
-
   if (!res.ok) {
-    if (isHtml) throw new Error('API is currently unavailable. Please check your connection and try again.');
-    try {
-      const err = JSON.parse(text) as { error?: string };
-      throw new Error(err.error || res.statusText);
-    } catch (parseErr) {
-      if (parseErr instanceof Error && parseErr.message !== res.statusText) throw parseErr;
-      throw new Error(res.statusText);
-    }
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error((err as any).error || res.statusText);
   }
-
-  if (isHtml) {
-    throw new Error('API is currently unavailable. Please check your connection and try again.');
-  }
-
-  try {
-    return JSON.parse(text) as T;
-  } catch {
-    throw new Error('Received invalid response from server.');
-  }
+  return res.json() as Promise<T>;
 }
 
 export const API = {
@@ -247,4 +227,10 @@ export const API = {
   getNotifications: () => apiRequest<any[]>('GET', '/api/user/notifications'),
   markNotificationsRead: () => apiRequest('PATCH', '/api/user/notifications/read', {}),
   markOneNotificationRead: (id: string) => apiRequest('PATCH', `/api/user/notifications/${id}/read`, {}),
+
+  // Manual Payment Gateway
+  getManualQR: () =>
+    apiRequest<{ qr_codes: any[]; current: any | null; rotate_interval_min: number }>('GET', '/api/payment/active-qr', undefined, false),
+  submitManualDeposit: (data: { plan_id: string; utr_id: string; screenshot_url?: string; qr_code_id?: string; promo_code?: string }) =>
+    apiRequest<{ success: boolean; purchase_id: string; status: string; message: string }>('POST', '/api/coins/manual-deposit', data),
 };

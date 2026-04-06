@@ -12,6 +12,8 @@ import {
   Dimensions,
   Platform,
   Linking,
+  Alert,
+  Modal,
 } from "react-native";
 import { router } from "expo-router";
 import { useColors } from "@/hooks/useColors";
@@ -44,6 +46,15 @@ interface Gateway {
   icon_emoji: string;
   instruction?: string;
   redirect_url?: string;
+}
+
+interface ManualQR {
+  id: string;
+  name: string;
+  upi_id: string;
+  qr_image_url: string;
+  instructions?: string;
+  rotate_interval_min: number;
 }
 
 // ─── WalletBannerSlider ───────────────────────────────────────────────────────
@@ -132,7 +143,7 @@ const wStyles = StyleSheet.create({
   dotActive: { width: 20, backgroundColor: "#A00EE7", borderRadius: 3 },
 });
 
-// ─── Gateway auto-selection logic (hidden from user) ─────────────────────────
+// ─── Gateway auto-selection logic ─────────────────────────────────────────────
 async function tryProcessPayment(
   gateways: Gateway[],
   plan: CoinPlan,
@@ -145,7 +156,6 @@ async function tryProcessPayment(
   const platform = Platform.OS;
   const promo = promoCode?.trim() || undefined;
 
-  // On mobile, use native payment flow (Google Pay / Apple Pay) — no redirect
   if (platform === "android" || platform === "ios") {
     const result = await API.purchaseCoins(plan.id, platform === "android" ? "googlepay" : "applepay", undefined, undefined, undefined, promo) as any;
     if (result?.new_balance != null) {
@@ -159,22 +169,15 @@ async function tryProcessPayment(
     return;
   }
 
-  // On web: try gateways in order (primary first, then fallbacks)
   for (let i = 0; i < gateways.length; i++) {
     const gw = gateways[i];
     try {
       if (gw.redirect_url && gw.redirect_url.startsWith("http")) {
-        // Build redirect URL — only pass plan_id; backend computes actual price from plan
-        const params = new URLSearchParams({
-          plan_id: plan.id,
-          currency: getCurrencyCode(),
-          gateway: gw.type,
-          source: "voxlink",
-        });
+        const params = new URLSearchParams({ plan_id: plan.id, currency: getCurrencyCode(), gateway: gw.type, source: "voxlink" });
         const url = `${gw.redirect_url}?${params.toString()}`;
         setLoading(false);
         await Linking.openURL(url);
-        return; // redirect happened — stop
+        return;
       } else {
         const result = await API.purchaseCoins(plan.id, gw.type, undefined, undefined, (gw as any).id, promo) as any;
         if (result?.new_balance != null) {
@@ -187,14 +190,283 @@ async function tryProcessPayment(
         throw new Error("Gateway did not process payment");
       }
     } catch (err) {
-      // This gateway failed — try next one
-      if (i === gateways.length - 1) throw err; // no more gateways
-      // else continue to next gateway silently
+      if (i === gateways.length - 1) throw err;
     }
   }
-
   throw new Error("All payment gateways failed. Please try again later.");
 }
+
+// ─── Manual Payment QR Modal ──────────────────────────────────────────────────
+interface ManualPayModalProps {
+  visible: boolean;
+  plan: CoinPlan | null;
+  totalCoins: number;
+  promoCode?: string;
+  onClose: () => void;
+  onSuccess: () => void;
+}
+
+function ManualPayModal({ visible, plan, totalCoins, promoCode, onClose, onSuccess }: ManualPayModalProps) {
+  const colors = useColors();
+  const [qrData, setQrData] = useState<{ qr_codes: ManualQR[]; current: ManualQR | null; rotate_interval_min: number } | null>(null);
+  const [qrLoading, setQrLoading] = useState(true);
+  const [utr, setUtr] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (!visible) return;
+    setUtr("");
+    setSubmitted(false);
+    setQrLoading(true);
+    API.getManualQR()
+      .then((d: any) => setQrData(d))
+      .catch(() => setQrData(null))
+      .finally(() => setQrLoading(false));
+  }, [visible]);
+
+  // Auto-refresh QR based on rotate_interval_min
+  useEffect(() => {
+    if (!visible || !qrData?.rotate_interval_min) return;
+    const intervalMs = (qrData.rotate_interval_min * 60 * 1000);
+    timerRef.current = setInterval(() => {
+      API.getManualQR().then((d: any) => setQrData(d)).catch(() => {});
+    }, intervalMs);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [visible, qrData?.rotate_interval_min]);
+
+  const handleSubmit = useCallback(async () => {
+    if (!utr.trim()) { Alert.alert("Required", "Please enter the UTR / transaction reference number."); return; }
+    if (!plan) return;
+    setSubmitting(true);
+    try {
+      await API.submitManualDeposit({
+        plan_id: plan.id,
+        utr_id: utr.trim(),
+        qr_code_id: qrData?.current?.id,
+        promo_code: promoCode || undefined,
+      });
+      setSubmitted(true);
+    } catch (err: any) {
+      Alert.alert("Submission Failed", err?.message || "Could not submit payment. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }, [utr, plan, qrData, promoCode]);
+
+  const currentQR = qrData?.current;
+
+  return (
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      <View style={[mStyles.root, { backgroundColor: colors.background }]}>
+        {/* Header */}
+        <View style={[mStyles.header, { borderBottomColor: colors.border }]}>
+          <TouchableOpacity onPress={onClose} style={mStyles.closeBtn}>
+            <Text style={[mStyles.closeText, { color: colors.mutedForeground }]}>✕</Text>
+          </TouchableOpacity>
+          <Text style={[mStyles.title, { color: colors.text }]}>Manual UPI Payment</Text>
+          <View style={{ width: 40 }} />
+        </View>
+
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={mStyles.scroll}>
+          {submitted ? (
+            // ── Success State ──────────────────────────────────────────────
+            <View style={mStyles.successWrap}>
+              <View style={[mStyles.successIcon, { backgroundColor: "#E8F5E9" }]}>
+                <Text style={{ fontSize: 44 }}>✅</Text>
+              </View>
+              <Text style={[mStyles.successTitle, { color: colors.text }]}>Payment Submitted!</Text>
+              <Text style={[mStyles.successSub, { color: colors.mutedForeground }]}>
+                Your payment is under review. Coins will be added to your account once the admin approves it (usually within a few hours).
+              </Text>
+              <View style={[mStyles.infoCard, { backgroundColor: colors.card }]}>
+                <Text style={[mStyles.infoLabel, { color: colors.mutedForeground }]}>Package</Text>
+                <Text style={[mStyles.infoValue, { color: colors.text }]}>{plan?.name} — {totalCoins.toLocaleString()} Coins</Text>
+                <Text style={[mStyles.infoLabel, { color: colors.mutedForeground, marginTop: 8 }]}>UTR / Ref</Text>
+                <Text style={[mStyles.infoValue, { color: colors.text, fontFamily: "Poppins_500Medium" }]}>{utr}</Text>
+              </View>
+              <TouchableOpacity
+                style={[mStyles.doneBtn, { backgroundColor: colors.accent }]}
+                onPress={() => { onSuccess(); onClose(); }}
+              >
+                <Text style={mStyles.doneBtnText}>Done</Text>
+              </TouchableOpacity>
+            </View>
+          ) : qrLoading ? (
+            <View style={mStyles.loadingWrap}>
+              <ActivityIndicator color="#A00EE7" size="large" />
+              <Text style={[mStyles.loadingText, { color: colors.mutedForeground }]}>Loading payment details...</Text>
+            </View>
+          ) : !currentQR ? (
+            <View style={mStyles.loadingWrap}>
+              <Text style={{ fontSize: 40 }}>⚠️</Text>
+              <Text style={[mStyles.successTitle, { color: colors.text }]}>Unavailable</Text>
+              <Text style={[mStyles.successSub, { color: colors.mutedForeground }]}>Manual payment is not available right now. Please try another payment method.</Text>
+            </View>
+          ) : (
+            <>
+              {/* Plan Summary */}
+              <View style={[mStyles.planCard, { backgroundColor: colors.accentLight }]}>
+                <Image source={require("@/assets/icons/ic_coin.png")} style={mStyles.planCoin} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[mStyles.planName, { color: colors.text }]}>{plan?.name}</Text>
+                  <Text style={[mStyles.planCoins, { color: colors.accent }]}>{totalCoins.toLocaleString()} Coins</Text>
+                </View>
+                <Text style={[mStyles.planPrice, { color: colors.text }]}>
+                  {plan ? formatPrice(plan.price, getCurrencyCode()) : ""}
+                </Text>
+              </View>
+
+              {/* Step 1 */}
+              <View style={mStyles.stepRow}>
+                <View style={[mStyles.stepBadge, { backgroundColor: "#A00EE7" }]}>
+                  <Text style={mStyles.stepNum}>1</Text>
+                </View>
+                <Text style={[mStyles.stepTitle, { color: colors.text }]}>Scan QR or pay to UPI ID</Text>
+              </View>
+
+              {/* QR Code */}
+              <View style={[mStyles.qrCard, { backgroundColor: colors.card }]}>
+                <View style={mStyles.qrImageWrap}>
+                  {currentQR.qr_image_url ? (
+                    <Image
+                      source={{ uri: currentQR.qr_image_url }}
+                      style={mStyles.qrImage}
+                      resizeMode="contain"
+                    />
+                  ) : (
+                    <View style={[mStyles.qrPlaceholder, { backgroundColor: colors.surface }]}>
+                      <Text style={{ fontSize: 36 }}>📱</Text>
+                    </View>
+                  )}
+                  {/* Rotate badge */}
+                  {qrData && qrData.qr_codes.length > 1 && (
+                    <View style={[mStyles.rotateBadge, { backgroundColor: "rgba(0,0,0,0.6)" }]}>
+                      <Text style={mStyles.rotateText}>🔄 Auto-rotating</Text>
+                    </View>
+                  )}
+                </View>
+                <Text style={[mStyles.qrLabel, { color: colors.mutedForeground }]}>Pay to UPI ID</Text>
+                <View style={[mStyles.upiBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                  <Text style={[mStyles.upiId, { color: "#A00EE7" }]}>{currentQR.upi_id}</Text>
+                </View>
+                <Text style={[mStyles.qrName, { color: colors.mutedForeground }]}>Account: {currentQR.name}</Text>
+                {currentQR.instructions ? (
+                  <Text style={[mStyles.qrInstructions, { color: colors.mutedForeground }]}>{currentQR.instructions}</Text>
+                ) : null}
+              </View>
+
+              {/* Step 2 */}
+              <View style={mStyles.stepRow}>
+                <View style={[mStyles.stepBadge, { backgroundColor: "#A00EE7" }]}>
+                  <Text style={mStyles.stepNum}>2</Text>
+                </View>
+                <Text style={[mStyles.stepTitle, { color: colors.text }]}>Enter UTR / Transaction ID</Text>
+              </View>
+
+              <Text style={[mStyles.utrHint, { color: colors.mutedForeground }]}>
+                After payment, find the 12-digit UTR or transaction reference in your UPI app.
+              </Text>
+
+              <View style={[mStyles.inputWrap, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <TextInput
+                  style={[mStyles.input, { color: colors.text }]}
+                  placeholder="Enter UTR / Reference No."
+                  placeholderTextColor={colors.mutedForeground}
+                  value={utr}
+                  onChangeText={setUtr}
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                  selectionColor="#A00EE7"
+                  underlineColorAndroid="transparent"
+                />
+              </View>
+
+              {/* Note */}
+              <View style={[mStyles.noteCard, { backgroundColor: "#FFF8E1", borderColor: "#FFE082" }]}>
+                <Text style={[mStyles.noteTitle, { color: "#F57F17" }]}>⏱ Admin Approval Required</Text>
+                <Text style={[mStyles.noteText, { color: "#795548" }]}>
+                  Manual payments are verified by our team. Coins will be credited within a few hours of approval. Ensure the exact amount is paid.
+                </Text>
+              </View>
+
+              {/* Submit */}
+              <TouchableOpacity
+                style={[mStyles.submitBtn, { backgroundColor: utr.trim() ? "#A00EE7" : colors.border }]}
+                onPress={handleSubmit}
+                disabled={submitting || !utr.trim()}
+                activeOpacity={0.85}
+              >
+                {submitting ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={mStyles.submitBtnText}>Submit Payment Proof</Text>
+                )}
+              </TouchableOpacity>
+            </>
+          )}
+        </ScrollView>
+      </View>
+    </Modal>
+  );
+}
+
+const mStyles = StyleSheet.create({
+  root: { flex: 1 },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingTop: 16, paddingBottom: 14, borderBottomWidth: StyleSheet.hairlineWidth },
+  closeBtn: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
+  closeText: { fontSize: 18 },
+  title: { fontSize: 16, fontFamily: "Poppins_600SemiBold" },
+  scroll: { padding: 20, paddingBottom: 60, gap: 16 },
+
+  planCard: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14, borderRadius: 14 },
+  planCoin: { width: 32, height: 32, resizeMode: "contain" },
+  planName: { fontSize: 13, fontFamily: "Poppins_500Medium" },
+  planCoins: { fontSize: 17, fontFamily: "Poppins_700Bold" },
+  planPrice: { fontSize: 16, fontFamily: "Poppins_700Bold" },
+
+  stepRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  stepBadge: { width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center" },
+  stepNum: { color: "#fff", fontSize: 14, fontFamily: "Poppins_700Bold" },
+  stepTitle: { fontSize: 14, fontFamily: "Poppins_600SemiBold", flex: 1 },
+
+  qrCard: { borderRadius: 16, padding: 16, alignItems: "center", gap: 10 },
+  qrImageWrap: { position: "relative", width: 200, height: 200 },
+  qrImage: { width: 200, height: 200, borderRadius: 12 },
+  qrPlaceholder: { width: 200, height: 200, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  rotateBadge: { position: "absolute", bottom: 8, right: 8, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 12 },
+  rotateText: { color: "#fff", fontSize: 10, fontFamily: "Poppins_500Medium" },
+  qrLabel: { fontSize: 11, fontFamily: "Poppins_400Regular", textTransform: "uppercase", letterSpacing: 0.5 },
+  upiBox: { borderWidth: 1.5, borderRadius: 10, paddingHorizontal: 20, paddingVertical: 10, width: "100%" },
+  upiId: { fontSize: 16, fontFamily: "Poppins_700Bold", textAlign: "center", letterSpacing: 0.5 },
+  qrName: { fontSize: 11, fontFamily: "Poppins_400Regular" },
+  qrInstructions: { fontSize: 11, fontFamily: "Poppins_400Regular", textAlign: "center" },
+
+  utrHint: { fontSize: 12, fontFamily: "Poppins_400Regular" },
+  inputWrap: { borderWidth: 1.5, borderRadius: 14, paddingHorizontal: 16, height: 56, justifyContent: "center" },
+  input: { fontSize: 15, fontFamily: "Poppins_500Medium", letterSpacing: 1 },
+
+  noteCard: { borderRadius: 14, padding: 14, gap: 4, borderWidth: 1 },
+  noteTitle: { fontSize: 13, fontFamily: "Poppins_700Bold" },
+  noteText: { fontSize: 12, fontFamily: "Poppins_400Regular", lineHeight: 18 },
+
+  submitBtn: { height: 56, borderRadius: 14, alignItems: "center", justifyContent: "center" },
+  submitBtnText: { color: "#fff", fontSize: 16, fontFamily: "Poppins_700Bold" },
+
+  loadingWrap: { alignItems: "center", paddingVertical: 60, gap: 12 },
+  loadingText: { fontSize: 13, fontFamily: "Poppins_400Regular" },
+
+  successWrap: { alignItems: "center", paddingVertical: 32, gap: 16 },
+  successIcon: { width: 80, height: 80, borderRadius: 40, alignItems: "center", justifyContent: "center" },
+  successTitle: { fontSize: 20, fontFamily: "Poppins_700Bold", textAlign: "center" },
+  successSub: { fontSize: 13, fontFamily: "Poppins_400Regular", textAlign: "center", lineHeight: 20 },
+  infoCard: { borderRadius: 14, padding: 16, gap: 4, width: "100%" },
+  infoLabel: { fontSize: 11, fontFamily: "Poppins_400Regular" },
+  infoValue: { fontSize: 14, fontFamily: "Poppins_600SemiBold" },
+  doneBtn: { height: 52, borderRadius: 14, alignItems: "center", justifyContent: "center", width: "100%" },
+  doneBtnText: { color: "#fff", fontSize: 15, fontFamily: "Poppins_700Bold" },
+});
 
 // ─── Main CheckoutScreen ──────────────────────────────────────────────────────
 export default function CheckoutScreen() {
@@ -211,6 +483,9 @@ export default function CheckoutScreen() {
   const [promoLoading, setPromoLoading] = useState(false);
   const [promoError, setPromoError] = useState("");
   const [walletBanners, setWalletBanners] = useState<any[]>([]);
+  const [paymentMethod, setPaymentMethod] = useState<"auto" | "manual">("auto");
+  const [showManualModal, setShowManualModal] = useState(false);
+  const [hasManualQR, setHasManualQR] = useState(false);
 
   useEffect(() => {
     const errors: string[] = [];
@@ -225,6 +500,9 @@ export default function CheckoutScreen() {
         .catch(() => { setPlans([]); errors.push("coin plans"); }),
       API.getBanners("wallet").then(setWalletBanners).catch(() => { errors.push("banners"); }),
       API.getPaymentGateways().then(setGateways).catch(() => { setGateways([]); errors.push("payment options"); }),
+      API.getManualQR()
+        .then((d: any) => { if (d?.current) setHasManualQR(true); })
+        .catch(() => {}),
     ]).then(() => {
       if (errors.length > 0) showErrorToast(`Failed to load ${errors.join(", ")}.`);
       setPlansLoading(false);
@@ -254,6 +532,10 @@ export default function CheckoutScreen() {
 
   const handlePurchase = useCallback(async () => {
     if (!user || !selectedPlan) return;
+    if (paymentMethod === "manual") {
+      setShowManualModal(true);
+      return;
+    }
     setLoading(true);
     try {
       await tryProcessPayment(gateways, selectedPlan, totalCoins, finalPrice, updateCoins, setLoading, promoCode);
@@ -262,7 +544,9 @@ export default function CheckoutScreen() {
     } finally {
       setLoading(false);
     }
-  }, [selectedPlan, gateways, user, totalCoins, finalPrice, updateCoins]);
+  }, [selectedPlan, gateways, user, totalCoins, finalPrice, updateCoins, paymentMethod]);
+
+  const isWeb = Platform.OS === "web";
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
@@ -330,6 +614,40 @@ export default function CheckoutScreen() {
               );
             })}
           </View>
+        )}
+
+        {/* Payment Method Selector (Web + when manual QR available) */}
+        {isWeb && hasManualQR && (
+          <>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Payment Method</Text>
+            <View style={[styles.methodRow, { gap: 10 }]}>
+              <TouchableOpacity
+                onPress={() => setPaymentMethod("auto")}
+                style={[styles.methodCard, { backgroundColor: paymentMethod === "auto" ? colors.accent : colors.card, borderColor: paymentMethod === "auto" ? colors.accent : colors.border }]}
+                activeOpacity={0.82}
+              >
+                <Text style={styles.methodEmoji}>💳</Text>
+                <Text style={[styles.methodLabel, { color: paymentMethod === "auto" ? "#fff" : colors.text }]}>Online</Text>
+                <Text style={[styles.methodSub, { color: paymentMethod === "auto" ? "rgba(255,255,255,0.75)" : colors.mutedForeground }]}>Auto gateway</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setPaymentMethod("manual")}
+                style={[styles.methodCard, { backgroundColor: paymentMethod === "manual" ? colors.accent : colors.card, borderColor: paymentMethod === "manual" ? colors.accent : colors.border }]}
+                activeOpacity={0.82}
+              >
+                <Text style={styles.methodEmoji}>📲</Text>
+                <Text style={[styles.methodLabel, { color: paymentMethod === "manual" ? "#fff" : colors.text }]}>Manual UPI</Text>
+                <Text style={[styles.methodSub, { color: paymentMethod === "manual" ? "rgba(255,255,255,0.75)" : colors.mutedForeground }]}>QR / UPI ID</Text>
+              </TouchableOpacity>
+            </View>
+            {paymentMethod === "manual" && (
+              <View style={[styles.manualNote, { backgroundColor: "#FFF3E0", borderColor: "#FFB74D" }]}>
+                <Text style={[styles.manualNoteText, { color: "#E65100" }]}>
+                  ⏱ Manual payment requires admin approval (a few hours). Coins will be added after verification.
+                </Text>
+              </View>
+            )}
+          </>
         )}
 
         {/* Promo Code */}
@@ -420,14 +738,25 @@ export default function CheckoutScreen() {
           disabled={!selectedPlan || loading}
         >
           <Text style={styles.buyBtnText}>
-            {selectedPlan
-              ? `Continue — ${formatPrice(finalPrice, userCurrency)} for ${totalCoins.toLocaleString()} Coins`
-              : "Select a Package"}
+            {!selectedPlan
+              ? "Select a Package"
+              : paymentMethod === "manual"
+              ? `Pay via UPI — ${formatPrice(finalPrice, userCurrency)} for ${totalCoins.toLocaleString()} Coins`
+              : `Continue — ${formatPrice(finalPrice, userCurrency)} for ${totalCoins.toLocaleString()} Coins`}
           </Text>
         </TouchableOpacity>
       </View>
 
       <LoadingOverlay visible={loading} message="Redirecting to payment..." />
+
+      <ManualPayModal
+        visible={showManualModal}
+        plan={selectedPlan}
+        totalCoins={totalCoins}
+        promoCode={promoApplied ? promoCode : undefined}
+        onClose={() => setShowManualModal(false)}
+        onSuccess={() => showSuccessToast("Payment submitted for review!", "Submitted")}
+      />
     </View>
   );
 }
@@ -455,6 +784,13 @@ const styles = StyleSheet.create({
   planCoins: { fontSize: 15, fontFamily: "Poppins_700Bold" },
   planLabel: { fontSize: 10, fontFamily: "Poppins_400Regular" },
   planPrice: { fontSize: 13, fontFamily: "Poppins_600SemiBold", marginTop: 2 },
+  methodRow: { flexDirection: "row", marginBottom: 8 },
+  methodCard: { flex: 1, borderRadius: 14, borderWidth: 2, padding: 14, alignItems: "center", gap: 4 },
+  methodEmoji: { fontSize: 24 },
+  methodLabel: { fontSize: 14, fontFamily: "Poppins_700Bold" },
+  methodSub: { fontSize: 11, fontFamily: "Poppins_400Regular" },
+  manualNote: { borderRadius: 12, padding: 12, marginBottom: 8, borderWidth: 1 },
+  manualNoteText: { fontSize: 12, fontFamily: "Poppins_400Regular", lineHeight: 18 },
   promoRow: { flexDirection: "row", alignItems: "center", borderRadius: 14, borderWidth: 1.5, marginBottom: 8, overflow: "hidden" },
   promoInput: { flex: 1, paddingHorizontal: 14, paddingVertical: 14, fontSize: 14, fontFamily: "Poppins_500Medium", letterSpacing: 1 },
   promoBtn: { paddingHorizontal: 18, paddingVertical: 14, alignItems: "center", justifyContent: "center" },

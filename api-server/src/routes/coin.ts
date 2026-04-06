@@ -83,16 +83,59 @@ coin.post('/purchase', async (c) => {
       if (gw?.name) gatewayName = gw.name;
     } catch {}
   }
-  // Security fix: coins are NOT credited immediately. Purchase is created with status='pending'.
-  // Admin must verify the payment (UTR ID / payment proof) and mark it 'approved' via the
-  // Admin Panel → Deposits → Approve. Only then are coins credited to the user's wallet.
-  await db.prepare(
-    `INSERT INTO coin_purchases (id, user_id, plan_id, plan_name, coins, bonus_coins, amount, currency, payment_method, gateway_id, gateway_name, payment_ref, utr_id, promo_code, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`
-  ).bind(purchaseId, sub, plan_id, plan.name, plan.coins, (plan.bonus_coins || 0) + promoBonus, plan.price, plan.currency || 'USD', payment_method || 'unknown', gateway_id || null, gatewayName, payment_ref || null, utr_id || null, promo_code || null).run();
-
+  const batchOps: any[] = [
+    db.prepare('UPDATE users SET coins = coins + ?, updated_at = unixepoch() WHERE id = ?').bind(total, sub),
+    db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
+      .bind(crypto.randomUUID(), sub, 'purchase', total, `Purchased ${plan.name} — ${total} coins`, plan_id),
+    db.prepare(`INSERT INTO coin_purchases (id, user_id, plan_id, plan_name, coins, bonus_coins, amount, currency, payment_method, gateway_id, gateway_name, payment_ref, utr_id, promo_code, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'success')`)
+      .bind(purchaseId, sub, plan_id, plan.name, plan.coins, (plan.bonus_coins || 0) + promoBonus, plan.price, plan.currency || 'USD', payment_method || 'unknown', gateway_id || null, gatewayName, payment_ref || null, utr_id || null, promo_code || null),
+  ];
+  // Bug fix: increment promo used_count so max_uses limit works correctly
+  if (promoRow) {
+    batchOps.push(
+      db.prepare('UPDATE promo_codes SET used_count = used_count + 1 WHERE id = ?').bind(promoRow.id)
+    );
+  }
+  await db.batch(batchOps);
   const user = await db.prepare('SELECT coins FROM users WHERE id = ?').bind(sub).first<any>();
-  return c.json({ success: true, pending: true, coins_to_add: total, current_balance: user?.coins, purchase_id: purchaseId });
+  return c.json({ success: true, coins_added: total, new_balance: user?.coins, purchase_id: purchaseId });
+});
+
+// POST /api/coins/manual-deposit — user submits manual UPI/QR payment, creates pending deposit
+coin.post('/manual-deposit', async (c) => {
+  const { sub } = c.get('user');
+  const { plan_id, utr_id, screenshot_url, qr_code_id, promo_code } = await c.req.json();
+  const db = c.env.DB;
+  if (!plan_id) return c.json({ error: 'plan_id is required' }, 400);
+  if (!utr_id || !String(utr_id).trim()) return c.json({ error: 'UTR / transaction reference is required' }, 400);
+  const plan = await db.prepare('SELECT * FROM coin_plans WHERE id = ? AND is_active = 1').bind(plan_id).first<any>();
+  if (!plan) return c.json({ error: 'Plan not found' }, 404);
+  // Duplicate UTR check
+  const existing = await db.prepare("SELECT id FROM coin_purchases WHERE utr_id = ? AND payment_method = 'manual'").bind(String(utr_id).trim()).first<any>();
+  if (existing) return c.json({ error: 'This UTR / transaction ID has already been submitted' }, 409);
+
+  let promoBonus = 0;
+  if (promo_code) {
+    const promo = await db.prepare('SELECT * FROM promo_codes WHERE UPPER(code) = UPPER(?) AND active = 1').bind(promo_code.trim()).first<any>();
+    if (promo && promo.type === 'bonus' && !(promo.expires_at && new Date(promo.expires_at * 1000) < new Date()) && !(promo.max_uses && promo.used_count >= promo.max_uses)) {
+      promoBonus = promo.bonus_coins ?? 0;
+    }
+  }
+
+  let qrName = 'Manual UPI';
+  if (qr_code_id) {
+    const qr = await db.prepare('SELECT name FROM manual_qr_codes WHERE id = ?').bind(qr_code_id).first<any>();
+    if (qr?.name) qrName = qr.name;
+  }
+
+  const purchaseId = crypto.randomUUID();
+  await db.prepare(
+    `INSERT INTO coin_purchases (id, user_id, plan_id, plan_name, coins, bonus_coins, amount, currency, payment_method, gateway_id, gateway_name, utr_id, promo_code, status, screenshot_url)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'manual', ?, ?, ?, ?, 'pending', ?)`
+  ).bind(purchaseId, sub, plan_id, plan.name, plan.coins, (plan.bonus_coins || 0) + promoBonus, plan.price, plan.currency || 'USD', qr_code_id || null, qrName, String(utr_id).trim(), promo_code || null, screenshot_url || null).run();
+
+  return c.json({ success: true, purchase_id: purchaseId, status: 'pending', message: 'Payment submitted for admin review. Coins will be added once approved.' });
 });
 
 // POST /api/coins/withdraw — host withdrawal request

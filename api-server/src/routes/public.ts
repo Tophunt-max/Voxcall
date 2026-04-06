@@ -202,4 +202,17 @@ pub.get('/app-config', async (c) => {
   return cachedJson(config);
 });
 
+// GET /api/payment/active-qr — returns active manual QR codes with time-based rotation (no auth)
+pub.get('/payment/active-qr', async (c) => {
+  const result = await c.env.DB.prepare(
+    'SELECT id, name, upi_id, qr_image_url, instructions, rotate_interval_min, position FROM manual_qr_codes WHERE is_active = 1 ORDER BY position ASC'
+  ).all();
+  const codes = result.results as any[];
+  if (codes.length === 0) return c.json({ qr_codes: [], current: null, rotate_interval_min: 30 });
+  const intervalMin = Math.max(1, Math.min(...codes.map((q: any) => q.rotate_interval_min || 30)));
+  const slot = Math.floor(Math.floor(Date.now() / 1000) / 60 / intervalMin);
+  const currentIdx = slot % codes.length;
+  return c.json({ qr_codes: codes, current: codes[currentIdx], rotate_interval_min: intervalMin });
+});
+
 export default pub;

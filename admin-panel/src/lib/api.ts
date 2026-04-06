@@ -1,11 +1,8 @@
-// Use VITE_API_URL env var for production API URL (e.g. https://voxlink-api.*.workers.dev).
-// Falls back to the hardcoded production Worker URL so deployed Pages builds always work.
-const PROD_API = 'https://voxlink-api.ssunilkumarmohanta3.workers.dev';
+// Use VITE_API_URL env var for direct connection to production API,
+// or fall back to Vite proxy (localhost:8080) for local dev
 const API = import.meta.env.VITE_API_URL
   ? `${import.meta.env.VITE_API_URL}/api`
-  : import.meta.env.DEV
-    ? `${import.meta.env.BASE_URL.replace(/\/$/, '')}/api`
-    : `${PROD_API}/api`;
+  : `${import.meta.env.BASE_URL.replace(/\/$/, '')}/api`;
 
 export function getToken() { return localStorage.getItem('voxlink_admin_token') || ''; }
 
@@ -104,4 +101,8 @@ export const api = {
   createPaymentGateway: (data: any) => req<any>('POST', '/admin/payment-gateways', data),
   updatePaymentGateway: (id: string, data: any) => req('PATCH', `/admin/payment-gateways/${id}`, data),
   deletePaymentGateway: (id: string) => req('DELETE', `/admin/payment-gateways/${id}`),
+  manualQRCodes: () => req<any[]>('GET', '/admin/manual-qr-codes'),
+  createManualQRCode: (data: any) => req<any>('POST', '/admin/manual-qr-codes', data),
+  updateManualQRCode: (id: string, data: any) => req('PATCH', `/admin/manual-qr-codes/${id}`, data),
+  deleteManualQRCode: (id: string) => req('DELETE', `/admin/manual-qr-codes/${id}`),
 };

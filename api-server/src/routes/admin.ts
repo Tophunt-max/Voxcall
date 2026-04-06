@@ -573,7 +573,19 @@ admin.patch('/deposits/:id', async (c) => {
   if (sets.length === 0) return c.json({ error: 'Nothing to update' }, 400);
   sets.push('updated_at = unixepoch()');
   vals.push(id);
-  if (body.status === 'refunded') {
+  if (body.status === 'success') {
+    const purchase = await db(c).prepare('SELECT user_id, coins, bonus_coins, status FROM coin_purchases WHERE id = ?').bind(id).first<any>();
+    if (!purchase) return c.json({ error: 'Deposit not found' }, 404);
+    if (purchase.status === 'success') return c.json({ error: 'Deposit already marked as success' }, 400);
+    const totalCoins = (purchase.coins || 0) + (purchase.bonus_coins || 0);
+    await db(c).batch([
+      db(c).prepare(`UPDATE coin_purchases SET ${sets.join(', ')} WHERE id = ?`).bind(...vals),
+      db(c).prepare('UPDATE users SET coins = coins + ?, updated_at = unixepoch() WHERE id = ?').bind(totalCoins, purchase.user_id),
+      db(c).prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)').bind(
+        crypto.randomUUID(), purchase.user_id, 'purchase', totalCoins, `Deposit approved by admin`, id
+      ),
+    ]);
+  } else if (body.status === 'refunded') {
     const purchase = await db(c).prepare('SELECT user_id, coins, bonus_coins, status FROM coin_purchases WHERE id = ?').bind(id).first<any>();
     if (!purchase) return c.json({ error: 'Deposit not found' }, 404);
     if (purchase.status === 'refunded') return c.json({ error: 'Deposit already refunded' }, 400);
@@ -583,7 +595,7 @@ admin.patch('/deposits/:id', async (c) => {
       db(c).prepare(`UPDATE coin_purchases SET ${sets.join(', ')} WHERE id = ?`).bind(...vals),
       db(c).prepare('UPDATE users SET coins = coins - ?, updated_at = unixepoch() WHERE id = ?').bind(totalRefund, purchase.user_id),
       db(c).prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)').bind(
-        crypto.randomUUID(), purchase.user_id, 'refund', -totalRefund, `Deposit refunded by admin`, id
+        crypto.randomUUID(), purchase.user_id, 'spend', totalRefund, `Deposit refunded by admin`, id
       ),
     ]);
   } else {
@@ -788,7 +800,7 @@ admin.post('/payment-gateways', async (c) => {
   const id = crypto.randomUUID();
   await db(c).prepare(
     'INSERT INTO payment_gateways (id, name, type, icon_emoji, platforms, instruction, redirect_url, is_active, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch(), unixepoch())'
-  ).bind(id, body.name, body.type || 'manual', body.icon_emoji || '💳', JSON.stringify(body.platforms || ['all']), body.instruction || '', body.redirect_url || '', body.is_active ? 1 : 1, body.position || 0).run();
+  ).bind(id, body.name, body.type || 'manual', body.icon_emoji || '💳', JSON.stringify(body.platforms || ['all']), body.instruction || '', body.redirect_url || '', body.is_active !== false ? 1 : 0, body.position || 0).run();
   return c.json({ id, success: true });
 });
 admin.patch('/payment-gateways/:id', async (c) => {
@@ -811,6 +823,47 @@ admin.patch('/payment-gateways/:id', async (c) => {
 admin.delete('/payment-gateways/:id', async (c) => {
   const { id } = c.req.param();
   await db(c).prepare('DELETE FROM payment_gateways WHERE id = ?').bind(id).run();
+  return c.json({ success: true });
+});
+
+// ─── Manual QR Codes CRUD ─────────────────────────────────────────────────────
+admin.get('/manual-qr-codes', async (c) => {
+  const result = await db(c).prepare('SELECT * FROM manual_qr_codes ORDER BY position ASC, created_at DESC').all();
+  return c.json(result.results);
+});
+admin.post('/manual-qr-codes', async (c) => {
+  const body = await c.req.json() as any;
+  const id = crypto.randomUUID();
+  await db(c).prepare(
+    'INSERT INTO manual_qr_codes (id, name, upi_id, qr_image_url, instructions, is_active, position, rotate_interval_min, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, unixepoch(), unixepoch())'
+  ).bind(id, body.name || '', body.upi_id || '', body.qr_image_url || '', body.instructions || '', body.is_active !== false ? 1 : 0, body.position ?? 0, body.rotate_interval_min ?? 30).run();
+  const u = c.get('user');
+  await auditLog(db(c), u.sub, u.email || 'Admin', u.email || '', 'create', 'manual_qr_code', id, `Manual QR created: ${body.name}`);
+  return c.json({ id, success: true }, 201);
+});
+admin.patch('/manual-qr-codes/:id', async (c) => {
+  const { id } = c.req.param();
+  const body = await c.req.json() as any;
+  const sets: string[] = [], vals: any[] = [];
+  if (body.name !== undefined) { sets.push('name = ?'); vals.push(body.name); }
+  if (body.upi_id !== undefined) { sets.push('upi_id = ?'); vals.push(body.upi_id); }
+  if (body.qr_image_url !== undefined) { sets.push('qr_image_url = ?'); vals.push(body.qr_image_url); }
+  if (body.instructions !== undefined) { sets.push('instructions = ?'); vals.push(body.instructions); }
+  if (body.is_active !== undefined) { sets.push('is_active = ?'); vals.push(body.is_active ? 1 : 0); }
+  if (body.position !== undefined) { sets.push('position = ?'); vals.push(body.position); }
+  if (body.rotate_interval_min !== undefined) { sets.push('rotate_interval_min = ?'); vals.push(body.rotate_interval_min); }
+  if (!sets.length) return c.json({ success: true });
+  sets.push('updated_at = unixepoch()');
+  await db(c).prepare(`UPDATE manual_qr_codes SET ${sets.join(', ')} WHERE id = ?`).bind(...vals, id).run();
+  const u = c.get('user');
+  await auditLog(db(c), u.sub, u.email || 'Admin', u.email || '', 'update', 'manual_qr_code', id, `Manual QR updated`);
+  return c.json({ success: true });
+});
+admin.delete('/manual-qr-codes/:id', async (c) => {
+  const { id } = c.req.param();
+  await db(c).prepare('DELETE FROM manual_qr_codes WHERE id = ?').bind(id).run();
+  const u = c.get('user');
+  await auditLog(db(c), u.sub, u.email || 'Admin', u.email || '', 'delete', 'manual_qr_code', id, `Manual QR deleted`);
   return c.json({ success: true });
 });
 
@@ -1211,6 +1264,20 @@ admin.post('/run-migrations', async (c) => {
       ('t6','Music','🎵',1,6),
       ('t7','Travel','✈️',1,7),
       ('t8','Casual Talk','☕',1,8)`,
+    // Manual QR Codes table
+    `CREATE TABLE IF NOT EXISTS manual_qr_codes (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL DEFAULT '',
+      upi_id TEXT NOT NULL DEFAULT '',
+      qr_image_url TEXT NOT NULL DEFAULT '',
+      instructions TEXT DEFAULT '',
+      is_active INTEGER DEFAULT 1,
+      position INTEGER DEFAULT 0,
+      rotate_interval_min INTEGER DEFAULT 30,
+      created_at INTEGER DEFAULT (unixepoch()),
+      updated_at INTEGER DEFAULT (unixepoch())
+    )`,
+    `ALTER TABLE coin_purchases ADD COLUMN screenshot_url TEXT`,
     // Coin Purchases (deposit tracking)
     `CREATE TABLE IF NOT EXISTS coin_purchases (
       id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
