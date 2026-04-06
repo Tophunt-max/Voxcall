@@ -10,6 +10,7 @@ export interface Env {
   CF_ACCOUNT_ID: string;
   FIREBASE_SERVICE_ACCOUNT: string;
   GOOGLE_PLAY_SERVICE_ACCOUNT_JSON?: string;
+  RESEND_API_KEY?: string;
 }
 
 export interface JWTPayload {
