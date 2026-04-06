@@ -66,22 +66,8 @@ async function validateFileType(file: File, allowed: Set<string>): Promise<strin
   return null;
 }
 
-// ─── Public file serving — NO auth required ────────────────────────────────────
-// Avatar and media URLs are embedded in app UI (img src, audio src, etc.) so they
-// must be publicly accessible without a Bearer token.
-// The key is unguessable (userId + timestamp), which provides adequate access control.
-upload.get('/files/:key{.+}', async (c) => {
-  const key = c.req.param('key');
-  const obj = await c.env.STORAGE.get(key);
-  if (!obj) return c.json({ error: 'File not found' }, 404);
-  const headers = new Headers();
-  obj.writeHttpMetadata(headers);
-  headers.set('etag', obj.httpEtag);
-  headers.set('Cache-Control', 'public, max-age=31536000');
-  return new Response(obj.body, { headers });
-});
-
 // ─── Upload routes — auth required ────────────────────────────────────────────
+// Note: public file serving (R2) is handled by /api/files/:key in public.ts
 upload.use('/avatar', authMiddleware);
 upload.use('/media', authMiddleware);
 

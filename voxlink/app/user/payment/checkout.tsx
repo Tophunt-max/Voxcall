@@ -240,7 +240,7 @@ function ManualPayModal({ visible, plan, totalCoins, promoCode, onClose, onSucce
   }, [visible, qrData?.rotate_interval_min]);
 
   const [autoApproved, setAutoApproved] = useState(false);
-  const { refreshProfile } = useAuth();
+  const { refreshBalance } = useAuth();
 
   const handleSubmit = useCallback(async () => {
     if (!utr.trim()) { Alert.alert("Required", "Please enter the UTR / transaction reference number."); return; }
@@ -254,9 +254,8 @@ function ManualPayModal({ visible, plan, totalCoins, promoCode, onClose, onSucce
         promo_code: promoCode || undefined,
       }) as any;
       if (result?.status === 'success' && result?.coins_added) {
-        // Auto-approved!
         setAutoApproved(true);
-        await refreshProfile();
+        await refreshBalance();
       }
       setSubmitted(true);
     } catch (err: any) {
@@ -264,7 +263,7 @@ function ManualPayModal({ visible, plan, totalCoins, promoCode, onClose, onSucce
     } finally {
       setSubmitting(false);
     }
-  }, [utr, plan, qrData, promoCode, refreshProfile]);
+  }, [utr, plan, qrData, promoCode, refreshBalance]);
 
   const currentQR = qrData?.current;
 
