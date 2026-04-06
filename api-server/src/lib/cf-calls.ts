@@ -1,5 +1,14 @@
 const CF_CALLS_BASE = 'https://rtc.live.cloudflare.com/v1/apps';
 
+export interface CFCallsTrack {
+  mid?: string;
+  trackName?: string;
+  errorCode?: string;
+  errorDescription?: string;
+  location?: 'local' | 'remote';
+  sessionId?: string;
+}
+
 export class CloudflareCalls {
   private appId: string;
   private appSecret: string;
@@ -39,7 +48,7 @@ export class CloudflareCalls {
     sessionId: string,
     offer: { type: string; sdp: string },
     tracks: Array<{ location: 'local'; mid: string; trackName: string }>
-  ): Promise<{ answer: { type: string; sdp: string }; tracks: any[] }> {
+  ): Promise<{ answer: { type: string; sdp: string }; tracks: CFCallsTrack[] }> {
     const res = await fetch(`${this.baseUrl}/sessions/${sessionId}/tracks/new`, {
       method: 'POST',
       headers: this.headers,
@@ -63,7 +72,7 @@ export class CloudflareCalls {
     sessionId: string,
     remoteSessionId: string,
     trackNames: string[]
-  ): Promise<{ offer: { type: string; sdp: string }; tracks: any[] }> {
+  ): Promise<{ offer: { type: string; sdp: string } | null; tracks: CFCallsTrack[] }> {
     const tracks = trackNames.map((trackName, i) => ({
       location: 'remote' as const,
       sessionId: remoteSessionId,

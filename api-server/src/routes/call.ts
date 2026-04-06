@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { authMiddleware } from '../middleware/auth';
-import { createCFCalls } from '../lib/cf-calls';
+import { createCFCalls, CFCallsTrack } from '../lib/cf-calls';
 import { sendFCMPush } from '../lib/fcm';
 import type { Env, JWTPayload } from '../types';
 
@@ -355,7 +355,7 @@ call.post('/:id/sdp/pull', async (c) => {
     // so we must explicitly detect this and signal "not ready" instead of returning the bad offer.
     const allTracksErrored =
       pullResult.tracks?.length > 0 &&
-      pullResult.tracks.every((t: any) => t.errorCode);
+      pullResult.tracks.every((t: CFCallsTrack) => t.errorCode);
 
     if (allTracksErrored) {
       return c.json({ offer: null, tracks: [], role, retryable: true });

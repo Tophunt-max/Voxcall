@@ -1,6 +1,13 @@
 import { Platform } from 'react-native';
 import { API } from './api';
 
+interface CFPullTrack {
+  mid?: string;
+  trackName?: string;
+  errorCode?: string;
+  errorDescription?: string;
+}
+
 let RTC: any = null;
 let mediaDevicesRef: any = null;
 let MediaStreamClass: any = null;
@@ -246,7 +253,7 @@ export class WebRTCService {
 
         // CF Calls returns a valid offer even when tracks have errors (a=inactive).
         // Detect this and retry rather than processing a bad SDP.
-        const hasTrackErrors = result.tracks?.some((t: any) => t.errorCode);
+        const hasTrackErrors = (result.tracks as CFPullTrack[])?.some((t) => t.errorCode);
         if (hasTrackErrors) {
           throw new Error('Remote tracks not ready yet (track unavailable)');
         }
