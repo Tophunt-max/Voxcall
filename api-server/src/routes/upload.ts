@@ -35,8 +35,16 @@ const FILE_SIGNATURES: Sig[] = [
   { mime: 'audio/mpeg', magic: [0xFF, 0xFB] },
   { mime: 'audio/mpeg', magic: [0x49, 0x44, 0x33] },         // ID3
   { mime: 'audio/ogg',  magic: [0x4F, 0x67, 0x67, 0x53] },  // OggS
+  { mime: 'audio/webm', magic: [0x1A, 0x45, 0xDF, 0xA3] },  // EBML (same as webm video)
+  { mime: 'audio/mp4',  magic: [0x66, 0x74, 0x79, 0x70], offset: 4 }, // ftyp at byte 4
+  {                                                            // WAV: RIFF header + WAVE marker
+    mime: 'audio/wav',
+    magic: [0x52, 0x49, 0x46, 0x46],                         // RIFF at byte 0
+    extra: { offset: 8, magic: [0x57, 0x41, 0x56, 0x45] },  // WAVE at byte 8
+  },
   { mime: 'video/webm', magic: [0x1A, 0x45, 0xDF, 0xA3] },
   { mime: 'video/mp4',  magic: [0x66, 0x74, 0x79, 0x70], offset: 4 }, // ftyp at byte 4
+  { mime: 'video/ogg',  magic: [0x4F, 0x67, 0x67, 0x53] },  // OggS (same as audio/ogg)
 ];
 
 function matchesSig(bytes: Uint8Array, sig: Sig): boolean {

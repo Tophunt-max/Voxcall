@@ -75,5 +75,3 @@ onlyBuiltDependencies:
   - msw
   - unrs-resolver
 
-# overrides moved to root package.json under pnpm.overrides
-# for compatibility with older pnpm versions (e.g. Cloudflare's build environment)
