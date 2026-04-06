@@ -36,7 +36,7 @@ const FILE_SIGNATURES: Sig[] = [
   { mime: 'audio/mpeg', magic: [0x49, 0x44, 0x33] },         // ID3
   { mime: 'audio/ogg',  magic: [0x4F, 0x67, 0x67, 0x53] },  // OggS
   { mime: 'video/webm', magic: [0x1A, 0x45, 0xDF, 0xA3] },
-  { mime: 'video/mp4',  magic: [0x00, 0x00, 0x00], offset: 4, extra: { offset: 4, magic: [0x66, 0x74, 0x79, 0x70] } }, // ftyp box
+  { mime: 'video/mp4',  magic: [0x66, 0x74, 0x79, 0x70], offset: 4 }, // ftyp at byte 4
 ];
 
 function matchesSig(bytes: Uint8Array, sig: Sig): boolean {

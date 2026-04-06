@@ -552,16 +552,15 @@ function WebhookSettingsTab() {
   const [gpSaving, setGpSaving] = useState(false);
 
   // Sync local state from loaded config
-  const configRef = useState<any>(null);
-  if (!isLoading && config && configRef[0] !== config) {
-    configRef[0] = config;
+  useEffect(() => {
+    if (!config || isLoading) return;
     const c = config as any;
     setAutoApprove(c.auto_approve_manual === 'true' || c.auto_approve_manual === '1');
     setAutoApproveMax(c.auto_approve_manual_max_amount || '');
     WEBHOOKS.forEach(w => {
       if (w.secretKey && c[w.secretKey]) setSecrets(s => ({ ...s, [w.secretKey!]: c[w.secretKey!] }));
     });
-  }
+  }, [config, isLoading]);
 
   const saveMutation = useMutation({ mutationFn: api.updateAppConfig, onSuccess: () => qc.invalidateQueries({ queryKey: ['app-config'] }) });
 
