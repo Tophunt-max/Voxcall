@@ -118,6 +118,7 @@ class SocketService {
       case "call_accepted":
         this.emit(SocketEvents.CALL_ACCEPT, {
           sessionId: msg.session_id,
+          startedAt: msg.started_at ?? null,
           timestamp: Date.now(),
         });
         break;

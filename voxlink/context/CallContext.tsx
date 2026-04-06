@@ -35,6 +35,7 @@ interface CallContextValue {
   receiveCall: (participant: CallParticipant, type: CallType, callId: string) => void;
   acceptCall: () => void;
   markCallActive: () => void;
+  syncServerStartTime: (serverStartedAtSeconds: number) => void;
   declineCall: () => void;
   endCall: (autoEnded?: boolean) => void;
   toggleMute: () => void;
@@ -119,6 +120,15 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     updateCall({ ...curr, status: "active" as CallStatus, startTime: Date.now() });
   }, []);
 
+  // FIX: Called when the server notifies us that the host accepted the call.
+  // Syncs the client billing timer to the server's started_at so they never drift.
+  const syncServerStartTime = useCallback((serverStartedAtSeconds: number) => {
+    const curr = activeCallRef.current;
+    if (!curr) return;
+    const startTimeMs = serverStartedAtSeconds * 1000;
+    updateCall({ ...curr, status: "active" as CallStatus, startTime: startTimeMs });
+  }, []);
+
   const declineCall = useCallback(() => {
     const curr = activeCallRef.current;
     updateCall(null);
@@ -173,7 +183,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const toggleSpeaker = useCallback(() => setActiveCall((p) => p ? { ...p, isSpeakerOn: !p.isSpeakerOn } : null), []);
 
   return (
-    <CallContext.Provider value={{ activeCall, initiateCall, receiveCall, acceptCall, markCallActive, declineCall, endCall, toggleMute, toggleCamera, toggleSpeaker }}>
+    <CallContext.Provider value={{ activeCall, initiateCall, receiveCall, acceptCall, markCallActive, syncServerStartTime, declineCall, endCall, toggleMute, toggleCamera, toggleSpeaker }}>
       {children}
     </CallContext.Provider>
   );

@@ -4,6 +4,7 @@ import * as Haptics from "expo-haptics";
 interface UseCallTimerOptions {
   isActive: boolean;
   maxSeconds?: number;
+  startTimeMs?: number; // server-synced start time in ms — used to initialize elapsed correctly
   onAutoEnd: () => void;
 }
 
@@ -15,7 +16,7 @@ interface CallTimerState {
   dismissRechargePopup: () => void;
 }
 
-export function useCallTimer({ isActive, maxSeconds, onAutoEnd }: UseCallTimerOptions): CallTimerState {
+export function useCallTimer({ isActive, maxSeconds, startTimeMs, onAutoEnd }: UseCallTimerOptions): CallTimerState {
   const [elapsed, setElapsed] = useState(0);
   const [showLowCoinWarning, setShowLowCoinWarning] = useState(false);
   const [showRechargePopup, setShowRechargePopup] = useState(false);
@@ -30,7 +31,14 @@ export function useCallTimer({ isActive, maxSeconds, onAutoEnd }: UseCallTimerOp
     hasWarnedRef.current = false;
     hasPopupRef.current = false;
     hasEndedRef.current = false;
-    setElapsed(0);
+
+    // FIX: initialize elapsed from server's started_at so the display timer matches
+    // what the server is billing. Without this, the timer starts from 0 even though
+    // the server already started charging 5-15 seconds ago (WebRTC negotiation time).
+    const initialElapsed = startTimeMs
+      ? Math.max(0, Math.floor((Date.now() - startTimeMs) / 1000))
+      : 0;
+    setElapsed(initialElapsed);
     setShowLowCoinWarning(false);
     setShowRechargePopup(false);
 

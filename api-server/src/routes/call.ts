@@ -247,19 +247,20 @@ call.post('/:id/answer', async (c) => {
   const now = Math.floor(Date.now() / 1000);
   await db.prepare('UPDATE call_sessions SET status = ?, started_at = ? WHERE id = ?').bind('active', now, sessionId).run();
 
-  // Bug 3 fix: notify caller that call was accepted
+  // FIX: include started_at so caller can sync their billing timer with the server
   try {
     const notifId = c.env.NOTIFICATION_HUB.idFromName(session.caller_id);
     const notifStub = c.env.NOTIFICATION_HUB.get(notifId);
     await notifStub.fetch('https://dummy/notify', {
       method: 'POST',
-      body: JSON.stringify({ type: 'call_accepted', session_id: sessionId }),
+      body: JSON.stringify({ type: 'call_accepted', session_id: sessionId, started_at: now }),
     });
   } catch {}
 
   return c.json({
     success: true,
     status: 'active',
+    started_at: now,
     cf_session_id: session.cf_session_id,
     cf_host_session_id: session.cf_host_session_id,
   });
@@ -331,6 +332,14 @@ call.post('/:id/sdp/push', async (c) => {
       }
     } catch {}
 
+    // FIX: persist the track names so the remote side can pull using exact names
+    try {
+      const field = role === 'host' ? 'cf_host_track_names' : 'cf_caller_track_names';
+      const trackNamesJson = JSON.stringify(body.tracks.map((t: any) => t.trackName));
+      await db.prepare(`UPDATE call_sessions SET ${field} = ? WHERE id = ?`)
+        .bind(trackNamesJson, sessionId).run();
+    } catch {}
+
     return c.json({
       answer: pushResult.answer,
       tracks: pushResult.tracks,
@@ -364,8 +373,17 @@ call.post('/:id/sdp/pull', async (c) => {
   if (!mySessionId) return c.json({ offer: null, tracks: [], role, retryable: true });
   if (!remoteSessionId) return c.json({ offer: null, tracks: [], role, retryable: true });
 
+  // FIX: use stored remote track names if available — avoids hardcoded 'audio-0'/'video-1'
+  // assumption that breaks when MID assignment differs by platform
+  const storedRemoteNames = role === 'caller'
+    ? session.cf_host_track_names
+    : session.cf_caller_track_names;
+  const trackNamesToUse = storedRemoteNames
+    ? JSON.parse(storedRemoteNames)
+    : body.trackNames;
+
   try {
-    const pullResult = await cfCalls.pullTracks(mySessionId, remoteSessionId, body.trackNames);
+    const pullResult = await cfCalls.pullTracks(mySessionId, remoteSessionId, trackNamesToUse);
 
     // If ALL requested tracks have errors, remote hasn't pushed yet — tell client to retry.
     // CF Calls returns a valid offer SDP even when tracks are unavailable (a=inactive),
@@ -429,8 +447,19 @@ call.post('/:id/end', async (c) => {
   const db = c.env.DB;
 
   try {
-  const session = await db.prepare('SELECT * FROM call_sessions WHERE id = ?').bind(sessionId).first<any>();
+  const session = await db.prepare(
+    `SELECT cs.*, h.user_id as host_user_id
+     FROM call_sessions cs
+     LEFT JOIN hosts h ON h.id = cs.host_id
+     WHERE cs.id = ?`
+  ).bind(sessionId).first<any>();
   if (!session) return c.json({ error: 'Session not found' }, 404);
+
+  // FIX: Authorization check — only the caller or the host can end the call
+  if (session.caller_id !== sub && session.host_user_id !== sub) {
+    return c.json({ error: 'Not authorized to end this call' }, 403);
+  }
+
   if (session.status !== 'active' && session.status !== 'pending') return c.json({ error: 'Call already ended' }, 400);
 
   const now = Math.floor(Date.now() / 1000);

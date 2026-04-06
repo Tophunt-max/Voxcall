@@ -15,7 +15,7 @@ const RING_TIMEOUT_MS = 45000;
 
 export default function OutgoingCallScreen() {
   const insets = useSafeAreaInsets();
-  const { activeCall, endCall } = useCall();
+  const { activeCall, endCall, syncServerStartTime } = useCall();
   const { onEvent } = useSocket();
   const params = useLocalSearchParams<{
     hostId: string;
@@ -82,9 +82,13 @@ export default function OutgoingCallScreen() {
     return () => { clearTimeout(t1); clearTimeout(t2); };
   }, []);
 
-  // Fix C2 + H1: listen for call_accepted / call_declined socket events
+  // Fix C2 + H1: listen for call_accepted / call_declined / call_ended socket events
   useEffect(() => {
-    const offAccept = onEvent(SocketEvents.CALL_ACCEPT, () => {
+    const offAccept = onEvent(SocketEvents.CALL_ACCEPT, (payload: any) => {
+      // FIX: sync client billing timer to server's started_at before navigating
+      if (payload?.startedAt) {
+        syncServerStartTime(payload.startedAt);
+      }
       goToCallScreen();
     });
     const offReject = onEvent(SocketEvents.CALL_REJECT, async () => {
@@ -99,8 +103,22 @@ export default function OutgoingCallScreen() {
         }, 2000);
       }
     });
-    return () => { offAccept(); offReject(); };
-  }, [onEvent, goToCallScreen, stopRing]);
+    // FIX: If server forcefully ends the pending call (cron cleanup / host crash),
+    // dismiss the outgoing screen instead of staying stuck on "Ringing..."
+    const offEnd = onEvent(SocketEvents.CALL_END, async () => {
+      if (!navigated.current) {
+        setStatus("no_answer");
+        await stopRing();
+        setTimeout(async () => {
+          if (!navigated.current) {
+            navigated.current = true;
+            endCall(false);
+          }
+        }, 1500);
+      }
+    });
+    return () => { offAccept(); offReject(); offEnd(); };
+  }, [onEvent, goToCallScreen, stopRing, syncServerStartTime, endCall]);
 
   const makeRipple = (val: Animated.Value, size: number) => ({
     transform: [{ scale: val.interpolate({ inputRange: [0, 1], outputRange: [1, size] }) }],
@@ -136,6 +154,11 @@ export default function OutgoingCallScreen() {
           <Text style={[s.statusText, (status === "declined" || status === "no_answer") && { color: "#FF6B6B" }]}>
             {statusLabel}
           </Text>
+          {status !== "declined" && status !== "no_answer" && (
+            <View style={s.minBillingBadge}>
+              <Text style={s.minBillingText}>⏱ Minimum 1 minute billing applies</Text>
+            </View>
+          )}
         </View>
       </View>
 
@@ -166,4 +189,10 @@ const s = StyleSheet.create({
   endBtn: { width: 68, height: 68, borderRadius: 34, backgroundColor: "#E84855", alignItems: "center", justifyContent: "center" },
   endIcon: { width: 30, height: 30, tintColor: "#fff" },
   endLabel: { color: "rgba(255,255,255,0.7)", fontSize: 13, fontFamily: "Poppins_400Regular" },
+  minBillingBadge: {
+    marginTop: 6, paddingHorizontal: 14, paddingVertical: 6,
+    backgroundColor: "rgba(255,255,255,0.08)", borderRadius: 16,
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.15)",
+  },
+  minBillingText: { color: "rgba(255,255,255,0.5)", fontSize: 11, fontFamily: "Poppins_400Regular" },
 });

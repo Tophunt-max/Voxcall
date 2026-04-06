@@ -115,6 +115,7 @@ class SocketService {
       case "call_accepted":
         this.emit(SocketEvents.CALL_ACCEPT, {
           sessionId: msg.session_id,
+          startedAt: msg.started_at ?? null, // Unix seconds from server — use to sync billing timer
           timestamp: Date.now(),
         });
         break;

@@ -97,6 +97,15 @@ export default function AudioCallScreen() {
     return off;
   }, [onEvent, webrtc.triggerPull]);
 
+  // FIX: Handle remote party ending the call — clean up and show call summary
+  useEffect(() => {
+    const off = onEvent(SocketEvents.CALL_END, () => {
+      webrtc.cleanup();
+      endCall(true);
+    });
+    return off;
+  }, [onEvent, webrtc.cleanup, endCall]);
+
   const handleEndCall = useCallback(() => {
     webrtc.cleanup();
     endCall();
@@ -110,6 +119,7 @@ export default function AudioCallScreen() {
   const { elapsed, remaining, showLowCoinWarning } = useCallTimer({
     isActive: status === "active",
     maxSeconds: activeCall?.maxSeconds,
+    startTimeMs: activeCall?.startTime,
     onAutoEnd: handleAutoEnd,
   });
 

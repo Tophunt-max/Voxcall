@@ -74,9 +74,13 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     // Bug 10 Fix: Call API first before updating state/navigating.
     // If the API fails (caller already cancelled), decline the call instead of
     // navigating to a dead call screen.
+    let serverStartedAtMs = Date.now(); // fallback if server doesn't return started_at
     if (curr.sessionId) {
       try {
-        await API.answerCall(curr.sessionId, true);
+        const res = await API.answerCall(curr.sessionId, true);
+        // FIX: use server's started_at to sync billing timer — avoids discrepancy
+        // between client clock and server clock when charging coins
+        if (res?.started_at) serverStartedAtMs = res.started_at * 1000;
       } catch {
         // Call no longer valid — silently decline and reset
         updateCall(null);
@@ -84,7 +88,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         return;
       }
     }
-    const updated = { ...curr, status: "active" as CallStatus, startTime: Date.now() };
+    const updated = { ...curr, status: "active" as CallStatus, startTime: serverStartedAtMs };
     updateCall(updated);
     router.replace(curr.type === "audio" ? "/calls/audio-call" : "/calls/video-call");
   }, []);
