@@ -13,19 +13,28 @@ export async function appendFileToFormData(
   mimeType: string
 ): Promise<void> {
   if (Platform.OS === "web") {
+    let lastError: unknown;
     try {
       const response = await fetch(uri);
+      if (!response.ok) throw new Error(`Failed to fetch file: ${response.status}`);
       const blob = await response.blob();
       const file = new File([blob], fileName, { type: mimeType });
       formData.append(fieldName, file);
-    } catch {
-      // Fallback: try appending as blob directly
-      try {
-        const response = await fetch(uri);
-        const blob = await response.blob();
-        formData.append(fieldName, blob, fileName);
-      } catch {}
+      return;
+    } catch (err) {
+      lastError = err;
     }
+    // Fallback: try appending as blob directly
+    try {
+      const response = await fetch(uri);
+      if (!response.ok) throw new Error(`Failed to fetch file (fallback): ${response.status}`);
+      const blob = await response.blob();
+      formData.append(fieldName, blob, fileName);
+      return;
+    } catch (err) {
+      lastError = err;
+    }
+    throw new Error(`Could not prepare file for upload: ${lastError instanceof Error ? lastError.message : String(lastError)}`);
   } else {
     formData.append(fieldName, { uri, name: fileName, type: mimeType } as any);
   }

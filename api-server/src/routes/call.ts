@@ -157,7 +157,17 @@ call.post('/end', async (c) => {
       db.prepare('UPDATE users SET coins = coins + ? WHERE id = ?').bind(hostShare, hostRow?.user_id),
     );
   }
-  await db.batch(txs);
+  const batchResults = await db.batch(txs);
+  // Verify coin deduction actually succeeded (user may have had insufficient coins due to a race)
+  if (coinsCharged > 0) {
+    const deductResult = batchResults[1];
+    if (!deductResult?.meta?.changes || deductResult.meta.changes === 0) {
+      // Deduction failed — undo host credit to keep books balanced
+      console.error('[/end] Coin deduction failed for caller', session.caller_id, '— reversing host credit');
+      await db.prepare('UPDATE users SET coins = coins - ? WHERE id = ?').bind(hostShare, hostRow?.user_id).run();
+      await db.prepare('UPDATE hosts SET total_earnings = total_earnings - ? WHERE id = ?').bind(hostShare, session.host_id).run();
+    }
+  }
 
   // Fix NEW-1 + NEW-2: notify the OTHER party that call ended (cancel/end)
   try {
@@ -460,7 +470,16 @@ call.post('/:id/end', async (c) => {
       db.prepare('UPDATE users SET coins = coins + ? WHERE id = ?').bind(hostShare, hostRow?.user_id),
     );
   }
-  await db.batch(batchOps);
+  const batchOpResults = await db.batch(batchOps);
+  // Verify coin deduction actually succeeded (user may have had insufficient coins due to a race)
+  if (coinsCharged > 0) {
+    const deductResult = batchOpResults[1];
+    if (!deductResult?.meta?.changes || deductResult.meta.changes === 0) {
+      console.error('[/:id/end] Coin deduction failed for caller', session.caller_id, '— reversing host credit');
+      await db.prepare('UPDATE users SET coins = coins - ? WHERE id = ?').bind(hostShare, hostRow?.user_id).run();
+      await db.prepare('UPDATE hosts SET total_earnings = total_earnings - ? WHERE id = ?').bind(hostShare, session.host_id).run();
+    }
+  }
 
   // Fix NEW-1 + NEW-2: notify the OTHER party that call ended
   try {

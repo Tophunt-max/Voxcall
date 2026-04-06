@@ -9,8 +9,15 @@ async function approveDeposit(db: D1Database, purchaseId: string, source: string
   if (!purchase) return { ok: false, notFound: true };
   if (purchase.status === 'success') return { ok: true, already: true };
   const totalCoins = (purchase.coins || 0) + (purchase.bonus_coins || 0);
+  // Atomic CAS: only update if status is still not 'success' — prevents double-credit on concurrent webhook retries
+  const casUpdate = await db.prepare(
+    "UPDATE coin_purchases SET status = 'success', payment_method = COALESCE(payment_method, ?), updated_at = unixepoch() WHERE id = ? AND status != 'success'"
+  ).bind(source, purchaseId).run();
+  if (!casUpdate.meta?.changes || casUpdate.meta.changes === 0) {
+    // Another webhook already processed this purchase
+    return { ok: true, already: true };
+  }
   await db.batch([
-    db.prepare("UPDATE coin_purchases SET status = 'success', payment_method = COALESCE(payment_method, ?), updated_at = unixepoch() WHERE id = ?").bind(source, purchaseId),
     db.prepare('UPDATE users SET coins = coins + ?, updated_at = unixepoch() WHERE id = ?').bind(totalCoins, purchase.user_id),
     db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)').bind(
       crypto.randomUUID(), purchase.user_id, 'purchase', totalCoins, note || `Auto-matched via ${source}`, purchaseId
@@ -137,10 +144,34 @@ payment.post('/webhook/phonepe', async (c) => {
 });
 
 // ─── POST /api/payment/webhook/paytm ─────────────────────────────────────────
+// Paytm checksum verification uses HMAC-SHA256 of sorted param values with merchant key.
+async function verifyPaytmChecksum(payload: Record<string, string>, merchantKey: string): Promise<boolean> {
+  const checksum = payload['CHECKSUMHASH'];
+  if (!checksum) return false;
+  const sortedValues = Object.keys(payload)
+    .filter(k => k !== 'CHECKSUMHASH')
+    .sort()
+    .map(k => (payload[k] === undefined || payload[k] === null ? 'null' : payload[k]))
+    .join('|');
+  const expected = await hmacSha256(merchantKey, sortedValues);
+  return expected === checksum;
+}
+
 payment.post('/webhook/paytm', async (c) => {
   try {
     const body = await c.req.text();
     const payload = JSON.parse(body);
+
+    // Verify Paytm checksum using merchant key from app_settings
+    const merchantKeyRow = await c.env.DB.prepare("SELECT value FROM app_settings WHERE key = 'paytm_merchant_key'").first<any>();
+    if (merchantKeyRow?.value) {
+      const valid = await verifyPaytmChecksum(payload, merchantKeyRow.value);
+      if (!valid) return c.json({ error: 'Invalid checksum' }, 401);
+    } else if (!payload['CHECKSUMHASH']) {
+      // If no key configured and no checksum present, reject as unverifiable
+      return c.json({ error: 'Missing CHECKSUMHASH — configure paytm_merchant_key in app_settings' }, 401);
+    }
+
     const orderId = payload.ORDERID as string;
     const txnStatus = payload.STATUS as string;
     const txnId = payload.TXNID as string;

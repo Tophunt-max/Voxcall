@@ -237,9 +237,18 @@ auth.post('/refresh', async (c) => {
   try {
     const payload = await verifyToken(token, c.env.JWT_SECRET);
     const user = await c.env.DB.prepare(
-      'SELECT id, name, role FROM users WHERE id = ?'
+      'SELECT id, name, role, status, token_invalidated_at FROM users WHERE id = ?'
     ).bind(payload.sub).first<any>();
     if (!user) return c.json({ error: 'User not found' }, 404);
+    if (user.status === 'banned' || user.status === 'deleted') {
+      return c.json({ error: 'Account suspended' }, 403);
+    }
+    // Reject refresh if token was issued before the invalidation timestamp (e.g. after logout)
+    const issuedAt = payload.iat ?? 0;
+    const invalidatedAt = user.token_invalidated_at ?? 0;
+    if (issuedAt < invalidatedAt) {
+      return c.json({ error: 'Token has been revoked. Please log in again.' }, 401);
+    }
     const newToken = await signToken({ sub: user.id, role: user.role, name: user.name }, c.env.JWT_SECRET);
     return c.json({ token: newToken });
   } catch {

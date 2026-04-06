@@ -122,8 +122,8 @@ app.get('/api/ws/call/:sessionId', async (c) => {
   return stub.fetch(c.req.raw);
 });
 
-// 404 handler
-app.notFound((c) => c.json({ error: 'Not found', path: c.req.path }, 404));
+// 404 handler — path is intentionally omitted to prevent internal route enumeration
+app.notFound((c) => c.json({ error: 'Not found' }, 404));
 
 // FIX #2: Stale call reaper — scheduled via Cloudflare Cron (every 5 min)
 // Ends calls stuck in 'active' or 'pending' for >30 minutes (crash/disconnect scenario)

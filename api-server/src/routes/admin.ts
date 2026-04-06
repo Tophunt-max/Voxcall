@@ -379,13 +379,17 @@ admin.post('/notifications/send', async (c) => {
   }
   if (targetUsers.length === 0) return c.json({ sent: 0 });
 
-  // Save to D1 notifications table
-  const stmts = targetUsers.map((u: any) => {
-    const id = 'notif-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
-    return db(c).prepare('INSERT INTO notifications (id, user_id, type, title, body, created_at) VALUES (?, ?, ?, ?, ?, ?)')
-      .bind(id, u.id, type, title, msgBody, now);
-  });
-  await db(c).batch(stmts);
+  // Save to D1 notifications table in chunks of 90 (D1 batch limit is 100)
+  const DB_BATCH_SIZE = 90;
+  for (let i = 0; i < targetUsers.length; i += DB_BATCH_SIZE) {
+    const chunk = targetUsers.slice(i, i + DB_BATCH_SIZE);
+    const stmts = chunk.map((u: any) => {
+      const id = 'notif-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+      return db(c).prepare('INSERT INTO notifications (id, user_id, type, title, body, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+        .bind(id, u.id, type, title, msgBody, now);
+    });
+    await db(c).batch(stmts);
+  }
 
   // Send actual Expo Push Notifications in batches of 100
   try {
