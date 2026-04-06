@@ -242,6 +242,7 @@ function ManualPayModal({ visible, plan, totalCoins, promoCode, onClose, onSucce
   const [autoApproved, setAutoApproved] = useState(false);
   const { refreshBalance } = useAuth();
 
+
   const handleSubmit = useCallback(async () => {
     if (!utr.trim()) { Alert.alert("Required", "Please enter the UTR / transaction reference number."); return; }
     if (!plan) return;

@@ -152,6 +152,7 @@ coin.post('/manual-deposit', async (c) => {
     return c.json({ success: true, purchase_id: purchaseId, status: 'success', coins_added: totalCoins, message: 'Payment auto-approved! Coins added to your account.' });
   }
 
+
   return c.json({ success: true, purchase_id: purchaseId, status: 'pending', message: 'Payment submitted for admin review. Coins will be added once approved.' });
 });
 
