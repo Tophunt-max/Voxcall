@@ -14,15 +14,19 @@ const blankForm = () => ({ email: '', reason: '', ban_type: 'temporary', expires
 export default function BanManagement() {
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [search, setSearch] = useState('');
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState('');
   const [form, setForm] = useState(blankForm());
 
-  useEffect(() => {
-    api.bannedUsers().then(setRows).catch(() => {}).finally(() => setLoading(false));
-  }, []);
+  const load = () => {
+    setLoading(true);
+    setLoadError('');
+    api.bannedUsers().then(setRows).catch((e: any) => setLoadError(e.message || 'Failed to load bans')).finally(() => setLoading(false));
+  };
+  useEffect(load, []);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 2500); };
 
@@ -67,7 +71,7 @@ export default function BanManagement() {
       setCreating(false);
       setForm(blankForm());
       showToast('User banned');
-    } catch { showToast('Failed to ban user'); }
+    } catch (e: any) { showToast('Error: ' + (e?.message || 'Failed to ban user')); }
     finally { setSaving(false); }
   };
 
@@ -94,7 +98,14 @@ export default function BanManagement() {
     },
     {
       key: 'expires', header: 'Expires', className: 'hidden lg:table-cell',
-      render: (r: any) => <span className="text-xs text-muted-foreground">{r.expires_at || 'Never'}</span>
+      render: (r: any) => {
+        if (!r.expires_at) return <span className="text-xs text-muted-foreground">Never</span>;
+        try {
+          return <span className="text-xs text-muted-foreground">{new Date(r.expires_at).toLocaleDateString()}</span>;
+        } catch {
+          return <span className="text-xs text-muted-foreground">{r.expires_at}</span>;
+        }
+      }
     },
     {
       key: 'device', header: 'Device ID', className: 'hidden xl:table-cell',
@@ -114,6 +125,12 @@ export default function BanManagement() {
   return (
     <div className="space-y-5">
       {toast && <div className="fixed bottom-5 right-5 z-50 bg-foreground text-background text-sm px-4 py-2.5 rounded-xl shadow-xl">{toast}</div>}
+
+      {loadError && (
+        <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3">
+          Failed to load bans: {loadError} — <button className="underline font-semibold" onClick={load}>Retry</button>
+        </div>
+      )}
 
       <div className="grid grid-cols-3 gap-4">
         {[
