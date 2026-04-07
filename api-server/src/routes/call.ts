@@ -116,15 +116,17 @@ call.post('/end', async (c) => {
     return c.json({ error: 'Call already ended' }, 400);
   }
 
-  const durationSec = duration_seconds ?? (session.started_at ? now - session.started_at : 0);
-  const durationMin = Math.max(1, Math.ceil(durationSec / 60));
+  // Use server-calculated duration as primary; fall back to client-provided only when started_at unavailable
+  const durationSec = session.started_at ? now - session.started_at : (duration_seconds ?? 0);
+  // Only apply 1-minute minimum when the call actually had some duration
+  const durationMin = durationSec > 0 ? Math.max(1, Math.ceil(durationSec / 60)) : 0;
 
   const hostRow = await db.prepare('SELECT coins_per_minute, audio_coins_per_minute, video_coins_per_minute, user_id, total_minutes, total_earnings FROM hosts WHERE id = ?').bind(session.host_id).first<any>();
   const effectiveRate = session.rate_per_minute
     ?? (session.type === 'video'
         ? (hostRow?.video_coins_per_minute ?? hostRow?.coins_per_minute ?? 5)
         : (hostRow?.audio_coins_per_minute ?? hostRow?.coins_per_minute ?? 5));
-  const coinsCharged = (session.status === 'active' || (session.status === 'pending' && durationSec > 0))
+  const coinsCharged = (session.status === 'active' && durationSec > 0)
     ? durationMin * effectiveRate
     : 0;
   const hostShare = Math.floor(coinsCharged * 0.7);
@@ -487,13 +489,14 @@ call.post('/:id/end', async (c) => {
   }
 
   const durationSec = session.started_at ? now - session.started_at : 0;
-  const durationMin = Math.max(1, Math.ceil(durationSec / 60));
+  // Only apply 1-minute minimum when the call actually had some duration
+  const durationMin = durationSec > 0 ? Math.max(1, Math.ceil(durationSec / 60)) : 0;
   const hostRow = await db.prepare('SELECT coins_per_minute, audio_coins_per_minute, video_coins_per_minute, user_id, total_minutes, total_earnings FROM hosts WHERE id = ?').bind(session.host_id).first<any>();
   const effectiveRate = session.rate_per_minute ?? (session.type === 'video'
     ? (hostRow?.video_coins_per_minute ?? hostRow?.coins_per_minute ?? 5)
     : (hostRow?.audio_coins_per_minute ?? hostRow?.coins_per_minute ?? 5));
-  // Bug 14 fix: only charge if call was actually active
-  const coinsCharged = session.status === 'active' ? durationMin * effectiveRate : 0;
+  // Only charge if call was active AND had non-zero duration
+  const coinsCharged = (session.status === 'active' && durationSec > 0) ? durationMin * effectiveRate : 0;
   const hostShare = Math.floor(coinsCharged * 0.7);
 
   const batchOps: any[] = [
