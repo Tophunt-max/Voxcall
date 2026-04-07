@@ -4,7 +4,7 @@ const net = require('net');
 const { spawn } = require('child_process');
 const path = require('path');
 
-const ADMIN_PORT = 5001;
+const ADMIN_PORT = 5000;
 const USER_APP_PORT = 8080;
 const HOST_APP_PORT = 8099;
 const PROXY_PORT = parseInt(process.env.PROXY_PORT || '3000');
@@ -60,7 +60,7 @@ function startAllServices() {
     EXPO_PUBLIC_API_URL: apiUrl,
   };
 
-  // Admin Panel (Vite/React on port 5000)
+  // Admin Panel (Vite/React on port 5000 — managed here so port 3000 health-check workflow works)
   startService(
     'admin-panel',
     'pnpm',
