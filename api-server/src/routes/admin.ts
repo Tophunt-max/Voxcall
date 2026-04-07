@@ -1356,4 +1356,33 @@ admin.post('/run-migrations', async (c) => {
   return c.json({ success: true, results, total: results.length });
 });
 
+// ─── Stuck Calls Cleanup ───────────────────────────────────────────────────────
+// Marks stale pending (>10 min) and active (>6 hr) calls as ended with 0 coins
+admin.post('/calls/cleanup-stuck', async (c) => {
+  const database = db(c);
+  const now = Math.floor(Date.now() / 1000);
+  const PENDING_TIMEOUT_SEC = 10 * 60;      // 10 minutes
+  const ACTIVE_TIMEOUT_SEC  = 6 * 60 * 60;  // 6 hours
+
+  const stuckPending = await database.prepare(
+    `UPDATE call_sessions SET status = 'ended', ended_at = ?, duration_seconds = 0, coins_charged = 0
+     WHERE status = 'pending' AND created_at < ?`
+  ).bind(now, now - PENDING_TIMEOUT_SEC).run();
+
+  const stuckActive = await database.prepare(
+    `UPDATE call_sessions SET status = 'ended', ended_at = ?, duration_seconds = (? - COALESCE(started_at, created_at)), coins_charged = 0
+     WHERE status = 'active' AND created_at < ?`
+  ).bind(now, now, now - ACTIVE_TIMEOUT_SEC).run();
+
+  const u = c.get('user');
+  await auditLog(database, u.sub, u.email || 'Admin', u.email || '', 'update', 'call_sessions', 'bulk',
+    `Cleaned up ${stuckPending.meta?.changes ?? 0} stuck-pending + ${stuckActive.meta?.changes ?? 0} stuck-active calls`);
+
+  return c.json({
+    success: true,
+    pending_ended: stuckPending.meta?.changes ?? 0,
+    active_ended: stuckActive.meta?.changes ?? 0,
+  });
+});
+
 export default admin;
