@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback } from "react";
+import React, { useEffect, useCallback, useRef } from "react";
 import { View, Text, StyleSheet, Image, TouchableOpacity } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
@@ -17,9 +17,22 @@ export default function IncomingCallScreen() {
 
   const { stop: stopRing } = useRingtone("incoming", true);
 
+  // FIX: Only auto-back when activeCall goes FROM non-null TO null (i.e. call was
+  // cancelled/ended AFTER we mounted). Do NOT back out on first render — there is
+  // a natural race where state hasn't propagated yet when the screen first mounts.
+  const hasMounted = useRef(false);
+  const hadCall = useRef(false);
   useEffect(() => {
-    if (!activeCall) {
-      router.back();
+    if (!hasMounted.current) {
+      hasMounted.current = true;
+      if (activeCall) hadCall.current = true;
+      return;
+    }
+    if (activeCall) {
+      hadCall.current = true;
+    } else if (hadCall.current) {
+      // activeCall went from truthy → null after we confirmed we had one
+      try { router.back(); } catch {}
     }
   }, [activeCall]);
 

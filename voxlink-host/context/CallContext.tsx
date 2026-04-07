@@ -65,7 +65,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       coinsPerMinute,
     };
     updateCall(call);
-    router.push("/calls/incoming");
+    // Navigation is handled by the caller (AppBridge / FCMBridge) so we do NOT
+    // push here. Pushing from two places creates a duplicate stack entry that
+    // causes the incoming screen to auto-back on mount (race condition).
   }, []);
 
   const acceptCall = useCallback(async () => {
@@ -105,13 +107,23 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     if (curr?.sessionId) {
       try { API.answerCall(curr.sessionId, false); } catch {}
     }
-    router.back();
+    // NOTE: Do NOT call router.back() here — incoming.tsx's useEffect watches
+    // activeCall and calls router.back() when it goes null. Calling it here too
+    // would double-pop the navigation stack.
   }, []);
 
   const endCall = useCallback(async (autoEnded = false) => {
     const call = activeCallRef.current;
-    const duration = call?.startTime ? Math.floor((Date.now() - call.startTime) / 1000) : 0;
+    const wasActive = !!(call?.startTime);
+    const duration = wasActive ? Math.floor((Date.now() - call!.startTime!) / 1000) : 0;
     updateCall(null);
+
+    // If call was never answered (still incoming when ended/cancelled by remote),
+    // just dismiss — no summary, no API call needed.
+    if (!wasActive) {
+      // incoming.tsx useEffect watches activeCall → null and calls router.back()
+      return;
+    }
 
     let coinsEarned = Math.floor(duration / 60) * (call?.coinsPerMinute ?? 5);
 
@@ -143,7 +155,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         },
       });
     } else {
-      router.back();
+      try { router.back(); } catch {}
     }
   }, [refreshProfile]);
 
