@@ -69,6 +69,14 @@ export async function apiRequest<T>(
   if (res.status === 401 && auth && _retry) {
     const newToken = await refreshAuthToken();
     if (newToken) return apiRequest<T>(method, path, body, auth, false);
+    // Refresh bhi fail hua — token revoked ya expired hai, force logout karo
+    try {
+      const { removeItem } = await import('@/utils/storage');
+      await removeItem(StorageKeys.AUTH_TOKEN);
+      await removeItem(StorageKeys.USER);
+      const { router } = await import('expo-router');
+      router.replace('/user/auth/login');
+    } catch {}
   }
 
   if (!res.ok) {

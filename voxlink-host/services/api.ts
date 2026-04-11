@@ -69,9 +69,14 @@ export async function apiRequest<T>(
   if (res.status === 401 && auth && _retry) {
     const newToken = await refreshAuthToken();
     if (newToken) return apiRequest<T>(method, path, body, auth, false);
-    // Bug 13 Fix: If refresh also fails, clear the stored token to prevent an infinite
-    // broken-state loop where every request fails with 401 but never triggers logout.
-    await setItem(StorageKeys.AUTH_TOKEN, '');
+    // Refresh bhi fail hua — token revoked ya expired, force logout karo
+    try {
+      const { removeItem } = await import('@/utils/storage');
+      await removeItem(StorageKeys.AUTH_TOKEN);
+      await removeItem(StorageKeys.USER);
+      const { router } = await import('expo-router');
+      router.replace('/auth/login');
+    } catch {}
     throw new Error('SESSION_EXPIRED');
   }
 
