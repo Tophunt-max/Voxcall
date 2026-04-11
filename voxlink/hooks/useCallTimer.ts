@@ -47,7 +47,7 @@ export function useCallTimer({ isActive, maxSeconds, startTimeMs, onAutoEnd }: U
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [isActive]);
+  }, [isActive, startTimeMs]);
 
   useEffect(() => {
     if (!isActive || remaining == null) return;

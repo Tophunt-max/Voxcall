@@ -141,10 +141,18 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
   const endCall = useCallback(async (autoEnded = false) => {
     const call = activeCallRef.current;
-    const duration = call?.startTime ? Math.floor((Date.now() - call.startTime) / 1000) : 0;
+    const wasActive = !!(call?.startTime);
+    const duration = wasActive ? Math.floor((Date.now() - call!.startTime!) / 1000) : 0;
     updateCall(null);
 
-    let coinsSpent = Math.ceil(duration / 60) * (call?.coinsPerMinute ?? 5);
+    // Agar call kabhi accept nahi hua (incoming stage mein hi cancel/decline hua)
+    // to sirf dismiss karo — koi summary, koi API call nahi
+    if (!wasActive) {
+      try { router.back(); } catch {}
+      return;
+    }
+
+    let coinsSpent = Math.ceil((duration / 60) * (call?.coinsPerMinute ?? 5));
 
     if (call?.sessionId) {
       try {
@@ -176,7 +184,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     } else {
       router.back();
     }
-  }, []);
+  }, [updateCoins]);
 
   const toggleMute = useCallback(() => setActiveCall((p) => p ? { ...p, isMuted: !p.isMuted } : null), []);
   const toggleCamera = useCallback(() => setActiveCall((p) => p ? { ...p, isCameraOn: !p.isCameraOn } : null), []);

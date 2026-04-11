@@ -53,7 +53,7 @@ export default function IncomingCallScreen() {
       declineCall();
     }, 30000);
     return () => clearTimeout(timeout);
-  }, []);
+  }, [stopRing, declineCall]);
 
   return (
     <View style={[styles.screen, { backgroundColor: "#1A1A2E", paddingTop: topPad, paddingBottom: bottomPad }]}>

@@ -138,10 +138,13 @@ function WebNotificationBridge() {
 
 // ─── AppBridge ───────────────────────────────────────────────────────────────
 // WebSocket CALL_INCOMING → CallContext (all platforms)
-// WebSocket CALL_END → dismiss active call screen (remote party hung up)
+// NOTE: CALL_END is intentionally NOT handled here — audio-call.tsx and
+// video-call.tsx already handle it with webrtc.cleanup(). Handling it here
+// too causes a double-endCall race where the summary screen gets immediately
+// popped by the second router.back().
 // FCM tap handlers (native + web)
 function AppBridge() {
-  const { receiveCall, endCall, activeCall } = useCall();
+  const { receiveCall, activeCall } = useCall();
 
   useSocketEvent(
     SocketEvents.CALL_INCOMING,
@@ -150,7 +153,6 @@ function AppBridge() {
       receiveCall(
         {
           id: data.callerId ?? data.caller_id ?? "",
-          // Fix H2: callerName comes from backend WS message
           name: data.callerName ?? data.hostName ?? data.caller_name ?? "Caller",
           avatar: data.callerAvatar ?? data.hostAvatar,
           role: "user",
@@ -160,19 +162,6 @@ function AppBridge() {
       );
     },
     [activeCall]
-  );
-
-  // Fix NEW-1 + NEW-2: when remote party ends or cancels, dismiss our screen
-  useSocketEvent(
-    SocketEvents.CALL_END,
-    (data: any) => {
-      const sid = data?.sessionId ?? data?.session_id;
-      if (activeCall && (!sid || activeCall.sessionId === sid)) {
-        // endCall will try API.endCall → gets "already ended" (silently caught) → goes to summary
-        endCall(true);
-      }
-    },
-    [activeCall, endCall]
   );
 
   return (

@@ -53,7 +53,7 @@ const queryClient = new QueryClient({
   },
 });
 
-function FCMNotificationTapBridge() {
+function FCMNotificationTapBridge({ seenCallIds }: { seenCallIds: React.MutableRefObject<Set<string>> }) {
   const { receiveCall, activeCall } = useCall();
 
   useEffect(() => {
@@ -62,11 +62,13 @@ function FCMNotificationTapBridge() {
     function handleNotificationData(data: Record<string, any>) {
       if (!data) return;
       if (data.type === "incoming_call") {
-        if (!activeCall) {
+        const callId = String(data.session_id ?? "");
+        if (!activeCall && callId && !seenCallIds.current.has(callId)) {
+          seenCallIds.current.add(callId);
           receiveCall(
             { id: String(data.caller_id ?? ""), name: data.caller_name ?? "Caller", role: "user" },
             (data.call_type as "audio" | "video") ?? "audio",
-            String(data.session_id ?? "")
+            callId
           );
           router.push("/calls/incoming");
         }
@@ -99,7 +101,7 @@ function FCMNotificationTapBridge() {
   return null;
 }
 
-function WebNotificationBridge() {
+function WebNotificationBridge({ seenCallIds }: { seenCallIds: React.MutableRefObject<Set<string>> }) {
   const { receiveCall, activeCall } = useCall();
 
   useEffect(() => {
@@ -109,11 +111,13 @@ function WebNotificationBridge() {
       if (event.data?.type !== "NOTIFICATION_CLICK") return;
       const data = event.data?.data ?? {};
       if (data.type === "incoming_call") {
-        if (!activeCall) {
+        const callId = String(data.session_id ?? "");
+        if (!activeCall && callId && !seenCallIds.current.has(callId)) {
+          seenCallIds.current.add(callId);
           receiveCall(
             { id: String(data.caller_id ?? ""), name: data.caller_name ?? "Caller", role: "user" },
             (data.call_type as "audio" | "video") ?? "audio",
-            String(data.session_id ?? "")
+            callId
           );
           router.push("/calls/incoming");
         }
@@ -131,12 +135,19 @@ function WebNotificationBridge() {
 }
 
 function AppBridge() {
-  const { receiveCall, endCall, activeCall } = useCall();
+  const { receiveCall, activeCall } = useCall();
   const { user, isLoggedIn } = useAuth();
   const activeCallRef = useRef(activeCall);
   const seenCallIds = useRef(new Set<string>());
 
   useEffect(() => { activeCallRef.current = activeCall; }, [activeCall]);
+
+  // seenCallIds logout pe clear karo — nahin to purane IDs future calls block karenge
+  useEffect(() => {
+    if (!isLoggedIn) {
+      seenCallIds.current.clear();
+    }
+  }, [isLoggedIn]);
 
   // Polling fallback — fires every 4 s while logged in.
   // Catches incoming calls even when WebSocket is disconnected.
@@ -149,6 +160,8 @@ function AppBridge() {
       try {
         const pending = await API.getPendingCall();
         if (pending?.id && !seenCallIds.current.has(pending.id)) {
+          // Size cap — prevent unbounded memory growth
+          if (seenCallIds.current.size > 500) seenCallIds.current.clear();
           seenCallIds.current.add(pending.id);
           receiveCall(
             {
@@ -159,7 +172,8 @@ function AppBridge() {
             },
             (pending.call_type as "audio" | "video") ?? "audio",
             pending.id,
-            pending.rate_per_minute
+            pending.rate_per_minute,
+            (pending as any).max_seconds
           );
           router.push("/calls/incoming");
         }
@@ -176,6 +190,7 @@ function AppBridge() {
       if (activeCallRef.current) return;
       const callId = data.callId ?? data.sessionId ?? data.session_id ?? "";
       if (callId && seenCallIds.current.has(callId)) return;
+      if (seenCallIds.current.size > 500) seenCallIds.current.clear();
       if (callId) seenCallIds.current.add(callId);
       receiveCall(
         {
@@ -186,28 +201,22 @@ function AppBridge() {
         },
         data.type ?? data.call_type ?? "audio",
         callId,
-        data.coinsPerMinute
+        data.coinsPerMinute,
+        data.maxSeconds
       );
       router.push("/calls/incoming");
     },
     []
   );
 
-  useSocketEvent(
-    SocketEvents.CALL_END,
-    (data: any) => {
-      const sid = data?.sessionId ?? data?.session_id;
-      if (activeCall && (!sid || activeCall.sessionId === sid)) {
-        endCall(true);
-      }
-    },
-    [activeCall, endCall]
-  );
+  // NOTE: CALL_END intentionally NOT handled here — audio-call.tsx aur
+  // video-call.tsx already handle it with webrtc.cleanup(). Yahan bhi handle karne
+  // se double endCall hoti hai aur summary screen immediately pop ho jaati hai.
 
   return (
     <>
-      {Platform.OS !== "web" && <FCMNotificationTapBridge />}
-      {Platform.OS === "web" && <WebNotificationBridge />}
+      {Platform.OS !== "web" && <FCMNotificationTapBridge seenCallIds={seenCallIds} />}
+      {Platform.OS === "web" && <WebNotificationBridge seenCallIds={seenCallIds} />}
     </>
   );
 }

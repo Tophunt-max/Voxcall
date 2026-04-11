@@ -23,6 +23,7 @@ export interface ActiveCall {
   participant: CallParticipant;
   startTime?: number;
   coinsPerMinute?: number;
+  maxSeconds?: number;
   isMuted?: boolean;
   isCameraOn?: boolean;
   isSpeakerOn?: boolean;
@@ -30,7 +31,7 @@ export interface ActiveCall {
 
 interface CallContextValue {
   activeCall: ActiveCall | null;
-  receiveCall: (participant: CallParticipant, type: CallType, callId: string, coinsPerMinute?: number) => void;
+  receiveCall: (participant: CallParticipant, type: CallType, callId: string, coinsPerMinute?: number, maxSeconds?: number) => void;
   acceptCall: () => void;
   markCallActive: () => void;
   declineCall: () => void;
@@ -52,7 +53,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     setActiveCall(call);
   };
 
-  const receiveCall = useCallback((participant: CallParticipant, type: CallType, callId: string, coinsPerMinute?: number) => {
+  const receiveCall = useCallback((participant: CallParticipant, type: CallType, callId: string, coinsPerMinute?: number, maxSeconds?: number) => {
     const call: ActiveCall = {
       callId,
       sessionId: callId,
@@ -63,6 +64,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       isCameraOn: false,
       isSpeakerOn: false,
       coinsPerMinute,
+      maxSeconds,
     };
     updateCall(call);
     // Navigation is handled by the caller (AppBridge / FCMBridge) so we do NOT
@@ -125,7 +127,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    let coinsEarned = Math.floor(duration / 60) * (call?.coinsPerMinute ?? 5);
+    let coinsEarned = Math.ceil((duration / 60) * (call?.coinsPerMinute ?? 5));
 
     if (call?.sessionId) {
       try {
