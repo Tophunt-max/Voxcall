@@ -43,7 +43,7 @@ jobs:
         env:
           NODE_ENV: production
           EXPO_PUBLIC_API_URL: ${{ vars.EXPO_PUBLIC_API_URL }}
-          EXPO_PUBLIC_FIREBASE_VAPID_KEY: ${{ vars.EXPO_PUBLIC_FIREBASE_VAPID_KEY }}
+          EXPO_PUBLIC_FIREBASE_VAPID_KEY: "BA169KXMPc3JsGE64NRFeibiuxRCPfphnVroydDaG69iL4HYuhMqA1hKx3e-b5wAWhgqcBS_mIcO8Yz428do63E"
           EXPO_PUBLIC_FIREBASE_API_KEY: ${{ vars.EXPO_PUBLIC_FIREBASE_API_KEY }}
           EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN: "connectme-80909.firebaseapp.com"
           EXPO_PUBLIC_FIREBASE_PROJECT_ID: "connectme-80909"
