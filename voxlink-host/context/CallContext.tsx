@@ -75,26 +75,40 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const acceptCall = useCallback(async () => {
     const curr = activeCallRef.current;
     if (!curr) return;
-    // Bug 10 Fix: Call API first before updating state/navigating.
-    // If the API fails (caller already cancelled), decline the call instead of
-    // navigating to a dead call screen.
-    let serverStartedAtMs = Date.now(); // fallback if server doesn't return started_at
+
+    let serverStartedAtMs = Date.now();
     if (curr.sessionId) {
       try {
         const res = await API.answerCall(curr.sessionId, true);
-        // FIX: use server's started_at to sync billing timer — avoids discrepancy
-        // between client clock and server clock when charging coins
         if (res?.started_at) serverStartedAtMs = res.started_at * 1000;
-      } catch {
-        // Call no longer valid — silently decline and reset
-        updateCall(null);
-        try { router.back(); } catch {}
-        return;
+      } catch (e: any) {
+        const msg = (e?.message || "").toLowerCase();
+        // Sirf "session not found" ya "not authorized" pe decline karo
+        // Network error ya 401 pe bhi decline mat karo — retry milega
+        const isHardFail =
+          msg.includes("not found") ||
+          msg.includes("not authorized") ||
+          msg.includes("declined") ||
+          msg.includes("ended");
+        if (isHardFail) {
+          updateCall(null);
+          // incoming.tsx ka activeCall watcher router.back() karega
+          return;
+        }
+        // Soft error (network, timeout): optimistically continue karo
+        // server billing timer reset ho sakta hai — startTime ab ka use hoga
+        console.warn("answerCall soft error, continuing:", e);
       }
     }
+
     const updated = { ...curr, status: "active" as CallStatus, startTime: serverStartedAtMs };
     updateCall(updated);
-    router.replace(curr.type === "audio" ? "/calls/audio-call" : "/calls/video-call");
+
+    // router.replace ki jagah router.push use karo — fullScreenModal ke andar
+    // replace() kabhi kabhi modal stack ko galat navigate karta hai web pe.
+    // incoming screen activeCall null nahi hoga (status "active" hai) isliye
+    // incoming ka watcher back() nahi karega.
+    router.push(curr.type === "audio" ? "/calls/audio-call" : "/calls/video-call");
   }, []);
 
   const markCallActive = useCallback(() => {

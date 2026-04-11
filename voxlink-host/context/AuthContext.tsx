@@ -238,16 +238,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const setOnlineStatus = useCallback(async (online: boolean) => {
-    // Backend expects is_online (snake_case), not isOnline
-    try {
-      await apiRequest("PATCH", "/api/host/status", { is_online: online });
-    } catch {}
+    // Optimistic update — UI turant respond kare
     setState((prev) => {
       if (!prev.user) return prev;
       const updated = { ...prev.user, isOnline: online };
       setItem(StorageKeys.USER, updated);
       return { ...prev, user: updated };
     });
+    try {
+      await apiRequest("PATCH", "/api/host/status", { is_online: online });
+    } catch (e) {
+      // API fail hua — revert karo
+      setState((prev) => {
+        if (!prev.user) return prev;
+        const reverted = { ...prev.user, isOnline: !online };
+        setItem(StorageKeys.USER, reverted);
+        return { ...prev, user: reverted };
+      });
+      throw e; // Caller (index.tsx) revert karega UI mein bhi
+    }
   }, []);
 
   return (

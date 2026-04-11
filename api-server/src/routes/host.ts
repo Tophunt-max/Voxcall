@@ -189,8 +189,43 @@ hostProtected.patch('/me', async (c) => {
 hostProtected.patch('/status', async (c) => {
   const { sub } = c.get('user');
   const { is_online } = await c.req.json();
+
+  // 1. DB update
   await c.env.DB.prepare('UPDATE hosts SET is_online = ?, updated_at = unixepoch() WHERE user_id = ?')
     .bind(is_online ? 1 : 0, sub).run();
+
+  // 2. Host ke apne NotificationHub ko notify karo — host app ka UI sync rahega
+  try {
+    const hostNotifId = c.env.NOTIFICATION_HUB.idFromName(sub);
+    const hostNotifStub = c.env.NOTIFICATION_HUB.get(hostNotifId);
+    await hostNotifStub.fetch('https://dummy/notify', {
+      method: 'POST',
+      body: JSON.stringify({ type: 'presence', user_id: sub, is_online }),
+    });
+  } catch {}
+
+  // 3. Active users (last 100 user-role accounts) ko broadcast karo
+  // taaki unka host list instantly refresh ho — presence event pe queryClient invalidate hoga
+  try {
+    const recentUsers = await c.env.DB.prepare(
+      `SELECT id FROM users WHERE role = 'user' ORDER BY updated_at DESC LIMIT 100`
+    ).all<{ id: string }>();
+
+    const presenceMsg = JSON.stringify({ type: 'presence', user_id: sub, is_online });
+    await Promise.allSettled(
+      (recentUsers.results ?? []).map(async (u) => {
+        try {
+          const notifId = c.env.NOTIFICATION_HUB.idFromName(u.id);
+          const notifStub = c.env.NOTIFICATION_HUB.get(notifId);
+          await notifStub.fetch('https://dummy/notify', {
+            method: 'POST',
+            body: presenceMsg,
+          });
+        } catch {}
+      })
+    );
+  } catch {}
+
   return c.json({ success: true, is_online });
 });
 

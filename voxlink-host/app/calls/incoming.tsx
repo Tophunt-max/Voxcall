@@ -17,9 +17,8 @@ export default function IncomingCallScreen() {
 
   const { stop: stopRing } = useRingtone("incoming", true);
 
-  // FIX: Only auto-back when activeCall goes FROM non-null TO null (i.e. call was
-  // cancelled/ended AFTER we mounted). Do NOT back out on first render — there is
-  // a natural race where state hasn't propagated yet when the screen first mounts.
+  // Sirf tab back lo jab activeCall null ho jaye (call cancel/decline/end hua)
+  // Agar status "active" ho gaya (accept hua) to back mat lo — audio/video screen open ho raha hai
   const hasMounted = useRef(false);
   const hadCall = useRef(false);
   useEffect(() => {
@@ -30,8 +29,11 @@ export default function IncomingCallScreen() {
     }
     if (activeCall) {
       hadCall.current = true;
-    } else if (hadCall.current) {
-      // activeCall went from truthy → null after we confirmed we had one
+      // Accept hone ke baad status "active" hota hai — yahan kuch mat karo
+      return;
+    }
+    // activeCall null hua — call cancel/decline/end hua
+    if (hadCall.current) {
       try { router.back(); } catch {}
     }
   }, [activeCall]);

@@ -16,6 +16,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { useCall } from "@/context/CallContext";
+import { useSocketEvent } from "@/context/SocketContext";
+import { SocketEvents } from "@/constants/events";
 import { HostCard } from "@/components/HostCard";
 import { InsufficientCoinsPopup } from "@/components/InsufficientCoinsPopup";
 import { SkeletonHostCard, SkeletonHostCardCompact } from "@/components/SkeletonCard";
@@ -265,6 +267,33 @@ export default function HomeScreen() {
     await refetchHosts();
     setRefreshing(false);
   }, [queryClient, refetchHosts]);
+
+  // REALTIME: Jab koi host online/offline ho — host list mein turant update karo
+  // Backend PATCH /api/host/status ke baad "presence" socket event bhejta hai
+  useSocketEvent(
+    SocketEvents.PRESENCE_UPDATE,
+    (data: any) => {
+      const hostUserId: string = data?.userId ?? data?.user_id;
+      const isOnline: boolean = !!(data?.isOnline ?? data?.is_online);
+      if (!hostUserId) return;
+
+      // React Query cache mein directly update karo — re-fetch nahi karunga
+      // taaki instant lag kare bina network call ke
+      queryClient.setQueryData<Host[]>(['hosts'], (old) => {
+        if (!old) return old;
+        const updated = old.map((h) =>
+          h.id === hostUserId ? { ...h, isOnline } : h
+        );
+        // Agar host nahi mili cache mein (nayi host), full refetch karo
+        const found = old.some((h) => h.id === hostUserId);
+        if (!found) {
+          queryClient.invalidateQueries({ queryKey: ['hosts'] });
+        }
+        return updated;
+      });
+    },
+    [queryClient]
+  );
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
