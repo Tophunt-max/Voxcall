@@ -12,6 +12,8 @@ import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { API, resolveMediaUrl } from "@/services/api";
 import { showErrorToast } from "@/components/Toast";
+import { useSocketEvent } from "@/context/SocketContext";
+import { SocketEvents } from "@/constants/events";
 import { usePermissions } from "@/hooks/usePermissions";
 import { PermissionDialog, PERMISSION_CONFIGS } from "@/components/PermissionDialog";
 import { SkeletonStatsCard } from "@/components/SkeletonCard";
@@ -62,6 +64,11 @@ export default function HostHomeScreen() {
   useFocusEffect(useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['host-earnings'] });
   }, [queryClient]));
+
+  // Call khatam hone par coin event aata hai — dashboard earnings turant refresh karo
+  useSocketEvent(SocketEvents.COIN_DEDUCTED, () => {
+    queryClient.invalidateQueries({ queryKey: ['host-earnings'] });
+  }, [queryClient]);
 
   return (
     <ScrollView

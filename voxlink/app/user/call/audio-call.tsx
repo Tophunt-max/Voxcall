@@ -137,7 +137,21 @@ export default function AudioCallScreen() {
   const fmt = (s: number) =>
     `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 
-  const statusLabel = status === "active" ? fmt(elapsed) : status === "ringing" ? "Ringing..." : "Connecting...";
+  const connectionStateLabel = (() => {
+    if (status === "active") return fmt(elapsed);
+    if (status === "ringing") return "Ringing...";
+    // WebRTC connection state se detailed feedback
+    switch (webrtc.connectionState) {
+      case "checking":   return "Connecting...";
+      case "connected":  return "Connected";
+      case "disconnected": return "Network drop — reconnecting...";
+      case "failed":     return "Connection failed — retrying...";
+      case "closed":     return "Call ended";
+      default:           return "Connecting...";
+    }
+  })();
+
+  const statusLabel = connectionStateLabel;
 
   const remainingLabel = remaining != null
     ? remaining <= 60

@@ -63,6 +63,9 @@ export class WebRTCService {
   private pullRunning = false;
   private triggerPullPending = false;
   private pullTimer: ReturnType<typeof setTimeout> | null = null;
+  private iceRestartTimer: ReturnType<typeof setTimeout> | null = null;
+  private iceRestartAttempts = 0;
+  private readonly MAX_ICE_RESTART_ATTEMPTS = 3;
 
   constructor(
     sessionId: string,
@@ -124,6 +127,12 @@ export class WebRTCService {
       this.pc.addEventListener('connectionstatechange', () => {
         const state = this.pc?.connectionState || 'unknown';
         this.callbacks.onConnectionStateChange?.(state);
+        if (state === 'disconnected' || state === 'failed') {
+          this._scheduleIceRestart(state === 'failed');
+        }
+        if (state === 'connected') {
+          this._clearIceRestartTimer();
+        }
       });
 
       const constraints: any = {
@@ -304,6 +313,40 @@ export class WebRTCService {
     this.pullRunning = false;
   }
 
+  private _scheduleIceRestart(immediate = false): void {
+    if (this.destroyed || this.iceRestartAttempts >= this.MAX_ICE_RESTART_ATTEMPTS) {
+      if (this.iceRestartAttempts >= this.MAX_ICE_RESTART_ATTEMPTS) {
+        this.callbacks.onError?.(new Error('Connection failed after multiple reconnect attempts'));
+      }
+      return;
+    }
+    this._clearIceRestartTimer();
+    const delay = immediate ? 1000 : 3000 + (this.iceRestartAttempts * 2000);
+    this.iceRestartTimer = setTimeout(async () => {
+      if (this.destroyed || !this.pc) return;
+      try {
+        this.iceRestartAttempts++;
+        const offer = await this.pc.createOffer({ iceRestart: true });
+        await this.pc.setLocalDescription(offer);
+        await this.waitForIceGathering();
+        const localDesc = this.pc.localDescription;
+        if (localDesc) {
+          await API.pushTracks(this.sessionId, localDesc.sdp, localDesc.type, []);
+        }
+      } catch (err) {
+        console.warn('[WebRTC] ICE restart failed:', err);
+      }
+    }, delay);
+  }
+
+  private _clearIceRestartTimer(): void {
+    if (this.iceRestartTimer) {
+      clearTimeout(this.iceRestartTimer);
+      this.iceRestartTimer = null;
+    }
+    this.iceRestartAttempts = 0;
+  }
+
   toggleMute(muted: boolean): void {
     if (!this.localStream) return;
     this.localStream.getAudioTracks().forEach((track: any) => {
@@ -321,8 +364,32 @@ export class WebRTCService {
   async switchCamera(): Promise<void> {
     if (!this.localStream) return;
     const videoTrack = this.localStream.getVideoTracks()[0];
-    if (videoTrack && videoTrack._switchCamera) {
-      videoTrack._switchCamera();
+    if (!videoTrack) return;
+
+    if (Platform.OS !== 'web') {
+      if (videoTrack._switchCamera) {
+        videoTrack._switchCamera();
+      }
+    } else {
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const cameras = devices.filter((d) => d.kind === 'videoinput');
+        if (cameras.length < 2) return;
+        const currentId = videoTrack.getSettings().deviceId;
+        const nextCamera = cameras.find((c) => c.deviceId !== currentId) ?? cameras[0];
+        const newStream = await navigator.mediaDevices.getUserMedia({
+          video: { deviceId: { exact: nextCamera.deviceId } },
+          audio: false,
+        });
+        const newVideoTrack = newStream.getVideoTracks()[0];
+        const sender = this.pc?.getSenders().find((s: any) => s.track?.kind === 'video');
+        if (sender) await sender.replaceTrack(newVideoTrack);
+        this.localStream.removeTrack(videoTrack);
+        this.localStream.addTrack(newVideoTrack);
+        videoTrack.stop();
+      } catch (err) {
+        console.warn('switchCamera web error:', err);
+      }
     }
   }
 
@@ -337,6 +404,7 @@ export class WebRTCService {
   destroy(): void {
     this.destroyed = true;
     this.pullRunning = false;
+    this._clearIceRestartTimer();
 
     if (this.pullTimer) {
       clearTimeout(this.pullTimer);

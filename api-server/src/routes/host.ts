@@ -1,8 +1,23 @@
 import { Hono } from 'hono';
+import { zValidator } from '@hono/zod-validator';
+import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth';
 import type { Env, JWTPayload } from '../types';
 
 const host = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
+
+const updateProfileSchema = z.object({
+  display_name: z.string().min(2).max(60).optional(),
+  specialties: z.array(z.string().max(50)).max(10).optional(),
+  languages: z.array(z.string().max(30)).max(10).optional(),
+  coins_per_minute: z.number().int().min(1).max(500).optional(),
+  audio_coins_per_minute: z.number().int().min(1).max(500).optional(),
+  video_coins_per_minute: z.number().int().min(1).max(500).optional(),
+}).strict();
+
+const statusSchema = z.object({
+  is_online: z.boolean(),
+});
 
 /* ─── Level helpers ─── */
 const LEVELS: Record<number, { name: string; badge: string; color: string }> = {
@@ -158,7 +173,7 @@ const hostProtected = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } 
 hostProtected.use('*', authMiddleware);
 
 // PATCH /api/host/me — update host profile
-hostProtected.patch('/me', async (c) => {
+hostProtected.patch('/me', zValidator('json', updateProfileSchema), async (c) => {
   const { sub } = c.get('user');
   const body = await c.req.json();
   const MAX_RATE = 500; // coins per minute cap to prevent hosts from setting abusive rates
@@ -186,7 +201,7 @@ hostProtected.patch('/me', async (c) => {
 });
 
 // PATCH /api/host/status — go online/offline
-hostProtected.patch('/status', async (c) => {
+hostProtected.patch('/status', zValidator('json', statusSchema), async (c) => {
   const { sub } = c.get('user');
   const { is_online } = await c.req.json();
 

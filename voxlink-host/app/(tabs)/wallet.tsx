@@ -9,6 +9,8 @@ import { router } from "expo-router";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { API } from "@/services/api";
+import { useSocketEvent } from "@/context/SocketContext";
+import { SocketEvents } from "@/constants/events";
 import { showSuccessToast, showErrorToast, showWarningToast } from "@/components/Toast";
 
 const WITHDRAW_OPTIONS = [100, 200, 500, 1000];
@@ -103,6 +105,11 @@ export default function HostWalletScreen() {
   }, []);
 
   useEffect(() => { load(); }, []);
+
+  // Call khatam hone par coin_update event aata hai — wallet reload karo
+  useSocketEvent(SocketEvents.COIN_DEDUCTED, () => {
+    load();
+  }, [load]);
 
   const handleWithdraw = useCallback(async () => {
     const amt = parseInt(withdrawAmt, 10);

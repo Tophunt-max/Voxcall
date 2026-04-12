@@ -130,28 +130,30 @@ app.notFound((c) => c.json({ error: 'Not found' }, 404));
 // This prevents coins from being permanently frozen when neither party calls /end
 async function reapStaleCalls(env: Env): Promise<void> {
   const db = env.DB;
-  const staleThresholdSec = 30 * 60; // 30 minutes
-  const cutoff = Math.floor(Date.now() / 1000) - staleThresholdSec;
+  const now = Math.floor(Date.now() / 1000);
+
+  // Pending calls: 2 min ke baad expire (ring timeout 45s hai — 2min is generous)
+  const pendingCutoff = now - 120;
+  // Active calls: 30 min ke baad expire (crash/disconnect scenario)
+  const activeCutoff = now - (30 * 60);
 
   try {
-    // Find stale active calls (started but never ended)
     const staleCalls = await db
       .prepare(
-        `SELECT cs.id, cs.caller_id, cs.host_id, cs.started_at, cs.rate_per_minute, cs.type,
-                h.user_id as host_user_id, h.user_id as host_coins_user_id,
+        `SELECT cs.id, cs.caller_id, cs.host_id, cs.started_at, cs.created_at, cs.rate_per_minute, cs.type,
+                h.user_id as host_user_id,
                 cs.status
          FROM call_sessions cs
          JOIN hosts h ON h.id = cs.host_id
-         WHERE cs.status IN ('active', 'pending')
-           AND cs.created_at < ?
+         WHERE (cs.status = 'pending' AND cs.created_at < ?)
+            OR (cs.status = 'active'  AND cs.started_at < ?)
          LIMIT 50`
       )
-      .bind(cutoff)
+      .bind(pendingCutoff, activeCutoff)
       .all<any>();
 
     if (!staleCalls.results.length) return;
 
-    const now = Math.floor(Date.now() / 1000);
     const ops: any[] = [];
 
     for (const call of staleCalls.results) {
@@ -178,11 +180,11 @@ async function reapStaleCalls(env: Env): Promise<void> {
         const hostEarnings = Math.floor(coinsCharged * 0.7);
         batchOps.push(
           db.prepare(`UPDATE users SET coins = MAX(0, coins - ?) WHERE id = ?`).bind(coinsCharged, call.caller_id),
-          db.prepare(`UPDATE users SET coins = coins + ? WHERE id = ?`).bind(hostEarnings, call.host_coins_user_id),
+          db.prepare(`UPDATE users SET coins = coins + ? WHERE id = ?`).bind(hostEarnings, call.host_user_id),
           db.prepare(`INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?,?,?,?,?,?)`)
             .bind(crypto.randomUUID(), call.caller_id, 'spend', -coinsCharged, `${call.type || 'audio'} call (auto-reaped)`, call.id),
           db.prepare(`INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?,?,?,?,?,?)`)
-            .bind(crypto.randomUUID(), call.host_coins_user_id, 'earn', hostEarnings, `${call.type || 'audio'} call earnings (auto-reaped)`, call.id),
+            .bind(crypto.randomUUID(), call.host_user_id, 'earn', hostEarnings, `${call.type || 'audio'} call earnings (auto-reaped)`, call.id),
         );
       }
 

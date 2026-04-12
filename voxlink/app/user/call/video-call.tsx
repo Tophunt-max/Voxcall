@@ -201,6 +201,16 @@ export default function VideoCallScreen() {
     ? remaining <= 60 ? `${remaining}s left` : `${Math.ceil(remaining / 60)} min left`
     : null;
 
+  const connectingLabel = (() => {
+    switch (webrtc.connectionState) {
+      case "checking":     return "Connecting...";
+      case "connected":    return "Connected";
+      case "disconnected": return "Network drop — reconnecting...";
+      case "failed":       return "Connection failed — retrying...";
+      default:             return "Connecting...";
+    }
+  })();
+
   const remoteAvatarUri = activeCall?.participant.avatar ??
     `https://api.dicebear.com/7.x/avataaars/svg?seed=${activeCall?.participant.id ?? "host"}`;
 
@@ -297,7 +307,7 @@ export default function VideoCallScreen() {
         {status !== "active" && (
           <View style={styles.connectingBadge}>
             <Text style={styles.connectingText}>
-              {status === "connecting" ? "Connecting..." : "Ringing..."}
+              {status === "connecting" ? connectingLabel : "Ringing..."}
             </Text>
           </View>
         )}

@@ -161,9 +161,13 @@ CREATE INDEX IF NOT EXISTS idx_hosts_user_id ON hosts(user_id);
 CREATE INDEX IF NOT EXISTS idx_hosts_is_online ON hosts(is_online);
 CREATE INDEX IF NOT EXISTS idx_call_sessions_caller ON call_sessions(caller_id);
 CREATE INDEX IF NOT EXISTS idx_call_sessions_host ON call_sessions(host_id);
+CREATE INDEX IF NOT EXISTS idx_call_sessions_status_created ON call_sessions(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_call_sessions_caller_status ON call_sessions(caller_id, status);
+CREATE INDEX IF NOT EXISTS idx_call_sessions_host_status ON call_sessions(host_id, status);
 CREATE INDEX IF NOT EXISTS idx_messages_room ON messages(room_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, is_read);
 CREATE INDEX IF NOT EXISTS idx_coin_tx_user ON coin_transactions(user_id, created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_coin_purchases_payment_ref ON coin_purchases(payment_ref) WHERE payment_ref IS NOT NULL;
 
 -- Default seed data
 INSERT OR IGNORE INTO coin_plans (id, name, coins, price, bonus_coins, is_popular) VALUES

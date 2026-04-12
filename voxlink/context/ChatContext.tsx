@@ -53,7 +53,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           participantAvatar: r.other_avatar ?? undefined,
           lastMessage: r.last_message ?? "",
           lastMessageTime: r.last_message_at ? r.last_message_at * 1000 : Date.now(),
-          unreadCount: 0,
+          unreadCount: r.unread_count ?? 0,
           messages: [],
           roomId: r.id,
         }));

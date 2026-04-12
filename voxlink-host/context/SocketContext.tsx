@@ -9,6 +9,7 @@ import React, {
   useState,
   useCallback,
 } from "react";
+import { AppState } from "react-native";
 import socketService from "@/services/SocketService";
 import { SocketEvents } from "@/constants/events";
 import { useAuth } from "@/context/AuthContext";
@@ -43,10 +44,18 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     const offConnect = socketService.on(SocketEvents.CONNECT, () => setIsConnected(true));
     const offDisconnect = socketService.on(SocketEvents.DISCONNECT, () => setIsConnected(false));
 
+    // App foreground pe aane par socket reconnect karo
+    const appStateSub = AppState.addEventListener("change", (state) => {
+      if (state === "active" && !socketService.connected && user?.id) {
+        socketService.reconnect();
+      }
+    });
+
     cleanupRefs.current = [offConnect, offDisconnect];
 
     return () => {
       cleanupRefs.current.forEach((fn) => fn());
+      appStateSub.remove();
       socketService.disconnect();
     };
   }, [isLoggedIn, user?.id]);

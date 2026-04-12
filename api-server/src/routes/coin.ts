@@ -50,13 +50,29 @@ coin.get('/history', async (c) => {
   return c.json(result.results);
 });
 
-// POST /api/coins/purchase — coin purchase with deposit tracking
+// POST /api/coins/purchase — coin purchase with payment verification
+// SECURITY: payment_ref required for all non-manual methods to prevent free coin abuse
 coin.post('/purchase', async (c) => {
   const { sub } = c.get('user');
   const { plan_id, payment_method, payment_ref, utr_id, gateway_id, promo_code } = await c.req.json();
   const db = c.env.DB;
+
+  if (!plan_id) return c.json({ error: 'plan_id is required' }, 400);
   const plan = await db.prepare('SELECT * FROM coin_plans WHERE id = ? AND is_active = 1').bind(plan_id).first<any>();
   if (!plan) return c.json({ error: 'Plan not found' }, 404);
+
+  const method = payment_method || 'unknown';
+  // Require payment_ref for all non-manual payment methods (prevents free coin abuse)
+  if (!['manual', 'admin_grant'].includes(method) && !payment_ref) {
+    return c.json({ error: 'payment_ref is required to verify payment' }, 400);
+  }
+  // Prevent duplicate payment processing
+  if (payment_ref) {
+    const dup = await db.prepare(
+      "SELECT id FROM coin_purchases WHERE payment_ref = ? AND status = 'success' LIMIT 1"
+    ).bind(String(payment_ref)).first<any>();
+    if (dup) return c.json({ error: 'This payment has already been processed' }, 409);
+  }
 
   // Bug fix: look up promo code and apply bonus_coins if valid
   let promoBonus = 0;
@@ -156,39 +172,62 @@ coin.post('/manual-deposit', async (c) => {
 });
 
 // POST /api/coins/withdraw — host withdrawal request
+// Coins are frozen (not deducted) until admin approves.
+// Admin approve → deduct + transfer. Admin reject → unfreeze.
 coin.post('/withdraw', async (c) => {
   const { sub } = c.get('user');
   const { coins_requested, method, account_info } = await c.req.json();
   const db = c.env.DB;
 
-  // Check host
   const h = await db.prepare('SELECT id FROM hosts WHERE user_id = ?').bind(sub).first<any>();
   if (!h) return c.json({ error: 'Not a host account' }, 403);
 
-  // Get settings
+  if (!coins_requested || isNaN(Number(coins_requested)) || Number(coins_requested) <= 0) {
+    return c.json({ error: 'Invalid coins amount' }, 400);
+  }
+  const coinsReq = Math.floor(Number(coins_requested));
+
   const settings = await db.prepare("SELECT value FROM app_settings WHERE key = 'min_withdrawal_coins'").first<any>();
   const minCoins = parseInt(settings?.value ?? '100');
-  if (!coins_requested || coins_requested < minCoins) return c.json({ error: `Minimum withdrawal is ${minCoins} coins` }, 400);
+  if (coinsReq < minCoins) return c.json({ error: `Minimum withdrawal is ${minCoins} coins` }, 400);
 
-  // Check user has enough coins
+  // Atomic check + freeze: coins deduct ke baad admin approval pe credit milega
+  // Agar admin reject kare to admin route coins wapas add karega
   const userRow = await db.prepare('SELECT coins FROM users WHERE id = ?').bind(sub).first<any>();
-  if (!userRow || userRow.coins < coins_requested) return c.json({ error: 'Insufficient coin balance' }, 400);
+  if (!userRow || userRow.coins < coinsReq) return c.json({ error: 'Insufficient coin balance' }, 400);
+
+  // Duplicate pending withdrawal check
+  const pendingWithdrawal = await db.prepare(
+    "SELECT id FROM withdrawal_requests WHERE host_id = ? AND status = 'pending' LIMIT 1"
+  ).bind(h.id).first<any>();
+  if (pendingWithdrawal) {
+    return c.json({ error: 'You already have a pending withdrawal request. Please wait for it to be processed.' }, 409);
+  }
 
   const rateRow = await db.prepare("SELECT value FROM app_settings WHERE key = 'coin_to_usd_rate'").first<any>();
   const rate = parseFloat(rateRow?.value ?? '0.01');
-  const usdAmount = coins_requested * rate;
+  const usdAmount = coinsReq * rate;
   const withdrawId = crypto.randomUUID();
 
+  // Freeze coins: deduct now, will refund if rejected by admin
   await db.batch([
-    db.prepare('INSERT INTO withdrawal_requests (id, host_id, coins, amount, payment_method, account_details) VALUES (?, ?, ?, ?, ?, ?)')
-      .bind(withdrawId, h.id, coins_requested, usdAmount, method ?? 'bank', account_info ?? ''),
-    db.prepare('UPDATE users SET coins = coins - ?, updated_at = unixepoch() WHERE id = ? AND coins >= ?').bind(coins_requested, sub, coins_requested),
+    db.prepare('INSERT INTO withdrawal_requests (id, host_id, coins, amount, payment_method, account_details, status) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .bind(withdrawId, h.id, coinsReq, usdAmount, method ?? 'bank', account_info ?? '', 'pending'),
+    db.prepare('UPDATE users SET coins = coins - ?, updated_at = unixepoch() WHERE id = ? AND coins >= ?')
+      .bind(coinsReq, sub, coinsReq),
     db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
-      .bind(crypto.randomUUID(), sub, 'withdrawal', -coins_requested, `Withdrawal request — ${coins_requested} coins`, withdrawId),
+      .bind(crypto.randomUUID(), sub, 'withdrawal_pending', -coinsReq, `Withdrawal request frozen — ${coinsReq} coins (pending admin approval)`, withdrawId),
   ]);
 
   const updated = await db.prepare('SELECT coins FROM users WHERE id = ?').bind(sub).first<any>();
-  return c.json({ success: true, amount_usd: usdAmount.toFixed(2), coins_requested, new_balance: updated?.coins });
+  return c.json({
+    success: true,
+    amount_usd: usdAmount.toFixed(2),
+    coins_requested: coinsReq,
+    new_balance: updated?.coins,
+    message: 'Withdrawal request submitted. Coins frozen pending admin approval.',
+    withdrawal_id: withdrawId,
+  });
 });
 
 export default coin;

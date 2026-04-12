@@ -199,8 +199,8 @@ export default function HomeScreen() {
       const res = await API.getHosts({ limit: 50 });
       return res.hosts.map(mapApiHost);
     },
-    staleTime: 60_000,
-    refetchInterval: 2 * 60_000,
+    staleTime: 30_000,
+    refetchInterval: 90_000,
     retry: 2,
   });
 

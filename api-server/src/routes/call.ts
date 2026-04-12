@@ -1,4 +1,6 @@
 import { Hono } from 'hono';
+import { zValidator } from '@hono/zod-validator';
+import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth';
 import { createCFCalls, CFCallsTrack } from '../lib/cf-calls';
 import { sendFCMPush } from '../lib/fcm';
@@ -7,7 +9,20 @@ import type { Env, JWTPayload } from '../types';
 const call = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
 call.use('*', authMiddleware);
 
-call.post('/initiate', async (c) => {
+const initiateSchema = z.object({
+  host_id: z.string().min(1),
+  type: z.enum(['audio', 'video']).optional(),
+  call_type: z.enum(['audio', 'video']).optional(),
+});
+
+const rateSchema = z.object({
+  session_id: z.string().min(1),
+  stars: z.number().int().min(1).max(5).optional(),
+  rating: z.number().int().min(1).max(5).optional(),
+  comment: z.string().max(500).optional(),
+});
+
+call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
   const { sub } = c.get('user');
   const db = c.env.DB;
 
@@ -31,6 +46,27 @@ call.post('/initiate', async (c) => {
 
   const host = await db.prepare('SELECT id, coins_per_minute, audio_coins_per_minute, video_coins_per_minute, user_id FROM hosts WHERE id = ? AND is_online = 1 AND is_active = 1').bind(body.host_id).first<any>();
   if (!host) return c.json({ error: 'Host not available' }, 404);
+
+  // Self-call check
+  if (host.user_id === sub) {
+    return c.json({ error: 'You cannot call yourself' }, 400);
+  }
+
+  // Concurrent call check — user pehle se kisi call mein hai?
+  const existingCall = await db.prepare(
+    "SELECT id FROM call_sessions WHERE caller_id = ? AND status IN ('pending','active') LIMIT 1"
+  ).bind(sub).first<any>();
+  if (existingCall) {
+    return c.json({ error: 'You are already in a call. Please end it before starting a new one.' }, 409);
+  }
+
+  // Host already busy check
+  const hostBusy = await db.prepare(
+    "SELECT id FROM call_sessions WHERE host_id = ? AND status IN ('pending','active') LIMIT 1"
+  ).bind(host.id).first<any>();
+  if (hostBusy) {
+    return c.json({ error: 'Host is currently busy. Please try again later.' }, 409);
+  }
 
   const ratePerMin = callType === 'video'
     ? (host.video_coins_per_minute ?? host.coins_per_minute ?? 5)
@@ -188,7 +224,7 @@ call.post('/end', async (c) => {
   }
 });
 
-call.post('/rate', async (c) => {
+call.post('/rate', zValidator('json', rateSchema), async (c) => {
   const { sub } = c.get('user');
   const body = await c.req.json<{ session_id: string; rating?: number; stars?: number; comment?: string }>();
   const starsVal = Math.min(5, Math.max(1, Number(body.stars ?? body.rating ?? 5)));
