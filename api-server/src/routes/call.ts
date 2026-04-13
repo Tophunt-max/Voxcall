@@ -41,7 +41,8 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
     }
   } catch { /* rate limit table may not exist — don't block */ }
 
-  const body = await c.req.json<{ host_id: string; type?: 'audio' | 'video'; call_type?: 'audio' | 'video' }>();
+  // FIX: Use c.req.valid('json') — zValidator already parsed the body, do NOT call c.req.json() again
+  const body = c.req.valid('json');
   const callType = body.type || body.call_type || 'audio';
 
   const host = await db.prepare('SELECT id, coins_per_minute, audio_coins_per_minute, video_coins_per_minute, user_id FROM hosts WHERE id = ? AND is_online = 1 AND is_active = 1').bind(body.host_id).first<any>();
@@ -73,8 +74,10 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
     : (host.audio_coins_per_minute ?? host.coins_per_minute ?? 5);
 
   const caller = await db.prepare('SELECT coins, name FROM users WHERE id = ?').bind(sub).first<any>();
-  if (!caller || caller.coins < ratePerMin) {
-    return c.json({ error: 'Insufficient coins' }, 402);
+  // Require at least 2 minutes worth of coins — WebRTC negotiation takes ~15s
+  // so 1-min minimum would auto-end the call before it truly starts
+  if (!caller || caller.coins < ratePerMin * 2) {
+    return c.json({ error: 'Insufficient coins. You need at least 2 minutes worth of coins to start a call.' }, 402);
   }
 
   // FIX BUG-1: Do NOT pre-create CF sessions at initiation time.
@@ -197,7 +200,7 @@ call.post('/end', async (c) => {
     }
   }
 
-  // Fix NEW-1 + NEW-2: notify the OTHER party that call ended (cancel/end)
+  // Notify the OTHER party that call ended
   try {
     const isCallerEnding = session.caller_id === sub;
     const otherUserId = isCallerEnding ? hostRow?.user_id : session.caller_id;
@@ -210,6 +213,28 @@ call.post('/end', async (c) => {
       });
     }
   } catch {}
+
+  // FIX: coin_update event bhejo — host wallet + user balance real-time update hoga
+  // Host ko earning notify karo
+  if (coinsCharged > 0 && hostRow?.user_id) {
+    try {
+      const hostNotif = c.env.NOTIFICATION_HUB.get(c.env.NOTIFICATION_HUB.idFromName(hostRow.user_id));
+      const updatedHost = await c.env.DB.prepare('SELECT coins FROM users WHERE id = ?').bind(hostRow.user_id).first<any>();
+      await hostNotif.fetch('https://dummy/notify', {
+        method: 'POST',
+        body: JSON.stringify({ type: 'coin_update', amount: hostShare, new_balance: updatedHost?.coins ?? 0 }),
+      });
+    } catch {}
+    // User ko deduction notify karo
+    try {
+      const userNotif = c.env.NOTIFICATION_HUB.get(c.env.NOTIFICATION_HUB.idFromName(session.caller_id));
+      const updatedUser = await c.env.DB.prepare('SELECT coins FROM users WHERE id = ?').bind(session.caller_id).first<any>();
+      await userNotif.fetch('https://dummy/notify', {
+        method: 'POST',
+        body: JSON.stringify({ type: 'coin_update', amount: -coinsCharged, new_balance: updatedUser?.coins ?? 0 }),
+      });
+    } catch {}
+  }
 
   const cfCalls = createCFCalls(c.env);
   if (cfCalls) {
@@ -226,7 +251,8 @@ call.post('/end', async (c) => {
 
 call.post('/rate', zValidator('json', rateSchema), async (c) => {
   const { sub } = c.get('user');
-  const body = await c.req.json<{ session_id: string; rating?: number; stars?: number; comment?: string }>();
+  // FIX: Use c.req.valid('json') — zValidator already parsed, do NOT call c.req.json() again
+  const body = c.req.valid('json');
   const starsVal = Math.min(5, Math.max(1, Number(body.stars ?? body.rating ?? 5)));
   const sessionId = body.session_id;
   const db = c.env.DB;
@@ -254,7 +280,12 @@ call.post('/:id/answer', async (c) => {
   const session = await db.prepare('SELECT * FROM call_sessions WHERE id = ?').bind(sessionId).first<any>();
   if (!session) return c.json({ error: 'Session not found' }, 404);
 
-  // Bug 13 fix: verify the requester is actually the host of this session
+  // Status check — can only answer pending calls
+  if (session.status !== 'pending') {
+    return c.json({ error: `Cannot answer — call is already ${session.status}` }, 400);
+  }
+
+  // Verify the requester is actually the host of this session
   const hostCheck = await db.prepare('SELECT id FROM hosts WHERE id = ? AND user_id = ?').bind(session.host_id, sub).first<any>();
   if (!hostCheck) return c.json({ error: 'Not authorized — you are not the host of this session' }, 403);
 
@@ -273,7 +304,13 @@ call.post('/:id/answer', async (c) => {
   }
 
   const now = Math.floor(Date.now() / 1000);
-  await db.prepare('UPDATE call_sessions SET status = ?, started_at = ? WHERE id = ?').bind('active', now, sessionId).run();
+  // Atomic guard — prevent double-accept race
+  const acceptUpdate = await db.prepare(
+    "UPDATE call_sessions SET status = 'active', started_at = ? WHERE id = ? AND status = 'pending'"
+  ).bind(now, sessionId).run();
+  if (!acceptUpdate.meta?.changes || acceptUpdate.meta.changes === 0) {
+    return c.json({ error: 'Call already answered or cancelled' }, 409);
+  }
 
   // FIX: include started_at so caller can sync their billing timer with the server
   try {
@@ -564,7 +601,7 @@ call.post('/:id/end', async (c) => {
     }
   }
 
-  // Fix NEW-1 + NEW-2: notify the OTHER party that call ended
+  // Notify the OTHER party that call ended
   try {
     const isCallerEnding = session.caller_id === sub;
     const otherUserId = isCallerEnding ? hostRow?.user_id : session.caller_id;
@@ -577,6 +614,26 @@ call.post('/:id/end', async (c) => {
       });
     }
   } catch {}
+
+  // FIX: coin_update event — host wallet + user balance real-time update
+  if (coinsCharged > 0 && hostRow?.user_id) {
+    try {
+      const hostNotif = c.env.NOTIFICATION_HUB.get(c.env.NOTIFICATION_HUB.idFromName(hostRow.user_id));
+      const updatedHost = await db.prepare('SELECT coins FROM users WHERE id = ?').bind(hostRow.user_id).first<any>();
+      await hostNotif.fetch('https://dummy/notify', {
+        method: 'POST',
+        body: JSON.stringify({ type: 'coin_update', amount: hostShare, new_balance: updatedHost?.coins ?? 0 }),
+      });
+    } catch {}
+    try {
+      const userNotif = c.env.NOTIFICATION_HUB.get(c.env.NOTIFICATION_HUB.idFromName(session.caller_id));
+      const updatedUser = await db.prepare('SELECT coins FROM users WHERE id = ?').bind(session.caller_id).first<any>();
+      await userNotif.fetch('https://dummy/notify', {
+        method: 'POST',
+        body: JSON.stringify({ type: 'coin_update', amount: -coinsCharged, new_balance: updatedUser?.coins ?? 0 }),
+      });
+    } catch {}
+  }
 
   const cfCalls = createCFCalls(c.env);
   if (cfCalls) {

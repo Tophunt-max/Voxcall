@@ -20,6 +20,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ToastContainer } from "@/components/Toast";
 import { OfflineBanner } from "@/components/OfflineBanner";
 import { AuthProvider } from "@/context/AuthContext";
+import { useAuth } from "@/context/AuthContext";
 import { CallProvider } from "@/context/CallContext";
 import { ChatProvider } from "@/context/ChatContext";
 import { LanguageProvider } from "@/context/LanguageContext";
@@ -147,6 +148,7 @@ function WebNotificationBridge() {
 // FCM tap handlers (native + web)
 function AppBridge() {
   const { receiveCall, activeCall } = useCall();
+  const { updateCoins } = useAuth();
 
   useSocketEvent(
     SocketEvents.CALL_INCOMING,
@@ -164,6 +166,18 @@ function AppBridge() {
       );
     },
     [activeCall]
+  );
+
+  // FIX: coin_update socket event aane par balance turant update karo
+  // Backend /end endpoint ke baad coin_update bhejta hai
+  useSocketEvent(
+    SocketEvents.COIN_DEDUCTED,
+    (data: any) => {
+      if (data?.newBalance != null) {
+        updateCoins(data.newBalance);
+      }
+    },
+    [updateCoins]
   );
 
   return (

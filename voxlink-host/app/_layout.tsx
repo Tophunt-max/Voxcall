@@ -137,13 +137,13 @@ function WebNotificationBridge({ seenCallIds }: { seenCallIds: React.MutableRefO
 
 function AppBridge() {
   const { receiveCall, activeCall } = useCall();
-  const { user, isLoggedIn } = useAuth();
+  const { user, isLoggedIn, refreshProfile } = useAuth();
   const activeCallRef = useRef(activeCall);
   const seenCallIds = useRef(new Set<string>());
 
   useEffect(() => { activeCallRef.current = activeCall; }, [activeCall]);
 
-  // seenCallIds logout pe clear karo — nahin to purane IDs future calls block karenge
+  // seenCallIds logout pe clear karo
   useEffect(() => {
     if (!isLoggedIn) {
       seenCallIds.current.clear();
@@ -151,8 +151,6 @@ function AppBridge() {
   }, [isLoggedIn]);
 
   // Polling fallback — fires every 4 s while logged in.
-  // Catches incoming calls even when WebSocket is disconnected.
-  // seenCallIds deduplicates so the same call is never shown twice.
   useEffect(() => {
     if (!isLoggedIn || !user?.id) return;
 
@@ -161,7 +159,6 @@ function AppBridge() {
       try {
         const pending = await API.getPendingCall();
         if (pending?.id && !seenCallIds.current.has(pending.id)) {
-          // Size cap — prevent unbounded memory growth
           if (seenCallIds.current.size > 500) seenCallIds.current.clear();
           seenCallIds.current.add(pending.id);
           receiveCall(
@@ -210,9 +207,17 @@ function AppBridge() {
     []
   );
 
-  // NOTE: CALL_END intentionally NOT handled here — audio-call.tsx aur
-  // video-call.tsx already handle it with webrtc.cleanup(). Yahan bhi handle karne
-  // se double endCall hoti hai aur summary screen immediately pop ho jaati hai.
+  // FIX: coin_update event pe host ka balance + earnings update karo
+  useSocketEvent(
+    SocketEvents.COIN_DEDUCTED,
+    (_data: any) => {
+      // Profile refresh karo — coins aur earnings dono update honge
+      refreshProfile().catch(() => {});
+    },
+    [refreshProfile]
+  );
+
+  // NOTE: CALL_END intentionally NOT handled here.
 
   return (
     <>
