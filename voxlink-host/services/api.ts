@@ -97,12 +97,16 @@ export const API = {
     apiRequest<{ token: string; user: any; is_returning?: boolean }>('POST', '/api/auth/guest-login', { device_id: device_id ?? null }, false),
   quickLogin: (device_id?: string | null) =>
     apiRequest<{ token: string; user: any; is_returning?: boolean }>('POST', '/api/auth/quick-login', { device_id: device_id ?? null }, false),
-  googleLogin: (email: string, name: string, google_id: string, avatar_url?: string | null) =>
-    apiRequest<{ token: string; user: any }>('POST', '/api/auth/google-login', { email, name, google_id, avatar_url }, false),
+  // FIX: Added device_id param (was missing — causes Google/QuickLogin account merge to fail)
+  googleLogin: (email: string, name: string, google_id: string, avatar_url?: string | null, device_id?: string | null) =>
+    apiRequest<{ token: string; user: any }>('POST', '/api/auth/google-login', { email, name, google_id, avatar_url, device_id }, false),
   forgotPassword: (email: string) =>
     apiRequest<{ success: boolean }>('POST', '/api/auth/forgot-password', { email }, false),
   resetPassword: (email: string, otp: string, new_password: string) =>
     apiRequest<{ success: boolean }>('POST', '/api/auth/reset-password', { email, otp, new_password }, false),
+  // FIX: Added missing verifyOtp method (host app had no way to verify email)
+  verifyOtp: (email: string, otp: string) =>
+    apiRequest<{ success: boolean; bonus_coins?: number }>('POST', '/api/auth/verify-otp', { email, otp }, false),
 
   // Host KYC Application
   getHostAppStatus: () => apiRequest<any>('GET', '/api/host-app/status'),

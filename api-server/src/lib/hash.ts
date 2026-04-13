@@ -46,15 +46,31 @@ export async function verifyPassword(password: string, stored: string): Promise<
     );
     const hashHex = Array.from(new Uint8Array(derived))
       .map(b => b.toString(16).padStart(2, '0')).join('');
-    return hashHex === expectedHash;
+    // SECURITY FIX: Use constant-time comparison to prevent timing attacks
+    return timingSafeEqual(hashHex, expectedHash);
   }
   // Legacy backward-compat: plain SHA-256 without salt (existing users)
   const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(password));
-  return btoa(String.fromCharCode(...new Uint8Array(hash))) === stored;
+  const legacyHash = btoa(String.fromCharCode(...new Uint8Array(hash)));
+  return timingSafeEqual(legacyHash, stored);
+}
+
+// Constant-time string comparison to prevent timing attacks on password/OTP verification
+export function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let result = 0;
+  for (let i = 0; i < a.length; i++) {
+    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return result === 0;
 }
 
 export function generateOTP(): string {
-  return Math.floor(100000 + Math.random() * 900000).toString();
+  // SECURITY FIX: Use crypto.getRandomValues() instead of Math.random()
+  // Math.random() is not cryptographically secure for OTP generation
+  const arr = new Uint32Array(1);
+  crypto.getRandomValues(arr);
+  return String(100000 + (arr[0] % 900000));
 }
 
 export function generateId(): string {

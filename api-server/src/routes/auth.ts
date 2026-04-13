@@ -3,7 +3,7 @@ import type { Context, Next } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { signToken, verifyToken } from '../lib/jwt';
-import { hashPassword, verifyPassword, generateOTP, generateId } from '../lib/hash';
+import { hashPassword, verifyPassword, generateOTP, generateId, timingSafeEqual } from '../lib/hash';
 import { sendEmail, otpEmailHtml } from '../lib/email';
 import type { Env } from '../types';
 import { authMiddleware } from '../middleware/auth';
@@ -155,13 +155,18 @@ auth.post('/login', rateLimit, zValidator('json', loginSchema), async (c) => {
 
 // POST /api/auth/verify-otp
 auth.post('/verify-otp', strictRateLimit, async (c) => {
-  const { email, otp } = await c.req.json();
+  const body = await c.req.json().catch(() => ({}));
+  const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+  const otp = String(body.otp ?? '');  // Coerce to string for type-safe comparison
+  if (!email || !otp) return c.json({ error: 'Email and OTP are required' }, 400);
+
   const db = c.env.DB;
   const now = Math.floor(Date.now() / 1000);
   const user = await db.prepare(
     'SELECT id, otp, otp_expires_at FROM users WHERE email = ?'
   ).bind(email).first<any>();
-  if (!user || user.otp !== otp || user.otp_expires_at < now) {
+  // SECURITY FIX: Use constant-time comparison for OTP to prevent timing attacks
+  if (!user || !user.otp || !timingSafeEqual(String(user.otp), otp) || user.otp_expires_at < now) {
     return c.json({ error: 'Invalid or expired OTP' }, 400);
   }
   // Bug 3 Fix: Process pending referral only after OTP verified — prevents Sybil attacks
@@ -212,7 +217,10 @@ auth.post('/forgot-password', strictRateLimit, async (c) => {
 
 // POST /api/auth/reset-password
 auth.post('/reset-password', strictRateLimit, async (c) => {
-  const { email, otp, new_password } = await c.req.json();
+  const body = await c.req.json().catch(() => ({}));
+  const { new_password } = body as { new_password?: string };
+  const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+  const otp = String(body.otp ?? '');
   if (!new_password || typeof new_password !== 'string' || new_password.length < 8) {
     return c.json({ error: 'Password must be at least 8 characters' }, 400);
   }
@@ -224,10 +232,10 @@ auth.post('/reset-password', strictRateLimit, async (c) => {
   const user = await db.prepare(
     'SELECT id, otp, otp_expires_at FROM users WHERE email = ?'
   ).bind(email).first<any>();
-  if (!user || user.otp !== otp || user.otp_expires_at < now) {
+  if (!user || !user.otp || !timingSafeEqual(String(user.otp), otp) || user.otp_expires_at < now) {
     return c.json({ error: 'Invalid or expired OTP' }, 400);
   }
-  const hash = await hashPassword(new_password);
+  const hash = await hashPassword(new_password!);
   // SECURITY FIX: Invalidate all existing tokens after password reset.
   // Without this, old tokens remain valid even after password change.
   await db.prepare('UPDATE users SET password_hash = ?, otp = NULL, token_invalidated_at = ? WHERE id = ?')
@@ -273,13 +281,42 @@ auth.post('/logout', authMiddleware, async (c) => {
 });
 
 // POST /api/auth/google-login — sign in or register via Google OAuth
+// SECURITY FIX: Verify Google ID token via Google's tokeninfo endpoint.
+// Previously trusted client-supplied google_id + email, allowing account impersonation.
 auth.post('/google-login', rateLimit, async (c) => {
   const body = await c.req.json();
-  const { name, google_id, avatar_url, device_id } = body as {
-    email: string; name: string; google_id: string; avatar_url?: string | null; device_id?: string | null;
+  const { avatar_url, device_id, id_token } = body as {
+    email?: string; name?: string; google_id?: string; avatar_url?: string | null;
+    device_id?: string | null; id_token?: string;
   };
-  const email = (body.email as string)?.trim().toLowerCase();
-  if (!email || !google_id) return c.json({ error: 'Missing required fields' }, 400);
+
+  let email: string;
+  let name: string;
+  let google_id: string;
+
+  if (id_token) {
+    // Verify the Google ID token via Google's tokeninfo API
+    try {
+      const verifyRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(id_token)}`);
+      if (!verifyRes.ok) return c.json({ error: 'Invalid Google ID token' }, 401);
+      const tokenData = await verifyRes.json() as { email: string; name?: string; sub: string; picture?: string };
+      email = tokenData.email?.trim().toLowerCase();
+      name = tokenData.name || body.name || 'User';
+      google_id = tokenData.sub;
+      if (!email || !google_id) return c.json({ error: 'Invalid Google token payload' }, 401);
+    } catch {
+      return c.json({ error: 'Failed to verify Google ID token' }, 500);
+    }
+  } else if (body.google_id && body.email) {
+    // Legacy fallback: trust client-supplied data (for backward compatibility during migration)
+    // TODO: Remove this fallback once all clients send id_token
+    email = (body.email as string)?.trim().toLowerCase();
+    name = body.name || 'User';
+    google_id = body.google_id;
+    console.warn('[google-login] Client sent google_id without id_token — legacy mode');
+  } else {
+    return c.json({ error: 'id_token or (email + google_id) required' }, 400);
+  }
   const db = c.env.DB;
 
   // 1. Look up by google_id first (handles email changes in Google account)
