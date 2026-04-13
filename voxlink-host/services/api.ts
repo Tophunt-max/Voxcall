@@ -209,7 +209,8 @@ export const API = {
   // Promo codes
   applyPromoCode: (code: string, plan_id?: string) =>
     apiRequest<{ valid: boolean; type: string; discount: number; bonus_coins: number; discount_pct: number; code: string }>(
-      'POST', '/api/coins/apply-promo', { code, plan_id }, false
+      // FIX: Backend requires auth for apply-promo — was sending without token
+      'POST', '/api/coins/apply-promo', { code, plan_id }
     ),
 
   // Referral

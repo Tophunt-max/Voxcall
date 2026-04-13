@@ -102,9 +102,11 @@ auth.post('/register', rateLimit, zValidator('json', registerSchema), async (c) 
   const hash = await hashPassword(password);
   const otp = generateOTP();
   const otpExp = Math.floor(Date.now() / 1000) + 600;
+  // SECURITY FIX: Set is_verified=0 at registration. Only set to 1 after OTP verification.
+  // Previously was hardcoded to 1, completely bypassing email verification.
   await db.prepare(
     `INSERT INTO users (id, name, email, password_hash, gender, phone, otp, otp_expires_at, is_verified)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`
   ).bind(id, name, email, hash, gender ?? null, phone ?? null, otp, otpExp).run();
   // Bug 3 Fix: Record referral as pending (coins_given=0) — coins awarded only after OTP verification
   // This prevents Sybil attacks where fake accounts are created to farm referral coins.
@@ -226,7 +228,10 @@ auth.post('/reset-password', strictRateLimit, async (c) => {
     return c.json({ error: 'Invalid or expired OTP' }, 400);
   }
   const hash = await hashPassword(new_password);
-  await db.prepare('UPDATE users SET password_hash = ?, otp = NULL WHERE id = ?').bind(hash, user.id).run();
+  // SECURITY FIX: Invalidate all existing tokens after password reset.
+  // Without this, old tokens remain valid even after password change.
+  await db.prepare('UPDATE users SET password_hash = ?, otp = NULL, token_invalidated_at = ? WHERE id = ?')
+    .bind(hash, now, user.id).run();
   return c.json({ success: true });
 });
 

@@ -14,11 +14,14 @@ export class ChatRoom {
     }
 
     const url = new URL(request.url);
-    // Bug 4 Fix: Use verified userId from Worker header (X-CF-User-Id), not URL query params
+    // SECURITY FIX: Only trust verified userId from Worker header (X-CF-User-Id).
     // The Worker validates the JWT and sets this header before proxying to the DO.
-    // This prevents client-side impersonation via URL params.
-    const userId = request.headers.get('X-CF-User-Id') || url.searchParams.get('userId') || 'anonymous';
-    const userName = request.headers.get('X-CF-User-Name') || url.searchParams.get('name') || 'User';
+    // Reject connections without the trusted header to prevent identity spoofing.
+    const userId = request.headers.get('X-CF-User-Id');
+    const userName = request.headers.get('X-CF-User-Name') || 'User';
+    if (!userId) {
+      return new Response(JSON.stringify({ error: 'Unauthorized — missing verified identity' }), { status: 401 });
+    }
 
     const { 0: client, 1: server } = new WebSocketPair();
     this.state.acceptWebSocket(server);

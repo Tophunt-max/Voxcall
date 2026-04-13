@@ -46,11 +46,16 @@ payment.post('/webhook/razorpay', async (c) => {
   try {
     const body = await c.req.text();
     const sig = c.req.header('X-Razorpay-Signature') || '';
+    // SECURITY FIX: Reject webhooks entirely when no secret is configured.
+    // Previously, missing secret silently bypassed verification, allowing forged webhooks.
     const secret = await c.env.DB.prepare("SELECT value FROM app_settings WHERE key = 'razorpay_webhook_secret'").first<any>();
-    if (secret?.value && sig) {
-      const expected = await hmacSha256(secret.value, body);
-      if (expected !== sig) return c.json({ error: 'Invalid signature' }, 401);
+    if (!secret?.value) {
+      console.error('[Webhook] Razorpay webhook secret not configured — rejecting');
+      return c.json({ error: 'Webhook secret not configured' }, 500);
     }
+    if (!sig) return c.json({ error: 'Missing signature' }, 401);
+    const expected = await hmacSha256(secret.value, body);
+    if (expected !== sig) return c.json({ error: 'Invalid signature' }, 401);
     const payload = JSON.parse(body);
     const event = payload.event as string;
     if (!event.startsWith('payment')) return c.json({ ok: true });

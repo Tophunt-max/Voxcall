@@ -59,10 +59,15 @@ async function edgePut(cacheKey: string, data: unknown): Promise<void> {
 
 const pub = new Hono<{ Bindings: Env }>();
 
-// GET /api/files/:key* — public R2 file serving (avatars, KYC docs, media)
-// URLs stored in DB use this path; must be unauthenticated so <img src> works in browsers
+// GET /api/files/:key* — public R2 file serving (avatars, media ONLY)
+// SECURITY FIX: Block access to KYC documents (aadhar, verification, kyc paths).
+// KYC docs should only be accessible via authenticated admin endpoints.
 pub.get('/files/:key{.+}', async (c) => {
   const key = c.req.param('key');
+  // Block path traversal and sensitive file access
+  if (key.includes('..') || /\b(kyc|aadhar|aadhaar|verification|identity|document|id[-_]?proof)\b/i.test(key)) {
+    return c.json({ error: 'Access denied' }, 403);
+  }
   const obj = await c.env.STORAGE.get(key);
   if (!obj) return c.json({ error: 'File not found' }, 404);
   const headers = new Headers();
