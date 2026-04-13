@@ -185,7 +185,14 @@ class SocketService {
   private _scheduleReconnect(): void {
     if (!this._userId) return;
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.warn("[Socket] Max reconnect attempts reached");
+      // FIX BUG-9: Don't permanently die — retry after 5 minutes.
+      // Host app MUST stay connected to receive incoming calls.
+      // Without this, hosts on poor networks stop receiving calls forever.
+      console.warn("[Socket] Max reconnect attempts reached — will retry in 5 minutes");
+      this.reconnectTimeout = setTimeout(() => {
+        this.reconnectAttempts = 0;
+        if (this._userId) this._openWebSocket(this._userId, this._token);
+      }, 5 * 60 * 1000);
       return;
     }
     this.reconnectAttempts++;

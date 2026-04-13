@@ -1,9 +1,10 @@
-import React, { useEffect, useCallback } from "react";
+import React, { useEffect, useCallback, useRef } from "react";
 import { View, Text, StyleSheet, Image, TouchableOpacity } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useCall } from "@/context/CallContext";
 import { resolveMediaUrl } from "@/services/api";
+import { router } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { useRingtone } from "@/hooks/useRingtone";
 
@@ -15,6 +16,29 @@ export default function IncomingCallScreen() {
   const bottomPad = insets.bottom;
 
   const { stop: stopRing } = useRingtone("incoming", true);
+
+  // FIX BUG-6: Watch for activeCall going null (remote caller cancelled, server ended call,
+  // or cron reaped it). Without this, the incoming screen stays stuck forever.
+  // Same pattern as host incoming.tsx — only go back when activeCall becomes null,
+  // NOT when status changes to "active" (that means we accepted and call screen is opening).
+  const hasMounted = useRef(false);
+  const hadCall = useRef(false);
+  useEffect(() => {
+    if (!hasMounted.current) {
+      hasMounted.current = true;
+      if (activeCall) hadCall.current = true;
+      return;
+    }
+    if (activeCall) {
+      hadCall.current = true;
+      return;
+    }
+    // activeCall went null — call was cancelled/ended externally
+    if (hadCall.current) {
+      stopRing().catch(() => {});
+      try { router.back(); } catch {}
+    }
+  }, [activeCall, stopRing]);
 
   const handleAccept = useCallback(async () => {
     await stopRing();

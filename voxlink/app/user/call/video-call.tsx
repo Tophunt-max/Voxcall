@@ -106,6 +106,9 @@ export default function VideoCallScreen() {
     check();
   }, []);
 
+  // FIX BUG-7: Re-evaluate permissions when they change (e.g. after user grants via dialog),
+  // not just on initial check. Without camera+mic deps, the effect never re-fires after
+  // the user grants permission, so WebRTC never starts.
   useEffect(() => {
     if (!permChecked) return;
     if (permissions.camera.status !== "granted") {
@@ -116,14 +119,11 @@ export default function VideoCallScreen() {
       setPermStep("done");
       setWebrtcReady(true);
     }
-  }, [permChecked]);
+  }, [permChecked, permissions.camera.status, permissions.microphone.status]);
 
-  useEffect(() => {
-    const t1 = setTimeout(() => {
-      if (status === "connecting") setStatus("ringing");
-    }, 2000);
-    return () => { clearTimeout(t1); };
-  }, [markCallActive]);
+  // FIX BUG-8: Removed "ringing" status timeout. The user reaches this screen
+  // AFTER the host accepted the call — showing "Ringing..." is misleading.
+  // Status goes directly from "connecting" → "active" when WebRTC connects.
 
   useEffect(() => {
     if (activeCall?.isMuted !== undefined) {

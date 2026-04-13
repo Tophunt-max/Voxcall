@@ -13,6 +13,7 @@ import { AppState } from "react-native";
 import socketService from "@/services/SocketService";
 import { SocketEvents } from "@/constants/events";
 import { useAuth } from "@/context/AuthContext";
+import { API } from "@/services/api";
 import { getItem, StorageKeys } from "@/utils/storage";
 
 interface SocketContextValue {
@@ -66,9 +67,12 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
+  // FIX BUG-10: Was calling simulateNewMessage (mock/fake). Use real API instead.
   const sendMessage = useCallback(
-    (chatId: string, senderName: string, text: string) => {
-      socketService.simulateNewMessage(chatId, senderName, text);
+    (chatId: string, _senderName: string, text: string) => {
+      API.sendMessage(chatId, text).catch((err) =>
+        console.warn("[SocketContext] sendMessage failed:", err)
+      );
     },
     []
   );

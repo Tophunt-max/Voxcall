@@ -168,7 +168,14 @@ export async function sendFCMPush(
       },
       apns: {
         payload: {
-          aps: { sound: 'default', badge: 1 },
+          aps: {
+            sound: 'default',
+            badge: 1,
+            // FIX BUG-11: content-available wakes the app in background for incoming calls.
+            // Without this, iOS won't deliver data-only push to the app process,
+            // so the host app never shows the incoming call screen when backgrounded.
+            ...(data?.type === 'incoming_call' ? { 'content-available': 1 } : {}),
+          },
         },
       },
       webpush: {
