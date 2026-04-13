@@ -56,8 +56,14 @@ app.use('*', cors({
 app.use('*', logger());
 app.use('*', prettyJSON());
 
-// Health check
-app.get('/api/healthz', (c) => c.json({ status: 'ok', ts: Date.now(), service: 'voxlink-api' }));
+// Health check — also reports whether critical secrets are configured
+app.get('/api/healthz', (c) => c.json({
+  status: 'ok',
+  ts: Date.now(),
+  service: 'voxlink-api',
+  cf_calls_configured: !!(c.env.CF_CALLS_APP_ID && c.env.CF_CALLS_APP_SECRET),
+  fcm_configured: !!c.env.FIREBASE_SERVICE_ACCOUNT,
+}));
 
 // Routes
 app.route('/api/auth', authRouter);
@@ -157,12 +163,13 @@ async function reapStaleCalls(env: Env): Promise<void> {
     const ops: any[] = [];
 
     for (const call of staleCalls.results) {
-      // Atomic guard — only process if still in stale status
+      // Atomic guard — use ended_at IS NULL instead of setting status to 'processing'
+      // because 'processing' is NOT a valid CHECK constraint value and causes silent failures.
       const guard = await db
-        .prepare(`UPDATE call_sessions SET status = 'processing' WHERE id = ? AND status IN ('active', 'pending')`)
-        .bind(call.id)
+        .prepare(`UPDATE call_sessions SET ended_at = ? WHERE id = ? AND status IN ('active', 'pending') AND ended_at IS NULL`)
+        .bind(now, call.id)
         .run();
-      if (!guard.meta.changes) continue; // already processed
+      if (!guard.meta.changes) continue; // already processed by another worker or /end call
 
       const durationSec = call.started_at ? now - call.started_at : 0;
       const durationMin = Math.max(0, Math.ceil(durationSec / 60));
@@ -170,10 +177,11 @@ async function reapStaleCalls(env: Env): Promise<void> {
       const coinsCharged = call.status === 'active' ? durationMin * effectiveRate : 0;
 
       // Batch: end the call, deduct caller coins if active, add host earnings
+      // ended_at already set by atomic guard above
       const batchOps = [
         db.prepare(
-          `UPDATE call_sessions SET status = 'ended', ended_at = ?, duration_seconds = ?, coins_charged = ?, notes = 'reaped_by_cron' WHERE id = ?`
-        ).bind(now, durationSec, coinsCharged, call.id),
+          `UPDATE call_sessions SET status = 'ended', duration_seconds = ?, coins_charged = ? WHERE id = ?`
+        ).bind(durationSec, coinsCharged, call.id),
       ];
 
       if (coinsCharged > 0) {

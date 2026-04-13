@@ -358,7 +358,10 @@ call.post('/:id/sdp/push', async (c) => {
   const { session, role } = result;
 
   const cfCalls = createCFCalls(c.env);
-  if (!cfCalls) return c.json({ error: 'CF Calls not configured' }, 500);
+  if (!cfCalls) {
+    console.error('[CF Calls] NOT CONFIGURED — CF_CALLS_APP_ID:', !!c.env.CF_CALLS_APP_ID, 'CF_CALLS_APP_SECRET:', !!c.env.CF_CALLS_APP_SECRET);
+    return c.json({ error: 'CF Calls not configured — contact admin to set CF_CALLS_APP_SECRET' }, 500);
+  }
 
   let cfSessionId = role === 'host' ? session.cf_host_session_id : session.cf_session_id;
 
@@ -454,7 +457,10 @@ call.post('/:id/sdp/pull', async (c) => {
   const { session, role } = result;
 
   const cfCalls = createCFCalls(c.env);
-  if (!cfCalls) return c.json({ error: 'CF Calls not configured' }, 500);
+  if (!cfCalls) {
+    console.error('[CF Calls] NOT CONFIGURED — CF_CALLS_APP_ID:', !!c.env.CF_CALLS_APP_ID, 'CF_CALLS_APP_SECRET:', !!c.env.CF_CALLS_APP_SECRET);
+    return c.json({ error: 'CF Calls not configured — contact admin to set CF_CALLS_APP_SECRET' }, 500);
+  }
 
   const mySessionId = role === 'host' ? session.cf_host_session_id : session.cf_session_id;
   const remoteSessionId = role === 'host' ? session.cf_session_id : session.cf_host_session_id;
@@ -517,7 +523,10 @@ call.post('/:id/sdp/answer', async (c) => {
   const { session, role } = result;
 
   const cfCalls = createCFCalls(c.env);
-  if (!cfCalls) return c.json({ error: 'CF Calls not configured' }, 500);
+  if (!cfCalls) {
+    console.error('[CF Calls] NOT CONFIGURED — CF_CALLS_APP_ID:', !!c.env.CF_CALLS_APP_ID, 'CF_CALLS_APP_SECRET:', !!c.env.CF_CALLS_APP_SECRET);
+    return c.json({ error: 'CF Calls not configured — contact admin to set CF_CALLS_APP_SECRET' }, 500);
+  }
 
   const mySessionId = role === 'host' ? session.cf_host_session_id : session.cf_session_id;
   if (!mySessionId) return c.json({ error: 'No CF session' }, 400);

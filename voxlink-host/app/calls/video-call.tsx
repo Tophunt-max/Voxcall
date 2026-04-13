@@ -108,6 +108,9 @@ export default function VideoCallScreen() {
     check();
   }, []);
 
+  // FIX BUG-7: Re-evaluate permissions when they change (e.g. after user grants via dialog),
+  // not just on initial check. Without camera+mic deps, the effect never re-fires after
+  // the user grants permission, so WebRTC never starts.
   useEffect(() => {
     if (!permChecked) return;
     if (permissions.camera.status !== "granted") {
@@ -118,7 +121,7 @@ export default function VideoCallScreen() {
       setPermStep("done");
       setWebrtcReady(true);
     }
-  }, [permChecked]);
+  }, [permChecked, permissions.camera.status, permissions.microphone.status]);
 
   // FIX BUG-3: Host navigates to video-call AFTER accepting — don't show "Ringing..."
 
