@@ -248,10 +248,14 @@ hostProtected.patch('/status', zValidator('json', statusSchema), async (c) => {
 hostProtected.get('/earnings', async (c) => {
   const { sub } = c.get('user');
   const h = await c.env.DB.prepare(
-    'SELECT id, total_earnings, total_minutes, rating, review_count FROM hosts WHERE user_id = ?'
+    `SELECT h.id, h.total_earnings, h.total_minutes, h.rating, h.review_count,
+            COUNT(cs.id) as total_calls
+     FROM hosts h
+     LEFT JOIN call_sessions cs ON cs.host_id = h.id AND cs.status = 'ended'
+     WHERE h.user_id = ?
+     GROUP BY h.id`
   ).bind(sub).first<any>();
   if (!h) return c.json({ error: 'Not a host' }, 403);
-  // Bug 2 fix: use 'bonus' type (matches what call.ts inserts) and join for caller_name + call metadata
   const txs = await c.env.DB.prepare(
     `SELECT ct.id, ct.amount, ct.description, ct.created_at,
             cs.type as call_type, cs.duration_seconds, u.name as caller_name
@@ -261,7 +265,6 @@ hostProtected.get('/earnings', async (c) => {
      WHERE cs.host_id = ? AND ct.type = 'bonus'
      ORDER BY ct.created_at DESC LIMIT 50`
   ).bind(h.id).all();
-  // Withdrawal requests
   const withdrawals = await c.env.DB.prepare(
     'SELECT * FROM withdrawal_requests WHERE host_id = ? ORDER BY created_at DESC LIMIT 20'
   ).bind(h.id).all();

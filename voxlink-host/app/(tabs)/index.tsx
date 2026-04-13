@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useCallback } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, Image,
   ScrollView, Switch
@@ -6,8 +6,7 @@ import {
 import { router } from "expo-router";
 import { useFocusEffect } from "expo-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback } from "react";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useCallback } from "react";import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { API, resolveMediaUrl } from "@/services/api";
@@ -26,19 +25,24 @@ export default function HostHomeScreen() {
   const {
     permissions, isBlocked,
     requestMicrophone, requestCamera, requestNotifications,
-    openSettings,
+    openSettings, refresh: refreshPermissions,
   } = usePermissions();
 
-  const [isOnline, setIsOnline] = useState(user?.isOnline ?? false);
+  // FIX: Single source of truth — sirf AuthContext se isOnline lo, local state nahi
+  // setOnlineStatus already optimistic update karta hai AuthContext mein
+  const isOnline = user?.isOnline ?? false;
+
+  // FIX: Double-tap debounce for online toggle
+  const [togglingOnline, setTogglingOnline] = useState(false);
+
   const [permDialog, setPermDialog] = useState<"microphone" | "camera" | "notifications" | null>(null);
   const topPad = insets.top;
 
-  // Keep local toggle in sync when AuthContext updates (e.g. on foreground refresh)
-  useEffect(() => {
-    setIsOnline(user?.isOnline ?? false);
-  }, [user?.isOnline]);
+  // FIX: Permissions refresh on every focus — stale status avoid karo
+  useFocusEffect(useCallback(() => {
+    refreshPermissions();
+  }, [refreshPermissions]));
 
-  // OPTIMIZATION #7 (voxlink-host): useQuery for earnings — cached 2 min, skeleton while loading
   const { data: earningsData, isLoading: earningsLoading } = useQuery({
     queryKey: ['host-earnings'],
     queryFn: () => API.getEarnings(),
@@ -46,29 +50,60 @@ export default function HostHomeScreen() {
     retry: 2,
   });
 
+  // FIX: Unread notification count for bell badge
+  const { data: unreadCount = 0 } = useQuery({
+    queryKey: ['host-notif-unread'],
+    queryFn: async () => {
+      try {
+        const data = await API.getNotifications() as any[];
+        return Array.isArray(data) ? data.filter((n: any) => !n.is_read).length : 0;
+      } catch { return 0; }
+    },
+    staleTime: 30_000,
+  });
+
   const stats = (() => {
     if (!earningsData) return { calls: "—", hours: "—", earnings: "—" };
     const d = earningsData as any;
     const h = d.host ?? {};
     const minutes = Number(h.total_minutes) || 0;
-    const sessions = Number(h.total_calls) || (d.transactions || []).length;
+    // FIX: total_calls ab backend se aata hai accurately
+    const sessions = Number(h.total_calls) || 0;
     const earnings = Number(h.total_earnings) || 0;
+    // FIX: "0h 0m" ke bajaye "0" dikhao
+    const hoursDisplay = minutes === 0
+      ? "0"
+      : `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
     return {
       calls: String(sessions),
-      hours: `${Math.floor(minutes / 60)}h ${minutes % 60}m`,
+      hours: hoursDisplay,
       earnings: earnings.toLocaleString(),
     };
   })();
 
-  // Invalidate earnings query each time screen comes into focus (e.g. after a call ends)
+  // FIX: refetchQueries — actual data fetch hoga, sirf stale mark nahi
   useFocusEffect(useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: ['host-earnings'] });
+    queryClient.refetchQueries({ queryKey: ['host-earnings'] });
   }, [queryClient]));
 
-  // Call khatam hone par coin event aata hai — dashboard earnings turant refresh karo
+  // Call khatam hone par coin event — earnings refresh
   useSocketEvent(SocketEvents.COIN_DEDUCTED, () => {
-    queryClient.invalidateQueries({ queryKey: ['host-earnings'] });
+    queryClient.refetchQueries({ queryKey: ['host-earnings'] });
+    queryClient.invalidateQueries({ queryKey: ['host-notif-unread'] });
   }, [queryClient]);
+
+  // FIX: Online toggle with debounce — double-tap race condition fix
+  const handleOnlineToggle = useCallback(async (v: boolean) => {
+    if (togglingOnline) return;
+    setTogglingOnline(true);
+    try {
+      await setOnlineStatus(v);
+    } catch {
+      showErrorToast("Status update karne mein error. Dobara try karo.");
+    } finally {
+      setTogglingOnline(false);
+    }
+  }, [togglingOnline, setOnlineStatus]);
 
   return (
     <ScrollView
@@ -100,6 +135,11 @@ export default function HostHomeScreen() {
           </View>
           <TouchableOpacity onPress={() => router.push("/notifications")} style={[styles.bellBtn, { backgroundColor: colors.surface }]}>
             <Image source={require("@/assets/icons/ic_notify.png")} style={styles.bellIcon} tintColor={colors.text} resizeMode="contain" />
+            {(unreadCount as number) > 0 && (
+              <View style={styles.notifBadge}>
+                <Text style={styles.notifBadgeText}>{(unreadCount as number) > 99 ? "99+" : String(unreadCount)}</Text>
+              </View>
+            )}
           </TouchableOpacity>
         </View>
       </View>
@@ -115,18 +155,10 @@ export default function HostHomeScreen() {
         </View>
         <Switch
           value={isOnline}
-          onValueChange={async (v) => {
-            setIsOnline(v);
-            try {
-              // Use setOnlineStatus from AuthContext so isOnline stays in sync across the app
-              await setOnlineStatus(v);
-            } catch {
-              setIsOnline(!v);
-              showErrorToast("Failed to update online status.");
-            }
-          }}
+          onValueChange={handleOnlineToggle}
+          disabled={togglingOnline}
           trackColor={{ false: "rgba(255,255,255,0.3)", true: "rgba(255,255,255,0.6)" }}
-          thumbColor="#fff"
+          thumbColor={togglingOnline ? "rgba(255,255,255,0.5)" : "#fff"}
         />
       </View>
 
@@ -176,6 +208,8 @@ export default function HostHomeScreen() {
             } else if (permDialog === "notifications") {
               await requestNotifications();
             }
+            // FIX: Permission status reload karo — dialog band hone ke baad row update ho
+            await refreshPermissions();
             setPermDialog(null);
           }}
           onDeny={() => setPermDialog(null)}
@@ -263,6 +297,13 @@ const styles = StyleSheet.create({
   coinText: { color: "#fff", fontSize: 14, fontFamily: "Poppins_600SemiBold" },
   bellBtn: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center" },
   bellIcon: { width: 18, height: 18 },
+  notifBadge: {
+    position: "absolute", top: -2, right: -2,
+    minWidth: 16, height: 16, borderRadius: 8,
+    backgroundColor: "#E84855", alignItems: "center", justifyContent: "center",
+    paddingHorizontal: 3, borderWidth: 1.5, borderColor: "#fff",
+  },
+  notifBadgeText: { color: "#fff", fontSize: 9, fontFamily: "Poppins_700Bold" },
   statusBanner: { borderRadius: 16, padding: 16, flexDirection: "row", alignItems: "center", marginBottom: 16 },
   statusTitle: { color: "#fff", fontSize: 16, fontFamily: "Poppins_700Bold" },
   statusSub: { color: "rgba(255,255,255,0.8)", fontSize: 12, fontFamily: "Poppins_400Regular", marginTop: 2 },
