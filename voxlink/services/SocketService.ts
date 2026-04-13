@@ -158,6 +158,7 @@ class SocketService {
       case "presence":
         this.emit(SocketEvents.PRESENCE_UPDATE, {
           userId: msg.user_id,
+          hostId: msg.host_id,      // FIX: hosts.id (PK) — user app cache match ke liye
           isOnline: msg.is_online ?? false,
           timestamp: Date.now(),
         });

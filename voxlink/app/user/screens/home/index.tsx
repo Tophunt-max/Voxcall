@@ -268,25 +268,30 @@ export default function HomeScreen() {
     setRefreshing(false);
   }, [queryClient, refetchHosts]);
 
-  // REALTIME: Jab koi host online/offline ho — host list mein turant update karo
-  // Backend PATCH /api/host/status ke baad "presence" socket event bhejta hai
+  // FIX: PRESENCE_UPDATE — host_id (hosts.id) se match karo
+  // Backend user_id (users.id) bhi bhejta hai, lekin user app cache mein h.id = hosts.id hota hai
+  // Isliye h.id === data.host_id comparison sahi hai, user_id se nahi
   useSocketEvent(
     SocketEvents.PRESENCE_UPDATE,
     (data: any) => {
-      const hostUserId: string = data?.userId ?? data?.user_id;
+      const hostId: string = data?.host_id;           // hosts.id (PK) — cache match ke liye
+      const hostUserId: string = data?.user_id ?? data?.userId; // users.id — fallback
       const isOnline: boolean = !!(data?.isOnline ?? data?.is_online);
-      if (!hostUserId) return;
 
-      // React Query cache mein directly update karo — re-fetch nahi karunga
-      // taaki instant lag kare bina network call ke
       queryClient.setQueryData<Host[]>(['hosts'], (old) => {
         if (!old) return old;
-        const updated = old.map((h) =>
-          h.id === hostUserId ? { ...h, isOnline } : h
-        );
-        // Agar host nahi mili cache mein (nayi host), full refetch karo
-        const found = old.some((h) => h.id === hostUserId);
+        // host_id se match karo (hosts.id = h.id in cache)
+        const updated = old.map((h) => {
+          if (hostId && h.id === hostId) return { ...h, isOnline };
+          // Fallback: user_id se bhi try karo agar host_id nahi mila
+          // (purane events ke liye backward compatibility)
+          return h;
+        });
+        const found = hostId
+          ? old.some((h) => h.id === hostId)
+          : false;
         if (!found) {
+          // Host cache mein nahi — full refetch karo
           queryClient.invalidateQueries({ queryKey: ['hosts'] });
         }
         return updated;

@@ -161,6 +161,7 @@ class SocketService {
       case "presence":
         this.emit(SocketEvents.PRESENCE_UPDATE, {
           userId: msg.user_id,
+          hostId: msg.host_id,
           isOnline: msg.is_online ?? false,
           timestamp: Date.now(),
         });
