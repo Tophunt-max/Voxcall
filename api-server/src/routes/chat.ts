@@ -75,6 +75,18 @@ chat.post('/rooms/:id/messages', async (c) => {
   const { id } = c.req.param();
   const { content, media_url, media_type } = await c.req.json();
   const db = c.env.DB;
+
+  // SECURITY FIX: Verify the authenticated user is a participant of this room
+  // Without this check, any user can send messages to any room by guessing the ID
+  const roomAccess = await db.prepare(
+    'SELECT cr.id FROM chat_rooms cr JOIN hosts h ON h.id = cr.host_id WHERE cr.id = ? AND (cr.user_id = ? OR h.user_id = ?)'
+  ).bind(id, sub, sub).first<any>();
+  if (!roomAccess) return c.json({ error: 'Room not found or access denied' }, 403);
+
+  // Validate message content
+  if (!content && !media_url) return c.json({ error: 'Message content or media is required' }, 400);
+  if (content && content.length > 5000) return c.json({ error: 'Message too long (max 5000 chars)' }, 400);
+
   const msgId = crypto.randomUUID();
   const now = Math.floor(Date.now() / 1000);
 

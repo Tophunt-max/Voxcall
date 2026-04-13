@@ -77,6 +77,9 @@ export async function apiRequest<T>(
       const { router } = await import('expo-router');
       router.replace('/user/auth/login');
     } catch {}
+    // FIX: Throw after force-logout so callers know the session expired
+    // Without this, execution falls through to the generic error handler
+    throw new Error('SESSION_EXPIRED');
   }
 
   if (!res.ok) {
@@ -210,7 +213,8 @@ export const API = {
   // Promo codes
   applyPromoCode: (code: string, plan_id?: string) =>
     apiRequest<{ valid: boolean; type: string; discount: number; bonus_coins: number; discount_pct: number; code: string }>(
-      'POST', '/api/coins/apply-promo', { code, plan_id }, false
+      // FIX: Backend requires auth for apply-promo — was sending without token
+      'POST', '/api/coins/apply-promo', { code, plan_id }
     ),
 
   // Referral

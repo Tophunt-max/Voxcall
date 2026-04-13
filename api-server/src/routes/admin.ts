@@ -101,12 +101,24 @@ function db(c: any) { return c.env.DB as D1Database; }
 // PATCH /api/admin/users/:id
 admin.patch('/users/:id', async (c) => {
   const { id } = c.req.param();
-  const { coins, role, is_verified, status } = await c.req.json();
+  const body = await c.req.json();
+  const { coins, role, is_verified, status } = body;
   const sets: string[] = []; const vals: any[] = [];
-  if (coins !== undefined) { sets.push('coins = ?'); vals.push(coins); }
-  if (role !== undefined) { sets.push('role = ?'); vals.push(role); }
-  if (is_verified !== undefined) { sets.push('is_verified = ?'); vals.push(is_verified); }
-  if (status !== undefined) { sets.push('status = ?'); vals.push(status); }
+  // SECURITY FIX: Validate all fields against allowlists to prevent arbitrary values
+  if (coins !== undefined) {
+    const coinVal = parseInt(coins);
+    if (isNaN(coinVal) || coinVal < 0) return c.json({ error: 'coins must be a non-negative integer' }, 400);
+    sets.push('coins = ?'); vals.push(coinVal);
+  }
+  if (role !== undefined) {
+    if (!['user', 'host', 'admin'].includes(role)) return c.json({ error: 'role must be user, host, or admin' }, 400);
+    sets.push('role = ?'); vals.push(role);
+  }
+  if (is_verified !== undefined) { sets.push('is_verified = ?'); vals.push(is_verified ? 1 : 0); }
+  if (status !== undefined) {
+    if (!['active', 'banned', 'deleted'].includes(status)) return c.json({ error: 'status must be active, banned, or deleted' }, 400);
+    sets.push('status = ?'); vals.push(status);
+  }
   if (!sets.length) return c.json({ error: 'Nothing to update' }, 400);
   sets.push('updated_at = unixepoch()');
   vals.push(id);
@@ -237,8 +249,13 @@ admin.patch('/withdrawals/:id', async (c) => {
     if (wr.status !== 'pending' && wr.status !== 'approved') {
       return c.json({ error: `Cannot reject a ${wr.status} withdrawal` }, 400);
     }
+    // RACE CONDITION FIX: Use atomic guard to prevent double-refund on concurrent rejection
+    const guardResult = await d.prepare(
+      "UPDATE withdrawal_requests SET status = ?, admin_note = ?, updated_at = unixepoch() WHERE id = ? AND status IN ('pending', 'approved')"
+    ).bind(status, admin_note ?? null, id).run();
+    if (!guardResult.meta?.changes) return c.json({ error: 'Already processed' }, 409);
+
     await d.batch([
-      d.prepare('UPDATE withdrawal_requests SET status = ?, admin_note = ?, updated_at = unixepoch() WHERE id = ?').bind(status, admin_note ?? null, id),
       d.prepare('UPDATE users SET coins = coins + ?, updated_at = unixepoch() WHERE id = ?').bind(wr.coins, wr.user_id),
       d.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)').bind(
         crypto.randomUUID(), wr.user_id, 'refund', wr.coins, `Withdrawal rejected by admin — ${wr.coins} coins refunded`, id
@@ -247,8 +264,12 @@ admin.patch('/withdrawals/:id', async (c) => {
     return c.json({ success: true, refunded_coins: wr.coins });
   }
 
-  await d.prepare('UPDATE withdrawal_requests SET status = ?, admin_note = ?, updated_at = unixepoch() WHERE id = ?')
-    .bind(status, admin_note ?? null, id).run();
+  // FIX: Validate status for non-rejection updates
+  if (!['approved', 'completed', 'paid'].includes(status)) {
+    return c.json({ error: 'Invalid status. Must be approved, completed, paid, or rejected' }, 400);
+  }
+  await d.prepare("UPDATE withdrawal_requests SET status = ?, admin_note = ?, updated_at = unixepoch() WHERE id = ? AND status != ?")
+    .bind(status, admin_note ?? null, id, status).run();
   return c.json({ success: true });
 });
 
@@ -295,9 +316,21 @@ admin.get('/settings', async (c) => {
 });
 admin.patch('/settings', async (c) => {
   const body = await c.req.json();
-  const stmts = Object.entries(body).map(([k, v]) =>
-    db(c).prepare('INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES (?, ?, unixepoch())').bind(k, String(v))
-  );
+  // SECURITY FIX: Only allow known setting keys to prevent arbitrary key injection
+  const ALLOWED_SETTINGS = [
+    'min_coins_for_call', 'coin_to_usd_rate', 'host_revenue_share',
+    'min_withdrawal_coins', 'auto_approve_manual', 'auto_approve_manual_max_amount',
+    'maintenance_mode', 'maintenance_message', 'app_name', 'support_email',
+    'terms_url', 'privacy_url', 'razorpay_webhook_secret', 'stripe_webhook_secret',
+    'generic_webhook_secret', 'referrer_reward', 'new_user_reward',
+    'min_calls_to_unlock', 'referral_active', 'free_chat_messages',
+  ];
+  const stmts = Object.entries(body)
+    .filter(([k]) => ALLOWED_SETTINGS.includes(k))
+    .map(([k, v]) =>
+      db(c).prepare('INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES (?, ?, unixepoch())').bind(k, String(v))
+    );
+  if (!stmts.length) return c.json({ error: 'No valid settings to update' }, 400);
   await db(c).batch(stmts);
   return c.json({ success: true });
 });
@@ -1042,7 +1075,14 @@ admin.put('/app-config', async (c) => {
 });
 
 // POST /api/admin/run-migrations — apply missing schema to production DB
+// SECURITY FIX: Require a separate migration secret to prevent accidental or malicious schema changes.
+// Set MIGRATION_SECRET in Cloudflare Worker secrets. Without it, this endpoint is disabled.
 admin.post('/run-migrations', async (c) => {
+  const migrationSecret = (c.env as any).MIGRATION_SECRET;
+  const providedSecret = c.req.header('X-Migration-Secret') || '';
+  if (!migrationSecret || !providedSecret || migrationSecret !== providedSecret) {
+    return c.json({ error: 'Migration secret required. Set MIGRATION_SECRET in Worker secrets and pass via X-Migration-Secret header.' }, 403);
+  }
   const db = c.env.DB;
   const results: string[] = [];
 

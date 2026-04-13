@@ -62,8 +62,14 @@ coin.post('/purchase', async (c) => {
   if (!plan) return c.json({ error: 'Plan not found' }, 404);
 
   const method = payment_method || 'unknown';
-  // Require payment_ref for all non-manual payment methods (prevents free coin abuse)
-  if (!['manual', 'admin_grant'].includes(method) && !payment_ref) {
+  // SECURITY FIX: Block 'manual' and 'admin_grant' via the public purchase endpoint.
+  // Manual deposits should go through /manual-deposit (creates pending record for admin review).
+  // Admin grants should only happen via /admin endpoints.
+  if (['manual', 'admin_grant'].includes(method)) {
+    return c.json({ error: 'This payment method is not available for self-service purchases' }, 403);
+  }
+  // Require payment_ref for all payment methods (prevents free coin abuse)
+  if (!payment_ref) {
     return c.json({ error: 'payment_ref is required to verify payment' }, 400);
   }
   // Prevent duplicate payment processing

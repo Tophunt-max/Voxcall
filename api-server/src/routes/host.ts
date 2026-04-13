@@ -175,7 +175,8 @@ hostProtected.use('*', authMiddleware);
 // PATCH /api/host/me — update host profile
 hostProtected.patch('/me', zValidator('json', updateProfileSchema), async (c) => {
   const { sub } = c.get('user');
-  const body = await c.req.json();
+  // FIX: Use validated body from zValidator, not raw c.req.json() which bypasses validation
+  const body = c.req.valid('json');
   const MAX_RATE = 500; // coins per minute cap to prevent hosts from setting abusive rates
   const allowed = ['display_name', 'specialties', 'languages', 'coins_per_minute', 'audio_coins_per_minute', 'video_coins_per_minute'];
   const sets: string[] = [];
