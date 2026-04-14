@@ -134,9 +134,12 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     const duration = wasActive ? Math.floor((Date.now() - call!.startTime!) / 1000) : 0;
     updateCall(null);
 
-    // If call was never answered (still incoming when ended/cancelled by remote),
-    // just dismiss — no summary, no API call needed.
+    // FIX: Agar call cancel hua (wasActive = false) lekin sessionId hai,
+    // backend ko notify karo — warna caller ko call_ended event nahi milta
     if (!wasActive) {
+      if (call?.sessionId) {
+        try { await API.endCall(call.sessionId, 0); } catch {}
+      }
       // incoming.tsx useEffect watches activeCall → null and calls router.back()
       return;
     }

@@ -145,9 +145,13 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     const duration = wasActive ? Math.floor((Date.now() - call!.startTime!) / 1000) : 0;
     updateCall(null);
 
-    // Agar call kabhi accept nahi hua (incoming stage mein hi cancel/decline hua)
-    // to sirf dismiss karo — koi summary, koi API call nahi
+    // FIX: Agar call cancel/decline hua (wasActive = false) lekin sessionId hai,
+    // backend ko notify karo — warna session 2 min tak pending rehti hai
+    // aur host ko call_ended event nahi milta, screen pe "Ringing..." stuck rahta hai
     if (!wasActive) {
+      if (call?.sessionId) {
+        try { await API.endCall(call.sessionId, 0); } catch {}
+      }
       try { router.back(); } catch {}
       return;
     }
