@@ -3,6 +3,8 @@ import { View, Text, StyleSheet, Image, TouchableOpacity } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useCall } from "@/context/CallContext";
+import { useSocket } from "@/context/SocketContext";
+import { SocketEvents } from "@/constants/events";
 import { resolveMediaUrl } from "@/services/api";
 import { router } from "expo-router";
 import * as Haptics from "expo-haptics";
@@ -11,16 +13,14 @@ import { useRingtone } from "@/hooks/useRingtone";
 export default function IncomingCallScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { activeCall, acceptCall, declineCall } = useCall();
+  const { activeCall, acceptCall, declineCall, endCall } = useCall();
+  const { onEvent } = useSocket();
   const topPad = insets.top;
   const bottomPad = insets.bottom;
 
   const { stop: stopRing } = useRingtone("incoming", true);
 
-  // FIX BUG-6: Watch for activeCall going null (remote caller cancelled, server ended call,
-  // or cron reaped it). Without this, the incoming screen stays stuck forever.
-  // Same pattern as host incoming.tsx — only go back when activeCall becomes null,
-  // NOT when status changes to "active" (that means we accepted and call screen is opening).
+  // Watch for activeCall going null (remote caller cancelled, server ended call)
   const hasMounted = useRef(false);
   const hadCall = useRef(false);
   useEffect(() => {
@@ -33,12 +33,30 @@ export default function IncomingCallScreen() {
       hadCall.current = true;
       return;
     }
-    // activeCall went null — call was cancelled/ended externally
     if (hadCall.current) {
       stopRing().catch(() => {});
       try { router.back(); } catch {}
     }
   }, [activeCall, stopRing]);
+
+  // FIX: CALL_END + CALL_REJECT listeners — jab caller (host) cancel kare
+  // AppBridge se CALL_END remove kiya tha (audio/video double endCall fix ke liye)
+  // Lekin incoming screen pe koi listener nahi tha → screen stuck rehti thi
+  useEffect(() => {
+    const offEnd = onEvent(SocketEvents.CALL_END, async (data: any) => {
+      const sid = data?.sessionId ?? data?.session_id;
+      if (activeCall && sid && activeCall.sessionId !== sid) return;
+      await stopRing().catch(() => {});
+      endCall(true);
+    });
+    const offReject = onEvent(SocketEvents.CALL_REJECT, async (data: any) => {
+      const sid = data?.sessionId ?? data?.session_id;
+      if (activeCall && sid && activeCall.sessionId !== sid) return;
+      await stopRing().catch(() => {});
+      endCall(true);
+    });
+    return () => { offEnd(); offReject(); };
+  }, [onEvent, activeCall, stopRing, endCall]);
 
   const handleAccept = useCallback(async () => {
     await stopRing();
