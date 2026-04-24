@@ -178,7 +178,9 @@ async function getLevelConfig(d: D1Database): Promise<typeof DEFAULT_LEVEL_CONFI
   try {
     const row = await d.prepare("SELECT value FROM app_settings WHERE key = 'level_config'").first<any>();
     if (row?.value) return JSON.parse(row.value);
-  } catch (_) {}
+  } catch (err) {
+    console.error('[getLevelConfig] Error fetching or parsing level_config:', err);
+  }
   return DEFAULT_LEVEL_CONFIG;
 }
 
@@ -1391,7 +1393,9 @@ admin.post('/run-migrations', async (c) => {
     await db.prepare(`INSERT INTO audit_logs (id, admin_id, admin_name, action, detail, created_at)
       VALUES (lower(hex(randomblob(8))), ?, ?, 'run_migrations', ?, unixepoch())`)
       .bind(u.sub, u.email || 'Admin', `Applied ${results.length} migration steps`).run();
-  } catch {}
+  } catch (err) {
+    console.error('[run-migrations] Failed to write audit log:', err);
+  }
 
   return c.json({ success: true, results, total: results.length });
 });
