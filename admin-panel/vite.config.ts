@@ -20,7 +20,7 @@ export default defineConfig({
       configureServer(server) {
         server.middlewares.use((req, res, next) => {
           const url = req.url ?? "";
-          if (url === "/" || url === "/health" || url === "/admin-panel/" || url === "/admin-panel/health") {
+          if (url === "/health" || url === "/admin-panel/health") {
             res.writeHead(200, { "Content-Type": "text/plain" });
             res.end("OK");
             return;
