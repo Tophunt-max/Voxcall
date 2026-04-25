@@ -4,10 +4,10 @@ const net = require('net');
 const { spawn } = require('child_process');
 const path = require('path');
 
-const ADMIN_PORT = 5000;
+const ADMIN_PORT = 5001;
 const USER_APP_PORT = 8080;
 const HOST_APP_PORT = 8099;
-const PROXY_PORT = parseInt(process.env.PROXY_PORT || '3000');
+const PROXY_PORT = parseInt(process.env.PROXY_PORT || '5000');
 
 // Cloudflare Workers API — set CLOUDFLARE_WORKER_URL to use remote, else fallback to local wrangler
 const CF_WORKER_URL = process.env.CLOUDFLARE_WORKER_URL || null;
