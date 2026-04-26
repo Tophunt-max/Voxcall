@@ -33,6 +33,15 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   const { user, isLoggedIn } = useAuth();
   const [isConnected, setIsConnected] = useState(false);
   const cleanupRefs = useRef<Array<() => void>>([]);
+  // Track whether we've ever disconnected — used to detect RE-connects (not the
+  // initial connect) so we can resync the host's online status with the backend.
+  // Backend now auto-marks hosts offline when their WS closes (network blip,
+  // tab close, app suspend), so on reconnect we must restore is_online=true if
+  // the host's UI still shows them as online — otherwise users see them as
+  // offline forever despite the host being back online.
+  const hasDisconnectedRef = useRef(false);
+  const userRef = useRef(user);
+  useEffect(() => { userRef.current = user; }, [user]);
 
   useEffect(() => {
     if (!isLoggedIn || !user?.id) return;
@@ -41,8 +50,21 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       socketService.connect(user.id, token ?? undefined);
     });
 
-    const offConnect = socketService.on(SocketEvents.CONNECT, () => setIsConnected(true));
-    const offDisconnect = socketService.on(SocketEvents.DISCONNECT, () => setIsConnected(false));
+    const offConnect = socketService.on(SocketEvents.CONNECT, () => {
+      setIsConnected(true);
+      // Resync online status to backend on RECONNECT only (not initial connect).
+      // Initial connect: backend already has the truth from login response.
+      // Re-connect: backend may have flipped us to offline during the outage.
+      if (hasDisconnectedRef.current && userRef.current?.isOnline) {
+        API.setHostOnline(true).catch((err) =>
+          console.warn("[SocketContext] Failed to resync online status:", err)
+        );
+      }
+    });
+    const offDisconnect = socketService.on(SocketEvents.DISCONNECT, () => {
+      setIsConnected(false);
+      hasDisconnectedRef.current = true;
+    });
 
     // App foreground pe aane par socket reconnect karo
     const appStateSub = AppState.addEventListener("change", (state) => {
