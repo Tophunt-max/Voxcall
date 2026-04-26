@@ -90,16 +90,25 @@ payment.post('/webhook/stripe', async (c) => {
   try {
     const body = await c.req.text();
     const sig = c.req.header('Stripe-Signature') || '';
+    // SECURITY FIX: Reject webhook entirely if no secret configured or no signature provided.
+    // Previous behaviour silently accepted unsigned webhooks → attackers could forge "success" events.
     const secret = await c.env.DB.prepare("SELECT value FROM app_settings WHERE key = 'stripe_webhook_secret'").first<any>();
-    // Stripe signature verification (simplified — for full verification use stripe-signature library)
-    // In Cloudflare Workers, we verify the timestamp + payload hash
-    if (secret?.value && sig) {
-      const parts: Record<string, string> = {};
-      sig.split(',').forEach(p => { const [k, v] = p.split('='); if (k && v) parts[k] = v; });
-      const timestamp = parts['t'];
-      const expected = await hmacSha256(secret.value, `${timestamp}.${body}`);
-      if (expected !== parts['v1']) return c.json({ error: 'Invalid signature' }, 401);
+    if (!secret?.value) {
+      console.error('[Webhook] Stripe webhook secret not configured — rejecting');
+      return c.json({ error: 'Webhook secret not configured' }, 500);
     }
+    if (!sig) return c.json({ error: 'Missing signature' }, 401);
+    const parts: Record<string, string> = {};
+    sig.split(',').forEach(p => { const [k, v] = p.split('='); if (k && v) parts[k] = v; });
+    const timestamp = parts['t'];
+    if (!timestamp || !parts['v1']) return c.json({ error: 'Malformed signature header' }, 401);
+    // Reject signatures older than 5 minutes — prevents replay attacks
+    const ageSec = Math.floor(Date.now() / 1000) - parseInt(timestamp, 10);
+    if (Number.isNaN(ageSec) || ageSec > 300 || ageSec < -60) {
+      return c.json({ error: 'Stale signature timestamp' }, 401);
+    }
+    const expected = await hmacSha256(secret.value, `${timestamp}.${body}`);
+    if (expected !== parts['v1']) return c.json({ error: 'Invalid signature' }, 401);
     const payload = JSON.parse(body);
     const event = payload.type as string;
     if (event !== 'checkout.session.completed' && event !== 'payment_intent.succeeded') return c.json({ ok: true });
@@ -124,12 +133,18 @@ payment.post('/webhook/phonepe', async (c) => {
   try {
     const body = await c.req.text();
     const xVerify = c.req.header('X-Verify') || '';
+    // SECURITY FIX: Reject webhook entirely if no secret configured or no signature provided.
+    // Previous behaviour silently accepted unsigned webhooks → forged "PAYMENT_SUCCESS" possible.
     const secret = await c.env.DB.prepare("SELECT value FROM app_settings WHERE key = 'phonepe_webhook_secret'").first<any>();
-    if (secret?.value && xVerify) {
-      const [sigPart] = xVerify.split('###');
-      const expected = await hmacSha256(secret.value, body);
-      if (expected !== sigPart) return c.json({ error: 'Invalid signature' }, 401);
+    if (!secret?.value) {
+      console.error('[Webhook] PhonePe webhook secret not configured — rejecting');
+      return c.json({ error: 'Webhook secret not configured' }, 500);
     }
+    if (!xVerify) return c.json({ error: 'Missing X-Verify header' }, 401);
+    const [sigPart] = xVerify.split('###');
+    if (!sigPart) return c.json({ error: 'Malformed X-Verify header' }, 401);
+    const expected = await hmacSha256(secret.value, body);
+    if (expected !== sigPart) return c.json({ error: 'Invalid signature' }, 401);
     const payload = JSON.parse(body);
     const data = payload.data || {};
     const txnStatus = data.code || payload.code;
@@ -167,15 +182,17 @@ payment.post('/webhook/paytm', async (c) => {
     const body = await c.req.text();
     const payload = JSON.parse(body);
 
-    // Verify Paytm checksum using merchant key from app_settings
+    // SECURITY FIX: Always require both the merchant key AND a CHECKSUMHASH.
+    // Previous behaviour bypassed verification when no merchant key was configured,
+    // allowing forged "TXN_SUCCESS" payloads to credit coins.
     const merchantKeyRow = await c.env.DB.prepare("SELECT value FROM app_settings WHERE key = 'paytm_merchant_key'").first<any>();
-    if (merchantKeyRow?.value) {
-      const valid = await verifyPaytmChecksum(payload, merchantKeyRow.value);
-      if (!valid) return c.json({ error: 'Invalid checksum' }, 401);
-    } else if (!payload['CHECKSUMHASH']) {
-      // If no key configured and no checksum present, reject as unverifiable
-      return c.json({ error: 'Missing CHECKSUMHASH — configure paytm_merchant_key in app_settings' }, 401);
+    if (!merchantKeyRow?.value) {
+      console.error('[Webhook] Paytm merchant key not configured — rejecting');
+      return c.json({ error: 'Paytm merchant key not configured' }, 500);
     }
+    if (!payload['CHECKSUMHASH']) return c.json({ error: 'Missing CHECKSUMHASH' }, 401);
+    const valid = await verifyPaytmChecksum(payload, merchantKeyRow.value);
+    if (!valid) return c.json({ error: 'Invalid checksum' }, 401);
 
     const orderId = payload.ORDERID as string;
     const txnStatus = payload.STATUS as string;
@@ -199,10 +216,14 @@ payment.post('/webhook/generic', async (c) => {
   try {
     const { purchase_id, status, secret, note } = await c.req.json() as any;
     if (status !== 'success') return c.json({ ok: true });
+    // SECURITY FIX: Always require a configured secret AND a matching client-supplied secret.
+    // Previously, when no secret was configured, ANY caller could credit coins by knowing a purchase_id.
     const storedSecret = await c.env.DB.prepare("SELECT value FROM app_settings WHERE key = 'generic_webhook_secret'").first<any>();
-    if (storedSecret?.value) {
-      if (!secret || secret !== storedSecret.value) return c.json({ error: 'Invalid secret' }, 401);
+    if (!storedSecret?.value) {
+      console.error('[Webhook] Generic webhook secret not configured — rejecting');
+      return c.json({ error: 'Generic webhook secret not configured' }, 500);
     }
+    if (!secret || secret !== storedSecret.value) return c.json({ error: 'Invalid secret' }, 401);
     if (!purchase_id) return c.json({ error: 'purchase_id required' }, 400);
     const result = await approveDeposit(c.env.DB, purchase_id, 'generic', note || 'Auto-matched via generic webhook');
     return c.json({ ok: result.ok, already: result.already, coins: result.coins, notFound: result.notFound });

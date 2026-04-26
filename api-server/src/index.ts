@@ -109,7 +109,11 @@ app.get('/api/ws/notifications', async (c) => {
   return stub.fetch(c.req.raw);
 });
 
-// WebSocket: call signaling per session — BUG 3 FIX: require JWT auth
+// WebSocket: call signaling per session — JWT auth + identity binding.
+// CRITICAL FIX: Forward the JWT-verified userId AND the derived role to the DO
+// via trusted X-CF-* headers. Previously the DO read these from URL query
+// params, which an authenticated user with access to the session could spoof
+// to impersonate the OTHER party (caller posing as host or vice versa).
 app.get('/api/ws/call/:sessionId', async (c) => {
   const { sessionId } = c.req.param();
   const token = c.req.query('token') || c.req.header('Authorization')?.replace('Bearer ', '') || null;
@@ -120,12 +124,28 @@ app.get('/api/ws/call/:sessionId', async (c) => {
   const session = await c.env.DB.prepare(
     `SELECT cs.caller_id, h.user_id as host_user_id FROM call_sessions cs LEFT JOIN hosts h ON h.id = cs.host_id WHERE cs.id = ?`
   ).bind(sessionId).first<any>();
-  if (!session || (session.caller_id !== verifiedUserId && session.host_user_id !== verifiedUserId)) {
-    return c.json({ error: 'Access denied to this call session' }, 403);
-  }
+  if (!session) return c.json({ error: 'Session not found' }, 404);
+
+  // Derive role from the JWT-verified userId (server is the authority — never trust client claims)
+  let role: 'caller' | 'host';
+  if (session.caller_id === verifiedUserId) role = 'caller';
+  else if (session.host_user_id === verifiedUserId) role = 'host';
+  else return c.json({ error: 'Access denied to this call session' }, 403);
+
+  // Build a trusted request: copy original headers (preserves WebSocket upgrade
+  // headers like Sec-WebSocket-Key/Version/Extensions) and set our trusted ones.
+  // The DO requires X-CF-User-Id + X-CF-Role and ignores URL query params.
+  const trustedHeaders = new Headers(c.req.raw.headers);
+  trustedHeaders.set('X-CF-User-Id', verifiedUserId);
+  trustedHeaders.set('X-CF-Role', role);
+  const trustedReq = new Request(c.req.raw.url, {
+    method: c.req.raw.method,
+    headers: trustedHeaders,
+  });
+
   const id = c.env.CALL_SIGNALING.idFromName(sessionId);
   const stub = c.env.CALL_SIGNALING.get(id);
-  return stub.fetch(c.req.raw);
+  return stub.fetch(trustedReq);
 });
 
 // 404 handler — path is intentionally omitted to prevent internal route enumeration

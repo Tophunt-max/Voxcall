@@ -170,35 +170,64 @@ call.post('/end', async (c) => {
     : 0;
   const hostShare = Math.floor(coinsCharged * 0.7);
 
-  const txs: any[] = [
-    // ended_at already set by atomic guard above; update the rest of the fields
-    db.prepare('UPDATE call_sessions SET status = ?, duration_seconds = ?, coins_charged = ? WHERE id = ?')
-      .bind('ended', durationSec, coinsCharged, session_id),
-  ];
-  if (coinsCharged > 0) {
-    txs.push(
-      db.prepare('UPDATE users SET coins = coins - ? WHERE id = ? AND coins >= ?').bind(coinsCharged, session.caller_id, coinsCharged),
-      db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
-        .bind(crypto.randomUUID(), session.caller_id, 'spend', -coinsCharged, `${session.type || 'audio'} call — ${durationMin} min`, session_id),
-      db.prepare('UPDATE hosts SET total_minutes = total_minutes + ?, total_earnings = total_earnings + ? WHERE id = ?')
-        .bind(durationMin, hostShare, session.host_id),
-      // Bug 2 fix: insert earn transaction for host so wallet earnings show correctly
-      db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
-        .bind(crypto.randomUUID(), hostRow?.user_id, 'bonus', hostShare, `${session.type || 'audio'} call — ${durationMin} min`, session_id),
-      db.prepare('UPDATE users SET coins = coins + ? WHERE id = ?').bind(hostShare, hostRow?.user_id),
-    );
-  }
-  const batchResults = await db.batch(txs);
-  // Verify coin deduction actually succeeded (user may have had insufficient coins due to a race)
-  if (coinsCharged > 0) {
-    const deductResult = batchResults[1];
-    if (!deductResult?.meta?.changes || deductResult.meta.changes === 0) {
-      // Deduction failed — undo host credit to keep books balanced
-      console.error('[/end] Coin deduction failed for caller', session.caller_id, '— reversing host credit');
-      await db.prepare('UPDATE users SET coins = coins - ? WHERE id = ?').bind(hostShare, hostRow?.user_id).run();
-      await db.prepare('UPDATE hosts SET total_earnings = total_earnings - ? WHERE id = ?').bind(hostShare, session.host_id).run();
+  // ──────────────────────────────────────────────────────────────────────────
+  // CRITICAL FIX: Atomic coin transfer using a SINGLE UPDATE statement.
+  //
+  // Previous design used a multi-statement batch with a conditional WHERE
+  // (`coins >= ?`) on the deduction. If the caller had insufficient coins, the
+  // deduction "succeeded" with 0 changes (SQL doesn't error on unmatched WHERE)
+  // but the unconditional host credit still applied → free coins for the host.
+  // The "manual reversal" fallback was non-atomic — a Worker crash between the
+  // batch and the reversal would permanently inflate the money supply.
+  //
+  // New design: a single UPDATE with a CASE expression and an EXISTS guard.
+  //   - If caller has >= amount coins  →  EXISTS true  →  both rows update
+  //                                       (caller -= amount, host += share)
+  //   - If caller has < amount coins   →  EXISTS false →  WHERE excludes ALL
+  //                                       rows → ZERO money moves.
+  // Atomic at the SQL engine level. No partial state possible.
+  // ──────────────────────────────────────────────────────────────────────────
+  let actualCoinsCharged = 0;
+  let actualHostShare = 0;
+  if (coinsCharged > 0 && hostRow?.user_id) {
+    const transfer = await db.prepare(
+      `UPDATE users
+         SET coins = coins + CASE id
+           WHEN ?1 THEN -?2
+           WHEN ?3 THEN ?4
+           ELSE 0
+         END
+         WHERE id IN (?1, ?3)
+           AND EXISTS (SELECT 1 FROM users WHERE id = ?1 AND coins >= ?2)`
+    ).bind(session.caller_id, coinsCharged, hostRow.user_id, hostShare).run();
+
+    // changes === 2 → both caller and host rows updated (success).
+    // changes === 0 → caller had insufficient coins; nothing moved.
+    if (transfer.meta?.changes === 2) {
+      actualCoinsCharged = coinsCharged;
+      actualHostShare = hostShare;
+    } else {
+      console.warn('[/end] Atomic transfer failed (insufficient coins). Caller:', session.caller_id, 'wanted:', coinsCharged);
     }
   }
+
+  // Now record bookkeeping in a single batch (atomic at D1 batch level).
+  // Only insert coin_transactions / update host stats if money actually moved.
+  const txs: any[] = [
+    db.prepare('UPDATE call_sessions SET status = ?, duration_seconds = ?, coins_charged = ? WHERE id = ?')
+      .bind('ended', durationSec, actualCoinsCharged, session_id),
+  ];
+  if (actualCoinsCharged > 0) {
+    txs.push(
+      db.prepare('UPDATE hosts SET total_minutes = total_minutes + ?, total_earnings = total_earnings + ? WHERE id = ?')
+        .bind(durationMin, actualHostShare, session.host_id),
+      db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
+        .bind(crypto.randomUUID(), session.caller_id, 'spend', -actualCoinsCharged, `${session.type || 'audio'} call — ${durationMin} min`, session_id),
+      db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
+        .bind(crypto.randomUUID(), hostRow.user_id, 'bonus', actualHostShare, `${session.type || 'audio'} call — ${durationMin} min`, session_id),
+    );
+  }
+  await db.batch(txs);
 
   // Notify the OTHER party that call ended
   try {
@@ -214,15 +243,15 @@ call.post('/end', async (c) => {
     }
   } catch {}
 
-  // FIX: coin_update event bhejo — host wallet + user balance real-time update hoga
-  // Host ko earning notify karo
-  if (coinsCharged > 0 && hostRow?.user_id) {
+  // FIX: coin_update event bhejo — host wallet + user balance real-time update hoga.
+  // Use ACTUAL transferred amounts (could be 0 if atomic transfer failed due to insufficient coins).
+  if (actualCoinsCharged > 0 && hostRow?.user_id) {
     try {
       const hostNotif = c.env.NOTIFICATION_HUB.get(c.env.NOTIFICATION_HUB.idFromName(hostRow.user_id));
       const updatedHost = await c.env.DB.prepare('SELECT coins FROM users WHERE id = ?').bind(hostRow.user_id).first<any>();
       await hostNotif.fetch('https://dummy/notify', {
         method: 'POST',
-        body: JSON.stringify({ type: 'coin_update', amount: hostShare, new_balance: updatedHost?.coins ?? 0 }),
+        body: JSON.stringify({ type: 'coin_update', amount: actualHostShare, new_balance: updatedHost?.coins ?? 0 }),
       });
     } catch {}
     // User ko deduction notify karo
@@ -231,7 +260,7 @@ call.post('/end', async (c) => {
       const updatedUser = await c.env.DB.prepare('SELECT coins FROM users WHERE id = ?').bind(session.caller_id).first<any>();
       await userNotif.fetch('https://dummy/notify', {
         method: 'POST',
-        body: JSON.stringify({ type: 'coin_update', amount: -coinsCharged, new_balance: updatedUser?.coins ?? 0 }),
+        body: JSON.stringify({ type: 'coin_update', amount: -actualCoinsCharged, new_balance: updatedUser?.coins ?? 0 }),
       });
     } catch {}
   }
@@ -242,7 +271,7 @@ call.post('/end', async (c) => {
     if (session.cf_host_session_id) { try { await cfCalls.closeSession(session.cf_host_session_id); } catch {} }
   }
 
-  return c.json({ success: true, duration_seconds: durationSec, coins_charged: coinsCharged, host_earnings: hostShare });
+  return c.json({ success: true, duration_seconds: durationSec, coins_charged: actualCoinsCharged, host_earnings: actualHostShare });
   } catch (e: any) {
     console.error('[/end] error:', e);
     return c.json({ error: e.message || 'Failed to end call' }, 500);
