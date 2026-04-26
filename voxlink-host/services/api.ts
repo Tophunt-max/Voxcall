@@ -2,7 +2,7 @@
 import { getItem, setItem } from '@/utils/storage';
 import { StorageKeys } from '@/utils/storage';
 
-const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8080';
+const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://voxlink-api.ssunilkumarmohanta3.workers.dev';
 
 export function resolveMediaUrl(path?: string | null): string | undefined {
   if (!path) return undefined;

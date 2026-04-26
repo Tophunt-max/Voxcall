@@ -51,7 +51,11 @@ function startService(name, cmd, args, env = {}, cwd = ROOT) {
 function startAllServices() {
   const domain = process.env.REPLIT_DEV_DOMAIN || 'localhost';
   const expoDomain = process.env.REPLIT_EXPO_DEV_DOMAIN || 'localhost';
-  const apiUrl = `https://${domain}`;
+  // Point Expo apps DIRECTLY at the Cloudflare Worker for both REST and
+  // WebSocket traffic. The local gateway can't tunnel WS upgrades to a remote
+  // HTTPS endpoint, so going direct avoids "No internet connection" errors
+  // caused by failed socket upgrades.
+  const apiUrl = CF_WORKER_URL || `https://${domain}`;
 
   const commonExpoEnv = {
     EXPO_PUBLIC_DOMAIN: domain,
