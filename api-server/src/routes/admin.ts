@@ -1374,16 +1374,89 @@ admin.post('/run-migrations', async (c) => {
       ('f3','Are calls private?','Yes, all calls are private and end-to-end encrypted.','privacy',1,3)`
   ];
 
-  for (const sql of statements) {
-    try {
-      await db.prepare(sql).run();
-      results.push(`OK: ${sql.trim().slice(0, 60)}...`);
-    } catch (e: any) {
-      // Ignore "already exists" / "duplicate column" errors
-      if (e?.message?.includes('already exists') || e?.message?.includes('duplicate column')) {
-        results.push(`SKIP (already exists): ${sql.trim().slice(0, 60)}...`);
+  try {
+    // 1. Fetch current schema to pre-filter and avoid batch-breaking errors
+    const tables = await db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all();
+    const tableNames = (tables.results || []).map((r: any) => r.name);
+    const tableColumns: Record<string, Set<string>> = {};
+
+    if (tableNames.length > 0) {
+      const columnStmts = tableNames.map((name: string) => db.prepare(`PRAGMA table_info(${name})`));
+      const columnResults = await db.batch(columnStmts);
+      tableNames.forEach((name, i) => {
+        tableColumns[name] = new Set((columnResults[i].results || []).map((r: any) => r.name));
+      });
+    }
+
+    const batchStmts: D1PreparedStatement[] = [];
+    const statementMap: { originalIdx: number; batchIdx?: number; skipped: boolean; reason?: string }[] = [];
+
+    // 2. Filter statements
+    for (let i = 0; i < statements.length; i++) {
+      const sql = statements[i];
+      const alterMatch = sql.match(/ALTER\s+TABLE\s+(\w+)\s+ADD\s+COLUMN\s+(\w+)/i);
+      const createMatch = sql.match(/CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+(\w+)/i);
+
+      let skip = false;
+      let reason = "";
+
+      if (alterMatch) {
+        const [, table, column] = alterMatch;
+        if (tableColumns[table]?.has(column)) {
+          skip = true;
+          reason = "already exists";
+        }
+      } else if (createMatch) {
+        const [, table] = createMatch;
+        if (tableNames.includes(table)) {
+          // CREATE TABLE IF NOT EXISTS is safe to execute, but we can skip it if we know it exists
+          // to keep the batch smaller. However, for consistency with original "OK" status,
+          // let's only skip it if we want to be aggressive.
+          // Original code would run it and D1 would say "OK" (no-op).
+          // For now, let's NOT skip CREATE TABLE to match original behavior of returning "OK".
+        }
+      }
+
+      if (skip) {
+        statementMap.push({ originalIdx: i, skipped: true, reason });
       } else {
-        results.push(`ERR: ${e?.message} | SQL: ${sql.trim().slice(0, 60)}...`);
+        statementMap.push({ originalIdx: i, skipped: false, batchIdx: batchStmts.length });
+        batchStmts.push(db.prepare(sql));
+      }
+    }
+
+    // 3. Execute batch
+    const batchResults = batchStmts.length > 0 ? await db.batch(batchStmts) : [];
+
+    // 4. Reconstruct results
+    for (let i = 0; i < statements.length; i++) {
+      const sql = statements[i];
+      const map = statementMap[i];
+      if (map.skipped) {
+        results.push(`SKIP (${map.reason}): ${sql.trim().slice(0, 60)}...`);
+      } else {
+        const res = batchResults[map.batchIdx!];
+        if (res.success !== false) {
+          results.push(`OK: ${sql.trim().slice(0, 60)}...`);
+        } else {
+          results.push(`ERR: unknown batch error | SQL: ${sql.trim().slice(0, 60)}...`);
+        }
+      }
+    }
+  } catch (e: any) {
+    // FALLBACK: If batch/schema-check fails, use original sequential execution
+    console.error("[Migration] Batch failed, falling back to sequential:", e.message);
+    results.length = 0; // clear results for a clean start
+    for (const sql of statements) {
+      try {
+        await db.prepare(sql).run();
+        results.push(`OK: ${sql.trim().slice(0, 60)}...`);
+      } catch (err: any) {
+        if (err?.message?.includes('already exists') || err?.message?.includes('duplicate column')) {
+          results.push(`SKIP (already exists): ${sql.trim().slice(0, 60)}...`);
+        } else {
+          results.push(`ERR: ${err?.message} | SQL: ${sql.trim().slice(0, 60)}...`);
+        }
       }
     }
   }
