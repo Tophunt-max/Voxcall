@@ -1,7 +1,10 @@
 import { Hono } from 'hono';
-import type { Env } from '../types';
+import type { Env, JWTPayload } from '../types';
+import { authMiddleware } from '../middleware/auth';
 
-const payment = new Hono<{ Bindings: Env }>();
+type Variables = { user: JWTPayload };
+
+const payment = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 // ─── Shared: Approve a pending coin_purchase and credit coins to user ──────────
 async function approveDeposit(db: D1Database, purchaseId: string, source: string, note?: string): Promise<{ ok: boolean; already?: boolean; notFound?: boolean; coins?: number }> {
@@ -235,20 +238,9 @@ payment.post('/webhook/generic', async (c) => {
 // ─── POST /api/payment/initiate ──────────────────────────────────────────────
 // Creates a pending coin_purchase and returns gateway order details
 // Called by user app before redirecting to payment gateway
-payment.post('/initiate', async (c) => {
-  const authHeader = c.req.header('Authorization') || '';
-  if (!authHeader.startsWith('Bearer ')) return c.json({ error: 'Unauthorized' }, 401);
-  const token = authHeader.split(' ')[1];
-  let userId: string;
-  try {
-    const { jwtVerify } = await import('jose');
-    const secret = new TextEncoder().encode(c.env.JWT_SECRET);
-    const { payload } = await jwtVerify(token, secret);
-    userId = payload.sub as string;
-    if (!userId) throw new Error('No sub');
-  } catch {
-    return c.json({ error: 'Unauthorized' }, 401);
-  }
+// Uses authMiddleware so token_invalidated_at is checked (logout/password-change revocation)
+payment.post('/initiate', authMiddleware, async (c) => {
+  const userId = c.get('user').sub;
   const { plan_id, gateway_id, promo_code } = await c.req.json() as any;
   if (!plan_id) return c.json({ error: 'plan_id required' }, 400);
   const plan = await c.env.DB.prepare('SELECT * FROM coin_plans WHERE id = ? AND is_active = 1').bind(plan_id).first<any>();
@@ -280,20 +272,9 @@ payment.post('/initiate', async (c) => {
 // ─── POST /api/payment/verify-google-play ─────────────────────────────────────
 // Android: After Google Play billing, verify the purchase token with Google Play Developer API
 // Requires GOOGLE_PLAY_SERVICE_ACCOUNT_JSON env var (base64-encoded service account JSON)
-payment.post('/verify-google-play', async (c) => {
-  const authHeader = c.req.header('Authorization') || '';
-  if (!authHeader.startsWith('Bearer ')) return c.json({ error: 'Unauthorized' }, 401);
-  const token = authHeader.split(' ')[1];
-  let userId: string;
-  try {
-    const { jwtVerify } = await import('jose');
-    const secret = new TextEncoder().encode(c.env.JWT_SECRET);
-    const { payload } = await jwtVerify(token, secret);
-    userId = payload.sub as string;
-    if (!userId) throw new Error('No sub');
-  } catch {
-    return c.json({ error: 'Unauthorized' }, 401);
-  }
+// Uses authMiddleware so token_invalidated_at is checked (logout/password-change revocation)
+payment.post('/verify-google-play', authMiddleware, async (c) => {
+  const userId = c.get('user').sub;
 
   const { purchase_token, product_id, package_name, plan_id, promo_code } = await c.req.json() as any;
   if (!purchase_token || !product_id) return c.json({ error: 'purchase_token and product_id are required' }, 400);

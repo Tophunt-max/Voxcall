@@ -244,7 +244,8 @@ auth.post('/reset-password', strictRateLimit, async (c) => {
 });
 
 // POST /api/auth/refresh — issue new token from old (within grace period)
-auth.post('/refresh', async (c) => {
+// Rate-limited to prevent session extension abuse / DB stress
+auth.post('/refresh', rateLimit, async (c) => {
   const { token } = await c.req.json();
   if (!token) return c.json({ error: 'Token required' }, 400);
   try {

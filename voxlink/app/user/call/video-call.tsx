@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import {
   View, Text, StyleSheet, Image, TouchableOpacity,
-  Modal, Animated, Easing, Platform,
+  Modal, Animated, Easing, Platform, BackHandler,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
@@ -181,6 +181,18 @@ export default function VideoCallScreen() {
     webrtc.cleanup();
     endCall();
   }, [endCall, webrtc.cleanup]);
+
+  // Phase 2 Fix: Block Android hardware back button during an active call.
+  // Without this, pressing back navigates away while the call keeps running on
+  // the server — the caller keeps getting billed with no UI to end the call.
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      handleEndCall();
+      return true; // prevent default back navigation
+    });
+    return () => sub.remove();
+  }, [handleEndCall]);
 
   const handleAutoEnd = useCallback(() => {
     webrtc.cleanup();

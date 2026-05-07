@@ -9,6 +9,13 @@ const USER_APP_PORT = 8080;
 const HOST_APP_PORT = 8099;
 const PROXY_PORT = parseInt(process.env.PROXY_PORT || '5000');
 
+const SECURITY_HEADERS = {
+  'x-content-type-options': 'nosniff',
+  'x-frame-options': 'SAMEORIGIN',
+  'x-xss-protection': '1; mode=block',
+  'referrer-policy': 'strict-origin-when-cross-origin',
+};
+
 // Cloudflare Workers API — set CLOUDFLARE_WORKER_URL to use remote, else fallback to local wrangler
 const CF_WORKER_URL = process.env.CLOUDFLARE_WORKER_URL || null;
 const API_PORT = 8787;
@@ -194,7 +201,7 @@ const server = http.createServer((req, res) => {
       const cfReq = https.request(
         { hostname: parsed.hostname, port: 443, path: targetPath, method: req.method, headers: cfHeaders },
         (cfRes) => {
-          const resHeaders = { ...cfRes.headers, 'access-control-allow-origin': '*' };
+          const resHeaders = { ...cfRes.headers, 'access-control-allow-origin': '*', ...SECURITY_HEADERS };
           res.writeHead(cfRes.statusCode, resHeaders);
           cfRes.pipe(res);
         }
@@ -214,7 +221,7 @@ const server = http.createServer((req, res) => {
       const isHostApp = targetPort === HOST_APP_PORT;
       const isHtml = contentType.includes('text/html');
 
-      const resHeaders = { ...proxyRes.headers, 'access-control-allow-origin': '*' };
+      const resHeaders = { ...proxyRes.headers, 'access-control-allow-origin': '*', ...SECURITY_HEADERS };
 
       if (isHostApp && isHtml) {
         delete resHeaders['content-length'];
