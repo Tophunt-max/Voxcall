@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import {
   View, Text, StyleSheet, Image, TouchableOpacity,
-  Modal, Animated, Easing, Platform,
+  Modal, Animated, Easing, Platform, BackHandler,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SvgIcon } from "@/components/SvgIcon";
@@ -181,6 +181,18 @@ export default function VideoCallScreen() {
     webrtc.cleanup();
     endCall();
   }, [endCall, webrtc.cleanup]);
+
+  // Phase 3 Fix: Block Android hardware back button during an active host call.
+  // A host pressing back would leave the call orphaned on the server — user still
+  // billed, host earning coins with no way to end the session from the UI.
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      handleEndCall();
+      return true;
+    });
+    return () => sub.remove();
+  }, [handleEndCall]);
 
   const handleAutoEnd = useCallback(() => {
     webrtc.cleanup();

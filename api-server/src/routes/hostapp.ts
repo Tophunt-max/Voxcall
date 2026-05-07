@@ -83,6 +83,11 @@ hostapp.post('/submit', async (c) => {
     return c.json({ error: 'You must be at least 18 years old to become a host' }, 400);
   }
 
+  // Phase 3 Fix: length limits on free-text fields to prevent DB bloat / UI breakage
+  if (display_name && String(display_name).length > 60) return c.json({ error: 'display_name must be under 60 characters' }, 400);
+  if (bio && String(bio).length > 1000) return c.json({ error: 'bio must be under 1000 characters' }, 400);
+  if (experience && String(experience).length > 2000) return c.json({ error: 'experience must be under 2000 characters' }, 400);
+
   // Validate rates: must be positive numbers, not too large
   // Allow 0 when call type doesn't include that mode
   const audioRateNum = Number(audio_rate ?? 5);

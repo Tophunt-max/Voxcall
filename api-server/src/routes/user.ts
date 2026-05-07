@@ -140,6 +140,7 @@ user.post('/report', async (c) => {
   const db = c.env.DB;
   const { reported_user_id, reported_user, reason, category, reported_type } = await c.req.json();
   if (!reason) return c.json({ error: 'reason is required' }, 400);
+  if (String(reason).length > 2000) return c.json({ error: 'reason must be under 2000 characters' }, 400);
   if (!reported_user_id) return c.json({ error: 'reported_user_id is required' }, 400);
   const reporter = await db.prepare('SELECT name, phone, email FROM users WHERE id = ?').bind(sub).first<any>();
   const existing = await db.prepare(

@@ -1067,10 +1067,25 @@ admin.get('/app-config', async (c) => {
 });
 admin.put('/app-config', async (c) => {
   const body = await c.req.json() as any;
-  const stmts = Object.entries(body).map(([k, v]) =>
-    db(c).prepare('INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES (?, ?, unixepoch())').bind(k, String(v))
-  );
-  if (stmts.length) await db(c).batch(stmts);
+  // Phase 3 Fix: Allowlist prevents arbitrary key injection into app_settings.
+  // Add new keys here when intentionally extending the config schema.
+  const ALLOWED_APP_CONFIG_KEYS = new Set([
+    'min_coins_for_call', 'coin_to_usd_rate', 'host_revenue_share',
+    'min_withdrawal_coins', 'registration_bonus_coins', 'auto_approve_manual',
+    'auto_approve_manual_max_amount', 'maintenance_mode', 'maintenance_message',
+    'app_name', 'support_email', 'terms_url', 'privacy_url',
+    'razorpay_webhook_secret', 'stripe_webhook_secret', 'phonepe_webhook_secret',
+    'paytm_merchant_key', 'generic_webhook_secret',
+    'referrer_reward', 'new_user_reward', 'min_calls_to_unlock',
+    'referral_active', 'free_chat_messages', 'level_config',
+  ]);
+  const stmts = Object.entries(body)
+    .filter(([k]) => ALLOWED_APP_CONFIG_KEYS.has(k))
+    .map(([k, v]) =>
+      db(c).prepare('INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES (?, ?, unixepoch())').bind(k, String(v))
+    );
+  if (!stmts.length) return c.json({ error: 'No valid config keys to update' }, 400);
+  await db(c).batch(stmts);
   const u = c.get('user');
   await auditLog(db(c), u.sub, u.email || 'Admin', u.email || '', 'update', 'settings', 'App Config', `${stmts.length} settings updated`);
   return c.json({ success: true });

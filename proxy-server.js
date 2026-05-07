@@ -253,7 +253,11 @@ server.on('upgrade', (req, socket, head) => {
   const target = net.createConnection({ port: targetPort, host: '127.0.0.1' });
   target.on('connect', () => {
     const reqLine = `${req.method} ${targetPath} HTTP/1.1\r\n`;
-    const headerStr = Object.entries(headers).map(([k, v]) => `${k}: ${v}`).join('\r\n');
+    // Phase 3 Fix: Strip \r\n from each header value to prevent HTTP header injection
+    // via crafted WebSocket upgrade requests with newline-embedded header values.
+    const headerStr = Object.entries(headers)
+      .map(([k, v]) => `${k}: ${String(v).replace(/[\r\n]+/g, '')}`)
+      .join('\r\n');
     target.write(`${reqLine}${headerStr}\r\n\r\n`);
     if (head && head.length) target.write(head);
     target.pipe(socket);
