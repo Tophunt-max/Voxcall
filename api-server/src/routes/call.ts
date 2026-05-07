@@ -365,7 +365,7 @@ async function deriveRole(db: any, sessionId: string, userId: string): Promise<{
     `SELECT cs.*, h.user_id as host_user_id FROM call_sessions cs
      LEFT JOIN hosts h ON h.id = cs.host_id
      WHERE cs.id = ?`
-  ).bind(sessionId).first<any>();
+  ).bind(sessionId).first() as any;
   if (!session) return null;
   if (session.caller_id === userId) return { session, role: 'caller' };
   if (session.host_user_id === userId) return { session, role: 'host' };

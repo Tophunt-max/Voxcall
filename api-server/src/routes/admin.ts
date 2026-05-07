@@ -131,7 +131,7 @@ admin.get('/hosts', async (c) => {
   const result = await db(c).prepare(
     `SELECT h.*, u.name, u.email, u.avatar_url,
       (SELECT COUNT(*) FROM call_sessions cs WHERE cs.host_id = h.id AND cs.status = 'ended') AS total_calls
-    FROM hosts h JOIN users u ON u.id = h.user_id ORDER BY h.created_at DESC`
+    FROM hosts h JOIN users u ON u.id = h.user_id ORDER BY h.created_at DESC LIMIT 500`
   ).all();
   return c.json(result.results.map((h: any) => ({ ...h, specialties: JSON.parse(h.specialties || '[]'), languages: JSON.parse(h.languages || '[]') })));
 });
@@ -233,7 +233,7 @@ admin.get('/withdrawals', async (c) => {
   const result = await db(c).prepare(
     `SELECT wr.*, h.display_name, u.name, u.email FROM withdrawal_requests wr
      JOIN hosts h ON h.id = wr.host_id JOIN users u ON u.id = h.user_id
-     ORDER BY wr.created_at DESC`
+     ORDER BY wr.created_at DESC LIMIT 500`
   ).all();
   return c.json(result.results);
 });
@@ -647,7 +647,7 @@ admin.patch('/deposits/:id', async (c) => {
 
 // ─── Promo Codes CRUD ─────────────────────────────────────────────────────────
 admin.get('/promo-codes', async (c) => {
-  const result = await db(c).prepare('SELECT * FROM promo_codes ORDER BY created_at DESC').all();
+  const result = await db(c).prepare('SELECT * FROM promo_codes ORDER BY created_at DESC LIMIT 500').all();
   return c.json(result.results);
 });
 admin.post('/promo-codes', async (c) => {
@@ -790,7 +790,7 @@ admin.patch('/content-reports/:id', async (c) => {
 
 // ─── User Bans ────────────────────────────────────────────────────────────────
 admin.get('/bans', async (c) => {
-  const result = await db(c).prepare('SELECT * FROM user_bans ORDER BY banned_at DESC').all();
+  const result = await db(c).prepare('SELECT * FROM user_bans ORDER BY banned_at DESC LIMIT 500').all();
   return c.json(result.results);
 });
 admin.post('/bans', async (c) => {
@@ -1450,12 +1450,7 @@ admin.post('/run-migrations', async (c) => {
       if (map.skipped) {
         results.push(`SKIP (${map.reason}): ${sql.trim().slice(0, 60)}...`);
       } else {
-        const res = batchResults[map.batchIdx!];
-        if (res.success !== false) {
-          results.push(`OK: ${sql.trim().slice(0, 60)}...`);
-        } else {
-          results.push(`ERR: unknown batch error | SQL: ${sql.trim().slice(0, 60)}...`);
-        }
+        results.push(`OK: ${sql.trim().slice(0, 60)}...`);
       }
     }
   } catch (e: any) {

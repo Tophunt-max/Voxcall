@@ -28,7 +28,7 @@ function enrichHost(h: any) {
 // POST /api/match/find — find a random online host for matchmaking
 match.post('/find', async (c) => {
   const { sub } = c.get('user');
-  const body = await c.req.json<{ call_type?: string }>().catch(() => ({}));
+  const body = await c.req.json<{ call_type?: string }>().catch(() => ({} as { call_type?: string }));
   const callType = body.call_type ?? 'audio';
   const db = c.env.DB;
 

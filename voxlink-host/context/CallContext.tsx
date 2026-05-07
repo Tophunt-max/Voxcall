@@ -47,6 +47,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const { updateEarnings, refreshProfile } = useAuth();
   const [activeCall, setActiveCall] = useState<ActiveCall | null>(null);
   const activeCallRef = useRef<ActiveCall | null>(null);
+  const isAcceptingRef = useRef(false);
 
   const updateCall = (call: ActiveCall | null) => {
     activeCallRef.current = call;
@@ -75,6 +76,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const acceptCall = useCallback(async () => {
     const curr = activeCallRef.current;
     if (!curr) return;
+    if (isAcceptingRef.current) return;
+    isAcceptingRef.current = true;
 
     let serverStartedAtMs = Date.now();
     if (curr.sessionId) {
@@ -91,6 +94,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           msg.includes("declined") ||
           msg.includes("ended");
         if (isHardFail) {
+          isAcceptingRef.current = false;
           updateCall(null);
           // incoming.tsx ka activeCall watcher router.back() karega
           return;
@@ -103,6 +107,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
     const updated = { ...curr, status: "active" as CallStatus, startTime: serverStartedAtMs };
     updateCall(updated);
+    isAcceptingRef.current = false;
 
     // router.replace ki jagah router.push use karo — fullScreenModal ke andar
     // replace() kabhi kabhi modal stack ko galat navigate karta hai web pe.
@@ -119,9 +124,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
   const declineCall = useCallback(() => {
     const curr = activeCallRef.current;
+    isAcceptingRef.current = false;
     updateCall(null);
     if (curr?.sessionId) {
-      try { API.answerCall(curr.sessionId, false); } catch {}
+      API.answerCall(curr.sessionId, false).catch((e: any) => console.warn("declineCall notify error:", e));
     }
     // NOTE: Do NOT call router.back() here — incoming.tsx's useEffect watches
     // activeCall and calls router.back() when it goes null. Calling it here too

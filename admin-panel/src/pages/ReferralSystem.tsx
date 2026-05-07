@@ -26,9 +26,9 @@ export default function ReferralSystem() {
       setTopReferrers(data.top || []);
       setRecentActivity(data.recent || []);
       setStats(data.stats || { total: 0, this_month: 0, coins_distributed: 0 });
-    }).catch(() => {}).finally(() => setLoading(false));
+    }).catch(() => showToast('Failed to load referral data')).finally(() => setLoading(false));
 
-    api.referralConfig().then(setConfig).catch(() => {});
+    api.referralConfig().then(setConfig).catch(() => showToast('Failed to load referral config'));
   }, []);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 2500); };

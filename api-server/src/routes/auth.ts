@@ -87,7 +87,7 @@ auth.post('/register', rateLimit, zValidator('json', registerSchema), async (c) 
     const passwordOk = await verifyPassword(password, existing.password_hash);
     if (passwordOk && existing.role !== 'host') {
       const token = await signToken(
-        { sub: existing.id, role: existing.role, name: existing.name },
+        { sub: existing.id, role: existing.role, name: existing.name, email: existing.email },
         c.env.JWT_SECRET
       );
       return c.json({
@@ -128,7 +128,7 @@ auth.post('/register', rateLimit, zValidator('json', registerSchema), async (c) 
     html: otpEmailHtml(otp, 'verify'),
   });
 
-  const token = await signToken({ sub: id, role: 'user', name }, c.env.JWT_SECRET);
+  const token = await signToken({ sub: id, role: 'user', name, email }, c.env.JWT_SECRET);
   return c.json({ token, user: { id, name, email, role: 'user', coins: 0 } }, 201);
 });
 
@@ -143,7 +143,7 @@ auth.post('/login', rateLimit, zValidator('json', loginSchema), async (c) => {
   if (!user) return c.json({ error: 'Invalid email or password' }, 401);
   const valid = await verifyPassword(password, user.password_hash);
   if (!valid) return c.json({ error: 'Invalid email or password' }, 401);
-  const token = await signToken({ sub: user.id, role: user.role, name: user.name }, c.env.JWT_SECRET);
+  const token = await signToken({ sub: user.id, role: user.role, name: user.name, email: user.email }, c.env.JWT_SECRET);
   const { password_hash, ...safeUser } = user;
   // If host, fetch host data
   let hostData = null;
@@ -263,7 +263,7 @@ auth.post('/refresh', rateLimit, async (c) => {
     if (issuedAt < invalidatedAt) {
       return c.json({ error: 'Token has been revoked. Please log in again.' }, 401);
     }
-    const newToken = await signToken({ sub: user.id, role: user.role, name: user.name }, c.env.JWT_SECRET);
+    const newToken = await signToken({ sub: user.id, role: user.role, name: user.name, email: user.email }, c.env.JWT_SECRET);
     return c.json({ token: newToken });
   } catch {
     return c.json({ error: 'Invalid or expired token' }, 401);
@@ -375,7 +375,7 @@ auth.post('/google-login', rateLimit, async (c) => {
       .bind(...bindings).run();
   }
 
-  const token = await signToken({ sub: user.id, role: user.role, name: user.name }, c.env.JWT_SECRET);
+  const token = await signToken({ sub: user.id, role: user.role, name: user.name, email: user.email }, c.env.JWT_SECRET);
   return c.json({
     token,
     user: {
@@ -414,10 +414,10 @@ async function quickLoginHandler(c: any, deviceId: string | null) {
   if (deviceId) {
     const existing = await db.prepare(
       'SELECT id, name, email, role, coins, avatar_url FROM users WHERE device_id = ? LIMIT 1'
-    ).bind(deviceId).first<any>();
+    ).bind(deviceId).first() as any;
 
     if (existing) {
-      const token = await signToken({ sub: existing.id, role: existing.role, name: existing.name }, c.env.JWT_SECRET);
+      const token = await signToken({ sub: existing.id, role: existing.role, name: existing.name, email: existing.email }, c.env.JWT_SECRET);
       return c.json({
         token,
         user: { id: existing.id, name: existing.name, email: existing.email, role: existing.role, coins: existing.coins, avatar_url: existing.avatar_url, is_guest: true },
@@ -438,7 +438,7 @@ async function quickLoginHandler(c: any, deviceId: string | null) {
     `INSERT INTO users (id, name, email, password_hash, coins, is_verified, role, device_id) VALUES (?, ?, ?, '', 0, 0, 'user', ?)`
   ).bind(quickId, quickName, quickEmail, deviceId ?? null).run();
 
-  const token = await signToken({ sub: quickId, role: 'user', name: quickName }, c.env.JWT_SECRET);
+  const token = await signToken({ sub: quickId, role: 'user', name: quickName, email: quickEmail }, c.env.JWT_SECRET);
   return c.json({
     token,
     user: { id: quickId, name: quickName, email: quickEmail, coins: 0, role: 'user', is_guest: true },

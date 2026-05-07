@@ -38,12 +38,17 @@ export default function LiveCalls() {
   const [lastRefresh, setLastRefresh] = useState(new Date());
   const [endingId, setEndingId] = useState<string | null>(null);
   const [cleaningUp, setCleaningUp] = useState(false);
+  const [fetchError, setFetchError] = useState('');
   const intervalRef = useRef<any>(null);
 
   const refresh = () => {
     api.liveCalls().then(data => {
       setCalls(data || []);
-    }).catch(() => {}).finally(() => {
+      setFetchError('');
+    }).catch((e: any) => {
+      console.error('Failed to load live calls:', e);
+      setFetchError('Failed to load live calls. Retrying...');
+    }).finally(() => {
       setLoading(false);
       setLastRefresh(new Date());
     });
@@ -94,6 +99,11 @@ export default function LiveCalls() {
 
   return (
     <div className="space-y-5">
+      {fetchError && (
+        <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm">
+          <AlertTriangle size={15} /> {fetchError}
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="font-bold text-lg">Live Calls Monitor</h2>

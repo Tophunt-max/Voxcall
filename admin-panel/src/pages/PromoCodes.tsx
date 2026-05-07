@@ -18,11 +18,13 @@ export default function PromoCodes() {
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState<any>(blank());
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
   const [toast, setToast] = useState('');
   const [copied, setCopied] = useState('');
 
   useEffect(() => {
-    api.promoCodes().then(setRows).catch(() => {}).finally(() => setLoading(false));
+    api.promoCodes().then(setRows).catch(() => showToast('Failed to load promo codes')).finally(() => setLoading(false));
   }, []);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 2500); };
@@ -56,20 +58,26 @@ export default function PromoCodes() {
   };
 
   const deleteCode = async (id: string) => {
+    if (deletingId) return;
+    setDeletingId(id);
     try {
       await api.deletePromoCode(id);
       setRows(rows.filter(r => r.id !== id));
       showToast('Promo code deleted');
     } catch { showToast('Failed to delete'); }
+    finally { setDeletingId(null); }
   };
 
   const toggle = async (id: string) => {
+    if (togglingId) return;
     const row = rows.find(r => r.id === id);
     if (!row) return;
+    setTogglingId(id);
     try {
       await api.updatePromoCode(id, { active: !row.active });
       setRows(rows.map(r => r.id === id ? { ...r, active: !r.active } : r));
     } catch { showToast('Failed to update'); }
+    finally { setTogglingId(null); }
   };
 
   const cols = [
@@ -110,8 +118,8 @@ export default function PromoCodes() {
     {
       key: 'active', header: 'Status',
       render: (r: any) => (
-        <button onClick={() => toggle(r.id)}>
-          <Badge variant={r.active ? 'active' : 'inactive'}>{r.active ? 'Active' : 'Inactive'}</Badge>
+        <button onClick={() => toggle(r.id)} disabled={togglingId === r.id} className="disabled:opacity-50">
+          <Badge variant={r.active ? 'active' : 'inactive'}>{togglingId === r.id ? '...' : r.active ? 'Active' : 'Inactive'}</Badge>
         </button>
       )
     },
@@ -123,8 +131,8 @@ export default function PromoCodes() {
             className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground hover:text-primary transition-colors text-xs font-medium px-2">
             Edit
           </button>
-          <button onClick={() => deleteCode(r.id)}
-            className="p-1.5 rounded-lg hover:bg-red-50 text-muted-foreground hover:text-red-500 transition-colors">
+          <button onClick={() => deleteCode(r.id)} disabled={deletingId === r.id}
+            className="p-1.5 rounded-lg hover:bg-red-50 text-muted-foreground hover:text-red-500 transition-colors disabled:opacity-50">
             <Trash2 size={14} />
           </button>
         </div>

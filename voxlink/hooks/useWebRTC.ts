@@ -68,6 +68,9 @@ export function useWebRTC(options: UseWebRTCOptions): UseWebRTCReturn {
       if (stream) {
         setLocalStream(stream);
       }
+    }).catch((err: Error) => {
+      setError(err?.message || 'WebRTC failed to start');
+      console.error('WebRTC start error:', err);
     });
 
     return () => {

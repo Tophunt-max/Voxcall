@@ -24,7 +24,7 @@ export default function BulkNotifications() {
     api.notifications().then((data: any[]) => {
       const bulk = data.filter((n: any) => n.type === 'bulk' || n.type === 'system').slice(0, 20);
       setHistory(bulk);
-    }).catch(() => {}).finally(() => setHistLoading(false));
+    }).catch(() => showToast('Failed to load notification history')).finally(() => setHistLoading(false));
   }, []);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 2500); };

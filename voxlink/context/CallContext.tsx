@@ -134,7 +134,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     updateCall(null);
     // Fix M3: notify backend that host declined
     if (curr?.sessionId) {
-      try { API.answerCall(curr.sessionId, false); } catch {}
+      API.answerCall(curr.sessionId, false).catch((e: any) => console.warn("declineCall notify error:", e));
     }
     router.back();
   }, []);

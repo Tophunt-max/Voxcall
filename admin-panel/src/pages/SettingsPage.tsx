@@ -135,7 +135,7 @@ export default function SettingsPage() {
   const [editDurVal, setEditDurVal] = useState('');
 
   useEffect(() => {
-    api.settings().then(d => setSettings({ ...DEFAULTS, ...d })).catch(() => {}).finally(() => setLoading(false));
+    api.settings().then(d => setSettings({ ...DEFAULTS, ...d })).catch(() => showToast('Failed to load settings', false)).finally(() => setLoading(false));
   }, []);
 
   const showToast = (msg: string, ok = true) => { setToast({ msg, ok }); setTimeout(() => setToast(null), 2500); };

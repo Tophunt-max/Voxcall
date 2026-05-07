@@ -55,7 +55,7 @@ export default function LevelConfig() {
   useEffect(() => {
     api.getLevelConfig()
       .then(data => { if (Array.isArray(data) && data.length === 5) setConfig(data); })
-      .catch(() => {})
+      .catch(() => showToast('Failed to load level config', false))
       .finally(() => setLoading(false));
   }, []);
 

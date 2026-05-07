@@ -52,7 +52,7 @@ export default function ContentModeration() {
   const [actionLoading, setActionLoading] = useState(false);
 
   useEffect(() => {
-    api.contentReports().then(setRows).catch(() => {}).finally(() => setLoading(false));
+    api.contentReports().then(setRows).catch(() => showToast('Failed to load reports')).finally(() => setLoading(false));
   }, []);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };

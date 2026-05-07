@@ -20,12 +20,16 @@ const TARGET_LABELS: Record<string, string> = {
 export default function AuditLogs() {
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState('');
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
 
   const load = () => {
     setLoading(true);
-    api.auditLogs().then(setLogs).catch(() => {}).finally(() => setLoading(false));
+    api.auditLogs().then(data => { setLogs(data); setFetchError(''); }).catch((e: any) => {
+      console.error('Failed to load audit logs:', e);
+      setFetchError('Failed to load audit logs');
+    }).finally(() => setLoading(false));
   };
 
   useEffect(() => { load(); }, []);
@@ -80,6 +84,11 @@ export default function AuditLogs() {
         </div>
       </div>
 
+      {fetchError && (
+        <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm">
+          <AlertTriangle size={15} /> {fetchError}
+        </div>
+      )}
       <div className="bg-card border border-border rounded-2xl overflow-hidden">
         {loading ? (
           <div className="flex items-center justify-center p-12">
