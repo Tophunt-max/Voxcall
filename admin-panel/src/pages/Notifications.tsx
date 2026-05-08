@@ -23,8 +23,8 @@ export default function Notifications() {
   const [form, setForm] = useState({ title: '', body: '', type: 'system', target: 'all', userId: '' });
 
   useEffect(() => {
-    api.notifications().then(setNotifs).catch(console.error).finally(() => setLoading(false));
-    api.users().then(setUsers).catch(console.error);
+    api.notifications().then(setNotifs).catch(() => showToast('Failed to load notifications', false)).finally(() => setLoading(false));
+    api.users().then(setUsers).catch(() => showToast('Failed to load users', false));
   }, []);
 
   const showToast = (msg: string, ok = true) => { setToast({ msg, ok }); setTimeout(() => setToast(null), 2500); };

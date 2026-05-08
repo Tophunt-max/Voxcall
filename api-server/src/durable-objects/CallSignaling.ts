@@ -35,7 +35,16 @@ export class CallSignaling {
 
     // REST: send signal to other peer
     if (!upgradeHeader) {
-      const { to, type, payload } = await request.json() as any;
+      let to: string, type: string, payload: unknown;
+      try {
+        const body = await request.json() as any;
+        to = body.to; type = body.type; payload = body.payload;
+      } catch {
+        return new Response(JSON.stringify({ error: 'Invalid JSON body' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+      }
+      if (!to || !type) {
+        return new Response(JSON.stringify({ error: 'Missing to/type' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+      }
       // `from` is the trusted JWT-verified userId — never the URL param
       const msg = JSON.stringify({ type, payload, from: userId });
       for (const [ws, meta] of this.sessions) {

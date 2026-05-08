@@ -161,9 +161,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       } catch (e) {
         console.warn("endCall API error:", e);
       }
-      try {
-        await refreshProfile();
-      } catch {}
+      await refreshProfile().catch((e: unknown) => console.warn('refreshProfile after endCall failed:', e));
     }
 
     if (call) {

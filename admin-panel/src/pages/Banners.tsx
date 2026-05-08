@@ -21,14 +21,17 @@ function blank() {
 export default function Banners() {
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState('');
   const [editing, setEditing] = useState<any>(null);
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState<any>(blank());
   const [saving, setSaving] = useState(false);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [toast, setToast] = useState('');
 
   const loadBanners = () => {
-    api.banners().then(setRows).catch(() => {}).finally(() => setLoading(false));
+    api.banners().then(d => { setRows(d); setFetchError(''); }).catch(() => setFetchError('Failed to load banners')).finally(() => setLoading(false));
   };
 
   useEffect(() => { loadBanners(); }, []);
@@ -56,19 +59,24 @@ export default function Banners() {
 
   const toggle = async (id: string) => {
     const banner = rows.find(r => r.id === id);
-    if (!banner) return;
+    if (!banner || togglingId === id) return;
+    setTogglingId(id);
     try {
       await api.updateBanner(id, { active: !banner.active });
       loadBanners();
     } catch { showToast('Failed to update banner'); }
+    finally { setTogglingId(null); }
   };
 
   const remove = async (id: string) => {
+    if (deletingId === id) return;
+    setDeletingId(id);
     try {
       await api.deleteBanner(id);
       showToast('Banner deleted');
       loadBanners();
     } catch { showToast('Failed to delete banner'); }
+    finally { setDeletingId(null); }
   };
 
   const BannerForm = () => (
@@ -136,6 +144,7 @@ export default function Banners() {
   return (
     <div className="space-y-5">
       {toast && <div className="fixed bottom-5 right-5 z-50 bg-foreground text-background text-sm px-4 py-2.5 rounded-xl shadow-xl">{toast}</div>}
+      {fetchError && <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm">⚠ {fetchError}</div>}
 
       <div className="flex items-center justify-between">
         <div>
@@ -177,13 +186,13 @@ export default function Banners() {
                       </div>
                     </div>
                     <div className="flex items-center gap-1">
-                      <button onClick={() => toggle(b.id)} className="p-1.5 rounded-lg hover:bg-secondary transition-colors text-muted-foreground hover:text-primary">
+                      <button onClick={() => toggle(b.id)} disabled={togglingId === b.id} className="p-1.5 rounded-lg hover:bg-secondary transition-colors text-muted-foreground hover:text-primary disabled:opacity-40">
                         {b.active ? <EyeOff size={15} /> : <Eye size={15} />}
                       </button>
                       <button onClick={() => { setEditing(b); setForm({ ...b, active: !!b.active }); }} className="p-1.5 rounded-lg hover:bg-secondary transition-colors text-muted-foreground hover:text-primary">
                         <Edit2 size={15} />
                       </button>
-                      <button onClick={() => remove(b.id)} className="p-1.5 rounded-lg hover:bg-red-50 transition-colors text-muted-foreground hover:text-red-500">
+                      <button onClick={() => remove(b.id)} disabled={deletingId === b.id} className="p-1.5 rounded-lg hover:bg-red-50 transition-colors text-muted-foreground hover:text-red-500 disabled:opacity-40">
                         <Trash2 size={15} />
                       </button>
                     </div>

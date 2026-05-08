@@ -125,8 +125,14 @@ user.get('/referral', async (c) => {
   if (!ref) {
     const code = sub.slice(0, 4).toUpperCase() + Math.random().toString(36).slice(2, 6).toUpperCase();
     const id = crypto.randomUUID();
-    await db.prepare('INSERT INTO referral_codes (id, user_id, code) VALUES (?, ?, ?)').bind(id, sub, code).run();
-    ref = { id, user_id: sub, code, created_at: Date.now() };
+    try {
+      await db.prepare('INSERT INTO referral_codes (id, user_id, code) VALUES (?, ?, ?)').bind(id, sub, code).run();
+      ref = { id, user_id: sub, code, created_at: Date.now() };
+    } catch {
+      // Race condition: another request created the code concurrently — re-read it
+      ref = await db.prepare('SELECT * FROM referral_codes WHERE user_id = ?').bind(sub).first<any>();
+      if (!ref) return c.json({ error: 'Failed to generate referral code' }, 500);
+    }
   }
   const stats = await db.prepare(
     'SELECT COUNT(*) as referred, COALESCE(SUM(coins_given),0) as coins_earned FROM referral_uses WHERE referrer_id = ?'

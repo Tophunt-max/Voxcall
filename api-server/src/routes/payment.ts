@@ -367,9 +367,9 @@ payment.post('/verify-google-play', authMiddleware, async (c) => {
 
 // ─── POST /api/payment/match-utr ─────────────────────────────────────────────
 // Admin-only: manually trigger UTR matching for a pending deposit
-payment.post('/match-utr', async (c) => {
-  const authHeader = c.req.header('Authorization') || '';
-  if (!authHeader.startsWith('Bearer ')) return c.json({ error: 'Unauthorized' }, 401);
+payment.post('/match-utr', authMiddleware, async (c) => {
+  const caller = c.get('user');
+  if (caller.role !== 'admin') return c.json({ error: 'Forbidden' }, 403);
   const { utr_id } = await c.req.json() as any;
   if (!utr_id) return c.json({ error: 'utr_id required' }, 400);
   const purchase = await c.env.DB.prepare("SELECT id, status FROM coin_purchases WHERE utr_id = ? AND payment_method = 'manual' LIMIT 1").bind(utr_id.trim()).first<any>();

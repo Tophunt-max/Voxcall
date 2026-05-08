@@ -95,7 +95,7 @@ export default function LiveCalls() {
   const totalCoinsPerMin = calls.reduce((a, c) => a + (c.coins_per_min || 0), 0);
   const voiceCalls = calls.filter(c => c.type === 'audio');
   const videoCalls = calls.filter(c => c.type === 'video');
-  const staleCalls = calls.filter(c => isStale(c.started_at || Date.now(), 1));
+  const staleCalls = calls.filter(c => isStale(c.started_at ? c.started_at * 1000 : Date.now(), 1));
 
   return (
     <div className="space-y-5">
@@ -168,8 +168,9 @@ export default function LiveCalls() {
           </div>
           <div className="divide-y divide-border">
             {calls.map(call => {
-              const coinsSoFar = Math.floor((Date.now() - (call.started_at || Date.now())) / 60000) * (call.coins_per_min || 0);
-              const stale = isStale(call.started_at || Date.now(), 1);
+              const startedAtMs = call.started_at ? call.started_at * 1000 : Date.now();
+              const coinsSoFar = Math.floor((Date.now() - startedAtMs) / 60000) * (call.coins_per_min || 0);
+              const stale = isStale(startedAtMs, 1);
               const isEnding = endingId === call.id;
               return (
                 <div key={call.id} className={`flex items-center gap-4 p-4 transition-colors ${stale ? 'bg-red-50/50 hover:bg-red-50' : 'hover:bg-secondary/20'}`}>
@@ -201,7 +202,7 @@ export default function LiveCalls() {
                     <div className="text-right space-y-1">
                       <div className="flex items-center gap-1 justify-end">
                         <Clock size={12} className="text-muted-foreground" />
-                        <Duration startedAt={call.started_at || Date.now()} />
+                        <Duration startedAt={call.started_at ? call.started_at * 1000 : Date.now()} />
                       </div>
                       <p className="text-xs text-amber-600">~{coinsSoFar} coins used</p>
                     </div>
