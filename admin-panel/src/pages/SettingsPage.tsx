@@ -55,6 +55,47 @@ const DEFAULTS: Record<string, string> = {
   random_call_video_rate: '8',
 };
 
+// ─── safe arithmetic evaluator (no eval / new Function) ──────────────────────
+function safeEval(expression: string): number {
+  let pos = 0;
+  const s = expression.replace(/\s+/g, '');
+
+  function parseExpr(): number {
+    let left = parseTerm();
+    while (pos < s.length && (s[pos] === '+' || s[pos] === '-')) {
+      const op = s[pos++];
+      const right = parseTerm();
+      left = op === '+' ? left + right : left - right;
+    }
+    return left;
+  }
+
+  function parseTerm(): number {
+    let left = parseFactor();
+    while (pos < s.length && (s[pos] === '*' || s[pos] === '/' || s[pos] === '%')) {
+      const op = s[pos++];
+      const right = parseFactor();
+      if (op === '*') left = left * right;
+      else if (op === '/') left = right !== 0 ? left / right : NaN;
+      else left = left % right;
+    }
+    return left;
+  }
+
+  function parseFactor(): number {
+    if (s[pos] === '(') { pos++; const v = parseExpr(); if (s[pos] === ')') pos++; return v; }
+    if (s[pos] === '-') { pos++; return -parseFactor(); }
+    if (s[pos] === '+') { pos++; return parseFactor(); }
+    const start = pos;
+    while (pos < s.length && /[0-9.]/.test(s[pos])) pos++;
+    if (pos === start) return NaN;
+    return parseFloat(s.slice(start, pos));
+  }
+
+  const result = parseExpr();
+  return pos === s.length ? result : NaN;
+}
+
 // ─── built-in formula evaluators ─────────────────────────────────────────────
 function evalFormula(formula: ComputedRow['formula'], expr: string | undefined, s: Record<string, string>) {
   const rate = parseFloat(s.coin_to_usd_rate || '0.01');
@@ -69,26 +110,18 @@ function evalFormula(formula: ComputedRow['formula'], expr: string | undefined, 
     case 'min_withdrawal_usd':
       return { primary: `₹${(minW * rate * share).toFixed(2)}`, label2: `${minW} coins → INR (host share)` };
     case 'custom': {
-      // Bug 14 Fix: Replace new Function() (arbitrary code execution risk) with a safe
-      // arithmetic-only evaluator. Only allows numbers, operators, parentheses, and the
-      // three allowed variable names (rate, share, minW).
       try {
         const sanitized = (expr || '').trim();
         if (!sanitized) return { primary: '—', label2: 'Empty formula' };
-        // Replace variable names with values, then evaluate purely numeric expression
         const substituted = sanitized
           .replace(/\brate\b/g, String(rate))
           .replace(/\bshare\b/g, String(share))
           .replace(/\bminW\b/g, String(minW));
-        // Ensure only safe characters remain after substitution
-        if (!/^[0-9\s\.\+\-\*\/\(\)%]+$/.test(substituted)) {
+        if (!/^[0-9\s.\+\-\*\/\(\)%]+$/.test(substituted)) {
           return { primary: '—', label2: 'Invalid expression' };
         }
-        // Use Function with no access to globals by evaluating a pure math string
-        // eslint-disable-next-line no-new-func
-        const fn = new Function(`"use strict"; return (${substituted});`);
-        const val = fn();
-        return { primary: String(isNaN(val) ? '—' : typeof val === 'number' ? val.toFixed(4) : val), label2: 'Custom formula' };
+        const val = safeEval(substituted);
+        return { primary: String(isNaN(val) ? '—' : val.toFixed(4)), label2: 'Custom formula' };
       } catch {
         return { primary: '—', label2: 'Formula error' };
       }
@@ -146,7 +179,7 @@ export default function SettingsPage() {
       await api.updateSettings(settings);
       showToast('Settings saved successfully');
     } catch (e: any) {
-      showToast('Saved locally (API offline)', true);
+      showToast(e?.message || 'Failed to save settings', false);
     } finally { setSaving(false); }
   };
 

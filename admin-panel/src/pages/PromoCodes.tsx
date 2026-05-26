@@ -40,6 +40,22 @@ export default function PromoCodes() {
   };
 
   const save = async () => {
+    if (!form.code.trim()) { showToast('Promo code cannot be empty'); return; }
+    if (form.type === 'percent') {
+      const pct = Number(form.discount_pct);
+      if (!Number.isFinite(pct) || pct < 1 || pct > 100) {
+        showToast('Discount must be between 1% and 100%'); return;
+      }
+    } else {
+      const coins = Number(form.bonus_coins);
+      if (!Number.isFinite(coins) || coins < 1) {
+        showToast('Bonus coins must be at least 1'); return;
+      }
+    }
+    const maxUses = Number(form.max_uses);
+    if (!Number.isFinite(maxUses) || maxUses < 1) {
+      showToast('Max uses must be at least 1'); return;
+    }
     setSaving(true);
     try {
       if (editing) {

@@ -70,7 +70,7 @@ function Input({ value, onChange, type = 'text', prefix }: { value: string; onCh
 export default function AppConfig() {
   const [config, setConfig] = useState<Config>(DEFAULTS);
   const [saving, setSaving] = useState(false);
-  const [toast, setToast] = useState('');
+  const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
   const [hasChanges, setHasChanges] = useState(false);
 
   useEffect(() => {
@@ -86,24 +86,31 @@ export default function AppConfig() {
     setHasChanges(true);
   };
 
+  const showToast = (msg: string, ok = true) => {
+    setToast({ msg, ok });
+    setTimeout(() => setToast(null), 2500);
+  };
+
   const save = async () => {
     setSaving(true);
     try {
       await api.updateSettings(config);
-      setToast('Configuration saved successfully');
+      showToast('Configuration saved successfully');
       setHasChanges(false);
-    } catch {
-      setToast('Saved locally (API not connected)');
-      setHasChanges(false);
+    } catch (e: any) {
+      showToast(e?.message || 'Failed to save configuration', false);
     } finally {
       setSaving(false);
-      setTimeout(() => setToast(''), 2500);
     }
   };
 
   return (
     <div className="space-y-5">
-      {toast && <div className="fixed bottom-5 right-5 z-50 bg-foreground text-background text-sm px-4 py-2.5 rounded-xl shadow-xl">{toast}</div>}
+      {toast && (
+        <div className={`fixed bottom-5 right-5 z-50 text-white text-sm px-4 py-2.5 rounded-xl shadow-xl transition-all ${toast.ok ? 'bg-green-600' : 'bg-red-600'}`}>
+          {toast.msg}
+        </div>
+      )}
 
       <div className="flex items-center justify-between">
         <div>

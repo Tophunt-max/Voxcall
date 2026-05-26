@@ -223,7 +223,8 @@ export default function Users() {
     staleTime: 30_000,
   });
 
-  const hasMore = users.length === 20;
+  const hasMore = users.length > 20;
+  const displayedUsers = users.slice(0, 20);
 
   const handleSearchChange = (val: string) => {
     setSearch(val);
@@ -246,7 +247,7 @@ export default function Users() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h2 className="font-bold text-lg">Users</h2>
-          <p className="text-sm text-muted-foreground">{users.length} members on this page</p>
+          <p className="text-sm text-muted-foreground">{displayedUsers.length} members on this page</p>
         </div>
         <div className="relative">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
@@ -264,11 +265,11 @@ export default function Users() {
             <div key={i} className="h-16 rounded-xl bg-muted animate-pulse" />
           ))}
         </div>
-      ) : users.length === 0 ? (
+      ) : displayedUsers.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground text-sm">No users found</div>
       ) : (
         <div className="space-y-2">
-          {users.map((u: any) => (
+          {displayedUsers.map((u: any) => (
             <button
               key={u.id}
               onClick={() => setSelected(u)}

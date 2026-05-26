@@ -203,10 +203,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (updates.gender !== undefined) backendUpdates.gender = updates.gender;
     if (updates.avatar !== undefined) backendUpdates.avatar_url = updates.avatar;
     if (updates.language !== undefined) backendUpdates.language = updates.language;
+    let apiError: unknown = null;
     if (Object.keys(backendUpdates).length > 0) {
       try {
         await apiRequest("PATCH", "/api/user/me", backendUpdates);
-      } catch {}
+      } catch (err) {
+        apiError = err;
+      }
     }
     setState((prev) => {
       if (!prev.user) return prev;
@@ -214,6 +217,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setItem(StorageKeys.USER, updated);
       return { ...prev, user: updated };
     });
+    if (apiError) throw apiError;
   }, []);
 
   const updateEarnings = useCallback((newEarnings: number) => {

@@ -40,12 +40,17 @@ export default function LiveCalls() {
   const [cleaningUp, setCleaningUp] = useState(false);
   const [fetchError, setFetchError] = useState('');
   const intervalRef = useRef<any>(null);
+  const errorCountRef = useRef(0);
+  const autoRefreshRef = useRef(autoRefresh);
+  useEffect(() => { autoRefreshRef.current = autoRefresh; }, [autoRefresh]);
 
   const refresh = () => {
     api.liveCalls().then(data => {
       setCalls(data || []);
       setFetchError('');
+      errorCountRef.current = 0;
     }).catch((e: any) => {
+      errorCountRef.current = Math.min(errorCountRef.current + 1, 5);
       console.error('Failed to load live calls:', e);
       setFetchError('Failed to load live calls. Retrying...');
     }).finally(() => {
@@ -56,14 +61,20 @@ export default function LiveCalls() {
 
   useEffect(() => { refresh(); }, []);
 
+  // Reschedule after every refresh with exponential backoff on consecutive errors
   useEffect(() => {
-    if (autoRefresh) {
-      intervalRef.current = setInterval(refresh, 5000);
-    } else {
-      clearInterval(intervalRef.current);
+    if (!autoRefresh) {
+      clearTimeout(intervalRef.current);
+      return;
     }
-    return () => clearInterval(intervalRef.current);
-  }, [autoRefresh]);
+    const delay = errorCountRef.current === 0
+      ? 5000
+      : Math.min(5000 * Math.pow(2, errorCountRef.current - 1), 60000);
+    intervalRef.current = setTimeout(() => {
+      if (autoRefreshRef.current) refresh();
+    }, delay);
+    return () => clearTimeout(intervalRef.current);
+  }, [autoRefresh, lastRefresh]);
 
   const handleForceEnd = async (callId: string) => {
     if (!confirm('Is call ko force-end karna chahte hain?')) return;

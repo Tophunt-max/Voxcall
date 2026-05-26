@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import { View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity, Image, Platform, KeyboardAvoidingView, ActivityIndicator } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -47,6 +47,7 @@ export default function ChatScreen() {
   }, [id]);
 
   const messages = convo?.messages ?? [];
+  const reversedMessages = useMemo(() => [...messages].reverse(), [messages]);
 
   const handleSend = async () => {
     if (!text.trim() || !id) return;
@@ -103,7 +104,7 @@ export default function ChatScreen() {
         ) : (
           <FlatList
             ref={listRef}
-            data={[...messages].reverse()}
+            data={reversedMessages}
             inverted
             keyExtractor={(m) => m.id}
             renderItem={renderMessage}
