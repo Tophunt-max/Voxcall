@@ -164,7 +164,22 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         if (res?.coins_charged != null) {
           coinsSpent = res.coins_charged;
         }
-      } catch (e) { console.warn("endCall API error:", e); }
+      } catch (e: any) {
+        // "Call already ended" means the remote party ended it first — the server
+        // already charged the correct amount. Fetch session details so the summary
+        // shows the actual coins_charged instead of a locally-estimated value.
+        const isAlreadyEnded =
+          /already ended/i.test(e?.message ?? "") ||
+          e?.message?.includes("400");
+        if (isAlreadyEnded && call.sessionId) {
+          try {
+            const session = await API.getCallSession(call.sessionId);
+            if (session?.coins_charged != null) coinsSpent = session.coins_charged;
+          } catch {}
+        } else {
+          console.warn("endCall API error:", e);
+        }
+      }
       // Always refresh balance after call ends (remote may have already billed)
       try {
         const bal = await API.getBalance();

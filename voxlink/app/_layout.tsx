@@ -66,6 +66,9 @@ function FCMNotificationTapBridge() {
     function handleNotificationData(data: Record<string, any>) {
       if (!data) return;
       if (data.type === "incoming_call") {
+        // receiveCall in user's CallContext already calls router.push("/user/call/incoming")
+        // internally — do NOT push separately or the screen gets pushed twice onto the stack.
+        // If there is already an active call, ignore the tap entirely (cannot accept two calls).
         if (!activeCall) {
           receiveCall(
             { id: String(data.caller_id ?? ""), name: data.caller_name ?? "Caller", role: "host" },
@@ -73,7 +76,6 @@ function FCMNotificationTapBridge() {
             String(data.session_id ?? "")
           );
         }
-        router.push("/user/call/incoming");
       } else if (data.type === "chat_message" && data.room_id) {
         router.push({ pathname: "/user/chat/[id]", params: { id: String(data.room_id) } });
       }
@@ -118,6 +120,8 @@ function WebNotificationBridge() {
       if (event.data?.type !== "NOTIFICATION_CLICK") return;
       const data = event.data?.data ?? {};
       if (data.type === "incoming_call") {
+        // receiveCall in user's CallContext already navigates to /user/call/incoming
+        // internally. Do NOT push separately — that would create a duplicate stack entry.
         if (!activeCall) {
           receiveCall(
             { id: String(data.caller_id ?? ""), name: data.caller_name ?? "Caller", role: "host" },
@@ -125,7 +129,6 @@ function WebNotificationBridge() {
             String(data.session_id ?? "")
           );
         }
-        router.push("/user/call/incoming");
       } else if (data.type === "chat_message" && data.room_id) {
         router.push({ pathname: "/user/chat/[id]", params: { id: String(data.room_id) } });
       }

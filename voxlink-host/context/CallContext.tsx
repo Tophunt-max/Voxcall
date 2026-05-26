@@ -158,8 +158,23 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         if (res?.host_earnings != null) {
           coinsEarned = res.host_earnings;
         }
-      } catch (e) {
-        console.warn("endCall API error:", e);
+      } catch (e: any) {
+        // "Call already ended" means the caller ended it first — the server already
+        // calculated the correct host earnings. Fetch session data so the summary
+        // shows the actual host_earnings instead of a locally-estimated value.
+        const isAlreadyEnded =
+          /already ended/i.test(e?.message ?? "") ||
+          e?.message?.includes("400");
+        if (isAlreadyEnded && call.sessionId) {
+          try {
+            const session = await API.getCallSession(call.sessionId);
+            if (session?.coins_charged != null) {
+              coinsEarned = Math.floor(session.coins_charged * 0.7);
+            }
+          } catch {}
+        } else {
+          console.warn("endCall API error:", e);
+        }
       }
       await refreshProfile().catch((e: unknown) => console.warn('refreshProfile after endCall failed:', e));
     }
