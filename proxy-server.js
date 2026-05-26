@@ -129,15 +129,51 @@ function getTargetPort(url) {
   if (p.startsWith('/admin-panel')) return ADMIN_PORT;
   if (p.startsWith('/host')) return HOST_APP_PORT;
   if (p.startsWith('/api')) return API_PORT;
+
+  // Metro HMR WebSocket connections don't carry a /host prefix in their URL.
+  // Instead, when EXPO_BASE_URL=/host, the host app's Metro client sends
+  // bundleEntry=host/node_modules/... as a query param.  Detect this and
+  // route to the host Metro (8099) so it isn't mis-handled by the user Metro.
+  if (p.includes('/__metro/') || p.startsWith('/hot')) {
+    try {
+      const qs = p.includes('?') ? p.slice(p.indexOf('?')) : '';
+      const params = new URLSearchParams(qs);
+      const bundleEntry = params.get('bundleEntry') || '';
+      // bundleEntry may be 'host/...', './host/...', or '/host/...'
+      if (/^\.?\/?\bhost\//.test(bundleEntry)) {
+        return HOST_APP_PORT;
+      }
+    } catch (_) {}
+  }
+
   return USER_APP_PORT;
 }
 
 function rewritePath(url, targetPort) {
-  if (targetPort === HOST_APP_PORT) {
-    const stripped = url.replace(/^\/host/, '') || '/';
-    return stripped.startsWith('/') ? stripped : '/' + stripped;
+  if (targetPort !== HOST_APP_PORT) return url;
+
+  // Strip /host prefix from the URL path so Metro receives a clean path
+  const qIdx = url.indexOf('?');
+  const pathname = qIdx === -1 ? url : url.slice(0, qIdx);
+  const rawQs   = qIdx === -1 ? '' : url.slice(qIdx + 1);
+
+  const cleanPath = (pathname.replace(/^\/host/, '') || '/');
+
+  // For Metro HMR connections routed here via bundleEntry detection (URL has no
+  // /host prefix), also strip the "host/" prefix inside the bundleEntry param so
+  // the host Metro server can resolve its own entry point correctly.
+  let qs = rawQs;
+  if (rawQs) {
+    const params = new URLSearchParams(rawQs);
+    const be = params.get('bundleEntry');
+    if (be && /^\.?\/?\bhost\//.test(be)) {
+      params.set('bundleEntry', be.replace(/^\.?\/?host\//, ''));
+      qs = params.toString();
+    }
   }
-  return url;
+
+  const result = cleanPath + (qs ? '?' + qs : '');
+  return result.startsWith('/') ? result : '/' + result;
 }
 
 function buildHeaders(original, targetPort) {
