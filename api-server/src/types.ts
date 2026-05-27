@@ -43,6 +43,8 @@ export interface HostRow {
   specialties: string;
   languages: string;
   coins_per_minute: number;
+  audio_coins_per_minute?: number;
+  video_coins_per_minute?: number;
   total_minutes: number;
   total_earnings: number;
   rating: number;
@@ -50,4 +52,37 @@ export interface HostRow {
   is_online: number;
   is_top_rated: number;
   is_active: number;
+}
+
+export interface CallSessionRow {
+  id: string;
+  caller_id: string;
+  host_id: string;
+  type: 'audio' | 'video';
+  status: 'pending' | 'active' | 'declined' | 'ended';
+  cf_session_id: string | null;
+  cf_host_session_id: string | null;
+  rate_per_minute: number;
+  started_at?: number;
+  ended_at?: number;
+  duration_seconds?: number;
+  coins_charged?: number;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface CallerData {
+  id: string;
+  coins: number;
+  name: string;
+}
+
+export interface HostData {
+  id: string;
+  coins_per_minute: number;
+  audio_coins_per_minute?: number;
+  video_coins_per_minute?: number;
+  user_id: string;
+  total_minutes?: number;
+  total_earnings?: number;
 }
