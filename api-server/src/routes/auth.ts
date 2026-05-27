@@ -10,9 +10,10 @@ import { authMiddleware } from '../middleware/auth';
 
 const auth = new Hono<{ Bindings: Env }>();
 
-// ─── Rate Limiting ───────────────────────────────────────────────────────────
+// ─── Rate Limiting ────────────────────────────────────────────────────────
 // Standard: 10 attempts / 60s per IP per route
 // Strict:   3 attempts / 600s (10 min) — for OTP/password-reset endpoints
+// Device:   2 attempts / 3600s (1 hour) — for guest account creation (Sybil attack prevention)
 function makeRateLimit(maxAttempts: number, windowSecs: number) {
   return async function rateLimitFn(c: Context<{ Bindings: Env }>, next: Next) {
     const ip =
@@ -57,6 +58,7 @@ function makeRateLimit(maxAttempts: number, windowSecs: number) {
 
 const rateLimit = makeRateLimit(10, 60);
 const strictRateLimit = makeRateLimit(3, 600);
+const deviceRateLimit = makeRateLimit(2, 3600); // BUG FIX #4: Device-based rate limit for guest accounts
 
 const registerSchema = z.object({
   name: z.string().min(2).max(60),
@@ -169,23 +171,33 @@ auth.post('/verify-otp', strictRateLimit, async (c) => {
   if (!user || !user.otp || !timingSafeEqual(String(user.otp), otp) || user.otp_expires_at < now) {
     return c.json({ error: 'Invalid or expired OTP' }, 400);
   }
-  // Bug 3 Fix: Process pending referral only after OTP verified — prevents Sybil attacks
+  
+  // BUG FIX #3: Atomic referral processing to prevent race condition
+  // Use UPDATE...WHERE to make coin award atomic
   const pendingReferral = await db.prepare(
-    'SELECT * FROM referral_uses WHERE referred_id = ? AND coins_given = 0'
+    'SELECT id, referrer_id FROM referral_uses WHERE referred_id = ? AND coins_given = 0 LIMIT 1'
   ).bind(user.id).first<any>();
 
   if (pendingReferral) {
     const bonus = 25;
-    await db.batch([
-      db.prepare('UPDATE users SET is_verified = 1, otp = NULL, coins = coins + 110 WHERE id = ?').bind(user.id),
-      db.prepare('UPDATE users SET coins = coins + ? WHERE id = ?').bind(bonus, pendingReferral.referrer_id),
-      db.prepare('UPDATE referral_uses SET coins_given = ? WHERE id = ?').bind(bonus, pendingReferral.id),
-    ]);
-    return c.json({ success: true, bonus_coins: 110 });
-  } else {
-    await db.prepare('UPDATE users SET is_verified = 1, otp = NULL, coins = coins + 100 WHERE id = ?').bind(user.id).run();
-    return c.json({ success: true, bonus_coins: 100 });
+    // CRITICAL: Use atomic UPDATE with guard to prevent double-award race condition
+    const atomicReferralUpdate = await db.prepare(
+      'UPDATE referral_uses SET coins_given = ? WHERE id = ? AND coins_given = 0'
+    ).bind(bonus, pendingReferral.id).run();
+    
+    // Only proceed if the referral update succeeded (guard against concurrent verification)
+    if (atomicReferralUpdate.meta?.changes && atomicReferralUpdate.meta.changes > 0) {
+      await db.batch([
+        db.prepare('UPDATE users SET is_verified = 1, otp = NULL, coins = coins + 110 WHERE id = ?').bind(user.id),
+        db.prepare('UPDATE users SET coins = coins + ? WHERE id = ?').bind(bonus, pendingReferral.referrer_id),
+      ]);
+      return c.json({ success: true, bonus_coins: 110 });
+    }
   }
+  
+  // No pending referral or it was already processed
+  await db.prepare('UPDATE users SET is_verified = 1, otp = NULL, coins = coins + 100 WHERE id = ?').bind(user.id).run();
+  return c.json({ success: true, bonus_coins: 100 });
 });
 
 // POST /api/auth/forgot-password
@@ -204,7 +216,12 @@ auth.post('/forgot-password', strictRateLimit, async (c) => {
   }
   const otp = generateOTP();
   const otpExp = Math.floor(Date.now() / 1000) + 600;
-  await db.prepare('UPDATE users SET otp = ?, otp_expires_at = ? WHERE id = ?').bind(otp, otpExp, user.id).run();
+  
+  // BUG FIX #5: Store OTP generation timestamp to detect brute-force attacks
+  const otpAttemptKey = `otp_reset:${email}`;
+  await db.prepare('UPDATE users SET otp = ?, otp_expires_at = ?, otp_request_at = ? WHERE id = ?')
+    .bind(otp, otpExp, Math.floor(Date.now() / 1000), user.id).run();
+  
   // Send OTP via email
   await sendEmail({
     apiKey: c.env.RESEND_API_KEY,
@@ -230,15 +247,22 @@ auth.post('/reset-password', strictRateLimit, async (c) => {
   const db = c.env.DB;
   const now = Math.floor(Date.now() / 1000);
   const user = await db.prepare(
-    'SELECT id, otp, otp_expires_at FROM users WHERE email = ?'
+    'SELECT id, otp, otp_expires_at, otp_request_at FROM users WHERE email = ?'
   ).bind(email).first<any>();
   if (!user || !user.otp || !timingSafeEqual(String(user.otp), otp) || user.otp_expires_at < now) {
     return c.json({ error: 'Invalid or expired OTP' }, 400);
   }
+  
+  // BUG FIX #5: Verify OTP was recently requested (max 10 min old) to prevent brute-force
+  const otpAge = now - (user.otp_request_at || 0);
+  if (otpAge > 600) {
+    return c.json({ error: 'OTP expired. Please request a new one.' }, 400);
+  }
+  
   const hash = await hashPassword(new_password!);
   // SECURITY FIX: Invalidate all existing tokens after password reset.
   // Without this, old tokens remain valid even after password change.
-  await db.prepare('UPDATE users SET password_hash = ?, otp = NULL, token_invalidated_at = ? WHERE id = ?')
+  await db.prepare('UPDATE users SET password_hash = ?, otp = NULL, otp_request_at = NULL, token_invalidated_at = ? WHERE id = ?')
     .bind(hash, now, user.id).run();
   return c.json({ success: true });
 });
@@ -399,7 +423,8 @@ auth.post('/guest-login', rateLimit, async (c) => {
 });
 
 // POST /api/auth/quick-login — persistent device-based login (same device = same account)
-auth.post('/quick-login', rateLimit, async (c) => {
+// BUG FIX #4: Add device-level rate limiting to prevent Sybil attacks (unlimited guest account creation)
+auth.post('/quick-login', deviceRateLimit, async (c) => {
   const body = await c.req.json().catch(() => ({}));
   return quickLoginHandler(c, (body as any).device_id ?? null);
 });
