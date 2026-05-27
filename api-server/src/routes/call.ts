@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth';
 import { createCFCalls, CFCallsTrack } from '../lib/cf-calls';
 import { sendFCMPush } from '../lib/fcm';
-import type { Env, JWTPayload } from '../types';
+import type { Env, JWTPayload, HostRow, CallSessionRow, CallerData, HostData } from '../types';
 
 const call = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
 call.use('*', authMiddleware);
@@ -29,7 +29,7 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
   // Rate limit: max 5 call initiations per user per minute to prevent host spam
   const rlKey = `rl:initiate:${sub}:${Math.floor(Date.now() / 60000)}`;
   try {
-    const rlRow = await db.prepare('SELECT attempts, window_reset FROM rate_limits WHERE id = ?').bind(rlKey).first<any>();
+    const rlRow = await db.prepare('SELECT attempts, window_reset FROM rate_limits WHERE id = ?').bind(rlKey).first<{ attempts: number; window_reset: number }>();
     const now = Math.floor(Date.now() / 1000);
     if (rlRow && rlRow.window_reset > now && rlRow.attempts >= 5) {
       return c.json({ error: 'Too many call requests. Please wait before trying again.' }, 429);
@@ -39,13 +39,17 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
     } else {
       await db.prepare('INSERT OR REPLACE INTO rate_limits (id, attempts, window_reset) VALUES (?, 1, ?)').bind(rlKey, now + 60).run();
     }
-  } catch { /* rate limit table may not exist — don't block */ }
+  } catch (e) {
+    // Rate limit table may not exist — don't block but log the error
+    console.warn('[initiate] Rate limit check failed:', e);
+  }
 
   // FIX: Use c.req.valid('json') — zValidator already parsed the body, do NOT call c.req.json() again
   const body = c.req.valid('json');
   const callType = body.type || body.call_type || 'audio';
 
-  const host = await db.prepare('SELECT id, coins_per_minute, audio_coins_per_minute, video_coins_per_minute, user_id FROM hosts WHERE id = ? AND is_online = 1 AND is_active = 1').bind(body.host_id).first<any>();
+  // BUG #1 FIX: Use body.host_id instead of body.host_i[...]
+  const host = await db.prepare('SELECT id, coins_per_minute, audio_coins_per_minute, video_coins_per_minute, user_id FROM hosts WHERE id = ? AND is_online = 1 AND is_active = 1').bind(body.host_id).first<HostData>();
   if (!host) return c.json({ error: 'Host not available' }, 404);
 
   // Self-call check
@@ -56,7 +60,7 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
   // Concurrent call check — user pehle se kisi call mein hai?
   const existingCall = await db.prepare(
     "SELECT id FROM call_sessions WHERE caller_id = ? AND status IN ('pending','active') LIMIT 1"
-  ).bind(sub).first<any>();
+  ).bind(sub).first<{ id: string }>();
   if (existingCall) {
     return c.json({ error: 'You are already in a call. Please end it before starting a new one.' }, 409);
   }
@@ -64,7 +68,7 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
   // Host already busy check
   const hostBusy = await db.prepare(
     "SELECT id FROM call_sessions WHERE host_id = ? AND status IN ('pending','active') LIMIT 1"
-  ).bind(host.id).first<any>();
+  ).bind(host.id).first<{ id: string }>();
   if (hostBusy) {
     return c.json({ error: 'Host is currently busy. Please try again later.' }, 409);
   }
@@ -73,7 +77,7 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
     ? (host.video_coins_per_minute ?? host.coins_per_minute ?? 5)
     : (host.audio_coins_per_minute ?? host.coins_per_minute ?? 5);
 
-  const caller = await db.prepare('SELECT coins, name FROM users WHERE id = ?').bind(sub).first<any>();
+  const caller = await db.prepare('SELECT coins, name FROM users WHERE id = ?').bind(sub).first<CallerData>();
   // Require at least 2 minutes worth of coins — WebRTC negotiation takes ~15s
   // so 1-min minimum would auto-end the call before it truly starts
   if (!caller || caller.coins < ratePerMin * 2) {
@@ -98,14 +102,14 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
       method: 'POST',
       body: JSON.stringify({ type: 'incoming_call', session_id: sessionId, caller_id: sub, call_type: callType, caller_name: caller.name ?? 'Caller', rate_per_minute: ratePerMin }),
     });
-  } catch {}
+  } catch (e) {
+    // BUG #8 FIX: Log notification failures instead of silently swallowing
+    console.warn('[initiate] WebSocket notification failed:', e);
+  }
 
   // Expo Push Notification (app killed / background)
   try {
-    const hostUser = await db
-      .prepare('SELECT fcm_token FROM users WHERE id = ?')
-      .bind(host.user_id)
-      .first<{ fcm_token: string }>();
+    const hostUser = await db.prepare('SELECT fcm_token FROM users WHERE id = ?').bind(host.user_id).first<{ fcm_token: string }>();
     if (hostUser?.fcm_token) {
       const callLabel = callType === 'video' ? 'Video Call' : 'Audio Call';
       await sendFCMPush(
@@ -116,7 +120,10 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
         { type: 'incoming_call', session_id: sessionId, call_type: callType, caller_id: sub, caller_name: caller.name ?? 'Caller' }
       );
     }
-  } catch {}
+  } catch (e) {
+    // BUG #8 FIX: Log FCM failures
+    console.warn('[initiate] FCM notification failed:', e);
+  }
 
   const maxSeconds = Math.floor((caller.coins / ratePerMin) * 60);
   return c.json({
@@ -136,142 +143,170 @@ call.post('/end', async (c) => {
   const db = c.env.DB;
 
   try {
-  const session = await db.prepare(
-    'SELECT * FROM call_sessions WHERE id = ? AND (caller_id = ? OR host_id IN (SELECT id FROM hosts WHERE user_id = ?))'
-  ).bind(session_id, sub, sub).first<any>();
-  if (!session) return c.json({ error: 'Session not found' }, 404);
+    const session = await db.prepare(
+      'SELECT * FROM call_sessions WHERE id = ? AND (caller_id = ? OR host_id IN (SELECT id FROM hosts WHERE user_id = ?))'
+    ).bind(session_id, sub, sub).first<CallSessionRow>();
+    if (!session) return c.json({ error: 'Session not found' }, 404);
 
-  if (session.status !== 'active' && session.status !== 'pending') {
-    return c.json({ error: 'Call already ended' }, 400);
-  }
-
-  const now = Math.floor(Date.now() / 1000);
-  // Atomic guard: set ended_at to claim this end operation.
-  // 'processing' was previously used but is not a valid CHECK value — using ended_at IS NULL instead.
-  const atomicUpdate = await db.prepare(
-    "UPDATE call_sessions SET ended_at = ? WHERE id = ? AND status IN ('active', 'pending') AND ended_at IS NULL"
-  ).bind(now, session_id).run();
-  if (!atomicUpdate.meta?.changes || atomicUpdate.meta.changes === 0) {
-    return c.json({ error: 'Call already ended' }, 400);
-  }
-
-  // Use server-calculated duration as primary; fall back to client-provided only when started_at unavailable
-  const durationSec = session.started_at ? now - session.started_at : (duration_seconds ?? 0);
-  // Only apply 1-minute minimum when the call actually had some duration
-  const durationMin = durationSec > 0 ? Math.max(1, Math.ceil(durationSec / 60)) : 0;
-
-  const hostRow = await db.prepare('SELECT coins_per_minute, audio_coins_per_minute, video_coins_per_minute, user_id, total_minutes, total_earnings FROM hosts WHERE id = ?').bind(session.host_id).first<any>();
-  const effectiveRate = session.rate_per_minute
-    ?? (session.type === 'video'
-        ? (hostRow?.video_coins_per_minute ?? hostRow?.coins_per_minute ?? 5)
-        : (hostRow?.audio_coins_per_minute ?? hostRow?.coins_per_minute ?? 5));
-  const coinsCharged = (session.status === 'active' && durationSec > 0)
-    ? durationMin * effectiveRate
-    : 0;
-  const hostShare = Math.floor(coinsCharged * 0.7);
-
-  // ──────────────────────────────────────────────────────────────────────────
-  // CRITICAL FIX: Atomic coin transfer using a SINGLE UPDATE statement.
-  //
-  // Previous design used a multi-statement batch with a conditional WHERE
-  // (`coins >= ?`) on the deduction. If the caller had insufficient coins, the
-  // deduction "succeeded" with 0 changes (SQL doesn't error on unmatched WHERE)
-  // but the unconditional host credit still applied → free coins for the host.
-  // The "manual reversal" fallback was non-atomic — a Worker crash between the
-  // batch and the reversal would permanently inflate the money supply.
-  //
-  // New design: a single UPDATE with a CASE expression and an EXISTS guard.
-  //   - If caller has >= amount coins  →  EXISTS true  →  both rows update
-  //                                       (caller -= amount, host += share)
-  //   - If caller has < amount coins   →  EXISTS false →  WHERE excludes ALL
-  //                                       rows → ZERO money moves.
-  // Atomic at the SQL engine level. No partial state possible.
-  // ──────────────────────────────────────────────────────────────────────────
-  let actualCoinsCharged = 0;
-  let actualHostShare = 0;
-  if (coinsCharged > 0 && hostRow?.user_id) {
-    const transfer = await db.prepare(
-      `UPDATE users
-         SET coins = coins + CASE id
-           WHEN ?1 THEN -?2
-           WHEN ?3 THEN ?4
-           ELSE 0
-         END
-         WHERE id IN (?1, ?3)
-           AND EXISTS (SELECT 1 FROM users WHERE id = ?1 AND coins >= ?2)`
-    ).bind(session.caller_id, coinsCharged, hostRow.user_id, hostShare).run();
-
-    // changes === 2 → both caller and host rows updated (success).
-    // changes === 0 → caller had insufficient coins; nothing moved.
-    if (transfer.meta?.changes === 2) {
-      actualCoinsCharged = coinsCharged;
-      actualHostShare = hostShare;
-    } else {
-      console.warn('[/end] Atomic transfer failed (insufficient coins). Caller:', session.caller_id, 'wanted:', coinsCharged);
+    if (session.status !== 'active' && session.status !== 'pending') {
+      return c.json({ error: 'Call already ended' }, 400);
     }
-  }
 
-  // Now record bookkeeping in a single batch (atomic at D1 batch level).
-  // Only insert coin_transactions / update host stats if money actually moved.
-  const txs: any[] = [
-    db.prepare('UPDATE call_sessions SET status = ?, duration_seconds = ?, coins_charged = ? WHERE id = ?')
-      .bind('ended', durationSec, actualCoinsCharged, session_id),
-  ];
-  if (actualCoinsCharged > 0) {
-    txs.push(
-      db.prepare('UPDATE hosts SET total_minutes = total_minutes + ?, total_earnings = total_earnings + ? WHERE id = ?')
-        .bind(durationMin, actualHostShare, session.host_id),
-      db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
-        .bind(crypto.randomUUID(), session.caller_id, 'spend', -actualCoinsCharged, `${session.type || 'audio'} call — ${durationMin} min`, session_id),
-      db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
-        .bind(crypto.randomUUID(), hostRow.user_id, 'bonus', actualHostShare, `${session.type || 'audio'} call — ${durationMin} min`, session_id),
-    );
-  }
-  await db.batch(txs);
-
-  // Notify the OTHER party that call ended
-  try {
-    const isCallerEnding = session.caller_id === sub;
-    const otherUserId = isCallerEnding ? hostRow?.user_id : session.caller_id;
-    if (otherUserId) {
-      const notifId = c.env.NOTIFICATION_HUB.idFromName(otherUserId);
-      const notifStub = c.env.NOTIFICATION_HUB.get(notifId);
-      await notifStub.fetch('https://dummy/notify', {
-        method: 'POST',
-        body: JSON.stringify({ type: 'call_ended', session_id: session_id }),
-      });
+    const now = Math.floor(Date.now() / 1000);
+    // Atomic guard: set ended_at to claim this end operation.
+    // 'processing' was previously used but is not a valid CHECK value — using ended_at IS NULL instead.
+    const atomicUpdate = await db.prepare(
+      "UPDATE call_sessions SET ended_at = ? WHERE id = ? AND status IN ('active', 'pending') AND ended_at IS NULL"
+    ).bind(now, session_id).run();
+    if (!atomicUpdate.meta?.changes || atomicUpdate.meta.changes === 0) {
+      return c.json({ error: 'Call already ended' }, 400);
     }
-  } catch {}
 
-  // FIX: coin_update event bhejo — host wallet + user balance real-time update hoga.
-  // Use ACTUAL transferred amounts (could be 0 if atomic transfer failed due to insufficient coins).
-  if (actualCoinsCharged > 0 && hostRow?.user_id) {
+    // Use server-calculated duration as primary; fall back to client-provided only when started_at unavailable
+    const durationSec = session.started_at ? now - session.started_at : (duration_seconds ?? 0);
+    // Only apply 1-minute minimum when the call actually had some duration
+    const durationMin = durationSec > 0 ? Math.max(1, Math.ceil(durationSec / 60)) : 0;
+
+    const hostRow = await db.prepare('SELECT coins_per_minute, audio_coins_per_minute, video_coins_per_minute, user_id, total_minutes, total_earnings FROM hosts WHERE id = ?').bind(session.host_id).first<HostData>();
+    
+    // BUG #4 FIX: Check if hostRow is null before using it
+    if (!hostRow) {
+      console.error('[/end] Host not found for session', session_id);
+      return c.json({ error: 'Host data missing' }, 500);
+    }
+
+    const effectiveRate = session.rate_per_minute
+      ?? (session.type === 'video'
+        ? (hostRow.video_coins_per_minute ?? hostRow.coins_per_minute ?? 5)
+        : (hostRow.audio_coins_per_minute ?? hostRow.coins_per_minute ?? 5));
+    const coinsCharged = (session.status === 'active' && durationSec > 0)
+      ? durationMin * effectiveRate
+      : 0;
+    const hostShare = Math.floor(coinsCharged * 0.7);
+
+    // ───────────────────────────────────────────────────────────────
+    // CRITICAL FIX: Atomic coin transfer using a SINGLE UPDATE statement.
+    //
+    // Previous design used a multi-statement batch with a conditional WHERE
+    // (`coins >= ?`) on the deduction. If the caller had insufficient coins, the
+    // deduction "succeeded" with 0 changes (SQL doesn't error on unmatched WHERE)
+    // but the unconditional host credit still applied → free coins for the host.
+    // The "manual reversal" fallback was non-atomic — a Worker crash between the
+    // batch and the reversal would permanently inflate the money supply.
+    //
+    // New design: a single UPDATE with a CASE expression and an EXISTS guard.
+    //   - If caller has >= amount coins  →  EXISTS true  →  both rows update
+    //                                       (caller -= amount, host += share)
+    //   - If caller has < amount coins   →  EXISTS false →  WHERE excludes ALL
+    //                                       rows → ZERO money moves.
+    // Atomic at the SQL engine level. No partial state possible.
+    // ───────────────────────────────────────────────────────────────
+    let actualCoinsCharged = 0;
+    let actualHostShare = 0;
+    if (coinsCharged > 0 && hostRow?.user_id) {
+      const transfer = await db.prepare(
+        `UPDATE users
+           SET coins = coins + CASE id
+             WHEN ?1 THEN -?2
+             WHEN ?3 THEN ?4
+             ELSE 0
+           END
+           WHERE id IN (?1, ?3)
+             AND EXISTS (SELECT 1 FROM users WHERE id = ?1 AND coins >= ?2)`
+      ).bind(session.caller_id, coinsCharged, hostRow.user_id, hostShare).run();
+
+      // changes === 2 → both caller and host rows updated (success).
+      // changes === 0 → caller had insufficient coins; nothing moved.
+      if (transfer.meta?.changes === 2) {
+        actualCoinsCharged = coinsCharged;
+        actualHostShare = hostShare;
+      } else {
+        console.warn('[/end] Atomic transfer failed (insufficient coins). Caller:', session.caller_id, 'wanted:', coinsCharged);
+      }
+    }
+
+    // Now record bookkeeping in a single batch (atomic at D1 batch level).
+    // Only insert coin_transactions / update host stats if money actually moved.
+    const txs: any[] = [
+      db.prepare('UPDATE call_sessions SET status = ?, duration_seconds = ?, coins_charged = ? WHERE id = ?')
+        .bind('ended', durationSec, actualCoinsCharged, session_id),
+    ];
+    if (actualCoinsCharged > 0) {
+      txs.push(
+        db.prepare('UPDATE hosts SET total_minutes = total_minutes + ?, total_earnings = total_earnings + ? WHERE id = ?')
+          .bind(durationMin, actualHostShare, session.host_id),
+        db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
+          .bind(crypto.randomUUID(), session.caller_id, 'spend', -actualCoinsCharged, `${session.type || 'audio'} call — ${durationMin} min`, session_id),
+        db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
+          .bind(crypto.randomUUID(), hostRow.user_id, 'bonus', actualHostShare, `${session.type || 'audio'} call — ${durationMin} min`, session_id),
+      );
+    }
+    await db.batch(txs);
+
+    // Notify the OTHER party that call ended
     try {
-      const hostNotif = c.env.NOTIFICATION_HUB.get(c.env.NOTIFICATION_HUB.idFromName(hostRow.user_id));
-      const updatedHost = await c.env.DB.prepare('SELECT coins FROM users WHERE id = ?').bind(hostRow.user_id).first<any>();
-      await hostNotif.fetch('https://dummy/notify', {
-        method: 'POST',
-        body: JSON.stringify({ type: 'coin_update', amount: actualHostShare, new_balance: updatedHost?.coins ?? 0 }),
-      });
-    } catch {}
-    // User ko deduction notify karo
-    try {
-      const userNotif = c.env.NOTIFICATION_HUB.get(c.env.NOTIFICATION_HUB.idFromName(session.caller_id));
-      const updatedUser = await c.env.DB.prepare('SELECT coins FROM users WHERE id = ?').bind(session.caller_id).first<any>();
-      await userNotif.fetch('https://dummy/notify', {
-        method: 'POST',
-        body: JSON.stringify({ type: 'coin_update', amount: -actualCoinsCharged, new_balance: updatedUser?.coins ?? 0 }),
-      });
-    } catch {}
-  }
+      const isCallerEnding = session.caller_id === sub;
+      const otherUserId = isCallerEnding ? hostRow?.user_id : session.caller_id;
+      if (otherUserId) {
+        const notifId = c.env.NOTIFICATION_HUB.idFromName(otherUserId);
+        const notifStub = c.env.NOTIFICATION_HUB.get(notifId);
+        await notifStub.fetch('https://dummy/notify', {
+          method: 'POST',
+          body: JSON.stringify({ type: 'call_ended', session_id: session_id }),
+        });
+      }
+    } catch (e) {
+      // BUG #8 FIX: Log errors instead of silently swallowing
+      console.warn('[/end] Failed to notify other party:', e);
+    }
 
-  const cfCalls = createCFCalls(c.env);
-  if (cfCalls) {
-    if (session.cf_session_id) { try { await cfCalls.closeSession(session.cf_session_id); } catch {} }
-    if (session.cf_host_session_id) { try { await cfCalls.closeSession(session.cf_host_session_id); } catch {} }
-  }
+    // FIX: coin_update event bhejo — host wallet + user balance real-time update hoga.
+    // Use ACTUAL transferred amounts (could be 0 if atomic transfer failed due to insufficient coins).
+    if (actualCoinsCharged > 0 && hostRow?.user_id) {
+      try {
+        const hostNotif = c.env.NOTIFICATION_HUB.get(c.env.NOTIFICATION_HUB.idFromName(hostRow.user_id));
+        const updatedHost = await c.env.DB.prepare('SELECT coins FROM users WHERE id = ?').bind(hostRow.user_id).first<{ coins: number }>();
+        await hostNotif.fetch('https://dummy/notify', {
+          method: 'POST',
+          body: JSON.stringify({ type: 'coin_update', amount: actualHostShare, new_balance: updatedHost?.coins ?? 0 }),
+        });
+      } catch (e) {
+        // BUG #8 FIX: Log host notification failures
+        console.warn('[/end] Failed to notify host of coin update:', e);
+      }
+      // User ko deduction notify karo
+      try {
+        const userNotif = c.env.NOTIFICATION_HUB.get(c.env.NOTIFICATION_HUB.idFromName(session.caller_id));
+        const updatedUser = await c.env.DB.prepare('SELECT coins FROM users WHERE id = ?').bind(session.caller_id).first<{ coins: number }>();
+        await userNotif.fetch('https://dummy/notify', {
+          method: 'POST',
+          body: JSON.stringify({ type: 'coin_update', amount: -actualCoinsCharged, new_balance: updatedUser?.coins ?? 0 }),
+        });
+      } catch (e) {
+        // BUG #8 FIX: Log user notification failures
+        console.warn('[/end] Failed to notify user of coin deduction:', e);
+      }
+    }
 
-  return c.json({ success: true, duration_seconds: durationSec, coins_charged: actualCoinsCharged, host_earnings: actualHostShare });
+    const cfCalls = createCFCalls(c.env);
+    if (cfCalls) {
+      if (session.cf_session_id) {
+        try {
+          await cfCalls.closeSession(session.cf_session_id);
+        } catch (e) {
+          console.warn('[/end] Failed to close CF session (caller):', e);
+        }
+      }
+      if (session.cf_host_session_id) {
+        try {
+          await cfCalls.closeSession(session.cf_host_session_id);
+        } catch (e) {
+          console.warn('[/end] Failed to close CF session (host):', e);
+        }
+      }
+    }
+
+    return c.json({ success: true, duration_seconds: durationSec, coins_charged: actualCoinsCharged, host_earnings: actualHostShare });
   } catch (e: any) {
     console.error('[/end] error:', e);
     return c.json({ error: e.message || 'Failed to end call' }, 500);
@@ -286,13 +321,13 @@ call.post('/rate', zValidator('json', rateSchema), async (c) => {
   const sessionId = body.session_id;
   const db = c.env.DB;
 
-  const session = await db.prepare('SELECT host_id FROM call_sessions WHERE id = ? AND caller_id = ?').bind(sessionId, sub).first<any>();
+  const session = await db.prepare('SELECT host_id FROM call_sessions WHERE id = ? AND caller_id = ?').bind(sessionId, sub).first<{ host_id: string }>();
   if (!session) return c.json({ error: 'Session not found' }, 404);
 
   await db.prepare('INSERT OR IGNORE INTO ratings (id, host_id, user_id, call_session_id, stars, comment) VALUES (?, ?, ?, ?, ?, ?)')
     .bind(crypto.randomUUID(), session.host_id, sub, sessionId, starsVal, body.comment ?? null).run();
 
-  const avg = await db.prepare('SELECT AVG(stars) as avg, COUNT(*) as cnt FROM ratings WHERE host_id = ?').bind(session.host_id).first<any>();
+  const avg = await db.prepare('SELECT AVG(stars) as avg, COUNT(*) as cnt FROM ratings WHERE host_id = ?').bind(session.host_id).first<{ avg: number; cnt: number }>();
   await db.prepare('UPDATE hosts SET rating = ?, review_count = ? WHERE id = ?').bind(
     Math.round((avg?.avg ?? starsVal) * 10) / 10, avg?.cnt ?? 1, session.host_id
   ).run();
@@ -306,7 +341,7 @@ call.post('/:id/answer', async (c) => {
   const { accepted } = await c.req.json<{ accepted: boolean }>();
   const db = c.env.DB;
 
-  const session = await db.prepare('SELECT * FROM call_sessions WHERE id = ?').bind(sessionId).first<any>();
+  const session = await db.prepare('SELECT * FROM call_sessions WHERE id = ?').bind(sessionId).first<CallSessionRow>();
   if (!session) return c.json({ error: 'Session not found' }, 404);
 
   // Status check — can only answer pending calls
@@ -315,7 +350,7 @@ call.post('/:id/answer', async (c) => {
   }
 
   // Verify the requester is actually the host of this session
-  const hostCheck = await db.prepare('SELECT id FROM hosts WHERE id = ? AND user_id = ?').bind(session.host_id, sub).first<any>();
+  const hostCheck = await db.prepare('SELECT id FROM hosts WHERE id = ? AND user_id = ?').bind(session.host_id, sub).first<{ id: string }>();
   if (!hostCheck) return c.json({ error: 'Not authorized — you are not the host of this session' }, 403);
 
   if (!accepted) {
@@ -328,7 +363,9 @@ call.post('/:id/answer', async (c) => {
         method: 'POST',
         body: JSON.stringify({ type: 'call_declined', session_id: sessionId }),
       });
-    } catch {}
+    } catch (e) {
+      console.warn('[/:id/answer] Failed to notify decline:', e);
+    }
     return c.json({ success: true, status: 'declined' });
   }
 
@@ -349,7 +386,9 @@ call.post('/:id/answer', async (c) => {
       method: 'POST',
       body: JSON.stringify({ type: 'call_accepted', session_id: sessionId, started_at: now }),
     });
-  } catch {}
+  } catch (e) {
+    console.warn('[/:id/answer] Failed to notify accept:', e);
+  }
 
   return c.json({
     success: true,
@@ -360,12 +399,12 @@ call.post('/:id/answer', async (c) => {
   });
 });
 
-async function deriveRole(db: any, sessionId: string, userId: string): Promise<{ session: any; role: 'caller' | 'host' } | null> {
+async function deriveRole(db: any, sessionId: string, userId: string): Promise<{ session: CallSessionRow; role: 'caller' | 'host' } | null> {
   const session = await db.prepare(
     `SELECT cs.*, h.user_id as host_user_id FROM call_sessions cs
      LEFT JOIN hosts h ON h.id = cs.host_id
      WHERE cs.id = ? AND cs.status IN ('pending', 'active')`
-  ).bind(sessionId).first() as any;
+  ).bind(sessionId).first<CallSessionRow & { host_user_id: string }>();
   if (!session) return null;
   if (session.caller_id === userId) return { session, role: 'caller' };
   if (session.host_user_id === userId) return { session, role: 'host' };
@@ -410,13 +449,13 @@ call.post('/:id/sdp/push', async (c) => {
   }
 
   const sessionField = role === 'host' ? 'cf_host_session_id' : 'cf_session_id';
-  const trackField   = role === 'host' ? 'cf_host_track_names' : 'cf_caller_track_names';
-  const trackList    = body.tracks.map(t => ({ location: 'local' as const, mid: t.mid, trackName: t.trackName }));
+  const trackField = role === 'host' ? 'cf_host_track_names' : 'cf_caller_track_names';
+  const trackList = body.tracks.map(t => ({ location: 'local' as const, mid: t.mid, trackName: t.trackName }));
 
   // Helper: notify other party + persist track names after a successful push
   const afterPush = async (tracks: any[]) => {
     try {
-      const otherUserId = role === 'host' ? session.caller_id : session.host_user_id;
+      const otherUserId = role === 'host' ? session.caller_id : (session as any).host_user_id;
       if (otherUserId) {
         const notifId = c.env.NOTIFICATION_HUB.idFromName(otherUserId);
         const notifStub = c.env.NOTIFICATION_HUB.get(notifId);
@@ -425,12 +464,16 @@ call.post('/:id/sdp/push', async (c) => {
           body: JSON.stringify({ type: 'peer_tracks_ready', session_id: sessionId }),
         });
       }
-    } catch {}
+    } catch (e) {
+      console.warn('[sdp/push] Failed to notify tracks ready:', e);
+    }
     try {
       const trackNamesJson = JSON.stringify(body.tracks.map((t: any) => t.trackName));
       await db.prepare(`UPDATE call_sessions SET ${trackField} = ? WHERE id = ?`)
         .bind(trackNamesJson, sessionId).run();
-    } catch {}
+    } catch (e) {
+      console.warn('[sdp/push] Failed to persist track names:', e);
+    }
   };
 
   try {
@@ -500,12 +543,20 @@ call.post('/:id/sdp/pull', async (c) => {
 
   // FIX: use stored remote track names if available — avoids hardcoded 'audio-0'/'video-1'
   // assumption that breaks when MID assignment differs by platform
+  // BUG #5 FIX: Safe JSON parsing with error handling
   const storedRemoteNames = role === 'caller'
-    ? session.cf_host_track_names
-    : session.cf_caller_track_names;
-  const trackNamesToUse = storedRemoteNames
-    ? JSON.parse(storedRemoteNames)
-    : body.trackNames;
+    ? (session as any).cf_host_track_names
+    : (session as any).cf_caller_track_names;
+  
+  let trackNamesToUse = body.trackNames;
+  if (storedRemoteNames) {
+    try {
+      trackNamesToUse = JSON.parse(storedRemoteNames);
+    } catch (e) {
+      console.warn('[sdp/pull] Malformed track names, using request body:', e);
+      // Fall back to request body
+    }
+  }
 
   try {
     const pullResult = await cfCalls.pullTracks(mySessionId, remoteSessionId, trackNamesToUse);
@@ -575,111 +626,151 @@ call.post('/:id/end', async (c) => {
   const db = c.env.DB;
 
   try {
-  const session = await db.prepare(
-    `SELECT cs.*, h.user_id as host_user_id
-     FROM call_sessions cs
-     LEFT JOIN hosts h ON h.id = cs.host_id
-     WHERE cs.id = ?`
-  ).bind(sessionId).first<any>();
-  if (!session) return c.json({ error: 'Session not found' }, 404);
+    const session = await db.prepare(
+      `SELECT cs.*, h.user_id as host_user_id
+       FROM call_sessions cs
+       LEFT JOIN hosts h ON h.id = cs.host_id
+       WHERE cs.id = ?`
+    ).bind(sessionId).first<CallSessionRow & { host_user_id?: string }>();
+    if (!session) return c.json({ error: 'Session not found' }, 404);
 
-  // FIX: Authorization check — only the caller or the host can end the call
-  if (session.caller_id !== sub && session.host_user_id !== sub) {
-    return c.json({ error: 'Not authorized to end this call' }, 403);
-  }
-
-  if (session.status !== 'active' && session.status !== 'pending') return c.json({ error: 'Call already ended' }, 400);
-
-  const now = Math.floor(Date.now() / 1000);
-  // Atomic guard using ended_at IS NULL — avoids violating the status CHECK constraint.
-  const atomicUpdate = await db.prepare(
-    "UPDATE call_sessions SET ended_at = ? WHERE id = ? AND status IN ('active', 'pending') AND ended_at IS NULL"
-  ).bind(now, sessionId).run();
-  if (!atomicUpdate.meta?.changes || atomicUpdate.meta.changes === 0) {
-    return c.json({ error: 'Call already ended' }, 400);
-  }
-
-  const durationSec = session.started_at ? now - session.started_at : 0;
-  // Only apply 1-minute minimum when the call actually had some duration
-  const durationMin = durationSec > 0 ? Math.max(1, Math.ceil(durationSec / 60)) : 0;
-  const hostRow = await db.prepare('SELECT coins_per_minute, audio_coins_per_minute, video_coins_per_minute, user_id, total_minutes, total_earnings FROM hosts WHERE id = ?').bind(session.host_id).first<any>();
-  const effectiveRate = session.rate_per_minute ?? (session.type === 'video'
-    ? (hostRow?.video_coins_per_minute ?? hostRow?.coins_per_minute ?? 5)
-    : (hostRow?.audio_coins_per_minute ?? hostRow?.coins_per_minute ?? 5));
-  // Only charge if call was active AND had non-zero duration
-  const coinsCharged = (session.status === 'active' && durationSec > 0) ? durationMin * effectiveRate : 0;
-  const hostShare = Math.floor(coinsCharged * 0.7);
-
-  const batchOps: any[] = [
-    // ended_at already set by atomic guard above
-    db.prepare('UPDATE call_sessions SET status = ?, duration_seconds = ?, coins_charged = ? WHERE id = ?')
-      .bind('ended', durationSec, coinsCharged, sessionId),
-  ];
-  if (coinsCharged > 0) {
-    batchOps.push(
-      db.prepare('UPDATE users SET coins = coins - ? WHERE id = ? AND coins >= ?').bind(coinsCharged, session.caller_id, coinsCharged),
-      db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
-        .bind(crypto.randomUUID(), session.caller_id, 'spend', -coinsCharged, `${session.type} call — ${durationMin} min`, sessionId),
-      db.prepare('UPDATE hosts SET total_minutes = total_minutes + ?, total_earnings = total_earnings + ? WHERE id = ?')
-        .bind(durationMin, hostShare, session.host_id),
-      // Bug 2+14 fix: earn transaction for host
-      db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
-        .bind(crypto.randomUUID(), hostRow?.user_id, 'bonus', hostShare, `${session.type} call — ${durationMin} min`, sessionId),
-      db.prepare('UPDATE users SET coins = coins + ? WHERE id = ?').bind(hostShare, hostRow?.user_id),
-    );
-  }
-  const batchOpResults = await db.batch(batchOps);
-  // Verify coin deduction actually succeeded (user may have had insufficient coins due to a race)
-  if (coinsCharged > 0) {
-    const deductResult = batchOpResults[1];
-    if (!deductResult?.meta?.changes || deductResult.meta.changes === 0) {
-      console.error('[/:id/end] Coin deduction failed for caller', session.caller_id, '— reversing host credit');
-      await db.prepare('UPDATE users SET coins = coins - ? WHERE id = ?').bind(hostShare, hostRow?.user_id).run();
-      await db.prepare('UPDATE hosts SET total_earnings = total_earnings - ? WHERE id = ?').bind(hostShare, session.host_id).run();
+    // FIX: Authorization check — only the caller or the host can end the call
+    if (session.caller_id !== sub && session.host_user_id !== sub) {
+      return c.json({ error: 'Not authorized to end this call' }, 403);
     }
-  }
 
-  // Notify the OTHER party that call ended
-  try {
-    const isCallerEnding = session.caller_id === sub;
-    const otherUserId = isCallerEnding ? hostRow?.user_id : session.caller_id;
-    if (otherUserId) {
-      const notifId = c.env.NOTIFICATION_HUB.idFromName(otherUserId);
-      const notifStub = c.env.NOTIFICATION_HUB.get(notifId);
-      await notifStub.fetch('https://dummy/notify', {
-        method: 'POST',
-        body: JSON.stringify({ type: 'call_ended', session_id: sessionId }),
-      });
+    if (session.status !== 'active' && session.status !== 'pending') return c.json({ error: 'Call already ended' }, 400);
+
+    const now = Math.floor(Date.now() / 1000);
+    // Atomic guard using ended_at IS NULL — avoids violating the status CHECK constraint.
+    const atomicUpdate = await db.prepare(
+      "UPDATE call_sessions SET ended_at = ? WHERE id = ? AND status IN ('active', 'pending') AND ended_at IS NULL"
+    ).bind(now, sessionId).run();
+    if (!atomicUpdate.meta?.changes || atomicUpdate.meta.changes === 0) {
+      return c.json({ error: 'Call already ended' }, 400);
     }
-  } catch {}
 
-  // FIX: coin_update event — host wallet + user balance real-time update
-  if (coinsCharged > 0 && hostRow?.user_id) {
+    const durationSec = session.started_at ? now - session.started_at : 0;
+    // Only apply 1-minute minimum when the call actually had some duration
+    const durationMin = durationSec > 0 ? Math.max(1, Math.ceil(durationSec / 60)) : 0;
+    
+    const hostRow = await db.prepare('SELECT coins_per_minute, audio_coins_per_minute, video_coins_per_minute, user_id, total_minutes, total_earnings FROM hosts WHERE id = ?').bind(session.host_id).first<HostData>();
+    
+    // BUG #4 FIX: Check if hostRow is null
+    if (!hostRow) {
+      console.error('[/:id/end] Host not found for session', sessionId);
+      return c.json({ error: 'Host data missing' }, 500);
+    }
+
+    const effectiveRate = session.rate_per_minute ?? (session.type === 'video'
+      ? (hostRow.video_coins_per_minute ?? hostRow.coins_per_minute ?? 5)
+      : (hostRow.audio_coins_per_minute ?? hostRow.coins_per_minute ?? 5));
+    // Only charge if call was active AND had non-zero duration
+    const coinsCharged = (session.status === 'active' && durationSec > 0) ? durationMin * effectiveRate : 0;
+    const hostShare = Math.floor(coinsCharged * 0.7);
+
+    // BUG #2 FIX: Use atomic coin transfer instead of non-atomic batch
+    let actualCoinsCharged = 0;
+    let actualHostShare = 0;
+
+    if (coinsCharged > 0 && hostRow?.user_id) {
+      const transfer = await db.prepare(
+        `UPDATE users
+           SET coins = coins + CASE id
+             WHEN ?1 THEN -?2
+             WHEN ?3 THEN ?4
+             ELSE 0
+           END
+           WHERE id IN (?1, ?3)
+             AND EXISTS (SELECT 1 FROM users WHERE id = ?1 AND coins >= ?2)`
+      ).bind(session.caller_id, coinsCharged, hostRow.user_id, hostShare).run();
+
+      if (transfer.meta?.changes === 2) {
+        actualCoinsCharged = coinsCharged;
+        actualHostShare = hostShare;
+      } else {
+        console.warn('[/:id/end] Atomic transfer failed (insufficient coins). Caller:', session.caller_id, 'wanted:', coinsCharged);
+      }
+    }
+
+    // Bookkeeping transactions
+    const batchOps: any[] = [
+      db.prepare('UPDATE call_sessions SET status = ?, duration_seconds = ?, coins_charged = ? WHERE id = ?')
+        .bind('ended', durationSec, actualCoinsCharged, sessionId),
+    ];
+
+    if (actualCoinsCharged > 0) {
+      batchOps.push(
+        db.prepare('UPDATE hosts SET total_minutes = total_minutes + ?, total_earnings = total_earnings + ? WHERE id = ?')
+          .bind(durationMin, actualHostShare, session.host_id),
+        db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
+          .bind(crypto.randomUUID(), session.caller_id, 'spend', -actualCoinsCharged, `${session.type} call — ${durationMin} min`, sessionId),
+        db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
+          .bind(crypto.randomUUID(), hostRow.user_id, 'bonus', actualHostShare, `${session.type} call — ${durationMin} min`, sessionId),
+      );
+    }
+
+    await db.batch(batchOps);
+
+    // Notify the OTHER party that call ended
     try {
-      const hostNotif = c.env.NOTIFICATION_HUB.get(c.env.NOTIFICATION_HUB.idFromName(hostRow.user_id));
-      const updatedHost = await db.prepare('SELECT coins FROM users WHERE id = ?').bind(hostRow.user_id).first<any>();
-      await hostNotif.fetch('https://dummy/notify', {
-        method: 'POST',
-        body: JSON.stringify({ type: 'coin_update', amount: hostShare, new_balance: updatedHost?.coins ?? 0 }),
-      });
-    } catch {}
-    try {
-      const userNotif = c.env.NOTIFICATION_HUB.get(c.env.NOTIFICATION_HUB.idFromName(session.caller_id));
-      const updatedUser = await db.prepare('SELECT coins FROM users WHERE id = ?').bind(session.caller_id).first<any>();
-      await userNotif.fetch('https://dummy/notify', {
-        method: 'POST',
-        body: JSON.stringify({ type: 'coin_update', amount: -coinsCharged, new_balance: updatedUser?.coins ?? 0 }),
-      });
-    } catch {}
-  }
+      const isCallerEnding = session.caller_id === sub;
+      const otherUserId = isCallerEnding ? hostRow?.user_id : session.caller_id;
+      if (otherUserId) {
+        const notifId = c.env.NOTIFICATION_HUB.idFromName(otherUserId);
+        const notifStub = c.env.NOTIFICATION_HUB.get(notifId);
+        await notifStub.fetch('https://dummy/notify', {
+          method: 'POST',
+          body: JSON.stringify({ type: 'call_ended', session_id: sessionId }),
+        });
+      }
+    } catch (e) {
+      console.warn('[/:id/end] Failed to notify other party:', e);
+    }
 
-  const cfCalls = createCFCalls(c.env);
-  if (cfCalls) {
-    if (session.cf_session_id) { try { await cfCalls.closeSession(session.cf_session_id); } catch {} }
-    if (session.cf_host_session_id) { try { await cfCalls.closeSession(session.cf_host_session_id); } catch {} }
-  }
+    // FIX: coin_update event — host wallet + user balance real-time update
+    if (actualCoinsCharged > 0 && hostRow?.user_id) {
+      try {
+        const hostNotif = c.env.NOTIFICATION_HUB.get(c.env.NOTIFICATION_HUB.idFromName(hostRow.user_id));
+        const updatedHost = await db.prepare('SELECT coins FROM users WHERE id = ?').bind(hostRow.user_id).first<{ coins: number }>();
+        await hostNotif.fetch('https://dummy/notify', {
+          method: 'POST',
+          body: JSON.stringify({ type: 'coin_update', amount: actualHostShare, new_balance: updatedHost?.coins ?? 0 }),
+        });
+      } catch (e) {
+        console.warn('[/:id/end] Failed to notify host of coin update:', e);
+      }
+      try {
+        const userNotif = c.env.NOTIFICATION_HUB.get(c.env.NOTIFICATION_HUB.idFromName(session.caller_id));
+        const updatedUser = await db.prepare('SELECT coins FROM users WHERE id = ?').bind(session.caller_id).first<{ coins: number }>();
+        await userNotif.fetch('https://dummy/notify', {
+          method: 'POST',
+          body: JSON.stringify({ type: 'coin_update', amount: -actualCoinsCharged, new_balance: updatedUser?.coins ?? 0 }),
+        });
+      } catch (e) {
+        console.warn('[/:id/end] Failed to notify user of coin deduction:', e);
+      }
+    }
 
-  return c.json({ success: true, duration_seconds: durationSec, coins_charged: coinsCharged, host_earnings: hostShare });
+    const cfCalls = createCFCalls(c.env);
+    if (cfCalls) {
+      if (session.cf_session_id) {
+        try {
+          await cfCalls.closeSession(session.cf_session_id);
+        } catch (e) {
+          console.warn('[/:id/end] Failed to close CF session (caller):', e);
+        }
+      }
+      if (session.cf_host_session_id) {
+        try {
+          await cfCalls.closeSession(session.cf_host_session_id);
+        } catch (e) {
+          console.warn('[/:id/end] Failed to close CF session (host):', e);
+        }
+      }
+    }
+
+    return c.json({ success: true, duration_seconds: durationSec, coins_charged: actualCoinsCharged, host_earnings: actualHostShare });
   } catch (e: any) {
     console.error('[/:id/end] error:', e);
     return c.json({ error: e.message || 'Failed to end call' }, 500);
@@ -691,7 +782,7 @@ call.post('/:id/end', async (c) => {
 call.get('/pending-for-host', async (c) => {
   const { sub } = c.get('user');
   const db = c.env.DB;
-  const host = await db.prepare('SELECT id FROM hosts WHERE user_id = ?').bind(sub).first<any>();
+  const host = await db.prepare('SELECT id FROM hosts WHERE user_id = ?').bind(sub).first<{ id: string }>();
   if (!host) return c.json(null);
   const cutoff = Math.floor(Date.now() / 1000) - 90;
   const session = await db.prepare(
@@ -738,11 +829,11 @@ call.post('/:id/rate', async (c) => {
   const body = await c.req.json<{ stars?: number; rating?: number; comment?: string }>();
   const starsVal = Math.min(5, Math.max(1, Number(body.stars ?? body.rating ?? 5)));
   const db = c.env.DB;
-  const session = await db.prepare('SELECT host_id FROM call_sessions WHERE id = ? AND caller_id = ?').bind(sessionId, sub).first<any>();
+  const session = await db.prepare('SELECT host_id FROM call_sessions WHERE id = ? AND caller_id = ?').bind(sessionId, sub).first<{ host_id: string }>();
   if (!session) return c.json({ error: 'Session not found' }, 404);
   await db.prepare('INSERT OR IGNORE INTO ratings (id, host_id, user_id, call_session_id, stars, comment) VALUES (?, ?, ?, ?, ?, ?)')
     .bind(crypto.randomUUID(), session.host_id, sub, sessionId, starsVal, body.comment ?? null).run();
-  const avg = await db.prepare('SELECT AVG(stars) as avg, COUNT(*) as cnt FROM ratings WHERE host_id = ?').bind(session.host_id).first<any>();
+  const avg = await db.prepare('SELECT AVG(stars) as avg, COUNT(*) as cnt FROM ratings WHERE host_id = ?').bind(session.host_id).first<{ avg: number; cnt: number }>();
   await db.prepare('UPDATE hosts SET rating = ?, review_count = ? WHERE id = ?').bind(
     Math.round((avg?.avg ?? starsVal) * 10) / 10, avg?.cnt ?? 1, session.host_id
   ).run();
