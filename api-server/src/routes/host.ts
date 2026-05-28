@@ -13,6 +13,15 @@ const updateProfileSchema = z.object({
   coins_per_minute: z.number().int().min(1).max(500).optional(),
   audio_coins_per_minute: z.number().int().min(1).max(500).optional(),
   video_coins_per_minute: z.number().int().min(1).max(500).optional(),
+  // FIX: payout method storage so the Settings > Payout Method screen has a
+  // real persistence layer instead of the previous "Coming Soon" alert.
+  // Validation lives here in zod (rather than a CHECK constraint on the column)
+  // so future channels can be added without a migration.
+  payout_method: z.enum(['bank', 'upi', 'paytm', 'phonepe']).optional(),
+  // Channel-specific fields are stored as a free-form record; the route
+  // serializes to JSON before writing to the TEXT column. Length-capped to
+  // keep abusive payloads from blowing up the row size.
+  payout_details: z.record(z.string(), z.string().max(200)).optional(),
 }).strict();
 
 const statusSchema = z.object({
@@ -192,12 +201,23 @@ hostProtected.patch('/me', zValidator('json', updateProfileSchema), async (c) =>
   // FIX: Use validated body from zValidator, not raw c.req.json() which bypasses validation
   const body = c.req.valid('json') as Record<string, any>;
   const MAX_RATE = 500; // coins per minute cap to prevent hosts from setting abusive rates
-  const allowed = ['display_name', 'specialties', 'languages', 'coins_per_minute', 'audio_coins_per_minute', 'video_coins_per_minute'];
+  const allowed = ['display_name', 'specialties', 'languages', 'coins_per_minute', 'audio_coins_per_minute', 'video_coins_per_minute', 'payout_method', 'payout_details'];
   const sets: string[] = [];
   const vals: any[] = [];
   for (const key of allowed) {
     if (body[key] !== undefined) {
-      let val = Array.isArray(body[key]) ? JSON.stringify(body[key]) : body[key];
+      // FIX: payout_details is a JSON object on the wire; the column is TEXT.
+      // Same convention as specialties/languages — Array.isArray(payload)
+      // serializes those, but payout_details is an object so we handle it
+      // explicitly here.
+      let val: any;
+      if (key === 'payout_details') {
+        val = JSON.stringify(body[key] ?? {});
+      } else if (Array.isArray(body[key])) {
+        val = JSON.stringify(body[key]);
+      } else {
+        val = body[key];
+      }
       // Cap rate fields to prevent abuse
       if (['coins_per_minute', 'audio_coins_per_minute', 'video_coins_per_minute'].includes(key)) {
         const num = Number(val);
@@ -329,7 +349,19 @@ hostProtected.get('/me', async (c) => {
      JOIN users u ON u.id = h.user_id WHERE h.user_id = ?`
   ).bind(sub).first<any>();
   if (!h) return c.json({ error: 'Not a host' }, 403);
-  return c.json({ ...h, specialties: JSON.parse(h.specialties || '[]'), languages: JSON.parse(h.languages || '[]') });
+  // FIX: parse JSON-encoded TEXT columns. payout_details is the new addition;
+  // a missing/null/malformed value collapses to {} so the client can read it
+  // unconditionally without a try/catch.
+  let payoutDetails: Record<string, string> = {};
+  if (h.payout_details) {
+    try { payoutDetails = JSON.parse(h.payout_details); } catch { payoutDetails = {}; }
+  }
+  return c.json({
+    ...h,
+    specialties: JSON.parse(h.specialties || '[]'),
+    languages: JSON.parse(h.languages || '[]'),
+    payout_details: payoutDetails,
+  });
 });
 
 export { host as hostsRouter, hostProtected as hostRouter };

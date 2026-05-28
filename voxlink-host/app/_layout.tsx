@@ -15,6 +15,7 @@ import { onForegroundMessage, setupBackgroundMessageHandler } from "@/services/f
 import { setupGlobalErrorHandler } from "@/services/ErrorReporter";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { loadHostSettings, getHostSettingsSync } from "@/utils/hostSettings";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ToastContainer } from "@/components/Toast";
@@ -137,9 +138,12 @@ function WebNotificationBridge({ seenCallIds }: { seenCallIds: React.MutableRefO
 
 function AppBridge() {
   const { receiveCall, activeCall } = useCall();
-  const { user, isLoggedIn, refreshProfile } = useAuth();
+  const { user, isLoggedIn, refreshProfile, setOnlineStatus } = useAuth();
   const activeCallRef = useRef(activeCall);
   const seenCallIds = useRef(new Set<string>());
+  // FIX (Auto Go Online): track whether we've already auto-flipped online for
+  // this login session so we don't fight the user if they manually toggle off.
+  const autoOnlineRunRef = useRef(false);
 
   useEffect(() => { activeCallRef.current = activeCall; }, [activeCall]);
 
@@ -147,8 +151,30 @@ function AppBridge() {
   useEffect(() => {
     if (!isLoggedIn) {
       seenCallIds.current.clear();
+      autoOnlineRunRef.current = false; // Reset so next login can auto-online again
     }
   }, [isLoggedIn]);
+
+  // FIX (Auto Go Online on App Open):
+  // The Settings toggle persisted to AsyncStorage but no code ever consulted
+  // it on app start. Now: once on first login of a session, if the host has
+  // autoOnline=true and is currently offline, flip them online. The
+  // autoOnlineRunRef guard prevents re-flipping on every render and respects
+  // a manual offline toggle within the same session.
+  useEffect(() => {
+    if (!isLoggedIn || !user?.id || user.role !== "host") return;
+    if (autoOnlineRunRef.current) return;
+    const settings = getHostSettingsSync();
+    if (!settings.autoOnline) return;
+    if (user.isOnline) return; // Already online — nothing to do.
+    autoOnlineRunRef.current = true;
+    setOnlineStatus(true).catch((e) => {
+      console.warn("[AppBridge] Auto Go Online failed:", e);
+      // Revert the run-once flag so a network blip doesn't permanently disable
+      // auto-online for this session — user can re-foreground to retry.
+      autoOnlineRunRef.current = false;
+    });
+  }, [isLoggedIn, user?.id, user?.role, user?.isOnline, setOnlineStatus]);
 
   // Polling fallback — fires every 4 s while logged in.
   useEffect(() => {
@@ -258,6 +284,7 @@ function RootLayoutNav() {
         <Stack.Screen name="about" />
         <Stack.Screen name="referral" />
         <Stack.Screen name="earnings-history" />
+        <Stack.Screen name="payout-method" />
       </Stack>
       <ToastContainer />
       <OfflineBanner />
@@ -287,6 +314,11 @@ export default function RootLayout() {
   useEffect(() => {
     configurePushNotifications();
     setupGlobalErrorHandler();
+    // FIX: load persisted host settings into the in-memory cache before any
+    // service tries to consult them (NotificationService.shouldShowNotification,
+    // AppBridge auto-online check). Fire-and-forget — load is fast and
+    // consumers fall back to defaults until it completes.
+    loadHostSettings();
   }, []);
 
   if (!fontsLoaded && !fontError) return null;

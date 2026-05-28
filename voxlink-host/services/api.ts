@@ -163,6 +163,10 @@ export const API = {
   getHostReviews: (id: string) => apiRequest<any[]>('GET', `/api/hosts/${id}/reviews`),
   becomeHost: (data: any) => apiRequest('POST', '/api/user/become-host', data),
   updateHostProfile: (data: any) => apiRequest('PATCH', '/api/host/me', data),
+  // FIX: getHostMe was missing — the new payout-method screen needs to fetch
+  // the current host record (including payout_method/payout_details) on mount
+  // so the form pre-fills with whatever the host saved last time.
+  getHostMe: () => apiRequest<any>('GET', '/api/host/me'),
   setHostOnline: (online: boolean) => apiRequest('PATCH', '/api/host/status', { is_online: online }),
   getEarnings: () => apiRequest<any>('GET', '/api/host/earnings'),
 

@@ -14,9 +14,7 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { PermissionDialog, PERMISSION_CONFIGS } from "@/components/PermissionDialog";
 import { useLanguage } from "@/context/LanguageContext";
 import { LANGUAGES } from "@/localization";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-
-const SETTINGS_KEY = "host_settings_v1";
+import { useHostSettings } from "@/utils/hostSettings";
 
 function Row({
   icon, iconImg, label, value, onPress, isSwitch, switchVal, onSwitch, danger
@@ -65,10 +63,13 @@ export default function HostSettingsScreen() {
   const currentLangLabel = LANGUAGES.find((l) => l.code === language)?.name ?? "English";
 
   const [showNotifDialog, setShowNotifDialog] = useState(false);
-  const [callNotif, setCallNotif] = useState(true);
-  const [chatNotif, setChatNotif] = useState(true);
-  const [coinNotif, setCoinNotif] = useState(true);
-  const [autoOnline, setAutoOnline] = useState(false);
+
+  // FIX: switched from per-screen useState + AsyncStorage to the centralized
+  // useHostSettings hook. The previous setup persisted toggles only this
+  // screen ever read — the FCM handler, AppBridge, and other services had no
+  // way to consult them. Now the same store is shared everywhere.
+  const { settings, update } = useHostSettings();
+  const { autoOnline, dndMode, callNotif, chatNotif, coinNotif } = settings;
 
   const topPad = insets.top;
 
@@ -77,32 +78,11 @@ export default function HostSettingsScreen() {
     permissions.notifications.status === "blocked" ||
     (permissions.notifications.status === "denied" && !permissions.notifications.canAskAgain);
 
-  useEffect(() => {
-    AsyncStorage.getItem(SETTINGS_KEY)
-      .then((raw) => {
-        if (!raw) return;
-        const saved = JSON.parse(raw);
-        if (saved.callNotif !== undefined) setCallNotif(saved.callNotif);
-        if (saved.chatNotif !== undefined) setChatNotif(saved.chatNotif);
-        if (saved.coinNotif !== undefined) setCoinNotif(saved.coinNotif);
-        if (saved.autoOnline !== undefined) setAutoOnline(saved.autoOnline);
-      })
-      .catch(() => {});
-  }, []);
-
-  const persist = useCallback((patch: Record<string, boolean>) => {
-    AsyncStorage.getItem(SETTINGS_KEY)
-      .then((raw) => {
-        const current = raw ? JSON.parse(raw) : {};
-        return AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...current, ...patch }));
-      })
-      .catch(() => {});
-  }, []);
-
-  const handleCallNotif = (v: boolean) => { setCallNotif(v); persist({ callNotif: v }); };
-  const handleChatNotif = (v: boolean) => { setChatNotif(v); persist({ chatNotif: v }); };
-  const handleCoinNotif = (v: boolean) => { setCoinNotif(v); persist({ coinNotif: v }); };
-  const handleAutoOnline = (v: boolean) => { setAutoOnline(v); persist({ autoOnline: v }); };
+  const handleCallNotif = useCallback((v: boolean) => update({ callNotif: v }), [update]);
+  const handleChatNotif = useCallback((v: boolean) => update({ chatNotif: v }), [update]);
+  const handleCoinNotif = useCallback((v: boolean) => update({ coinNotif: v }), [update]);
+  const handleAutoOnline = useCallback((v: boolean) => update({ autoOnline: v }), [update]);
+  const handleDndMode = useCallback((v: boolean) => update({ dndMode: v }), [update]);
 
   const handlePushNotifToggle = (value: boolean) => {
     if (value) {
@@ -191,8 +171,26 @@ export default function HostSettingsScreen() {
         <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Availability</Text>
         <View style={[styles.card, { backgroundColor: colors.card }]}>
           <Row icon="clock" label="Auto Go Online on App Open" isSwitch switchVal={autoOnline} onSwitch={handleAutoOnline} onPress={() => {}} />
-          <Row icon="phone-off" iconImg={require("@/assets/icons/ic_call_end.png")} label="Do Not Disturb Mode" onPress={() => Alert.alert("Coming Soon", "DND mode will be available in a future update.")} />
-          <Row icon="calendar" iconImg={require("@/assets/icons/ic_calendar.png")} label="Availability Schedule" onPress={() => Alert.alert("Coming Soon", "Schedule settings coming soon.")} />
+          <Row
+            icon="phone-off"
+            iconImg={require("@/assets/icons/ic_call_end.png")}
+            label="Do Not Disturb Mode"
+            value={dndMode ? "On — silencing notifications" : undefined}
+            isSwitch
+            switchVal={dndMode}
+            onSwitch={handleDndMode}
+            onPress={() => {}}
+          />
+          <Row
+            icon="calendar"
+            iconImg={require("@/assets/icons/ic_calendar.png")}
+            label="Availability Schedule"
+            value="Coming soon"
+            onPress={() => Alert.alert(
+              "Availability Schedule",
+              "Scheduled availability is coming in a future update. For now, use Do Not Disturb Mode to mute notifications when you're unavailable, or toggle online/offline manually."
+            )}
+          />
         </View>
 
         <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Push Notifications</Text>
@@ -218,7 +216,7 @@ export default function HostSettingsScreen() {
 
         <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Earnings</Text>
         <View style={[styles.card, { backgroundColor: colors.card }]}>
-          <Row icon="trending-up" iconImg={require("@/assets/icons/ic_arrow_up.png")} label="Payout Method" value="Bank Account" onPress={() => Alert.alert("Coming Soon", "Payout settings coming soon.")} />
+          <Row icon="trending-up" iconImg={require("@/assets/icons/ic_arrow_up.png")} label="Payout Method" onPress={() => router.push("/payout-method")} />
           <Row icon="file-text" iconImg={require("@/assets/icons/ic_withdraw.png")} label="Withdraw Earnings" onPress={() => router.push("/(tabs)/wallet")} />
           <Row icon="gift" iconImg={require("@/assets/icons/ic_bonus.png")} label="Refer & Earn" onPress={() => router.push("/referral")} />
         </View>

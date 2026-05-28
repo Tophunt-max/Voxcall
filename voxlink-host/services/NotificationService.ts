@@ -4,6 +4,7 @@
 import { Platform } from "react-native";
 import { appendToArray, getItem, setItem, StorageKeys } from "@/utils/storage";
 import { requestFCMPermission, getFCMToken, setupBackgroundMessageHandler } from "./fcm";
+import { shouldShowNotification } from "@/utils/hostSettings";
 
 export interface InAppNotification {
   id: string;
@@ -74,12 +75,36 @@ export async function registerForPushNotifications(): Promise<string | null> {
 
 // ─── Local / Scheduled Notification ─────────────────────────────────────────
 
+/** Map notification data.type to the user-facing setting bucket. */
+function dataTypeToPrefBucket(t: unknown): "call" | "chat" | "coin" | "system" | "review" | "payment" {
+  switch (t) {
+    case "incoming_call": return "call";
+    case "chat_message": return "chat";
+    case "earning": return "coin";
+    case "review": return "review";
+    case "payment": return "payment";
+    default: return "system";
+  }
+}
+
 export async function scheduleLocalNotification(params: {
   title: string;
   body: string;
   data?: Record<string, unknown>;
   delaySeconds?: number;
 }): Promise<void> {
+  // FIX: previously this function ALWAYS showed the notification regardless
+  // of the user's preferences in Settings. The toggles in settings.tsx were
+  // saved to AsyncStorage but never consulted here, so the user could turn
+  // off "Coin Earned Alerts" and still receive them. Now we honor the per-
+  // type preference plus the DND master switch via shouldShowNotification().
+  // System/review/payment categories always show — those are operational
+  // alerts the host needs to see (KYC status, withdrawal status, etc.).
+  const bucket = dataTypeToPrefBucket(params.data?.type);
+  if (!shouldShowNotification(bucket)) {
+    return;
+  }
+
   if (Platform.OS === "web") {
     if (params.delaySeconds) {
       setTimeout(
