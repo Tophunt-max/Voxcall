@@ -206,14 +206,31 @@ async function reapStaleCalls(env: Env): Promise<void> {
 
       if (coinsCharged > 0) {
         const hostEarnings = Math.floor(coinsCharged * 0.7);
-        batchOps.push(
-          db.prepare(`UPDATE users SET coins = MAX(0, coins - ?) WHERE id = ?`).bind(coinsCharged, call.caller_id),
-          db.prepare(`UPDATE users SET coins = coins + ? WHERE id = ?`).bind(hostEarnings, call.host_user_id),
-          db.prepare(`INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?,?,?,?,?,?)`)
-            .bind(crypto.randomUUID(), call.caller_id, 'spend', -coinsCharged, `${call.type || 'audio'} call (auto-reaped)`, call.id),
-          db.prepare(`INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?,?,?,?,?,?)`)
-            .bind(crypto.randomUUID(), call.host_user_id, 'earn', hostEarnings, `${call.type || 'audio'} call earnings (auto-reaped)`, call.id),
-        );
+
+        // Atomic transfer: deduct caller and credit host in one statement.
+        // If caller has insufficient coins, EXISTS fails and ZERO rows update.
+        const transfer = await db.prepare(
+          `UPDATE users
+             SET coins = coins + CASE id
+               WHEN ?1 THEN -?2
+               WHEN ?3 THEN ?4
+               ELSE 0
+             END
+             WHERE id IN (?1, ?3)
+               AND EXISTS (SELECT 1 FROM users WHERE id = ?1 AND coins >= ?2)`
+        ).bind(call.caller_id, coinsCharged, call.host_user_id, hostEarnings).run();
+
+        if (transfer.meta?.changes === 2) {
+          // Both rows updated - record transactions
+          batchOps.push(
+            db.prepare(`INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?,?,?,?,?,?)`)
+              .bind(crypto.randomUUID(), call.caller_id, 'spend', -coinsCharged, `${call.type || 'audio'} call (auto-reaped)`, call.id),
+            db.prepare(`INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?,?,?,?,?,?)`)
+              .bind(crypto.randomUUID(), call.host_user_id, 'bonus', hostEarnings, `${call.type || 'audio'} call earnings (auto-reaped)`, call.id),
+          );
+        } else {
+          console.warn('[Cron] Atomic transfer failed for call', call.id, '- caller may have insufficient coins');
+        }
       }
 
       await db.batch(batchOps);
