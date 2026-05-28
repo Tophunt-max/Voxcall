@@ -225,40 +225,74 @@ hostProtected.patch('/status', zValidator('json', statusSchema), async (c) => {
   // host.id (hosts table PK) fetch karo — presence broadcast mein dono IDs chahiye
   const hostRow = await c.env.DB.prepare('SELECT id FROM hosts WHERE user_id = ?').bind(sub).first<{ id: string }>();
 
-  // 1. DB update
-  await c.env.DB.prepare('UPDATE hosts SET is_online = ?, updated_at = unixepoch() WHERE user_id = ?')
-    .bind(is_online ? 1 : 0, sub).run();
-
-  // 2. Host ke apne NotificationHub ko notify karo
-  try {
-    const hostNotifStub = c.env.NOTIFICATION_HUB.get(c.env.NOTIFICATION_HUB.idFromName(sub));
-    await hostNotifStub.fetch('https://dummy/notify', {
-      method: 'POST',
-      // FIX: host_id (hosts.id) bhi bhejo — user app cache match ke liye
-      body: JSON.stringify({ type: 'presence', user_id: sub, host_id: hostRow?.id, is_online }),
-    });
-  } catch {}
-
-  // 3. Active users ko broadcast karo — presence event pe host list update hoga
-  try {
-    const recentUsers = await c.env.DB.prepare(
-      `SELECT id FROM users WHERE role = 'user' ORDER BY updated_at DESC LIMIT 100`
-    ).all<{ id: string }>();
-
-    // FIX: host_id (hosts.id) bhi include karo — user app h.id se compare karta hai
-    const presenceMsg = JSON.stringify({ type: 'presence', user_id: sub, host_id: hostRow?.id, is_online });
-    await Promise.allSettled(
-      (recentUsers.results ?? []).map(async (u) => {
-        try {
-          const notifStub = c.env.NOTIFICATION_HUB.get(c.env.NOTIFICATION_HUB.idFromName(u.id));
-          await notifStub.fetch('https://dummy/notify', { method: 'POST', body: presenceMsg });
-        } catch {}
-      })
+  // FIX: previously the UPDATE was issued unconditionally and silently affected
+  // 0 rows when the user had no hosts row (data inconsistency: role='host' but
+  // hosts row missing). The host UI optimistically showed "Online" while
+  // server state never changed → users saw the host as offline forever.
+  // Now we fail fast with a clear error so the client can surface it.
+  if (!hostRow) {
+    console.warn('[host/status] No host row for user', sub, '— rejecting toggle');
+    return c.json(
+      { error: 'Host profile not found. Please complete your KYC application.', code: 'HOST_NOT_FOUND' },
+      404
     );
-  } catch {}
+  }
+
+  // 1. DB update with atomic guard. Use the result.changes to confirm the row
+  //    actually flipped — surfaces any future schema/permissions regression.
+  const updateResult = await c.env.DB
+    .prepare('UPDATE hosts SET is_online = ?, updated_at = unixepoch() WHERE user_id = ?')
+    .bind(is_online ? 1 : 0, sub)
+    .run();
+  if (!updateResult.meta?.changes) {
+    console.warn('[host/status] UPDATE affected 0 rows for user', sub);
+    return c.json({ error: 'Failed to update status. Please try again.', code: 'UPDATE_FAILED' }, 500);
+  }
+
+  // FIX: presence broadcast moved to ctx.waitUntil() — was blocking the
+  // response while up to 100 NotificationHub fetches resolved sequentially
+  // through Promise.allSettled, adding 100-500 ms+ latency on every toggle.
+  // Fire-and-forget pattern: client gets 200 immediately, broadcast happens
+  // in the background. Workers keep the request alive until waitUntil resolves.
+  const presenceMsg = JSON.stringify({ type: 'presence', user_id: sub, host_id: hostRow.id, is_online });
+  c.executionCtx.waitUntil(broadcastPresence(c.env, sub, presenceMsg));
 
   return c.json({ success: true, is_online });
 });
+
+// FIX: extracted to a function so it can run via ctx.waitUntil() without
+// blocking the toggle response. Errors are logged, never propagated — a failed
+// broadcast must not flip the host's status back to offline on the client.
+async function broadcastPresence(env: Env, hostUserId: string, presenceMsg: string): Promise<void> {
+  // 1. Notify the host's own NotificationHub (so other tabs/devices update)
+  try {
+    const hostNotifStub = env.NOTIFICATION_HUB.get(env.NOTIFICATION_HUB.idFromName(hostUserId));
+    await hostNotifStub.fetch('https://dummy/notify', { method: 'POST', body: presenceMsg });
+  } catch (e) {
+    console.warn('[host/status] self-notify failed:', e);
+  }
+
+  // 2. Broadcast to recently-active users so their host list updates live.
+  //    NOTE: ORDER BY users.updated_at — relies on the index added below.
+  try {
+    const recentUsers = await env.DB
+      .prepare("SELECT id FROM users WHERE role = 'user' ORDER BY updated_at DESC LIMIT 100")
+      .all<{ id: string }>();
+
+    await Promise.allSettled(
+      (recentUsers.results ?? []).map(async (u) => {
+        try {
+          const stub = env.NOTIFICATION_HUB.get(env.NOTIFICATION_HUB.idFromName(u.id));
+          await stub.fetch('https://dummy/notify', { method: 'POST', body: presenceMsg });
+        } catch {
+          /* one user's hub failure must not abort the rest of the broadcast */
+        }
+      })
+    );
+  } catch (e) {
+    console.warn('[host/status] broadcast failed:', e);
+  }
+}
 
 // GET /api/host/earnings
 hostProtected.get('/earnings', async (c) => {

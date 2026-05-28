@@ -200,7 +200,24 @@ export default function HostProfileScreen() {
             value={isOnline}
             onValueChange={async (v) => {
               setIsOnline(v);
-              try { await setOnlineStatus(v); } catch { setIsOnline(!v); showErrorToast("Failed to update online status."); }
+              try {
+                await setOnlineStatus(v);
+              } catch (e: any) {
+                setIsOnline(!v);
+                // FIX: surface specific server message (e.g. KYC missing) instead of
+                // a single generic toast that hides why the toggle keeps reverting.
+                const msg = String(e?.message || "");
+                if (msg.includes("HOST_NOT_FOUND") || msg.toLowerCase().includes("kyc")) {
+                  showErrorToast(
+                    "Host profile setup pending. Please complete your KYC application.",
+                    "Profile Incomplete"
+                  );
+                } else if (msg === "SESSION_EXPIRED") {
+                  // auto-logout in flight — no toast
+                } else {
+                  showErrorToast(msg || "Failed to update online status.");
+                }
+              }
             }}
             trackColor={{ false: colors.border, true: "#0BAF23" }}
             thumbColor="#fff"

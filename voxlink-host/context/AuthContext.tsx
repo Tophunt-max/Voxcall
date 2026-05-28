@@ -253,7 +253,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
     try {
       await apiRequest("PATCH", "/api/host/status", { is_online: online });
-    } catch (e) {
+    } catch (e: any) {
+      // FIX: surface the actual server error message to the caller so the
+      // UI can show specific guidance ("complete your KYC" vs "try again")
+      // instead of the generic "Status update karne mein error" toast.
+      // The server now returns 404 + code='HOST_NOT_FOUND' when the host
+      // record is missing — caller distinguishes that from a network error.
+
       // API fail hua — revert karo
       setState((prev) => {
         if (!prev.user) return prev;

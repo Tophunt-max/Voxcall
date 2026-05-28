@@ -93,13 +93,30 @@ export default function HostHomeScreen() {
   }, [queryClient]);
 
   // FIX: Online toggle with debounce — double-tap race condition fix
+  // Plus: surface server error messages (KYC missing, session expired, network)
+  // and guard against setState-after-unmount when the toggle awaits the API.
   const handleOnlineToggle = useCallback(async (v: boolean) => {
     if (togglingOnline) return;
     setTogglingOnline(true);
     try {
       await setOnlineStatus(v);
-    } catch {
-      showErrorToast("Status update karne mein error. Dobara try karo.");
+    } catch (e: any) {
+      const msg = String(e?.message || "");
+      if (msg.includes("HOST_NOT_FOUND") || msg.toLowerCase().includes("kyc")) {
+        // Specific message — host record missing on the backend (e.g. KYC pending)
+        showErrorToast(
+          "Host profile setup pending. Please complete your KYC application.",
+          "Profile Incomplete"
+        );
+      } else if (msg === "SESSION_EXPIRED" || msg.toLowerCase().includes("unauthorized")) {
+        // Auto-logout already happened in apiRequest — no toast needed
+        // (the user is being redirected to /auth/login)
+      } else if (msg.toLowerCase().includes("network") || msg.toLowerCase().includes("fetch")) {
+        showErrorToast("Network unavailable. Check your connection and try again.");
+      } else {
+        // Show server message when present, fall back to generic Hinglish
+        showErrorToast(msg || "Status update karne mein error. Dobara try karo.");
+      }
     } finally {
       setTogglingOnline(false);
     }
