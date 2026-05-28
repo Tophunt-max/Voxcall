@@ -65,17 +65,21 @@ export default function LoginScreen() {
         const provider = new GoogleAuthProvider();
         const result = await signInWithPopup(auth, provider);
         const u = result.user;
-        await handleGoogleProfileData(u.uid, u.displayName || "User", u.email || "", u.photoURL);
+        // Get Firebase ID token for secure server-side verification
+        const idToken = await u.getIdToken();
+        await handleGoogleProfileData(u.uid, u.displayName || "User", u.email || "", u.photoURL, idToken);
       } else {
         await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
         const signInResult = await GoogleSignin.signIn();
         const googleUser = signInResult.data?.user;
+        const idToken = signInResult.data?.idToken ?? null;
         if (!googleUser?.email) throw new Error("Could not retrieve Google account info.");
         await handleGoogleProfileData(
           googleUser.id,
           googleUser.name || "User",
           googleUser.email,
           googleUser.photo ?? null,
+          idToken,
         );
       }
     } catch (err: any) {
@@ -97,11 +101,11 @@ export default function LoginScreen() {
   };
 
   const handleGoogleProfileData = async (
-    id: string, name: string, email: string, photo?: string | null
+    id: string, name: string, email: string, photo?: string | null, idToken?: string | null
   ) => {
     try {
       const deviceId = await getDeviceId();
-      const data = await API.googleLogin(email, name, id, photo ?? null, deviceId);
+      const data = await API.googleLogin(email, name, id, photo ?? null, deviceId, idToken);
       const profile = {
         id: data.user.id || id,
         name: data.user.name || name,

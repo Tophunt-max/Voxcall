@@ -98,8 +98,8 @@ export const API = {
   quickLogin: (device_id?: string | null) =>
     apiRequest<{ token: string; user: any; is_returning?: boolean }>('POST', '/api/auth/quick-login', { device_id: device_id ?? null }, false),
   // FIX: Added device_id param (was missing — causes Google/QuickLogin account merge to fail)
-  googleLogin: (email: string, name: string, google_id: string, avatar_url?: string | null, device_id?: string | null) =>
-    apiRequest<{ token: string; user: any }>('POST', '/api/auth/google-login', { email, name, google_id, avatar_url, device_id }, false),
+  googleLogin: (email: string, name: string, google_id: string, avatar_url?: string | null, device_id?: string | null, id_token?: string | null) =>
+    apiRequest<{ token: string; user: any }>('POST', '/api/auth/google-login', { email, name, google_id, avatar_url, device_id: device_id ?? null, id_token: id_token ?? undefined }, false),
   forgotPassword: (email: string) =>
     apiRequest<{ success: boolean }>('POST', '/api/auth/forgot-password', { email }, false),
   resetPassword: (email: string, otp: string, new_password: string) =>
