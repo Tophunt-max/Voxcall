@@ -8,6 +8,13 @@ export interface Env {
   CF_CALLS_APP_ID: string;
   CF_CALLS_APP_SECRET: string;
   CF_ACCOUNT_ID: string;
+  // Cloudflare Realtime TURN credentials. Optional — when configured the
+  // /api/calls/ice-config endpoint hands out short-lived TURN credentials so
+  // clients on symmetric NATs / UDP-blocked networks (most mobile carriers)
+  // can actually connect. Without these we fall back to STUN + a public TURN
+  // relay which is fine for development but rate-limited in production.
+  TURN_KEY_ID?: string;
+  TURN_KEY_TOKEN?: string;
   FIREBASE_SERVICE_ACCOUNT: string;
   GOOGLE_PLAY_SERVICE_ACCOUNT_JSON?: string;
   RESEND_API_KEY?: string;

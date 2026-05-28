@@ -38,9 +38,20 @@ export function isWebRTCAvailable(): boolean {
   return RTC !== null && mediaDevicesRef !== null;
 }
 
-const ICE_SERVERS = [
+// FIX (TURN / no-audio on UDP-blocked networks): even with a serverless SFU
+// (Cloudflare Calls), clients on networks that block UDP outbound can't
+// reach the SFU's edge. TURN-over-TCP/TLS provides a 443 tunnel to the SFU.
+// We try to fetch the live config from /api/calls/ice-config (which mints
+// short-lived Cloudflare TURN credentials when configured) and fall back to
+// this static list if the fetch fails — so call setup never breaks because
+// of a transient backend hiccup.
+const FALLBACK_ICE_SERVERS = [
   { urls: 'stun:stun.cloudflare.com:3478' },
   { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+  { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
 ];
 
 export interface WebRTCCallbacks {
@@ -102,7 +113,35 @@ export class WebRTCService {
     if (this.destroyed || !RTC) return null;
 
     try {
-      this.pc = new RTC.RTCPeerConnection({ iceServers: ICE_SERVERS });
+      // FIX (TURN): fetch ICE config from backend (Cloudflare TURN creds when
+      // available) so calls work on networks that block UDP. If the request
+      // fails or returns nothing usable we fall back to the static list — we
+      // never want a transient backend error to make calls completely
+      // un-startable. The whole fetch is bounded by a 3 s soft timeout.
+      let iceServers: any[] = FALLBACK_ICE_SERVERS;
+      let iceCandidatePoolSize = 10;
+      let bundlePolicy: any = 'max-bundle';
+      let rtcpMuxPolicy: any = 'require';
+      try {
+        const ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+        const timer = ctrl ? setTimeout(() => ctrl.abort(), 3000) : null;
+        const cfg = await API.getIceConfig().finally(() => { if (timer) clearTimeout(timer); });
+        if (cfg && Array.isArray(cfg.iceServers) && cfg.iceServers.length > 0) {
+          iceServers = cfg.iceServers as any[];
+          if (typeof cfg.iceCandidatePoolSize === 'number') iceCandidatePoolSize = cfg.iceCandidatePoolSize;
+          if (cfg.bundlePolicy) bundlePolicy = cfg.bundlePolicy;
+          if (cfg.rtcpMuxPolicy) rtcpMuxPolicy = cfg.rtcpMuxPolicy;
+        }
+      } catch (e: any) {
+        console.warn('[WebRTC] ICE config fetch failed, using fallback:', e?.message ?? e);
+      }
+
+      this.pc = new RTC.RTCPeerConnection({
+        iceServers,
+        iceCandidatePoolSize,
+        bundlePolicy,
+        rtcpMuxPolicy,
+      });
 
       try {
         const MS = MediaStreamClass ?? (typeof MediaStream !== 'undefined' ? MediaStream : null);

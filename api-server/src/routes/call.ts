@@ -9,6 +9,95 @@ import type { Env, JWTPayload, HostRow, CallSessionRow, CallerData, HostData } f
 const call = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
 call.use('*', authMiddleware);
 
+// ─── ICE config ──────────────────────────────────────────────────────────────
+// Returns the iceServers list clients should pass to RTCPeerConnection. When
+// TURN_KEY_ID + TURN_KEY_TOKEN are configured we mint a short-lived (1h)
+// Cloudflare Realtime TURN credential so clients on symmetric NATs / UDP-
+// blocked networks (Jio / Airtel / corporate Wi-Fi) can actually relay.
+// Without those env vars we still return STUN + a public TURN relay (Open
+// Relay) so calls work in development.
+//
+// FIX (no-audio / one-way audio on mobile carriers): symmetric NAT prevents
+// peers from finding each other through STUN alone; without TURN the call
+// either silently fails ICE or only one direction's media gets through. The
+// previous client hardcoded only STUN, which is why audio went missing on
+// real devices behind cellular networks even though signalling succeeded.
+call.get('/ice-config', async (c) => {
+  const keyId = c.env.TURN_KEY_ID;
+  const keyToken = c.env.TURN_KEY_TOKEN;
+
+  // Default fallback: STUN + public TURN. Public TURN is rate-limited and
+  // not suitable for production scale but ensures dev / first-deploy users
+  // are not blocked by NAT issues.
+  const fallback = {
+    iceServers: [
+      { urls: 'stun:stun.cloudflare.com:3478' },
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+      { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+      { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+    ],
+    iceCandidatePoolSize: 10,
+    bundlePolicy: 'max-bundle' as const,
+    rtcpMuxPolicy: 'require' as const,
+    source: 'fallback' as const,
+  };
+
+  if (!keyId || !keyToken) {
+    return c.json(fallback);
+  }
+
+  try {
+    const res = await fetch(`https://rtc.live.cloudflare.com/v1/turn/keys/${keyId}/credentials/generate`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${keyToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ ttl: 3600 }),
+    });
+
+    if (!res.ok) {
+      console.warn('[ice-config] Cloudflare TURN credential request failed:', res.status, await res.text().catch(() => ''));
+      return c.json(fallback);
+    }
+
+    const data = await res.json<any>();
+    // Cloudflare's response shape: { iceServers: { urls: [...], username, credential }, ttl }
+    // RTCPeerConnection accepts both array-of-urls and a single-url-per-entry,
+    // so we normalize to a flat array that's safe for every browser.
+    const cfServers: any[] = [];
+    const iceField = data?.iceServers;
+    if (Array.isArray(iceField)) {
+      cfServers.push(...iceField);
+    } else if (iceField && typeof iceField === 'object') {
+      cfServers.push(iceField);
+    }
+
+    if (cfServers.length === 0) {
+      return c.json(fallback);
+    }
+
+    return c.json({
+      iceServers: [
+        // Keep the public STUN at the front for fast srflx candidate gathering.
+        { urls: 'stun:stun.cloudflare.com:3478' },
+        { urls: 'stun:stun.l.google.com:19302' },
+        ...cfServers,
+      ],
+      iceCandidatePoolSize: 10,
+      bundlePolicy: 'max-bundle' as const,
+      rtcpMuxPolicy: 'require' as const,
+      ttl: data?.ttl ?? 3600,
+      source: 'cloudflare' as const,
+    });
+  } catch (err: any) {
+    console.warn('[ice-config] error fetching Cloudflare TURN credentials:', err?.message ?? err);
+    return c.json(fallback);
+  }
+});
+
 const initiateSchema = z.object({
   host_id: z.string().min(1),
   type: z.enum(['audio', 'video']).optional(),

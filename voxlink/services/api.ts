@@ -201,6 +201,20 @@ export const API = {
 
   getCallSession: (sessionId: string) =>
     apiRequest<any>('GET', `/api/calls/${sessionId}`),
+  // FIX (no-audio / one-way audio on mobile carriers): fetch ICE config
+  // (STUN + TURN) from the backend so RTCPeerConnection has TURN relay
+  // candidates available. Without TURN, peers behind symmetric NATs (most
+  // mobile carrier networks) silently fail to negotiate media even when
+  // signalling succeeds.
+  getIceConfig: () =>
+    apiRequest<{
+      iceServers: Array<{ urls: string | string[]; username?: string; credential?: string }>;
+      iceCandidatePoolSize?: number;
+      bundlePolicy?: string;
+      rtcpMuxPolicy?: string;
+      ttl?: number;
+      source?: string;
+    }>('GET', '/api/calls/ice-config'),
   pushTracks: (sessionId: string, sdp: string, type: string, tracks: Array<{ mid: string; trackName: string }>) =>
     apiRequest<{ answer: { type: string; sdp: string }; tracks: any[]; role: string }>('POST', `/api/calls/${sessionId}/sdp/push`, { sdp, type, tracks }),
   pullTracks: (sessionId: string, trackNames: string[]) =>
