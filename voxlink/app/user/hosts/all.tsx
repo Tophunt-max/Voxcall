@@ -16,8 +16,10 @@ export default function AllHostsScreen() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    API.getHosts().then((data) => {
-      const mapped = (data || []).map((h: any) => ({
+    // FIX: API.getHosts now returns { hosts, nextCursor } — read .hosts before mapping
+    API.getHosts().then((res) => {
+      const list = res?.hosts ?? [];
+      const mapped = list.map((h: any) => ({
         ...h,
         avatar: resolveMediaUrl(h.avatar_url || h.avatar) || `https://api.dicebear.com/7.x/avataaars/svg?seed=${h.id}`,
       }));

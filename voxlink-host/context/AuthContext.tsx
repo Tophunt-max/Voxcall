@@ -108,7 +108,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isLoading: true,
   });
 
-  const logoutRef = useRef<() => Promise<void>>();
+  // FIX: React 19 + TS 5.9 require an explicit initial value for useRef.
+  // Use null + the existing logoutRef.current?.() optional-chain for read sites.
+  const logoutRef = useRef<(() => Promise<void>) | null>(null);
 
   // Register session-expired callback so fetchFreshProfile can trigger auto-logout
   useEffect(() => {

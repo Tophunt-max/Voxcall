@@ -95,12 +95,15 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
 
   // WebSocket notification (foreground/background)
   // Fix H2: include caller_name so host sees caller's name instead of "Incoming Call"
+  // FIX: also include max_seconds so host's call timer has a real cap (prevents
+  // running past the caller's balance on the host UI when the polling fallback is bypassed).
+  const maxSeconds = Math.floor((caller.coins / ratePerMin) * 60);
   try {
     const notifId = c.env.NOTIFICATION_HUB.idFromName(host.user_id);
     const notifStub = c.env.NOTIFICATION_HUB.get(notifId);
     await notifStub.fetch('https://dummy/notify', {
       method: 'POST',
-      body: JSON.stringify({ type: 'incoming_call', session_id: sessionId, caller_id: sub, call_type: callType, caller_name: caller.name ?? 'Caller', rate_per_minute: ratePerMin }),
+      body: JSON.stringify({ type: 'incoming_call', session_id: sessionId, caller_id: sub, call_type: callType, caller_name: caller.name ?? 'Caller', rate_per_minute: ratePerMin, max_seconds: maxSeconds }),
     });
   } catch (e) {
     // BUG #8 FIX: Log notification failures instead of silently swallowing
@@ -125,7 +128,6 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
     console.warn('[initiate] FCM notification failed:', e);
   }
 
-  const maxSeconds = Math.floor((caller.coins / ratePerMin) * 60);
   return c.json({
     session_id: sessionId,
     cf_session_id: null,
@@ -400,7 +402,7 @@ call.post('/:id/answer', async (c) => {
   });
 });
 
-async function deriveRole(db: any, sessionId: string, userId: string): Promise<{ session: CallSessionRow; role: 'caller' | 'host' } | null> {
+async function deriveRole(db: D1Database, sessionId: string, userId: string): Promise<{ session: CallSessionRow; role: 'caller' | 'host' } | null> {
   const session = await db.prepare(
     `SELECT cs.*, h.user_id as host_user_id FROM call_sessions cs
      LEFT JOIN hosts h ON h.id = cs.host_id
@@ -787,14 +789,24 @@ call.get('/pending-for-host', async (c) => {
   const host = await db.prepare('SELECT id FROM hosts WHERE user_id = ?').bind(sub).first<{ id: string }>();
   if (!host) return c.json(null);
   const cutoff = Math.floor(Date.now() / 1000) - 90;
+  // FIX: also fetch caller.coins so we can compute max_seconds — without it the host
+  // app's call timer has no upper bound (host UI keeps the call alive past the
+  // caller's balance even though the server's atomic guard refuses to charge).
   const session = await db.prepare(
-    `SELECT cs.id, cs.caller_id, cs.type as call_type, cs.rate_per_minute, u.name as caller_name, u.avatar_url as caller_avatar
+    `SELECT cs.id, cs.caller_id, cs.type as call_type, cs.rate_per_minute,
+            u.name as caller_name, u.avatar_url as caller_avatar, u.coins as caller_coins
      FROM call_sessions cs
      JOIN users u ON u.id = cs.caller_id
      WHERE cs.host_id = ? AND cs.status = 'pending' AND cs.created_at > ?
      ORDER BY cs.created_at DESC LIMIT 1`
   ).bind(host.id, cutoff).first<any>();
-  return c.json(session ?? null);
+  if (!session) return c.json(null);
+  const rate = session.rate_per_minute ?? 5;
+  const callerCoins = session.caller_coins ?? 0;
+  const max_seconds = Math.floor((callerCoins / rate) * 60);
+  // Strip caller_coins from the response (internal only) and append max_seconds
+  const { caller_coins, ...rest } = session;
+  return c.json({ ...rest, max_seconds });
 });
 
 call.get('/active', async (c) => {

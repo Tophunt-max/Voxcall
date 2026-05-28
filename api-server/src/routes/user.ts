@@ -189,7 +189,9 @@ user.delete('/me', async (c) => {
   // permanently anonymise a user's profile. Google-only accounts (no
   // password_hash) keep the no-password behaviour because they have no
   // password to verify; a Google ID token re-auth flow can be added later.
-  const body = await c.req.json<{ password?: string }>().catch(() => ({}));
+  // FIX: type the catch fallback so TS doesn't widen body to `{...} | {}` and
+  // reject the body.password access. Empty fallback still yields password=undefined.
+  const body = await c.req.json<{ password?: string }>().catch(() => ({} as { password?: string }));
   const userRow = await db.prepare('SELECT password_hash, google_id FROM users WHERE id = ?').bind(sub).first<any>();
   if (!userRow) return c.json({ error: 'User not found' }, 404);
   if (userRow.password_hash) {

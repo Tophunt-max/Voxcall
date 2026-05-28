@@ -171,7 +171,7 @@ function AppBridge() {
             (pending.call_type as "audio" | "video") ?? "audio",
             pending.id,
             pending.rate_per_minute,
-            (pending as any).max_seconds
+            pending.max_seconds
           );
           router.push("/calls/incoming");
         }

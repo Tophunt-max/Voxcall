@@ -185,7 +185,7 @@ export const API = {
   rateCall: (session_id: string, rating: number, comment?: string) =>
     apiRequest('POST', '/api/calls/rate', { session_id, rating, comment }),
   getCallHistory: () => apiRequest<any[]>('GET', '/api/calls/history'),
-  getPendingCall: () => apiRequest<{ id: string; caller_id: string; call_type: string; caller_name: string; caller_avatar?: string; rate_per_minute?: number } | null>('GET', '/api/calls/pending-for-host'),
+  getPendingCall: () => apiRequest<{ id: string; caller_id: string; call_type: string; caller_name: string; caller_avatar?: string; rate_per_minute?: number; max_seconds?: number } | null>('GET', '/api/calls/pending-for-host'),
   getCallSession: (sessionId: string) =>
     apiRequest<any>('GET', `/api/calls/${sessionId}`),
 
@@ -202,7 +202,7 @@ export const API = {
   getMessages: (room_id: string, before?: number) =>
     apiRequest<any[]>('GET', `/api/chat/rooms/${room_id}/messages${before ? `?before=${before}` : ''}`),
   sendMessage: (room_id: string, content: string, media_url?: string, media_type?: string) =>
-    apiRequest('POST', `/api/chat/rooms/${room_id}/messages`, { content, media_url, media_type }),
+    apiRequest<{ id?: string; sender_id?: string; content?: string; created_at?: number }>('POST', `/api/chat/rooms/${room_id}/messages`, { content, media_url, media_type }),
   getChatStatus: (host_id: string) =>
     apiRequest<{ unlocked: boolean; reason: string }>('GET', `/api/hosts/${host_id}/chat-status`),
 

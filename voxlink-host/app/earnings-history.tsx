@@ -65,7 +65,7 @@ function mapApiTx(tx: any): Transaction {
 export default function EarningsHistoryScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { user, refreshBalance } = useAuth();
+  const { user, refreshProfile } = useAuth();
   const [tab, setTab] = useState<Tab>("All");
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
@@ -79,7 +79,7 @@ export default function EarningsHistoryScreen() {
     try {
       const data = await API.getCoinHistory();
       setTransactions(data.map(mapApiTx));
-      await refreshBalance();
+      await refreshProfile();
     } catch {
       setTransactions([]);
       showErrorToast("Failed to load earnings history.");

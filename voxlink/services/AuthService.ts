@@ -19,7 +19,8 @@ function mapUser(u: any): UserProfile {
     avatar: u.avatar_url,
     bio: u.bio,
     gender: u.gender,
-    isVerified: u.is_verified,
+    // FIX: is_verified is not part of UserProfile and has no consumer in the app.
+    // Re-add to UserProfile if/when verification UI is wired up.
   };
 }
 

@@ -8,10 +8,11 @@ import {
   Platform,
 } from "react-native";
 import { useColors } from "@/hooks/useColors";
-import { Host } from "@/data/mockData";
+// FIX: mockData exports HostProfile (not Host) — old name caused TS2305.
+import { HostProfile } from "@/data/mockData";
 
 interface Props {
-  host: Host;
+  host: HostProfile;
   onPress: () => void;
   compact?: boolean;
   onTalkNow?: () => void;

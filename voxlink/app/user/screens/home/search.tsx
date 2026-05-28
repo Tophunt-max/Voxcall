@@ -78,7 +78,7 @@ function ListenerCard({ host, onPress, onAudioCall, onVideoCall }: { host: Retur
             <Text style={styles.langText}>{host.languages.join(", ")}</Text>
           </View>
           <View style={styles.topicsRow}>
-            {host.specialties.slice(0, 2).map((t) => (
+            {host.specialties.slice(0, 2).map((t: string) => (
               <View key={t} style={styles.topicChip}>
                 <Text style={styles.topicChipText} numberOfLines={1}>{t}</Text>
               </View>
@@ -162,8 +162,9 @@ export default function ListenerScreen() {
     try {
       const params: any = {};
       if (selectedTopic !== "All") params.topic = selectedTopic;
-      const data = await API.getHosts(params);
-      setHosts(data.map(mapApiHost));
+      // FIX: API.getHosts returns { hosts, nextCursor } — read .hosts before mapping
+      const res = await API.getHosts(params);
+      setHosts((res?.hosts ?? []).map(mapApiHost));
     } catch {
       setHosts([]);
       showErrorToast("Failed to load listeners.");

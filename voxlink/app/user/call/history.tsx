@@ -144,7 +144,6 @@ export default function CallHistoryScreen() {
           data={filtered}
           keyExtractor={(i) => i.id}
           renderItem={renderItem}
-          estimatedItemSize={80}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingBottom: 30 }}
         />

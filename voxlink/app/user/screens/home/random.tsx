@@ -316,7 +316,9 @@ export default function RandomScreen() {
         if (!isMounted.current) return;
         if (res.matched && res.host) {
           setMatchedHost(res.host);
-          setAdminCoinRate(res.host?.coins_per_minute ?? res.coins_per_minute ?? 5);
+          // FIX: matchFind response shape is { matched, host?, message? } — there is
+          // no top-level coins_per_minute. Read it off the host object only.
+          setAdminCoinRate(res.host?.coins_per_minute ?? 5);
           setPhase("found");
           if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
         } else {
@@ -494,6 +496,9 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: BG },
   bg: { ...StyleSheet.absoluteFillObject },
   ripplePositioner: { position: "absolute", right: -170, width: 370, height: 370, alignItems: "center", justifyContent: "center" },
+  // FIX: missing style — RippleRings() referenced styles.rippleContainer (TS2339).
+  // Mirrors matchRippleWrap pattern: fills the parent positioner and centers the rings.
+  rippleContainer: { ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "center" },
   rippleRing: { position: "absolute", width: 370, height: 370, borderRadius: 185, backgroundColor: RIPPLE_C },
   dotBg: { position: "absolute", left: 0, right: 0, width: SW, height: 300 },
   circleImgWrap: { position: "absolute", right: -140, width: CIRCLE_IMG_SIZE, height: CIRCLE_IMG_SIZE, borderRadius: CIRCLE_IMG_SIZE / 2, overflow: "hidden", opacity: 0.55 },

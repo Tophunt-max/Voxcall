@@ -27,7 +27,11 @@ export default function SearchHostsScreen() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    API.getHosts().then(setHosts).catch(() => { setHosts([]); showErrorToast("Failed to load hosts."); }).finally(() => setLoading(false));
+    // FIX: API.getHosts returns { hosts, nextCursor } — extract .hosts before setting
+    API.getHosts()
+      .then((res) => setHosts(res?.hosts ?? []))
+      .catch(() => { setHosts([]); showErrorToast("Failed to load hosts."); })
+      .finally(() => setLoading(false));
   }, []);
 
   const filtered = useMemo(() => {

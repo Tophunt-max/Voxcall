@@ -142,7 +142,6 @@ export default function HostCallsScreen() {
         <FlashList
           data={filtered}
           keyExtractor={c => c.id}
-          estimatedItemSize={90}
           contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 100, paddingTop: 8 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor="#A00EE7" />}
           ListEmptyComponent={

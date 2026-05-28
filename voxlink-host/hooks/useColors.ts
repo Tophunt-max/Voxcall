@@ -16,9 +16,12 @@ import colors from "@/constants/colors";
  */
 export function useColors() {
   const scheme = useColorScheme();
+  // FIX: cast through `unknown` because `colors` includes a numeric `radius` that
+  // does not satisfy `Record<string, palette>`. The `"dark" in colors` guard
+  // ensures the access is safe at runtime.
   const palette =
     scheme === "dark" && "dark" in colors
-      ? (colors as Record<string, typeof colors.light>).dark
+      ? (colors as unknown as { dark: typeof colors.light }).dark
       : colors.light;
   return { ...palette, radius: colors.radius };
 }
