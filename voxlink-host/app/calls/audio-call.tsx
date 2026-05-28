@@ -17,6 +17,46 @@ import * as Haptics from "expo-haptics";
 
 const useNativeDriverValue = Platform.OS !== "web";
 
+// FIX (no-audio bug): on web, the remote audio track will not play unless
+// it is attached to an <audio>/<video> element. The peer connection alone
+// does not produce sound. Mount a hidden <audio srcObject={remoteStream}/>
+// so audio calls actually have audio on web. On native, react-native-webrtc
+// routes audio through the audio session automatically — no element needed.
+function RemoteAudioMount({ stream }: { stream: any }) {
+  const ref = useRef<any>(null);
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    const el = ref.current;
+    if (!el || !stream) return;
+    try { el.srcObject = stream; } catch {}
+    const tryPlay = () => {
+      const p = el.play?.();
+      if (p && typeof p.catch === "function") {
+        p.catch((err: any) => {
+          console.warn("[audio-call] remote audio play() rejected:", err?.message ?? err);
+          const retry = () => {
+            el.play?.().catch(() => {});
+            try { window.removeEventListener("click", retry); } catch {}
+            try { window.removeEventListener("touchend", retry); } catch {}
+          };
+          try {
+            window.addEventListener("click", retry, { once: true } as any);
+            window.addEventListener("touchend", retry, { once: true } as any);
+          } catch {}
+        });
+      }
+    };
+    tryPlay();
+  }, [stream]);
+  if (Platform.OS !== "web" || !stream) return null;
+  return React.createElement("audio", {
+    ref,
+    autoPlay: true,
+    playsInline: true,
+    style: { width: 1, height: 1, opacity: 0, position: "absolute", pointerEvents: "none" },
+  });
+}
+
 export default function AudioCallScreen() {
   const insets = useSafeAreaInsets();
   const { activeCall, endCall, toggleMute, toggleSpeaker, markCallActive } = useCall();
@@ -263,6 +303,8 @@ export default function AudioCallScreen() {
       end={{ x: 1, y: 1 }}
       style={[styles.screen, { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 20 }]}
     >
+      <RemoteAudioMount stream={webrtc.remoteStream} />
+
       <PermissionDialog
         visible={showMicDialog}
         config={{ ...PERMISSION_CONFIGS.microphone, isBlocked }}

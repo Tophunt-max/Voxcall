@@ -31,13 +31,41 @@ try {
 
 // ─── StreamView ──────────────────────────────────────────────────────────────
 // Renders a MediaStream as video. Native: RTCView; Web: <video> srcObject.
-function StreamView({ stream, style, mirror = false }: { stream: any; style?: any; mirror?: boolean }) {
+// FIX (no-audio bug): on web we MUST attach the MediaStream to a <video> /
+// <audio> element for the remote audio track to actually play. Browsers do
+// not auto-play tracks just because they're in an RTCPeerConnection. We also
+// explicitly call .play() because some mobile browsers (esp. iOS Safari)
+// ignore the `autoPlay` attribute even after a user gesture.
+function StreamView({ stream, style, mirror = false, audioOnly = false }: { stream: any; style?: any; mirror?: boolean; audioOnly?: boolean }) {
   const videoRef = useRef<any>(null);
 
   useEffect(() => {
-    if (Platform.OS === 'web' && videoRef.current && stream) {
-      videoRef.current.srcObject = stream;
-    }
+    if (Platform.OS !== 'web') return;
+    const el = videoRef.current;
+    if (!el || !stream) return;
+    try { el.srcObject = stream; } catch {}
+    // Explicit play() — autoPlay alone is unreliable on iOS Safari / Chrome
+    // mobile when the page is in the background or the track was added late.
+    const tryPlay = () => {
+      const p = el.play?.();
+      if (p && typeof p.catch === 'function') {
+        p.catch((err: any) => {
+          // Most common reason: autoplay policy. We re-try on the next user
+          // tap/click so the call doesn't stay silent forever.
+          console.warn('[StreamView] play() rejected:', err?.message ?? err);
+          const retry = () => {
+            el.play?.().catch(() => {});
+            window.removeEventListener('click', retry);
+            window.removeEventListener('touchend', retry);
+          };
+          try {
+            window.addEventListener('click', retry, { once: true });
+            window.addEventListener('touchend', retry, { once: true });
+          } catch {}
+        });
+      }
+    };
+    tryPlay();
   }, [stream]);
 
   if (!stream) return null;
@@ -52,10 +80,17 @@ function StreamView({ stream, style, mirror = false }: { stream: any; style?: an
         ...StyleSheet.flatten(style),
         objectFit: 'cover',
         transform: mirror ? 'scaleX(-1)' : undefined,
+        // For audio-only mounts, render a 1x1 invisible element. We can't
+        // use display:none because some browsers pause playback when the
+        // element is fully removed from layout.
+        ...(audioOnly ? { width: 1, height: 1, opacity: 0, position: 'absolute', pointerEvents: 'none' } : {}),
       },
     });
   }
 
+  // On native, react-native-webrtc routes audio through the audio session
+  // automatically — we only need RTCView for the video portion.
+  if (audioOnly) return null;
   if (!RTCView || !stream?.toURL) return null;
   return <RTCView streamURL={stream.toURL()} style={style} objectFit="cover" mirror={mirror} zOrder={mirror ? 1 : 0} />;
 }
