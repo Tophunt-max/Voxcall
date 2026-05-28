@@ -62,7 +62,9 @@ async function syncPushToken(): Promise<void> {
     if (token) {
       await apiRequest("PATCH", "/api/user/me", { fcm_token: token });
     }
-  } catch {}
+  } catch (e) {
+    console.warn("[AuthContext] syncPushToken failed:", e);
+  }
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -161,11 +163,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Clear FCM token on backend before logging out so we stop receiving push notifications
     try {
       await apiRequest("PATCH", "/api/user/me", { fcm_token: null });
-    } catch {}
+    } catch (e) {
+      console.warn("[AuthContext] clear fcm_token before logout failed:", e);
+    }
     // Notify backend of logout (stateless JWT, best-effort)
     try {
       await apiRequest("POST", "/api/auth/logout", {});
-    } catch {}
+    } catch (e) {
+      console.warn("[AuthContext] logout notify backend failed:", e);
+    }
     await Promise.all([
       removeItem(StorageKeys.AUTH_TOKEN),
       removeItem(StorageKeys.USER),

@@ -31,6 +31,9 @@ chat.post('/rooms', async (c) => {
 
   // Check unlock policy
   const hostRow = await db.prepare('SELECT chat_unlock_policy FROM hosts WHERE id = ?').bind(host_id).first<any>();
+  // FIX #17: previously a missing host_id silently fell through to INSERT,
+  // creating an orphan chat_room with no actual host. Reject early.
+  if (!hostRow) return c.json({ error: 'Host not found' }, 404);
   if (hostRow?.chat_unlock_policy === 'call_first') {
     const prevCall = await db.prepare(
       `SELECT id FROM call_sessions WHERE caller_id = ? AND host_id = ? AND status = 'ended' LIMIT 1`

@@ -34,8 +34,8 @@ export default function IncomingCallScreen() {
       return;
     }
     if (hadCall.current) {
-      stopRing().catch(() => {});
-      try { router.back(); } catch {}
+      stopRing().catch((e) => console.warn("[IncomingCall] stopRing on activeCall null failed:", e));
+      try { router.back(); } catch (e) { console.warn("[IncomingCall] router.back on activeCall null failed:", e); }
     }
   }, [activeCall, stopRing]);
 

@@ -209,5 +209,9 @@ export async function getFCMTokens(
     )
     .bind(...userIds)
     .all<{ fcm_token: string }>();
-  return result.results.map((r) => r.fcm_token).filter((t) => !!t);
+  const tokens = result.results.map((r) => r.fcm_token).filter((t) => !!t);
+  // FIX #24: dedupe to avoid pushing the same notification multiple times when
+  // the same fcm_token is shared across user rows (e.g. test/duplicate accounts
+  // on one device). Set preserves first-seen order, which is good enough.
+  return Array.from(new Set(tokens));
 }

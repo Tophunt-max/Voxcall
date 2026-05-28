@@ -151,9 +151,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     // aur host ko call_ended event nahi milta, screen pe "Ringing..." stuck rahta hai
     if (!wasActive) {
       if (call?.sessionId) {
-        try { await API.endCall(call.sessionId, 0); } catch {}
+        try { await API.endCall(call.sessionId, 0); } catch (e) { console.warn("[CallContext] endCall (cancel) failed:", e); }
       }
-      try { router.back(); } catch {}
+      try { router.back(); } catch (e) { console.warn("[CallContext] router.back (cancel) failed:", e); }
       return;
     }
 
@@ -183,7 +183,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
             const session = await API.getCallSession(call.sessionId);
             if (session?.coins_charged != null) coinsSpent = session.coins_charged;
             if (session?.duration_seconds != null) finalDuration = session.duration_seconds;
-          } catch {}
+          } catch (e2) {
+            console.warn("[CallContext] getCallSession after already-ended failed:", e2);
+          }
         } else {
           console.warn("endCall API error:", e);
         }
@@ -192,7 +194,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       try {
         const bal = await API.getBalance();
         if (bal?.coins != null) updateCoins(bal.coins);
-      } catch {}
+      } catch (e) {
+        console.warn("[CallContext] refresh balance after endCall failed:", e);
+      }
     }
 
     if (call) {
