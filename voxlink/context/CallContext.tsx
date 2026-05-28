@@ -139,10 +139,11 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     router.back();
   }, []);
 
+  // BUG FIX #7: Improved duration handling with server validation
   const endCall = useCallback(async (autoEnded = false) => {
     const call = activeCallRef.current;
     const wasActive = !!(call?.startTime);
-    const duration = wasActive ? Math.floor((Date.now() - call!.startTime!) / 1000) : 0;
+    const clientDuration = wasActive ? Math.floor((Date.now() - call!.startTime!) / 1000) : 0;
     updateCall(null);
 
     // FIX: Agar call cancel/decline hua (wasActive = false) lekin sessionId hai,
@@ -156,11 +157,17 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    let coinsSpent = Math.ceil((duration / 60) * (call?.coinsPerMinute ?? 5));
+    // BUG FIX #7: Use server duration if available, fall back to client duration
+    let finalDuration = clientDuration;
+    let coinsSpent = Math.ceil((clientDuration / 60) * (call?.coinsPerMinute ?? 5));
 
     if (call?.sessionId) {
       try {
-        const res = await API.endCall(call.sessionId, duration);
+        const res = await API.endCall(call.sessionId, clientDuration);
+        if (res?.duration_seconds != null) {
+          // Server provided accurate duration
+          finalDuration = res.duration_seconds;
+        }
         if (res?.coins_charged != null) {
           coinsSpent = res.coins_charged;
         }
@@ -175,6 +182,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           try {
             const session = await API.getCallSession(call.sessionId);
             if (session?.coins_charged != null) coinsSpent = session.coins_charged;
+            if (session?.duration_seconds != null) finalDuration = session.duration_seconds;
           } catch {}
         } else {
           console.warn("endCall API error:", e);
@@ -191,7 +199,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       router.replace({
         pathname: "/user/call/summary",
         params: {
-          duration: String(duration),
+          duration: String(finalDuration),
           type: call.type,
           participantName: call.participant.name,
           participantId: call.participant.id,
