@@ -13,6 +13,7 @@ import { PermissionDialog, PERMISSION_CONFIGS } from "@/components/PermissionDia
 import { useWebRTC } from "@/hooks/useWebRTC";
 import { useSocket } from "@/context/SocketContext";
 import { SocketEvents } from "@/constants/events";
+import { API } from "@/services/api";
 import * as Haptics from "expo-haptics";
 
 export default function AudioCallScreen() {
@@ -116,6 +117,58 @@ export default function AudioCallScreen() {
     });
     return off;
   }, [onEvent, webrtc.cleanup, endCall]);
+
+  // FIX (call-disconnect propagation safety net): if WebRTC stays in
+  // 'disconnected' or 'failed' for longer than 15 s, the remote party most
+  // likely hung up and the WS-driven CALL_END notification was missed
+  // (offline at the moment of /end, FCM also dropped). Auto-end so the user
+  // is not stuck on the call screen and the server stops billing.
+  // The 15 s window covers transient cellular blips that ICE restart can
+  // recover from — do NOT shorten this without testing on real bad networks.
+  useEffect(() => {
+    if (status !== "active") return;
+    const s = webrtc.connectionState;
+    if (s !== "disconnected" && s !== "failed") return;
+    const t = setTimeout(() => {
+      console.warn("[audio-call] Connection stayed", s, "for 15s — auto-ending");
+      webrtc.cleanup();
+      endCall(true);
+    }, 15000);
+    return () => clearTimeout(t);
+  }, [webrtc.connectionState, status, webrtc.cleanup, endCall]);
+
+  // FIX (call-disconnect propagation safety net #2): poll the server every 10 s
+  // while the call is active. If the session is reported as ended/missed/
+  // declined server-side (e.g. cron reaper, or /end fired with both WS and FCM
+  // notifications lost), clean up locally so the screen does not stay stuck.
+  // 404 (session pruned) is also treated as ended.
+  useEffect(() => {
+    if (status !== "active" || !activeCall?.sessionId) return;
+    const sid = activeCall.sessionId;
+    let cancelled = false;
+    const interval = setInterval(async () => {
+      if (cancelled) return;
+      try {
+        const sess: any = await API.getCallSession(sid);
+        if (cancelled) return;
+        if (sess?.status === "ended" || sess?.status === "missed" || sess?.status === "declined") {
+          console.warn("[audio-call] Server reports session", sess.status, "— cleaning up");
+          webrtc.cleanup();
+          endCall(true);
+        }
+      } catch (e: any) {
+        // 404 = session pruned; treat as ended so the screen unblocks.
+        // Other errors (network blip, 5xx) are transient — ignore and try again next tick.
+        if (/not found|404/i.test(String(e?.message ?? ""))) {
+          if (!cancelled) {
+            webrtc.cleanup();
+            endCall(true);
+          }
+        }
+      }
+    }, 10000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [status, activeCall?.sessionId, webrtc.cleanup, endCall]);
 
   const handleEndCall = useCallback(() => {
     webrtc.cleanup();

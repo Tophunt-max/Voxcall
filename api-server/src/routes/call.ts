@@ -246,17 +246,60 @@ call.post('/end', async (c) => {
     }
     await db.batch(txs);
 
-    // Notify the OTHER party that call ended
+    // Notify the OTHER party that the call ended.
+    //
+    // FIX (call-disconnect propagation bug): the WebSocket path is unreliable —
+    // if the recipient's WS is briefly disconnected (mobile data switch, app
+    // backgrounded, brief network blip), NotificationHub silently drops the
+    // message because there's no offline queue. Result: the other party stays
+    // stuck on the call screen, billing keeps running on the server until the
+    // 30-min cron reaper fires.
+    //
+    // We now fan out via TWO channels:
+    //   1. WebSocket  → instant delivery when connected (covers 95% of cases)
+    //   2. FCM push   → wakes the app even when WS is dropped (covers the rest)
+    //
+    // The client treats whichever arrives first as authoritative; the second
+    // arrival is deduplicated by session_id on the receiver side.
     try {
       const isCallerEnding = session.caller_id === sub;
-      const otherUserId = isCallerEnding ? hostRow?.user_id : session.caller_id;
+      const otherUserId = isCallerEnding ? hostRow.user_id : session.caller_id;
       if (otherUserId) {
-        const notifId = c.env.NOTIFICATION_HUB.idFromName(otherUserId);
-        const notifStub = c.env.NOTIFICATION_HUB.get(notifId);
-        await notifStub.fetch('https://dummy/notify', {
-          method: 'POST',
-          body: JSON.stringify({ type: 'call_ended', session_id: session_id }),
-        });
+        // 1. WebSocket notification (fast path)
+        try {
+          const notifId = c.env.NOTIFICATION_HUB.idFromName(otherUserId);
+          const notifStub = c.env.NOTIFICATION_HUB.get(notifId);
+          await notifStub.fetch('https://dummy/notify', {
+            method: 'POST',
+            body: JSON.stringify({ type: 'call_ended', session_id: session_id }),
+          });
+        } catch (e) {
+          console.warn('[/end] WS notify failed for other party:', e);
+        }
+
+        // 2. FCM push fallback (offline path) — fire-and-forget so a slow FCM
+        //    response does not block the /end response. The push payload uses
+        //    the same `type: 'call_ended'` shape the WS handler emits, so the
+        //    client's FCM bridge can route it through the same code path.
+        c.executionCtx.waitUntil((async () => {
+          try {
+            const otherUser = await db
+              .prepare('SELECT fcm_token FROM users WHERE id = ?')
+              .bind(otherUserId)
+              .first<{ fcm_token: string | null }>();
+            if (otherUser?.fcm_token) {
+              await sendFCMPush(
+                c.env.FIREBASE_SERVICE_ACCOUNT,
+                otherUser.fcm_token,
+                'Call Ended',
+                'The other party has disconnected.',
+                { type: 'call_ended', session_id: session_id }
+              );
+            }
+          } catch (e) {
+            console.warn('[/end] FCM fallback failed:', e);
+          }
+        })());
       }
     } catch (e) {
       // BUG #8 FIX: Log errors instead of silently swallowing

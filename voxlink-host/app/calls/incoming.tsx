@@ -3,6 +3,8 @@ import { View, Text, StyleSheet, Image, TouchableOpacity } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useCall } from "@/context/CallContext";
+import { useSocket } from "@/context/SocketContext";
+import { SocketEvents } from "@/constants/events";
 import { resolveMediaUrl } from "@/services/api";
 import { router } from "expo-router";
 import * as Haptics from "expo-haptics";
@@ -11,7 +13,8 @@ import { useRingtone } from "@/hooks/useRingtone";
 export default function IncomingCallScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { activeCall, acceptCall, declineCall } = useCall();
+  const { activeCall, acceptCall, declineCall, endCall } = useCall();
+  const { onEvent } = useSocket();
   const topPad = insets.top;
   const bottomPad = insets.bottom;
 
@@ -47,6 +50,32 @@ export default function IncomingCallScreen() {
     await stopRing();
     declineCall();
   }, [declineCall, stopRing]);
+
+  // FIX (call-disconnect propagation parity): the user's incoming screen has
+  // had CALL_END + CALL_REJECT listeners; the host's did not. Result: when the
+  // caller cancelled before the host accepted, the host's incoming screen
+  // could stay ringing indefinitely (or until the 45 s timeout) because the
+  // CallContext's `activeCall` watcher only triggers when the OPTIMISTIC local
+  // state is cleared — the server's call_ended/call_rejected events were
+  // arriving but had no listener wired to the CallContext.
+  //
+  // We dedupe by sessionId so a stale event for an unrelated session does not
+  // dismiss the current incoming call.
+  useEffect(() => {
+    const offEnd = onEvent(SocketEvents.CALL_END, async (data: any) => {
+      const sid = data?.sessionId ?? data?.session_id;
+      if (activeCall && sid && activeCall.sessionId !== sid) return;
+      await stopRing().catch(() => {});
+      endCall(true);
+    });
+    const offReject = onEvent(SocketEvents.CALL_REJECT, async (data: any) => {
+      const sid = data?.sessionId ?? data?.session_id;
+      if (activeCall && sid && activeCall.sessionId !== sid) return;
+      await stopRing().catch(() => {});
+      endCall(true);
+    });
+    return () => { offEnd(); offReject(); };
+  }, [onEvent, activeCall, stopRing, endCall]);
 
   useEffect(() => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);

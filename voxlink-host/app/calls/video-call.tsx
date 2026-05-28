@@ -14,6 +14,7 @@ import { PermissionDialog, PERMISSION_CONFIGS } from "@/components/PermissionDia
 import { useWebRTC } from "@/hooks/useWebRTC";
 import { useSocket } from "@/context/SocketContext";
 import { SocketEvents } from "@/constants/events";
+import { API } from "@/services/api";
 
 const useNativeDriverValue = Platform.OS !== "web";
 
@@ -176,6 +177,50 @@ export default function VideoCallScreen() {
     });
     return off;
   }, [onEvent, webrtc.cleanup, endCall]);
+
+  // FIX (call-disconnect propagation safety net): see audio-call for rationale.
+  // If WebRTC stays disconnected/failed for >15 s, auto-end the call.
+  useEffect(() => {
+    if (status !== "active") return;
+    const s = webrtc.connectionState;
+    if (s !== "disconnected" && s !== "failed") return;
+    const t = setTimeout(() => {
+      console.warn("[host video-call] Connection stayed", s, "for 15s — auto-ending");
+      webrtc.cleanup();
+      endCall(true);
+    }, 15000);
+    return () => clearTimeout(t);
+  }, [webrtc.connectionState, status, webrtc.cleanup, endCall]);
+
+  // FIX (call-disconnect propagation safety net #2): poll the server every 10s
+  // while active. Catches sessions that ended server-side (cron reaper, /end
+  // with both WS and FCM lost, force-quit on the other device). 404 = pruned,
+  // also treated as ended.
+  useEffect(() => {
+    if (status !== "active" || !activeCall?.sessionId) return;
+    const sid = activeCall.sessionId;
+    let cancelled = false;
+    const interval = setInterval(async () => {
+      if (cancelled) return;
+      try {
+        const sess: any = await API.getCallSession(sid);
+        if (cancelled) return;
+        if (sess?.status === "ended" || sess?.status === "missed" || sess?.status === "declined") {
+          console.warn("[host video-call] Server reports session", sess.status, "— cleaning up");
+          webrtc.cleanup();
+          endCall(true);
+        }
+      } catch (e: any) {
+        if (/not found|404/i.test(String(e?.message ?? ""))) {
+          if (!cancelled) {
+            webrtc.cleanup();
+            endCall(true);
+          }
+        }
+      }
+    }, 10000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [status, activeCall?.sessionId, webrtc.cleanup, endCall]);
 
   const handleEndCall = useCallback(() => {
     webrtc.cleanup();
