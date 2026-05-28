@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { authMiddleware } from '../middleware/auth';
+import { verifyPassword } from '../lib/hash';
 import type { Env, JWTPayload } from '../types';
 
 const user = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
@@ -153,6 +154,15 @@ user.post('/report', async (c) => {
     'SELECT id FROM content_reports WHERE reporter_id = ? AND reported_user_id = ? AND status = ? AND created_at > unixepoch() - 86400'
   ).bind(sub, reported_user_id, 'pending').first<any>();
   if (existing) return c.json({ error: 'You have already reported this user. Please wait for review.' }, 429);
+  // FIX #19: Per-reporter daily cap — prevents one user from spamming the
+  // moderation queue across many targets. Per-pair check above stays.
+  const dayAgo = Math.floor(Date.now() / 1000) - 86400;
+  const dailyCount = await db.prepare(
+    'SELECT COUNT(*) as cnt FROM content_reports WHERE reporter_id = ? AND created_at > ?'
+  ).bind(sub, dayAgo).first<{ cnt: number }>();
+  if (dailyCount && dailyCount.cnt >= 10) {
+    return c.json({ error: 'Too many reports submitted today. Please try again tomorrow.' }, 429);
+  }
   const id = crypto.randomUUID();
   try {
     await db.prepare(
@@ -174,6 +184,19 @@ user.post('/report', async (c) => {
 user.delete('/me', async (c) => {
   const { sub } = c.get('user');
   const db = c.env.DB;
+  // FIX #13: Require the user's password before destroying their account.
+  // A password-less account-delete endpoint means a stolen/leaked token can
+  // permanently anonymise a user's profile. Google-only accounts (no
+  // password_hash) keep the no-password behaviour because they have no
+  // password to verify; a Google ID token re-auth flow can be added later.
+  const body = await c.req.json<{ password?: string }>().catch(() => ({}));
+  const userRow = await db.prepare('SELECT password_hash, google_id FROM users WHERE id = ?').bind(sub).first<any>();
+  if (!userRow) return c.json({ error: 'User not found' }, 404);
+  if (userRow.password_hash) {
+    if (!body.password) return c.json({ error: 'Password required to delete account' }, 400);
+    const ok = await verifyPassword(body.password, userRow.password_hash);
+    if (!ok) return c.json({ error: 'Incorrect password' }, 401);
+  }
   // Anonymize personal data and mark as deleted so referential integrity is preserved
   const deletedEmail = `deleted_${sub}@deleted.voxlink`;
   await db.prepare(`
