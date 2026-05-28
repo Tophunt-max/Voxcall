@@ -93,7 +93,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
   const receiveCall = useCallback((participant: CallParticipant, type: CallType, callId: string) => {
     // Fix C3: also set sessionId = callId so acceptCall/declineCall can call the backend
-    const call: ActiveCall = { callId, sessionId: callId, type, status: "incoming", participant, isMuted: false, isCameraOn: false, isSpeakerOn: false };
+    // FIX: For video calls, camera/speaker should default ON to match the
+    // outgoing-call defaults — otherwise an incoming video call shows the
+    // accepter's preview as "Camera Off" right after they accept.
+    const call: ActiveCall = { callId, sessionId: callId, type, status: "incoming", participant, isMuted: false, isCameraOn: type === "video", isSpeakerOn: type === "video" };
     updateCall(call);
     router.push("/user/call/incoming");
   }, []);

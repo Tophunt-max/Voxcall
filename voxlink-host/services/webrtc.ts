@@ -135,9 +135,20 @@ export class WebRTCService {
         }
       });
 
+      // FIX (video clarity): the previous constraints capped capture at
+      // 640x480 (VGA) which looks blurry/unclear on modern phones and big
+      // screens. Use HD (1280x720) as the ideal target with a sensible
+      // floor and a 30 fps target. `ideal` lets the platform downgrade on
+      // weak hardware/networks rather than failing outright.
       const constraints: any = {
         audio: true,
-        video: this.isVideo ? { facingMode: 'user', width: 640, height: 480 } : false,
+        video: this.isVideo ? {
+          facingMode: 'user',
+          width:  { min: 320, ideal: 1280, max: 1920 },
+          height: { min: 240, ideal: 720,  max: 1080 },
+          frameRate: { min: 15, ideal: 30, max: 30 },
+          aspectRatio: { ideal: 16 / 9 },
+        } : false,
       };
 
       this.localStream = await mediaDevicesRef.getUserMedia(constraints);
@@ -145,6 +156,33 @@ export class WebRTCService {
       this.localStream.getTracks().forEach((track: any) => {
         this.pc?.addTrack(track, this.localStream);
       });
+
+      // FIX (video clarity): bump the outbound video sender's max bitrate so
+      // the encoder actually has room to deliver an HD-quality stream. CF
+      // Calls / SFU defaults are conservative (~250-500 kbps) which produces
+      // a soft, blocky picture even when the source is 720p. 1.2 Mbps is a
+      // safe target for 720p30 over 4G/Wi-Fi; the encoder will scale down
+      // automatically when bandwidth is constrained.
+      if (this.isVideo) {
+        try {
+          const videoSender = this.pc.getSenders?.().find((s: any) => s.track?.kind === 'video');
+          if (videoSender && videoSender.getParameters && videoSender.setParameters) {
+            const params = videoSender.getParameters();
+            params.encodings = (params.encodings && params.encodings.length > 0)
+              ? params.encodings
+              : [{}];
+            for (const enc of params.encodings) {
+              enc.maxBitrate = 1_200_000;
+              enc.maxFramerate = 30;
+            }
+            await videoSender.setParameters(params);
+          }
+        } catch (e) {
+          // Non-fatal: if setParameters isn't supported on this platform we
+          // fall back to the default bitrate.
+          console.warn('[WebRTC] setParameters (video bitrate) failed:', e);
+        }
+      }
 
       await this.pushLocalTracks();
 

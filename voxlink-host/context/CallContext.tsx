@@ -62,8 +62,12 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       status: "incoming",
       participant,
       isMuted: false,
-      isCameraOn: false,
-      isSpeakerOn: false,
+      // FIX: For video calls, host's camera should default to ON. Hardcoding
+      // false meant the host saw their own preview as "Camera Off" the moment
+      // they accepted, even though the screen is a video call. Speaker also
+      // defaults to ON for video to match the user app behavior.
+      isCameraOn: type === "video",
+      isSpeakerOn: type === "video",
       coinsPerMinute,
       maxSeconds,
     };
