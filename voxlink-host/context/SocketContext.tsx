@@ -46,7 +46,10 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!isLoggedIn || !user?.id) return;
 
-    getItem(StorageKeys.AUTH_TOKEN).then((token) => {
+    // FIX: pass explicit <string> generic so TS narrows the result type for
+    // socketService.connect(token: string | undefined) — without it T defaults to
+    // `{}` and the call rejects with "type {} not assignable to string | undefined".
+    getItem<string>(StorageKeys.AUTH_TOKEN).then((token) => {
       socketService.connect(user.id, token ?? undefined);
     });
 

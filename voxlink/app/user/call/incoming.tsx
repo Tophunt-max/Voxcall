@@ -70,10 +70,13 @@ export default function IncomingCallScreen() {
 
   useEffect(() => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    // FIX: caller-side ringback uses RING_TIMEOUT_MS = 45000 (see outgoing.tsx).
+    // Receiver MUST match that to avoid a race where receiver auto-declines while
+    // caller still sees "ringing".
     const timeout = setTimeout(async () => {
       await stopRing();
       declineCall();
-    }, 30000);
+    }, 45000);
     return () => clearTimeout(timeout);
   }, [stopRing, declineCall]);
 

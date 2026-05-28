@@ -106,7 +106,9 @@ export default function LoginScreen() {
         id: data.user.id || id,
         name: data.user.name || name,
         email: data.user.email || email,
-        avatar: photo || resolveMediaUrl(data.user.avatar_url) || null,
+        // FIX: UserProfile.avatar is `string | undefined`, not `string | null`.
+        // Coalesce null → undefined so type-safe consumers don't get a null leak.
+        avatar: photo || resolveMediaUrl(data.user.avatar_url) || undefined,
         coins: data.user.coins ?? 50,
         role: "user" as const,
       };

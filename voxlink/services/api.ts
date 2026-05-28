@@ -214,7 +214,7 @@ export const API = {
   getMessages: (room_id: string, before?: number) =>
     apiRequest<any[]>('GET', `/api/chat/rooms/${room_id}/messages${before ? `?before=${before}` : ''}`),
   sendMessage: (room_id: string, content: string, media_url?: string, media_type?: string) =>
-    apiRequest('POST', `/api/chat/rooms/${room_id}/messages`, { content, media_url, media_type }),
+    apiRequest<{ id?: string; sender_id?: string; content?: string; created_at?: number }>('POST', `/api/chat/rooms/${room_id}/messages`, { content, media_url, media_type }),
   getChatStatus: (host_id: string) =>
     apiRequest<{ unlocked: boolean; reason: string }>('GET', `/api/hosts/${host_id}/chat-status`),
 

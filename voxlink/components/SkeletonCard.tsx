@@ -81,6 +81,9 @@ const styles = StyleSheet.create({
     gap: 6,
     marginRight: 10,
   },
+  // FIX: missing style — SkeletonHostCardCompact referenced styles.compactBody (TS2339).
+  // Holds the two text-line placeholders centered under the avatar.
+  compactBody: { alignItems: "center", gap: 4, width: "100%" },
   compactAvatar: { width: 64, height: 64, borderRadius: 32 },
   compactName: { height: 10, width: 56, borderRadius: 5 },
   compactSub: { height: 8, width: 40, borderRadius: 4 },

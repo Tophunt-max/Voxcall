@@ -7,7 +7,7 @@ import { SocketEvents } from "@/constants/events";
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL || "https://voxlink-api.ssunilkumarmohanta3.workers.dev";
 
 function getWsUrl(userId: string, token?: string): string {
-  const wsBase = BASE_URL.replace(/^https?:\/\//, (match) =>
+  const wsBase = BASE_URL.replace(/^https?:\/\//, (match: string) =>
     match === "https://" ? "wss://" : "ws://"
   );
   const params = new URLSearchParams({ userId });
@@ -108,6 +108,9 @@ class SocketService {
           callerId: msg.caller_id,
           callerName: msg.caller_name ?? "Caller",
           callerAvatar: msg.caller_avatar ?? undefined,
+          // FIX: forward rate + max_seconds when present (server now includes them)
+          coinsPerMinute: msg.rate_per_minute,
+          maxSeconds: msg.max_seconds,
           timestamp: Date.now(),
         });
         break;

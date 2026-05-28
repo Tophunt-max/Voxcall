@@ -49,6 +49,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const { updateCoins } = useAuth();
   const [activeCall, setActiveCall] = useState<ActiveCall | null>(null);
   const activeCallRef = useRef<ActiveCall | null>(null);
+  // FIX: guard against double-tap accepting the same call (mirror host pattern)
+  const isAcceptingRef = useRef(false);
 
   const updateCall = (call: ActiveCall | null) => {
     activeCallRef.current = call;
@@ -99,18 +101,38 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const acceptCall = useCallback(async () => {
     const curr = activeCallRef.current;
     if (!curr) return;
+    // FIX: race-protection — double-tap on Accept must not fire answerCall twice
+    if (isAcceptingRef.current) return;
+    isAcceptingRef.current = true;
+
+    // FIX: server-synced billing timer — start from server's started_at when present,
+    // otherwise fall back to local clock. Prevents drift on slow networks.
+    let serverStartedAtMs = Date.now();
     if (curr.sessionId) {
       try {
-        await API.answerCall(curr.sessionId, true);
-      } catch (e) {
-        console.warn("acceptCall API error:", e);
-        updateCall(null);
-        router.back();
-        return;
+        const res = await API.answerCall(curr.sessionId, true);
+        if (res?.started_at) serverStartedAtMs = res.started_at * 1000;
+      } catch (e: any) {
+        // FIX: only treat session-state errors as hard failures. Network/timeout
+        // soft errors must NOT cancel the call — the user may still be on the line.
+        const msg = (e?.message || "").toLowerCase();
+        const isHardFail =
+          msg.includes("not found") ||
+          msg.includes("not authorized") ||
+          msg.includes("declined") ||
+          msg.includes("ended");
+        if (isHardFail) {
+          isAcceptingRef.current = false;
+          updateCall(null);
+          return;
+        }
+        console.warn("acceptCall soft error, continuing:", e);
       }
     }
-    const updated = { ...curr, status: "active" as CallStatus, startTime: Date.now() };
+
+    const updated = { ...curr, status: "active" as CallStatus, startTime: serverStartedAtMs };
     updateCall(updated);
+    isAcceptingRef.current = false;
     router.replace(curr.type === "audio" ? "/user/call/audio-call" : "/user/call/video-call");
   }, []);
 
@@ -131,6 +153,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
   const declineCall = useCallback(() => {
     const curr = activeCallRef.current;
+    isAcceptingRef.current = false;
     updateCall(null);
     // Fix M3: notify backend that host declined
     if (curr?.sessionId) {
