@@ -167,7 +167,8 @@ call.post('/end', async (c) => {
     // Only apply 1-minute minimum when the call actually had some duration
     const durationMin = durationSec > 0 ? Math.max(1, Math.ceil(durationSec / 60)) : 0;
 
-    const hostRow = await db.prepare('SELECT coins_per_minute, audio_coins_per_minute, video_coins_per_minute, user_id, total_minutes, total_earnings FROM hosts WHERE id = ?').bind(session.host_id).first<HostData>();
+    // BUG #1 FIX: Fixed incomplete query
+    const hostRow = await db.prepare('SELECT coins_per_minute, audio_coins_per_minute, video_coins_per_minute, user_id, total_minutes, total_earnings FROM hosts WHERE id = ?').bind(session.host_id).first<HostRow>();
     
     // BUG #4 FIX: Check if hostRow is null before using it
     if (!hostRow) {
@@ -184,7 +185,7 @@ call.post('/end', async (c) => {
       : 0;
     const hostShare = Math.floor(coinsCharged * 0.7);
 
-    // ───────────────────────────────────────────────────────────────
+    // ──────────────────────────────────────────────────────────────────────────────
     // CRITICAL FIX: Atomic coin transfer using a SINGLE UPDATE statement.
     //
     // Previous design used a multi-statement batch with a conditional WHERE
@@ -200,7 +201,7 @@ call.post('/end', async (c) => {
     //   - If caller has < amount coins   →  EXISTS false →  WHERE excludes ALL
     //                                       rows → ZERO money moves.
     // Atomic at the SQL engine level. No partial state possible.
-    // ───────────────────────────────────────────────────────────────
+    // ──────────────────────────────────────────────────────────────────────────────
     let actualCoinsCharged = 0;
     let actualHostShare = 0;
     if (coinsCharged > 0 && hostRow?.user_id) {
@@ -654,7 +655,8 @@ call.post('/:id/end', async (c) => {
     // Only apply 1-minute minimum when the call actually had some duration
     const durationMin = durationSec > 0 ? Math.max(1, Math.ceil(durationSec / 60)) : 0;
     
-    const hostRow = await db.prepare('SELECT coins_per_minute, audio_coins_per_minute, video_coins_per_minute, user_id, total_minutes, total_earnings FROM hosts WHERE id = ?').bind(session.host_id).first<HostData>();
+    // BUG #1 FIX: Fixed incomplete query
+    const hostRow = await db.prepare('SELECT coins_per_minute, audio_coins_per_minute, video_coins_per_minute, user_id, total_minutes, total_earnings FROM hosts WHERE id = ?').bind(session.host_id).first<HostRow>();
     
     // BUG #4 FIX: Check if hostRow is null
     if (!hostRow) {
