@@ -270,8 +270,16 @@ admin.patch('/withdrawals/:id', async (c) => {
   if (!['approved', 'completed', 'paid'].includes(status)) {
     return c.json({ error: 'Invalid status. Must be approved, completed, paid, or rejected' }, 400);
   }
-  await d.prepare("UPDATE withdrawal_requests SET status = ?, admin_note = ?, updated_at = unixepoch() WHERE id = ? AND status != ?")
-    .bind(status, admin_note ?? null, id, status).run();
+  // FIX #12: Marking a withdrawal as paid/completed without any reference is a
+  // workflow gap — admins could "pay" without proof. Require admin_note (e.g. a
+  // bank/UPI transaction reference). Also tighten the WHERE clause so we never
+  // overwrite a withdrawal that is already in a terminal state.
+  if ((status === 'paid' || status === 'completed') && (!admin_note || !String(admin_note).trim())) {
+    return c.json({ error: 'admin_note (e.g. transaction reference) is required when marking withdrawal as paid/completed' }, 400);
+  }
+  await d.prepare(
+    "UPDATE withdrawal_requests SET status = ?, admin_note = ?, updated_at = unixepoch() WHERE id = ? AND status NOT IN ('paid', 'completed', 'rejected')"
+  ).bind(status, admin_note ?? null, id).run();
   return c.json({ success: true });
 });
 
@@ -401,6 +409,13 @@ admin.get('/notifications', async (c) => {
 admin.post('/notifications/send', async (c) => {
   const body = await c.req.json() as any;
   const { title, body: msgBody, type = 'system', target, userId } = body;
+  // FIX #30: Validate title/body length to prevent DB bloat and broken push payloads.
+  if (typeof title !== 'string' || title.length === 0 || title.length > 100) {
+    return c.json({ error: 'title must be 1-100 chars' }, 400);
+  }
+  if (typeof msgBody !== 'string' || msgBody.length === 0 || msgBody.length > 500) {
+    return c.json({ error: 'body must be 1-500 chars' }, 400);
+  }
   const now = Math.floor(Date.now() / 1000);
   let targetUsers: any[] = [];
   if (target === 'all') {
@@ -630,11 +645,15 @@ admin.patch('/deposits/:id', async (c) => {
     if (purchase.status === 'refunded') return c.json({ error: 'Deposit already refunded' }, 400);
     if (purchase.status !== 'success') return c.json({ error: 'Only successful deposits can be refunded' }, 400);
     const totalRefund = (purchase.coins || 0) + (purchase.bonus_coins || 0);
+    // FIX #11: Clamp the refund deduction at 0 so a user who already spent
+    // the credited coins doesn't end up with a negative balance. Record the
+    // ledger entry as a `refund` (not `spend`) with a negative amount, matching
+    // the convention used by withdrawal refunds elsewhere in this file.
     await db(c).batch([
       db(c).prepare(`UPDATE coin_purchases SET ${sets.join(', ')} WHERE id = ?`).bind(...vals),
-      db(c).prepare('UPDATE users SET coins = coins - ?, updated_at = unixepoch() WHERE id = ?').bind(totalRefund, purchase.user_id),
+      db(c).prepare('UPDATE users SET coins = MAX(0, coins - ?), updated_at = unixepoch() WHERE id = ?').bind(totalRefund, purchase.user_id),
       db(c).prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)').bind(
-        crypto.randomUUID(), purchase.user_id, 'spend', totalRefund, `Deposit refunded by admin`, id
+        crypto.randomUUID(), purchase.user_id, 'refund', -totalRefund, `Deposit refunded by admin (coins reversed)`, id
       ),
     ]);
   } else {
@@ -1026,8 +1045,17 @@ admin.get('/calls/live', async (c) => {
 
 admin.post('/calls/stale-cleanup', async (c) => {
   const body = await c.req.json().catch(() => ({})) as any;
+  // FIX #16: Require an explicit `confirm: true` body so this destructive
+  // janitor action can't fire from a stray click. Returns 400 if missing.
+  if (body?.confirm !== true) {
+    return c.json({ error: 'Refusing to run stale cleanup without explicit { confirm: true }' }, 400);
+  }
   const maxHours = Math.max(1, Math.min(24, parseInt(body.max_hours) || 4));
   const staleThreshold = Math.floor(Date.now() / 1000) - (maxHours * 3600);
+  // NOTE: Stale cleanup intentionally does NOT bill coins or pay hosts.
+  // Use this only for cleaning up zombie sessions. For proper billing,
+  // the cron-based reaper in src/index.ts handles legitimate stale calls
+  // with full atomic coin transfer.
   const result = await db(c).prepare(`
     UPDATE call_sessions
     SET status = 'ended', ended_at = unixepoch(),
@@ -1037,7 +1065,11 @@ admin.post('/calls/stale-cleanup', async (c) => {
   `).bind(staleThreshold).run();
   const u = c.get('user');
   await auditLog(db(c), u.sub, u.email || 'Admin', u.email || '', 'update', 'calls', 'Stale Cleanup', `Ended ${result.meta?.changes ?? 0} stale calls (>${maxHours}h)`);
-  return c.json({ success: true, ended: result.meta?.changes ?? 0 });
+  return c.json({
+    success: true,
+    ended: result.meta?.changes ?? 0,
+    warning: 'No coins were billed and no host earnings were paid. The cron reaper handles legitimate stale calls; use this only for zombie sessions.',
+  });
 });
 
 admin.post('/calls/:id/force-end', async (c) => {
@@ -1047,7 +1079,13 @@ admin.post('/calls/:id/force-end', async (c) => {
   if (session.status === 'ended') return c.json({ error: 'Call already ended' }, 400);
   const now = Math.floor(Date.now() / 1000);
   const durationSec = session.started_at ? now - session.started_at : 0;
-  const coinsCharged = Math.floor(durationSec / 60) * (session.coins_per_min ?? 0);
+  // FIX #15: column is `rate_per_minute` on call_sessions, not `coins_per_min`.
+  // The old name silently resolved to undefined → ?? 0 → no charge.
+  // TODO: this admin force-end should perform the same atomic coin transfer
+  // as routes/call.ts /end (deduct caller, credit host with revenue share).
+  // For now we just record duration + an estimated charge in the session row
+  // without moving any coins.
+  const coinsCharged = Math.floor(durationSec / 60) * (session.rate_per_minute ?? 0);
   await db(c).prepare(`
     UPDATE call_sessions
     SET status = 'ended', ended_at = ?, duration_seconds = ?, coins_charged = ?
@@ -1116,6 +1154,10 @@ admin.post('/run-migrations', async (c) => {
       specialties TEXT DEFAULT '[]',
       languages TEXT DEFAULT '["English"]',
       experience TEXT,
+      -- FIX #23: include application_type so fresh databases match the columns
+      -- routes/hostapp.ts INSERTs into. The ALTER TABLE further down then
+      -- becomes a no-op on new DBs and only fixes existing legacy schemas.
+      application_type TEXT DEFAULT 'both',
       audio_rate INTEGER DEFAULT 5,
       video_rate INTEGER DEFAULT 8,
       aadhar_front_url TEXT,
