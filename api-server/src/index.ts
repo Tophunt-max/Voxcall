@@ -196,13 +196,9 @@ async function reapStaleCalls(env: Env): Promise<void> {
       const effectiveRate = call.rate_per_minute ?? 5;
       const coinsCharged = call.status === 'active' ? durationMin * effectiveRate : 0;
 
-      // Batch: end the call, deduct caller coins if active, add host earnings
-      // ended_at already set by atomic guard above
-      const batchOps = [
-        db.prepare(
-          `UPDATE call_sessions SET status = 'ended', duration_seconds = ?, coins_charged = ? WHERE id = ?`
-        ).bind(durationSec, coinsCharged, call.id),
-      ];
+      // Track actual coins transferred (0 until confirmed)
+      let actualCoinsCharged = 0;
+      let actualHostEarnings = 0;
 
       if (coinsCharged > 0) {
         const hostEarnings = Math.floor(coinsCharged * 0.7);
@@ -221,16 +217,29 @@ async function reapStaleCalls(env: Env): Promise<void> {
         ).bind(call.caller_id, coinsCharged, call.host_user_id, hostEarnings).run();
 
         if (transfer.meta?.changes === 2) {
-          // Both rows updated - record transactions
-          batchOps.push(
-            db.prepare(`INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?,?,?,?,?,?)`)
-              .bind(crypto.randomUUID(), call.caller_id, 'spend', -coinsCharged, `${call.type || 'audio'} call (auto-reaped)`, call.id),
-            db.prepare(`INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?,?,?,?,?,?)`)
-              .bind(crypto.randomUUID(), call.host_user_id, 'bonus', hostEarnings, `${call.type || 'audio'} call earnings (auto-reaped)`, call.id),
-          );
+          actualCoinsCharged = coinsCharged;
+          actualHostEarnings = hostEarnings;
         } else {
           console.warn('[Cron] Atomic transfer failed for call', call.id, '- caller may have insufficient coins');
         }
+      }
+
+      // Batch: end the call session + record bookkeeping only if money moved
+      const batchOps: any[] = [
+        db.prepare(
+          `UPDATE call_sessions SET status = 'ended', duration_seconds = ?, coins_charged = ? WHERE id = ?`
+        ).bind(durationSec, actualCoinsCharged, call.id),
+      ];
+
+      if (actualCoinsCharged > 0) {
+        batchOps.push(
+          db.prepare(`UPDATE hosts SET total_minutes = total_minutes + ?, total_earnings = total_earnings + ? WHERE id = ?`)
+            .bind(durationMin, actualHostEarnings, call.host_id),
+          db.prepare(`INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?,?,?,?,?,?)`)
+            .bind(crypto.randomUUID(), call.caller_id, 'spend', -actualCoinsCharged, `${call.type || 'audio'} call (auto-reaped)`, call.id),
+          db.prepare(`INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?,?,?,?,?,?)`)
+            .bind(crypto.randomUUID(), call.host_user_id, 'bonus', actualHostEarnings, `${call.type || 'audio'} call earnings (auto-reaped)`, call.id),
+        );
       }
 
       await db.batch(batchOps);
