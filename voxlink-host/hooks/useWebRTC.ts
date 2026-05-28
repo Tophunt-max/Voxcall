@@ -10,6 +10,7 @@ export interface UseWebRTCOptions {
 export interface UseWebRTCReturn {
   localStream: any;
   remoteStream: any;
+  remoteHasVideo: boolean;
   connectionState: string;
   isConnected: boolean;
   isAvailable: boolean;
@@ -26,6 +27,7 @@ export function useWebRTC(options: UseWebRTCOptions): UseWebRTCReturn {
   const { sessionId, isVideo, enabled } = options;
   const [localStream, setLocalStream] = useState<any>(null);
   const [remoteStream, setRemoteStream] = useState<any>(null);
+  const [remoteHasVideo, setRemoteHasVideo] = useState(false);
   const [connectionState, setConnectionState] = useState('new');
   const [error, setError] = useState<string | null>(null);
   const serviceRef = useRef<WebRTCService | null>(null);
@@ -41,6 +43,7 @@ export function useWebRTC(options: UseWebRTCOptions): UseWebRTCReturn {
     startedRef.current = false;
     setLocalStream(null);
     setRemoteStream(null);
+    setRemoteHasVideo(false);
     setConnectionState('closed');
   }, []);
 
@@ -100,9 +103,67 @@ export function useWebRTC(options: UseWebRTCOptions): UseWebRTCReturn {
     setError(null);
   }, []);
 
+  // FIX (remote-camera-off detection): track whether the remote stream has an
+  // active video track. We can't simply check `!!remoteStream` because the
+  // peer connection keeps the stream alive even when the remote toggles their
+  // camera off — the video track stays present but goes muted/disabled, so
+  // <video>/RTCView shows pure black instead of falling back to the avatar.
+  // Listen to track add/remove and per-track mute/unmute/ended events, with a
+  // polling fallback because not every platform fires every event reliably.
+  useEffect(() => {
+    const stream = remoteStream;
+    if (!stream) {
+      setRemoteHasVideo(false);
+      return;
+    }
+
+    const recompute = () => {
+      const tracks: any[] = stream.getVideoTracks?.() ?? [];
+      const active = tracks.some((t: any) => {
+        if (!t) return false;
+        if (t.enabled === false) return false;
+        if (t.readyState === 'ended') return false;
+        if (t.muted === true) return false;
+        return true;
+      });
+      setRemoteHasVideo(active);
+    };
+
+    recompute();
+
+    const trackBindings: Array<{ t: any; evt: string; fn: any }> = [];
+    const streamBindings: Array<{ evt: string; fn: any }> = [];
+
+    try { stream.addEventListener?.('addtrack', recompute); streamBindings.push({ evt: 'addtrack', fn: recompute }); } catch {}
+    try { stream.addEventListener?.('removetrack', recompute); streamBindings.push({ evt: 'removetrack', fn: recompute }); } catch {}
+
+    const tracks: any[] = stream.getVideoTracks?.() ?? [];
+    for (const t of tracks) {
+      for (const evt of ['mute', 'unmute', 'ended']) {
+        try {
+          t.addEventListener?.(evt, recompute);
+          trackBindings.push({ t, evt, fn: recompute });
+        } catch {}
+      }
+    }
+
+    const interval = setInterval(recompute, 1500);
+
+    return () => {
+      clearInterval(interval);
+      for (const { evt, fn } of streamBindings) {
+        try { stream.removeEventListener?.(evt, fn); } catch {}
+      }
+      for (const { t, evt, fn } of trackBindings) {
+        try { t.removeEventListener?.(evt, fn); } catch {}
+      }
+    };
+  }, [remoteStream]);
+
   return {
     localStream,
     remoteStream,
+    remoteHasVideo,
     connectionState,
     isConnected: connectionState === 'connected',
     isAvailable: available,

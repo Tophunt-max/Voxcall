@@ -192,6 +192,23 @@ export default function VideoCallScreen() {
     return () => clearTimeout(t);
   }, [webrtc.connectionState, status, webrtc.cleanup, endCall]);
 
+  // FIX (connecting timeout): if WebRTC never reaches `connected` state within
+  // 30 s of mount, the call is stalled (CF Calls negotiation hung, ICE timed
+  // out, etc.). Auto-end so the host is not stuck on "Connecting..." while the
+  // server keeps the session alive (and the caller keeps getting billed).
+  useEffect(() => {
+    if (status === "active") return;
+    if (!webrtcReady) return;
+    const t = setTimeout(() => {
+      if (!webrtc.isConnected) {
+        console.warn("[host video-call] Did not connect within 30s — auto-ending");
+        webrtc.cleanup();
+        endCall(true);
+      }
+    }, 30000);
+    return () => clearTimeout(t);
+  }, [status, webrtcReady, webrtc.isConnected, webrtc.cleanup, endCall]);
+
   // FIX (call-disconnect propagation safety net #2): poll the server every 10s
   // while active. Catches sessions that ended server-side (cron reaper, /end
   // with both WS and FCM lost, force-quit on the other device). 404 = pruned,
@@ -350,15 +367,29 @@ export default function VideoCallScreen() {
       />
 
       <View style={styles.remoteArea}>
-        {webrtc.remoteStream ? (
+        {/* FIX (remote-camera-off): always render StreamView while a stream
+            exists so audio keeps playing on web; overlay an avatar + label
+            when the remote has no active video track. Using StreamView for
+            audio-only streams shows pure black on web, which is the original
+            "blank screen" bug. */}
+        {webrtc.remoteStream && (
           <StreamView stream={webrtc.remoteStream} style={styles.remoteVideo} mirror={false} />
-        ) : (
+        )}
+        {!webrtc.remoteHasVideo && (
           <>
-            <Animated.Image
-              source={{ uri: remoteAvatarUri }}
-              style={[styles.remoteAvatar, { transform: [{ scale: pulse }] }]}
-            />
             <View style={styles.remoteGrad} />
+            <View style={styles.remoteAvatarBox} pointerEvents="none">
+              <Animated.Image
+                source={{ uri: remoteAvatarUri }}
+                style={[styles.remoteAvatar, { transform: [{ scale: pulse }] }]}
+              />
+              {webrtc.remoteStream && status === "active" && (
+                <View style={styles.remoteCameraOffBadge}>
+                  <SvgIcon name="camera-off" size={12} color="rgba(255,255,255,0.85)" />
+                  <Text style={styles.remoteCameraOffText}>Camera off</Text>
+                </View>
+              )}
+            </View>
           </>
         )}
         {status !== "active" && (
@@ -374,12 +405,20 @@ export default function VideoCallScreen() {
         {activeCall?.isCameraOn && cameraGranted ? (
           webrtc.localStream ? (
             <StreamView stream={webrtc.localStream} style={styles.selfCameraView} mirror={true} />
-          ) : CameraView ? (
+          ) : !webrtc.isAvailable && CameraView ? (
+            // FIX (camera-busy race): only render <CameraView /> when WebRTC isn't
+            // available (e.g. web fallback). On native, WebRTC's getUserMedia
+            // owns the camera — rendering CameraView in parallel grabs the same
+            // hardware and breaks WebRTC capture.
             <CameraView
               style={styles.selfCameraView}
               facing="front"
             />
-          ) : null
+          ) : (
+            <View style={styles.selfCameraOff}>
+              <Text style={styles.selfCameraOffText}>Starting camera...</Text>
+            </View>
+          )
         ) : (
           <View style={styles.selfCameraOff}>
             <SvgIcon name="camera-off" size={22} color="rgba(255,255,255,0.6)" />
@@ -522,13 +561,31 @@ const styles = StyleSheet.create({
   remoteVideo: {
     ...StyleSheet.absoluteFillObject,
   },
+  remoteAvatarBox: {
+    position: "absolute",
+    top: "22%",
+    left: 0,
+    right: 0,
+    alignItems: "center",
+    gap: 10,
+  },
   remoteAvatar: {
     width: 180, height: 180, borderRadius: 90,
     borderWidth: 3, borderColor: "rgba(160, 14, 231, 0.5)",
   },
+  remoteCameraOffBadge: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    paddingHorizontal: 12, paddingVertical: 6,
+    borderRadius: 14,
+  },
+  remoteCameraOffText: {
+    color: "rgba(255,255,255,0.85)", fontSize: 11,
+    fontFamily: "Poppins_500Medium",
+  },
   remoteGrad: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(10, 10, 20, 0.35)",
+    backgroundColor: "rgba(10, 10, 20, 0.55)",
   },
   connectingBadge: {
     position: "absolute", bottom: 110, alignSelf: "center",

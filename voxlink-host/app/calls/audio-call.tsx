@@ -131,6 +131,23 @@ export default function AudioCallScreen() {
     return () => clearTimeout(t);
   }, [webrtc.connectionState, status, webrtc.cleanup, endCall]);
 
+  // FIX (connecting timeout): if WebRTC never reaches `connected` state within
+  // 30 s of mount, the call is stalled (CF Calls negotiation hung, ICE timed
+  // out, etc.). Auto-end so the host is not stuck on "Connecting..." while
+  // the server keeps the session (and the caller) alive.
+  useEffect(() => {
+    if (status === "active") return;
+    if (!webrtcReady) return;
+    const t = setTimeout(() => {
+      if (!webrtc.isConnected) {
+        console.warn("[host audio-call] Did not connect within 30s — auto-ending");
+        webrtc.cleanup();
+        endCall(true);
+      }
+    }, 30000);
+    return () => clearTimeout(t);
+  }, [status, webrtcReady, webrtc.isConnected, webrtc.cleanup, endCall]);
+
   // FIX (call-disconnect propagation safety net #2): poll the server every 10s
   // while active. Catches sessions that ended server-side (cron reaper, /end
   // with both WS and FCM lost, force-quit on the other device). 404 = pruned,
