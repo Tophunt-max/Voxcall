@@ -82,17 +82,23 @@ export default function HostRegisterScreen() {
         const { auth } = await import("@/services/firebase");
         const result = await signInWithPopup(auth, new GoogleAuthProvider());
         const u = result.user;
-        await handleGoogleProfileData(u.uid, u.displayName || "User", u.email || "", u.photoURL);
+        // Use the Google OIDC id_token (not Firebase's JWT) so the server
+        // can verify it via Google's tokeninfo endpoint.
+        const credential = GoogleAuthProvider.credentialFromResult(result);
+        const idToken = credential?.idToken ?? null;
+        await handleGoogleProfileData(u.uid, u.displayName || "User", u.email || "", u.photoURL, idToken);
       } else {
         await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
         const signInResult = await GoogleSignin.signIn();
         const googleUser = signInResult.data?.user;
+        const idToken = signInResult.data?.idToken ?? null;
         if (!googleUser?.email) throw new Error("Could not retrieve Google account info.");
         await handleGoogleProfileData(
           googleUser.id,
           googleUser.name || "User",
           googleUser.email,
           googleUser.photo ?? null,
+          idToken,
         );
       }
     } catch (err: any) {
@@ -109,9 +115,9 @@ export default function HostRegisterScreen() {
     }
   };
 
-  const handleGoogleProfileData = async (id: string, name: string, email: string, photo?: string | null) => {
+  const handleGoogleProfileData = async (id: string, name: string, email: string, photo?: string | null, idToken?: string | null) => {
     try {
-      const data = await API.googleLogin(email, name, id, photo ?? null);
+      const data = await API.googleLogin(email, name, id, photo ?? null, undefined, idToken);
       const u = data.user;
       await loginWithToken(data.token, {
         id: u.id, name: u.name, email: u.email,
