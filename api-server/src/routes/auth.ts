@@ -332,15 +332,8 @@ auth.post('/google-login', rateLimit, async (c) => {
     } catch {
       return c.json({ error: 'Failed to verify Google ID token' }, 500);
     }
-  } else if (body.google_id && body.email) {
-    // Legacy fallback: trust client-supplied data (for backward compatibility during migration)
-    // TODO: Remove this fallback once all clients send id_token
-    email = (body.email as string)?.trim().toLowerCase();
-    name = body.name || 'User';
-    google_id = body.google_id;
-    console.warn('[google-login] Client sent google_id without id_token — legacy mode');
   } else {
-    return c.json({ error: 'id_token or (email + google_id) required' }, 400);
+    return c.json({ error: 'id_token is required for Google login' }, 400);
   }
   const db = c.env.DB;
 
