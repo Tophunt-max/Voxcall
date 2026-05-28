@@ -21,6 +21,7 @@ import paymentRouter from './routes/payment';
 import { ChatRoom } from './durable-objects/ChatRoom';
 import { CallSignaling } from './durable-objects/CallSignaling';
 import { NotificationHub } from './durable-objects/NotificationHub';
+import { ensureUsersSchema } from './lib/schemaGuard';
 
 // Re-export Durable Objects (required by wrangler)
 export { ChatRoom, CallSignaling, NotificationHub };
@@ -59,6 +60,16 @@ app.use('*', cors({
 }));
 app.use('*', logger());
 app.use('*', prettyJSON());
+
+// Schema auto-heal: ensure migration 0023's columns (country, currency on
+// users) exist before any /api/* DB query runs. Cached per worker isolate
+// after first success — subsequent requests pay only a microtask cost.
+// Belt-and-suspenders for the case where `wrangler d1 migrations apply`
+// in CI didn't reach the production DB (e.g. missing `--remote` flag).
+app.use('/api/*', async (c, next) => {
+  await ensureUsersSchema(c.env.DB);
+  return next();
+});
 
 // Health check — also reports whether critical secrets are configured
 app.get('/api/healthz', (c) => c.json({
