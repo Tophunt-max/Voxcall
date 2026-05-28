@@ -6,6 +6,7 @@ import { signToken, verifyToken } from '../lib/jwt';
 import { hashPassword, verifyPassword, generateOTP, generateId, timingSafeEqual } from '../lib/hash';
 import { sendEmail, otpEmailHtml } from '../lib/email';
 import { detectCountryFromRequest, currencyForCountry } from '../lib/currency';
+import { verifyFirebaseIdToken, projectIdFromServiceAccount, decodeJwtPayloadUnsafe } from '../lib/firebaseVerify';
 import type { Env } from '../types';
 import { authMiddleware } from '../middleware/auth';
 
@@ -374,17 +375,56 @@ auth.post('/google-login', rateLimit, async (c) => {
   let google_id: string;
 
   if (id_token) {
-    // Verify the Google ID token via Google's tokeninfo API
+    // Two valid token shapes reach this endpoint:
+    //   1. Google OIDC ID token  — issuer "accounts.google.com"
+    //      (from react-native-google-signin on Android/iOS, or from
+    //      GoogleAuthProvider.credentialFromResult() on web)
+    //   2. Firebase ID token     — issuer "securetoken.google.com/<project>"
+    //      (from Firebase Web SDK's user.getIdToken() on web)
+    //
+    // Google's tokeninfo endpoint only verifies type 1 — it rejects type 2
+    // with HTTP 400 "Invalid Value", which surfaced to users as
+    // "Invalid Google ID token". Route by issuer so both work.
+    const peek = decodeJwtPayloadUnsafe(id_token);
+    if (!peek) {
+      return c.json({ error: 'Malformed ID token' }, 400);
+    }
+    const iss = String(peek.iss || '');
+
     try {
-      const verifyRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(id_token)}`);
-      if (!verifyRes.ok) return c.json({ error: 'Invalid Google ID token' }, 401);
-      const tokenData = await verifyRes.json() as { email: string; name?: string; sub: string; picture?: string };
-      email = tokenData.email?.trim().toLowerCase();
-      name = tokenData.name || body.name || 'User';
-      google_id = tokenData.sub;
+      if (iss === 'https://accounts.google.com' || iss === 'accounts.google.com') {
+        // ── Google OIDC token ───────────────────────────────────────────
+        const verifyRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(id_token)}`);
+        if (!verifyRes.ok) {
+          const errBody = await verifyRes.text().catch(() => '');
+          console.error('[google-login] tokeninfo rejected:', verifyRes.status, errBody.slice(0, 300));
+          return c.json({ error: 'Invalid Google ID token' }, 401);
+        }
+        const tokenData = await verifyRes.json() as { email?: string; name?: string; sub?: string; picture?: string };
+        email = (tokenData.email || '').trim().toLowerCase();
+        name = tokenData.name || body.name || 'User';
+        google_id = tokenData.sub || '';
+      } else if (iss.startsWith('https://securetoken.google.com/')) {
+        // ── Firebase ID token ───────────────────────────────────────────
+        const tokenProjectId = iss.split('/').pop() || '';
+        const expectedProjectId = projectIdFromServiceAccount(c.env.FIREBASE_SERVICE_ACCOUNT) || tokenProjectId;
+        if (tokenProjectId !== expectedProjectId) {
+          console.error('[google-login] Firebase token project mismatch:', tokenProjectId, 'vs', expectedProjectId);
+          return c.json({ error: 'Invalid Firebase ID token' }, 401);
+        }
+        const claims = await verifyFirebaseIdToken(id_token, expectedProjectId);
+        email = String(claims.email || '').trim().toLowerCase();
+        name = claims.name || body.name || 'User';
+        google_id = String(claims.sub || claims.user_id || '');
+      } else {
+        console.error('[google-login] unknown token issuer:', iss);
+        return c.json({ error: 'Invalid token issuer' }, 401);
+      }
+
       if (!email || !google_id) return c.json({ error: 'Invalid Google token payload' }, 401);
-    } catch {
-      return c.json({ error: 'Failed to verify Google ID token' }, 500);
+    } catch (err: any) {
+      console.error('[google-login] ID token verification failed:', err?.message || err);
+      return c.json({ error: 'Invalid ID token' }, 401);
     }
   } else {
     return c.json({ error: 'id_token is required for Google login' }, 400);

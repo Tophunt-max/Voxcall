@@ -82,10 +82,9 @@ export default function HostRegisterScreen() {
         const { auth } = await import("@/services/firebase");
         const result = await signInWithPopup(auth, new GoogleAuthProvider());
         const u = result.user;
-        // Use the Google OIDC id_token (not Firebase's JWT) so the server
-        // can verify it via Google's tokeninfo endpoint.
-        const credential = GoogleAuthProvider.credentialFromResult(result);
-        const idToken = credential?.idToken ?? null;
+        // Send the Firebase ID token; the server's google-login route
+        // accepts both Google OIDC and Firebase JWTs (routed by iss claim).
+        const idToken = await u.getIdToken();
         await handleGoogleProfileData(u.uid, u.displayName || "User", u.email || "", u.photoURL, idToken);
       } else {
         await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });

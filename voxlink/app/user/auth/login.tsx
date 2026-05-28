@@ -65,13 +65,11 @@ export default function LoginScreen() {
         const provider = new GoogleAuthProvider();
         const result = await signInWithPopup(auth, provider);
         const u = result.user;
-        // FIX: server verifies via Google's tokeninfo endpoint, which only
-        // accepts Google-issued ID tokens. `u.getIdToken()` returns a
-        // Firebase JWT (different signer/audience) and gets rejected with
-        // "Invalid Google ID token". credentialFromResult() exposes the
-        // actual Google OIDC id_token from the OAuth response.
-        const credential = GoogleAuthProvider.credentialFromResult(result);
-        const idToken = credential?.idToken ?? null;
+        // On web we send the Firebase ID token (signed by Firebase, easy
+        // to verify on the server via Firebase JWKS). The server's
+        // /api/auth/google-login route accepts both Google OIDC tokens
+        // and Firebase ID tokens, routing by the `iss` claim.
+        const idToken = await u.getIdToken();
         await handleGoogleProfileData(u.uid, u.displayName || "User", u.email || "", u.photoURL, idToken);
       } else {
         await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
