@@ -36,10 +36,14 @@ crons = ["*/5 * * * *"]
 CF_ACCOUNT_ID = "b592b3b2a5455323a76de721a92699cd"
 CF_CALLS_APP_ID = "536d1e7e8d540b7ccfb238d32f734d1a"
 
-# Secrets (set via Cloudflare Dashboard → Workers → voxlink-api → Settings → Variables & Secrets):
+# Secrets (set via Cloudflare Dashboard → Workers → voxlink-api → Settings → Variables & Secrets,
+# or via `wrangler secret put <NAME>`, or automatically by .github/workflows/deploy-backend.yml
+# when the matching GitHub repo secret is present):
 # - CF_CALLS_APP_SECRET       (Cloudflare Calls App Secret)
 # - JWT_SECRET                (JWT signing secret)
 # - FIREBASE_SERVICE_ACCOUNT  (Firebase Service Account JSON for FCM HTTP v1 API)
+# - TURN_KEY_ID               (Cloudflare Realtime TURN Key ID — for /api/calls/ice-config)
+# - TURN_KEY_TOKEN            (Cloudflare Realtime TURN Key Token — for /api/calls/ice-config)
 
 [dev]
 port = 8787
