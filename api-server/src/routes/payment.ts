@@ -107,7 +107,9 @@ payment.post('/webhook/stripe', async (c) => {
     if (!timestamp || !parts['v1']) return c.json({ error: 'Malformed signature header' }, 401);
     // Reject signatures older than 5 minutes — prevents replay attacks
     const ageSec = Math.floor(Date.now() / 1000) - parseInt(timestamp, 10);
-    if (Number.isNaN(ageSec) || ageSec > 300 || ageSec < -60) {
+    // FIX #31: tighten future-clock tolerance from 60s to 10s. Anything earlier
+    // than -10s is almost certainly a malformed/forged timestamp.
+    if (Number.isNaN(ageSec) || ageSec > 300 || ageSec < -10) {
       return c.json({ error: 'Stale signature timestamp' }, 401);
     }
     const expected = await hmacSha256(secret.value, `${timestamp}.${body}`);

@@ -29,9 +29,13 @@ const ALLOWED_ORIGINS = [
   /^https?:\/\/localhost(:\d+)?$/,
   /\.replit\.app$/,
   /\.replit\.dev$/,
-  /^https:\/\/voxlink/i,
-  /^https:\/\/voxcall/i,
-  /^https:\/\/connectme/i,
+  // FIX #10: Anchor the brand patterns so `https://voxlinkattacker.com` cannot
+  // match. Allow any subdomain plus a real TLD (one or more dot-separated
+  // labels) — covers voxlink.com, app.voxlink.io, etc., but not arbitrary
+  // domains that merely start with the brand name.
+  /^https:\/\/(.*\.)?voxlink\.[a-z.]+$/i,
+  /^https:\/\/(.*\.)?voxcall\.[a-z.]+$/i,
+  /^https:\/\/(.*\.)?connectme\.[a-z.]+$/i,
   /\.pages\.dev$/,
 ];
 

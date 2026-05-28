@@ -39,6 +39,10 @@ export const adminMiddleware = createMiddleware<{ Bindings: Env; Variables: Vari
   async (c, next) => {
     const user = c.get('user');
     if (user?.role !== 'admin') return c.json({ error: 'Forbidden' }, 403);
+    // TODO (#29): Add rate limiting on admin endpoints to prevent abuse from
+    // compromised admin tokens. A single leaked admin JWT can currently issue
+    // unlimited /api/admin/* calls (mass user delete, settings rewrite, etc.).
+    // Likely shape: per-admin sliding-window counter in the rate_limits table.
     await next();
   }
 );

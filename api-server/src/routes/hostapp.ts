@@ -3,6 +3,20 @@ import { Hono } from 'hono';
 import { authMiddleware } from '../middleware/auth';
 import type { Env, JWTPayload } from '../types';
 
+// FIX #20: Validate KYC document URLs are well-formed https URLs before
+// persisting. We don't fetch them — that's the admin/reviewer's job — but we
+// do reject obvious garbage so the KYC review queue isn't littered with
+// `javascript:` URIs or local file paths.
+function isValidHttpsUrl(s: unknown): boolean {
+  if (typeof s !== 'string' || !s) return false;
+  try {
+    const u = new URL(s);
+    return u.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 const hostapp = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
 hostapp.use('*', authMiddleware);
 
@@ -68,6 +82,19 @@ hostapp.post('/submit', async (c) => {
 
   if (!aadhar_front_url || !aadhar_back_url) {
     return c.json({ error: 'Aadhar front and back photos required' }, 400);
+  }
+
+  // FIX #20: Validate KYC URL fields. Required ones (aadhar front/back) must
+  // pass the https check; verification_video_url is optional, so we only
+  // validate it when supplied.
+  if (!isValidHttpsUrl(aadhar_front_url)) {
+    return c.json({ error: 'aadhar_front_url must be a valid https URL' }, 400);
+  }
+  if (!isValidHttpsUrl(aadhar_back_url)) {
+    return c.json({ error: 'aadhar_back_url must be a valid https URL' }, 400);
+  }
+  if (verification_video_url && !isValidHttpsUrl(verification_video_url)) {
+    return c.json({ error: 'verification_video_url must be a valid https URL' }, 400);
   }
 
   // Validate date of birth — required for KYC

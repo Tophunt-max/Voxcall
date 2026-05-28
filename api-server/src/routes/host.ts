@@ -77,8 +77,22 @@ host.get('/', async (c) => {
   const params: any[] = [];
 
   if (online === '1') { query += ' AND h.is_online = 1'; }
-  if (search) { query += ' AND (u.name LIKE ? OR h.display_name LIKE ?)'; params.push(`%${search}%`, `%${search}%`); }
-  if (topic) { query += ' AND h.specialties LIKE ?'; params.push(`%${topic}%`); }
+  // FIX #26: Strip LIKE meta-characters and clamp length so a malicious search
+  // term like `%%%%%...%%%` can't trigger a worst-case full-table LIKE scan.
+  if (search) {
+    const safeSearch = String(search).replace(/[%_\\]/g, '').slice(0, 50);
+    if (safeSearch) {
+      query += ' AND (u.name LIKE ? OR h.display_name LIKE ?)';
+      params.push(`%${safeSearch}%`, `%${safeSearch}%`);
+    }
+  }
+  if (topic) {
+    const safeTopic = String(topic).replace(/[%_\\]/g, '').slice(0, 50);
+    if (safeTopic) {
+      query += ' AND h.specialties LIKE ?';
+      params.push(`%${safeTopic}%`);
+    }
+  }
 
   // Keyset cursor: encoded as base64(JSON({is_online,rating,total_minutes,id}))
   if (cursor) {

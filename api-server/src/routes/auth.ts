@@ -84,8 +84,11 @@ auth.post('/register', rateLimit, zValidator('json', registerSchema), async (c) 
   ).bind(email).first<any>();
 
   if (existing) {
-    // If the user exists but hasn't completed host signup (role = 'user'), let them continue
-    // by verifying their password and issuing a fresh token.
+    // FIX #21: Don't leak whether the email exists or whether the password
+    // matched. The auto-login UX is preserved for incomplete user signups
+    // (existing user account that hasn't become a host), but every other
+    // case — wrong password, existing host — returns the same generic error
+    // a fresh /login mismatch would.
     const passwordOk = await verifyPassword(password, existing.password_hash);
     if (passwordOk && existing.role !== 'host') {
       const token = await signToken(
@@ -98,7 +101,7 @@ auth.post('/register', rateLimit, zValidator('json', registerSchema), async (c) 
         user: { id: existing.id, name: existing.name, email: existing.email, role: existing.role, coins: existing.coins ?? 0 },
       }, 200);
     }
-    return c.json({ error: 'Email already registered' }, 409);
+    return c.json({ error: 'Invalid email or password' }, 401);
   }
   const id = generateId();
   const hash = await hashPassword(password);
@@ -167,36 +170,49 @@ auth.post('/verify-otp', strictRateLimit, async (c) => {
   const user = await db.prepare(
     'SELECT id, otp, otp_expires_at FROM users WHERE email = ?'
   ).bind(email).first<any>();
-  // SECURITY FIX: Use constant-time comparison for OTP to prevent timing attacks
+  // SECURITY FIX: Use constant-time comparison for OTP to prevent timing attacks.
+  // The atomic UPDATE below is the real protection against double-credit races;
+  // this check just lets us fail fast on obvious mismatches without leaking timing.
   if (!user || !user.otp || !timingSafeEqual(String(user.otp), otp) || user.otp_expires_at < now) {
     return c.json({ error: 'Invalid or expired OTP' }, 400);
   }
-  
-  // BUG FIX #3: Atomic referral processing to prevent race condition
-  // Use UPDATE...WHERE to make coin award atomic
+
+  // CRITICAL FIX (#9): Atomic verify + welcome bonus credit.
+  // Previously the read (above) and the credit-write (below) were separate, so
+  // two concurrent verify-otp requests could both pass the read and both add
+  // 100 coins. The `is_verified = 0` guard ensures only the first UPDATE wins;
+  // the second sees changes=0 and returns the same generic error.
+  const verifyResult = await db.prepare(
+    `UPDATE users
+       SET is_verified = 1, otp = NULL, otp_expires_at = NULL,
+           coins = coins + 100, updated_at = unixepoch()
+       WHERE id = ? AND otp = ? AND otp_expires_at > ? AND is_verified = 0`
+  ).bind(user.id, user.otp, now).run();
+
+  if (!verifyResult.meta?.changes) {
+    return c.json({ error: 'Invalid or expired OTP' }, 400);
+  }
+
+  // BUG FIX #3: Atomic referral processing (extra +10 to verified user, +25 to referrer)
   const pendingReferral = await db.prepare(
     'SELECT id, referrer_id FROM referral_uses WHERE referred_id = ? AND coins_given = 0 LIMIT 1'
   ).bind(user.id).first<any>();
 
   if (pendingReferral) {
     const bonus = 25;
-    // CRITICAL: Use atomic UPDATE with guard to prevent double-award race condition
-    const atomicReferralUpdate = await db.prepare(
+    const refResult = await db.prepare(
       'UPDATE referral_uses SET coins_given = ? WHERE id = ? AND coins_given = 0'
     ).bind(bonus, pendingReferral.id).run();
-    
-    // Only proceed if the referral update succeeded (guard against concurrent verification)
-    if (atomicReferralUpdate.meta?.changes && atomicReferralUpdate.meta.changes > 0) {
+
+    if (refResult.meta?.changes && refResult.meta.changes > 0) {
       await db.batch([
-        db.prepare('UPDATE users SET is_verified = 1, otp = NULL, coins = coins + 110 WHERE id = ?').bind(user.id),
+        db.prepare('UPDATE users SET coins = coins + 10 WHERE id = ?').bind(user.id),
         db.prepare('UPDATE users SET coins = coins + ? WHERE id = ?').bind(bonus, pendingReferral.referrer_id),
       ]);
       return c.json({ success: true, bonus_coins: 110 });
     }
   }
-  
-  // No pending referral or it was already processed
-  await db.prepare('UPDATE users SET is_verified = 1, otp = NULL, coins = coins + 100 WHERE id = ?').bind(user.id).run();
+
   return c.json({ success: true, bonus_coins: 100 });
 });
 
@@ -274,6 +290,21 @@ auth.post('/refresh', rateLimit, async (c) => {
   if (!token) return c.json({ error: 'Token required' }, 400);
   try {
     const payload = await verifyToken(token, c.env.JWT_SECRET);
+
+    // FIX #28: Reject tokens without a numeric `iat` so the age check below
+    // can't be bypassed by stripping/altering the claim.
+    if (typeof payload.iat !== 'number') {
+      return c.json({ error: 'Malformed token' }, 401);
+    }
+
+    // FIX #18: Cap total session lifetime. Refresh extends the token, so
+    // without a hard ceiling a single login could be refreshed forever.
+    const now = Math.floor(Date.now() / 1000);
+    const MAX_REFRESH_AGE = 30 * 24 * 60 * 60; // 30 days
+    if (now - payload.iat > MAX_REFRESH_AGE) {
+      return c.json({ error: 'Token too old, please log in again' }, 401);
+    }
+
     const user = await c.env.DB.prepare(
       'SELECT id, name, role, status, token_invalidated_at FROM users WHERE id = ?'
     ).bind(payload.sub).first<any>();
@@ -282,9 +313,8 @@ auth.post('/refresh', rateLimit, async (c) => {
       return c.json({ error: 'Account suspended' }, 403);
     }
     // Reject refresh if token was issued before the invalidation timestamp (e.g. after logout)
-    const issuedAt = payload.iat ?? 0;
     const invalidatedAt = user.token_invalidated_at ?? 0;
-    if (issuedAt < invalidatedAt) {
+    if (payload.iat < invalidatedAt) {
       return c.json({ error: 'Token has been revoked. Please log in again.' }, 401);
     }
     const newToken = await signToken({ sub: user.id, role: user.role, name: user.name, email: user.email }, c.env.JWT_SECRET);
@@ -448,7 +478,10 @@ async function quickLoginHandler(c: any, deviceId: string | null) {
   const quickEmail = `${quickId}@quick.voxlink.app`;
   const _adj = ['Happy','Bright','Cool','Swift','Bold','Brave','Calm','Witty','Smart','Lucky'];
   const _ani = ['Fox','Bear','Wolf','Lion','Tiger','Eagle','Panda','Koala','Hawk','Lynx'];
-  const quickName = `${_adj[Math.floor(Math.random()*_adj.length)]}${_ani[Math.floor(Math.random()*_ani.length)]}${String(Math.floor(Math.random()*900)+100)}`;
+  // FIX #33: Bumped suffix from 3 digits (1000 combinations / adj×animal pair)
+  // to 5 digits (100k) to make device-keyed quick-login names far less likely
+  // to collide on a busy day.
+  const quickName = `${_adj[Math.floor(Math.random()*_adj.length)]}${_ani[Math.floor(Math.random()*_ani.length)]}${String(Math.floor(Math.random()*90000)+10000)}`;
 
   // Bug fix: 0 coins for guest accounts (was 50) — prevents Sybil attack of creating
   // unlimited guest accounts to farm free coins.

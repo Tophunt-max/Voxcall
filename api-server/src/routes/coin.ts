@@ -62,11 +62,27 @@ coin.post('/purchase', async (c) => {
   if (!plan) return c.json({ error: 'Plan not found' }, 404);
 
   const method = payment_method || 'unknown';
-  // SECURITY FIX: Block 'manual' and 'admin_grant' via the public purchase endpoint.
-  // Manual deposits should go through /manual-deposit (creates pending record for admin review).
-  // Admin grants should only happen via /admin endpoints.
-  if (['manual', 'admin_grant'].includes(method)) {
-    return c.json({ error: 'This payment method is not available for self-service purchases' }, 403);
+  // SECURITY FIX (Critical #7): /api/coins/purchase no longer accepts arbitrary
+  // payment_method values. Self-service crediting from this route is the wrong
+  // primitive — there is no payment-gateway verification here, so any caller
+  // could supply a payment_ref and credit themselves coins.
+  //
+  // Real flows:
+  //   - Manual UPI / QR  → POST /api/coins/manual-deposit (creates `pending`
+  //                        purchase, admin approves via /api/admin/deposits)
+  //   - Online gateways  → POST /api/payment/* (initiate) and the verified
+  //                        webhook (Stripe / Razorpay / PhonePe) credits coins.
+  //   - Admin grant      → /api/admin/* with admin auth.
+  //
+  // Allowlist is intentionally empty: there is no payment_method that should
+  // be accepted here. Kept the route mounted to return a clear 400 instead of
+  // 404 so older clients get an actionable error message.
+  const PURCHASE_PAYMENT_METHOD_ALLOWLIST: string[] = [];
+  if (!PURCHASE_PAYMENT_METHOD_ALLOWLIST.includes(method)) {
+    return c.json(
+      { error: 'Use /api/payment/* for online payments or /api/coins/manual-deposit for UPI/QR' },
+      400
+    );
   }
   // Require payment_ref for all payment methods (prevents free coin abuse)
   if (!payment_ref) {
@@ -157,24 +173,20 @@ coin.post('/manual-deposit', async (c) => {
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'manual', ?, ?, ?, ?, 'pending', ?)`
   ).bind(purchaseId, sub, plan_id, plan.name, plan.coins, (plan.bonus_coins || 0) + promoBonus, plan.price, plan.currency || 'USD', qr_code_id || null, qrName, String(utr_id).trim(), promo_code || null, screenshot_url || null).run();
 
-  // Check auto-approve setting
-  const autoApproveSetting = await db.prepare("SELECT value FROM app_settings WHERE key = 'auto_approve_manual'").first<any>();
-  const autoApproveMaxSetting = await db.prepare("SELECT value FROM app_settings WHERE key = 'auto_approve_manual_max_amount'").first<any>();
-  const autoApprove = autoApproveSetting?.value === 'true' || autoApproveSetting?.value === '1';
-  const autoApproveMax = parseFloat(autoApproveMaxSetting?.value || '0');
-  if (autoApprove && (autoApproveMax <= 0 || plan.price <= autoApproveMax)) {
-    const totalCoins = (plan.coins || 0) + (plan.bonus_coins || 0) + promoBonus;
-    await db.batch([
-      db.prepare("UPDATE coin_purchases SET status = 'success', updated_at = unixepoch() WHERE id = ? AND status = 'pending'").bind(purchaseId),
-      db.prepare('UPDATE users SET coins = coins + ?, updated_at = unixepoch() WHERE id = ?').bind(totalCoins, sub),
-      db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)').bind(
-        crypto.randomUUID(), sub, 'purchase', totalCoins, 'Manual payment auto-approved', purchaseId
-      ),
-    ]);
-    return c.json({ success: true, purchase_id: purchaseId, status: 'success', coins_added: totalCoins, message: 'Payment auto-approved! Coins added to your account.' });
-  }
-
-  return c.json({ success: true, purchase_id: purchaseId, status: 'pending', message: 'Payment submitted for admin review. Coins will be added once approved.' });
+  // SECURITY FIX (Critical #8): Auto-approve removed. Even with a small amount
+  // threshold, trusting any client-supplied UTR meant a malicious user could
+  // get coins by submitting a fake/random transaction reference. All manual
+  // deposits MUST go through admin verification via /api/admin/deposits.
+  //
+  // The `auto_approve_manual` and `auto_approve_manual_max_amount` settings
+  // are intentionally ignored here. They can stay in app_settings (other code
+  // may surface them in the admin UI) but they no longer credit coins.
+  return c.json({
+    success: true,
+    purchase_id: purchaseId,
+    status: 'pending',
+    message: 'Payment submitted for admin review. Coins will be added once approved.',
+  });
 });
 
 // POST /api/coins/withdraw — host withdrawal request
