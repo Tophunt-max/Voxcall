@@ -2,6 +2,7 @@
 // Hosts earn coins per minute from calls; they can withdraw earnings
 
 import { appendToArray, getItem, StorageKeys } from "@/utils/storage";
+import { coinsToLocalCurrency } from "@/utils/currency";
 
 export type TransactionType = "earning" | "bonus" | "withdrawal" | "adjustment";
 export type TransactionStatus = "completed" | "pending" | "failed" | "refunded";
@@ -164,6 +165,12 @@ export function coinsToINR(coins: number): string {
   return `₹${(coins * COIN_TO_INR_RATE).toFixed(2)}`;
 }
 
+// FIX (currency auto-detect): show coins → fiat in the host's local currency.
+// Falls back to USD when no server-detected currency is available (logged out,
+// pre-migration users on first launch).
 export function coinsToUSD(coins: number): string {
-  return `$${(coins * COIN_TO_USD_RATE).toFixed(2)}`;
+  // Name kept for backward compat — the actual currency is now whatever the
+  // server detected for this host. coinsToLocalCurrency is the new explicit
+  // helper but a lot of host screens still call coinsToUSD.
+  return coinsToLocalCurrency(coins);
 }

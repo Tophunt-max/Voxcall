@@ -1,13 +1,63 @@
 import { Hono } from 'hono';
 import { authMiddleware } from '../middleware/auth';
+import { COUNTRY_TO_CURRENCY, USD_TO_FOREIGN, currencyForCountry, convertFromUSD, detectCountryFromRequest } from '../lib/currency';
 import type { Env, JWTPayload } from '../types';
 
 const coin = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
 
-// GET /api/coins/plans — public
+// GET /api/coins/plans — public, but the response is localized to the
+// caller's currency when we can detect it. Resolution priority:
+//   1. ?currency= query (explicit override — admin tools, testing)
+//   2. Authenticated user's currency (set at login from CF-IPCountry)
+//   3. Cloudflare's CF-IPCountry header on this request
+//   4. USD fallback so the response shape is always consistent
+//
+// Each plan now carries `price_local` and `currency` alongside the original
+// USD `price` so the client can display the local amount without doing FX
+// itself, AND the original USD is preserved for analytics/admin tooling.
 coin.get('/plans', async (c) => {
   const plans = await c.env.DB.prepare('SELECT * FROM coin_plans WHERE is_active = 1 ORDER BY coins ASC').all();
-  return c.json(plans.results);
+
+  // Resolve currency for this response.
+  let currency = 'USD';
+  const queryCurrency = c.req.query('currency')?.toUpperCase();
+  if (queryCurrency && USD_TO_FOREIGN[queryCurrency]) {
+    currency = queryCurrency;
+  } else {
+    // Try authenticated user (no auth requirement on this route, so verify token if present)
+    const authHeader = c.req.header('Authorization');
+    if (authHeader?.startsWith('Bearer ')) {
+      try {
+        const { verifyToken } = await import('../lib/jwt');
+        const payload = await verifyToken(authHeader.slice(7), c.env.JWT_SECRET);
+        const u = await c.env.DB.prepare('SELECT currency FROM users WHERE id = ?').bind(payload.sub).first<{ currency: string | null }>();
+        if (u?.currency && USD_TO_FOREIGN[u.currency]) {
+          currency = u.currency;
+        }
+      } catch { /* token invalid → fall through to header detection */ }
+    }
+    if (currency === 'USD') {
+      const country = detectCountryFromRequest(c.req.raw);
+      if (country) currency = currencyForCountry(country);
+    }
+  }
+
+  const localized = (plans.results as any[]).map((p) => {
+    // Plan rows store amount in USD (legacy currency column defaults to 'USD'
+    // and the seeds use USD prices — see migrations/0001_initial.sql).
+    const usdPrice = Number(p.price ?? 0);
+    const priceLocal = convertFromUSD(usdPrice, currency);
+    return {
+      ...p,
+      // Original USD preserved for admin/analytics
+      price_usd: usdPrice,
+      // What the client should actually show
+      price_local: priceLocal,
+      currency,
+    };
+  });
+
+  return c.json(localized);
 });
 
 // POST /api/coins/apply-promo — validate a promo code (requires auth to prevent brute-force)

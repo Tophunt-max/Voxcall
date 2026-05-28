@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { signToken, verifyToken } from '../lib/jwt';
 import { hashPassword, verifyPassword, generateOTP, generateId, timingSafeEqual } from '../lib/hash';
 import { sendEmail, otpEmailHtml } from '../lib/email';
+import { detectCountryFromRequest, currencyForCountry } from '../lib/currency';
 import type { Env } from '../types';
 import { authMiddleware } from '../middleware/auth';
 
@@ -107,12 +108,18 @@ auth.post('/register', rateLimit, zValidator('json', registerSchema), async (c) 
   const hash = await hashPassword(password);
   const otp = generateOTP();
   const otpExp = Math.floor(Date.now() / 1000) + 600;
+  // FIX (currency auto-detect): capture the user's country at registration so
+  // we can serve localized prices on the very first /api/coins/plans call.
+  // The auth middleware later backfills any users who registered before this
+  // change.
+  const country = detectCountryFromRequest(c.req.raw);
+  const currency = country ? currencyForCountry(country) : null;
   // SECURITY FIX: Set is_verified=0 at registration. Only set to 1 after OTP verification.
   // Previously was hardcoded to 1, completely bypassing email verification.
   await db.prepare(
-    `INSERT INTO users (id, name, email, password_hash, gender, phone, otp, otp_expires_at, is_verified)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`
-  ).bind(id, name, email, hash, gender ?? null, phone ?? null, otp, otpExp).run();
+    `INSERT INTO users (id, name, email, password_hash, gender, phone, otp, otp_expires_at, is_verified, country, currency)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
+  ).bind(id, name, email, hash, gender ?? null, phone ?? null, otp, otpExp, country, currency).run();
   // Bug 3 Fix: Record referral as pending (coins_given=0) — coins awarded only after OTP verification
   // This prevents Sybil attacks where fake accounts are created to farm referral coins.
   if (referral_code) {
@@ -134,7 +141,7 @@ auth.post('/register', rateLimit, zValidator('json', registerSchema), async (c) 
   });
 
   const token = await signToken({ sub: id, role: 'user', name, email }, c.env.JWT_SECRET);
-  return c.json({ token, user: { id, name, email, role: 'user', coins: 0 } }, 201);
+  return c.json({ token, user: { id, name, email, role: 'user', coins: 0, country, currency } }, 201);
 });
 
 // POST /api/auth/login
@@ -143,11 +150,28 @@ auth.post('/login', rateLimit, zValidator('json', loginSchema), async (c) => {
   const email = c.req.valid('json').email.trim().toLowerCase();
   const db = c.env.DB;
   const user = await db.prepare(
-    'SELECT id, name, email, password_hash, role, coins, avatar_url, gender, phone, bio FROM users WHERE email = ?'
+    'SELECT id, name, email, password_hash, role, coins, avatar_url, gender, phone, bio, country, currency FROM users WHERE email = ?'
   ).bind(email).first<any>();
   if (!user) return c.json({ error: 'Invalid email or password' }, 401);
   const valid = await verifyPassword(password, user.password_hash);
   if (!valid) return c.json({ error: 'Invalid email or password' }, 401);
+
+  // FIX (currency auto-detect): backfill country/currency on login when the
+  // user record predates the 0023 migration. Same pattern as the auth
+  // middleware backfill but runs at login so the response carries the
+  // detected currency immediately.
+  if (!user.country || !user.currency) {
+    const detected = detectCountryFromRequest(c.req.raw);
+    if (detected) {
+      const cur = currencyForCountry(detected);
+      await db.prepare(
+        'UPDATE users SET country = COALESCE(country, ?), currency = COALESCE(currency, ?) WHERE id = ?'
+      ).bind(detected, cur, user.id).run().catch(() => {});
+      user.country = user.country ?? detected;
+      user.currency = user.currency ?? cur;
+    }
+  }
+
   const token = await signToken({ sub: user.id, role: user.role, name: user.name, email: user.email }, c.env.JWT_SECRET);
   const { password_hash, ...safeUser } = user;
   // If host, fetch host data
@@ -369,13 +393,13 @@ auth.post('/google-login', rateLimit, async (c) => {
 
   // 1. Look up by google_id first (handles email changes in Google account)
   let user = await db.prepare(
-    'SELECT id, name, email, role, coins, avatar_url, gender, phone, bio FROM users WHERE google_id = ?'
+    'SELECT id, name, email, role, coins, avatar_url, gender, phone, bio, country, currency FROM users WHERE google_id = ?'
   ).bind(google_id).first<any>();
 
   // 2. Fall back to email lookup
   if (!user) {
     user = await db.prepare(
-      'SELECT id, name, email, role, coins, avatar_url, gender, phone, bio FROM users WHERE email = ?'
+      'SELECT id, name, email, role, coins, avatar_url, gender, phone, bio, country, currency FROM users WHERE email = ?'
     ).bind(email).first<any>();
   }
 
@@ -383,7 +407,7 @@ auth.post('/google-login', rateLimit, async (c) => {
   //    This prevents creating a second account when user switches from Quick Login to Google
   if (!user && device_id) {
     const deviceUser = await db.prepare(
-      "SELECT id, name, email, role, coins, avatar_url, gender, phone, bio FROM users WHERE device_id = ? AND (google_id IS NULL OR google_id = '') LIMIT 1"
+      "SELECT id, name, email, role, coins, avatar_url, gender, phone, bio, country, currency FROM users WHERE device_id = ? AND (google_id IS NULL OR google_id = '') LIMIT 1"
     ).bind(device_id).first<any>();
     if (deviceUser) {
       // Merge: upgrade the quick-login account to a full Google account
@@ -395,17 +419,21 @@ auth.post('/google-login', rateLimit, async (c) => {
     }
   }
 
+  // FIX (currency auto-detect): country + currency on first Google login
+  const detectedCountry = detectCountryFromRequest(c.req.raw);
+  const detectedCurrency = detectedCountry ? currencyForCountry(detectedCountry) : null;
+
   if (!user) {
     // 4. New user — create account
     const id = 'g_' + generateId().slice(0, 12);
     const av = avatar_url || null;
     await db.prepare(
-      `INSERT INTO users (id, name, email, password_hash, role, coins, is_verified, avatar_url, google_id, device_id)
-       VALUES (?, ?, ?, '', 'user', 0, 1, ?, ?, ?)`
-    ).bind(id, name, email, av, google_id, device_id ?? null).run();
-    user = { id, name, email, role: 'user', coins: 0, avatar_url: av };
+      `INSERT INTO users (id, name, email, password_hash, role, coins, is_verified, avatar_url, google_id, device_id, country, currency)
+       VALUES (?, ?, ?, '', 'user', 0, 1, ?, ?, ?, ?, ?)`
+    ).bind(id, name, email, av, google_id, device_id ?? null, detectedCountry, detectedCurrency).run();
+    user = { id, name, email, role: 'user', coins: 0, avatar_url: av, country: detectedCountry, currency: detectedCurrency };
   } else {
-    // 5. Existing user — update google_id, avatar, device_id as needed
+    // 5. Existing user — update google_id, avatar, device_id, and backfill country/currency if missing
     const updates: string[] = ['google_id = ?'];
     const bindings: any[] = [google_id];
     if (avatar_url && !user.avatar_url) {
@@ -416,6 +444,16 @@ auth.post('/google-login', rateLimit, async (c) => {
     if (device_id) {
       updates.push('device_id = ?');
       bindings.push(device_id);
+    }
+    if (!user.country && detectedCountry) {
+      updates.push('country = ?');
+      bindings.push(detectedCountry);
+      user.country = detectedCountry;
+    }
+    if (!user.currency && detectedCurrency) {
+      updates.push('currency = ?');
+      bindings.push(detectedCurrency);
+      user.currency = detectedCurrency;
     }
     bindings.push(user.id);
     await db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`)
@@ -435,6 +473,8 @@ auth.post('/google-login', rateLimit, async (c) => {
       phone: user.phone ?? null,
       gender: user.gender ?? null,
       bio: user.bio,
+      country: user.country ?? null,
+      currency: user.currency ?? null,
     }
   });
 });
@@ -459,16 +499,39 @@ async function quickLoginHandler(c: any, deviceId: string | null) {
 
   const db = c.env.DB;
 
+  // FIX (currency auto-detect): detect country once at the top of the handler
+  // so both the returning-user backfill and the new-user INSERT can reuse it.
+  const detectedCountry = detectCountryFromRequest(c.req.raw);
+  const detectedCurrency = detectedCountry ? currencyForCountry(detectedCountry) : null;
+
   if (deviceId) {
     const existing = await db.prepare(
-      'SELECT id, name, email, role, coins, avatar_url FROM users WHERE device_id = ? LIMIT 1'
+      'SELECT id, name, email, role, coins, avatar_url, country, currency FROM users WHERE device_id = ? LIMIT 1'
     ).bind(deviceId).first() as any;
 
     if (existing) {
+      // Backfill country/currency if missing
+      if ((!existing.country || !existing.currency) && detectedCountry) {
+        await db.prepare(
+          'UPDATE users SET country = COALESCE(country, ?), currency = COALESCE(currency, ?) WHERE id = ?'
+        ).bind(detectedCountry, detectedCurrency, existing.id).run().catch(() => {});
+        existing.country = existing.country ?? detectedCountry;
+        existing.currency = existing.currency ?? detectedCurrency;
+      }
       const token = await signToken({ sub: existing.id, role: existing.role, name: existing.name, email: existing.email }, c.env.JWT_SECRET);
       return c.json({
         token,
-        user: { id: existing.id, name: existing.name, email: existing.email, role: existing.role, coins: existing.coins, avatar_url: existing.avatar_url, is_guest: true },
+        user: {
+          id: existing.id,
+          name: existing.name,
+          email: existing.email,
+          role: existing.role,
+          coins: existing.coins,
+          avatar_url: existing.avatar_url,
+          country: existing.country ?? null,
+          currency: existing.currency ?? null,
+          is_guest: true,
+        },
         is_returning: true,
       });
     }
@@ -486,13 +549,22 @@ async function quickLoginHandler(c: any, deviceId: string | null) {
   // Bug fix: 0 coins for guest accounts (was 50) — prevents Sybil attack of creating
   // unlimited guest accounts to farm free coins.
   await db.prepare(
-    `INSERT INTO users (id, name, email, password_hash, coins, is_verified, role, device_id) VALUES (?, ?, ?, '', 0, 0, 'user', ?)`
-  ).bind(quickId, quickName, quickEmail, deviceId ?? null).run();
+    `INSERT INTO users (id, name, email, password_hash, coins, is_verified, role, device_id, country, currency) VALUES (?, ?, ?, '', 0, 0, 'user', ?, ?, ?)`
+  ).bind(quickId, quickName, quickEmail, deviceId ?? null, detectedCountry, detectedCurrency).run();
 
   const token = await signToken({ sub: quickId, role: 'user', name: quickName, email: quickEmail }, c.env.JWT_SECRET);
   return c.json({
     token,
-    user: { id: quickId, name: quickName, email: quickEmail, coins: 0, role: 'user', is_guest: true },
+    user: {
+      id: quickId,
+      name: quickName,
+      email: quickEmail,
+      coins: 0,
+      role: 'user',
+      country: detectedCountry,
+      currency: detectedCurrency,
+      is_guest: true,
+    },
     is_returning: false,
   });
 }

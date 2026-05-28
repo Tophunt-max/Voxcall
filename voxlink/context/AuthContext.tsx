@@ -3,6 +3,7 @@ import { AppState } from "react-native";
 import { setItem, getItem, removeItem, StorageKeys } from "@/utils/storage";
 import { apiRequest, API } from "@/services/api";
 import { registerForPushNotifications, notifyLowCoins } from "@/services/NotificationService";
+import { setServerCurrency } from "@/utils/currency";
 
 const LOW_COINS_THRESHOLD = 10;
 
@@ -16,6 +17,9 @@ export interface UserProfile {
   avatar?: string;
   gender?: "male" | "female" | "other";
   country?: string;
+  /** ISO 4217 code (INR, USD, etc.) — set from CF-IPCountry on login,
+   *  used by utils/currency.ts to format prices in the user's local money. */
+  currency?: string;
   bio?: string;
   language?: string;
   coins: number;
@@ -73,6 +77,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isLoggedIn: false,
     isLoading: true,
   });
+
+  // FIX (currency auto-detect): keep utils/currency.ts in sync with the
+  // server-detected currency on the auth user. setServerCurrency is read by
+  // formatPrice / getCurrencyCode, so every screen that formats money will
+  // automatically pick up the new value the moment the user logs in or
+  // refreshes their profile. Falling back to null (when there's no logged-in
+  // user) lets the formatter use the device locale as before.
+  useEffect(() => {
+    setServerCurrency(state.user?.currency ?? null);
+  }, [state.user?.currency]);
 
   useEffect(() => {
     (async () => {

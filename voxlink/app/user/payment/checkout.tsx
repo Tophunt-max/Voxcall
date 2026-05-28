@@ -22,18 +22,23 @@ import { API } from "@/services/api";
 import { notifyPurchaseSuccess } from "@/services/NotificationService";
 import LoadingOverlay from "@/components/LoadingOverlay";
 import { showSuccessToast, showErrorToast } from "@/components/Toast";
-import { formatPrice, detectCurrency, getCurrencyCode } from "@/utils/currency";
+import { formatPrice, formatLocalAmount, getCurrencyCode } from "@/utils/currency";
 
 const SCREEN_W = Dimensions.get("window").width;
 const WALLET_BANNER_W = SCREEN_W - 40;
 const AUTO_SLIDE_MS = 3500;
 
+// FIX (currency auto-detect): server now also returns price_local and currency
+// alongside the original USD price. We accept both shapes so old API
+// responses (pre-deploy) still work.
 interface CoinPlan {
   id: string;
   name: string;
   coins: number;
   bonus_coins?: number;
   price: number;
+  /** Localized price in `currency`. Set by /api/coins/plans after migration 0023. */
+  price_local?: number;
   currency: string;
   is_popular?: number | boolean;
   is_active?: number | boolean;
@@ -333,7 +338,11 @@ function ManualPayModal({ visible, plan, totalCoins, promoCode, onClose, onSucce
                   <Text style={[mStyles.planCoins, { color: colors.accent }]}>{totalCoins.toLocaleString()} Coins</Text>
                 </View>
                 <Text style={[mStyles.planPrice, { color: colors.text }]}>
-                  {plan ? formatPrice(plan.price, getCurrencyCode()) : ""}
+                  {plan
+                    ? plan.price_local != null
+                      ? formatLocalAmount(plan.price_local, plan.currency)
+                      : formatPrice(plan.price, getCurrencyCode())
+                    : ""}
                 </Text>
               </View>
 
@@ -629,7 +638,9 @@ export default function CheckoutScreen() {
                   </Text>
                   <Text style={[styles.planLabel, { color: selected ? "rgba(255,255,255,0.8)" : colors.mutedForeground }]}>Coins</Text>
                   <Text style={[styles.planPrice, { color: selected ? "#fff" : colors.accent }]}>
-                    {formatPrice(plan.price, userCurrency)}
+                    {plan.price_local != null
+                      ? formatLocalAmount(plan.price_local, plan.currency)
+                      : formatPrice(plan.price, userCurrency)}
                   </Text>
                 </TouchableOpacity>
               );

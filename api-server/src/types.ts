@@ -20,6 +20,12 @@ export interface JWTPayload {
   email?: string;
   iat: number;
   exp: number;
+  // FIX (currency auto-detect): the auth middleware enriches the request-scoped
+  // payload with the user's detected country + currency so route handlers can
+  // localize prices without an extra DB read. These are NOT signed into the
+  // JWT itself — they're hydrated per-request from the users row.
+  country?: string;
+  currency?: string;
 }
 
 export interface UserRow {

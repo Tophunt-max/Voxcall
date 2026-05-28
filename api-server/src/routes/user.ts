@@ -12,6 +12,7 @@ user.get('/me', async (c) => {
   const me = await c.env.DB.prepare(
     `SELECT u.id, u.name, u.email, u.phone, u.avatar_url, u.gender, u.bio,
        u.coins, u.role, u.is_verified, u.created_at,
+       u.country, u.currency,
        (SELECT COUNT(*) FROM call_sessions WHERE caller_id = u.id AND status = 'ended') as total_calls
      FROM users u WHERE u.id = ?`
   ).bind(sub).first();
@@ -24,7 +25,7 @@ user.patch('/me', async (c) => {
   const { sub } = c.get('user');
   const body = await c.req.json();
   const LIMITS: Record<string, number> = { name: 100, phone: 20, bio: 500, gender: 10, avatar_url: 2000, fcm_token: 500 };
-  const allowed = ['name', 'phone', 'bio', 'gender', 'avatar_url', 'fcm_token'];
+  const allowed = ['name', 'phone', 'bio', 'gender', 'avatar_url', 'fcm_token', 'currency'];
   const sets: string[] = [];
   const vals: any[] = [];
   for (const key of allowed) {

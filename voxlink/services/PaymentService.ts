@@ -3,6 +3,7 @@
 
 import { appendToArray, StorageKeys } from "@/utils/storage";
 import { CoinPlan } from "@/data/mockData";
+import { coinsToLocalCurrency } from "@/utils/currency";
 
 export type TransactionType = "purchase" | "spend" | "bonus" | "refund" | "transfer" | "withdrawal";
 export type TransactionStatus = "completed" | "pending" | "failed" | "refunded";
@@ -183,8 +184,12 @@ export async function getTransactionHistory(): Promise<CoinTransaction[]> {
   return (txs ?? []).sort((a, b) => b.timestamp - a.timestamp);
 }
 
-export function coinsToCurrency(coins: number, rate = 0.01): string {
-  return `$${(coins * rate).toFixed(2)}`;
+// FIX (currency auto-detect): show coins → fiat in the user's local currency.
+// The `rate` parameter is ignored — kept for backward compat with older
+// callers that passed an override. The actual rate now comes from the
+// app-wide coin-to-USD constant inside coinsToLocalCurrency().
+export function coinsToCurrency(coins: number, _rate?: number): string {
+  return coinsToLocalCurrency(coins);
 }
 
 export function currencyToCoins(usd: number, rate = 100): number {

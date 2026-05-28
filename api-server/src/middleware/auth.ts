@@ -1,5 +1,6 @@
 import { createMiddleware } from 'hono/factory';
 import { verifyToken, extractBearer } from '../lib/jwt';
+import { detectCountryFromRequest, currencyForCountry } from '../lib/currency';
 import type { Env, JWTPayload } from '../types';
 
 type Variables = { user: JWTPayload };
@@ -14,9 +15,18 @@ export const authMiddleware = createMiddleware<{ Bindings: Env; Variables: Varia
       // - Detects banned/deleted accounts immediately (no 7-day token grace period)
       // - Uses current role from DB so KYC approvals take effect without re-login
       // FIX #12: token_invalidated_at allows server-side token revocation (logout, password change)
+      // FIX (currency auto-detect): also fetch country/currency so we can backfill
+      //   it the first time the user hits an authenticated endpoint after the
+      //   0023 migration. Cheaper than rewriting every login path.
       const dbUser = await c.env.DB.prepare(
-        'SELECT role, status, token_invalidated_at FROM users WHERE id = ?'
-      ).bind(payload.sub).first<{ role: 'user' | 'host' | 'admin'; status: string | null; token_invalidated_at: number | null }>();
+        'SELECT role, status, token_invalidated_at, country, currency FROM users WHERE id = ?'
+      ).bind(payload.sub).first<{
+        role: 'user' | 'host' | 'admin';
+        status: string | null;
+        token_invalidated_at: number | null;
+        country: string | null;
+        currency: string | null;
+      }>();
       if (!dbUser) return c.json({ error: 'User not found' }, 401);
       if (dbUser.status === 'banned' || dbUser.status === 'deleted') {
         return c.json({ error: 'Account suspended. Contact support if you believe this is an error.' }, 403);
@@ -27,7 +37,37 @@ export const authMiddleware = createMiddleware<{ Bindings: Env; Variables: Varia
       if (issuedAt < invalidatedAt) {
         return c.json({ error: 'Token has been revoked. Please log in again.' }, 401);
       }
-      c.set('user', { ...payload, role: dbUser.role });
+
+      // FIX (currency auto-detect): opportunistically populate country/currency
+      // on the user row when they're missing. Uses Cloudflare's edge-detected
+      // country (CF-IPCountry header / request.cf.country). The write only
+      // happens once per user lifetime, then the columns are read from the
+      // existing query above without an extra round-trip.
+      // We do NOT block the request if detection fails — currency is decorative,
+      // not a security primitive.
+      if (!dbUser.country || !dbUser.currency) {
+        const country = detectCountryFromRequest(c.req.raw);
+        if (country) {
+          const currency = currencyForCountry(country);
+          // Fire-and-forget: don't await, don't fail the request if D1 errors.
+          c.env.DB.prepare(
+            'UPDATE users SET country = COALESCE(country, ?), currency = COALESCE(currency, ?) WHERE id = ?'
+          ).bind(country, currency, payload.sub).run().catch((e) => {
+            console.warn('[auth] country backfill failed for', payload.sub, e);
+          });
+          // Reflect in this request's payload so route handlers see the new value
+          // without waiting for the next request.
+          (dbUser as any).country = country;
+          (dbUser as any).currency = currency;
+        }
+      }
+
+      c.set('user', {
+        ...payload,
+        role: dbUser.role,
+        country: dbUser.country ?? undefined,
+        currency: dbUser.currency ?? undefined,
+      });
       await next();
     } catch {
       return c.json({ error: 'Invalid or expired token' }, 401);
