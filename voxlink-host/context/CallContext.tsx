@@ -137,14 +137,14 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   const endCall = useCallback(async (autoEnded = false) => {
     const call = activeCallRef.current;
     const wasActive = !!(call?.startTime);
-    const duration = wasActive ? Math.floor((Date.now() - call!.startTime!) / 1000) : 0;
+    let duration = wasActive ? Math.floor((Date.now() - call!.startTime!) / 1000) : 0;
     updateCall(null);
 
     // FIX: Agar call cancel hua (wasActive = false) lekin sessionId hai,
     // backend ko notify karo — warna caller ko call_ended event nahi milta
     if (!wasActive) {
       if (call?.sessionId) {
-        try { await API.endCall(call.sessionId, 0); } catch {}
+        try { await API.endCall(call.sessionId, 0); } catch (e) { console.warn('[CallContext] endCall failed:', e); }
       }
       // incoming.tsx useEffect watches activeCall → null and calls router.back()
       return;
@@ -155,6 +155,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     if (call?.sessionId) {
       try {
         const res = await API.endCall(call.sessionId, duration);
+        if (res?.duration_seconds != null) {
+          duration = res.duration_seconds;
+        }
         if (res?.host_earnings != null) {
           coinsEarned = res.host_earnings;
         }
@@ -171,7 +174,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
             if (session?.coins_charged != null) {
               coinsEarned = Math.floor(session.coins_charged * 0.7);
             }
-          } catch {}
+          } catch (e) { console.warn('[CallContext] getCallSession failed:', e); }
         } else {
           console.warn("endCall API error:", e);
         }
@@ -193,7 +196,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         },
       });
     } else {
-      try { router.back(); } catch {}
+      try { router.back(); } catch (e) { console.warn('[CallContext] router.back failed:', e); }
     }
   }, [refreshProfile]);
 

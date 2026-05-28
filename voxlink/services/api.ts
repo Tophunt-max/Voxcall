@@ -126,8 +126,14 @@ export const API = {
       if (newToken) return API.updateAvatar(formData, false);
     }
     if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error((err as any).error || 'Avatar upload failed');
+      let errorMsg = 'Avatar upload failed';
+      try {
+        const err = await res.json();
+        errorMsg = (err as any).error || errorMsg;
+      } catch (parseErr) {
+        console.error('[updateAvatar] Response JSON parse failed:', parseErr);
+      }
+      throw new Error(errorMsg);
     }
     return res.json();
   },
@@ -144,8 +150,14 @@ export const API = {
       if (newToken) return API.uploadFile(formData, false);
     }
     if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error((err as any).error || 'Upload failed');
+      let errorMsg = 'Upload failed';
+      try {
+        const err = await res.json();
+        errorMsg = (err as any).error || errorMsg;
+      } catch (parseErr) {
+        console.error('[uploadFile] Response JSON parse failed:', parseErr);
+      }
+      throw new Error(errorMsg);
     }
     return res.json();
   },

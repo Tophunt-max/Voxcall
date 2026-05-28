@@ -34,7 +34,7 @@ export default function IncomingCallScreen() {
     }
     // activeCall null hua — call cancel/decline/end hua
     if (hadCall.current) {
-      try { router.back(); } catch {}
+      try { router.back(); } catch (e) { console.warn('[IncomingCall] router.back failed:', e); }
     }
   }, [activeCall]);
 
@@ -53,7 +53,7 @@ export default function IncomingCallScreen() {
     const timeout = setTimeout(async () => {
       await stopRing();
       declineCall();
-    }, 30000);
+    }, 45000);
     return () => clearTimeout(timeout);
   }, [stopRing, declineCall]);
 
