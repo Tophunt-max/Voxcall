@@ -47,6 +47,9 @@ match.post('/find', async (c) => {
   // FIX #19: Replace ORDER BY RANDOM() — which does a full table sort — with
   // a fast offset-based random pick. Gets count first, then picks a random row by offset.
   // This is O(log N) on indexed columns vs O(N log N) for RANDOM().
+  // NOTE (#32): There is a small race window between the COUNT and the SELECT —
+  // if a host goes offline in between, the offset SELECT can return zero rows.
+  // The race is transient and self-healing; the client should retry on no-result.
   const countRow = await db
     .prepare(`SELECT COUNT(*) as cnt FROM hosts WHERE is_active = 1 AND is_online = 1 AND user_id != ?`)
     .bind(sub)
