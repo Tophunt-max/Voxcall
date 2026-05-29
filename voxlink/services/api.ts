@@ -47,6 +47,15 @@ async function refreshAuthToken(): Promise<string | null> {
   return _refreshing;
 }
 
+// Exported so SocketService can drive the same single-flight refresh logic
+// when its WebSocket upgrade is rejected with 401. Browsers/RN don't surface
+// the HTTP status on a failed WS upgrade — only `onclose` fires — so the
+// SocketService heuristic (no `onopen` before `onclose`) is what triggers
+// this. We intentionally reuse the in-flight Promise from api.ts so a 401
+// REST call and a failed WS upgrade racing each other only issue ONE refresh
+// network call.
+export { refreshAuthToken };
+
 export async function apiRequest<T>(
   method: string,
   path: string,
@@ -221,6 +230,21 @@ export const API = {
     apiRequest<{ offer: { type: string; sdp: string } | null; tracks: Array<{ mid?: string; trackName?: string; errorCode?: string }>; role: string; retryable?: boolean }>('POST', `/api/calls/${sessionId}/sdp/pull`, { trackNames }),
   sendPullAnswer: (sessionId: string, sdp: string, type: string) =>
     apiRequest<{ success: boolean }>('POST', `/api/calls/${sessionId}/sdp/answer`, { sdp, type }),
+
+  // App version gate. The mobile app calls this on launch to find out
+  // whether it must show a force-update modal (running build below
+  // `minSupported`) or a soft update nudge (below `latestStable`). Server
+  // values come from `app_settings`; defaults are permissive ('0.0.0') so
+  // an unconfigured deployment never accidentally locks anyone out.
+  getAppVersion: (app: 'user' | 'host' = 'user') =>
+    apiRequest<{
+      app: 'user' | 'host';
+      minSupported: string;
+      latestStable: string;
+      downloadUrl: string | null;
+      blockMessage: string;
+      recommendMessage: string;
+    }>('GET', `/api/app/version?app=${app}`),
 
   // Chat
   getChatRooms: () => apiRequest<any[]>('GET', '/api/chat/rooms'),

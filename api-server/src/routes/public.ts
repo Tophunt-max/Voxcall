@@ -220,4 +220,65 @@ pub.get('/payment/active-qr', async (c) => {
   return c.json({ qr_codes: codes, current: codes[currentIdx], rotate_interval_min: intervalMin });
 });
 
+// GET /api/app/version?app=user|host — force-update gate
+//
+// Mobile apps call this on launch (and periodically). Response shape:
+//   { minSupported, latestStable, downloadUrl, blockMessage?, recommendMessage? }
+//
+// If the running app build is below `minSupported` it should show a BLOCKING
+// modal that only offers an Update CTA. Below `latestStable` (but >=
+// `minSupported`) is a non-blocking nudge.
+//
+// All values come from the `app_settings` table so an operator can flip them
+// in production without a Worker redeploy. Defaults are intentionally
+// permissive ("0.0.0" min) so an unconfigured deployment never accidentally
+// locks every user out of the app.
+//
+// Cache: 60s edge / 30s memory. Short enough that an emergency block
+// propagates within ~1 min, long enough to absorb every-launch traffic
+// without pounding D1.
+pub.get('/app/version', async (c) => {
+  const appKind = (c.req.query('app') ?? 'user').toLowerCase() === 'host' ? 'host' : 'user';
+  const KEY = `app_version:${appKind}`;
+  const mem = memGet<any>(KEY);
+  if (mem) return cachedJson(mem, 60, 120);
+  const edge = await edgeGet(KEY);
+  if (edge) { memSet(KEY, edge); return cachedJson(edge, 60, 120); }
+
+  // Read all version-related app_settings keys in one round-trip.
+  // Per-app-kind keys override shared defaults.
+  const keys = [
+    `app_min_version_${appKind}`,
+    `app_latest_version_${appKind}`,
+    `app_download_url_${appKind}`,
+    'app_update_block_message',
+    'app_update_recommend_message',
+  ];
+  const placeholders = keys.map(() => '?').join(',');
+  const rows = await c.env.DB.prepare(
+    `SELECT key, value FROM app_settings WHERE key IN (${placeholders})`
+  ).bind(...keys).all();
+  const settings: Record<string, string> = {};
+  for (const row of (rows.results as any[]) ?? []) {
+    if (row?.key && typeof row.value === 'string') settings[row.key] = row.value;
+  }
+
+  const data = {
+    app: appKind,
+    minSupported: settings[`app_min_version_${appKind}`] || '0.0.0',
+    latestStable: settings[`app_latest_version_${appKind}`] || '0.0.0',
+    downloadUrl: settings[`app_download_url_${appKind}`] || null,
+    blockMessage:
+      settings.app_update_block_message ||
+      'Please update VoxLink to the latest version to continue.',
+    recommendMessage:
+      settings.app_update_recommend_message ||
+      'A new version of VoxLink is available with improvements.',
+  };
+
+  memSet(KEY, data);
+  await edgePut(KEY, data);
+  return cachedJson(data, 60, 120);
+});
+
 export default pub;

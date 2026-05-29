@@ -199,7 +199,10 @@ coin.post('/manual-deposit', async (c) => {
   if (!utr_id || !String(utr_id).trim()) return c.json({ error: 'UTR / transaction reference is required' }, 400);
   const plan = await db.prepare('SELECT * FROM coin_plans WHERE id = ? AND is_active = 1').bind(plan_id).first<any>();
   if (!plan) return c.json({ error: 'Plan not found' }, 404);
-  // Duplicate UTR check
+  // Duplicate UTR check (advisory). The unique partial index added in
+  // migration 0024 (idx_coin_purchases_manual_utr) is what actually closes
+  // the race window — two concurrent calls with the same UTR will both pass
+  // this SELECT but only one of them will succeed at INSERT time.
   const existing = await db.prepare("SELECT id FROM coin_purchases WHERE utr_id = ? AND payment_method = 'manual'").bind(String(utr_id).trim()).first<any>();
   if (existing) return c.json({ error: 'This UTR / transaction ID has already been submitted' }, 409);
 
@@ -218,10 +221,30 @@ coin.post('/manual-deposit', async (c) => {
   }
 
   const purchaseId = crypto.randomUUID();
-  await db.prepare(
-    `INSERT INTO coin_purchases (id, user_id, plan_id, plan_name, coins, bonus_coins, amount, currency, payment_method, gateway_id, gateway_name, utr_id, promo_code, status, screenshot_url)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'manual', ?, ?, ?, ?, 'pending', ?)`
-  ).bind(purchaseId, sub, plan_id, plan.name, plan.coins, (plan.bonus_coins || 0) + promoBonus, plan.price, plan.currency || 'USD', qr_code_id || null, qrName, String(utr_id).trim(), promo_code || null, screenshot_url || null).run();
+  // RACE FIX: previously this was a bare INSERT after the existing-UTR
+  // SELECT above, but the SELECT/INSERT pair is TOCTOU — two concurrent
+  // submissions with the same UTR could both pass the SELECT and both
+  // INSERT a `pending` row. Once admin approved both, the user got 2×
+  // the coin credit.
+  //
+  // Migration 0024 adds a partial unique index on (utr_id) where
+  // payment_method='manual', which makes the second INSERT raise a
+  // SQLite UNIQUE constraint error. Catch it here and convert to a clean
+  // 409 response so the user UI shows the right message instead of a
+  // generic 500.
+  try {
+    await db.prepare(
+      `INSERT INTO coin_purchases (id, user_id, plan_id, plan_name, coins, bonus_coins, amount, currency, payment_method, gateway_id, gateway_name, utr_id, promo_code, status, screenshot_url)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'manual', ?, ?, ?, ?, 'pending', ?)`
+    ).bind(purchaseId, sub, plan_id, plan.name, plan.coins, (plan.bonus_coins || 0) + promoBonus, plan.price, plan.currency || 'USD', qr_code_id || null, qrName, String(utr_id).trim(), promo_code || null, screenshot_url || null).run();
+  } catch (e: any) {
+    const msg = String(e?.message || '').toLowerCase();
+    if (msg.includes('unique') || msg.includes('constraint')) {
+      return c.json({ error: 'This UTR / transaction ID has already been submitted' }, 409);
+    }
+    console.error('[/manual-deposit] insert failed:', e);
+    return c.json({ error: 'Could not submit deposit. Please try again.' }, 500);
+  }
 
   // SECURITY FIX (Critical #8): Auto-approve removed. Even with a small amount
   // threshold, trusting any client-supplied UTR meant a malicious user could
@@ -259,33 +282,106 @@ coin.post('/withdraw', async (c) => {
   const minCoins = parseInt(settings?.value ?? '100');
   if (coinsReq < minCoins) return c.json({ error: `Minimum withdrawal is ${minCoins} coins` }, 400);
 
-  // Atomic check + freeze: coins deduct ke baad admin approval pe credit milega
-  // Agar admin reject kare to admin route coins wapas add karega
-  const userRow = await db.prepare('SELECT coins FROM users WHERE id = ?').bind(sub).first<any>();
-  if (!userRow || userRow.coins < coinsReq) return c.json({ error: 'Insufficient coin balance' }, 400);
-
-  // Duplicate pending withdrawal check
-  const pendingWithdrawal = await db.prepare(
-    "SELECT id FROM withdrawal_requests WHERE host_id = ? AND status = 'pending' LIMIT 1"
-  ).bind(h.id).first<any>();
-  if (pendingWithdrawal) {
-    return c.json({ error: 'You already have a pending withdrawal request. Please wait for it to be processed.' }, 409);
-  }
-
   const rateRow = await db.prepare("SELECT value FROM app_settings WHERE key = 'coin_to_usd_rate'").first<any>();
   const rate = parseFloat(rateRow?.value ?? '0.01');
   const usdAmount = coinsReq * rate;
   const withdrawId = crypto.randomUUID();
 
-  // Freeze coins: deduct now, will refund if rejected by admin
-  await db.batch([
-    db.prepare('INSERT INTO withdrawal_requests (id, host_id, coins, amount, payment_method, account_details, status) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .bind(withdrawId, h.id, coinsReq, usdAmount, method ?? 'bank', account_info ?? '', 'pending'),
-    db.prepare('UPDATE users SET coins = coins - ?, updated_at = unixepoch() WHERE id = ? AND coins >= ?')
-      .bind(coinsReq, sub, coinsReq),
-    db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
-      .bind(crypto.randomUUID(), sub, 'withdrawal_pending', -coinsReq, `Withdrawal request frozen — ${coinsReq} coins (pending admin approval)`, withdrawId),
-  ]);
+  // RACE FIX (concurrent withdrawal → 2× payout):
+  //
+  // The previous code did three separate operations:
+  //   1. SELECT user's coins
+  //   2. SELECT existing pending withdrawal
+  //   3. db.batch([ INSERT withdrawal_requests, UPDATE users, INSERT tx ])
+  //
+  // Two concurrent /withdraw requests from the same host could both pass
+  // steps 1 and 2 (TOCTOU). In step 3 both INSERTs into withdrawal_requests
+  // succeed unconditionally, but only ONE conditional UPDATE actually
+  // deducts coins (the second sees `coins < coinsReq` and silently does
+  // nothing because D1 batches do NOT abort on a 0-row UPDATE). Net
+  // outcome: TWO pending withdrawal_requests rows, ONE coin debit, TWO
+  // coin_transactions ledger entries. When the admin approves both, the
+  // host receives 2× the payout.
+  //
+  // Fix is in two layered guards:
+  //   (a) The INSERT into withdrawal_requests is now an INSERT…SELECT…
+  //       WHERE NOT EXISTS / EXISTS, executed as a single SQLite statement.
+  //       Either the row goes in (changes === 1) or no row matches and
+  //       changes === 0. SQLite serializes writes per-database, so two
+  //       concurrent INSERT…SELECT statements cannot both succeed for the
+  //       same host_id.
+  //   (b) The follow-up UPDATE keeps its `WHERE coins >= ?` guard. If a
+  //       different transaction (e.g. a call ending and charging coins)
+  //       drains the host's balance between (a) and (b), the UPDATE
+  //       returns 0 rows changed and we DELETE the just-inserted
+  //       withdrawal_requests row — leaving the system in a clean state.
+  const insertResult = await db.prepare(
+    `INSERT INTO withdrawal_requests
+       (id, host_id, coins, amount, payment_method, account_details, status)
+     SELECT ?1, ?2, ?3, ?4, ?5, ?6, 'pending'
+     WHERE NOT EXISTS (
+       SELECT 1 FROM withdrawal_requests WHERE host_id = ?2 AND status = 'pending'
+     )
+     AND EXISTS (
+       SELECT 1 FROM users WHERE id = ?7 AND coins >= ?3
+     )`
+  ).bind(
+    withdrawId,
+    h.id,
+    coinsReq,
+    usdAmount,
+    method ?? 'bank',
+    account_info ?? '',
+    sub
+  ).run();
+
+  if (!insertResult.meta?.changes) {
+    // Conditional INSERT was a no-op. Disambiguate the reason for the user.
+    const pending = await db.prepare(
+      "SELECT 1 as ok FROM withdrawal_requests WHERE host_id = ? AND status = 'pending' LIMIT 1"
+    ).bind(h.id).first<{ ok: number }>();
+    if (pending) {
+      return c.json(
+        { error: 'You already have a pending withdrawal request. Please wait for it to be processed.' },
+        409
+      );
+    }
+    return c.json({ error: 'Insufficient coin balance' }, 400);
+  }
+
+  // Atomic debit. If this fails the request body racing with us drained the
+  // wallet — roll back the withdrawal_requests INSERT so we don't leak a
+  // ghost pending row (which would block the host from withdrawing again
+  // until an admin manually intervenes).
+  const debit = await db.prepare(
+    'UPDATE users SET coins = coins - ?, updated_at = unixepoch() WHERE id = ? AND coins >= ?'
+  ).bind(coinsReq, sub, coinsReq).run();
+
+  if (!debit.meta?.changes) {
+    try {
+      await db.prepare('DELETE FROM withdrawal_requests WHERE id = ?').bind(withdrawId).run();
+    } catch (e) {
+      console.warn('[/withdraw] failed to roll back withdrawal_requests row after debit race:', e);
+    }
+    return c.json({ error: 'Insufficient coin balance' }, 400);
+  }
+
+  // Bookkeeping ledger entry — money has already moved at this point so a
+  // failure here is non-fatal for the user's balance. We still log loudly.
+  try {
+    await db.prepare(
+      'INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)'
+    ).bind(
+      crypto.randomUUID(),
+      sub,
+      'withdrawal_pending',
+      -coinsReq,
+      `Withdrawal request frozen — ${coinsReq} coins (pending admin approval)`,
+      withdrawId
+    ).run();
+  } catch (e) {
+    console.warn('[/withdraw] failed to write coin_transactions row (state still consistent):', e);
+  }
 
   const updated = await db.prepare('SELECT coins FROM users WHERE id = ?').bind(sub).first<any>();
   return c.json({

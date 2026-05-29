@@ -29,6 +29,7 @@ import { SocketEvents } from "@/constants/events";
 import { useCall } from "@/context/CallContext";
 import { useAuth } from "@/context/AuthContext";
 import { API } from "@/services/api";
+import { useAppVersionGate } from "@/hooks/useAppVersionGate";
 
 let RNMessaging: any = null;
 if (Platform.OS !== "web") {
@@ -254,6 +255,9 @@ function AppBridge() {
 }
 
 function RootLayoutNav() {
+  // Force-update gate. Fires once on app launch and shows a blocking
+  // Alert if the running build is below the server-configured min version.
+  useAppVersionGate('host');
   return (
     <>
       <AppBridge />

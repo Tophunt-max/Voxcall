@@ -290,12 +290,35 @@ payment.post('/verify-google-play', authMiddleware, async (c) => {
   if (!serviceAccountJson) {
     // Fallback: accept and pending for admin review if no service account configured
     const plan = plan_id ? await c.env.DB.prepare('SELECT * FROM coin_plans WHERE id = ? AND is_active = 1').bind(plan_id).first<any>() : null;
-    const purchaseId = existing?.id || crypto.randomUUID();
+    let purchaseId = existing?.id || crypto.randomUUID();
     if (!existing) {
       if (!plan) return c.json({ error: 'plan_id required when service account not configured' }, 400);
-      await c.env.DB.prepare(
-        "INSERT INTO coin_purchases (id, user_id, plan_id, plan_name, coins, bonus_coins, amount, currency, payment_method, payment_ref, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'google_play', ?, 'pending')"
-      ).bind(purchaseId, userId, plan_id, plan.name, plan.coins, plan.bonus_coins || 0, plan.price, plan.currency || 'USD', purchase_token).run();
+      // RACE FIX: bare INSERT below could collide with the unique index on
+      // coin_purchases.payment_ref (added in migration 0018) when two
+      // concurrent /verify-google-play calls share the same purchase_token.
+      // Catch the constraint failure and re-resolve to the existing row so
+      // the second caller gets a coherent response instead of a 500.
+      try {
+        await c.env.DB.prepare(
+          "INSERT INTO coin_purchases (id, user_id, plan_id, plan_name, coins, bonus_coins, amount, currency, payment_method, payment_ref, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'google_play', ?, 'pending')"
+        ).bind(purchaseId, userId, plan_id, plan.name, plan.coins, plan.bonus_coins || 0, plan.price, plan.currency || 'USD', purchase_token).run();
+      } catch (e: any) {
+        const msg = String(e?.message || '').toLowerCase();
+        if (msg.includes('unique') || msg.includes('constraint')) {
+          const winner = await c.env.DB.prepare(
+            "SELECT id FROM coin_purchases WHERE payment_ref = ? AND payment_method = 'google_play' LIMIT 1"
+          ).bind(purchase_token).first<any>();
+          if (winner) {
+            purchaseId = winner.id;
+          } else {
+            console.error('[/verify-google-play] unique violation but row not findable:', e);
+            return c.json({ error: 'Concurrent verification conflict, please retry' }, 409);
+          }
+        } else {
+          console.error('[/verify-google-play] fallback insert failed:', e);
+          return c.json({ error: 'Could not record purchase' }, 500);
+        }
+      }
     }
     return c.json({ success: false, pending: true, purchase_id: purchaseId, message: 'Google Play service account not configured — purchase submitted for manual review' });
   }
@@ -356,9 +379,31 @@ payment.post('/verify-google-play', authMiddleware, async (c) => {
     if (!purchaseId) {
       if (!plan) return c.json({ error: 'plan_id required for new purchase' }, 400);
       purchaseId = crypto.randomUUID();
-      await c.env.DB.prepare(
-        "INSERT INTO coin_purchases (id, user_id, plan_id, plan_name, coins, bonus_coins, amount, currency, payment_method, payment_ref, promo_code, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'google_play', ?, ?, 'pending')"
-      ).bind(purchaseId, userId, plan_id, plan.name, plan.coins, (plan.bonus_coins || 0) + promoBonus, plan.price, plan.currency || 'USD', purchase_token, promo_code || null).run();
+      // RACE FIX: same as the fallback path above — guard against the
+      // payment_ref unique index (migration 0018) and gracefully resolve to
+      // the row that won the race. Without this, two concurrent verify
+      // calls would each see existing=null, race the INSERT, and the loser
+      // would crash to 500 even though the purchase is actually progressing.
+      try {
+        await c.env.DB.prepare(
+          "INSERT INTO coin_purchases (id, user_id, plan_id, plan_name, coins, bonus_coins, amount, currency, payment_method, payment_ref, promo_code, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'google_play', ?, ?, 'pending')"
+        ).bind(purchaseId, userId, plan_id, plan.name, plan.coins, (plan.bonus_coins || 0) + promoBonus, plan.price, plan.currency || 'USD', purchase_token, promo_code || null).run();
+      } catch (e: any) {
+        const msg = String(e?.message || '').toLowerCase();
+        if (msg.includes('unique') || msg.includes('constraint')) {
+          const winner = await c.env.DB.prepare(
+            "SELECT id FROM coin_purchases WHERE payment_ref = ? AND payment_method = 'google_play' LIMIT 1"
+          ).bind(purchase_token).first<any>();
+          if (winner) {
+            purchaseId = winner.id;
+          } else {
+            console.error('[/verify-google-play] unique violation but row not findable:', e);
+            return c.json({ error: 'Concurrent verification conflict, please retry' }, 409);
+          }
+        } else {
+          throw e;
+        }
+      }
     }
     const result = await approveDeposit(c.env.DB, purchaseId, 'google_play', `Google Play product ${product_id} verified`);
     return c.json({ success: result.ok, purchase_id: purchaseId, coins_added: result.coins, already_credited: result.already });

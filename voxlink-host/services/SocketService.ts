@@ -3,6 +3,7 @@
 // Falls back to event emitter only when WebSocket is unavailable
 
 import { SocketEvents } from "@/constants/events";
+import { refreshAuthToken } from "@/services/api";
 
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL || "https://voxlink-api.ssunilkumarmohanta3.workers.dev";
 
@@ -30,6 +31,17 @@ class SocketService {
   // FIX #16: Increased from 8 to 50 to match user app — hosts on poor networks
   // need many more retries so they don't miss incoming calls
   private maxReconnectAttempts = 50;
+  // ─── Token-expiry refresh signal ───────────────────────────────────────────
+  // Mirrors the user-app SocketService. Server rejects WS upgrades with HTTP
+  // 401 when the JWT in the querystring is invalid/expired; browsers and RN
+  // surface this only as `onclose` with code 1006, indistinguishable from a
+  // network drop. We use "did we ever see onopen since the last connect
+  // attempt?" as the auth-failure heuristic to fire a one-shot token refresh
+  // before falling back to exponential reconnect backoff. The refresh is
+  // single-flight via api.ts's shared Promise so a REST 401 racing a failed
+  // WS upgrade only issues one /api/auth/refresh request.
+  private _didOpenThisAttempt = false;
+  private _authRefreshAttempted = false;
 
   static getInstance(): SocketService {
     if (!SocketService.instance) {
@@ -52,6 +64,10 @@ class SocketService {
     if (this._connected && this._userId === userId) return;
     this._userId = userId;
     this._token = token;
+    // Re-arm the auth-refresh attempt: a fresh `connect` call usually means
+    // the AuthContext just installed a new token and we want to be willing
+    // to try refreshing once again next time the WS upgrade gets rejected.
+    this._authRefreshAttempted = false;
     this._openWebSocket(userId, token);
   }
 
@@ -61,6 +77,11 @@ class SocketService {
       this.ws = null;
     }
 
+    // Reset the per-attempt open flag so onclose can distinguish "connection
+    // dropped after handshake" (likely network) from "connection never
+    // opened" (likely auth).
+    this._didOpenThisAttempt = false;
+
     try {
       const url = getWsUrl(userId, token ?? this._token);
       const ws = new WebSocket(url);
@@ -68,6 +89,10 @@ class SocketService {
 
       ws.onopen = () => {
         this._connected = true;
+        this._didOpenThisAttempt = true;
+        // Successful open proves the token is valid right now — re-arm the
+        // refresh attempt so a future expiry can recover via refresh again.
+        this._authRefreshAttempted = false;
         this.reconnectAttempts = 0;
         this.emit(SocketEvents.CONNECT, { userId });
         this.startHeartbeat();
@@ -90,12 +115,41 @@ class SocketService {
         this.ws = null;
         this.stopHeartbeat();
         this.emit(SocketEvents.DISCONNECT, {});
-        if (this._userId) this._scheduleReconnect();
+        if (!this._userId) return;
+
+        // Auth-failure heuristic: if we never saw `onopen` AND we haven't
+        // already tried refreshing in this auth-fail burst, attempt a single
+        // token refresh. On success we update _token and reconnect
+        // immediately. On failure we fall through to the normal exponential
+        // backoff and let api.ts's REST 401 path drive the user to re-login.
+        if (!this._didOpenThisAttempt && !this._authRefreshAttempted) {
+          this._authRefreshAttempted = true;
+          void this._refreshTokenAndReconnect();
+          return;
+        }
+
+        this._scheduleReconnect();
       };
     } catch (err) {
       console.warn("[Socket] WebSocket open failed:", err);
       this._scheduleReconnect();
     }
+  }
+
+  private async _refreshTokenAndReconnect(): Promise<void> {
+    try {
+      const newToken = await refreshAuthToken();
+      if (newToken && this._userId) {
+        this._token = newToken;
+        console.log("[Socket] Token refreshed after auth-fail close, reconnecting");
+        this._openWebSocket(this._userId, newToken);
+        return;
+      }
+      console.warn("[Socket] Token refresh failed after auth-fail close — will fall back to backoff");
+    } catch (e) {
+      console.warn("[Socket] Token refresh threw:", e);
+    }
+    if (this._userId) this._scheduleReconnect();
   }
 
   private _handleServerMessage(msg: any): void {

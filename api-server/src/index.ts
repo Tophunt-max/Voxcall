@@ -166,9 +166,12 @@ app.get('/api/ws/call/:sessionId', async (c) => {
 // 404 handler — path is intentionally omitted to prevent internal route enumeration
 app.notFound((c) => c.json({ error: 'Not found' }, 404));
 
-// FIX #2: Stale call reaper — scheduled via Cloudflare Cron (every 5 min)
-// Ends calls stuck in 'active' or 'pending' for >30 minutes (crash/disconnect scenario)
-// This prevents coins from being permanently frozen when neither party calls /end
+// FIX #2: Stale call reaper — scheduled via Cloudflare Cron (every 1 min)
+// Ends calls stuck in 'pending' for >2 min or 'active' for >30 min (crash/
+// disconnect scenario). 1-min cadence keeps worst-case stale window small
+// (max ~3 min from creation to reap for pending) so the admin dashboard and
+// the host UI don't show phantom in-progress calls long after the user has
+// actually given up. Cron interval lives in wrangler.toml.
 async function reapStaleCalls(env: Env): Promise<void> {
   const db = env.DB;
   const now = Math.floor(Date.now() / 1000);

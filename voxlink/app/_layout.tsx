@@ -27,6 +27,7 @@ import { LanguageProvider } from "@/context/LanguageContext";
 import { SocketProvider, useSocketEvent } from "@/context/SocketContext";
 import { SocketEvents } from "@/constants/events";
 import { useCall } from "@/context/CallContext";
+import { useAppVersionGate } from "@/hooks/useAppVersionGate";
 
 // RNFirebase messaging (native only) — lazy loaded to avoid web crash
 let RNMessaging: any = null;
@@ -192,6 +193,9 @@ function AppBridge() {
 }
 
 function RootLayoutNav() {
+  // Force-update gate. Fires once on app launch and shows a blocking
+  // Alert if the running build is below the server-configured min version.
+  useAppVersionGate('user');
   return (
     <>
       <AppBridge />

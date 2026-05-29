@@ -79,10 +79,53 @@ export const adminMiddleware = createMiddleware<{ Bindings: Env; Variables: Vari
   async (c, next) => {
     const user = c.get('user');
     if (user?.role !== 'admin') return c.json({ error: 'Forbidden' }, 403);
-    // TODO (#29): Add rate limiting on admin endpoints to prevent abuse from
-    // compromised admin tokens. A single leaked admin JWT can currently issue
-    // unlimited /api/admin/* calls (mass user delete, settings rewrite, etc.).
-    // Likely shape: per-admin sliding-window counter in the rate_limits table.
+
+    // Rate limiting (TODO #29 follow-up): cap admin endpoints per-admin so a
+    // leaked admin JWT can't be used to mass-mutate via /api/admin/* (mass
+    // user delete, app-settings rewrite, force-end loop, bulk withdrawal
+    // approval). We deliberately key on the admin user ID instead of IP —
+    // an office full of admins typically shares one egress IP, and the
+    // attacker also controls IPs cheaply, so per-user is both more
+    // permissive for legit ops and tighter for theft scenarios.
+    //
+    // 600 req / 60s ≈ 10 req/s sustained, which is well above any human
+    // admin UI flow but blocks a token-replay loop within ~6 seconds.
+    const ADMIN_MAX_ATTEMPTS = 600;
+    const ADMIN_WINDOW_SECS = 60;
+    const adminId = user.sub || 'unknown';
+    const now = Math.floor(Date.now() / 1000);
+    const windowSlot = Math.floor(now / ADMIN_WINDOW_SECS);
+    const key = `rl:admin:${adminId}:${windowSlot}`;
+
+    try {
+      const row = await c.env.DB.prepare(
+        'SELECT attempts, window_reset FROM rate_limits WHERE id = ?'
+      ).bind(key).first<{ attempts: number; window_reset: number }>();
+
+      if (row && row.window_reset > now) {
+        if (row.attempts >= ADMIN_MAX_ATTEMPTS) {
+          const waitSec = Math.max(1, row.window_reset - now);
+          console.warn('[admin-rate-limit] admin', adminId, 'hit cap, attempts=', row.attempts);
+          return c.json(
+            { error: `Admin rate limit exceeded. Please retry in ${waitSec}s.` },
+            429
+          );
+        }
+        await c.env.DB.prepare(
+          'UPDATE rate_limits SET attempts = attempts + 1 WHERE id = ?'
+        ).bind(key).run();
+      } else {
+        await c.env.DB.prepare(
+          'INSERT OR REPLACE INTO rate_limits (id, attempts, window_reset) VALUES (?, 1, ?)'
+        ).bind(key, now + ADMIN_WINDOW_SECS).run();
+      }
+    } catch (e) {
+      // Same fail-open semantics as the auth-route limiter: don't 500 if the
+      // rate_limits table isn't yet migrated or D1 is briefly unavailable,
+      // but log loudly so ops sees the silent fail-open in production.
+      console.warn('[admin-rate-limit] table check failed, failing open:', e);
+    }
+
     await next();
   }
 );

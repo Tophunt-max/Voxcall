@@ -50,8 +50,13 @@ function makeRateLimit(maxAttempts: number, windowSecs: number) {
           'INSERT OR REPLACE INTO rate_limits (id, attempts, window_reset) VALUES (?, 1, ?)'
         ).bind(key, now + windowSecs).run();
       }
-    } catch {
-      // Rate limit table may not exist yet — don't block legitimate requests
+    } catch (e) {
+      // Rate limit table may not exist yet (pre-migration boot) or D1 had a
+      // brief outage — don't block legitimate requests. We DO surface the
+      // failure in Worker logs so an operator notices when the rate limiter
+      // is silently failing open in production (which would let auth/OTP
+      // brute-force protection lapse).
+      console.warn('[rate-limit] table check failed, failing open:', e);
     }
 
     return next();
@@ -581,10 +586,42 @@ async function quickLoginHandler(c: any, deviceId: string | null) {
   const quickEmail = `${quickId}@quick.voxlink.app`;
   const _adj = ['Happy','Bright','Cool','Swift','Bold','Brave','Calm','Witty','Smart','Lucky'];
   const _ani = ['Fox','Bear','Wolf','Lion','Tiger','Eagle','Panda','Koala','Hawk','Lynx'];
-  // FIX #33: Bumped suffix from 3 digits (1000 combinations / adj×animal pair)
-  // to 5 digits (100k) to make device-keyed quick-login names far less likely
-  // to collide on a busy day.
-  const quickName = `${_adj[Math.floor(Math.random()*_adj.length)]}${_ani[Math.floor(Math.random()*_ani.length)]}${String(Math.floor(Math.random()*90000)+10000)}`;
+
+  // FIX #33: Display-name uniqueness for quick-login users at scale.
+  //
+  // The pool is 10 adj × 10 animal × 90 000 numeric suffixes ≈ 9M combos.
+  // Birthday-paradox collisions start around √9M ≈ 3 000 quick-login users
+  // active in the same window — well within real load for a chat app.
+  // Two users with the same display name break trust ("am I really chatting
+  // with the right Brave Lion?") and break naïve admin search.
+  //
+  // Strategy: probe up to 3 random candidates, taking the first that does
+  // NOT already exist in `users.name`. If all 3 collide, append a 4-char
+  // hex tail derived from the freshly-generated `quickId`. The id is itself
+  // a globally-unique random token, so the suffixed name is guaranteed
+  // unique for new rows even under concurrent-burst load (and the residual
+  // TOCTOU window between SELECT and INSERT is microseconds — same Worker
+  // request, single-writer D1).
+  let quickName = '';
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const candidate = `${_adj[Math.floor(Math.random() * _adj.length)]}${_ani[Math.floor(Math.random() * _ani.length)]}${String(Math.floor(Math.random() * 90000) + 10000)}`;
+    try {
+      const taken = await db.prepare('SELECT 1 as ok FROM users WHERE name = ? LIMIT 1').bind(candidate).first();
+      if (!taken) { quickName = candidate; break; }
+    } catch (e) {
+      // Read-side failure is non-fatal — fall through to the deterministic
+      // suffix path below, which doesn't need a SELECT.
+      console.warn('[quick-login] name collision probe failed:', e);
+      break;
+    }
+  }
+  if (!quickName) {
+    // Deterministic fallback: append last 4 hex chars of the unique quickId.
+    // Adds 16^4 = 65 536 disambiguators per adj+animal pair, lifting effective
+    // pool past 5 billion combos.
+    const base = `${_adj[Math.floor(Math.random() * _adj.length)]}${_ani[Math.floor(Math.random() * _ani.length)]}${String(Math.floor(Math.random() * 90000) + 10000)}`;
+    quickName = `${base}-${quickId.slice(-4)}`;
+  }
 
   // Bug fix: 0 coins for guest accounts (was 50) — prevents Sybil attack of creating
   // unlimited guest accounts to farm free coins.

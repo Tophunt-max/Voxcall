@@ -27,10 +27,16 @@ bindings = [
 tag = "v1"
 new_sqlite_classes = ["ChatRoom", "CallSignaling", "NotificationHub"]
 
-# FIX #2: Stale call cleanup cron — runs every 5 minutes
-# Reaps call_sessions stuck in 'active'/'pending' for >30 min (crash/disconnect scenario)
+# Stale call cleanup cron — runs every 1 minute.
+# Reaps call_sessions stuck in 'pending' (>2 min) and 'active' (>30 min) so
+# callers/hosts crashing mid-call don't leave coins frozen and don't leave
+# the admin/host UI showing a phantom in-progress call. Previous 5-minute
+# interval meant pending sessions could sit visible for up to 5min + 2min
+# = ~7min before being reaped. The reaper itself is cheap (one SELECT plus
+# a small batch UPDATE) so 1-minute cadence is well within Worker free-tier
+# cron limits.
 [triggers]
-crons = ["*/5 * * * *"]
+crons = ["* * * * *"]
 
 [vars]
 CF_ACCOUNT_ID = "b592b3b2a5455323a76de721a92699cd"
