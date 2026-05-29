@@ -1074,26 +1074,186 @@ admin.post('/calls/stale-cleanup', async (c) => {
 
 admin.post('/calls/:id/force-end', async (c) => {
   const { id } = c.req.param();
-  const session = await db(c).prepare('SELECT * FROM call_sessions WHERE id = ?').bind(id).first<any>();
+  const dbA = db(c);
+  // Pull host_user_id alongside the session so we can credit the host atomically
+  // and notify both parties without a second query round-trip.
+  const session = await dbA.prepare(
+    `SELECT cs.*, h.user_id as host_user_id
+     FROM call_sessions cs
+     LEFT JOIN hosts h ON h.id = cs.host_id
+     WHERE cs.id = ?`
+  ).bind(id).first<any>();
   if (!session) return c.json({ error: 'Call not found' }, 404);
-  if (session.status === 'ended') return c.json({ error: 'Call already ended' }, 400);
+  if (session.status === 'ended' || session.status === 'declined') {
+    return c.json({ error: 'Call already ended' }, 400);
+  }
+
   const now = Math.floor(Date.now() / 1000);
+
+  // ──────────────────────────────────────────────────────────────────────────────
+  // CRITICAL FIX: previously this endpoint computed `coins_charged` and wrote
+  // it on the session row but never actually moved any coins — caller wasn't
+  // debited, host wasn't credited, no coin_transactions, host stats stale.
+  // Result: an admin force-ending a stuck call left the caller with free
+  // talk time and the host with no earnings.
+  //
+  // We now mirror the atomic transfer pattern used by /api/calls/end and the
+  // cron reaper (src/index.ts):
+  //   1. Atomic ended_at guard so two concurrent admin force-ends (or a
+  //      force-end racing the cron reaper / a genuine /end call) cannot
+  //      double-charge.
+  //   2. Single UPDATE with CASE + EXISTS to move both rows or neither.
+  //   3. Bookkeeping batch (host stats + coin_transactions) only if money
+  //      actually moved.
+  //   4. Notify both parties (WS + FCM fallback) so their call screens
+  //      unblock and the local billing timer halts.
+  //   5. Close the CF Calls SFU sessions so we don't leak edge resources.
+  // ──────────────────────────────────────────────────────────────────────────────
+
+  // Atomic guard — use ended_at IS NULL (matches the rest of the codebase).
+  // Setting status='processing' would violate the CHECK constraint silently.
+  const guard = await dbA.prepare(
+    "UPDATE call_sessions SET ended_at = ? WHERE id = ? AND status IN ('active', 'pending') AND ended_at IS NULL"
+  ).bind(now, id).run();
+  if (!guard.meta?.changes) {
+    return c.json({ error: 'Call already ended' }, 400);
+  }
+
   const durationSec = session.started_at ? now - session.started_at : 0;
-  // FIX #15: column is `rate_per_minute` on call_sessions, not `coins_per_min`.
-  // The old name silently resolved to undefined → ?? 0 → no charge.
-  // TODO: this admin force-end should perform the same atomic coin transfer
-  // as routes/call.ts /end (deduct caller, credit host with revenue share).
-  // For now we just record duration + an estimated charge in the session row
-  // without moving any coins.
-  const coinsCharged = Math.floor(durationSec / 60) * (session.rate_per_minute ?? 0);
-  await db(c).prepare(`
-    UPDATE call_sessions
-    SET status = 'ended', ended_at = ?, duration_seconds = ?, coins_charged = ?
-    WHERE id = ?
-  `).bind(now, durationSec, coinsCharged, id).run();
+  // Round UP minutes (matches /api/calls/end). Floor would under-bill on
+  // 1m30s calls — host gets 0 earnings even though they spoke for 90s.
+  const durationMin = durationSec > 0 ? Math.max(1, Math.ceil(durationSec / 60)) : 0;
+  const effectiveRate = session.rate_per_minute ?? 0;
+  // Only charge if the call was actually `active` and had any duration.
+  // A force-end on a still-`pending` call (caller cancelled, host never
+  // accepted) must not bill anything.
+  const coinsCharged = (session.status === 'active' && durationSec > 0)
+    ? durationMin * effectiveRate
+    : 0;
+  const hostShare = Math.floor(coinsCharged * 0.7);
+
+  let actualCoinsCharged = 0;
+  let actualHostShare = 0;
+
+  if (coinsCharged > 0 && session.host_user_id) {
+    const transfer = await dbA.prepare(
+      `UPDATE users
+         SET coins = coins + CASE id
+           WHEN ?1 THEN -?2
+           WHEN ?3 THEN ?4
+           ELSE 0
+         END
+         WHERE id IN (?1, ?3)
+           AND EXISTS (SELECT 1 FROM users WHERE id = ?1 AND coins >= ?2)`
+    ).bind(session.caller_id, coinsCharged, session.host_user_id, hostShare).run();
+
+    if (transfer.meta?.changes === 2) {
+      actualCoinsCharged = coinsCharged;
+      actualHostShare = hostShare;
+    } else {
+      // Caller had insufficient coins — call was running past balance.
+      // Force-end still succeeds (session marked ended) but no money moves.
+      console.warn('[admin/force-end] Atomic transfer failed (insufficient coins). call:', id, 'wanted:', coinsCharged);
+    }
+  }
+
+  const batchOps: any[] = [
+    dbA.prepare('UPDATE call_sessions SET status = ?, duration_seconds = ?, coins_charged = ? WHERE id = ?')
+      .bind('ended', durationSec, actualCoinsCharged, id),
+  ];
+  if (actualCoinsCharged > 0) {
+    batchOps.push(
+      dbA.prepare('UPDATE hosts SET total_minutes = total_minutes + ?, total_earnings = total_earnings + ? WHERE id = ?')
+        .bind(durationMin, actualHostShare, session.host_id),
+      dbA.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
+        .bind(crypto.randomUUID(), session.caller_id, 'spend', -actualCoinsCharged, `${session.type || 'audio'} call — admin force-end (${durationMin} min)`, id),
+      dbA.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
+        .bind(crypto.randomUUID(), session.host_user_id, 'bonus', actualHostShare, `${session.type || 'audio'} call — admin force-end (${durationMin} min)`, id),
+    );
+  }
+  await dbA.batch(batchOps);
+
+  // Notify both parties so neither stays stuck on the call screen.
+  // We deliberately fan out independently — one party's failure must not
+  // block notifying the other.
+  const notify = async (userId: string | null | undefined) => {
+    if (!userId) return;
+    try {
+      const notifId = c.env.NOTIFICATION_HUB.idFromName(userId);
+      const notifStub = c.env.NOTIFICATION_HUB.get(notifId);
+      await notifStub.fetch('https://dummy/notify', {
+        method: 'POST',
+        body: JSON.stringify({ type: 'call_ended', session_id: id, reason: 'admin_force_end' }),
+      });
+    } catch (e) {
+      console.warn('[admin/force-end] WS notify failed for', userId, e);
+    }
+  };
+  await Promise.all([notify(session.caller_id), notify(session.host_user_id)]);
+
+  // Coin balance updates so wallets refresh immediately on both sides.
+  if (actualCoinsCharged > 0 && session.host_user_id) {
+    try {
+      const updatedHost = await dbA.prepare('SELECT coins FROM users WHERE id = ?').bind(session.host_user_id).first<{ coins: number }>();
+      const hostNotif = c.env.NOTIFICATION_HUB.get(c.env.NOTIFICATION_HUB.idFromName(session.host_user_id));
+      await hostNotif.fetch('https://dummy/notify', {
+        method: 'POST',
+        body: JSON.stringify({ type: 'coin_update', amount: actualHostShare, new_balance: updatedHost?.coins ?? 0 }),
+      });
+    } catch (e) {
+      console.warn('[admin/force-end] coin_update host notify failed:', e);
+    }
+    try {
+      const updatedUser = await dbA.prepare('SELECT coins FROM users WHERE id = ?').bind(session.caller_id).first<{ coins: number }>();
+      const userNotif = c.env.NOTIFICATION_HUB.get(c.env.NOTIFICATION_HUB.idFromName(session.caller_id));
+      await userNotif.fetch('https://dummy/notify', {
+        method: 'POST',
+        body: JSON.stringify({ type: 'coin_update', amount: -actualCoinsCharged, new_balance: updatedUser?.coins ?? 0 }),
+      });
+    } catch (e) {
+      console.warn('[admin/force-end] coin_update caller notify failed:', e);
+    }
+  }
+
+  // Best-effort CF Calls cleanup. Lazy-import so admin module load doesn't
+  // pay the cost on every request.
+  try {
+    const { createCFCalls } = await import('../lib/cf-calls');
+    const cfCalls = createCFCalls(c.env);
+    if (cfCalls) {
+      if (session.cf_session_id) {
+        try { await cfCalls.closeSession(session.cf_session_id); }
+        catch (e) { console.warn('[admin/force-end] close CF caller session failed:', e); }
+      }
+      if (session.cf_host_session_id) {
+        try { await cfCalls.closeSession(session.cf_host_session_id); }
+        catch (e) { console.warn('[admin/force-end] close CF host session failed:', e); }
+      }
+    }
+  } catch (e) {
+    console.warn('[admin/force-end] CF Calls cleanup skipped:', e);
+  }
+
   const u = c.get('user');
-  await auditLog(db(c), u.sub, u.email || 'Admin', u.email || '', 'update', 'calls', id, `Force-ended call (was ${session.status})`);
-  return c.json({ success: true, id, duration_seconds: durationSec });
+  await auditLog(
+    dbA,
+    u.sub,
+    u.email || 'Admin',
+    u.email || '',
+    'update',
+    'calls',
+    id,
+    `Force-ended call (was ${session.status}) — ${durationSec}s, charged ${actualCoinsCharged} coins, host earned ${actualHostShare}`
+  );
+
+  return c.json({
+    success: true,
+    id,
+    duration_seconds: durationSec,
+    coins_charged: actualCoinsCharged,
+    host_earnings: actualHostShare,
+    insufficient_coins: coinsCharged > 0 && actualCoinsCharged === 0,
+  });
 });
 
 // ─── App Config (alias for settings) ─────────────────────────────────────────
