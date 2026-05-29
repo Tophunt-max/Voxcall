@@ -119,10 +119,9 @@ export default function VideoCallScreen() {
   const [status, setStatus] = useState<"connecting" | "ringing" | "active">("connecting");
 
   const [permStep, setPermStep] = useState<PermStep | null>(null);
-  const [permChecked, setPermChecked] = useState(false);
   const [webrtcReady, setWebrtcReady] = useState(false);
 
-  const { permissions, requestCamera, requestMicrophone, openSettings, refresh } = usePermissions();
+  const { permissions, requestCamera, requestMicrophone, openSettings, loaded } = usePermissions();
   const { onEvent } = useSocket();
 
   const webrtc = useWebRTC({
@@ -155,19 +154,16 @@ export default function VideoCallScreen() {
     return () => anim.stop();
   }, [webrtc.remoteStream]);
 
+  // FIX (permission flash bug): the previous version had a local `permChecked`
+  // state that flipped true after `await refresh()` resolved — but on native,
+  // expo-camera's `useCameraPermissions()` hook updates the camera status on
+  // its own async timeline (often 100-500 ms after mount). When `permChecked`
+  // turned true, camera was still 'undetermined', triggering setPermStep("camera")
+  // and flashing the permission dialog even when the OS had already granted it.
+  // We now gate on the hook's own `loaded` flag, which waits for the camera
+  // hook AND the manual checkAll() — eliminating the race.
   useEffect(() => {
-    const check = async () => {
-      await refresh();
-      setPermChecked(true);
-    };
-    check();
-  }, []);
-
-  // FIX BUG-7: Re-evaluate permissions when they change (e.g. after user grants via dialog),
-  // not just on initial check. Without camera+mic deps, the effect never re-fires after
-  // the user grants permission, so WebRTC never starts.
-  useEffect(() => {
-    if (!permChecked) return;
+    if (!loaded) return;
     if (permissions.camera.status !== "granted") {
       setPermStep("camera");
     } else if (permissions.microphone.status !== "granted") {
@@ -176,7 +172,7 @@ export default function VideoCallScreen() {
       setPermStep("done");
       setWebrtcReady(true);
     }
-  }, [permChecked, permissions.camera.status, permissions.microphone.status]);
+  }, [loaded, permissions.camera.status, permissions.microphone.status]);
 
   // FIX BUG-8: Removed "ringing" status timeout. The user reaches this screen
   // AFTER the host accepted the call — showing "Ringing..." is misleading.

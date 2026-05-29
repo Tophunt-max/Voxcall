@@ -61,9 +61,8 @@ export default function AudioCallScreen() {
   const { activeCall, endCall, toggleMute, toggleSpeaker, markCallActive } = useCall();
   const [status, setStatus] = useState<"connecting" | "ringing" | "active">("connecting");
   const [showMicDialog, setShowMicDialog] = useState(false);
-  const [micChecked, setMicChecked] = useState(false);
 
-  const { permissions, requestMicrophone, openSettings, refresh } = usePermissions();
+  const { permissions, requestMicrophone, openSettings, loaded } = usePermissions();
   const { onEvent } = useSocket();
   const pulse = useRef(new Animated.Value(1)).current;
 
@@ -81,21 +80,18 @@ export default function AudioCallScreen() {
     }
   }, [webrtc.isConnected, status, markCallActive]);
 
+  // FIX (permission flash bug): see voxlink/hooks/usePermissions.ts. We now
+  // wait for the hook's `loaded` flag instead of running a second redundant
+  // refresh() and flipping a local `micChecked` state. Without this, the
+  // mic dialog flashed open even when the OS had granted the permission.
   useEffect(() => {
-    const checkMic = async () => {
-      await refresh();
-      setMicChecked(true);
-    };
-    checkMic();
-  }, []);
-
-  useEffect(() => {
-    if (micChecked && permissions.microphone.status !== "granted") {
+    if (!loaded) return;
+    if (permissions.microphone.status !== "granted") {
       setShowMicDialog(true);
-    } else if (micChecked && permissions.microphone.status === "granted") {
+    } else {
       setWebrtcReady(true);
     }
-  }, [micChecked, permissions.microphone.status]);
+  }, [loaded, permissions.microphone.status]);
 
   useEffect(() => {
     const anim = Animated.loop(
@@ -321,7 +317,7 @@ export default function AudioCallScreen() {
         onDeny={handleMicDeny}
       />
 
-      {micChecked && permissions.microphone.status !== "granted" && !showMicDialog && (
+      {loaded && permissions.microphone.status !== "granted" && !showMicDialog && (
         <TouchableOpacity onPress={() => setShowMicDialog(true)} style={styles.permBanner}>
           <Image source={require("@/assets/icons/ic_mic.png")} style={{ width: 14, height: 14, tintColor: "#FFD166" }} resizeMode="contain" />
           <Text style={styles.permBannerText}>Microphone access needed — Tap to fix</Text>

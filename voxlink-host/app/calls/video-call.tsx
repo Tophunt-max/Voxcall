@@ -118,10 +118,9 @@ export default function VideoCallScreen() {
   const [status, setStatus] = useState<"connecting" | "ringing" | "active">("connecting");
 
   const [permStep, setPermStep] = useState<PermStep | null>(null);
-  const [permChecked, setPermChecked] = useState(false);
   const [webrtcReady, setWebrtcReady] = useState(false);
 
-  const { permissions, requestCamera, requestMicrophone, openSettings, refresh } = usePermissions();
+  const { permissions, requestCamera, requestMicrophone, openSettings, loaded } = usePermissions();
   const { onEvent } = useSocket();
 
   const webrtc = useWebRTC({
@@ -154,19 +153,14 @@ export default function VideoCallScreen() {
     return () => anim.stop();
   }, [webrtc.remoteStream]);
 
+  // FIX (permission flash bug): see voxlink-host/hooks/usePermissions.ts.
+  // Wait for the hook's `loaded` flag (which respects expo-camera's async
+  // OS resolution) instead of a local `permChecked` flag flipped after a
+  // manual refresh(). Without this, the camera dialog flashed open every
+  // time the screen mounted because our state still showed 'undetermined'
+  // while expo-camera was busy fetching the real OS state in the background.
   useEffect(() => {
-    const check = async () => {
-      await refresh();
-      setPermChecked(true);
-    };
-    check();
-  }, []);
-
-  // FIX BUG-7: Re-evaluate permissions when they change (e.g. after user grants via dialog),
-  // not just on initial check. Without camera+mic deps, the effect never re-fires after
-  // the user grants permission, so WebRTC never starts.
-  useEffect(() => {
-    if (!permChecked) return;
+    if (!loaded) return;
     if (permissions.camera.status !== "granted") {
       setPermStep("camera");
     } else if (permissions.microphone.status !== "granted") {
@@ -175,7 +169,7 @@ export default function VideoCallScreen() {
       setPermStep("done");
       setWebrtcReady(true);
     }
-  }, [permChecked, permissions.camera.status, permissions.microphone.status]);
+  }, [loaded, permissions.camera.status, permissions.microphone.status]);
 
   // FIX BUG-3: Host navigates to video-call AFTER accepting — don't show "Ringing..."
 

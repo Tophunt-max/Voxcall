@@ -77,10 +77,36 @@ export function usePermissions() {
     notifications: DEFAULT,
   });
 
+  // FIX (permission flash bug): track when initial detection has actually
+  // completed. Previously screens started prompting for camera permission
+  // the moment our local `permChecked` flag flipped — but on native, the
+  // expo-camera `useCameraPermissions()` hook resolves OS state on its own
+  // schedule (often 100-500 ms after mount). During that window, our
+  // `permissions.camera.status` was still the DEFAULT 'undetermined' value,
+  // which fired the camera-permission dialog even when the OS had already
+  // granted it. The dialog would flash, the camera state would resolve,
+  // and the dialog would auto-hide — but a slow Android device showed the
+  // dialog long enough for the user to tap Allow, triggering the OS prompt
+  // a SECOND time. Hence "bar bar permission mag raha hai".
+  //
+  // The `loaded` flag below is true only after BOTH:
+  //   • our manual checkAll() has finished (mic / mediaLibrary / notifications)
+  //   • on native, the expo-camera hook has populated cameraPermission
+  // Screens gate their decision logic on `loaded` so they wait for the
+  // real OS state instead of acting on the DEFAULT placeholder.
+  const [refreshDone, setRefreshDone] = useState(false);
+
   // Native camera hook — only active on non-web
   const nativeCameraHook = useCameraPermissionsNative ? useCameraPermissionsNative() : [null, null];
   const cameraPermission = nativeCameraHook[0];
   const requestCameraPermissionNative = nativeCameraHook[1];
+
+  // Computed: every permission source has reported its real OS state.
+  // - Web: only `refreshDone` matters (no separate camera hook).
+  // - Native: also wait for the expo-camera hook to resolve (cameraPermission
+  //   non-null). expo-camera initializes this asynchronously after mount.
+  const loaded =
+    refreshDone && (Platform.OS === "web" || cameraPermission != null);
 
   // Sync expo-camera native hook into our state
   useEffect(() => {
@@ -121,6 +147,11 @@ export function usePermissions() {
         mediaLibrary: { status: "granted", canAskAgain: false }, // web: always accessible
         notifications: { status: notif, canAskAgain: notif !== "denied" },
       });
+      // FIX (permission flash bug): web takes the early-return path, so mark
+      // refreshDone here too. Without this `loaded` would never flip true on
+      // web and call screens would block forever waiting for the camera hook
+      // (which is native-only).
+      setRefreshDone(true);
       return;
     }
 
@@ -165,6 +196,11 @@ export function usePermissions() {
         }));
       }
     } catch {}
+
+    // FIX (permission flash bug): mark refresh as done so the `loaded` flag
+    // can flip true once expo-camera's hook also resolves (or immediately on
+    // web where the camera state is fetched here in checkAll).
+    setRefreshDone(true);
   }, []);
 
   useEffect(() => {
@@ -290,6 +326,12 @@ export function usePermissions() {
 
   return {
     permissions,
+    // FIX (permission flash bug): expose `loaded` so call screens can wait
+    // until ALL permission sources have actually reported their real OS
+    // state before deciding whether to show a permission dialog. Prevents
+    // the "dialog flash on every screen mount" that made the app appear to
+    // re-ask for permissions even after the user had already granted them.
+    loaded,
     isGranted,
     isBlocked,
     requestCamera,
