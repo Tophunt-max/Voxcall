@@ -1,8 +1,10 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Image,
   Animated, Easing, Platform } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import * as Haptics from "expo-haptics";
 import { useRingtone } from "@/hooks/useRingtone";
 import { resolveMediaUrl, API } from "@/services/api";
 import { useCall } from "@/context/CallContext";
@@ -18,6 +20,39 @@ const RING_TIMEOUT_MS = 45000;
 // drop). Without this, the user is stuck on "Ringing..." until the 45s
 // no-answer timeout even though the host already picked up.
 const STATUS_POLL_MS = 12000;
+
+// ─── AnimatedDots ────────────────────────────────────────────────────────────
+// FIX (UI polish): the previous version showed a static "Ringing..." string
+// with the trailing dots baked in. Animating each dot's opacity gives the
+// user a clear "we're actively waiting" signal, matching the pattern used
+// in WhatsApp, Zoom, and FaceTime call-out screens.
+function AnimatedDots({ color }: { color: string }) {
+  const d1 = useRef(new Animated.Value(0.3)).current;
+  const d2 = useRef(new Animated.Value(0.3)).current;
+  const d3 = useRef(new Animated.Value(0.3)).current;
+
+  useEffect(() => {
+    const animate = (val: Animated.Value, delay: number) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(delay),
+          Animated.timing(val, { toValue: 1, duration: 400, useNativeDriver: useNativeDriverValue }),
+          Animated.timing(val, { toValue: 0.3, duration: 400, useNativeDriver: useNativeDriverValue }),
+        ])
+      ).start();
+    animate(d1, 0);
+    animate(d2, 200);
+    animate(d3, 400);
+  }, []);
+
+  return (
+    <View style={s.dotsRow}>
+      {[d1, d2, d3].map((d, i) => (
+        <Animated.View key={i} style={[s.dot, { backgroundColor: color, opacity: d }]} />
+      ))}
+    </View>
+  );
+}
 
 export default function OutgoingCallScreen() {
   const insets = useSafeAreaInsets();
@@ -65,6 +100,9 @@ export default function OutgoingCallScreen() {
   const goToCallScreen = useCallback(async () => {
     if (navigated.current) return;
     navigated.current = true;
+    // FIX (UI feedback): success haptic when host accepts. Audio-only haptic
+    // gives the user a clear non-visual cue at the moment of connection.
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     await stopRing();
     router.replace(callType === "video" ? "/user/call/video-call" : "/user/call/audio-call");
   }, [callType, stopRing]);
@@ -72,6 +110,9 @@ export default function OutgoingCallScreen() {
   const cancelCall = useCallback(async () => {
     if (navigated.current) return;
     navigated.current = true;
+    // FIX (UI feedback): warning haptic on Cancel — matches the destructive
+    // visual intent of the red end-call button.
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
     await stopRing();
     // Fix M1: end call on backend when user cancels
     endCall(false);
@@ -82,13 +123,13 @@ export default function OutgoingCallScreen() {
       Animated.loop(
         Animated.sequence([
           Animated.delay(delay),
-          Animated.timing(val, { toValue: 1, duration: 2000, easing: Easing.out(Easing.ease), useNativeDriver: useNativeDriverValue }),
+          Animated.timing(val, { toValue: 1, duration: 2400, easing: Easing.out(Easing.ease), useNativeDriver: useNativeDriverValue }),
           Animated.timing(val, { toValue: 0, duration: 0, useNativeDriver: useNativeDriverValue }),
         ])
       ).start();
     animateRipple(ripple1, 0);
-    animateRipple(ripple2, 600);
-    animateRipple(ripple3, 1200);
+    animateRipple(ripple2, 800);
+    animateRipple(ripple3, 1600);
 
     const t1 = setTimeout(() => setStatus("ringing"), 1500);
     pendingTimeouts.current.add(t1);
@@ -205,79 +246,219 @@ export default function OutgoingCallScreen() {
     return () => { cancelled = true; clearInterval(interval); };
   }, [activeCall?.sessionId, goToCallScreen, stopRing, endCall, syncServerStartTime, scheduleTimeout]);
 
-  const makeRipple = (val: Animated.Value, size: number) => ({
-    transform: [{ scale: val.interpolate({ inputRange: [0, 1], outputRange: [1, size] }) }],
-    opacity: val.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.4, 0.2, 0] }),
+  // FIX (UI polish): ripples now animate from the avatar's outer edge outward,
+  // not from a fixed inner circle. The visual reads as the avatar "broadcasting"
+  // a signal — the previous version had the rings start tiny and grow past
+  // the avatar, which looked like noise instead of intentional ripples.
+  const makeRipple = (val: Animated.Value) => ({
+    transform: [{ scale: val.interpolate({ inputRange: [0, 1], outputRange: [1, 2.2] }) }],
+    opacity: val.interpolate({ inputRange: [0, 0.4, 1], outputRange: [0.5, 0.25, 0] }),
   });
 
+  const isErrorState = status === "declined" || status === "no_answer";
+  const statusColor = isErrorState ? "#FF6B6B" : "rgba(255,255,255,0.85)";
   const statusLabel =
     status === "declined"  ? "Call Declined" :
     status === "no_answer" ? "No Answer" :
-    status === "ringing"   ? "Ringing..." :
-                             "Connecting...";
+    status === "ringing"   ? "Ringing" :
+                             "Connecting";
+
+  // FIX (UI hierarchy): coins/min badge surfaces the cost up-front so the
+  // user knows what the call will bill. Previously this info was buried.
+  const coinsPerMinute = activeCall?.coinsPerMinute;
 
   return (
-    <View style={[s.container, { backgroundColor: "#1A1040" }]}>
-      <View style={{ alignItems: "center", flex: 1, justifyContent: "center", gap: 24 }}>
-        <Text style={s.callTypeLabel}>
-          {callType === "video" ? "Video Call" : "Voice Call"}
-        </Text>
-
-        <View style={s.avatarWrap}>
-          {[ripple3, ripple2, ripple1].map((r, i) => (
-            <Animated.View key={i} style={[s.rippleCircle, makeRipple(r, 1.5 + i * 0.5)]} />
-          ))}
+    <LinearGradient
+      colors={callType === "video"
+        ? ["#1A0040", "#3D0073", "#1A0040"]
+        : ["#200060", "#4B0082", "#1A0040"]}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={[s.container, { paddingTop: insets.top + 24 }]}
+    >
+      {/* Top: call-type label */}
+      <View style={s.topSection}>
+        <View style={s.callTypeBadge}>
           <Image
-            source={{ uri: hostAvatar }}
-            style={s.avatar}
+            source={callType === "video"
+              ? require("@/assets/icons/ic_photo.png")
+              : require("@/assets/icons/ic_call.png")}
+            style={s.callTypeIcon}
+            resizeMode="contain"
           />
-        </View>
-
-        <View style={{ alignItems: "center", gap: 8 }}>
-          <Text style={s.hostName}>{hostName}</Text>
-          {!!specialty && <Text style={s.hostMeta}>{specialty}</Text>}
-          <Text style={[s.statusText, (status === "declined" || status === "no_answer") && { color: "#FF6B6B" }]}>
-            {statusLabel}
+          <Text style={s.callTypeLabel}>
+            {callType === "video" ? "Video Call" : "Voice Call"}
           </Text>
-          {status !== "declined" && status !== "no_answer" && (
-            <View style={s.minBillingBadge}>
-              <Text style={s.minBillingText}>⏱ Minimum 1 minute billing applies</Text>
-            </View>
-          )}
         </View>
       </View>
 
-      <View style={[s.bottomControls, { paddingBottom: insets.bottom + 40 }]}>
+      {/* Middle: avatar + ripples + name */}
+      <View style={s.middleSection}>
+        <View style={s.avatarWrap}>
+          {[ripple3, ripple2, ripple1].map((r, i) => (
+            <Animated.View key={i} style={[s.rippleCircle, makeRipple(r)]} />
+          ))}
+          <View style={s.avatarRing}>
+            <Image source={{ uri: hostAvatar }} style={s.avatar} />
+          </View>
+        </View>
+
+        <Text style={s.hostName} numberOfLines={1}>{hostName}</Text>
+        {!!specialty && <Text style={s.hostMeta} numberOfLines={1}>{specialty}</Text>}
+
+        {/* Status row: text + animated dots (for in-progress states) */}
+        <View style={s.statusRow}>
+          <Text style={[s.statusText, { color: statusColor }]}>
+            {statusLabel}
+          </Text>
+          {!isErrorState && <AnimatedDots color={statusColor} />}
+        </View>
+
+        {/* Cost info — hidden once call ends so we don't tease about a price
+            that's no longer relevant. */}
+        {!isErrorState && (
+          <View style={s.costRow}>
+            {coinsPerMinute != null && (
+              <View style={s.costBadge}>
+                <Text style={s.costEmoji}>🪙</Text>
+                <Text style={s.costText}>
+                  {coinsPerMinute} <Text style={s.costSubText}>coins / min</Text>
+                </Text>
+              </View>
+            )}
+            <View style={s.costBadge}>
+              <Image
+                source={require("@/assets/icons/ic_calendar.png")}
+                style={s.costSubIcon}
+                resizeMode="contain"
+              />
+              <Text style={s.costSubText}>1 min minimum</Text>
+            </View>
+          </View>
+        )}
+      </View>
+
+      {/* Bottom: cancel button */}
+      <View style={[s.bottomControls, { paddingBottom: insets.bottom + 36 }]}>
         <TouchableOpacity
           style={s.endBtn}
           onPress={cancelCall}
-          activeOpacity={0.85}
+          activeOpacity={0.8}
+          // FIX (accessibility): explicit role + label so screen readers
+          // announce the destructive action correctly.
+          accessibilityRole="button"
+          accessibilityLabel="Cancel call"
         >
           <Image source={require("@/assets/icons/ic_call_end.png")} style={s.endIcon} resizeMode="contain" />
         </TouchableOpacity>
         <Text style={s.endLabel}>Cancel</Text>
       </View>
-    </View>
+    </LinearGradient>
   );
 }
 
 const s = StyleSheet.create({
   container: { flex: 1 },
-  callTypeLabel: { color: "rgba(255,255,255,0.7)", fontSize: 14, fontFamily: "Poppins_500Medium", letterSpacing: 1, textTransform: "uppercase" },
-  avatarWrap: { alignItems: "center", justifyContent: "center", width: 180, height: 180 },
-  rippleCircle: { position: "absolute", width: 120, height: 120, borderRadius: 60, backgroundColor: "rgba(160, 14, 231, 0.3)" },
-  avatar: { width: 120, height: 120, borderRadius: 60, borderWidth: 3, borderColor: "rgba(255,255,255,0.3)" },
-  hostName: { color: "#fff", fontSize: 24, fontFamily: "Poppins_700Bold" },
-  hostMeta: { color: "rgba(255,255,255,0.6)", fontSize: 14, fontFamily: "Poppins_400Regular" },
-  statusText: { color: "rgba(255,255,255,0.8)", fontSize: 14, fontFamily: "Poppins_400Regular", marginTop: 8 },
-  bottomControls: { alignItems: "center", gap: 12 },
-  endBtn: { width: 68, height: 68, borderRadius: 34, backgroundColor: "#E84855", alignItems: "center", justifyContent: "center" },
-  endIcon: { width: 30, height: 30, tintColor: "#fff" },
-  endLabel: { color: "rgba(255,255,255,0.7)", fontSize: 13, fontFamily: "Poppins_400Regular" },
-  minBillingBadge: {
-    marginTop: 6, paddingHorizontal: 14, paddingVertical: 6,
-    backgroundColor: "rgba(255,255,255,0.08)", borderRadius: 16,
+
+  // ─── Top section ─────────────────────────────────────────────────────────
+  topSection: { alignItems: "center", paddingTop: 8 },
+  callTypeBadge: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    backgroundColor: "rgba(255,255,255,0.1)",
+    paddingHorizontal: 14, paddingVertical: 8,
+    borderRadius: 20,
     borderWidth: 1, borderColor: "rgba(255,255,255,0.15)",
   },
-  minBillingText: { color: "rgba(255,255,255,0.5)", fontSize: 11, fontFamily: "Poppins_400Regular" },
+  callTypeIcon: { width: 16, height: 16, tintColor: "rgba(255,255,255,0.85)" },
+  callTypeLabel: {
+    color: "rgba(255,255,255,0.9)", fontSize: 12,
+    fontFamily: "Poppins_600SemiBold", letterSpacing: 1,
+    textTransform: "uppercase",
+  },
+
+  // ─── Middle section ──────────────────────────────────────────────────────
+  middleSection: {
+    flex: 1, alignItems: "center", justifyContent: "center",
+    gap: 14, paddingHorizontal: 24,
+  },
+  // FIX (clipping): wrap is now sized to fit the LARGEST ripple at peak
+  // scale (avatar 132 × 2.2 ≈ 290) so rings never get cropped at the edges
+  // of the wrap. Previously wrap was 180 — rings got clipped past 1.5x.
+  avatarWrap: {
+    width: 290, height: 290,
+    alignItems: "center", justifyContent: "center",
+    marginBottom: 4,
+  },
+  rippleCircle: {
+    position: "absolute",
+    width: 132, height: 132, borderRadius: 66,
+    backgroundColor: "rgba(160, 14, 231, 0.55)",
+    shadowColor: "#A00EE7", shadowOpacity: 0.6, shadowRadius: 12, shadowOffset: { width: 0, height: 0 },
+  },
+  avatarRing: {
+    width: 132, height: 132, borderRadius: 66,
+    borderWidth: 3, borderColor: "rgba(255,255,255,0.35)",
+    alignItems: "center", justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.06)",
+  },
+  avatar: {
+    width: 116, height: 116, borderRadius: 58,
+    backgroundColor: "rgba(255,255,255,0.05)",
+  },
+  hostName: {
+    color: "#fff", fontSize: 28, fontFamily: "Poppins_700Bold",
+    marginTop: 8, textAlign: "center",
+  },
+  hostMeta: {
+    color: "rgba(255,255,255,0.6)", fontSize: 14,
+    fontFamily: "Poppins_400Regular",
+  },
+  statusRow: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    marginTop: 8,
+  },
+  statusText: {
+    fontSize: 16, fontFamily: "Poppins_500Medium",
+  },
+  dotsRow: { flexDirection: "row", gap: 4, marginLeft: 4, marginBottom: -2 },
+  dot: { width: 4, height: 4, borderRadius: 2 },
+  costRow: {
+    flexDirection: "row", gap: 8, flexWrap: "wrap",
+    justifyContent: "center", marginTop: 6,
+  },
+  costBadge: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    backgroundColor: "rgba(255,255,255,0.1)",
+    paddingHorizontal: 12, paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.12)",
+  },
+  costEmoji: { fontSize: 14 },
+  costSubIcon: { width: 12, height: 12, tintColor: "rgba(255,255,255,0.65)" },
+  costText: {
+    color: "#FFD166", fontSize: 13, fontFamily: "Poppins_700Bold",
+  },
+  costSubText: {
+    color: "rgba(255,255,255,0.7)", fontSize: 11,
+    fontFamily: "Poppins_500Medium",
+  },
+
+  // ─── Bottom controls ─────────────────────────────────────────────────────
+  bottomControls: { alignItems: "center", gap: 10 },
+  // FIX (touch target): bumped from 68px to 76px so the destructive button
+  // reads as the most important action on screen (matches industry standard
+  // for primary call actions: WhatsApp 80px, Telegram 76px, FaceTime 72px).
+  endBtn: {
+    width: 76, height: 76, borderRadius: 38,
+    backgroundColor: "#E84855",
+    alignItems: "center", justifyContent: "center",
+    elevation: 8,
+    shadowColor: "#E84855", shadowOpacity: 0.6,
+    shadowRadius: 16, shadowOffset: { width: 0, height: 6 },
+  },
+  endIcon: { width: 32, height: 32, tintColor: "#fff" },
+  endLabel: {
+    color: "rgba(255,255,255,0.75)", fontSize: 13,
+    fontFamily: "Poppins_500Medium",
+  },
 });

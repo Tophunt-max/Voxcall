@@ -1,8 +1,9 @@
-import React, { useEffect, useState, useCallback, useRef } from "react";
+import React, { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import {
-  View, Text, StyleSheet, Image, TouchableOpacity,
-  Animated, Easing, Platform, BackHandler,
+  View, Text, StyleSheet, Image, TouchableOpacity, Pressable,
+  Animated, Easing, Platform, BackHandler, PanResponder, Dimensions,
 } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SvgIcon } from "@/components/SvgIcon";
 import { IconView } from "@/components/IconView";
@@ -15,6 +16,14 @@ import { useWebRTC } from "@/hooks/useWebRTC";
 import { useSocket } from "@/context/SocketContext";
 import { SocketEvents } from "@/constants/events";
 import { API } from "@/services/api";
+
+// FIX (UI: draggable self-preview): see voxlink/app/user/call/video-call.tsx
+// for full rationale. Identical numbers so both apps behave the same.
+const SCREEN_W = Dimensions.get("window").width || 360;
+const SCREEN_H = Dimensions.get("window").height || 720;
+const SELF_W = 110;
+const SELF_H = 160;
+const CONTROLS_HIDE_DELAY = 4000;
 
 const useNativeDriverValue = Platform.OS !== "web";
 
@@ -398,6 +407,85 @@ export default function VideoCallScreen() {
   const cameraGranted = permissions.camera.status === "granted";
   const micGranted = permissions.microphone.status === "granted";
 
+  // ─── UI Polish: tap-to-hide controls ─────────────────────────────────────
+  // FIX (UI): see user app's video-call for the full rationale. Hosts get the
+  // same auto-hide-after-4s behaviour during an active call.
+  const [controlsVisible, setControlsVisible] = useState(true);
+  const controlsHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const controlsOpacity = useRef(new Animated.Value(1)).current;
+
+  const showControls = useCallback(() => {
+    setControlsVisible(true);
+    if (controlsHideTimer.current) {
+      clearTimeout(controlsHideTimer.current);
+      controlsHideTimer.current = null;
+    }
+    if (status !== "active") return;
+    controlsHideTimer.current = setTimeout(() => {
+      setControlsVisible(false);
+    }, CONTROLS_HIDE_DELAY);
+  }, [status]);
+
+  useEffect(() => {
+    if (status === "active") {
+      showControls();
+    } else {
+      setControlsVisible(true);
+      if (controlsHideTimer.current) clearTimeout(controlsHideTimer.current);
+    }
+    return () => {
+      if (controlsHideTimer.current) clearTimeout(controlsHideTimer.current);
+    };
+  }, [status, showControls]);
+
+  useEffect(() => {
+    Animated.timing(controlsOpacity, {
+      toValue: controlsVisible ? 1 : 0,
+      duration: 220,
+      useNativeDriver: useNativeDriverValue,
+    }).start();
+  }, [controlsVisible]);
+
+  // ─── UI Polish: draggable self-preview ───────────────────────────────────
+  // FIX (UI): same as user app — clamp to safe area and screen edges. Default
+  // anchor is the top-right (matches the previous pinned position).
+  const selfPan = useRef(new Animated.ValueXY({ x: SCREEN_W - SELF_W - 16, y: insets.top + 12 })).current;
+  const selfPosition = useRef({ x: SCREEN_W - SELF_W - 16, y: insets.top + 12 });
+
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: (_, gesture) =>
+          Math.abs(gesture.dx) > 4 || Math.abs(gesture.dy) > 4,
+        onPanResponderGrant: () => {
+          selfPan.setOffset({ x: selfPosition.current.x, y: selfPosition.current.y });
+          selfPan.setValue({ x: 0, y: 0 });
+        },
+        onPanResponderMove: Animated.event([null, { dx: selfPan.x, dy: selfPan.y }], {
+          useNativeDriver: false,
+        }),
+        onPanResponderRelease: (_, gesture) => {
+          const newX = Math.max(
+            12,
+            Math.min(SCREEN_W - SELF_W - 12, selfPosition.current.x + gesture.dx)
+          );
+          const newY = Math.max(
+            insets.top + 12,
+            Math.min(SCREEN_H - SELF_H - 100, selfPosition.current.y + gesture.dy)
+          );
+          selfPosition.current = { x: newX, y: newY };
+          selfPan.flattenOffset();
+          Animated.spring(selfPan, {
+            toValue: { x: newX, y: newY },
+            useNativeDriver: false,
+            friction: 7,
+          }).start();
+        },
+      }),
+    [selfPan, insets.top]
+  );
+
   return (
     <View style={styles.screen}>
       <PermissionDialog
@@ -414,7 +502,18 @@ export default function VideoCallScreen() {
         onDeny={handleMicDeny}
       />
 
-      <View style={styles.remoteArea}>
+      <Pressable
+        style={styles.remoteArea}
+        onPress={() => {
+          if (status !== "active") return;
+          if (controlsVisible) {
+            setControlsVisible(false);
+            if (controlsHideTimer.current) clearTimeout(controlsHideTimer.current);
+          } else {
+            showControls();
+          }
+        }}
+      >
         {/* FIX (remote-camera-off): always render StreamView while a stream
             exists so audio keeps playing on web; overlay an avatar + label
             when the remote has no active video track. Using StreamView for
@@ -447,9 +546,22 @@ export default function VideoCallScreen() {
             </Text>
           </View>
         )}
-      </View>
+      </Pressable>
 
-      <View style={[styles.selfPreview, { top: insets.top + 12, right: 16 }]}>
+      {/* FIX (UI): draggable self-preview — see user app's video-call for the
+          full rationale. */}
+      <Animated.View
+        {...panResponder.panHandlers}
+        style={[
+          styles.selfPreview,
+          {
+            transform: selfPan.getTranslateTransform(),
+            top: 0,
+            right: undefined,
+            left: 0,
+          },
+        ]}
+      >
         {/* FIX (camera conflict): the previous fallback rendered a <CameraView>
             placeholder while waiting for webrtc.localStream. On Android this
             opened the camera twice — Expo's CameraView held the handle while
@@ -485,7 +597,7 @@ export default function VideoCallScreen() {
         <View style={styles.selfLabel}>
           <Text style={styles.selfLabelText}>You</Text>
         </View>
-      </View>
+      </Animated.View>
 
       {permStep === "done" && (!cameraGranted || !micGranted) && (
         <View style={[styles.permMissingBar, { top: insets.top + 8 }]}>
@@ -504,10 +616,23 @@ export default function VideoCallScreen() {
         </View>
       )}
 
-      <View
-        style={[styles.overlay, { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 20 }]}
-        pointerEvents="box-none"
+      <Animated.View
+        style={[styles.overlay, { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 20, opacity: controlsOpacity }]}
+        pointerEvents={controlsVisible ? "box-none" : "none"}
       >
+        {/* FIX (UI): gradient backdrops behind the top / bottom overlay so call
+            info and controls stay readable over bright remote video. */}
+        <LinearGradient
+          colors={["rgba(0,0,0,0.45)", "rgba(0,0,0,0)"]}
+          style={styles.topGradient}
+          pointerEvents="none"
+        />
+        <LinearGradient
+          colors={["rgba(0,0,0,0)", "rgba(0,0,0,0.7)"]}
+          style={styles.bottomGradient}
+          pointerEvents="none"
+        />
+
         {showLowCoinWarning && (
           <View style={styles.warningBanner}>
             <SvgIcon name="alert-triangle" size={13} color="#FFD166" />
@@ -575,8 +700,10 @@ export default function VideoCallScreen() {
             <TouchableOpacity
               onPress={() => { Haptics?.notificationAsync?.(Haptics?.NotificationFeedbackType?.Warning); handleEndCall(); }}
               style={styles.endBtn}
+              accessibilityRole="button"
+              accessibilityLabel="End call"
             >
-              <SvgIcon name="phone-off" size={26} color="#fff" />
+              <SvgIcon name="phone-off" size={30} color="#fff" />
             </TouchableOpacity>
             <Text style={styles.ctrlLabel}>End</Text>
           </View>
@@ -609,7 +736,7 @@ export default function VideoCallScreen() {
             <Text style={styles.ctrlLabel}>{activeCall?.isSpeakerOn ? "Speaker" : "Earpiece"}</Text>
           </View>
         </View>
-      </View>
+      </Animated.View>
 
     </View>
   );
@@ -700,6 +827,14 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingHorizontal: 20,
   },
+  // FIX (UI): gradient backdrops behind the overlay so labels remain readable
+  // over bright remote video. Pointer-events:none so they don't block taps.
+  topGradient: {
+    position: "absolute", top: 0, left: 0, right: 0, height: 140,
+  },
+  bottomGradient: {
+    position: "absolute", bottom: 0, left: 0, right: 0, height: 220,
+  },
   warningBanner: {
     flexDirection: "row", alignItems: "center", gap: 8,
     backgroundColor: "rgba(255, 107, 107, 0.3)",
@@ -722,13 +857,17 @@ const styles = StyleSheet.create({
   statusSubText: { color: "rgba(255,255,255,0.55)", fontSize: 13, fontFamily: "Poppins_400Regular" },
 
   bottomControls: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", paddingHorizontal: 4 },
-  ctrlItem: { alignItems: "center", gap: 6, flex: 1 },
-  ctrlBtn: { width: 52, height: 52, borderRadius: 26, backgroundColor: "rgba(255,255,255,0.2)", alignItems: "center", justifyContent: "center" },
-  ctrlBtnOff: { backgroundColor: "rgba(255,59,48,0.7)" },
-  ctrlBtnActive: { backgroundColor: "rgba(255,255,255,0.4)" },
+  ctrlItem: { alignItems: "center", gap: 7, flex: 1 },
+  // FIX (touch target): bumped from 52 to 56px to comfortably exceed WCAG 48px.
+  ctrlBtn: { width: 56, height: 56, borderRadius: 28, backgroundColor: "rgba(255,255,255,0.22)", alignItems: "center", justifyContent: "center" },
+  ctrlBtnOff: { backgroundColor: "rgba(255,59,48,0.75)" },
+  ctrlBtnActive: { backgroundColor: "rgba(255,255,255,0.45)" },
   // FIX: visual hint for buttons disabled by state (e.g. Flip while camera off)
   ctrlBtnDisabled: { backgroundColor: "rgba(255,255,255,0.08)" },
-  ctrlLabel: { color: "rgba(255,255,255,0.7)", fontSize: 10, fontFamily: "Poppins_400Regular", textAlign: "center" },
-  endBtn: { width: 64, height: 64, borderRadius: 32, backgroundColor: "#E84855", alignItems: "center", justifyContent: "center", elevation: 4, shadowColor: "#E84855", shadowOpacity: 0.5, shadowRadius: 12, shadowOffset: { width: 0, height: 4 } },
+  // FIX (UI accessibility): label bumped from 10px to 11px + medium weight
+  // for readability over video.
+  ctrlLabel: { color: "rgba(255,255,255,0.85)", fontSize: 11, fontFamily: "Poppins_500Medium", textAlign: "center", textShadowColor: "rgba(0,0,0,0.6)", textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3 },
+  // FIX (UI hierarchy): End button is now visually dominant (72x72 vs 56x56).
+  endBtn: { width: 72, height: 72, borderRadius: 36, backgroundColor: "#E84855", alignItems: "center", justifyContent: "center", elevation: 6, shadowColor: "#E84855", shadowOpacity: 0.55, shadowRadius: 14, shadowOffset: { width: 0, height: 4 } },
 
 });
