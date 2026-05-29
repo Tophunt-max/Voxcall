@@ -4,7 +4,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Image,
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRingtone } from "@/hooks/useRingtone";
-import { resolveMediaUrl } from "@/services/api";
+import { resolveMediaUrl, API } from "@/services/api";
 import { useCall } from "@/context/CallContext";
 import { useSocket } from "@/context/SocketContext";
 import { SocketEvents } from "@/constants/events";
@@ -12,6 +12,12 @@ import { SocketEvents } from "@/constants/events";
 const useNativeDriverValue = Platform.OS !== "web";
 
 const RING_TIMEOUT_MS = 45000;
+// FIX: poll the server's session status every 12s while the call is pending.
+// Catches the case where the host accepted/declined but the WebSocket
+// CALL_ACCEPT/CALL_REJECT event was missed (mobile data switch, brief WS
+// drop). Without this, the user is stuck on "Ringing..." until the 45s
+// no-answer timeout even though the host already picked up.
+const STATUS_POLL_MS = 12000;
 
 export default function OutgoingCallScreen() {
   const insets = useSafeAreaInsets();
@@ -33,8 +39,24 @@ export default function OutgoingCallScreen() {
 
   const [status, setStatus] = useState<"connecting" | "ringing" | "declined" | "no_answer">("connecting");
   const navigated = useRef(false);
+  // FIX: track every nested setTimeout so they can be cancelled if the
+  // component unmounts before they fire. Previously the chain
+  //   setTimeout → setStatus → setTimeout → endCall
+  // would fire endCall(false) on a dead component, throwing a state-update
+  // warning and (worse) cancelling the call AFTER the user had already
+  // navigated to the call screen via the CALL_ACCEPT path.
+  const pendingTimeouts = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
 
   const { stop: stopRing } = useRingtone("outgoing", true);
+
+  // Track every nested timeout so the unmount cleanup can clear them all.
+  const scheduleTimeout = useCallback((fn: () => void, ms: number): void => {
+    const id = setTimeout(() => {
+      pendingTimeouts.current.delete(id);
+      fn();
+    }, ms);
+    pendingTimeouts.current.add(id);
+  }, []);
 
   const ripple1 = useRef(new Animated.Value(0)).current;
   const ripple2 = useRef(new Animated.Value(0)).current;
@@ -69,18 +91,29 @@ export default function OutgoingCallScreen() {
     animateRipple(ripple3, 1200);
 
     const t1 = setTimeout(() => setStatus("ringing"), 1500);
+    pendingTimeouts.current.add(t1);
 
     // Fix C2: no-answer timeout — end call after 45s if host doesn't respond
     const t2 = setTimeout(async () => {
+      pendingTimeouts.current.delete(t2);
       if (!navigated.current) {
         setStatus("no_answer");
         await stopRing();
-        setTimeout(() => endCall(false), 1500);
+        // FIX: tracked nested timeout so it can be cancelled on unmount.
+        scheduleTimeout(() => endCall(false), 1500);
       }
     }, RING_TIMEOUT_MS);
+    pendingTimeouts.current.add(t2);
 
-    return () => { clearTimeout(t1); clearTimeout(t2); };
-  }, []);
+    // FIX (cleanup): clear ALL pending timeouts on unmount, including the
+    // nested ones queued via scheduleTimeout. Previously t1+t2 were cleared
+    // but the inner setTimeout(...→endCall, 1500) survived, firing endCall
+    // on a dead component.
+    return () => {
+      pendingTimeouts.current.forEach((id) => clearTimeout(id));
+      pendingTimeouts.current.clear();
+    };
+  }, [stopRing, endCall, scheduleTimeout]);
 
   // Fix C2 + H1: listen for call_accepted / call_declined / call_ended socket events
   useEffect(() => {
@@ -95,7 +128,8 @@ export default function OutgoingCallScreen() {
       if (!navigated.current) {
         setStatus("declined");
         await stopRing();
-        setTimeout(() => {
+        // FIX: tracked timeout — see scheduleTimeout for rationale.
+        scheduleTimeout(() => {
           if (!navigated.current) {
             navigated.current = true;
             router.back();
@@ -109,7 +143,7 @@ export default function OutgoingCallScreen() {
       if (!navigated.current) {
         setStatus("no_answer");
         await stopRing();
-        setTimeout(async () => {
+        scheduleTimeout(() => {
           if (!navigated.current) {
             navigated.current = true;
             endCall(false);
@@ -118,7 +152,58 @@ export default function OutgoingCallScreen() {
       }
     });
     return () => { offAccept(); offReject(); offEnd(); };
-  }, [onEvent, goToCallScreen, stopRing, syncServerStartTime, endCall]);
+  }, [onEvent, goToCallScreen, stopRing, syncServerStartTime, endCall, scheduleTimeout]);
+
+  // FIX (stuck-screen safety net): if activeCall goes null while we're still
+  // showing this screen (logout, network issue cleared the context, or user
+  // double-tapped Cancel and CallContext flushed), dismiss without billing.
+  // navigated.current guards against the legitimate accept-then-clear path
+  // where activeCall is replaced with the active session shape.
+  useEffect(() => {
+    if (navigated.current) return;
+    if (activeCall === null && status !== "declined" && status !== "no_answer") {
+      navigated.current = true;
+      try { router.back(); } catch { /* navigation may be gone */ }
+    }
+  }, [activeCall, status]);
+
+  // FIX (session-status poll): WebSocket CALL_ACCEPT/CALL_REJECT delivery
+  // can be lost (mobile data switch, app backgrounded with WS suspended).
+  // Poll the server every 12 s while the call is pending so we navigate to
+  // the call screen even if the WS event was dropped. This mirrors the
+  // safety-net poll added to audio-call.tsx and video-call.tsx.
+  useEffect(() => {
+    if (navigated.current) return;
+    if (!activeCall?.sessionId) return;
+    const sid = activeCall.sessionId;
+    let cancelled = false;
+    const interval = setInterval(async () => {
+      if (cancelled || navigated.current) return;
+      try {
+        const sess: any = await API.getCallSession(sid);
+        if (cancelled || navigated.current) return;
+        if (sess?.status === "active") {
+          // Host accepted — navigate even though WS event was missed.
+          if (sess.started_at) syncServerStartTime(sess.started_at);
+          goToCallScreen();
+        } else if (sess?.status === "declined" || sess?.status === "missed" || sess?.status === "ended") {
+          // Host declined / cron-reaped / 410 — clean up.
+          setStatus(sess.status === "declined" ? "declined" : "no_answer");
+          await stopRing();
+          scheduleTimeout(() => {
+            if (!navigated.current) {
+              navigated.current = true;
+              endCall(false);
+            }
+          }, 1500);
+        }
+      } catch {
+        // Network blip — try again next tick. 404 here means the session
+        // was pruned, treat as no_answer.
+      }
+    }, STATUS_POLL_MS);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [activeCall?.sessionId, goToCallScreen, stopRing, endCall, syncServerStartTime, scheduleTimeout]);
 
   const makeRipple = (val: Animated.Value, size: number) => ({
     transform: [{ scale: val.interpolate({ inputRange: [0, 1], outputRange: [1, size] }) }],

@@ -17,6 +17,9 @@ import { API } from "@/services/api";
 const useNativeDriverValue = Platform.OS !== "web";
 
 let RTCView: any = null;
+// FIX: CameraView placeholder removed — was causing camera-in-use crashes on
+// Android when WebRTC's getUserMedia tried to acquire the same camera. The
+// require remains for backward compat in case any future code references it.
 let CameraView: any = null;
 let Haptics: any = null;
 try {
@@ -124,7 +127,12 @@ export default function VideoCallScreen() {
   }, [webrtc.isConnected, status, markCallActive]);
 
   const pulse = useRef(new Animated.Value(1)).current;
+  // FIX: stop the avatar pulse when the remote video stream arrives. Before
+  // this, the loop kept running on the JS thread (web) / UI thread (native)
+  // even though the avatar had been visually replaced by the video frame —
+  // wasted CPU/GPU cycles for no user-visible benefit.
   useEffect(() => {
+    if (webrtc.remoteStream) return;
     const anim = Animated.loop(
       Animated.sequence([
         Animated.timing(pulse, { toValue: 1.04, duration: 1200, easing: Easing.inOut(Easing.ease), useNativeDriver: useNativeDriverValue }),
@@ -133,7 +141,7 @@ export default function VideoCallScreen() {
     );
     anim.start();
     return () => anim.stop();
-  }, []);
+  }, [webrtc.remoteStream]);
 
   useEffect(() => {
     const check = async () => {
@@ -368,8 +376,11 @@ export default function VideoCallScreen() {
       const granted = await requestMicrophone();
       setPermStep("done");
       if (!granted) {
+        // FIX (double-pop): handleEndCall() routes through CallContext.endCall
+        // which itself navigates (router.replace to summary OR router.back when
+        // the call never went active). Calling router.back() here too pops a
+        // second route, ejecting the user from the summary screen.
         handleEndCall();
-        router.back();
         return;
       }
       setWebrtcReady(true);
@@ -378,8 +389,9 @@ export default function VideoCallScreen() {
 
   const handleMicDeny = () => {
     setPermStep("done");
+    // FIX (double-pop): see handleMicAllow above. handleEndCall() navigates;
+    // the explicit router.back() that used to follow popped a second route.
     handleEndCall();
-    router.back();
   };
 
   const cameraGranted = permissions.camera.status === "granted";
@@ -441,22 +453,33 @@ export default function VideoCallScreen() {
       </View>
 
       <View style={[styles.selfPreview, { top: insets.top + 12, right: 16 }]}>
+        {/* FIX (camera conflict): the previous fallback rendered a <CameraView>
+            placeholder while waiting for webrtc.localStream. On Android this
+            opened the camera twice — Expo's CameraView held the handle while
+            WebRTC's getUserMedia tried to acquire it, throwing
+            "java.lang.RuntimeException: Camera in use". Now we show a text
+            placeholder until the real WebRTC stream is ready (~200-1000 ms). */}
         {activeCall?.isCameraOn && cameraGranted ? (
           webrtc.localStream ? (
             <StreamView stream={webrtc.localStream} style={styles.selfCameraView} mirror={true} />
           ) : !webrtc.isAvailable && CameraView ? (
-            // FIX (camera-busy race): only render <CameraView /> when WebRTC isn't
-            // available (e.g. web fallback). On native, WebRTC's getUserMedia
-            // owns the camera — rendering CameraView in parallel grabs the same
-            // hardware and breaks WebRTC capture. Show a loading placeholder
-            // while WebRTC's localStream is becoming available.
+            // FIX (camera-busy race): only render <CameraView /> when WebRTC
+            // isn't available (e.g. some web fallback). On native, WebRTC's
+            // getUserMedia owns the camera — rendering CameraView in parallel
+            // grabs the same hardware and breaks WebRTC capture with a
+            // "java.lang.RuntimeException: Camera in use" on Android.
             <CameraView
               style={styles.selfCameraView}
               facing="front"
             />
           ) : (
             <View style={styles.selfCameraOff}>
-              <Text style={styles.selfCameraOffText}>Starting camera...</Text>
+              <Image
+                source={require("@/assets/icons/ic_photo.png")}
+                style={{ width: 22, height: 22, tintColor: "rgba(255,255,255,0.6)" }}
+                resizeMode="contain"
+              />
+              <Text style={styles.selfCameraOffText}>Starting camera…</Text>
             </View>
           )
         ) : (
@@ -571,8 +594,24 @@ export default function VideoCallScreen() {
           </View>
 
           <View style={styles.ctrlItem}>
-            <TouchableOpacity onPress={handleFlip} style={styles.ctrlBtn}>
-              <Image source={require("@/assets/icons/ic_cam_flip.png")} style={{ width: 22, height: 22, tintColor: "#fff" }} resizeMode="contain" />
+            <TouchableOpacity
+              onPress={handleFlip}
+              style={[styles.ctrlBtn, (!activeCall?.isCameraOn || !cameraGranted) && styles.ctrlBtnDisabled]}
+              disabled={!activeCall?.isCameraOn || !cameraGranted}
+            >
+              <Image
+                source={require("@/assets/icons/ic_cam_flip.png")}
+                style={{
+                  width: 22, height: 22, tintColor: "#fff",
+                  // FIX: dim the icon when the button is disabled so the user
+                  // gets visual feedback that flipping is not available with
+                  // the camera off / blocked. Previously the button looked
+                  // identical to its enabled state and tapping was silently
+                  // a no-op, which made the UI feel broken.
+                  opacity: (!activeCall?.isCameraOn || !cameraGranted) ? 0.4 : 1,
+                }}
+                resizeMode="contain"
+              />
             </TouchableOpacity>
             <Text style={styles.ctrlLabel}>Flip</Text>
           </View>
@@ -724,6 +763,8 @@ const styles = StyleSheet.create({
   ctrlBtn: { width: 52, height: 52, borderRadius: 26, backgroundColor: "rgba(255,255,255,0.2)", alignItems: "center", justifyContent: "center" },
   ctrlBtnOff: { backgroundColor: "rgba(255,59,48,0.7)" },
   ctrlBtnActive: { backgroundColor: "rgba(255,255,255,0.4)" },
+  // FIX: visual hint for buttons disabled by state (e.g. Flip while camera off)
+  ctrlBtnDisabled: { backgroundColor: "rgba(255,255,255,0.08)" },
   ctrlLabel: { color: "rgba(255,255,255,0.7)", fontSize: 10, fontFamily: "Poppins_400Regular", textAlign: "center" },
   endBtn: { width: 64, height: 64, borderRadius: 32, backgroundColor: "#E84855", alignItems: "center", justifyContent: "center", elevation: 4, shadowColor: "#E84855", shadowOpacity: 0.5, shadowRadius: 12, shadowOffset: { width: 0, height: 4 } },
 
