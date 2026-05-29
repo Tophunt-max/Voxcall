@@ -222,7 +222,14 @@ export default function AudioCallScreen() {
     return () => { cancelled = true; clearInterval(interval); };
   }, [status, activeCall?.sessionId, webrtc.cleanup, endCall]);
 
+  // FIX (back-navigation: double-call guard) — see voxlink-host/app/calls/
+  // video-call.tsx for full rationale. The user side has the same vulnerability:
+  // rapid back-press while endCall is awaiting API.endCall could fire a
+  // second handleEndCall on top of the first, racing router navigation.
+  const isEndingRef = useRef(false);
   const handleEndCall = useCallback(() => {
+    if (isEndingRef.current) return;
+    isEndingRef.current = true;
     webrtc.cleanup();
     endCall();
   }, [endCall, webrtc.cleanup]);
@@ -238,6 +245,47 @@ export default function AudioCallScreen() {
     });
     return () => sub.remove();
   }, [handleEndCall]);
+
+  // FIX (back-navigation, web beforeunload): closing the tab / pressing
+  // browser-back during a call left the session 'active' on the server,
+  // billing the caller until the 30-min cron reaper. Now we
+  //   1. fire API.endCall via navigator.sendBeacon (survives unload), and
+  //   2. ask the browser to confirm before leaving.
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+    const handler = (e: BeforeUnloadEvent) => {
+      const sid = activeCall?.sessionId;
+      if (sid && status === 'active') {
+        try {
+          const url = `${(process.env.EXPO_PUBLIC_API_URL || '').replace(/\/$/, '')}/api/calls/${sid}/end`;
+          const blob = new Blob([JSON.stringify({ duration_seconds: 0 })], { type: 'application/json' });
+          (navigator as any).sendBeacon?.(url, blob);
+        } catch { /* best-effort — cron reaper will catch */ }
+        e.preventDefault();
+        e.returnValue = 'A call is in progress. Are you sure you want to leave?';
+        return e.returnValue;
+      }
+      return undefined;
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [activeCall?.sessionId, status]);
+
+  // FIX (back-navigation, stuck-screen safety net): if activeCall flips to
+  // null externally — e.g. logout while in a call, or another part of the
+  // app clears the context — dismiss the screen instead of letting the
+  // user stare at a stale UI. The isEndingRef guard distinguishes our own
+  // legitimate end from external clears.
+  useEffect(() => {
+    if (activeCall === null && !isEndingRef.current) {
+      try {
+        webrtc.cleanup();
+        router.back();
+      } catch {
+        try { router.replace('/user/screens/home'); } catch { /* navigation gone */ }
+      }
+    }
+  }, [activeCall, webrtc.cleanup]);
 
   const handleAutoEnd = useCallback(() => {
     webrtc.cleanup();

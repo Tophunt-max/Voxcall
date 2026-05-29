@@ -214,7 +214,13 @@ export default function AudioCallScreen() {
     return () => { cancelled = true; clearInterval(interval); };
   }, [status, activeCall?.sessionId, webrtc.cleanup, endCall]);
 
+  // FIX (back-navigation: double-call guard) — see voxlink-host/app/calls/
+  // video-call.tsx for full rationale. Prevents rapid back-press from racing
+  // a second handleEndCall on top of the first one's router.replace.
+  const isEndingRef = useRef(false);
   const handleEndCall = useCallback(() => {
+    if (isEndingRef.current) return;
+    isEndingRef.current = true;
     webrtc.cleanup();
     endCall();
   }, [endCall, webrtc.cleanup]);
@@ -230,6 +236,44 @@ export default function AudioCallScreen() {
     });
     return () => sub.remove();
   }, [handleEndCall]);
+
+  // FIX (back-navigation, web beforeunload) — see video-call.tsx for full
+  // rationale. Without this, closing the tab during a call leaves the
+  // session in 'active' until the 30-min cron reaper, billing the caller
+  // for every passing minute.
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+    const handler = (e: BeforeUnloadEvent) => {
+      const sid = activeCall?.sessionId;
+      if (sid && status === 'active') {
+        try {
+          const url = `${(process.env.EXPO_PUBLIC_API_URL || '').replace(/\/$/, '')}/api/calls/${sid}/end`;
+          const blob = new Blob([JSON.stringify({ duration_seconds: 0 })], { type: 'application/json' });
+          (navigator as any).sendBeacon?.(url, blob);
+        } catch { /* best-effort */ }
+        e.preventDefault();
+        e.returnValue = 'A call is in progress. Are you sure you want to leave?';
+        return e.returnValue;
+      }
+      return undefined;
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [activeCall?.sessionId, status]);
+
+  // FIX (back-navigation, stuck-screen safety net): see video-call.tsx for
+  // full rationale. Dismiss the call screen if activeCall is cleared
+  // externally without going through our handleEndCall path.
+  useEffect(() => {
+    if (activeCall === null && !isEndingRef.current) {
+      try {
+        webrtc.cleanup();
+        router.back();
+      } catch {
+        try { router.replace('/(tabs)'); } catch { /* navigation gone */ }
+      }
+    }
+  }, [activeCall, webrtc.cleanup]);
 
   const handleAutoEnd = useCallback(() => {
     webrtc.cleanup();

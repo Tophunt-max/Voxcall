@@ -317,7 +317,12 @@ export default function VideoCallScreen() {
     return () => { cancelled = true; clearInterval(interval); };
   }, [status, activeCall?.sessionId, webrtc.cleanup, endCall]);
 
+  // FIX (back-navigation: double-call guard) — see voxlink-host/app/calls/
+  // video-call.tsx for full rationale.
+  const isEndingRef = useRef(false);
   const handleEndCall = useCallback(() => {
+    if (isEndingRef.current) return;
+    isEndingRef.current = true;
     webrtc.cleanup();
     endCall();
   }, [endCall, webrtc.cleanup]);
@@ -333,6 +338,39 @@ export default function VideoCallScreen() {
     });
     return () => sub.remove();
   }, [handleEndCall]);
+
+  // FIX (back-navigation, web beforeunload) — see audio-call for rationale.
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+    const handler = (e: BeforeUnloadEvent) => {
+      const sid = activeCall?.sessionId;
+      if (sid && status === 'active') {
+        try {
+          const url = `${(process.env.EXPO_PUBLIC_API_URL || '').replace(/\/$/, '')}/api/calls/${sid}/end`;
+          const blob = new Blob([JSON.stringify({ duration_seconds: 0 })], { type: 'application/json' });
+          (navigator as any).sendBeacon?.(url, blob);
+        } catch { /* best-effort */ }
+        e.preventDefault();
+        e.returnValue = 'A call is in progress. Are you sure you want to leave?';
+        return e.returnValue;
+      }
+      return undefined;
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [activeCall?.sessionId, status]);
+
+  // FIX (back-navigation, stuck-screen safety net) — see audio-call for rationale.
+  useEffect(() => {
+    if (activeCall === null && !isEndingRef.current) {
+      try {
+        webrtc.cleanup();
+        router.back();
+      } catch {
+        try { router.replace('/user/screens/home'); } catch { /* navigation gone */ }
+      }
+    }
+  }, [activeCall, webrtc.cleanup]);
 
   const handleAutoEnd = useCallback(() => {
     webrtc.cleanup();

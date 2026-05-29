@@ -215,10 +215,10 @@ function RootLayoutNav() {
         {/* User utility screens */}
         <Stack.Screen name="user/auth/onboarding" />
         <Stack.Screen name="user/chat/[id]" />
-        <Stack.Screen name="user/call/audio-call" options={{ presentation: "fullScreenModal" }} />
-        <Stack.Screen name="user/call/video-call" options={{ presentation: "fullScreenModal" }} />
-        <Stack.Screen name="user/call/incoming" options={{ presentation: "fullScreenModal" }} />
-        <Stack.Screen name="user/call/outgoing" options={{ presentation: "fullScreenModal" }} />
+        <Stack.Screen name="user/call/audio-call" options={{ presentation: "fullScreenModal", gestureEnabled: false }} />
+        <Stack.Screen name="user/call/video-call" options={{ presentation: "fullScreenModal", gestureEnabled: false }} />
+        <Stack.Screen name="user/call/incoming" options={{ presentation: "fullScreenModal", gestureEnabled: false }} />
+        <Stack.Screen name="user/call/outgoing" options={{ presentation: "fullScreenModal", gestureEnabled: false }} />
         <Stack.Screen name="user/call/summary" />
         <Stack.Screen name="user/call/history" />
         <Stack.Screen name="user/notifications" />

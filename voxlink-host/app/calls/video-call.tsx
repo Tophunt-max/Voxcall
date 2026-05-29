@@ -311,7 +311,17 @@ export default function VideoCallScreen() {
     return () => { cancelled = true; clearInterval(interval); };
   }, [status, activeCall?.sessionId, webrtc.cleanup, endCall]);
 
+  // FIX (back-navigation: double-call guard): rapid Android back-press could
+  // fire handleEndCall() twice in the few hundred ms while endCall awaited
+  // API.endCall. Second call saw activeCallRef.current = null (already
+  // nullified), wasActive=false, and tried router.back() ON TOP of the
+  // in-progress router.replace('/calls/summary') from the first call —
+  // resulting in the host being ejected past the summary screen. The ref
+  // ensures only the first end-attempt runs.
+  const isEndingRef = useRef(false);
   const handleEndCall = useCallback(() => {
+    if (isEndingRef.current) return;
+    isEndingRef.current = true;
     webrtc.cleanup();
     endCall();
   }, [endCall, webrtc.cleanup]);
@@ -327,6 +337,55 @@ export default function VideoCallScreen() {
     });
     return () => sub.remove();
   }, [handleEndCall]);
+
+  // FIX (back-navigation, web): on web the OS BackHandler doesn't fire — users
+  // press the browser back button or close the tab. Without this, the call
+  // screen unmounts (WebRTC cleanup runs) but the server never receives
+  // `/api/calls/:id/end`, so the call stays in 'active' state and the caller
+  // keeps getting billed until the 30-min cron reaper.
+  //
+  // We register a beforeunload listener that:
+  //   1. Synchronously fires API.endCall via navigator.sendBeacon — this
+  //      survives the page-unload event window, unlike fetch() which is
+  //      cancelled when the page closes.
+  //   2. Returns a string from the handler so the browser shows its native
+  //      "Are you sure you want to leave?" prompt during an active call.
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+    const handler = (e: BeforeUnloadEvent) => {
+      const sid = activeCall?.sessionId;
+      if (sid && status === 'active') {
+        try {
+          const url = `${(process.env.EXPO_PUBLIC_API_URL || '').replace(/\/$/, '')}/api/calls/${sid}/end`;
+          const blob = new Blob([JSON.stringify({ duration_seconds: 0 })], { type: 'application/json' });
+          (navigator as any).sendBeacon?.(url, blob);
+        } catch { /* best-effort — cron reaper will catch if this fails */ }
+        e.preventDefault();
+        e.returnValue = 'A call is in progress. Are you sure you want to leave?';
+        return e.returnValue;
+      }
+      return undefined;
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [activeCall?.sessionId, status]);
+
+  // FIX (back-navigation, stuck-screen safety net): if activeCall becomes null
+  // externally — e.g. logout while in a call, or another part of the app
+  // clears the context — the screen would stay mounted forever showing stale
+  // UI. Mirror the pattern from incoming.tsx: when activeCall flips to null
+  // and we haven't initiated end ourselves, navigate back. The isEndingRef
+  // guard distinguishes legitimate end (we set it) from external clears.
+  useEffect(() => {
+    if (activeCall === null && !isEndingRef.current) {
+      try {
+        webrtc.cleanup();
+        router.back();
+      } catch {
+        try { router.replace('/(tabs)'); } catch { /* navigation fully gone */ }
+      }
+    }
+  }, [activeCall, webrtc.cleanup]);
 
   const handleAutoEnd = useCallback(() => {
     webrtc.cleanup();

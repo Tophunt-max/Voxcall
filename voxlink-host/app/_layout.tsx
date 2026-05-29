@@ -271,10 +271,10 @@ function RootLayoutNav() {
         <Stack.Screen name="auth/kyc" />
         <Stack.Screen name="auth/status" />
         <Stack.Screen name="auth/onboarding" />
-        <Stack.Screen name="calls/incoming" options={{ presentation: "fullScreenModal" }} />
-        <Stack.Screen name="calls/audio-call" options={{ presentation: "fullScreenModal" }} />
-        <Stack.Screen name="calls/video-call" options={{ presentation: "fullScreenModal" }} />
-        <Stack.Screen name="calls/outgoing" options={{ presentation: "fullScreenModal" }} />
+        <Stack.Screen name="calls/incoming" options={{ presentation: "fullScreenModal", gestureEnabled: false }} />
+        <Stack.Screen name="calls/audio-call" options={{ presentation: "fullScreenModal", gestureEnabled: false }} />
+        <Stack.Screen name="calls/video-call" options={{ presentation: "fullScreenModal", gestureEnabled: false }} />
+        <Stack.Screen name="calls/outgoing" options={{ presentation: "fullScreenModal", gestureEnabled: false }} />
         <Stack.Screen name="calls/summary" />
         <Stack.Screen name="calls/history" />
         <Stack.Screen name="chat/[id]" />
