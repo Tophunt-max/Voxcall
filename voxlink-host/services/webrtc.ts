@@ -42,6 +42,48 @@ export function isWebRTCAvailable(): boolean {
   return RTC !== null && mediaDevicesRef !== null;
 }
 
+// FIX (video quality): target ceiling for the video stream. 720p30 looks
+// crisp at ~2.5 Mbps. This is a CEILING, not a forced rate — WebRTC's
+// congestion control (transport-cc / REMB) still scales the encoder DOWN
+// automatically on weak networks, so raising it never causes overshoot; it
+// only lets quality go UP when bandwidth is available. The old value was
+// ~1.2 Mbps which produced a soft / blocky picture even on good Wi-Fi.
+const VIDEO_MAX_KBPS = 2500;
+const VIDEO_MAX_BPS = VIDEO_MAX_KBPS * 1000;
+
+// Inject (or replace) the bandwidth lines on every video m-section of an SDP
+// so neither the local encoder nor the Cloudflare SFU caps quality at the
+// conservative WebRTC default. We apply this to BOTH the push offer (raises
+// what WE send) and the pull answer (raises what the SFU sends US — i.e. what
+// the user actually sees). `b=AS` is in kbps (Chromium/libwebrtc); `b=TIAS`
+// is in bps (RFC 3890). Bandwidth lines must immediately follow the `c=` line
+// per RFC 4566 ordering.
+function preferVideoBitrate(sdp: string, kbps: number): string {
+  if (!sdp) return sdp;
+  const eol = sdp.includes('\r\n') ? '\r\n' : '\n';
+  const lines = sdp.split(/\r\n|\n/);
+  const out: string[] = [];
+  let inVideo = false;
+  for (const line of lines) {
+    if (line.startsWith('m=')) {
+      inVideo = line.startsWith('m=video');
+      out.push(line);
+      continue;
+    }
+    // Strip any pre-existing bandwidth caps inside the video section so we
+    // don't end up with stale / duplicate b= lines.
+    if (inVideo && (line.startsWith('b=AS:') || line.startsWith('b=TIAS:'))) {
+      continue;
+    }
+    out.push(line);
+    if (inVideo && line.startsWith('c=')) {
+      out.push(`b=AS:${kbps}`);
+      out.push(`b=TIAS:${kbps * 1000}`);
+    }
+  }
+  return out.join(eol);
+}
+
 // FIX (TURN / no-audio on UDP-blocked networks): even with a serverless SFU
 // (Cloudflare Calls), clients on networks that block UDP outbound can't
 // reach the SFU's edge. TURN-over-TCP/TLS provides a 443 tunnel to the SFU.
@@ -200,12 +242,14 @@ export class WebRTCService {
         this.pc?.addTrack(track, this.localStream);
       });
 
-      // FIX (video clarity): bump the outbound video sender's max bitrate so
-      // the encoder actually has room to deliver an HD-quality stream. CF
-      // Calls / SFU defaults are conservative (~250-500 kbps) which produces
-      // a soft, blocky picture even when the source is 720p. 1.2 Mbps is a
-      // safe target for 720p30 over 4G/Wi-Fi; the encoder will scale down
-      // automatically when bandwidth is constrained.
+      // FIX (video clarity): give the outbound video sender real headroom so
+      // the encoder can deliver a sharp HD picture. CF Calls / SFU relays
+      // exactly what we send, and the previous ~1.2 Mbps cap produced a soft,
+      // blocky image even from a 720p source. 2.5 Mbps is a safe ceiling for
+      // 720p30 over 4G / Wi-Fi; congestion control scales it down when the
+      // network is constrained. We also pin scaleResolutionDownBy=1 so the
+      // encoder never silently drops below capture resolution, and bump the
+      // network priority so video gets DSCP precedence over background data.
       if (this.isVideo) {
         try {
           const videoSender = this.pc.getSenders?.().find((s: any) => s.track?.kind === 'video');
@@ -215,14 +259,16 @@ export class WebRTCService {
               ? params.encodings
               : [{}];
             for (const enc of params.encodings) {
-              enc.maxBitrate = 1_200_000;
+              enc.maxBitrate = VIDEO_MAX_BPS;
               enc.maxFramerate = 30;
+              enc.scaleResolutionDownBy = 1;
+              (enc as any).networkPriority = 'high';
             }
             await videoSender.setParameters(params);
           }
         } catch (e) {
           // Non-fatal: if setParameters isn't supported on this platform we
-          // fall back to the default bitrate.
+          // fall back to the default bitrate (the SDP b=AS line still helps).
           console.warn('[WebRTC] setParameters (video bitrate) failed:', e);
         }
       }
@@ -282,6 +328,27 @@ export class WebRTCService {
     this.pullRemoteTracks();
   }
 
+  // FIX (video quality): set the local description after raising the video
+  // bandwidth ceiling in its SDP. Munging BEFORE setLocalDescription means the
+  // description we forward to CF Calls (this.pc.localDescription) carries the
+  // b=AS / b=TIAS lines — applied to both the push offer (what we send) and
+  // the pull answer (what the SFU sends us). Falls back to the un-munged
+  // description on any error so call setup never breaks.
+  private async _setLocalWithBitrate(desc: any): Promise<void> {
+    let finalDesc: any = desc;
+    try {
+      if (this.isVideo && desc?.sdp) {
+        const sdp = preferVideoBitrate(desc.sdp, VIDEO_MAX_KBPS);
+        finalDesc = RTC?.RTCSessionDescription
+          ? new RTC.RTCSessionDescription({ type: desc.type, sdp })
+          : { type: desc.type, sdp };
+      }
+    } catch {
+      finalDesc = desc;
+    }
+    await this.pc.setLocalDescription(finalDesc);
+  }
+
   private async pushLocalTracks(): Promise<void> {
     if (!this.pc || this.destroyed) return;
 
@@ -290,7 +357,7 @@ export class WebRTCService {
       offerToReceiveVideo: this.isVideo,
     });
 
-    await this.pc.setLocalDescription(offer);
+    await this._setLocalWithBitrate(offer);
     await this.waitForIceGathering();
 
     const localDesc = this.pc.localDescription;
@@ -367,7 +434,7 @@ export class WebRTCService {
           await this.pc.setRemoteDescription(offerDesc);
 
           const answer = await this.pc.createAnswer();
-          await this.pc.setLocalDescription(answer);
+          await this._setLocalWithBitrate(answer);
 
           await this.waitForIceGathering();
 
@@ -408,7 +475,7 @@ export class WebRTCService {
       try {
         this.iceRestartAttempts++;
         const offer = await this.pc.createOffer({ iceRestart: true });
-        await this.pc.setLocalDescription(offer);
+        await this._setLocalWithBitrate(offer);
         await this.waitForIceGathering();
         const localDesc = this.pc.localDescription;
         if (!localDesc) return;
