@@ -131,12 +131,21 @@ export class CloudflareCalls {
 
   async closeSession(sessionId: string): Promise<void> {
     try {
-      await fetch(`${this.baseUrl}/sessions/${sessionId}`, {
+      const res = await fetch(`${this.baseUrl}/sessions/${sessionId}`, {
         method: 'PUT',
         headers: this.headers,
         body: JSON.stringify({ force_close: true }),
       });
-    } catch {}
+      if (!res.ok) {
+        // Non-2xx is logged but not thrown — closing a session that's
+        // already closed/expired is a normal outcome we don't want to
+        // surface as an /end-route 500.
+        const text = await res.text().catch(() => '');
+        console.warn('[CF Calls] closeSession non-OK', res.status, text);
+      }
+    } catch (e) {
+      console.warn('[CF Calls] closeSession network error:', e);
+    }
   }
 }
 

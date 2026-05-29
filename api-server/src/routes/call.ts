@@ -177,10 +177,44 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
   // CF Calls sessions idle-timeout in ~30-60s. Pre-creating them means by the time
   // the host accepts and WebRTC negotiation starts, they are already expired (→ 410 session_error).
   // Sessions are created lazily in /sdp/push when each party actually starts negotiating.
+  //
+  // RACE FIX (host double-call): the previous code did two SELECTs — one for
+  // the caller's existing call and one for the host's existing call — then a
+  // bare INSERT. Two callers initiating to the same host within the same few
+  // ms could both pass both SELECTs (TOCTOU), then both INSERTs would succeed,
+  // and the host would receive TWO simultaneous incoming calls. The early
+  // SELECTs are still useful because they let us return precise error
+  // messages ("you are already in a call" vs "host is busy") in the common
+  // non-race case, but they are only advisory — the atomic guard below is
+  // what actually prevents the race.
+  //
+  // The INSERT...SELECT WHERE NOT EXISTS form executes the existence check
+  // and the row insert as a single SQLite statement. Either the row goes in
+  // (changes === 1) or no row matches the SELECT and zero changes happen.
+  // No other transaction can sneak in between, so two concurrent callers on
+  // the same host can never both succeed.
   const sessionId = crypto.randomUUID();
-  await db.prepare(
-    'INSERT INTO call_sessions (id, caller_id, host_id, type, status, cf_session_id, cf_host_session_id, rate_per_minute) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-  ).bind(sessionId, sub, body.host_id, callType, 'pending', null, null, ratePerMin).run();
+  const insertResult = await db.prepare(
+    `INSERT INTO call_sessions (id, caller_id, host_id, type, status, cf_session_id, cf_host_session_id, rate_per_minute)
+     SELECT ?1, ?2, ?3, ?4, 'pending', NULL, NULL, ?5
+     WHERE NOT EXISTS (
+       SELECT 1 FROM call_sessions
+       WHERE status IN ('pending', 'active')
+         AND (caller_id = ?2 OR host_id = ?3)
+     )`
+  ).bind(sessionId, sub, body.host_id, callType, ratePerMin).run();
+
+  if (!insertResult.meta?.changes) {
+    // Race lost — another concurrent /initiate took the slot. Re-query to
+    // tell the user precisely why so they see the right toast.
+    const stillBusyOnCaller = await db.prepare(
+      "SELECT 1 as ok FROM call_sessions WHERE caller_id = ? AND status IN ('pending','active') LIMIT 1"
+    ).bind(sub).first<{ ok: number }>();
+    if (stillBusyOnCaller) {
+      return c.json({ error: 'You are already in a call. Please end it before starting a new one.' }, 409);
+    }
+    return c.json({ error: 'Host is currently busy. Please try again later.' }, 409);
+  }
 
   // WebSocket notification (foreground/background)
   // Fix H2: include caller_name so host sees caller's name instead of "Incoming Call"

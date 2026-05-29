@@ -410,8 +410,35 @@ export class WebRTCService {
         await this.pc.setLocalDescription(offer);
         await this.waitForIceGathering();
         const localDesc = this.pc.localDescription;
-        if (localDesc) {
-          await API.pushTracks(this.sessionId, localDesc.sdp, localDesc.type, []);
+        if (!localDesc) return;
+
+        // CRITICAL FIX (ICE restart was completely broken): the previous
+        // implementation pushed the new offer to the server but DISCARDED
+        // the answer. CF Calls returns a renegotiated answer SDP that MUST
+        // be applied via setRemoteDescription for ICE restart to actually
+        // complete. Without it, the connection stayed in 'failed'/
+        // 'disconnected' forever — every cellular network blip permanently
+        // killed the call instead of recovering.
+        //
+        // Send the current local tracks list (not an empty array) so CF can
+        // map the renegotiated transceivers correctly. An empty list is a
+        // valid renegotiation signal in some SFU implementations but the
+        // safe path is to mirror what pushLocalTracks() does.
+        const transceivers = this.pc.getTransceivers ? this.pc.getTransceivers() : [];
+        const tracks = transceivers.length > 0
+          ? transceivers
+              .filter((t: any) => t.sender?.track)
+              .map((t: any) => ({
+                mid: t.mid || String(transceivers.indexOf(t)),
+                trackName: `${t.sender.track.kind}-${t.mid || transceivers.indexOf(t)}`,
+              }))
+          : [];
+
+        const result = await API.pushTracks(this.sessionId, localDesc.sdp, localDesc.type, tracks);
+        if (this.destroyed || !this.pc) return;
+        if (result?.answer && RTC.RTCSessionDescription) {
+          const answerDesc = new RTC.RTCSessionDescription(result.answer);
+          await this.pc.setRemoteDescription(answerDesc);
         }
       } catch (err) {
         console.warn('[WebRTC] ICE restart failed:', err);
