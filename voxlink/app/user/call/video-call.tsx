@@ -735,63 +735,71 @@ export default function VideoCallScreen() {
           pointerEvents="none"
         />
 
-        {showLowCoinWarning && (
-          <View style={styles.warningBanner}>
-            <Image source={require("@/assets/icons/ic_notify.png")} style={{ width: 13, height: 13, tintColor: "#FFD166" }} resizeMode="contain" />
-            <Text style={styles.warningText}>Low coins — {remainingLabel}</Text>
-          </View>
-        )}
+        {/* FIX (UI): top group — warning banner + glass header card are now
+            wrapped in a single container pinned to the TOP of the screen.
+            Previously the header card was a standalone flex child of the
+            `space-between` overlay (alongside a spacer + control bar), which
+            pushed it into the vertical CENTER of the screen (covering the
+            remote video). Grouping it here leaves the overlay with just two
+            flex children — this top group and the control bar — so the card
+            sits at the top and the controls at the bottom. */}
+        <View style={uiS.topGroup} pointerEvents="box-none">
+          {showLowCoinWarning && (
+            <View style={styles.warningBanner}>
+              <Image source={require("@/assets/icons/ic_notify.png")} style={{ width: 13, height: 13, tintColor: "#FFD166" }} resizeMode="contain" />
+              <Text style={styles.warningText}>Low coins — {remainingLabel}</Text>
+            </View>
+          )}
 
-        {webrtc.error && !showLowCoinWarning && (
-          <View style={styles.warningBanner}>
-            <Image source={require("@/assets/icons/ic_close.png")} style={{ width: 13, height: 13, tintColor: "#FF6B6B" }} resizeMode="contain" />
-            <Text style={styles.warningText}>Connection issue</Text>
-          </View>
-        )}
+          {webrtc.error && !showLowCoinWarning && (
+            <View style={styles.warningBanner}>
+              <Image source={require("@/assets/icons/ic_close.png")} style={{ width: 13, height: 13, tintColor: "#FF6B6B" }} resizeMode="contain" />
+              <Text style={styles.warningText}>Connection issue</Text>
+            </View>
+          )}
 
-        {!showLowCoinWarning && !webrtc.error && <View />}
-
-        {/* FIX (UI redesign): glassmorphism header card.
-            BlurView on native gives a true frosted-glass effect; on web the
-            tint+intensity props degrade to a translucent dark pill which
-            still reads correctly over bright remote video. ConnectionBars
-            on the right give an at-a-glance signal indicator (3 green/2
-            yellow/1 red) so the user knows the call quality without reading
-            text. The right-aligned remaining-time pill stacks under the
-            timer instead of fighting it for horizontal space. */}
-        <BlurView intensity={Platform.OS === "ios" ? 50 : 80} tint="dark" style={uiS.headerCard}>
-          <View style={uiS.headerLeft}>
-            <Text style={uiS.headerName} numberOfLines={1}>
-              {activeCall?.participant.name ?? "Connecting..."}
-            </Text>
-            {status === "active" ? (
-              <View style={uiS.headerMetaRow}>
-                <View style={uiS.liveBadge}>
-                  <View style={uiS.liveDot} />
-                  <Text style={uiS.liveText}>LIVE</Text>
-                </View>
-                <Text style={uiS.timer}>{formatTime(elapsed)}</Text>
-                {remainingLabel && (
-                  <View style={[uiS.remainPill, remaining != null && remaining <= 60 && uiS.remainPillLow]}>
-                    <Text
-                      style={[
-                        uiS.remainText,
-                        remaining != null && remaining <= 60 && { color: "#FF6B6B" },
-                      ]}
-                    >
-                      {remainingLabel}
-                    </Text>
-                  </View>
-                )}
-              </View>
-            ) : (
-              <Text style={uiS.headerSub}>
-                {status === "connecting" ? "Setting up secure connection..." : "Waiting for response..."}
+          {/* FIX (UI redesign): glassmorphism header card.
+              BlurView on native gives a true frosted-glass effect; on web the
+              tint+intensity props degrade to a translucent dark pill which
+              still reads correctly over bright remote video. ConnectionBars
+              on the right give an at-a-glance signal indicator (3 green/2
+              yellow/1 red) so the user knows the call quality without reading
+              text. The right-aligned remaining-time pill stacks under the
+              timer instead of fighting it for horizontal space. */}
+          <BlurView intensity={Platform.OS === "ios" ? 50 : 80} tint="dark" style={uiS.headerCard}>
+            <View style={uiS.headerLeft}>
+              <Text style={uiS.headerName} numberOfLines={1}>
+                {activeCall?.participant.name ?? "Connecting..."}
               </Text>
-            )}
-          </View>
-          <ConnectionBars state={webrtc.connectionState} />
-        </BlurView>
+              {status === "active" ? (
+                <View style={uiS.headerMetaRow}>
+                  <View style={uiS.liveBadge}>
+                    <View style={uiS.liveDot} />
+                    <Text style={uiS.liveText}>LIVE</Text>
+                  </View>
+                  <Text style={uiS.timer}>{formatTime(elapsed)}</Text>
+                  {remainingLabel && (
+                    <View style={[uiS.remainPill, remaining != null && remaining <= 60 && uiS.remainPillLow]}>
+                      <Text
+                        style={[
+                          uiS.remainText,
+                          remaining != null && remaining <= 60 && { color: "#FF6B6B" },
+                        ]}
+                      >
+                        {remainingLabel}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              ) : (
+                <Text style={uiS.headerSub}>
+                  {status === "connecting" ? "Setting up secure connection..." : "Waiting for response..."}
+                </Text>
+              )}
+            </View>
+            <ConnectionBars state={webrtc.connectionState} />
+          </BlurView>
+        </View>
 
         {/* FIX (UI redesign): bottom control bar is now a single pill-shaped
             BlurView (frosted glass). Visually groups the controls and
@@ -1046,6 +1054,13 @@ const styles = StyleSheet.create({
 // Kept separate from the original `styles` block so the legacy fields above
 // remain easy to compare against. New code paths use uiS exclusively.
 const uiS = StyleSheet.create({
+  // ─── Top group (warning banner + header card) ──────────────────────────
+  // FIX (UI): keeps the call-info card anchored to the TOP of the screen
+  // instead of floating in the vertical center. `gap` spaces the optional
+  // warning banner above the header card; `alignItems: center` keeps both
+  // horizontally centered like before.
+  topGroup: { gap: 10, alignItems: "center" },
+
   // ─── Glass header card ─────────────────────────────────────────────────
   // Floating frosted-glass pill at the top with name, LIVE badge, timer,
   // remaining-time chip, and signal-strength bars. BlurView gives a true
