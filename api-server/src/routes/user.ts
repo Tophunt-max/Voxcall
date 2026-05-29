@@ -200,7 +200,13 @@ user.delete('/me', async (c) => {
     const ok = await verifyPassword(body.password, userRow.password_hash);
     if (!ok) return c.json({ error: 'Incorrect password' }, 401);
   }
-  // Anonymize personal data and mark as deleted so referential integrity is preserved
+  // Anonymize personal data and mark as deleted so referential integrity is preserved.
+  // We also bump `token_invalidated_at` to NOW so any existing tokens (this
+  // request itself, plus any other devices the user is logged in on) are
+  // rejected by authMiddleware on the very next call. Relying on the
+  // status='deleted' check alone leaves a small window where a stolen token
+  // could be replayed before the next auth check; bumping the invalidation
+  // timestamp closes that window.
   const deletedEmail = `deleted_${sub}@deleted.voxlink`;
   await db.prepare(`
     UPDATE users SET
@@ -214,6 +220,7 @@ user.delete('/me', async (c) => {
       device_id   = NULL,
       fcm_token   = NULL,
       status      = 'deleted',
+      token_invalidated_at = unixepoch(),
       updated_at  = unixepoch()
     WHERE id = ?
   `).bind(deletedEmail, sub).run();
@@ -235,12 +242,25 @@ user.post('/become-host', async (c) => {
     return c.json({ error: 'Please complete KYC verification and wait for admin approval before becoming a host.' }, 403);
   }
   const hostId = `host_${sub}`;
-  await db.batch([
-    db.prepare('INSERT INTO hosts (id, user_id, display_name, specialties, languages) VALUES (?, ?, ?, ?, ?)')
-      .bind(hostId, sub, name, JSON.stringify(specialties ?? []), JSON.stringify(languages ?? ['English'])),
-    db.prepare('UPDATE users SET role = ?, bio = ?, updated_at = unixepoch() WHERE id = ?')
-      .bind('host', bio ?? '', sub),
-  ]);
+  // Race fix: two concurrent become-host requests would both pass the
+  // existing-host SELECT above and the second would crash on the PRIMARY
+  // KEY collision (host_${sub} is unique on hosts.id). Catch the conflict
+  // and return a clean 409 instead of bubbling a 500 to the client.
+  try {
+    await db.batch([
+      db.prepare('INSERT INTO hosts (id, user_id, display_name, specialties, languages) VALUES (?, ?, ?, ?, ?)')
+        .bind(hostId, sub, name, JSON.stringify(specialties ?? []), JSON.stringify(languages ?? ['English'])),
+      db.prepare('UPDATE users SET role = ?, bio = ?, updated_at = unixepoch() WHERE id = ?')
+        .bind('host', bio ?? '', sub),
+    ]);
+  } catch (e: any) {
+    const msg = String(e?.message || '').toLowerCase();
+    if (msg.includes('unique') || msg.includes('constraint') || msg.includes('primary key')) {
+      return c.json({ error: 'Already a host' }, 409);
+    }
+    console.error('[/become-host] insert failed:', e);
+    return c.json({ error: 'Failed to create host profile' }, 500);
+  }
   return c.json({ success: true, host_id: hostId }, 201);
 });
 

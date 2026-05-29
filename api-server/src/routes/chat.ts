@@ -123,7 +123,12 @@ chat.post('/rooms/:id/messages', async (c) => {
         );
       }
     }
-  } catch {}
+  } catch (e) {
+    // Push delivery is best-effort: a push failure must never fail the
+    // message send (the message is already persisted via db.batch above).
+    // We do log so production FCM credential / token issues are visible.
+    console.warn('[chat/messages] FCM push notify failed:', e);
+  }
 
   return c.json({ id: msgId, room_id: id, sender_id: sub, content, created_at: now });
 });

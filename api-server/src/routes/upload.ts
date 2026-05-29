@@ -82,6 +82,16 @@ upload.post('/avatar', async (c) => {
   const typeError = await validateFileType(file, ALLOWED_IMAGE_TYPES);
   if (typeError) return c.json({ error: typeError }, 415);
 
+  // Capture the previous avatar URL so we can delete the orphan blob from R2
+  // after the new one is in place. Without this, every avatar upload leaks
+  // ~50 KB-5 MB of R2 storage that nobody references — a real cost issue
+  // for active users who change their avatar repeatedly. We only delete
+  // blobs we ourselves wrote (paths under `avatars/`); never touch CDN /
+  // gravatar URLs that may be set via SSO.
+  const prevAvatarRow = await c.env.DB.prepare('SELECT avatar_url FROM users WHERE id = ?')
+    .bind(sub)
+    .first<{ avatar_url: string | null }>();
+
   const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
   const safeExt = ['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(ext) ? ext : 'jpg';
   const key = `avatars/${sub}-${Date.now()}.${safeExt}`;
@@ -92,6 +102,22 @@ upload.post('/avatar', async (c) => {
 
   const url = `/api/files/${key}`;
   await c.env.DB.prepare('UPDATE users SET avatar_url = ?, updated_at = unixepoch() WHERE id = ?').bind(url, sub).run();
+
+  // Best-effort delete of the previous owned blob. Failures here are
+  // non-fatal — orphan cleanup can also be done by a periodic job — but
+  // we do log so an R2 permission misconfiguration surfaces in production.
+  if (prevAvatarRow?.avatar_url) {
+    const prev = prevAvatarRow.avatar_url;
+    const match = prev.match(/^\/api\/files\/(avatars\/[^?#]+)$/);
+    if (match && match[1] !== key) {
+      try {
+        await c.env.STORAGE.delete(match[1]);
+      } catch (e) {
+        console.warn('[/upload/avatar] failed to delete previous avatar:', match[1], e);
+      }
+    }
+  }
+
   return c.json({ url, key });
 });
 
