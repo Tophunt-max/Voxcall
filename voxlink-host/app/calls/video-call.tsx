@@ -719,59 +719,68 @@ export default function VideoCallScreen() {
           pointerEvents="none"
         />
 
-        {showLowCoinWarning && (
-          <View style={styles.warningBanner}>
-            <SvgIcon name="alert-triangle" size={13} color="#FFD166" />
-            <Text style={styles.warningText}>Call ending soon — {remainingLabel}</Text>
-          </View>
-        )}
+        {/* FIX (UI): top group — warning banner + glass header card are now
+            wrapped in a single container pinned to the TOP of the screen.
+            Previously the header card was a standalone flex child of the
+            `space-between` overlay (alongside a spacer + control bar), which
+            pushed it into the vertical CENTER of the screen (covering the
+            remote video). Grouping it here leaves the overlay with just two
+            flex children — this top group and the control bar — so the card
+            sits at the top and the controls at the bottom. Mirrors the user
+            app fix in voxlink/app/user/call/video-call.tsx. */}
+        <View style={uiS.topGroup} pointerEvents="box-none">
+          {showLowCoinWarning && (
+            <View style={styles.warningBanner}>
+              <SvgIcon name="alert-triangle" size={13} color="#FFD166" />
+              <Text style={styles.warningText}>Call ending soon — {remainingLabel}</Text>
+            </View>
+          )}
 
-        {webrtc.error && !showLowCoinWarning && (
-          <View style={styles.warningBanner}>
-            <SvgIcon name="wifi-off" size={13} color="#FF6B6B" />
-            <Text style={styles.warningText}>Connection issue</Text>
-          </View>
-        )}
+          {webrtc.error && !showLowCoinWarning && (
+            <View style={styles.warningBanner}>
+              <SvgIcon name="wifi-off" size={13} color="#FF6B6B" />
+              <Text style={styles.warningText}>Connection issue</Text>
+            </View>
+          )}
 
-        {!showLowCoinWarning && !webrtc.error && <View />}
-
-        {/* FIX (UI redesign): glassmorphism header card. See voxlink/app/user/
-            call/video-call.tsx for the full rationale. ConnectionBars right
-            of the name give an at-a-glance signal indicator (3 green / 2
-            yellow / 1 red). */}
-        <BlurView intensity={Platform.OS === "ios" ? 50 : 80} tint="dark" style={uiS.headerCard}>
-          <View style={uiS.headerLeft}>
-            <Text style={uiS.headerName} numberOfLines={1}>
-              {activeCall?.participant.name ?? "Connecting..."}
-            </Text>
-            {status === "active" ? (
-              <View style={uiS.headerMetaRow}>
-                <View style={uiS.liveBadge}>
-                  <View style={uiS.liveDot} />
-                  <Text style={uiS.liveText}>LIVE</Text>
-                </View>
-                <Text style={uiS.timer}>{formatTime(elapsed)}</Text>
-                {remainingLabel && (
-                  <View style={[uiS.remainPill, remaining != null && remaining <= 60 && uiS.remainPillLow]}>
-                    <Text
-                      style={[
-                        uiS.remainText,
-                        remaining != null && remaining <= 60 && { color: "#FF6B6B" },
-                      ]}
-                    >
-                      {remainingLabel}
-                    </Text>
-                  </View>
-                )}
-              </View>
-            ) : (
-              <Text style={uiS.headerSub}>
-                {status === "connecting" ? "Setting up secure connection..." : "Waiting for response..."}
+          {/* FIX (UI redesign): glassmorphism header card. See voxlink/app/user/
+              call/video-call.tsx for the full rationale. ConnectionBars right
+              of the name give an at-a-glance signal indicator (3 green / 2
+              yellow / 1 red). */}
+          <BlurView intensity={Platform.OS === "ios" ? 50 : 80} tint="dark" style={uiS.headerCard}>
+            <View style={uiS.headerLeft}>
+              <Text style={uiS.headerName} numberOfLines={1}>
+                {activeCall?.participant.name ?? "Connecting..."}
               </Text>
-            )}
-          </View>
-          <ConnectionBars state={webrtc.connectionState} />
-        </BlurView>
+              {status === "active" ? (
+                <View style={uiS.headerMetaRow}>
+                  <View style={uiS.liveBadge}>
+                    <View style={uiS.liveDot} />
+                    <Text style={uiS.liveText}>LIVE</Text>
+                  </View>
+                  <Text style={uiS.timer}>{formatTime(elapsed)}</Text>
+                  {remainingLabel && (
+                    <View style={[uiS.remainPill, remaining != null && remaining <= 60 && uiS.remainPillLow]}>
+                      <Text
+                        style={[
+                          uiS.remainText,
+                          remaining != null && remaining <= 60 && { color: "#FF6B6B" },
+                        ]}
+                      >
+                        {remainingLabel}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              ) : (
+                <Text style={uiS.headerSub}>
+                  {status === "connecting" ? "Setting up secure connection..." : "Waiting for response..."}
+                </Text>
+              )}
+            </View>
+            <ConnectionBars state={webrtc.connectionState} />
+          </BlurView>
+        </View>
 
         {/* FIX (UI redesign): pill-shaped frosted-glass control bar. End
             button retains red accent + larger size for the dominant-action
@@ -990,6 +999,13 @@ const styles = StyleSheet.create({
 // for the full rationale on each block. Kept in sync between the two apps so
 // the call experience looks identical from either side.
 const uiS = StyleSheet.create({
+  // ─── Top group (warning banner + header card) ──────────────────────────
+  // FIX (UI): keeps the call-info card anchored to the TOP of the screen
+  // instead of floating in the vertical center. `gap` spaces the optional
+  // warning banner above the header card; `alignItems: center` keeps both
+  // horizontally centered like before. Mirrors the user app fix.
+  topGroup: { gap: 10, alignItems: "center" },
+
   // ─── Glass header card ─────────────────────────────────────────────────
   headerCard: {
     flexDirection: "row", alignItems: "center", gap: 12,
