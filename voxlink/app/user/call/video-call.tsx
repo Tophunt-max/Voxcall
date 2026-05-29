@@ -4,6 +4,7 @@ import {
   Modal, Animated, Easing, Platform, BackHandler, PanResponder, Dimensions,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
+import { BlurView } from "expo-blur";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { useCall } from "@/context/CallContext";
@@ -25,6 +26,32 @@ const SELF_H = 160;
 // Auto-hide controls after this idle period during an active call so the
 // remote video has the full screen. Tap anywhere to bring them back.
 const CONTROLS_HIDE_DELAY = 4000;
+
+// ─── ConnectionBars (signal-strength indicator) ──────────────────────────────
+// Three vertical bars whose count + color indicate WebRTC connection state.
+// 'connected' → 3 green bars, 'checking' / 'new' → 2 yellow, 'disconnected'
+// or 'failed' → 1 red. Anchored visually in the glass header card so the
+// user gets at-a-glance feedback without a separate banner.
+function ConnectionBars({ state }: { state: string }) {
+  const level = state === "connected" ? 3 : state === "checking" || state === "new" ? 2 : 1;
+  const color = level === 3 ? "#22C55E" : level === 2 ? "#FBBF24" : "#EF4444";
+  return (
+    <View style={uiS.bars}>
+      {[1, 2, 3].map((i) => (
+        <View
+          key={i}
+          style={[
+            uiS.bar,
+            {
+              height: 6 + i * 4,
+              backgroundColor: i <= level ? color : "rgba(255,255,255,0.18)",
+            },
+          ]}
+        />
+      ))}
+    </View>
+  );
+}
 
 const useNativeDriverValue = Platform.OS !== "web";
 
@@ -622,6 +649,16 @@ export default function VideoCallScreen() {
         <View style={styles.selfLabel}>
           <Text style={styles.selfLabelText}>You</Text>
         </View>
+        {/* FIX (UI redesign): persistent muted indicator. Without this the
+            user could leave their mic muted and forget — only knowing when
+            the other side asked "you there?". A small red pill anchored
+            at the top of the self-preview makes the muted state obvious. */}
+        {activeCall?.isMuted && (
+          <View style={uiS.mutedBadge}>
+            <Image source={require("@/assets/icons/ic_mic.png")} style={{ width: 10, height: 10, tintColor: "#fff" }} resizeMode="contain" />
+            <Text style={uiS.mutedBadgeText}>Muted</Text>
+          </View>
+        )}
       </Animated.View>
 
       {permStep === "done" && (!cameraGranted || !micGranted) && (
@@ -676,98 +713,122 @@ export default function VideoCallScreen() {
 
         {!showLowCoinWarning && !webrtc.error && <View />}
 
-        <View style={styles.remoteInfo}>
-          <Text style={styles.remoteName}>{activeCall?.participant.name ?? "Connecting..."}</Text>
-          {status === "active" && (
-            <View style={styles.timerRow}>
-              <View style={styles.liveIndicator}>
-                <View style={styles.liveDot} />
-                <Text style={styles.liveText}>LIVE</Text>
-              </View>
-              <Text style={styles.timerText}>{formatTime(elapsed)}</Text>
-              {remainingLabel && (
-                <View style={[styles.remainingBadge, remaining != null && remaining <= 60 && styles.remainingBadgeLow]}>
-                  <Image source={require("@/assets/icons/ic_calendar.png")} style={{ width: 10, height: 10, tintColor: remaining != null && remaining <= 60 ? "#FF6B6B" : "rgba(255,255,255,0.7)" }} resizeMode="contain" />
-                  <Text style={[styles.remainingText, remaining != null && remaining <= 60 && { color: "#FF6B6B" }]}>
-                    {remainingLabel}
-                  </Text>
-                </View>
-              )}
-            </View>
-          )}
-          {status !== "active" && (
-            <Text style={styles.statusSubText}>
-              {status === "connecting" ? "Setting up secure connection..." : "Waiting for response..."}
+        {/* FIX (UI redesign): glassmorphism header card.
+            BlurView on native gives a true frosted-glass effect; on web the
+            tint+intensity props degrade to a translucent dark pill which
+            still reads correctly over bright remote video. ConnectionBars
+            on the right give an at-a-glance signal indicator (3 green/2
+            yellow/1 red) so the user knows the call quality without reading
+            text. The right-aligned remaining-time pill stacks under the
+            timer instead of fighting it for horizontal space. */}
+        <BlurView intensity={Platform.OS === "ios" ? 50 : 80} tint="dark" style={uiS.headerCard}>
+          <View style={uiS.headerLeft}>
+            <Text style={uiS.headerName} numberOfLines={1}>
+              {activeCall?.participant.name ?? "Connecting..."}
             </Text>
-          )}
-        </View>
+            {status === "active" ? (
+              <View style={uiS.headerMetaRow}>
+                <View style={uiS.liveBadge}>
+                  <View style={uiS.liveDot} />
+                  <Text style={uiS.liveText}>LIVE</Text>
+                </View>
+                <Text style={uiS.timer}>{formatTime(elapsed)}</Text>
+                {remainingLabel && (
+                  <View style={[uiS.remainPill, remaining != null && remaining <= 60 && uiS.remainPillLow]}>
+                    <Text
+                      style={[
+                        uiS.remainText,
+                        remaining != null && remaining <= 60 && { color: "#FF6B6B" },
+                      ]}
+                    >
+                      {remainingLabel}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            ) : (
+              <Text style={uiS.headerSub}>
+                {status === "connecting" ? "Setting up secure connection..." : "Waiting for response..."}
+              </Text>
+            )}
+          </View>
+          <ConnectionBars state={webrtc.connectionState} />
+        </BlurView>
 
-        <View style={styles.bottomControls}>
-          <View style={styles.ctrlItem}>
+        {/* FIX (UI redesign): bottom control bar is now a single pill-shaped
+            BlurView (frosted glass). Visually groups the controls and
+            separates them from the video — much cleaner than free-floating
+            buttons. End button retains its red accent and slightly larger
+            size for the dominant-action pattern (FaceTime / WhatsApp style).
+            Active-state colors:
+              • Mute / Cam off → red ring (destructive-style toggle)
+              • Speaker on    → blue ring (informational toggle) */}
+        <BlurView intensity={Platform.OS === "ios" ? 60 : 90} tint="dark" style={uiS.controlBar}>
+          <View style={uiS.ctrlItem}>
             <TouchableOpacity
               onPress={() => { Haptics?.impactAsync?.(Haptics?.ImpactFeedbackStyle?.Light); toggleCamera(); }}
-              style={[styles.ctrlBtn, !activeCall?.isCameraOn && styles.ctrlBtnOff]}
+              style={[uiS.ctrlBtn, !activeCall?.isCameraOn && uiS.ctrlBtnDanger]}
+              accessibilityRole="button"
+              accessibilityLabel={activeCall?.isCameraOn ? "Turn off camera" : "Turn on camera"}
             >
-              <Image source={activeCall?.isCameraOn ? require("@/assets/icons/ic_photo.png") : require("@/assets/icons/ic_cancel_video.png")} style={{ width: 22, height: 22, tintColor: "#fff" }} resizeMode="contain" />
+              <Image source={activeCall?.isCameraOn ? require("@/assets/icons/ic_photo.png") : require("@/assets/icons/ic_cancel_video.png")} style={uiS.ctrlIcon} resizeMode="contain" />
             </TouchableOpacity>
-            <Text style={styles.ctrlLabel}>{activeCall?.isCameraOn ? "Camera" : "Cam Off"}</Text>
+            <Text style={uiS.ctrlLabel}>{activeCall?.isCameraOn ? "Camera" : "Cam Off"}</Text>
           </View>
 
-          <View style={styles.ctrlItem}>
+          <View style={uiS.ctrlItem}>
             <TouchableOpacity
               onPress={() => { Haptics?.impactAsync?.(Haptics?.ImpactFeedbackStyle?.Light); toggleMute(); }}
-              style={[styles.ctrlBtn, activeCall?.isMuted && styles.ctrlBtnOff]}
+              style={[uiS.ctrlBtn, activeCall?.isMuted && uiS.ctrlBtnDanger]}
+              accessibilityRole="button"
+              accessibilityLabel={activeCall?.isMuted ? "Unmute" : "Mute"}
             >
-              <Image source={require("@/assets/icons/ic_mic.png")} style={{ width: 22, height: 22, tintColor: "#fff", opacity: activeCall?.isMuted ? 0.4 : 1 }} resizeMode="contain" />
+              <Image source={require("@/assets/icons/ic_mic.png")} style={[uiS.ctrlIcon, { opacity: activeCall?.isMuted ? 0.5 : 1 }]} resizeMode="contain" />
             </TouchableOpacity>
-            <Text style={styles.ctrlLabel}>{activeCall?.isMuted ? "Unmute" : "Mute"}</Text>
+            <Text style={uiS.ctrlLabel}>{activeCall?.isMuted ? "Unmute" : "Mute"}</Text>
           </View>
 
-          <View style={styles.ctrlItem}>
+          <View style={uiS.ctrlItem}>
             <TouchableOpacity
               onPress={() => { Haptics?.notificationAsync?.(Haptics?.NotificationFeedbackType?.Warning); handleEndCall(); }}
-              style={styles.endBtn}
+              style={uiS.endBtn}
               accessibilityRole="button"
               accessibilityLabel="End call"
             >
-              <Image source={require("@/assets/icons/ic_call_end.png")} style={{ width: 30, height: 30, tintColor: "#fff" }} resizeMode="contain" />
+              <Image source={require("@/assets/icons/ic_call_end.png")} style={uiS.endIcon} resizeMode="contain" />
             </TouchableOpacity>
-            <Text style={styles.ctrlLabel}>End</Text>
+            <Text style={uiS.ctrlLabel}>End</Text>
           </View>
 
-          <View style={styles.ctrlItem}>
+          <View style={uiS.ctrlItem}>
             <TouchableOpacity
               onPress={handleFlip}
-              style={[styles.ctrlBtn, (!activeCall?.isCameraOn || !cameraGranted) && styles.ctrlBtnDisabled]}
+              style={[uiS.ctrlBtn, (!activeCall?.isCameraOn || !cameraGranted) && uiS.ctrlBtnDisabled]}
               disabled={!activeCall?.isCameraOn || !cameraGranted}
+              accessibilityRole="button"
+              accessibilityLabel="Flip camera"
             >
               <Image
                 source={require("@/assets/icons/ic_cam_flip.png")}
-                style={{
-                  width: 22, height: 22, tintColor: "#fff",
-                  // FIX: dim the icon when the button is disabled so the user
-                  // gets visual feedback that flipping is not available with
-                  // the camera off / blocked. Previously the button looked
-                  // identical to its enabled state and tapping was silently
-                  // a no-op, which made the UI feel broken.
-                  opacity: (!activeCall?.isCameraOn || !cameraGranted) ? 0.4 : 1,
-                }}
+                style={[uiS.ctrlIcon, { opacity: (!activeCall?.isCameraOn || !cameraGranted) ? 0.4 : 1 }]}
                 resizeMode="contain"
               />
             </TouchableOpacity>
-            <Text style={styles.ctrlLabel}>Flip</Text>
+            <Text style={uiS.ctrlLabel}>Flip</Text>
           </View>
 
-          <View style={styles.ctrlItem}>
+          <View style={uiS.ctrlItem}>
             <TouchableOpacity
               onPress={() => { Haptics?.impactAsync?.(Haptics?.ImpactFeedbackStyle?.Light); toggleSpeaker(); }}
-              style={[styles.ctrlBtn, activeCall?.isSpeakerOn && styles.ctrlBtnActive]}
+              style={[uiS.ctrlBtn, activeCall?.isSpeakerOn && uiS.ctrlBtnInfo]}
+              accessibilityRole="button"
+              accessibilityLabel={activeCall?.isSpeakerOn ? "Turn off speaker" : "Turn on speaker"}
             >
-              <Image source={activeCall?.isSpeakerOn ? require("@/assets/icons/ic_speaker_on.png") : require("@/assets/icons/ic_speaker_off.png")} style={{ width: 22, height: 22, tintColor: "#fff" }} resizeMode="contain" />
+              <Image source={activeCall?.isSpeakerOn ? require("@/assets/icons/ic_speaker_on.png") : require("@/assets/icons/ic_speaker_off.png")} style={uiS.ctrlIcon} resizeMode="contain" />
             </TouchableOpacity>
-            <Text style={styles.ctrlLabel}>{activeCall?.isSpeakerOn ? "Speaker" : "Earpiece"}</Text>
+            <Text style={uiS.ctrlLabel}>{activeCall?.isSpeakerOn ? "Speaker" : "Earpiece"}</Text>
           </View>
-        </View>
+        </BlurView>
       </Animated.View>
 
       <Modal visible={showRechargePopup} transparent animationType="slide">
@@ -841,9 +902,14 @@ const styles = StyleSheet.create({
 
   selfPreview: {
     position: "absolute", width: 110, height: 160,
-    borderRadius: 16, overflow: "hidden",
-    borderWidth: 2, borderColor: "rgba(255,255,255,0.25)",
+    // FIX (UI redesign): bigger rounded corners + white border + heavy shadow
+    // makes the self-preview read as a clearly-secondary picture-in-picture
+    // window (FaceTime / WhatsApp / Google Meet pattern). Was 16/2/none.
+    borderRadius: 20, overflow: "hidden",
+    borderWidth: 2, borderColor: "rgba(255,255,255,0.6)",
     backgroundColor: "#1a1a2e", zIndex: 10,
+    shadowColor: "#000", shadowOpacity: 0.45, shadowRadius: 12, shadowOffset: { width: 0, height: 6 },
+    elevation: 10,
   },
   selfCameraView: { flex: 1 },
   selfCameraOff: {
@@ -936,4 +1002,119 @@ const styles = StyleSheet.create({
   rechargeBtnText: { color: "#fff", fontSize: 16, fontFamily: "Poppins_700Bold" },
   continueBtn: { paddingVertical: 8, paddingHorizontal: 16 },
   continueBtnText: { color: "#888", fontSize: 14, fontFamily: "Poppins_400Regular" },
+});
+
+// ─── uiS — redesigned video-call UI styles ──────────────────────────────────
+// Kept separate from the original `styles` block so the legacy fields above
+// remain easy to compare against. New code paths use uiS exclusively.
+const uiS = StyleSheet.create({
+  // ─── Glass header card ─────────────────────────────────────────────────
+  // Floating frosted-glass pill at the top with name, LIVE badge, timer,
+  // remaining-time chip, and signal-strength bars. BlurView gives a true
+  // backdrop blur on iOS / Android; web falls back to the tint color.
+  headerCard: {
+    flexDirection: "row", alignItems: "center", gap: 12,
+    paddingHorizontal: 14, paddingVertical: 10,
+    borderRadius: 18,
+    overflow: "hidden",
+    backgroundColor: Platform.OS === "web" ? "rgba(0,0,0,0.45)" : "rgba(0,0,0,0.25)",
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.12)",
+    alignSelf: "center",
+    minWidth: 240, maxWidth: "85%",
+  },
+  headerLeft: { flex: 1, gap: 4 },
+  headerName: {
+    color: "#fff", fontSize: 16, fontFamily: "Poppins_700Bold",
+    textShadowColor: "rgba(0,0,0,0.6)", textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4,
+  },
+  headerSub: { color: "rgba(255,255,255,0.7)", fontSize: 12, fontFamily: "Poppins_400Regular" },
+  headerMetaRow: { flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" },
+  liveBadge: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    backgroundColor: "#EF4444",
+    paddingHorizontal: 8, paddingVertical: 3,
+    borderRadius: 10,
+  },
+  liveDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: "#fff" },
+  liveText: { color: "#fff", fontSize: 9, fontFamily: "Poppins_700Bold", letterSpacing: 0.6 },
+  timer: {
+    color: "#fff", fontSize: 14, fontFamily: "Poppins_600SemiBold",
+    fontVariant: ["tabular-nums"],
+  },
+  remainPill: {
+    backgroundColor: "rgba(255,255,255,0.12)",
+    paddingHorizontal: 8, paddingVertical: 3,
+    borderRadius: 10,
+  },
+  remainPillLow: { backgroundColor: "rgba(239,68,68,0.2)" },
+  remainText: { color: "rgba(255,255,255,0.85)", fontSize: 10, fontFamily: "Poppins_500Medium" },
+
+  // Connection-strength bars (right side of header)
+  bars: { flexDirection: "row", alignItems: "flex-end", gap: 2, height: 18 },
+  bar: { width: 3, borderRadius: 1.5 },
+
+  // ─── Glass control bar ─────────────────────────────────────────────────
+  // Pill containing all five call controls. Items have equal flex so the
+  // layout stays balanced on small phones (375px wide is the tightest
+  // common case — fits 5 × ~48px buttons + gap comfortably).
+  controlBar: {
+    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
+    paddingHorizontal: 12, paddingVertical: 12,
+    borderRadius: 36, overflow: "hidden",
+    backgroundColor: Platform.OS === "web" ? "rgba(0,0,0,0.55)" : "rgba(0,0,0,0.3)",
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.1)",
+    alignSelf: "center",
+    minWidth: 320, maxWidth: 460,
+    width: "92%",
+  },
+  ctrlItem: { alignItems: "center", gap: 5, flex: 1 },
+  // 52x52 base — exceeds WCAG AAA 48px touch target with comfortable padding.
+  ctrlBtn: {
+    width: 52, height: 52, borderRadius: 26,
+    backgroundColor: "rgba(255,255,255,0.18)",
+    alignItems: "center", justifyContent: "center",
+    borderWidth: 1.5, borderColor: "transparent",
+  },
+  // Destructive-style toggle (mute on, camera off) — red ring.
+  ctrlBtnDanger: {
+    backgroundColor: "rgba(239,68,68,0.85)",
+    borderColor: "rgba(255,255,255,0.18)",
+  },
+  // Informational toggle (speaker on) — blue ring.
+  ctrlBtnInfo: {
+    backgroundColor: "rgba(59,130,246,0.75)",
+    borderColor: "rgba(255,255,255,0.18)",
+  },
+  // Disabled state (Flip while camera off).
+  ctrlBtnDisabled: {
+    backgroundColor: "rgba(255,255,255,0.06)",
+  },
+  ctrlIcon: { width: 22, height: 22, tintColor: "#fff" },
+  ctrlLabel: {
+    color: "rgba(255,255,255,0.85)", fontSize: 11,
+    fontFamily: "Poppins_500Medium", textAlign: "center",
+    textShadowColor: "rgba(0,0,0,0.6)", textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3,
+  },
+  // End button — visually dominant: 64x64 (vs 52x52), red, glowing shadow.
+  endBtn: {
+    width: 64, height: 64, borderRadius: 32,
+    backgroundColor: "#EF4444",
+    alignItems: "center", justifyContent: "center",
+    elevation: 8,
+    shadowColor: "#EF4444", shadowOpacity: 0.55, shadowRadius: 14, shadowOffset: { width: 0, height: 4 },
+  },
+  endIcon: { width: 28, height: 28, tintColor: "#fff" },
+
+  // ─── Self-preview muted indicator ──────────────────────────────────────
+  mutedBadge: {
+    position: "absolute", top: -8, alignSelf: "center",
+    flexDirection: "row", alignItems: "center", gap: 4,
+    backgroundColor: "#EF4444",
+    paddingHorizontal: 8, paddingVertical: 3,
+    borderRadius: 10,
+    borderWidth: 1.5, borderColor: "rgba(255,255,255,0.85)",
+    elevation: 4,
+    shadowColor: "#000", shadowOpacity: 0.4, shadowRadius: 4, shadowOffset: { width: 0, height: 2 },
+  },
+  mutedBadgeText: { color: "#fff", fontSize: 10, fontFamily: "Poppins_700Bold", letterSpacing: 0.3 },
 });
