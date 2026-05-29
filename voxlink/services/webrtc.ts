@@ -22,7 +22,11 @@ try {
       mediaDevicesRef = (navigator as any).mediaDevices;
     }
   } else {
-    const webrtc = require('react-native-webrtc');
+    // Cloudflare's fork of react-native-webrtc — drop-in replacement that
+    // tracks libwebrtc one minor release ahead. Same JS API surface
+    // (RTCPeerConnection, mediaDevices, MediaStream, RTCView, _switchCamera,
+    // etc.) so the rest of this file is unchanged.
+    const webrtc = require('@cloudflare/react-native-webrtc');
     RTC = {
       RTCPeerConnection: webrtc.RTCPeerConnection,
       RTCSessionDescription: webrtc.RTCSessionDescription,
@@ -474,7 +478,8 @@ export class WebRTCService {
     if (!videoTrack) return;
 
     if (Platform.OS !== 'web') {
-      // Native (iOS/Android): react-native-webrtc built-in method
+      // Native (iOS/Android): Cloudflare's react-native-webrtc fork ships
+      // the same `_switchCamera()` helper as upstream.
       if (videoTrack._switchCamera) {
         videoTrack._switchCamera();
       }

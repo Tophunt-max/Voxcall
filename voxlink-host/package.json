@@ -56,7 +56,6 @@
     "zod-validation-error": "^3.4.0"
   },
   "dependencies": {
-    "@config-plugins/react-native-webrtc": "^13.0.0",
     "@expo-google-fonts/poppins": "^0.4.1",
     "@react-native-community/datetimepicker": "^8.4.4",
     "@react-native-firebase/app": "^24.0.0",
@@ -70,7 +69,7 @@
     "expo-clipboard": "~8.0.8",
     "expo-localization": "~17.0.8",
     "firebase": "^12.11.0",
-    "react-native-webrtc": "^124.0.7",
+    "@cloudflare/react-native-webrtc": "^125.0.5",
     "zustand": "^5.0.12"
   }
 }

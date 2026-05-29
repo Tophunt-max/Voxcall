@@ -78,7 +78,7 @@
         }
       ],
       [
-        "@config-plugins/react-native-webrtc",
+        "@cloudflare/react-native-webrtc",
         {
           "cameraPermission": "VoxLink needs camera access for video calls so the other person can see you.",
           "microphonePermission": "VoxLink needs microphone access for audio and video calls."

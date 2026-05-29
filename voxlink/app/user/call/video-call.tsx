@@ -21,7 +21,8 @@ let CameraView: any = null;
 let Haptics: any = null;
 try {
   if (Platform.OS !== 'web') {
-    RTCView = require('react-native-webrtc').RTCView;
+    // Cloudflare's react-native-webrtc fork — same RTCView component as upstream.
+    RTCView = require('@cloudflare/react-native-webrtc').RTCView;
     CameraView = require('expo-camera').CameraView;
   } else {
     CameraView = require('expo-camera').CameraView; // has web support
