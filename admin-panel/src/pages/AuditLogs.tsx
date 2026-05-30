@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
-import { Search, Shield, User, Coins, Bell, Settings, Trash2, Edit, CheckCircle, XCircle, Download, RefreshCw } from 'lucide-react';
+import { Search, Shield, User, Coins, Bell, Settings, Trash2, Edit, CheckCircle, XCircle, Download, RefreshCw, AlertTriangle } from 'lucide-react';
 
 const ACTION_ICONS: Record<string, any> = { approve: CheckCircle, reject: XCircle, ban: Shield, unban: Shield, edit: Edit, delete: Trash2, send: Bell, update: Settings, create: Edit, coins: Coins, login: User };
 const ACTION_COLORS: Record<string, string> = {

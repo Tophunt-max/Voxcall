@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Badge } from '@/components/ui/badge';
+import { Badge } from '@/components/ui/Badge';
 import { toast } from 'sonner';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -177,7 +177,7 @@ function AutoGatewaysTab() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-semibold text-sm truncate">{gw.name}</span>
-                    <Badge variant="secondary" className="text-xs">{info.label}</Badge>
+                    <Badge variant="secondary">{info.label}</Badge>
                     {isPrimary && <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-bold bg-violet-600 text-white"><Star size={9} /> PRIMARY</span>}
                     {!isPrimary && gw.is_active && fallbackNum !== null && <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">FALLBACK {fallbackNum + 1}</span>}
                     {!gw.is_active && <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-gray-100 text-gray-500">DISABLED</span>}
@@ -661,7 +661,7 @@ function WebhookSettingsTab() {
         <div className="flex items-center gap-2">
           <Zap size={16} className="text-amber-500" />
           <h3 className="font-semibold text-sm">Auto-Approve Manual (UPI) Payments</h3>
-          <Badge variant="secondary" className="text-[10px]">Manual QR</Badge>
+          <Badge variant="secondary">Manual QR</Badge>
         </div>
         <p className="text-xs text-muted-foreground">When enabled, manual UPI deposits are automatically approved as soon as the user submits their UTR — without admin review. Use only if you trust your users or have verified your UPI account receives funds properly.</p>
         <div className="flex items-center gap-4 flex-wrap">
