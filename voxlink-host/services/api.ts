@@ -97,6 +97,12 @@ export async function apiRequest<T>(
 }
 
 // ─── Host level system types ───────────────────────────────────────────────
+export interface HostLevelPerks {
+  max_rate: number;
+  earning_share: number;
+  rank_boost: number;
+}
+
 export interface HostLevelDef {
   level: number;
   name: string;
@@ -106,6 +112,7 @@ export interface HostLevelDef {
   min_rating: number;
   coin_reward: number;
   description: string;
+  perks: HostLevelPerks;
 }
 
 export interface HostLevelResponse {
@@ -118,6 +125,7 @@ export interface HostLevelResponse {
     calls: { current: number; required: number; pct: number; met: boolean };
     rating: { current: number; required: number; pct: number; met: boolean };
   };
+  perks: HostLevelPerks;
   levels: HostLevelDef[];
   stats: {
     total_calls: number;

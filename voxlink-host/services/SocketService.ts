@@ -209,6 +209,17 @@ class SocketService {
           timestamp: Date.now(),
         });
         break;
+      case "level_up":
+        this.emit(SocketEvents.HOST_LEVEL_UP, {
+          oldLevel: msg.old_level ?? 1,
+          newLevel: msg.new_level ?? 1,
+          levelName: msg.level_name ?? "",
+          badge: msg.badge ?? "🎉",
+          color: msg.color ?? "#A00AE7",
+          coinsAwarded: msg.coins_awarded ?? 0,
+          timestamp: Date.now(),
+        });
+        break;
       case "peer_tracks_ready":
         this.emit(SocketEvents.PEER_TRACKS_READY, {
           sessionId: msg.session_id,

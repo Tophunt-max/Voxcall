@@ -13,11 +13,11 @@ import { API } from "@/services/api";
 import { showErrorToast, showSuccessToast } from "@/components/Toast";
 
 const MIN_RATE = 1;
-const MAX_RATE = 500;
+const ABS_MAX_RATE = 500;
 
-function clamp(n: number): number {
+function clamp(n: number, max: number = ABS_MAX_RATE): number {
   if (isNaN(n)) return MIN_RATE;
-  return Math.min(MAX_RATE, Math.max(MIN_RATE, Math.round(n)));
+  return Math.min(max, Math.max(MIN_RATE, Math.round(n)));
 }
 
 interface RatesEditorSheetProps {
@@ -25,6 +25,8 @@ interface RatesEditorSheetProps {
   onClose: () => void;
   initialAudio: number;
   initialVideo: number;
+  /** Level-based rate cap (coins/min). Defaults to the global max. */
+  maxRate?: number;
   /** Called with the saved (clamped) rates after a successful update. */
   onSaved?: (rates: { audio: number; video: number }) => void;
 }
@@ -91,25 +93,26 @@ export default function RatesEditorSheet({
   onClose,
   initialAudio,
   initialVideo,
+  maxRate = ABS_MAX_RATE,
   onSaved,
 }: RatesEditorSheetProps) {
   const colors = useColors();
-  const [audio, setAudio] = useState(String(clamp(initialAudio)));
-  const [video, setVideo] = useState(String(clamp(initialVideo)));
+  const [audio, setAudio] = useState(String(clamp(initialAudio, maxRate)));
+  const [video, setVideo] = useState(String(clamp(initialVideo, maxRate)));
   const [saving, setSaving] = useState(false);
 
   // Re-sync inputs whenever the sheet is (re)opened with new values.
   useEffect(() => {
     if (visible) {
-      setAudio(String(clamp(initialAudio)));
-      setVideo(String(clamp(initialVideo)));
+      setAudio(String(clamp(initialAudio, maxRate)));
+      setVideo(String(clamp(initialVideo, maxRate)));
     }
-  }, [visible, initialAudio, initialVideo]);
+  }, [visible, initialAudio, initialVideo, maxRate]);
 
   const step = useCallback((which: "audio" | "video", delta: number) => {
     const setter = which === "audio" ? setAudio : setVideo;
-    setter((prev) => String(clamp((parseInt(prev, 10) || 0) + delta)));
-  }, []);
+    setter((prev) => String(clamp((parseInt(prev, 10) || 0) + delta, maxRate)));
+  }, [maxRate]);
 
   const onChangeRate = useCallback((which: "audio" | "video", raw: string) => {
     const digits = raw.replace(/[^0-9]/g, "").slice(0, 3);
@@ -117,8 +120,8 @@ export default function RatesEditorSheet({
   }, []);
 
   const handleSave = useCallback(async () => {
-    const a = clamp(parseInt(audio, 10));
-    const v = clamp(parseInt(video, 10));
+    const a = clamp(parseInt(audio, 10), maxRate);
+    const v = clamp(parseInt(video, 10), maxRate);
     setSaving(true);
     try {
       await API.updateHostProfile({
@@ -135,17 +138,18 @@ export default function RatesEditorSheet({
     } finally {
       setSaving(false);
     }
-  }, [audio, video, onSaved, onClose]);
+  }, [audio, video, maxRate, onSaved, onClose]);
 
-  const audioNum = clamp(parseInt(audio, 10) || 0);
-  const videoNum = clamp(parseInt(video, 10) || 0);
+  const audioNum = clamp(parseInt(audio, 10) || 0, maxRate);
+  const videoNum = clamp(parseInt(video, 10) || 0, maxRate);
 
   return (
     <BottomSheet visible={visible} onClose={onClose} title="Edit Call Rates">
       <View style={{ gap: 12, paddingBottom: 8 }}>
         <Text style={[styles.help, { color: colors.mutedForeground }]}>
           Set how many coins users pay you per minute. Video usually earns more
-          than audio. You can change this anytime ({MIN_RATE}–{MAX_RATE} coins/min).
+          than audio. Your level lets you charge up to {maxRate} coins/min — reach
+          higher levels to raise this cap.
         </Text>
 
         <RateStepper

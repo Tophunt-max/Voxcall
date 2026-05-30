@@ -226,7 +226,7 @@ export default function HostHomeScreen() {
       <LevelCard
         data={levelData}
         loading={levelLoading}
-        onPress={() => router.push("/call-rates")}
+        onPress={() => router.push("/level-benefits")}
       />
 
       {/* Stats — OPTIMIZATION #8: skeleton while earnings are loading */}
@@ -413,6 +413,7 @@ export default function HostHomeScreen() {
         onClose={() => setRatesSheetOpen(false)}
         initialAudio={audioRate}
         initialVideo={videoRate}
+        maxRate={levelData?.perks?.max_rate ?? 500}
         onSaved={() => {
           queryClient.invalidateQueries({ queryKey: ['host-me'] });
         }}

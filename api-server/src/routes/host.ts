@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth';
-import { getLevelConfig, computeLevelProgress } from '../lib/levels';
+import { getLevelConfig, computeLevelProgress, getMaxRate, ABSOLUTE_MAX_RATE } from '../lib/levels';
 import type { Env, JWTPayload } from '../types';
 
 const host = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
@@ -201,7 +201,15 @@ hostProtected.patch('/me', zValidator('json', updateProfileSchema), async (c) =>
   const { sub } = c.get('user');
   // FIX: Use validated body from zValidator, not raw c.req.json() which bypasses validation
   const body = c.req.valid('json') as Record<string, any>;
-  const MAX_RATE = 500; // coins per minute cap to prevent hosts from setting abusive rates
+  const rateKeys = ['coins_per_minute', 'audio_coins_per_minute', 'video_coins_per_minute'];
+  // Level-based rate cap: a host may only charge up to their level's max_rate
+  // (a level perk). Resolved only when a rate field is actually being changed.
+  let MAX_RATE = ABSOLUTE_MAX_RATE;
+  if (rateKeys.some((k) => body[k] !== undefined)) {
+    const hostRow = await c.env.DB.prepare('SELECT level FROM hosts WHERE user_id = ?').bind(sub).first<{ level: number }>();
+    const cfg = await getLevelConfig(c.env.DB);
+    MAX_RATE = getMaxRate(hostRow?.level ?? 1, cfg);
+  }
   const allowed = ['display_name', 'specialties', 'languages', 'coins_per_minute', 'audio_coins_per_minute', 'video_coins_per_minute', 'payout_method', 'payout_details'];
   const sets: string[] = [];
   const vals: any[] = [];
@@ -219,8 +227,8 @@ hostProtected.patch('/me', zValidator('json', updateProfileSchema), async (c) =>
       } else {
         val = body[key];
       }
-      // Cap rate fields to prevent abuse
-      if (['coins_per_minute', 'audio_coins_per_minute', 'video_coins_per_minute'].includes(key)) {
+      // Cap rate fields to the host's level max_rate (clamped, non-breaking).
+      if (rateKeys.includes(key)) {
         const num = Number(val);
         if (isNaN(num) || num < 1) return c.json({ error: `${key} must be at least 1` }, 400);
         val = Math.min(num, MAX_RATE);
@@ -233,7 +241,7 @@ hostProtected.patch('/me', zValidator('json', updateProfileSchema), async (c) =>
   sets.push('updated_at = unixepoch()');
   vals.push(sub);
   await c.env.DB.prepare(`UPDATE hosts SET ${sets.join(', ')} WHERE user_id = ?`).bind(...vals).run();
-  return c.json({ success: true });
+  return c.json({ success: true, max_rate: MAX_RATE });
 });
 
 // PATCH /api/host/status — go online/offline

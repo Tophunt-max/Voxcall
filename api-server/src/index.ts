@@ -22,6 +22,8 @@ import { ChatRoom } from './durable-objects/ChatRoom';
 import { CallSignaling } from './durable-objects/CallSignaling';
 import { NotificationHub } from './durable-objects/NotificationHub';
 import { ensureUsersSchema } from './lib/schemaGuard';
+import { getLevelConfig, getEarningShare } from './lib/levels';
+import { recalcAllHostLevels } from './lib/levelService';
 
 // Re-export Durable Objects (required by wrangler)
 export { ChatRoom, CallSignaling, NotificationHub };
@@ -175,6 +177,8 @@ app.notFound((c) => c.json({ error: 'Not found' }, 404));
 async function reapStaleCalls(env: Env): Promise<void> {
   const db = env.DB;
   const now = Math.floor(Date.now() / 1000);
+  // Loaded once per run — used for level-based earning share below.
+  const levelCfg = await getLevelConfig(db);
 
   // Pending calls: 2 min ke baad expire (ring timeout 45s hai — 2min is generous)
   const pendingCutoff = now - 120;
@@ -185,7 +189,7 @@ async function reapStaleCalls(env: Env): Promise<void> {
     const staleCalls = await db
       .prepare(
         `SELECT cs.id, cs.caller_id, cs.host_id, cs.started_at, cs.created_at, cs.rate_per_minute, cs.type,
-                h.user_id as host_user_id,
+                h.user_id as host_user_id, h.level as host_level,
                 cs.status
          FROM call_sessions cs
          JOIN hosts h ON h.id = cs.host_id
@@ -219,7 +223,7 @@ async function reapStaleCalls(env: Env): Promise<void> {
       let actualHostEarnings = 0;
 
       if (coinsCharged > 0) {
-        const hostEarnings = Math.floor(coinsCharged * 0.7);
+        const hostEarnings = Math.floor(coinsCharged * getEarningShare(call.host_level ?? 1, levelCfg));
 
         // Atomic transfer: deduct caller and credit host in one statement.
         // If caller has insufficient coins, EXISTS fails and ZERO rows update.
@@ -269,9 +273,33 @@ async function reapStaleCalls(env: Env): Promise<void> {
   }
 }
 
+// Level-up safety net — runs at most once per 24h even though the cron fires
+// every minute. The auto level-up engine handles promotions in real time on
+// each rating; this backfill catches anything missed (e.g. a rating write that
+// raced a config change, or hosts promoted via a freshly-edited ladder).
+// Gated via the `last_level_recalc` timestamp in app_settings; the slot is
+// claimed BEFORE running so overlapping cron ticks don't double-run it.
+async function maybeRecalcLevelsDaily(env: Env): Promise<void> {
+  try {
+    const now = Math.floor(Date.now() / 1000);
+    const row = await env.DB.prepare("SELECT value FROM app_settings WHERE key = 'last_level_recalc'").first<{ value: string }>();
+    const last = row?.value ? parseInt(row.value, 10) || 0 : 0;
+    if (now - last < 24 * 3600) return; // already ran within the last day
+    // Claim the slot first so a second cron tick in the same window is a no-op.
+    await env.DB.prepare(
+      "INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('last_level_recalc', ?, unixepoch())"
+    ).bind(String(now)).run();
+    const res = await recalcAllHostLevels(env, 'recalc');
+    console.log('[Cron] Daily level recalc:', JSON.stringify(res));
+  } catch (e) {
+    console.error('[Cron] Daily level recalc error:', e);
+  }
+}
+
 export default {
   fetch: app.fetch,
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil(reapStaleCalls(env));
+    ctx.waitUntil(maybeRecalcLevelsDaily(env));
   },
 };

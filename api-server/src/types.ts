@@ -65,6 +65,7 @@ export interface HostRow {
   is_online: number;
   is_top_rated: number;
   is_active: number;
+  level?: number;
 }
 
 export interface CallSessionRow {

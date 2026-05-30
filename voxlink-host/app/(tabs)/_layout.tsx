@@ -2,6 +2,7 @@ import { Tabs } from "expo-router";
 import { Image, Platform, View } from "react-native";
 import { useColors } from "@/hooks/useColors";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import LevelUpCelebration from "@/components/LevelUpCelebration";
 
 function TabIcon({ source, focused, color }: { source: any; focused: boolean; color: string }) {
   return (
@@ -19,6 +20,7 @@ export default function HostTabLayout() {
   const insets = useSafeAreaInsets();
 
   return (
+    <>
     <Tabs
       screenOptions={{
         headerShown: false,
@@ -77,5 +79,7 @@ export default function HostTabLayout() {
         }}
       />
     </Tabs>
+      <LevelUpCelebration />
+    </>
   );
 }

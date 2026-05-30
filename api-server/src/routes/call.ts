@@ -4,6 +4,8 @@ import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth';
 import { createCFCalls, CFCallsTrack } from '../lib/cf-calls';
 import { sendFCMPush } from '../lib/fcm';
+import { getLevelConfig, getEarningShare } from '../lib/levels';
+import { applyLevelUp } from '../lib/levelService';
 import type { Env, JWTPayload, HostRow, CallSessionRow, CallerData, HostData } from '../types';
 
 const call = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
@@ -293,7 +295,7 @@ call.post('/end', async (c) => {
     const durationMin = durationSec > 0 ? Math.max(1, Math.ceil(durationSec / 60)) : 0;
 
     // BUG #1 FIX: Fixed incomplete query
-    const hostRow = await db.prepare('SELECT coins_per_minute, audio_coins_per_minute, video_coins_per_minute, user_id, total_minutes, total_earnings FROM hosts WHERE id = ?').bind(session.host_id).first<HostRow>();
+    const hostRow = await db.prepare('SELECT coins_per_minute, audio_coins_per_minute, video_coins_per_minute, user_id, total_minutes, total_earnings, level FROM hosts WHERE id = ?').bind(session.host_id).first<HostRow>();
     
     // BUG #4 FIX: Check if hostRow is null before using it
     if (!hostRow) {
@@ -308,7 +310,10 @@ call.post('/end', async (c) => {
     const coinsCharged = (session.status === 'active' && durationSec > 0)
       ? durationMin * effectiveRate
       : 0;
-    const hostShare = Math.floor(coinsCharged * 0.7);
+    // Level-based earning share — higher-level hosts keep a larger cut.
+    // Defaults to the historical 70% (level 1) so low-level hosts are unaffected.
+    const levelCfg = await getLevelConfig(c.env.DB);
+    const hostShare = Math.floor(coinsCharged * getEarningShare(hostRow.level ?? 1, levelCfg));
 
     // ──────────────────────────────────────────────────────────────────────────────
     // CRITICAL FIX: Atomic coin transfer using a SINGLE UPDATE statement.
@@ -500,6 +505,14 @@ call.post('/rate', zValidator('json', rateSchema), async (c) => {
   await db.prepare('UPDATE hosts SET rating = ?, review_count = ? WHERE id = ?').bind(
     Math.round((avg?.avg ?? starsVal) * 10) / 10, avg?.cnt ?? 1, session.host_id
   ).run();
+
+  // Auto level-up: the host's rating/review_count just changed, so re-evaluate
+  // their level. Best-effort — a failure here must never fail the rating call.
+  try {
+    await applyLevelUp(c.env, session.host_id, 'auto');
+  } catch (e) {
+    console.warn('[/rate] applyLevelUp failed:', e);
+  }
 
   return c.json({ success: true });
 });
@@ -824,7 +837,7 @@ call.post('/:id/end', async (c) => {
     const durationMin = durationSec > 0 ? Math.max(1, Math.ceil(durationSec / 60)) : 0;
     
     // BUG #1 FIX: Fixed incomplete query
-    const hostRow = await db.prepare('SELECT coins_per_minute, audio_coins_per_minute, video_coins_per_minute, user_id, total_minutes, total_earnings FROM hosts WHERE id = ?').bind(session.host_id).first<HostRow>();
+    const hostRow = await db.prepare('SELECT coins_per_minute, audio_coins_per_minute, video_coins_per_minute, user_id, total_minutes, total_earnings, level FROM hosts WHERE id = ?').bind(session.host_id).first<HostRow>();
     
     // BUG #4 FIX: Check if hostRow is null
     if (!hostRow) {
@@ -837,7 +850,10 @@ call.post('/:id/end', async (c) => {
       : (hostRow.audio_coins_per_minute ?? hostRow.coins_per_minute ?? 5));
     // Only charge if call was active AND had non-zero duration
     const coinsCharged = (session.status === 'active' && durationSec > 0) ? durationMin * effectiveRate : 0;
-    const hostShare = Math.floor(coinsCharged * 0.7);
+    // Level-based earning share — higher-level hosts keep a larger cut.
+    // Defaults to the historical 70% (level 1) so low-level hosts are unaffected.
+    const levelCfg = await getLevelConfig(c.env.DB);
+    const hostShare = Math.floor(coinsCharged * getEarningShare(hostRow.level ?? 1, levelCfg));
 
     // BUG #2 FIX: Use atomic coin transfer instead of non-atomic batch
     let actualCoinsCharged = 0;
@@ -1017,6 +1033,12 @@ call.post('/:id/rate', async (c) => {
   await db.prepare('UPDATE hosts SET rating = ?, review_count = ? WHERE id = ?').bind(
     Math.round((avg?.avg ?? starsVal) * 10) / 10, avg?.cnt ?? 1, session.host_id
   ).run();
+  // Auto level-up after rating update (best-effort — never fails the request).
+  try {
+    await applyLevelUp(c.env, session.host_id, 'auto');
+  } catch (e) {
+    console.warn('[/:id/rate] applyLevelUp failed:', e);
+  }
   return c.json({ success: true });
 });
 

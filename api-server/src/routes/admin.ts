@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { authMiddleware, adminMiddleware } from '../middleware/auth';
 import { sendFCMPush, getFCMTokens } from '../lib/fcm';
 import { getLevelConfig, normalizeLevelConfig } from '../lib/levels';
+import { recalcAllHostLevels } from '../lib/levelService';
 import type { Env, JWTPayload } from '../types';
 
 const admin = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
@@ -185,23 +186,14 @@ admin.put('/level-config', async (c) => {
   return c.json({ success: true, config: normalized });
 });
 
-// POST /api/admin/hosts/recalculate-levels — auto-recalculate all host levels using DB config
+// POST /api/admin/hosts/recalculate-levels — recalculate all host levels using
+// the configured ladder. Uses the SAME engine as the live path so promotions
+// also grant the one-time coin reward, write the audit history, and notify the
+// host (in-app + push + real-time). Promotion-only (never demotes).
 admin.post('/hosts/recalculate-levels', async (c) => {
-  const d = db(c);
-  const config = await getLevelConfig(d);
-  const sorted = [...config].sort((a, b) => b.level - a.level); // highest first
-  const stmts: D1PreparedStatement[] = [];
-  for (const lvl of sorted) {
-    if (lvl.level === 1) {
-      stmts.push(d.prepare("UPDATE hosts SET level = 1 WHERE level IS NULL OR level < 1"));
-    } else {
-      stmts.push(d.prepare(
-        `UPDATE hosts SET level = ? WHERE (level IS NULL OR level < ?) AND review_count >= ? AND rating >= ?`
-      ).bind(lvl.level, lvl.level, lvl.min_calls, lvl.min_rating));
-    }
-  }
-  await d.batch(stmts);
-  return c.json({ success: true, config });
+  const config = await getLevelConfig(db(c));
+  const result = await recalcAllHostLevels(c.env, 'admin');
+  return c.json({ success: true, config, ...result });
 });
 
 // GET /api/admin/withdrawals
