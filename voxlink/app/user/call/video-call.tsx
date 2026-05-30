@@ -234,6 +234,14 @@ export default function VideoCallScreen() {
     }
   }, [activeCall?.isCameraOn]);
 
+  // FIX (#1): apply the speaker/earpiece routing whenever the Speaker button
+  // toggles isSpeakerOn. webrtc.setSpeaker drives InCallManager on native; no-op on web.
+  useEffect(() => {
+    if (activeCall?.isSpeakerOn !== undefined) {
+      webrtc.setSpeaker(activeCall.isSpeakerOn);
+    }
+  }, [activeCall?.isSpeakerOn]);
+
   useEffect(() => {
     if (webrtc.error) {
       const isPermissionError =

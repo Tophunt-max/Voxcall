@@ -18,6 +18,7 @@ export interface UseWebRTCReturn {
   error: string | null;
   toggleMute: (muted: boolean) => void;
   toggleCamera: (enabled: boolean) => void;
+  setSpeaker: (on: boolean) => void;
   switchCamera: () => void;
   triggerPull: () => void;
   clearError: () => void;
@@ -92,6 +93,10 @@ export function useWebRTC(options: UseWebRTCOptions): UseWebRTCReturn {
 
   const toggleCamera = useCallback((cameraOn: boolean) => {
     serviceRef.current?.toggleCamera(cameraOn);
+  }, []);
+
+  const setSpeaker = useCallback((on: boolean) => {
+    serviceRef.current?.setSpeaker(on);
   }, []);
 
   const switchCamera = useCallback(() => {
@@ -196,6 +201,7 @@ export function useWebRTC(options: UseWebRTCOptions): UseWebRTCReturn {
     error,
     toggleMute,
     toggleCamera,
+    setSpeaker,
     switchCamera,
     triggerPull,
     clearError,

@@ -164,22 +164,24 @@ These two were identified during the calling-system audit. They are **not**
 quick code fixes — each needs either a new native dependency or a deliberate
 product decision, so they are documented here rather than patched blindly.
 
-### L1. Speaker / Earpiece button does not actually route audio
-- **Symptom:** Tapping *Speaker* toggles the icon but the audio output device
-  does not change.
-- **Cause:** There is no audio-routing code anywhere in the apps. The only
-  `Audio.setAudioModeAsync` call lives in `useRingtone.ts` (for ringtone
-  playback) and does **not** control the live WebRTC audio session.
-  `toggleSpeaker` in `CallContext` only flips a UI flag (`isSpeakerOn`).
-- **Web:** there is no earpiece concept and no API to switch output, so the
-  toggle is effectively a no-op (audio always plays through the active device).
-- **Native fix (requires a dependency + dev build):** add
-  `react-native-incall-manager` and call
-  `InCallManager.setForceSpeakerphoneOn(isSpeakerOn)` (and `start()/stop()` on
-  call begin/end). This needs an Expo config plugin and a new native build —
-  it cannot be hot-shipped to the existing web bundle.
-- **Interim option:** hide/disable the Speaker button on web so it is not
-  misleading.
+### L1. Speaker / Earpiece button does not actually route audio  ✅ FIXED (2026-05-30)
+- **Was:** Tapping *Speaker* toggled the icon but the audio output device did
+  not change — `toggleSpeaker` only flipped the `isSpeakerOn` UI flag and there
+  was no audio-routing code.
+- **Fix:** Added `react-native-incall-manager`. The WebRTC service now calls
+  `InCallManager.start({ media })` on call start, `setForceSpeakerphoneOn(on)`
+  via a new `setSpeaker()` method (exposed through `useWebRTC`), and
+  `InCallManager.stop()` on teardown. Each call screen drives `setSpeaker`
+  from an effect on `activeCall.isSpeakerOn`. Video calls default to the
+  loudspeaker, audio calls to the earpiece.
+- **Build note:** this is a native module. It autolinks via EAS prebuild
+  (like `@cloudflare/react-native-webrtc`) — a **new dev/preview build is
+  required** for it to take effect; it will not appear in the existing web
+  bundle. Added `android.permission.MODIFY_AUDIO_SETTINGS`; iOS already
+  declares the `audio`/`voip` background modes. On web there is no output-
+  switch API, so `setSpeaker` is a safe no-op (audio plays through the active
+  output). Loads behind a `Platform.OS !== 'web'` + try/catch guard, so the
+  app degrades gracefully if the native module is missing (pre-rebuild).
 
 ### L2. Turning the camera OFF does not release the camera hardware
 - **Symptom:** With camera toggled off, the device camera light/handle stays

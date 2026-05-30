@@ -38,6 +38,21 @@ try {
   RTC = null;
 }
 
+// FIX (#1 — speaker/earpiece audio routing): InCallManager actually routes the
+// live call audio between the loudspeaker and the earpiece. WebRTC alone has
+// no output-routing control, so previously the in-call Speaker button only
+// flipped a UI flag without changing where the audio played. Native-only
+// (Android/iOS); on web there is no programmatic output switch, so this stays
+// null and setSpeaker() becomes a harmless no-op.
+let InCallManager: any = null;
+try {
+  if (Platform.OS !== 'web') {
+    InCallManager = require('react-native-incall-manager').default;
+  }
+} catch {
+  InCallManager = null;
+}
+
 export function isWebRTCAvailable(): boolean {
   return RTC !== null && mediaDevicesRef !== null;
 }
@@ -291,6 +306,17 @@ export class WebRTCService {
       // constraints and, as a last resort on a video call, falls back to
       // audio-only so the call still connects.
       this.localStream = await this.acquireLocalStream();
+
+      // FIX (#1): initialise audio routing for this call. Video calls default
+      // to the loudspeaker, audio calls to the earpiece — matching the UI
+      // defaults (CallContext sets isSpeakerOn = type === 'video'). The in-call
+      // Speaker button then drives setSpeaker(). No-op on web.
+      try {
+        InCallManager?.start?.({ media: this.isVideo ? 'video' : 'audio' });
+        InCallManager?.setForceSpeakerphoneOn?.(this.isVideo);
+      } catch (e) {
+        console.warn('[WebRTC] InCallManager.start failed:', e);
+      }
 
       this.localStream.getTracks().forEach((track: any) => {
         this.pc?.addTrack(track, this.localStream);
@@ -592,6 +618,18 @@ export class WebRTCService {
     });
   }
 
+  // FIX (#1 — speaker routing): actually switch the call audio between the
+  // loudspeaker (on=true) and the earpiece (on=false) via InCallManager.
+  // Native-only; on web there is no output-switch API so this is a no-op and
+  // audio keeps playing through the device's active output.
+  setSpeaker(on: boolean): void {
+    try {
+      InCallManager?.setForceSpeakerphoneOn?.(on);
+    } catch (e) {
+      console.warn('[WebRTC] setSpeaker failed:', e);
+    }
+  }
+
   // FIX (camera re-enable): camera failed to come back ON if the call had no
   // live video track — e.g. acquireLocalStream() fell back to audio-only, or
   // the track ended. We now re-acquire a camera track and attach it to the
@@ -713,6 +751,9 @@ export class WebRTCService {
     this.destroyed = true;
     this.pullRunning = false;
     this._clearIceRestartTimer();
+
+    // FIX (#1): release the audio session / reset routing when the call ends.
+    try { InCallManager?.stop?.(); } catch {}
 
     if (this.pullTimer) {
       clearTimeout(this.pullTimer);

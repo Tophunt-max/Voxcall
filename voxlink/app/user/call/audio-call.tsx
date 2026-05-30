@@ -121,6 +121,14 @@ export default function AudioCallScreen() {
     }
   }, [activeCall?.isMuted]);
 
+  // FIX (#1): apply speaker/earpiece routing when the Speaker button toggles
+  // isSpeakerOn. Drives InCallManager on native; no-op on web.
+  useEffect(() => {
+    if (activeCall?.isSpeakerOn !== undefined) {
+      webrtc.setSpeaker(activeCall.isSpeakerOn);
+    }
+  }, [activeCall?.isSpeakerOn]);
+
   useEffect(() => {
     if (webrtc.error) {
       const isPermissionError =
