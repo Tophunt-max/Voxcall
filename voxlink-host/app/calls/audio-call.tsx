@@ -550,3 +550,8 @@ const styles = StyleSheet.create({
   },
 
 });
+
+
+// Per-screen error boundary — contains a mid-call render crash to this screen
+// (retry / go back) instead of blanking the whole app. See components/RouteErrorBoundary.
+export { ErrorBoundary } from "@/components/RouteErrorBoundary";

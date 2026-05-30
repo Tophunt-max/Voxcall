@@ -170,3 +170,8 @@ const styles = StyleSheet.create({
     fontFamily: "Poppins_600SemiBold",
   },
 });
+
+
+// Per-screen error boundary — contains a render crash to this screen
+// (retry / go back) instead of blanking the whole app. See components/RouteErrorBoundary.
+export { ErrorBoundary } from "@/components/RouteErrorBoundary";

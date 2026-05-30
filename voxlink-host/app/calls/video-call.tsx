@@ -1152,3 +1152,8 @@ const uiS = StyleSheet.create({
   },
   mutedBadgeText: { color: "#fff", fontSize: 10, fontFamily: "Poppins_700Bold", letterSpacing: 0.3 },
 });
+
+
+// Per-screen error boundary — contains a mid-call render crash to this screen
+// (retry / go back) instead of blanking the whole app. See components/RouteErrorBoundary.
+export { ErrorBoundary } from "@/components/RouteErrorBoundary";

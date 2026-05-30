@@ -130,3 +130,8 @@ const styles = StyleSheet.create({
   acceptBtn: { width: 72, height: 72, borderRadius: 36, backgroundColor: "#22C55E", alignItems: "center", justifyContent: "center" },
   actionLabel: { color: "rgba(255,255,255,0.7)", fontSize: 13, fontFamily: "Poppins_400Regular" },
 });
+
+
+// Per-screen error boundary — contains a render crash to this screen
+// (retry / go back) instead of blanking the whole app. See components/RouteErrorBoundary.
+export { ErrorBoundary } from "@/components/RouteErrorBoundary";

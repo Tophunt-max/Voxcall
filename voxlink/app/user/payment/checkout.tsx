@@ -844,3 +844,8 @@ const styles = StyleSheet.create({
   buyBtn: { paddingVertical: 16, borderRadius: 14, alignItems: "center" },
   buyBtnText: { color: "#fff", fontSize: 15, fontFamily: "Poppins_700Bold" },
 });
+
+
+// Per-screen error boundary — a render crash during checkout stays contained
+// (retry / go back) instead of blanking the whole app. See components/RouteErrorBoundary.
+export { ErrorBoundary } from "@/components/RouteErrorBoundary";

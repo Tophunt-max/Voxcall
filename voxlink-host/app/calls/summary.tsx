@@ -291,3 +291,8 @@ const s = StyleSheet.create({
   actionBtnIcon: { width: 18, height: 18 },
   actionBtnText: { color: "#fff", fontSize: 15, fontFamily: "Poppins_600SemiBold" },
 });
+
+
+// Per-screen error boundary — contains a render crash to this screen
+// (retry / go back) instead of blanking the whole app. See components/RouteErrorBoundary.
+export { ErrorBoundary } from "@/components/RouteErrorBoundary";

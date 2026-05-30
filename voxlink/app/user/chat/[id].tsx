@@ -167,3 +167,8 @@ const styles = StyleSheet.create({
   input: { fontSize: 14, fontFamily: "Poppins_400Regular", padding: 0 },
   sendBtn: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
 });
+
+
+// Per-screen error boundary — contains a render crash to this screen
+// (retry / go back) instead of blanking the whole app. See components/RouteErrorBoundary.
+export { ErrorBoundary } from "@/components/RouteErrorBoundary";

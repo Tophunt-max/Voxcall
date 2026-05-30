@@ -167,3 +167,8 @@ const s = StyleSheet.create({
   endIcon: { width: 30, height: 30, tintColor: "#fff" },
   endLabel: { color: "rgba(255,255,255,0.7)", fontSize: 13, fontFamily: "Poppins_400Regular" },
 });
+
+
+// Per-screen error boundary — contains a render crash to this screen
+// (retry / go back) instead of blanking the whole app. See components/RouteErrorBoundary.
+export { ErrorBoundary } from "@/components/RouteErrorBoundary";
