@@ -67,6 +67,11 @@ export default function AudioCallScreen() {
   const pulse = useRef(new Animated.Value(1)).current;
 
   const [webrtcReady, setWebrtcReady] = useState(false);
+  // FIX (repeated permission popup): one-shot guards — see video-call.tsx.
+  // permGateDoneRef stops the initial mic gate from re-firing; permRepromptedRef
+  // stops the WebRTC error handler from reopening the mic dialog in a loop.
+  const permGateDoneRef = useRef(false);
+  const permRepromptedRef = useRef(false);
   const webrtc = useWebRTC({
     sessionId: activeCall?.sessionId,
     isVideo: false,
@@ -86,9 +91,12 @@ export default function AudioCallScreen() {
   // mic dialog flashed open even when the OS had granted the permission.
   useEffect(() => {
     if (!loaded) return;
+    // FIX (repeated permission popup): run the initial mic gate only once.
+    if (permGateDoneRef.current) return;
     if (permissions.microphone.status !== "granted") {
       setShowMicDialog(true);
     } else {
+      permGateDoneRef.current = true;
       setWebrtcReady(true);
     }
   }, [loaded, permissions.microphone.status]);
@@ -119,10 +127,20 @@ export default function AudioCallScreen() {
         /permission/i.test(webrtc.error) ||
         /NotAllowed/i.test(webrtc.error) ||
         /not allowed/i.test(webrtc.error);
-      if (isPermissionError) {
+      // FIX (repeated permission popup): re-prompt ONLY when the OS still
+      // reports the mic as missing AND we haven't re-prompted already this
+      // call. Otherwise clear the error without reopening the dialog so a
+      // non-permission getUserMedia failure can't loop the popup.
+      const micMissing = permissions.microphone.status !== "granted";
+      if (isPermissionError && micMissing && !permRepromptedRef.current) {
+        permRepromptedRef.current = true;
         webrtc.clearError();
         setWebrtcReady(false);
         setShowMicDialog(true);
+        return;
+      }
+      if (isPermissionError) {
+        webrtc.clearError();
         return;
       }
       // FIX BUG-4: If the CF session expired or any fatal WebRTC error, auto-end the call
@@ -136,7 +154,7 @@ export default function AudioCallScreen() {
         endCall(false);
       }
     }
-  }, [webrtc.error, webrtc.clearError, webrtc.cleanup, endCall]);
+  }, [webrtc.error, webrtc.clearError, webrtc.cleanup, endCall, permissions.microphone.status]);
 
   useEffect(() => {
     const off = onEvent(SocketEvents.PEER_TRACKS_READY, () => {

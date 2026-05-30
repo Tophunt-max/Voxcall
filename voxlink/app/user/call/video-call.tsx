@@ -148,6 +148,18 @@ export default function VideoCallScreen() {
   const [permStep, setPermStep] = useState<PermStep | null>(null);
   const [webrtcReady, setWebrtcReady] = useState(false);
 
+  // FIX (repeated permission popup): two one-shot guards so we never re-open
+  // the permission dialog in a loop.
+  //   • permGateDoneRef — once permissions are satisfied and WebRTC is enabled,
+  //     the initial gate stops reacting to permission-state churn.
+  //   • permRepromptedRef — the WebRTC error handler may re-prompt for a
+  //     permission AT MOST ONCE, and only when the OS actually reports it as
+  //     missing. Without this, any getUserMedia failure whose message merely
+  //     contained "NotAllowed"/"permission" (camera busy, unreadable source,
+  //     transient web errors) re-opened the dialog forever.
+  const permGateDoneRef = useRef(false);
+  const permRepromptedRef = useRef(false);
+
   const { permissions, requestCamera, requestMicrophone, openSettings, loaded } = usePermissions();
   const { onEvent } = useSocket();
 
@@ -191,11 +203,16 @@ export default function VideoCallScreen() {
   // hook AND the manual checkAll() — eliminating the race.
   useEffect(() => {
     if (!loaded) return;
+    // FIX (repeated permission popup): only run the initial gate once. After
+    // permissions are granted (permGateDoneRef set), later permission-state
+    // updates must NOT reopen the dialog.
+    if (permGateDoneRef.current) return;
     if (permissions.camera.status !== "granted") {
       setPermStep("camera");
     } else if (permissions.microphone.status !== "granted") {
       setPermStep("microphone");
     } else {
+      permGateDoneRef.current = true;
       setPermStep("done");
       setWebrtcReady(true);
     }
@@ -223,10 +240,26 @@ export default function VideoCallScreen() {
         /permission/i.test(webrtc.error) ||
         /NotAllowed/i.test(webrtc.error) ||
         /not allowed/i.test(webrtc.error);
-      if (isPermissionError) {
+      // FIX (repeated permission popup): re-prompt ONLY when the OS still
+      // reports the permission as missing AND we haven't re-prompted already
+      // this call. A getUserMedia failure whose message merely contains
+      // "NotAllowed" (camera busy, unreadable source, transient web error)
+      // while the permission is in fact granted must NOT reopen the dialog —
+      // that was the endless "bar bar permission" loop.
+      const camMissing = permissions.camera.status !== "granted";
+      const micMissing = permissions.microphone.status !== "granted";
+      if (isPermissionError && (camMissing || micMissing) && !permRepromptedRef.current) {
+        permRepromptedRef.current = true;
         webrtc.clearError();
         setWebrtcReady(false);
-        setPermStep("microphone");
+        setPermStep(camMissing ? "camera" : "microphone");
+        return;
+      }
+      // Permission-style error but either the OS says we're granted (device
+      // busy / transient) or we've already re-prompted once — clear it WITHOUT
+      // reopening the dialog so we never loop.
+      if (isPermissionError) {
+        webrtc.clearError();
         return;
       }
       // FIX BUG-4: Fatal WebRTC/CF session error — auto-end call
@@ -239,7 +272,7 @@ export default function VideoCallScreen() {
         endCall(false);
       }
     }
-  }, [webrtc.error, webrtc.clearError, webrtc.cleanup, endCall]);
+  }, [webrtc.error, webrtc.clearError, webrtc.cleanup, endCall, permissions.camera.status, permissions.microphone.status]);
 
   useEffect(() => {
     const off = onEvent(SocketEvents.PEER_TRACKS_READY, () => {
