@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, Image,
-  ScrollView, Switch
+  ScrollView, Switch, RefreshControl
 } from "react-native";
 import { router } from "expo-router";
 import { useFocusEffect } from "expo-router";
@@ -10,12 +10,15 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { API, resolveMediaUrl } from "@/services/api";
+import type { HostLevelResponse } from "@/services/api";
 import { showErrorToast } from "@/components/Toast";
 import { useSocketEvent } from "@/context/SocketContext";
 import { SocketEvents } from "@/constants/events";
 import { usePermissions } from "@/hooks/usePermissions";
 import { PermissionDialog, PERMISSION_CONFIGS } from "@/components/PermissionDialog";
 import { SkeletonStatsCard } from "@/components/SkeletonCard";
+import LevelCard from "@/components/LevelCard";
+import RatesEditorSheet from "@/components/RatesEditorSheet";
 
 export default function HostHomeScreen() {
   const colors = useColors();
@@ -34,6 +37,8 @@ export default function HostHomeScreen() {
 
   // FIX: Double-tap debounce for online toggle
   const [togglingOnline, setTogglingOnline] = useState(false);
+  const [ratesSheetOpen, setRatesSheetOpen] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const [permDialog, setPermDialog] = useState<"microphone" | "camera" | "notifications" | null>(null);
   const topPad = insets.top;
@@ -49,6 +54,25 @@ export default function HostHomeScreen() {
     staleTime: 2 * 60_000,
     retry: 2,
   });
+
+  // Level system — current level + progress towards the next rung
+  const { data: levelData, isLoading: levelLoading } = useQuery<HostLevelResponse>({
+    queryKey: ['host-level'],
+    queryFn: () => API.getHostLevel(),
+    staleTime: 2 * 60_000,
+    retry: 2,
+  });
+
+  // Host profile — used for the live per-minute call rates (coin edit system)
+  const { data: hostMe } = useQuery({
+    queryKey: ['host-me'],
+    queryFn: () => API.getHostMe(),
+    staleTime: 2 * 60_000,
+    retry: 1,
+  });
+
+  const audioRate = Number(hostMe?.audio_coins_per_minute ?? hostMe?.coins_per_minute ?? 5);
+  const videoRate = Number(hostMe?.video_coins_per_minute ?? (Number(hostMe?.coins_per_minute ?? 5) + 5));
 
   // FIX: Unread notification count for bell badge
   const { data: unreadCount = 0 } = useQuery({
@@ -84,12 +108,28 @@ export default function HostHomeScreen() {
   // FIX: refetchQueries — actual data fetch hoga, sirf stale mark nahi
   useFocusEffect(useCallback(() => {
     queryClient.refetchQueries({ queryKey: ['host-earnings'] });
+    queryClient.refetchQueries({ queryKey: ['host-level'] });
   }, [queryClient]));
 
-  // Call khatam hone par coin event — earnings refresh
+  // Call khatam hone par coin event — earnings + level refresh
   useSocketEvent(SocketEvents.COIN_DEDUCTED, () => {
     queryClient.refetchQueries({ queryKey: ['host-earnings'] });
+    queryClient.refetchQueries({ queryKey: ['host-level'] });
     queryClient.invalidateQueries({ queryKey: ['host-notif-unread'] });
+  }, [queryClient]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([
+        queryClient.refetchQueries({ queryKey: ['host-earnings'] }),
+        queryClient.refetchQueries({ queryKey: ['host-level'] }),
+        queryClient.refetchQueries({ queryKey: ['host-me'] }),
+        queryClient.refetchQueries({ queryKey: ['host-notif-unread'] }),
+      ]);
+    } finally {
+      setRefreshing(false);
+    }
   }, [queryClient]);
 
   // FIX: Online toggle with debounce — double-tap race condition fix
@@ -127,6 +167,9 @@ export default function HostHomeScreen() {
       style={{ flex: 1, backgroundColor: colors.background }}
       contentContainerStyle={{ paddingBottom: 100 }}
       showsVerticalScrollIndicator={false}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} colors={[colors.accent]} />
+      }
     >
       {/* Header */}
       <View style={[styles.header, { paddingTop: topPad + 12 }]}>
@@ -146,10 +189,10 @@ export default function HostHomeScreen() {
           </View>
         </View>
         <View style={styles.headerRight}>
-          <View style={[styles.coinBadge, { backgroundColor: colors.primary }]}>
+          <TouchableOpacity onPress={() => router.push("/(tabs)/wallet")} activeOpacity={0.8} style={[styles.coinBadge, { backgroundColor: colors.primary }]}>
             <Image source={require("@/assets/icons/ic_coin.png")} style={styles.coinIcon} resizeMode="contain" />
             <Text style={styles.coinText}>{user?.coins ?? 0}</Text>
-          </View>
+          </TouchableOpacity>
           <TouchableOpacity onPress={() => router.push("/notifications")} style={[styles.bellBtn, { backgroundColor: colors.surface }]}>
             <Image source={require("@/assets/icons/ic_notify.png")} style={styles.bellIcon} tintColor={colors.text} resizeMode="contain" />
             {(unreadCount as number) > 0 && (
@@ -179,6 +222,13 @@ export default function HostHomeScreen() {
         />
       </View>
 
+      {/* Level system card — current level + progress to next */}
+      <LevelCard
+        data={levelData}
+        loading={levelLoading}
+        onPress={() => router.push("/call-rates")}
+      />
+
       {/* Stats — OPTIMIZATION #8: skeleton while earnings are loading */}
       {earningsLoading ? (
         <SkeletonStatsCard />
@@ -200,6 +250,39 @@ export default function HostHomeScreen() {
         </View>
       )}
 
+      {/* Coin & Rates card — host "coin edit system" inline on the dashboard */}
+      <View style={[styles.ratesCard, { backgroundColor: colors.card, marginHorizontal: 16 }]}>
+        <View style={styles.ratesHeader}>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.ratesTitle, { color: colors.text }]}>Your Call Rates</Text>
+            <Text style={[styles.ratesSub, { color: colors.mutedForeground }]}>Coins users pay you per minute</Text>
+          </View>
+          <TouchableOpacity
+            onPress={() => setRatesSheetOpen(true)}
+            activeOpacity={0.85}
+            style={[styles.editBtn, { backgroundColor: colors.accentLight, borderColor: colors.accentBorder }]}
+          >
+            <Text style={[styles.editBtnText, { color: colors.accent }]}>Edit</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={styles.ratesRow}>
+          <View style={[styles.rateItem, { backgroundColor: colors.surface }]}>
+            <Text style={styles.rateEmoji}>🎙️</Text>
+            <View>
+              <Text style={[styles.rateValue, { color: colors.text }]}>{audioRate}</Text>
+              <Text style={[styles.rateUnit, { color: colors.mutedForeground }]}>Audio / min</Text>
+            </View>
+          </View>
+          <View style={[styles.rateItem, { backgroundColor: colors.surface }]}>
+            <Text style={styles.rateEmoji}>📹</Text>
+            <View>
+              <Text style={[styles.rateValue, { color: colors.text }]}>{videoRate}</Text>
+              <Text style={[styles.rateUnit, { color: colors.mutedForeground }]}>Video / min</Text>
+            </View>
+          </View>
+        </View>
+      </View>
+
       {/* Quick Actions — host self-service tools */}
       <View style={styles.quickSection}>
         <Text style={[styles.quickTitle, { color: colors.text }]}>Manage</Text>
@@ -209,8 +292,11 @@ export default function HostHomeScreen() {
             { icon: "🏷️", label: "My Topics", desc: "Reach more users", onPress: () => router.push("/manage-topics") },
             { icon: "📈", label: "Earnings", desc: "View history", onPress: () => router.push("/earnings-history") },
             { icon: "🏦", label: "Payouts", desc: "Withdraw coins", onPress: () => router.push("/payout-method") },
-            { icon: "🎁", label: "Refer & Earn", desc: "Invite friends", onPress: () => router.push("/referral") },
+            { icon: "💼", label: "Wallet", desc: "Balance & withdraw", onPress: () => router.push("/(tabs)/wallet") },
             { icon: "📞", label: "Call History", desc: "Past calls", onPress: () => router.push("/calls/history") },
+            { icon: "🎁", label: "Refer & Earn", desc: "Invite friends", onPress: () => router.push("/referral") },
+            { icon: "👤", label: "Profile", desc: "Edit details", onPress: () => router.push("/(tabs)/profile") },
+            { icon: "⚙️", label: "Settings", desc: "App preferences", onPress: () => router.push("/settings") },
           ] as const).map((q) => (
             <TouchableOpacity
               key={q.label}
@@ -321,6 +407,17 @@ export default function HostHomeScreen() {
         ))}
       </View>
 
+      {/* Coin edit system — rates editor bottom sheet */}
+      <RatesEditorSheet
+        visible={ratesSheetOpen}
+        onClose={() => setRatesSheetOpen(false)}
+        initialAudio={audioRate}
+        initialVideo={videoRate}
+        onSaved={() => {
+          queryClient.invalidateQueries({ queryKey: ['host-me'] });
+        }}
+      />
+
     </ScrollView>
   );
 }
@@ -355,6 +452,17 @@ const styles = StyleSheet.create({
   statValue: { fontSize: 20, fontFamily: "Poppins_700Bold" },
   statLabel: { fontSize: 11, fontFamily: "Poppins_400Regular" },
   statDiv: { width: 1, height: 40 },
+  ratesCard: { borderRadius: 16, padding: 16, marginBottom: 16, gap: 14 },
+  ratesHeader: { flexDirection: "row", alignItems: "center" },
+  ratesTitle: { fontSize: 15, fontFamily: "Poppins_700Bold" },
+  ratesSub: { fontSize: 12, fontFamily: "Poppins_400Regular", marginTop: 2 },
+  editBtn: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 12, borderWidth: 1 },
+  editBtnText: { fontSize: 13, fontFamily: "Poppins_600SemiBold" },
+  ratesRow: { flexDirection: "row", gap: 12 },
+  rateItem: { flex: 1, borderRadius: 12, padding: 12, flexDirection: "row", alignItems: "center", gap: 10 },
+  rateEmoji: { fontSize: 22 },
+  rateValue: { fontSize: 18, fontFamily: "Poppins_700Bold" },
+  rateUnit: { fontSize: 11, fontFamily: "Poppins_400Regular", marginTop: -2 },
   promoImg: { width: "100%", height: 160, marginBottom: 16 },
   quickSection: { paddingHorizontal: 16, marginBottom: 16 },
   quickTitle: { fontSize: 16, fontFamily: "Poppins_700Bold", marginBottom: 12 },

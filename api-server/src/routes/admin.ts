@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { authMiddleware, adminMiddleware } from '../middleware/auth';
 import { sendFCMPush, getFCMTokens } from '../lib/fcm';
+import { getLevelConfig, normalizeLevelConfig } from '../lib/levels';
 import type { Env, JWTPayload } from '../types';
 
 const admin = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
@@ -165,24 +166,8 @@ admin.post('/hosts/:id/level', async (c) => {
   return c.json({ success: true, level: lvl });
 });
 
-// DEFAULT level config (fallback if not set in DB)
-const DEFAULT_LEVEL_CONFIG = [
-  { level: 1, name: 'Newcomer', badge: '🌱', color: '#6B7280', min_calls: 0,    min_rating: 0.0, coin_reward: 0,    description: 'New to the platform' },
-  { level: 2, name: 'Rising',   badge: '⭐', color: '#F59E0B', min_calls: 50,   min_rating: 4.0, coin_reward: 100,  description: 'Getting established' },
-  { level: 3, name: 'Expert',   badge: '🔥', color: '#EF4444', min_calls: 200,  min_rating: 4.3, coin_reward: 300,  description: 'Proven expertise' },
-  { level: 4, name: 'Pro',      badge: '💎', color: '#8B5CF6', min_calls: 500,  min_rating: 4.6, coin_reward: 500,  description: 'Professional tier' },
-  { level: 5, name: 'Elite',    badge: '👑', color: '#D97706', min_calls: 1000, min_rating: 4.8, coin_reward: 1000, description: 'Top performer' },
-];
-
-async function getLevelConfig(d: D1Database): Promise<typeof DEFAULT_LEVEL_CONFIG> {
-  try {
-    const row = await d.prepare("SELECT value FROM app_settings WHERE key = 'level_config'").first<any>();
-    if (row?.value) return JSON.parse(row.value);
-  } catch (err) {
-    console.error('[getLevelConfig] Error fetching or parsing level_config:', err);
-  }
-  return DEFAULT_LEVEL_CONFIG;
-}
+// DEFAULT level config + getLevelConfig live in ../lib/levels (single source of
+// truth, shared with the host-facing /api/host/level endpoint).
 
 // GET /api/admin/level-config
 admin.get('/level-config', async (c) => {
@@ -192,18 +177,9 @@ admin.get('/level-config', async (c) => {
 
 // PUT /api/admin/level-config
 admin.put('/level-config', async (c) => {
-  const body = await c.req.json<typeof DEFAULT_LEVEL_CONFIG>();
+  const body = await c.req.json<unknown>();
   if (!Array.isArray(body) || body.length !== 5) return c.json({ error: 'Invalid config: must be array of 5 levels' }, 400);
-  const normalized = body.map((l, i) => ({
-    level: i + 1,
-    name: String(l.name || DEFAULT_LEVEL_CONFIG[i].name),
-    badge: String(l.badge || DEFAULT_LEVEL_CONFIG[i].badge),
-    color: String(l.color || DEFAULT_LEVEL_CONFIG[i].color),
-    min_calls: Math.max(0, parseInt(String(l.min_calls)) || 0),
-    min_rating: Math.min(5, Math.max(0, parseFloat(String(l.min_rating)) || 0)),
-    coin_reward: Math.max(0, parseInt(String(l.coin_reward)) || 0),
-    description: String(l.description || ''),
-  }));
+  const normalized = normalizeLevelConfig(body);
   await db(c).prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('level_config', ?, unixepoch())")
     .bind(JSON.stringify(normalized)).run();
   return c.json({ success: true, config: normalized });

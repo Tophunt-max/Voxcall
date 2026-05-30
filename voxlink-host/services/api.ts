@@ -96,6 +96,38 @@ export async function apiRequest<T>(
   return res.json() as Promise<T>;
 }
 
+// ─── Host level system types ───────────────────────────────────────────────
+export interface HostLevelDef {
+  level: number;
+  name: string;
+  badge: string;
+  color: string;
+  min_calls: number;
+  min_rating: number;
+  coin_reward: number;
+  description: string;
+}
+
+export interface HostLevelResponse {
+  level: number;
+  current: HostLevelDef;
+  next: HostLevelDef | null;
+  is_max_level: boolean;
+  progress_pct: number;
+  requirements: {
+    calls: { current: number; required: number; pct: number; met: boolean };
+    rating: { current: number; required: number; pct: number; met: boolean };
+  };
+  levels: HostLevelDef[];
+  stats: {
+    total_calls: number;
+    total_minutes: number;
+    total_earnings: number;
+    rating: number;
+    review_count: number;
+  };
+}
+
 export const API = {
   // Auth
   login: (email: string, password: string) =>
@@ -178,6 +210,10 @@ export const API = {
   getHostMe: () => apiRequest<any>('GET', '/api/host/me'),
   setHostOnline: (online: boolean) => apiRequest('PATCH', '/api/host/status', { is_online: online }),
   getEarnings: () => apiRequest<any>('GET', '/api/host/earnings'),
+  // Host level + progress towards the next level (drives the dashboard Level card).
+  // Returns the configurable ladder, current/next level info, progress %, and
+  // per-requirement breakdown (calls + rating) plus aggregate stats.
+  getHostLevel: () => apiRequest<HostLevelResponse>('GET', '/api/host/level'),
 
   // Coins
   getCoinPlans: () => apiRequest<any[]>('GET', '/api/coins/plans'),

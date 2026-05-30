@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth';
+import { getLevelConfig, computeLevelProgress } from '../lib/levels';
 import type { Env, JWTPayload } from '../types';
 
 const host = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
@@ -339,6 +340,44 @@ hostProtected.get('/earnings', async (c) => {
     'SELECT * FROM withdrawal_requests WHERE host_id = ? ORDER BY created_at DESC LIMIT 20'
   ).bind(h.id).all();
   return c.json({ host: h, transactions: txs.results, withdrawals: withdrawals.results });
+});
+
+// GET /api/host/level — host's own level + progress towards the next level.
+// Powers the Level card on the host dashboard. Uses the SAME admin-configured
+// ladder (app_settings.level_config) and the SAME metric the recalculation job
+// uses (review_count vs min_calls, rating vs min_rating) so the progress bar
+// accurately predicts when the host will be promoted.
+hostProtected.get('/level', async (c) => {
+  const { sub } = c.get('user');
+  const h = await c.env.DB.prepare(
+    `SELECT h.id, h.level, h.rating, h.review_count, h.total_minutes, h.total_earnings,
+            COUNT(cs.id) AS total_calls
+     FROM hosts h
+     LEFT JOIN call_sessions cs ON cs.host_id = h.id AND cs.status = 'ended'
+     WHERE h.user_id = ?
+     GROUP BY h.id`
+  ).bind(sub).first<any>();
+  if (!h) return c.json({ error: 'Not a host' }, 403);
+
+  const config = await getLevelConfig(c.env.DB);
+  const progress = computeLevelProgress(
+    { review_count: Number(h.review_count) || 0, rating: Number(h.rating) || 0 },
+    config,
+    h.level,
+  );
+
+  return c.json({
+    ...progress,
+    // Full ladder so the client can render every rung if it wants to.
+    levels: config,
+    stats: {
+      total_calls: Number(h.total_calls) || 0,
+      total_minutes: Number(h.total_minutes) || 0,
+      total_earnings: Number(h.total_earnings) || 0,
+      rating: Number(h.rating) || 0,
+      review_count: Number(h.review_count) || 0,
+    },
+  });
 });
 
 // GET /api/host/me — host profile for current user
