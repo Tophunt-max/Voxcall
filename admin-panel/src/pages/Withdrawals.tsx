@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
 import { Wallet, CheckCircle, XCircle, DollarSign, Coins } from 'lucide-react';
 import { StatCard } from '@/components/ui/StatCard';
+import { formatCoins, formatInr, sumBy, formatUnixDate } from '@/lib/format';
 
 export default function Withdrawals() {
   const [items, setItems] = useState<any[]>([]);
@@ -38,7 +39,7 @@ export default function Withdrawals() {
   };
 
   const pending = items.filter(i => i.status === 'pending');
-  const totalCoins = items.filter(i => i.status === 'paid').reduce((s, i) => s + (i.coins || 0), 0);
+  const totalCoins = sumBy(items.filter(i => i.status === 'paid'), 'coins');
 
   const cols = [
     { key: 'host', header: 'Host',
@@ -53,9 +54,9 @@ export default function Withdrawals() {
       render: (w: any) => (
         <div>
           <div className="flex items-center gap-1 font-semibold text-amber-600 text-sm">
-            <Coins size={13} />{(w.coins || 0).toLocaleString()}
+            <Coins size={13} />{formatCoins(w.coins)}
           </div>
-          <p className="text-xs text-muted-foreground">₹{(w.amount || 0).toFixed(2)} INR</p>
+          <p className="text-xs text-muted-foreground">{formatInr(w.amount)} INR</p>
         </div>
       )
     },
@@ -63,7 +64,7 @@ export default function Withdrawals() {
       render: (w: any) => <span className="capitalize text-sm">{w.payment_method || '—'}</span>
     },
     { key: 'date', header: 'Date', className: 'hidden lg:table-cell',
-      render: (w: any) => <span className="text-xs text-muted-foreground">{w.created_at ? new Date(w.created_at * 1000).toLocaleDateString() : '—'}</span>
+      render: (w: any) => <span className="text-xs text-muted-foreground">{formatUnixDate(w.created_at)}</span>
     },
     { key: 'status', header: 'Status',
       render: (w: any) => <Badge variant={w.status}>{w.status}</Badge>
@@ -96,7 +97,7 @@ export default function Withdrawals() {
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <StatCard icon={Wallet} label="Pending Requests" value={pending.length} gradient="gradient-orange" />
-        <StatCard icon={Coins} label="Total Paid (Coins)" value={totalCoins.toLocaleString()} gradient="gradient-green" />
+        <StatCard icon={Coins} label="Total Paid (Coins)" value={formatCoins(totalCoins)} gradient="gradient-green" />
         <StatCard icon={DollarSign} label="Total Requests" value={items.length} gradient="gradient-purple" />
       </div>
 
@@ -113,8 +114,8 @@ export default function Withdrawals() {
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Amount</span>
                 <div className="text-right">
-                  <p className="font-bold text-amber-600">{(selected.coins || 0).toLocaleString()} coins</p>
-                  <p className="text-xs text-muted-foreground">₹{(selected.amount || 0).toFixed(2)} INR</p>
+                  <p className="font-bold text-amber-600">{formatCoins(selected.coins)} coins</p>
+                  <p className="text-xs text-muted-foreground">{formatInr(selected.amount)} INR</p>
                 </div>
               </div>
               <div className="flex justify-between text-sm">

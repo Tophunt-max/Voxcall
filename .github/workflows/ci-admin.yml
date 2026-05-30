@@ -1,0 +1,50 @@
+name: CI — Admin Panel
+
+# Quality gate for the admin panel: typecheck + unit tests (money/format
+# helpers). Runs on every push to main and on PRs touching the admin panel.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'admin-panel/**'
+      - 'lib/**'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - '.github/workflows/ci-admin.yml'
+  pull_request:
+    paths:
+      - 'admin-panel/**'
+      - 'lib/**'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - '.github/workflows/ci-admin.yml'
+  workflow_dispatch:
+
+jobs:
+  quality:
+    name: Typecheck · Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        # Version comes from `packageManager` in root package.json.
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --filter @workspace/admin-panel...
+
+      - name: Typecheck
+        run: pnpm --filter @workspace/admin-panel run typecheck
+
+      - name: Test
+        run: pnpm --filter @workspace/admin-panel run test

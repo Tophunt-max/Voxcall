@@ -4,6 +4,7 @@ import { Table } from '@/components/ui/Table';
 import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
 import { StatCard } from '@/components/ui/StatCard';
+import { formatCoins, formatAmount, formatInr, sumBy, formatUnixDate } from '@/lib/format';
 import { Search, Download, Coins, CheckCircle, Clock, XCircle, IndianRupee, Wallet, DollarSign, RefreshCw } from 'lucide-react';
 
 function HostAvatar({ name }: { name: string }) {
@@ -66,9 +67,9 @@ export default function PayoutManagement() {
   const statusIcon = (s: string) => s === 'paid' ? <CheckCircle size={14} className="text-green-500" /> : s === 'approved' ? <Clock size={14} className="text-blue-500" /> : s === 'pending' ? <Clock size={14} className="text-amber-500" /> : <XCircle size={14} className="text-red-500" />;
 
   const pending = rows.filter(r => r.status === 'pending');
-  const totalPending = pending.reduce((a, r) => a + (r.inr_amount || 0), 0);
-  const totalPaid = rows.filter(r => r.status === 'paid').reduce((a, r) => a + (r.inr_amount || 0), 0);
-  const totalApproved = rows.filter(r => r.status === 'approved').reduce((a, r) => a + (r.inr_amount || 0), 0);
+  const totalPending = sumBy(pending, 'inr_amount');
+  const totalPaid = sumBy(rows.filter(r => r.status === 'paid'), 'inr_amount');
+  const totalApproved = sumBy(rows.filter(r => r.status === 'approved'), 'inr_amount');
 
   const cols = [
     {
@@ -87,15 +88,15 @@ export default function PayoutManagement() {
       key: 'amount', header: 'Amount',
       render: (r: any) => (
         <div>
-          <div className="flex items-center gap-1 font-bold text-sm text-violet-600"><Coins size={13} />{(r.coins_earned || 0).toLocaleString()}</div>
-          <div className="flex items-center gap-0.5 text-xs text-muted-foreground"><DollarSign size={10} />{(r.inr_amount || 0).toFixed(2)}</div>
+          <div className="flex items-center gap-1 font-bold text-sm text-violet-600"><Coins size={13} />{formatCoins(r.coins_earned)}</div>
+          <div className="flex items-center gap-0.5 text-xs text-muted-foreground"><DollarSign size={10} />{formatAmount(r.inr_amount)}</div>
         </div>
       )
     },
     { key: 'period', header: 'Period', render: (r: any) => <span className="text-sm">{r.period || '—'}</span> },
     { key: 'bank', header: 'Payment Method', className: 'hidden lg:table-cell', render: (r: any) => <span className="text-xs text-muted-foreground capitalize">{r.bank || '—'}</span> },
     { key: 'date', header: 'Date', className: 'hidden md:table-cell',
-      render: (r: any) => <span className="text-xs text-muted-foreground">{r.requested_at ? new Date(r.requested_at * 1000).toLocaleDateString() : '—'}</span>
+      render: (r: any) => <span className="text-xs text-muted-foreground">{formatUnixDate(r.requested_at)}</span>
     },
     {
       key: 'status', header: 'Status',
@@ -125,9 +126,9 @@ export default function PayoutManagement() {
       {toast && <div className="fixed bottom-5 right-5 z-50 bg-foreground text-background text-sm px-4 py-2.5 rounded-xl shadow-xl">{toast}</div>}
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <StatCard icon={Clock} label="Pending Payouts" value={`₹${totalPending.toFixed(2)}`} gradient="gradient-orange" />
-        <StatCard icon={CheckCircle} label="Approved" value={`₹${totalApproved.toFixed(2)}`} gradient="gradient-blue" />
-        <StatCard icon={Wallet} label="Total Paid" value={`₹${totalPaid.toFixed(2)}`} gradient="gradient-green" />
+        <StatCard icon={Clock} label="Pending Payouts" value={formatInr(totalPending)} gradient="gradient-orange" />
+        <StatCard icon={CheckCircle} label="Approved" value={formatInr(totalApproved)} gradient="gradient-blue" />
+        <StatCard icon={Wallet} label="Total Paid" value={formatInr(totalPaid)} gradient="gradient-green" />
         <StatCard icon={IndianRupee} label="Total Requests" value={rows.length} gradient="gradient-purple" />
       </div>
 
@@ -176,11 +177,11 @@ export default function PayoutManagement() {
             <div className="grid grid-cols-2 gap-3 text-sm">
               <div className="p-3 bg-violet-50 rounded-xl">
                 <p className="text-xs text-muted-foreground">Coins Earned</p>
-                <p className="font-bold text-violet-600 mt-0.5">{(selected.coins_earned || 0).toLocaleString()}</p>
+                <p className="font-bold text-violet-600 mt-0.5">{formatCoins(selected.coins_earned)}</p>
               </div>
               <div className="p-3 bg-green-50 rounded-xl">
                 <p className="text-xs text-muted-foreground">Amount</p>
-                <p className="font-bold text-green-600 mt-0.5">₹{(selected.inr_amount || 0).toFixed(2)}</p>
+                <p className="font-bold text-green-600 mt-0.5">{formatInr(selected.inr_amount)}</p>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3 text-sm">
