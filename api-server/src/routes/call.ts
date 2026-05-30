@@ -6,6 +6,7 @@ import { createCFCalls, CFCallsTrack } from '../lib/cf-calls';
 import { sendFCMPush } from '../lib/fcm';
 import { getLevelConfig, getEarningShare } from '../lib/levels';
 import { applyLevelUp } from '../lib/levelService';
+import { billedMinutes, coinsForCall, hostShareOf, atomicCallTransfer } from '../lib/billing';
 import type { Env, JWTPayload, HostRow, CallSessionRow, CallerData, HostData } from '../types';
 
 const call = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
@@ -291,8 +292,8 @@ call.post('/end', async (c) => {
 
     // Use server-calculated duration as primary; fall back to client-provided only when started_at unavailable
     const durationSec = session.started_at ? now - session.started_at : (duration_seconds ?? 0);
-    // Only apply 1-minute minimum when the call actually had some duration
-    const durationMin = durationSec > 0 ? Math.max(1, Math.ceil(durationSec / 60)) : 0;
+    // Whole minutes billed for this call (any started minute rounds up).
+    const durationMin = billedMinutes(durationSec);
 
     // BUG #1 FIX: Fixed incomplete query
     const hostRow = await db.prepare('SELECT coins_per_minute, audio_coins_per_minute, video_coins_per_minute, user_id, total_minutes, total_earnings, level FROM hosts WHERE id = ?').bind(session.host_id).first<HostRow>();
@@ -307,48 +308,28 @@ call.post('/end', async (c) => {
       ?? (session.type === 'video'
         ? (hostRow.video_coins_per_minute ?? hostRow.coins_per_minute ?? 5)
         : (hostRow.audio_coins_per_minute ?? hostRow.coins_per_minute ?? 5));
-    const coinsCharged = (session.status === 'active' && durationSec > 0)
-      ? durationMin * effectiveRate
-      : 0;
+    const coinsCharged = coinsForCall({ status: session.status, durationSec, ratePerMinute: effectiveRate });
     // Level-based earning share — higher-level hosts keep a larger cut.
     // Defaults to the historical 70% (level 1) so low-level hosts are unaffected.
     const levelCfg = await getLevelConfig(c.env.DB);
-    const hostShare = Math.floor(coinsCharged * getEarningShare(hostRow.level ?? 1, levelCfg));
+    const hostShare = hostShareOf(coinsCharged, getEarningShare(hostRow.level ?? 1, levelCfg));
 
-    // ──────────────────────────────────────────────────────────────────────────────
-    // CRITICAL FIX: Atomic coin transfer using a SINGLE UPDATE statement.
-    //
-    // Previous design used a multi-statement batch with a conditional WHERE
-    // (`coins >= ?`) on the deduction. If the caller had insufficient coins, the
-    // deduction "succeeded" with 0 changes (SQL doesn't error on unmatched WHERE)
-    // but the unconditional host credit still applied → free coins for the host.
-    // The "manual reversal" fallback was non-atomic — a Worker crash between the
-    // batch and the reversal would permanently inflate the money supply.
-    //
-    // New design: a single UPDATE with a CASE expression and an EXISTS guard.
-    //   - If caller has >= amount coins  →  EXISTS true  →  both rows update
-    //                                       (caller -= amount, host += share)
-    //   - If caller has < amount coins   →  EXISTS false →  WHERE excludes ALL
-    //                                       rows → ZERO money moves.
-    // Atomic at the SQL engine level. No partial state possible.
-    // ──────────────────────────────────────────────────────────────────────────────
+    // Atomic caller→host coin transfer (single UPDATE, EXISTS-guarded).
+    // See lib/billing.ts → atomicCallTransfer for the full rationale (why a
+    // single CASE+EXISTS statement is the only crash-safe way to do this).
     let actualCoinsCharged = 0;
     let actualHostShare = 0;
     if (coinsCharged > 0 && hostRow?.user_id) {
-      const transfer = await db.prepare(
-        `UPDATE users
-           SET coins = coins + CASE id
-             WHEN ?1 THEN -?2
-             WHEN ?3 THEN ?4
-             ELSE 0
-           END
-           WHERE id IN (?1, ?3)
-             AND EXISTS (SELECT 1 FROM users WHERE id = ?1 AND coins >= ?2)`
-      ).bind(session.caller_id, coinsCharged, hostRow.user_id, hostShare).run();
+      const ok = await atomicCallTransfer(db, {
+        callerId: session.caller_id,
+        hostUserId: hostRow.user_id,
+        coinsCharged,
+        hostShare,
+      });
 
-      // changes === 2 → both caller and host rows updated (success).
-      // changes === 0 → caller had insufficient coins; nothing moved.
-      if (transfer.meta?.changes === 2) {
+      // ok === true → both caller and host rows updated (success).
+      // ok === false → caller had insufficient coins; nothing moved.
+      if (ok) {
         actualCoinsCharged = coinsCharged;
         actualHostShare = hostShare;
       } else {
@@ -833,8 +814,8 @@ call.post('/:id/end', async (c) => {
     }
 
     const durationSec = session.started_at ? now - session.started_at : 0;
-    // Only apply 1-minute minimum when the call actually had some duration
-    const durationMin = durationSec > 0 ? Math.max(1, Math.ceil(durationSec / 60)) : 0;
+    // Whole minutes billed for this call (any started minute rounds up).
+    const durationMin = billedMinutes(durationSec);
     
     // BUG #1 FIX: Fixed incomplete query
     const hostRow = await db.prepare('SELECT coins_per_minute, audio_coins_per_minute, video_coins_per_minute, user_id, total_minutes, total_earnings, level FROM hosts WHERE id = ?').bind(session.host_id).first<HostRow>();
@@ -849,29 +830,25 @@ call.post('/:id/end', async (c) => {
       ? (hostRow.video_coins_per_minute ?? hostRow.coins_per_minute ?? 5)
       : (hostRow.audio_coins_per_minute ?? hostRow.coins_per_minute ?? 5));
     // Only charge if call was active AND had non-zero duration
-    const coinsCharged = (session.status === 'active' && durationSec > 0) ? durationMin * effectiveRate : 0;
+    const coinsCharged = coinsForCall({ status: session.status, durationSec, ratePerMinute: effectiveRate });
     // Level-based earning share — higher-level hosts keep a larger cut.
     // Defaults to the historical 70% (level 1) so low-level hosts are unaffected.
     const levelCfg = await getLevelConfig(c.env.DB);
-    const hostShare = Math.floor(coinsCharged * getEarningShare(hostRow.level ?? 1, levelCfg));
+    const hostShare = hostShareOf(coinsCharged, getEarningShare(hostRow.level ?? 1, levelCfg));
 
     // BUG #2 FIX: Use atomic coin transfer instead of non-atomic batch
     let actualCoinsCharged = 0;
     let actualHostShare = 0;
 
     if (coinsCharged > 0 && hostRow?.user_id) {
-      const transfer = await db.prepare(
-        `UPDATE users
-           SET coins = coins + CASE id
-             WHEN ?1 THEN -?2
-             WHEN ?3 THEN ?4
-             ELSE 0
-           END
-           WHERE id IN (?1, ?3)
-             AND EXISTS (SELECT 1 FROM users WHERE id = ?1 AND coins >= ?2)`
-      ).bind(session.caller_id, coinsCharged, hostRow.user_id, hostShare).run();
+      const ok = await atomicCallTransfer(db, {
+        callerId: session.caller_id,
+        hostUserId: hostRow.user_id,
+        coinsCharged,
+        hostShare,
+      });
 
-      if (transfer.meta?.changes === 2) {
+      if (ok) {
         actualCoinsCharged = coinsCharged;
         actualHostShare = hostShare;
       } else {

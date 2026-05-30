@@ -5,6 +5,14 @@ compatibility_flags = ["nodejs_compat"]
 
 account_id = "b592b3b2a5455323a76de721a92699cd"
 
+# Workers Logs — capture console.* output, exceptions, and request metadata so
+# production failures (billing errors, webhook rejections, cron faults) are
+# searchable in the dashboard and via `wrangler tail`. head_sampling_rate = 1
+# keeps 100% of logs; lower it if volume/cost becomes a concern at scale.
+[observability]
+enabled = true
+head_sampling_rate = 1
+
 [[d1_databases]]
 binding = "DB"
 database_name = "voxlink-db"

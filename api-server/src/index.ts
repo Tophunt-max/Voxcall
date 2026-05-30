@@ -24,6 +24,7 @@ import { NotificationHub } from './durable-objects/NotificationHub';
 import { ensureUsersSchema } from './lib/schemaGuard';
 import { getLevelConfig, getEarningShare } from './lib/levels';
 import { recalcAllHostLevels } from './lib/levelService';
+import { billedMinutes, coinsForCall, hostShareOf, atomicCallTransfer } from './lib/billing';
 
 // Re-export Durable Objects (required by wrangler)
 export { ChatRoom, CallSignaling, NotificationHub };
@@ -81,6 +82,19 @@ app.get('/api/healthz', (c) => c.json({
   cf_calls_configured: !!(c.env.CF_CALLS_APP_ID && c.env.CF_CALLS_APP_SECRET),
   fcm_configured: !!c.env.FIREBASE_SERVICE_ACCOUNT,
 }));
+
+// Readiness probe — unlike /healthz (liveness only), this verifies the Worker
+// can actually reach its primary datastore. Uptime monitors / deploy gates can
+// poll this to catch a broken D1 binding before it serves real traffic.
+app.get('/api/readyz', async (c) => {
+  try {
+    await c.env.DB.prepare('SELECT 1').first();
+    return c.json({ status: 'ready', db: 'ok', ts: Date.now() });
+  } catch (err) {
+    console.error('[readyz] D1 ping failed:', err);
+    return c.json({ status: 'not_ready', db: 'error', ts: Date.now() }, 503);
+  }
+});
 
 // Routes
 app.route('/api/auth', authRouter);
@@ -202,8 +216,6 @@ async function reapStaleCalls(env: Env): Promise<void> {
 
     if (!staleCalls.results.length) return;
 
-    const ops: any[] = [];
-
     for (const call of staleCalls.results) {
       // Atomic guard — use ended_at IS NULL instead of setting status to 'processing'
       // because 'processing' is NOT a valid CHECK constraint value and causes silent failures.
@@ -214,31 +226,27 @@ async function reapStaleCalls(env: Env): Promise<void> {
       if (!guard.meta.changes) continue; // already processed by another worker or /end call
 
       const durationSec = call.started_at ? now - call.started_at : 0;
-      const durationMin = Math.max(0, Math.ceil(durationSec / 60));
+      const durationMin = billedMinutes(durationSec);
       const effectiveRate = call.rate_per_minute ?? 5;
-      const coinsCharged = call.status === 'active' ? durationMin * effectiveRate : 0;
+      const coinsCharged = coinsForCall({ status: call.status, durationSec, ratePerMinute: effectiveRate });
 
       // Track actual coins transferred (0 until confirmed)
       let actualCoinsCharged = 0;
       let actualHostEarnings = 0;
 
       if (coinsCharged > 0) {
-        const hostEarnings = Math.floor(coinsCharged * getEarningShare(call.host_level ?? 1, levelCfg));
+        const hostEarnings = hostShareOf(coinsCharged, getEarningShare(call.host_level ?? 1, levelCfg));
 
-        // Atomic transfer: deduct caller and credit host in one statement.
-        // If caller has insufficient coins, EXISTS fails and ZERO rows update.
-        const transfer = await db.prepare(
-          `UPDATE users
-             SET coins = coins + CASE id
-               WHEN ?1 THEN -?2
-               WHEN ?3 THEN ?4
-               ELSE 0
-             END
-             WHERE id IN (?1, ?3)
-               AND EXISTS (SELECT 1 FROM users WHERE id = ?1 AND coins >= ?2)`
-        ).bind(call.caller_id, coinsCharged, call.host_user_id, hostEarnings).run();
+        // Atomic transfer (single UPDATE, EXISTS-guarded) — shared with the
+        // live /end path. See lib/billing.ts → atomicCallTransfer.
+        const ok = await atomicCallTransfer(db, {
+          callerId: call.caller_id,
+          hostUserId: call.host_user_id,
+          coinsCharged,
+          hostShare: hostEarnings,
+        });
 
-        if (transfer.meta?.changes === 2) {
+        if (ok) {
           actualCoinsCharged = coinsCharged;
           actualHostEarnings = hostEarnings;
         } else {
