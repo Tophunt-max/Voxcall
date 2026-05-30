@@ -2,6 +2,12 @@ import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import { Trophy, Save, RefreshCw, Info, ChevronRight, Coins } from 'lucide-react';
 
+interface LevelPerks {
+  max_rate: number;
+  earning_share: number; // fraction 0–1 (platform keeps the rest)
+  rank_boost: number;
+}
+
 interface LevelDef {
   level: number;
   name: string;
@@ -11,14 +17,15 @@ interface LevelDef {
   min_rating: number;
   coin_reward: number;
   description: string;
+  perks: LevelPerks;
 }
 
 const DEFAULT_CONFIG: LevelDef[] = [
-  { level: 1, name: 'Newcomer', badge: '🌱', color: '#6B7280', min_calls: 0,    min_rating: 0,   coin_reward: 0,    description: 'New to the platform' },
-  { level: 2, name: 'Rising',   badge: '⭐', color: '#F59E0B', min_calls: 50,   min_rating: 4.0, coin_reward: 100,  description: 'Getting established' },
-  { level: 3, name: 'Expert',   badge: '🔥', color: '#EF4444', min_calls: 200,  min_rating: 4.3, coin_reward: 300,  description: 'Proven expertise' },
-  { level: 4, name: 'Pro',      badge: '💎', color: '#8B5CF6', min_calls: 500,  min_rating: 4.6, coin_reward: 500,  description: 'Professional tier' },
-  { level: 5, name: 'Elite',    badge: '👑', color: '#D97706', min_calls: 1000, min_rating: 4.8, coin_reward: 1000, description: 'Top performer' },
+  { level: 1, name: 'Newcomer', badge: '🌱', color: '#6B7280', min_calls: 0,    min_rating: 0,   coin_reward: 0,    description: 'New to the platform', perks: { max_rate: 100, earning_share: 0.70, rank_boost: 0 } },
+  { level: 2, name: 'Rising',   badge: '⭐', color: '#F59E0B', min_calls: 50,   min_rating: 4.0, coin_reward: 100,  description: 'Getting established',  perks: { max_rate: 150, earning_share: 0.70, rank_boost: 1 } },
+  { level: 3, name: 'Expert',   badge: '🔥', color: '#EF4444', min_calls: 200,  min_rating: 4.3, coin_reward: 300,  description: 'Proven expertise',    perks: { max_rate: 250, earning_share: 0.72, rank_boost: 2 } },
+  { level: 4, name: 'Pro',      badge: '💎', color: '#8B5CF6', min_calls: 500,  min_rating: 4.6, coin_reward: 500,  description: 'Professional tier',   perks: { max_rate: 400, earning_share: 0.75, rank_boost: 3 } },
+  { level: 5, name: 'Elite',    badge: '👑', color: '#D97706', min_calls: 1000, min_rating: 4.8, coin_reward: 1000, description: 'Top performer',       perks: { max_rate: 500, earning_share: 0.80, rank_boost: 5 } },
 ];
 
 function Field({ label, value, onChange, type = 'text', min, max, step, readOnly }: {
@@ -54,7 +61,17 @@ export default function LevelConfig() {
 
   useEffect(() => {
     api.getLevelConfig()
-      .then(data => { if (Array.isArray(data) && data.length === 5) setConfig(data); })
+      .then(data => {
+        if (Array.isArray(data) && data.length === 5) {
+          // Backfill perks defensively so the editor never reads undefined,
+          // even if an older saved config predates the perks field.
+          setConfig(data.map((l: any, i: number) => ({
+            ...DEFAULT_CONFIG[i],
+            ...l,
+            perks: { ...DEFAULT_CONFIG[i].perks, ...(l?.perks || {}) },
+          })));
+        }
+      })
       .catch(() => showToast('Failed to load level config', false))
       .finally(() => setLoading(false));
   }, []);
@@ -65,6 +82,22 @@ export default function LevelConfig() {
       if (field === 'min_calls' || field === 'coin_reward') return { ...l, [field]: Math.max(0, parseInt(val) || 0) };
       if (field === 'min_rating') return { ...l, [field]: Math.min(5, Math.max(0, parseFloat(val) || 0)) };
       return { ...l, [field]: val };
+    }));
+  };
+
+  // Perks are nested; earning_share is edited as a percentage (10–95) but
+  // stored as a fraction (0.10–0.95) to match the backend schema.
+  const updatePerk = (idx: number, field: keyof LevelPerks, val: string) => {
+    setConfig(prev => prev.map((l, i) => {
+      if (i !== idx) return l;
+      const perks = { ...l.perks };
+      if (field === 'max_rate') perks.max_rate = Math.min(500, Math.max(1, parseInt(val) || 1));
+      else if (field === 'rank_boost') perks.rank_boost = Math.max(0, parseInt(val) || 0);
+      else if (field === 'earning_share') {
+        const pct = Math.min(95, Math.max(10, parseFloat(val) || 0));
+        perks.earning_share = Math.round(pct) / 100;
+      }
+      return { ...l, perks };
     }));
   };
 
@@ -143,9 +176,9 @@ export default function LevelConfig() {
       <div className="flex items-start gap-3 p-4 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800/40 rounded-xl text-sm">
         <Info size={16} className="text-blue-500 mt-0.5 flex-shrink-0" />
         <div className="text-blue-700 dark:text-blue-300">
-          <strong>How levels work:</strong> Hosts are auto-promoted when they meet the Min Calls + Min Rating thresholds. 
-          Level 1 is the starting level (no requirements). Coin Reward is given when a host reaches that level for the first time.
-          Click <strong>"Recalculate All Host Levels"</strong> to apply current thresholds to all existing hosts.
+          <strong>How levels work:</strong> Hosts are <strong>auto-promoted in real time</strong> when their rated calls + rating cross a level's thresholds — the one-time Coin Reward is credited automatically.
+          Level 1 is the starting level (no requirements). <strong>Perks</strong> per level: <strong>Max Rate</strong> (highest coins/min a host may charge), <strong>Earning Share</strong> (host's cut of each call), and <strong>Rank Boost</strong> (higher = shown earlier in listings &amp; matchmaking).
+          Use <strong>"Recalculate All Host Levels"</strong> to back-fill existing hosts after changing thresholds.
         </div>
       </div>
 
@@ -198,6 +231,11 @@ export default function LevelConfig() {
                 <Coins size={14} className="text-amber-500" />
                 <span className="text-sm font-bold text-amber-700 dark:text-amber-400">+{lvl.coin_reward} coins</span>
               </div>
+              {/* Earning share badge */}
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/40">
+                <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">earns</span>
+                <span className="text-sm font-bold text-emerald-700 dark:text-emerald-400">{Math.round(lvl.perks.earning_share * 100)}%</span>
+              </div>
             </div>
 
             {/* Fields grid */}
@@ -243,6 +281,38 @@ export default function LevelConfig() {
               />
             </div>
 
+            {/* Perks / benefits grid */}
+            <div className="px-5 pt-1">
+              <label className="block text-[11px] font-semibold text-muted-foreground mb-2 uppercase tracking-wide">
+                Perks / Benefits unlocked at this level
+              </label>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                <Field
+                  label="Max Rate (coins/min)"
+                  value={lvl.perks.max_rate}
+                  type="number"
+                  min={1}
+                  max={500}
+                  onChange={v => updatePerk(idx, 'max_rate', v)}
+                />
+                <Field
+                  label="Earning Share %"
+                  value={Math.round(lvl.perks.earning_share * 100)}
+                  type="number"
+                  min={10}
+                  max={95}
+                  onChange={v => updatePerk(idx, 'earning_share', v)}
+                />
+                <Field
+                  label="Rank Boost"
+                  value={lvl.perks.rank_boost}
+                  type="number"
+                  min={0}
+                  onChange={v => updatePerk(idx, 'rank_boost', v)}
+                />
+              </div>
+            </div>
+
             {/* Description row */}
             <div className="px-5 pb-5">
               <label className="block text-xs font-medium text-muted-foreground mb-1">Description</label>
@@ -263,14 +333,15 @@ export default function LevelConfig() {
                 <ChevronRight size={13} />
                 <span>
                   Requires: <strong>{lvl.min_calls}+ calls</strong> and <strong>{lvl.min_rating}+ rating</strong> to unlock
-                  {lvl.coin_reward > 0 && <> · Reward: <strong className="text-amber-600">{lvl.coin_reward} coins</strong> on level-up</>}
+                  {lvl.coin_reward > 0 && <> · Reward: <strong className="text-amber-600">{lvl.coin_reward} coins</strong></>}
+                  {' '}· Perks: <strong className="text-emerald-600">{Math.round(lvl.perks.earning_share * 100)}% earnings</strong>, up to <strong>{lvl.perks.max_rate}/min</strong>, rank +{lvl.perks.rank_boost}
                 </span>
               </div>
             )}
             {idx === 0 && (
               <div className="px-5 pb-4 flex items-center gap-2 text-xs text-muted-foreground">
                 <ChevronRight size={13} />
-                <span>Starting level — all new hosts begin here, no requirements</span>
+                <span>Starting level — all new hosts begin here, no requirements · Perks: <strong className="text-emerald-600">{Math.round(lvl.perks.earning_share * 100)}% earnings</strong>, up to <strong>{lvl.perks.max_rate}/min</strong>, rank +{lvl.perks.rank_boost}</span>
               </div>
             )}
           </div>

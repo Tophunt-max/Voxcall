@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth';
-import { getLevelConfig, computeLevelProgress, getMaxRate, ABSOLUTE_MAX_RATE } from '../lib/levels';
+import { getLevelConfig, computeLevelProgress, getMaxRate, getRankBoost, buildLevelInfo, rankBoostCaseSql, ABSOLUTE_MAX_RATE, type LevelDef } from '../lib/levels';
 import type { Env, JWTPayload } from '../types';
 
 const host = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
@@ -30,41 +30,44 @@ const statusSchema = z.object({
 });
 
 /* ─── Level helpers ─── */
-const LEVELS: Record<number, { name: string; badge: string; color: string }> = {
-  1: { name: 'Newcomer', badge: '🌱', color: '#6B7280' },
-  2: { name: 'Rising',   badge: '⭐', color: '#F59E0B' },
-  3: { name: 'Expert',   badge: '🔥', color: '#EF4444' },
-  4: { name: 'Pro',      badge: '💎', color: '#8B5CF6' },
-  5: { name: 'Elite',    badge: '👑', color: '#D97706' },
-};
+// Badge/name/color now come from the admin-configured ladder (single source of
+// truth via buildLevelInfo) instead of a hardcoded map that silently diverged
+// from the admin panel. `rankBoostCase()` builds a SQL CASE expression mapping
+// each level to its configured rank_boost perk so listings can rank by it.
 
 function safeParse(json: string | null | undefined, fallback: any = []) {
   if (!json) return fallback;
   try { return JSON.parse(json); } catch { return fallback; }
 }
 
-function enrichHost(h: any) {
-  const lvl = h.level ?? 1;
+function enrichHost(h: any, config: LevelDef[]) {
   return {
     ...h,
     specialties: safeParse(h.specialties, []),
     languages: safeParse(h.languages, []),
-    level_info: LEVELS[lvl] ?? LEVELS[1],
+    level: h.level ?? 1,
+    level_info: buildLevelInfo(config, h.level ?? 1),
     audio_coins_per_minute: h.audio_coins_per_minute ?? h.coins_per_minute ?? 5,
     video_coins_per_minute: h.video_coins_per_minute ?? (h.coins_per_minute ?? 5) + 5,
   };
 }
 
+// Map hosts.level → its configured rank_boost perk for ORDER BY (see levels.ts).
+const rankBoostCase = (config: LevelDef[]) => rankBoostCaseSql(config);
+
 // GET /api/hosts/featured — top-rated/featured hosts (must be before /:id)
 // OPTIMIZATION #3: Cache-Control lets Cloudflare CDN cache this for 2 min (featured rarely changes)
 host.get('/featured', async (c) => {
+  const config = await getLevelConfig(c.env.DB);
+  // LEVEL PERK: rank_boost ranks higher-level hosts earlier (after the
+  // top-rated flag), making the perk actually visible on the featured rail.
   const result = await c.env.DB.prepare(
     `SELECT h.*, u.name, u.avatar_url, u.gender, u.bio FROM hosts h
      JOIN users u ON u.id = h.user_id
      WHERE h.is_active = 1 AND h.rating >= 4.0
-     ORDER BY h.is_top_rated DESC, h.rating DESC, h.total_minutes DESC LIMIT 10`
+     ORDER BY h.is_top_rated DESC, ${rankBoostCase(config)} DESC, h.rating DESC, h.total_minutes DESC LIMIT 10`
   ).all();
-  return new Response(JSON.stringify(result.results.map(enrichHost)), {
+  return new Response(JSON.stringify(result.results.map((h) => enrichHost(h, config))), {
     headers: {
       'Content-Type': 'application/json',
       'Cache-Control': 'public, s-maxage=120, stale-while-revalidate=300',
@@ -81,6 +84,12 @@ host.get('/featured', async (c) => {
 host.get('/', async (c) => {
   const { search, topic, online, cursor, limit = '20' } = c.req.query();
   const lim = Math.min(parseInt(limit) || 20, 100);
+
+  // LEVEL PERK: rank_boost is the top ranking signal after online status, so
+  // listings surface higher-level hosts first. The CASE maps level → configured
+  // rank_boost; it is part of both the ORDER BY and the keyset for stable paging.
+  const config = await getLevelConfig(c.env.DB);
+  const rb = rankBoostCase(config);
 
   let query = `SELECT h.*, u.name, u.avatar_url, u.gender, u.bio FROM hosts h
     JOIN users u ON u.id = h.user_id WHERE h.is_active = 1`;
@@ -104,34 +113,39 @@ host.get('/', async (c) => {
     }
   }
 
-  // Keyset cursor: encoded as base64(JSON({is_online,rating,total_minutes,id}))
+  // Keyset cursor: base64(JSON({is_online,rank,rating,total_minutes,id})).
+  // `rank` is the configured rank_boost of the row's level. Old cursors that
+  // predate this default rank to 0 so paging degrades gracefully.
   if (cursor) {
     try {
       const prev = JSON.parse(atob(cursor)) as {
-        is_online: number; rating: number; total_minutes: number; id: string;
+        is_online: number; rank?: number; rating: number; total_minutes: number; id: string;
       };
+      const prevRank = prev.rank ?? 0;
       query += ` AND (
         h.is_online < ? OR
-        (h.is_online = ? AND h.rating < ?) OR
-        (h.is_online = ? AND h.rating = ? AND h.total_minutes < ?) OR
-        (h.is_online = ? AND h.rating = ? AND h.total_minutes = ? AND h.id > ?)
+        (h.is_online = ? AND ${rb} < ?) OR
+        (h.is_online = ? AND ${rb} = ? AND h.rating < ?) OR
+        (h.is_online = ? AND ${rb} = ? AND h.rating = ? AND h.total_minutes < ?) OR
+        (h.is_online = ? AND ${rb} = ? AND h.rating = ? AND h.total_minutes = ? AND h.id > ?)
       )`;
       params.push(
         prev.is_online,
-        prev.is_online, prev.rating,
-        prev.is_online, prev.rating, prev.total_minutes,
-        prev.is_online, prev.rating, prev.total_minutes, prev.id,
+        prev.is_online, prevRank,
+        prev.is_online, prevRank, prev.rating,
+        prev.is_online, prevRank, prev.rating, prev.total_minutes,
+        prev.is_online, prevRank, prev.rating, prev.total_minutes, prev.id,
       );
     } catch {
       // Invalid cursor — ignore and return first page
     }
   }
 
-  query += ' ORDER BY h.is_online DESC, h.rating DESC, h.total_minutes DESC, h.id ASC LIMIT ?';
+  query += ` ORDER BY h.is_online DESC, ${rb} DESC, h.rating DESC, h.total_minutes DESC, h.id ASC LIMIT ?`;
   params.push(lim);
 
   const result = await c.env.DB.prepare(query).bind(...params).all();
-  const rows = result.results.map(enrichHost);
+  const rows = result.results.map((h) => enrichHost(h, config));
 
   // Build next cursor from last row
   let nextCursor: string | null = null;
@@ -139,6 +153,7 @@ host.get('/', async (c) => {
     const last = result.results[result.results.length - 1] as any;
     nextCursor = btoa(JSON.stringify({
       is_online: last.is_online,
+      rank: getRankBoost(last.level ?? 1, config),
       rating: last.rating,
       total_minutes: last.total_minutes,
       id: last.id,
@@ -160,12 +175,15 @@ host.get('/', async (c) => {
 
 // GET /api/hosts/:id — single host
 host.get('/:id', async (c) => {
-  const h = await c.env.DB.prepare(
-    `SELECT h.*, u.name, u.avatar_url, u.gender, u.bio FROM hosts h
-     JOIN users u ON u.id = h.user_id WHERE h.id = ?`
-  ).bind(c.req.param('id')).first<any>();
+  const [h, config] = await Promise.all([
+    c.env.DB.prepare(
+      `SELECT h.*, u.name, u.avatar_url, u.gender, u.bio FROM hosts h
+       JOIN users u ON u.id = h.user_id WHERE h.id = ?`
+    ).bind(c.req.param('id')).first<any>(),
+    getLevelConfig(c.env.DB),
+  ]);
   if (!h) return c.json({ error: 'Host not found' }, 404);
-  return c.json(enrichHost(h));
+  return c.json(enrichHost(h, config));
 });
 
 // GET /api/hosts/:id/chat-status — check if caller has called this host (chat unlock)

@@ -155,6 +155,45 @@ export function getMaxRate(level: number, config: LevelDef[]): number {
   return getLevelPerks(level, config).max_rate;
 }
 
+/** Search/discovery ranking weight for a level — higher = shown earlier. */
+export function getRankBoost(level: number, config: LevelDef[]): number {
+  return getLevelPerks(level, config).rank_boost;
+}
+
+/** Compact level descriptor attached to public host payloads. */
+export interface LevelInfo {
+  level: number;
+  name: string;
+  badge: string;
+  color: string;
+}
+
+/**
+ * Build the {level,name,badge,color} blob for a host from the admin-configured
+ * ladder. Single source of truth — replaces the hardcoded LEVELS maps that
+ * previously lived (and silently diverged) in host.ts and match.ts, so changing
+ * a badge/name/color in the admin panel now reflects everywhere.
+ */
+export function buildLevelInfo(config: LevelDef[], level: number | null | undefined): LevelInfo {
+  const ladder = asLadder(config);
+  const lvl = level && level >= 1 && level <= 5 ? level : 1;
+  const def = ladder.find((l) => l.level === lvl) ?? ladder[0];
+  return { level: def.level, name: def.name, badge: def.badge, color: def.color };
+}
+
+/**
+ * Build a SQL CASE expression mapping a `hosts.level` column to its configured
+ * rank_boost perk, so listings/matchmaking can ORDER BY the perk. The values
+ * come from the normalized config (guaranteed integers via normalizePerks), so
+ * inlining them is injection-safe.
+ */
+export function rankBoostCaseSql(config: LevelDef[], levelCol = 'h.level'): string {
+  const whens = asLadder(config)
+    .map((l) => `WHEN ${Math.trunc(l.level)} THEN ${Math.trunc(l.perks.rank_boost)}`)
+    .join(' ');
+  return `CASE COALESCE(${levelCol},1) ${whens} ELSE 0 END`;
+}
+
 export interface LevelProgress {
   /** The host's current level number (1–5). */
   level: number;

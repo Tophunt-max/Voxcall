@@ -1,25 +1,20 @@
 import { Hono } from 'hono';
 import { authMiddleware } from '../middleware/auth';
+import { getLevelConfig, buildLevelInfo, rankBoostCaseSql, type LevelDef } from '../lib/levels';
 import type { Env, JWTPayload } from '../types';
 
 const match = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
 match.use('*', authMiddleware);
 
-const LEVELS: Record<number, { name: string; badge: string; color: string }> = {
-  1: { name: 'Newcomer', badge: '🌱', color: '#6B7280' },
-  2: { name: 'Rising',   badge: '⭐', color: '#F59E0B' },
-  3: { name: 'Expert',   badge: '🔥', color: '#EF4444' },
-  4: { name: 'Pro',      badge: '💎', color: '#8B5CF6' },
-  5: { name: 'Elite',    badge: '👑', color: '#D97706' },
-};
-
-function enrichHost(h: any) {
-  const lvl = h.level ?? 1;
+// Level badge/name/color come from the admin-configured ladder (single source
+// of truth via buildLevelInfo) — no more hardcoded map that ignores admin edits.
+function enrichHost(h: any, config: LevelDef[]) {
   return {
     ...h,
     specialties: JSON.parse(h.specialties || '[]'),
     languages: JSON.parse(h.languages || '[]'),
-    level_info: LEVELS[lvl] ?? LEVELS[1],
+    level: h.level ?? 1,
+    level_info: buildLevelInfo(config, h.level ?? 1),
     audio_coins_per_minute: h.audio_coins_per_minute ?? h.coins_per_minute ?? 5,
     video_coins_per_minute: h.video_coins_per_minute ?? (h.coins_per_minute ?? 5) + 5,
   };
@@ -77,7 +72,8 @@ match.post('/find', async (c) => {
     return c.json({ matched: false, message: 'Abhi koi host available nahi hai, thodi der baad try karo' });
   }
 
-  const enriched = enrichHost(host);
+  const levelCfg = await getLevelConfig(db);
+  const enriched = enrichHost(host, levelCfg);
 
   return c.json({
     matched: true,
@@ -110,14 +106,16 @@ match.get('/online-hosts', async (c) => {
 
   // FIX #19: Use rating-based ordering instead of RANDOM() for online hosts list
   // This is deterministic but provides good variety since online hosts rotate frequently
+  // LEVEL PERK: rank_boost is the primary signal so higher-level hosts surface first.
+  const config = await getLevelConfig(db);
   const result = await db
     .prepare(
-      `SELECT h.id, h.display_name, h.specialties, h.rating, h.audio_coins_per_minute,
+      `SELECT h.id, h.display_name, h.specialties, h.rating, h.level, h.audio_coins_per_minute,
               u.name, u.avatar_url
        FROM hosts h
        JOIN users u ON u.id = h.user_id
        WHERE h.is_active = 1 AND h.is_online = 1 AND h.user_id != ?
-       ORDER BY h.rating DESC, h.review_count DESC
+       ORDER BY ${rankBoostCaseSql(config)} DESC, h.rating DESC, h.review_count DESC
        LIMIT 12`
     )
     .bind(sub)
@@ -131,6 +129,8 @@ match.get('/online-hosts', async (c) => {
       rating: h.rating ?? 0,
       coins_per_minute: h.audio_coins_per_minute ?? 5,
       specialties: JSON.parse(h.specialties || '[]'),
+      level: h.level ?? 1,
+      level_info: buildLevelInfo(config, h.level ?? 1),
     }))
   );
 });

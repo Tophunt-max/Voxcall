@@ -164,8 +164,10 @@ export default function HostDetailScreen() {
   const experience = `${Math.max(1, Math.floor((host.total_minutes ?? 0) / 5000))}+`;
   const audioRate: number = host.audio_coins_per_minute ?? host.coins_per_minute ?? 5;
   const videoRate: number = host.video_coins_per_minute ?? audioRate + 5;
-  const level: number = host.level ?? 1;
-  const levelInfo = LEVEL_CONFIG[level] ?? LEVEL_CONFIG[1];
+  // Prefer the server's admin-configured level_info (single source of truth);
+  // fall back to the local map only if the API is on an older build.
+  const level: number = host.level_info?.level ?? host.level ?? 1;
+  const levelInfo = host.level_info ?? LEVEL_CONFIG[level] ?? LEVEL_CONFIG[1];
 
   /* ─── Handlers ─── */
   const checkCoins = (rate: number) => {
