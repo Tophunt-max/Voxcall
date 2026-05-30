@@ -42,7 +42,7 @@ jobs:
 
       - name: Build Admin Panel
         working-directory: admin-panel
-        run: pnpm run build
+        run: pnpm --filter @workspace/admin-panel run build
         env:
           PORT: '4173'
           BASE_PATH: '/'
