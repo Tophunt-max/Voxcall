@@ -155,6 +155,60 @@ export class WebRTCService {
     });
   }
 
+  // FIX (camera fails to start / "Camera off"): robustly acquire the local
+  // MediaStream. Tries HD first, then progressively relaxes the video
+  // constraints, and (for video calls) falls back to audio-only as a last
+  // resort so a transient camera failure never kills the whole call. Real
+  // permission denials (NotAllowedError) are rethrown immediately so the UI
+  // can re-prompt rather than silently degrading.
+  private async acquireLocalStream(): Promise<any> {
+    const hdVideo = {
+      facingMode: 'user',
+      width:  { min: 320, ideal: 1280, max: 1920 },
+      height: { min: 240, ideal: 720,  max: 1080 },
+      frameRate: { min: 15, ideal: 30, max: 30 },
+      aspectRatio: { ideal: 16 / 9 },
+    };
+    const attempts: any[] = this.isVideo
+      ? [
+          { audio: true, video: hdVideo },
+          { audio: true, video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } } },
+          { audio: true, video: { facingMode: 'user' } },
+          { audio: true, video: true },
+          { audio: true, video: false }, // last resort: connect audio-only
+        ]
+      : [{ audio: true, video: false }];
+
+    let lastErr: any = null;
+    for (let i = 0; i < attempts.length; i++) {
+      if (this.destroyed) throw new Error('cancelled');
+      try {
+        const stream = await mediaDevicesRef.getUserMedia(attempts[i]);
+        if (i > 0) {
+          console.warn(`[WebRTC] getUserMedia succeeded after relaxing constraints (attempt ${i + 1}/${attempts.length})`);
+        }
+        return stream;
+      } catch (e: any) {
+        lastErr = e;
+        const name = String(e?.name ?? '');
+        const msg = String(e?.message ?? e ?? '');
+        // A genuine permission denial won't be fixed by relaxing constraints —
+        // surface it immediately so the screen can re-prompt (once).
+        if (/NotAllowed/i.test(name) || /NotAllowed/i.test(msg) ||
+            /permission/i.test(msg) || /SecurityError/i.test(name)) {
+          throw e;
+        }
+        // Transient hardware error (camera busy from the permission-check
+        // release, source not readable) or unsatisfiable constraints — pause
+        // briefly to let the device release the camera, then try the next,
+        // more relaxed attempt.
+        console.warn(`[WebRTC] getUserMedia attempt ${i + 1} failed (${name || msg}); retrying`);
+        await new Promise((r) => setTimeout(r, 400));
+      }
+    }
+    throw lastErr ?? new Error('getUserMedia failed');
+  }
+
   async start(): Promise<any> {
     if (this.destroyed || !RTC) return null;
 
@@ -222,23 +276,17 @@ export class WebRTCService {
         }
       });
 
-      // FIX (video clarity): the previous constraints capped capture at
-      // 640x480 (VGA) which looks blurry/unclear on modern phones and big
-      // screens. Use HD (1280x720) as the ideal target with a sensible
-      // floor and a 30 fps target. `ideal` lets the platform downgrade on
-      // weak hardware/networks rather than failing outright.
-      const constraints: any = {
-        audio: true,
-        video: this.isVideo ? {
-          facingMode: 'user',
-          width:  { min: 320, ideal: 1280, max: 1920 },
-          height: { min: 240, ideal: 720,  max: 1080 },
-          frameRate: { min: 15, ideal: 30, max: 30 },
-          aspectRatio: { ideal: 16 / 9 },
-        } : false,
-      };
-
-      this.localStream = await mediaDevicesRef.getUserMedia(constraints);
+      // FIX (camera fails to start / "Camera off"): acquire local media with a
+      // retry + constraint-fallback ladder instead of a single getUserMedia
+      // call. On web the permission pre-check (usePermissions) opens then
+      // immediately STOPS a camera stream; re-acquiring video+audio a moment
+      // later can transiently fail with NotReadableError / "Could not start
+      // video source", and the HD `min` values can throw OverconstrainedError
+      // on some devices — both of which previously left the user with no local
+      // video. acquireLocalStream() retries with progressively relaxed
+      // constraints and, as a last resort on a video call, falls back to
+      // audio-only so the call still connects.
+      this.localStream = await this.acquireLocalStream();
 
       this.localStream.getTracks().forEach((track: any) => {
         this.pc?.addTrack(track, this.localStream);
