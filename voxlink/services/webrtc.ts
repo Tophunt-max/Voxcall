@@ -110,6 +110,10 @@ export class WebRTCService {
   private pc: any = null;
   private localStream: any = null;
   private remoteStream: any = null;
+  // FIX (camera re-enable): cache the outbound video sender so toggleCamera can
+  // attach a freshly-acquired track via replaceTrack without an SFU
+  // renegotiation when the previous track ended / was never created.
+  private videoSender: any = null;
   private sessionId: string;
   private callbacks: WebRTCCallbacks;
   private isVideo: boolean;
@@ -293,34 +297,10 @@ export class WebRTCService {
       });
 
       // FIX (video clarity): give the outbound video sender real headroom so
-      // the encoder can deliver a sharp HD picture. CF Calls / SFU relays
-      // exactly what we send, and the previous ~1.2 Mbps cap produced a soft,
-      // blocky image even from a 720p source. 2.5 Mbps is a safe ceiling for
-      // 720p30 over 4G / Wi-Fi; congestion control scales it down when the
-      // network is constrained. We also pin scaleResolutionDownBy=1 so the
-      // encoder never silently drops below capture resolution, and bump the
-      // network priority so video gets DSCP precedence over background data.
+      // the encoder can deliver a sharp HD picture (see _applyVideoSenderParams).
       if (this.isVideo) {
-        try {
-          const videoSender = this.pc.getSenders?.().find((s: any) => s.track?.kind === 'video');
-          if (videoSender && videoSender.getParameters && videoSender.setParameters) {
-            const params = videoSender.getParameters();
-            params.encodings = (params.encodings && params.encodings.length > 0)
-              ? params.encodings
-              : [{}];
-            for (const enc of params.encodings) {
-              enc.maxBitrate = VIDEO_MAX_BPS;
-              enc.maxFramerate = 30;
-              enc.scaleResolutionDownBy = 1;
-              (enc as any).networkPriority = 'high';
-            }
-            await videoSender.setParameters(params);
-          }
-        } catch (e) {
-          // Non-fatal: if setParameters isn't supported on this platform we
-          // fall back to the default bitrate (the SDP b=AS line still helps).
-          console.warn('[WebRTC] setParameters (video bitrate) failed:', e);
-        }
+        this.videoSender = this.pc.getSenders?.().find((s: any) => s.track?.kind === 'video') ?? null;
+        await this._applyVideoSenderParams();
       }
 
       await this.pushLocalTracks();
@@ -573,6 +553,38 @@ export class WebRTCService {
     this.iceRestartAttempts = 0;
   }
 
+  // FIX (video clarity): apply the outbound video sender's bitrate/framerate
+  // headroom. CF Calls / SFU relays exactly what we send; the old ~1.2 Mbps
+  // cap produced a soft, blocky image even from a 720p source. 2.5 Mbps is a
+  // safe ceiling for 720p30 (congestion control scales it down on weak
+  // networks). scaleResolutionDownBy=1 stops silent downscaling and high
+  // networkPriority gives video DSCP precedence. Re-runnable so it can be
+  // re-applied after toggleCamera swaps in a new track.
+  private async _applyVideoSenderParams(): Promise<void> {
+    if (!this.isVideo) return;
+    try {
+      const videoSender = this.videoSender
+        ?? this.pc?.getSenders?.().find((s: any) => s.track?.kind === 'video');
+      if (videoSender && videoSender.getParameters && videoSender.setParameters) {
+        const params = videoSender.getParameters();
+        params.encodings = (params.encodings && params.encodings.length > 0)
+          ? params.encodings
+          : [{}];
+        for (const enc of params.encodings) {
+          enc.maxBitrate = VIDEO_MAX_BPS;
+          enc.maxFramerate = 30;
+          enc.scaleResolutionDownBy = 1;
+          (enc as any).networkPriority = 'high';
+        }
+        await videoSender.setParameters(params);
+      }
+    } catch (e) {
+      // Non-fatal: if setParameters isn't supported on this platform we fall
+      // back to the default bitrate (the SDP b=AS line still helps).
+      console.warn('[WebRTC] setParameters (video bitrate) failed:', e);
+    }
+  }
+
   toggleMute(muted: boolean): void {
     if (!this.localStream) return;
     this.localStream.getAudioTracks().forEach((track: any) => {
@@ -580,11 +592,57 @@ export class WebRTCService {
     });
   }
 
-  toggleCamera(enabled: boolean): void {
-    if (!this.localStream) return;
-    this.localStream.getVideoTracks().forEach((track: any) => {
-      track.enabled = enabled;
-    });
+  // FIX (camera re-enable): camera failed to come back ON if the call had no
+  // live video track — e.g. acquireLocalStream() fell back to audio-only, or
+  // the track ended. We now re-acquire a camera track and attach it to the
+  // existing video sender via replaceTrack. Turning OFF keeps the track + sender
+  // alive (track.enabled=false) so re-enabling is instant and never needs an
+  // SFU renegotiation; disabling sends "muted" to the remote (camera-off avatar).
+  async toggleCamera(enabled: boolean): Promise<void> {
+    if (!this.localStream || this.destroyed || !this.isVideo) return;
+
+    if (!enabled) {
+      this.localStream.getVideoTracks().forEach((t: any) => { try { t.enabled = false; } catch {} });
+      return;
+    }
+
+    // Re-enable a still-live track instantly.
+    const liveTrack = this.localStream.getVideoTracks().find((t: any) => t.readyState === 'live');
+    if (liveTrack) {
+      liveTrack.enabled = true;
+      return;
+    }
+
+    // No live video track — acquire a fresh camera track and swap it in.
+    try {
+      const camStream = await mediaDevicesRef.getUserMedia({
+        video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false,
+      });
+      if (this.destroyed) { camStream.getTracks().forEach((t: any) => t.stop()); return; }
+      const newTrack = camStream.getVideoTracks()[0];
+      if (!newTrack) return;
+      // Drop stale/ended video tracks first.
+      this.localStream.getVideoTracks().forEach((t: any) => {
+        try { t.stop(); } catch {}
+        try { this.localStream.removeTrack(t); } catch {}
+      });
+      this.localStream.addTrack(newTrack);
+      const sender = this.videoSender
+        ?? this.pc?.getSenders?.().find((s: any) => s.track?.kind === 'video');
+      if (sender) {
+        this.videoSender = sender;
+        await sender.replaceTrack(newTrack);
+        await this._applyVideoSenderParams();
+      } else if (this.pc) {
+        // No pre-existing video sender (audio-only start). addTrack needs a
+        // renegotiation our push flow doesn't perform mid-call, so this only
+        // fully works when a video sender already exists.
+        this.pc.addTrack(newTrack, this.localStream);
+      }
+    } catch (e) {
+      console.warn('[WebRTC] toggleCamera re-acquire failed:', e);
+    }
   }
 
   async switchCamera(): Promise<void> {
@@ -608,15 +666,28 @@ export class WebRTCService {
         const currentId = videoTrack.getSettings().deviceId;
         const nextCamera = cameras.find((c) => c.deviceId !== currentId) ?? cameras[0];
 
-        const newStream = await navigator.mediaDevices.getUserMedia({
-          video: { deviceId: { exact: nextCamera.deviceId } },
-          audio: false,
-        });
+        // FIX (#5): some browsers reject { deviceId: { exact } } (camera busy /
+        // constraint unsatisfiable), which left the flip silently broken. Try a
+        // fallback ladder: exact deviceId → non-exact deviceId → facingMode, so
+        // the camera still switches on more devices.
+        const ladder: any[] = [
+          { video: { deviceId: { exact: nextCamera.deviceId } }, audio: false },
+          { video: { deviceId: nextCamera.deviceId }, audio: false },
+          { video: { facingMode: 'environment' }, audio: false },
+        ];
+        let newStream: any = null;
+        for (const c of ladder) {
+          try { newStream = await navigator.mediaDevices.getUserMedia(c); break; }
+          catch { /* try next, more relaxed constraint */ }
+        }
+        if (!newStream) { console.warn('switchCamera: no camera could be acquired'); return; }
         const newVideoTrack = newStream.getVideoTracks()[0];
+        if (!newVideoTrack) return;
 
         // RTCPeerConnection sender mein track replace karo
-        const sender = this.pc?.getSenders().find((s: any) => s.track?.kind === 'video');
+        const sender = this.videoSender ?? this.pc?.getSenders().find((s: any) => s.track?.kind === 'video');
         if (sender) {
+          this.videoSender = sender;
           await sender.replaceTrack(newVideoTrack);
         }
 
@@ -659,5 +730,6 @@ export class WebRTCService {
     }
 
     this.remoteStream = null;
+    this.videoSender = null;
   }
 }

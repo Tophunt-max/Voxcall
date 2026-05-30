@@ -680,8 +680,16 @@ export default function VideoCallScreen() {
             "java.lang.RuntimeException: Camera in use". Now we show a text
             placeholder until the real WebRTC stream is ready (~200-1000 ms). */}
         {activeCall?.isCameraOn && cameraGranted ? (
-          webrtc.localStream ? (
+          webrtc.localStream && webrtc.localHasVideo ? (
             <StreamView stream={webrtc.localStream} style={styles.selfCameraView} mirror={true} />
+          ) : webrtc.localStream && !webrtc.localHasVideo ? (
+            // FIX (#6): a video call fell back to audio-only (camera busy /
+            // unreadable at start). Tell the user instead of showing a
+            // permanently black self-preview.
+            <View style={styles.selfCameraOff}>
+              <SvgIcon name="camera-off" size={22} color="rgba(255,255,255,0.6)" />
+              <Text style={styles.selfCameraOffText}>Camera unavailable</Text>
+            </View>
           ) : !webrtc.isAvailable && CameraView ? (
             // FIX (camera-busy race): only render <CameraView /> when WebRTC
             // isn't available (e.g. some web fallback). On native, WebRTC's

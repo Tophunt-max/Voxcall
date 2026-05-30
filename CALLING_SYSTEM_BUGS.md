@@ -154,3 +154,43 @@ explicitly admitted it.
 - `api-server/src/index.ts` — cron reaper pattern verified (used as fix #9 reference)
 
 Triple typecheck pass: api-server, voxlink, voxlink-host (all `Exit 0`).
+
+
+---
+
+## Known limitations (audited 2026-05-30) — not yet code-fixed
+
+These two were identified during the calling-system audit. They are **not**
+quick code fixes — each needs either a new native dependency or a deliberate
+product decision, so they are documented here rather than patched blindly.
+
+### L1. Speaker / Earpiece button does not actually route audio
+- **Symptom:** Tapping *Speaker* toggles the icon but the audio output device
+  does not change.
+- **Cause:** There is no audio-routing code anywhere in the apps. The only
+  `Audio.setAudioModeAsync` call lives in `useRingtone.ts` (for ringtone
+  playback) and does **not** control the live WebRTC audio session.
+  `toggleSpeaker` in `CallContext` only flips a UI flag (`isSpeakerOn`).
+- **Web:** there is no earpiece concept and no API to switch output, so the
+  toggle is effectively a no-op (audio always plays through the active device).
+- **Native fix (requires a dependency + dev build):** add
+  `react-native-incall-manager` and call
+  `InCallManager.setForceSpeakerphoneOn(isSpeakerOn)` (and `start()/stop()` on
+  call begin/end). This needs an Expo config plugin and a new native build —
+  it cannot be hot-shipped to the existing web bundle.
+- **Interim option:** hide/disable the Speaker button on web so it is not
+  misleading.
+
+### L2. Turning the camera OFF does not release the camera hardware
+- **Symptom:** With camera toggled off, the device camera light/handle stays
+  active (minor privacy + battery cost).
+- **Why it is intentional (for now):** `toggleCamera(false)` sets
+  `videoTrack.enabled = false` rather than `videoTrack.stop()`. Keeping the
+  track + sender alive means re-enabling is instant and never needs a
+  Cloudflare Calls SFU renegotiation. Fully stopping the track would require
+  re-acquiring + re-pushing tracks mid-call (a renegotiation path the current
+  push flow does not implement) and risks the camera-busy race we just fixed.
+- **Recommended fix (larger):** implement a proper mid-call renegotiation path
+  so the camera can be fully released on OFF and cleanly re-added on ON. The
+  `toggleCamera` re-acquire + `replaceTrack` logic added in this audit is the
+  first half of that work (it already re-acquires when a video sender exists).

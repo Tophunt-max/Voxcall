@@ -11,6 +11,7 @@ export interface UseWebRTCReturn {
   localStream: any;
   remoteStream: any;
   remoteHasVideo: boolean;
+  localHasVideo: boolean;
   connectionState: string;
   isConnected: boolean;
   isAvailable: boolean;
@@ -28,6 +29,7 @@ export function useWebRTC(options: UseWebRTCOptions): UseWebRTCReturn {
   const [localStream, setLocalStream] = useState<any>(null);
   const [remoteStream, setRemoteStream] = useState<any>(null);
   const [remoteHasVideo, setRemoteHasVideo] = useState(false);
+  const [localHasVideo, setLocalHasVideo] = useState(false);
   const [connectionState, setConnectionState] = useState('new');
   const [error, setError] = useState<string | null>(null);
   const serviceRef = useRef<WebRTCService | null>(null);
@@ -44,6 +46,7 @@ export function useWebRTC(options: UseWebRTCOptions): UseWebRTCReturn {
     setLocalStream(null);
     setRemoteStream(null);
     setRemoteHasVideo(false);
+    setLocalHasVideo(false);
     setConnectionState('closed');
   }, []);
 
@@ -160,10 +163,33 @@ export function useWebRTC(options: UseWebRTCOptions): UseWebRTCReturn {
     };
   }, [remoteStream]);
 
+  // FIX (#6 — camera-unavailable feedback): track whether our LOCAL stream
+  // actually carries a usable video track. When a video call falls back to
+  // audio-only (camera busy / unreadable at start), there is no video track —
+  // the screen uses this to tell the user "Camera unavailable" instead of
+  // showing a permanently black self-preview. Polled because track add/remove
+  // (e.g. toggleCamera re-acquire) mutates the same stream object in place.
+  useEffect(() => {
+    const stream = localStream;
+    if (!stream) {
+      setLocalHasVideo(false);
+      return;
+    }
+    const recompute = () => {
+      const tracks: any[] = stream.getVideoTracks?.() ?? [];
+      const active = tracks.some((t: any) => t && t.readyState !== 'ended');
+      setLocalHasVideo(active);
+    };
+    recompute();
+    const interval = setInterval(recompute, 1500);
+    return () => clearInterval(interval);
+  }, [localStream]);
+
   return {
     localStream,
     remoteStream,
     remoteHasVideo,
+    localHasVideo,
     connectionState,
     isConnected: connectionState === 'connected',
     isAvailable: available,

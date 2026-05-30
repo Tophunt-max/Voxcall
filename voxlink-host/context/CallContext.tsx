@@ -204,9 +204,22 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     }
   }, [refreshProfile]);
 
-  const toggleMute = useCallback(() => setActiveCall((p) => p ? { ...p, isMuted: !p.isMuted } : null), []);
-  const toggleCamera = useCallback(() => setActiveCall((p) => p ? { ...p, isCameraOn: !p.isCameraOn } : null), []);
-  const toggleSpeaker = useCallback(() => setActiveCall((p) => p ? { ...p, isSpeakerOn: !p.isSpeakerOn } : null), []);
+  // FIX (stale activeCallRef): route toggles through updateCall so the ref
+  // stays in sync with state. Previously these used setActiveCall directly,
+  // leaving activeCallRef.current.isMuted/isCameraOn/isSpeakerOn stale — any
+  // code reading those flags off the ref saw outdated values.
+  const toggleMute = useCallback(() => {
+    const c = activeCallRef.current;
+    if (c) updateCall({ ...c, isMuted: !c.isMuted });
+  }, []);
+  const toggleCamera = useCallback(() => {
+    const c = activeCallRef.current;
+    if (c) updateCall({ ...c, isCameraOn: !c.isCameraOn });
+  }, []);
+  const toggleSpeaker = useCallback(() => {
+    const c = activeCallRef.current;
+    if (c) updateCall({ ...c, isSpeakerOn: !c.isSpeakerOn });
+  }, []);
 
   return (
     <CallContext.Provider value={{
