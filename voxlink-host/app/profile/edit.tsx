@@ -158,12 +158,25 @@ export default function EditHostProfileScreen() {
             />
           </View>
 
-          <View style={[styles.infoBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <SvgIcon name="info" size={14} color={colors.mutedForeground} />
-            <Text style={[styles.infoText, { color: colors.mutedForeground }]}>
-              To update your hourly rate or specialties, please contact host support.
-            </Text>
-          </View>
+          <Text style={[styles.label, { color: colors.mutedForeground }]}>Host Settings</Text>
+          <TouchableOpacity
+            style={[styles.linkRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
+            onPress={() => router.push("/call-rates")}
+            activeOpacity={0.8}
+          >
+            <SvgIcon name="info" size={16} color={colors.primary} />
+            <Text style={[styles.linkText, { color: colors.text }]}>Set your call rates (coins / min)</Text>
+            <Image source={require("@/assets/icons/ic_back.png")} style={styles.linkChevron} tintColor={colors.mutedForeground} resizeMode="contain" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.linkRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
+            onPress={() => router.push("/manage-topics")}
+            activeOpacity={0.8}
+          >
+            <SvgIcon name="info" size={16} color={colors.primary} />
+            <Text style={[styles.linkText, { color: colors.text }]}>Manage your topics & specialties</Text>
+            <Image source={require("@/assets/icons/ic_back.png")} style={styles.linkChevron} tintColor={colors.mutedForeground} resizeMode="contain" />
+          </TouchableOpacity>
         </View>
 
         <PrimaryButton title="Save Changes" onPress={handleSave} loading={loading} />
@@ -196,4 +209,10 @@ const styles = StyleSheet.create({
     padding: 12, borderRadius: 10, borderWidth: 1,
   },
   infoText: { flex: 1, fontSize: 12, fontFamily: "Poppins_400Regular", lineHeight: 18 },
+  linkRow: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    padding: 14, borderRadius: 10, borderWidth: 1, marginTop: 8,
+  },
+  linkText: { flex: 1, fontSize: 13, fontFamily: "Poppins_500Medium" },
+  linkChevron: { width: 14, height: 14, transform: [{ rotate: "180deg" }] },
 });

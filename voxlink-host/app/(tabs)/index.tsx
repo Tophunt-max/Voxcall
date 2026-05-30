@@ -200,6 +200,32 @@ export default function HostHomeScreen() {
         </View>
       )}
 
+      {/* Quick Actions — host self-service tools */}
+      <View style={styles.quickSection}>
+        <Text style={[styles.quickTitle, { color: colors.text }]}>Manage</Text>
+        <View style={styles.quickGrid}>
+          {([
+            { icon: "💰", label: "Call Rates", desc: "Set your price", onPress: () => router.push("/call-rates") },
+            { icon: "🏷️", label: "My Topics", desc: "Reach more users", onPress: () => router.push("/manage-topics") },
+            { icon: "📈", label: "Earnings", desc: "View history", onPress: () => router.push("/earnings-history") },
+            { icon: "🏦", label: "Payouts", desc: "Withdraw coins", onPress: () => router.push("/payout-method") },
+            { icon: "🎁", label: "Refer & Earn", desc: "Invite friends", onPress: () => router.push("/referral") },
+            { icon: "📞", label: "Call History", desc: "Past calls", onPress: () => router.push("/calls/history") },
+          ] as const).map((q) => (
+            <TouchableOpacity
+              key={q.label}
+              style={[styles.quickCard, { backgroundColor: colors.card }]}
+              onPress={q.onPress}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.quickIcon}>{q.icon}</Text>
+              <Text style={[styles.quickLabel, { color: colors.text }]}>{q.label}</Text>
+              <Text style={[styles.quickDesc, { color: colors.mutedForeground }]}>{q.desc}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+
       {/* Host image / promo */}
       <Image
         source={require("@/assets/images/host_home.png")}
@@ -330,6 +356,13 @@ const styles = StyleSheet.create({
   statLabel: { fontSize: 11, fontFamily: "Poppins_400Regular" },
   statDiv: { width: 1, height: 40 },
   promoImg: { width: "100%", height: 160, marginBottom: 16 },
+  quickSection: { paddingHorizontal: 16, marginBottom: 16 },
+  quickTitle: { fontSize: 16, fontFamily: "Poppins_700Bold", marginBottom: 12 },
+  quickGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: 12 },
+  quickCard: { width: "31.5%", borderRadius: 14, paddingVertical: 16, paddingHorizontal: 8, alignItems: "center", gap: 3 },
+  quickIcon: { fontSize: 24, marginBottom: 3 },
+  quickLabel: { fontSize: 12, fontFamily: "Poppins_600SemiBold", textAlign: "center" },
+  quickDesc: { fontSize: 9.5, fontFamily: "Poppins_400Regular", textAlign: "center" },
   permSection: { paddingHorizontal: 16, gap: 10, marginBottom: 16 },
   permTitle: { fontSize: 16, fontFamily: "Poppins_700Bold", marginBottom: 4 },
   permRow: { borderRadius: 14, padding: 14, flexDirection: "row", alignItems: "center", gap: 12 },

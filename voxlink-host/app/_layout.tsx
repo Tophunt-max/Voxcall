@@ -289,6 +289,8 @@ function RootLayoutNav() {
         <Stack.Screen name="referral" />
         <Stack.Screen name="earnings-history" />
         <Stack.Screen name="payout-method" />
+        <Stack.Screen name="call-rates" />
+        <Stack.Screen name="manage-topics" />
       </Stack>
       <ToastContainer />
       <OfflineBanner />
