@@ -31,7 +31,7 @@ export default function CallingHistoryScreen() {
           id: c.id,
           hostId: c.host_id,
           hostName: c.host_name || c.host_display_name || "Host",
-          hostAvatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${c.host_id}`,
+          hostAvatar: `https://api.dicebear.com/7.x/avataaars/png?seed=${c.host_id}`,
           type: c.type || "audio",
           duration: c.duration_seconds || 0,
           coinsSpent: c.coins_charged || 0,
@@ -98,7 +98,7 @@ export default function CallingHistoryScreen() {
           >
             <View style={styles.avatarWrap}>
               <Image
-                source={{ uri: `https://api.dicebear.com/7.x/avataaars/svg?seed=${item.hostId}` }}
+                source={{ uri: `https://api.dicebear.com/7.x/avataaars/png?seed=${item.hostId}` }}
                 style={styles.avatar}
               />
               <View style={[styles.callTypeBadge, { backgroundColor: item.type === "video" ? "#F1F0FF" : "#E8CFFF" }]}>
@@ -163,3 +163,8 @@ const styles = StyleSheet.create({
   emptyImg: { width: 180, height: 140 },
   emptyText: { fontSize: 14, fontFamily: "Poppins_400Regular" },
 });
+
+
+// Per-screen error boundary — contains a render crash to this screen
+// (retry / go back) instead of blanking the whole app. See components/RouteErrorBoundary.
+export { ErrorBoundary } from "@/components/RouteErrorBoundary";

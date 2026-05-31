@@ -324,46 +324,6 @@ class SocketService {
       this.listeners.clear();
     }
   }
-
-  // ─── Dev/Test Simulation helpers ─────────────────────────────────────────
-
-  simulateIncomingCall(hostName: string, hostAvatar: string, callType: "audio" | "video" = "audio"): void {
-    setTimeout(() => {
-      this.emit(SocketEvents.CALL_INCOMING, {
-        callId: `call_${Date.now()}`,
-        hostName,
-        hostAvatar,
-        type: callType,
-        timestamp: Date.now(),
-      });
-    }, 3000);
-  }
-
-  simulateNewMessage(chatId: string, senderName: string, text: string): void {
-    setTimeout(() => {
-      this.emit(SocketEvents.MESSAGE_RECEIVED, {
-        chatId,
-        id: `msg_${Date.now()}`,
-        senderName,
-        text,
-        timestamp: Date.now(),
-      });
-    }, 1500);
-  }
-
-  simulatePresenceChange(userId: string, isOnline: boolean): void {
-    setTimeout(() => {
-      this.emit(SocketEvents.PRESENCE_UPDATE, { userId, isOnline, timestamp: Date.now() });
-    }, 500);
-  }
-
-  simulateCoinDeduct(amount: number, newBalance: number): void {
-    this.emit(SocketEvents.COIN_DEDUCTED, { amount, newBalance, timestamp: Date.now() });
-  }
-
-  simulateHostStatusChange(hostId: string, status: "online" | "offline" | "busy"): void {
-    this.emit(SocketEvents.HOST_STATUS_CHANGE, { hostId, status });
-  }
 }
 
 export const socketService = SocketService.getInstance();

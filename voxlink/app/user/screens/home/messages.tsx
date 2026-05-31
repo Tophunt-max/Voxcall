@@ -89,7 +89,7 @@ export default function MessagesScreen() {
             >
               <View style={styles.avatarWrap}>
                 <Image
-                  source={{ uri: `https://api.dicebear.com/7.x/avataaars/svg?seed=${item.participantId}` }}
+                  source={{ uri: `https://api.dicebear.com/7.x/avataaars/png?seed=${item.participantId}` }}
                   style={styles.avatar}
                 />
                 <View style={[styles.onlineDot, { backgroundColor: colors.online, borderColor: colors.background }]} />
@@ -146,3 +146,8 @@ const styles = StyleSheet.create({
   badgeText: { color: "#fff", fontSize: 11, fontFamily: "Poppins_700Bold" },
   separator: { height: StyleSheet.hairlineWidth, marginLeft: 86 },
 });
+
+
+// Per-screen error boundary — contains a render crash to this screen
+// (retry / go back) instead of blanking the whole app. See components/RouteErrorBoundary.
+export { ErrorBoundary } from "@/components/RouteErrorBoundary";

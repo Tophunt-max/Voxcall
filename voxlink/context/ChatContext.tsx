@@ -1,7 +1,9 @@
 import React, { createContext, useContext, useState, useCallback, useRef } from "react";
 import { API } from "@/services/api";
+import { showErrorToast } from "@/components/Toast";
 
 export type MessageType = "text" | "image" | "audio";
+export type MessageStatus = "sending" | "sent" | "failed";
 
 export interface Message {
   id: string;
@@ -11,6 +13,9 @@ export interface Message {
   type: MessageType;
   timestamp: number;
   isRead: boolean;
+  /** Delivery status for optimistic outgoing messages. Undefined == delivered
+   *  (e.g. messages loaded from the server). */
+  status?: MessageStatus;
 }
 
 export interface Conversation {
@@ -115,6 +120,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       type,
       timestamp: Date.now(),
       isRead: true,
+      status: "sending",
     };
 
     setConversations((prev) =>
@@ -134,14 +140,28 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
             ...c,
             messages: c.messages.map((m) =>
               m.id === tempId
-                ? { ...m, id: sent.id ?? m.id, senderId: sent.sender_id ?? "me" }
+                ? { ...m, id: sent.id ?? m.id, senderId: sent.sender_id ?? "me", status: "sent" as MessageStatus }
                 : m
             ),
           };
         })
       );
     } catch (e) {
-      console.log("sendMessage API error:", e);
+      // Don't leave a failed message looking delivered — mark it so the UI can
+      // show a "Not sent" indicator, and surface the failure to the user.
+      console.warn("sendMessage API error:", e);
+      setConversations((prev) =>
+        prev.map((c) => {
+          if (c.id !== conversationId) return c;
+          return {
+            ...c,
+            messages: c.messages.map((m) =>
+              m.id === tempId ? { ...m, status: "failed" as MessageStatus } : m
+            ),
+          };
+        })
+      );
+      showErrorToast("Message not sent. Check your connection and try again.");
     }
   }, [conversations]);
 

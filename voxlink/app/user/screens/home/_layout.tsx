@@ -47,12 +47,12 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: "#A00EE7",
-        tabBarInactiveTintColor: "#AAAACC",
+        tabBarActiveTintColor: colors.accent,
+        tabBarInactiveTintColor: colors.mutedForeground,
         tabBarStyle: {
-          backgroundColor: "#FFFFFF",
+          backgroundColor: colors.card,
           borderTopWidth: StyleSheet.hairlineWidth,
-          borderTopColor: "#E9E9E9",
+          borderTopColor: colors.border,
           elevation: 12,
           shadowColor: "#000",
           shadowOffset: { width: 0, height: -2 },

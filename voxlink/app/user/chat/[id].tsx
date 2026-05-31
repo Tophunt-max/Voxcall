@@ -24,7 +24,7 @@ export default function ChatScreen() {
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
   const [participantName, setParticipantName] = useState("Chat");
-  const [participantAvatar, setParticipantAvatar] = useState(`https://api.dicebear.com/7.x/avataaars/svg?seed=${id}`);
+  const [participantAvatar, setParticipantAvatar] = useState(`https://api.dicebear.com/7.x/avataaars/png?seed=${id}`);
   const listRef = useRef<FlatList>(null);
 
   const convo = conversations.find((c) => c.id === id || c.roomId === id);
@@ -68,9 +68,17 @@ export default function ChatScreen() {
           isMe ? { backgroundColor: colors.primary } : { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }
         ]}>
           <Text style={[styles.bubbleText, { color: isMe ? "#fff" : colors.foreground }]}>{item.content}</Text>
-          <Text style={[styles.bubbleTime, { color: isMe ? "rgba(255,255,255,0.6)" : colors.mutedForeground }]}>
-            {formatTime(item.timestamp)}
-          </Text>
+          <View style={styles.bubbleMetaRow}>
+            <Text style={[styles.bubbleTime, { color: isMe ? "rgba(255,255,255,0.6)" : colors.mutedForeground }]}>
+              {formatTime(item.timestamp)}
+            </Text>
+            {isMe && item.status === "sending" && (
+              <Text style={[styles.bubbleStatus, { color: "rgba(255,255,255,0.7)" }]}>Sending…</Text>
+            )}
+            {isMe && item.status === "failed" && (
+              <Text style={[styles.bubbleStatus, { color: "#FFD2D2" }]}>Not sent</Text>
+            )}
+          </View>
         </View>
       </View>
     );
@@ -160,7 +168,9 @@ const styles = StyleSheet.create({
   msgAvatar: { width: 28, height: 28, borderRadius: 14 },
   bubble: { maxWidth: "72%", padding: 12, borderRadius: 18, gap: 4 },
   bubbleText: { fontSize: 14, fontFamily: "Poppins_400Regular", lineHeight: 20 },
+  bubbleMetaRow: { flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 6 },
   bubbleTime: { fontSize: 10, fontFamily: "Poppins_400Regular", alignSelf: "flex-end" },
+  bubbleStatus: { fontSize: 10, fontFamily: "Poppins_500Medium" },
   inputBar: { flexDirection: "row", padding: 12, gap: 8, alignItems: "flex-end", borderTopWidth: StyleSheet.hairlineWidth },
   iconBtn: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
   inputWrap: { flex: 1, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 10, maxHeight: 100 },

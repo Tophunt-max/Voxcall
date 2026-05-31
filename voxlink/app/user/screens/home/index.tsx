@@ -34,7 +34,7 @@ function mapApiHost(h: any): Host {
   return {
     id: h.id,
     name: h.display_name || h.name || "Host",
-    avatar: resolveMediaUrl(h.avatar_url) || `https://api.dicebear.com/7.x/avataaars/svg?seed=${h.id}`,
+    avatar: resolveMediaUrl(h.avatar_url) || `https://api.dicebear.com/7.x/avataaars/png?seed=${h.id}`,
     bio: h.bio || "",
     rating: Number(h.rating) || 0,
     reviewCount: Number(h.review_count) || 0,
@@ -181,7 +181,7 @@ export default function HomeScreen() {
       setCoinPopup(true);
       return;
     }
-    const avatar = host.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${host.id}`;
+    const avatar = host.avatar || `https://api.dicebear.com/7.x/avataaars/png?seed=${host.id}`;
     initiateCall({ id: host.id, name: host.name, avatar, role: "host" }, type, rate);
     router.push({ pathname: "/user/call/outgoing", params: { hostId: host.id, callType: type, hostName: host.name, hostAvatar: avatar, specialty: host.specialties?.[0] ?? "" } });
   }, [user?.coins, initiateCall]);
@@ -311,7 +311,7 @@ export default function HomeScreen() {
           >
             <View style={[styles.avatarBorder, { borderColor: colors.primary }]}>
               <Image
-                source={{ uri: resolveMediaUrl(user?.avatar) || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.id ?? "me"}` }}
+                source={{ uri: resolveMediaUrl(user?.avatar) || `https://api.dicebear.com/7.x/avataaars/png?seed=${user?.id ?? "me"}` }}
                 style={styles.headerAvatar}
                 onError={() => {}}
                 defaultSource={require("@/assets/images/home_call_person.png")}
@@ -642,3 +642,8 @@ const styles = StyleSheet.create({
   emptyImage: { width: 160, height: 120 },
   emptyText: { fontSize: 14, fontFamily: "Poppins_400Regular" },
 });
+
+
+// Per-screen error boundary — a render crash on the home hub stays contained
+// (retry / go back) instead of blanking the whole app. See components/RouteErrorBoundary.
+export { ErrorBoundary } from "@/components/RouteErrorBoundary";

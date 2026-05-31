@@ -35,21 +35,29 @@ export default function ReferralScreen() {
       .finally(() => setLoading(false));
   }, []);
 
-  const handleCopy = () => {
+  const handleCopy = async () => {
     if (!referral?.code) return;
-    ClipboardModule.setStringAsync(referral.code);
-    setCopied(true);
-    showSuccessToast("Referral code copied!", "Copied");
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      await ClipboardModule.setStringAsync(referral.code);
+      setCopied(true);
+      showSuccessToast("Referral code copied!", "Copied");
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      showErrorToast("Couldn't copy the code. Please try again.");
+    }
   };
 
-  const handleShare = () => {
+  const handleShare = async () => {
     if (!referral?.code) return;
-    crossShare({
-      message: `Join VoxLink and connect with amazing hosts for audio & video calls!\n\nUse my referral code: ${referral.code} to get bonus coins on signup!\n\nDownload now: https://voxlink.app`,
-      title: "Join VoxLink",
-      url: "https://voxlink.app",
-    });
+    try {
+      await crossShare({
+        message: `Join VoxLink and connect with amazing hosts for audio & video calls!\n\nUse my referral code: ${referral.code} to get bonus coins on signup!\n\nDownload now: https://voxlink.app`,
+        title: "Join VoxLink",
+        url: "https://voxlink.app",
+      });
+    } catch {
+      // User cancelled the share sheet or it failed — non-fatal, no toast needed.
+    }
   };
 
   return (
@@ -196,3 +204,8 @@ const styles = StyleSheet.create({
   stepIcon: { width: 20 },
   stepText: { flex: 1, fontSize: 14, fontFamily: "Poppins_400Regular", lineHeight: 20 },
 });
+
+
+// Per-screen error boundary — contains a render crash to this screen
+// (retry / go back) instead of blanking the whole app. See components/RouteErrorBoundary.
+export { ErrorBoundary } from "@/components/RouteErrorBoundary";

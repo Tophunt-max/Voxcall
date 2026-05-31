@@ -54,7 +54,7 @@ export default function SearchHostsScreen() {
 
   const renderHost = ({ item }: { item: any }) => {
     const name = item.display_name ?? item.name ?? "Host";
-    const avatar = item.avatar_url ?? `https://api.dicebear.com/7.x/avataaars/svg?seed=${item.id}`;
+    const avatar = item.avatar_url ?? `https://api.dicebear.com/7.x/avataaars/png?seed=${item.id}`;
     const rating = (item.rating ?? 4.5).toFixed(1);
     const rate = item.audio_coins_per_minute ?? item.coinsPerMinute ?? 5;
     const topicsArr = Array.isArray(item.topics) ? item.topics : (item.topics ? String(item.topics).split(",") : []);
@@ -233,3 +233,8 @@ const styles = StyleSheet.create({
   empty: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12, padding: 40 },
   emptyText: { fontSize: 14, fontFamily: "Poppins_400Regular", textAlign: "center" },
 });
+
+
+// Per-screen error boundary — contains a render crash to this screen
+// (retry / go back) instead of blanking the whole app. See components/RouteErrorBoundary.
+export { ErrorBoundary } from "@/components/RouteErrorBoundary";

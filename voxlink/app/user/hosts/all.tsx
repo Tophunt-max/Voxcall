@@ -21,7 +21,7 @@ export default function AllHostsScreen() {
       const list = res?.hosts ?? [];
       const mapped = list.map((h: any) => ({
         ...h,
-        avatar: resolveMediaUrl(h.avatar_url || h.avatar) || `https://api.dicebear.com/7.x/avataaars/svg?seed=${h.id}`,
+        avatar: resolveMediaUrl(h.avatar_url || h.avatar) || `https://api.dicebear.com/7.x/avataaars/png?seed=${h.id}`,
       }));
       setHosts(mapped);
     }).catch(() => { setHosts([]); showErrorToast("Failed to load hosts."); }).finally(() => setLoading(false));
@@ -69,3 +69,8 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingBottom: 12 },
   title: { fontSize: 20, fontFamily: "Poppins_700Bold" },
 });
+
+
+// Per-screen error boundary — contains a render crash to this screen
+// (retry / go back) instead of blanking the whole app. See components/RouteErrorBoundary.
+export { ErrorBoundary } from "@/components/RouteErrorBoundary";

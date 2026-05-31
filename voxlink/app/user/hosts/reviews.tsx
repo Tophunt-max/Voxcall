@@ -125,7 +125,7 @@ export default function AllReviewsScreen() {
             <View style={[styles.reviewCard, { backgroundColor: colors.card }]}>
               <View style={styles.reviewTop}>
                 <Image
-                  source={{ uri: `https://api.dicebear.com/7.x/avataaars/svg?seed=${item.user_id ?? item.id}` }}
+                  source={{ uri: `https://api.dicebear.com/7.x/avataaars/png?seed=${item.user_id ?? item.id}` }}
                   style={styles.reviewAvatar}
                 />
                 <View style={{ flex: 1, gap: 2 }}>
@@ -167,3 +167,8 @@ const styles = StyleSheet.create({
   reviewText: { fontSize: 13, fontFamily: "Poppins_400Regular", lineHeight: 20 },
   emptyText: { fontSize: 16, fontFamily: "Poppins_600SemiBold" },
 });
+
+
+// Per-screen error boundary — contains a render crash to this screen
+// (retry / go back) instead of blanking the whole app. See components/RouteErrorBoundary.
+export { ErrorBoundary } from "@/components/RouteErrorBoundary";

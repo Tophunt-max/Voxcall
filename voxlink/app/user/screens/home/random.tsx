@@ -104,7 +104,7 @@ function ListenerCard({ host, isLeft, isSpecial, delay, onCycled, onPress }: Lis
     ? { paddingLeft: 32, paddingRight: 14, paddingVertical: 8 }
     : { paddingLeft: 20, paddingRight: 32, paddingVertical: 8 };
 
-  const avatarUri = resolveMediaUrl(host.avatar_url) || `https://api.dicebear.com/7.x/avataaars/svg?seed=${host.id}`;
+  const avatarUri = resolveMediaUrl(host.avatar_url) || `https://api.dicebear.com/7.x/avataaars/png?seed=${host.id}`;
 
   return (
     <Animated.View style={{ opacity, transform: [{ scale }] }}>
@@ -192,7 +192,7 @@ function MatchFoundScreen({ host, callType, adminCoinRate, onAccept, onDecline }
     Animated.spring(scale, { toValue: 1, tension: 55, friction: 8, useNativeDriver: false }).start();
   }, []);
 
-  const avatarUri = resolveMediaUrl(host.avatar_url) || `https://api.dicebear.com/7.x/avataaars/svg?seed=${host.id}`;
+  const avatarUri = resolveMediaUrl(host.avatar_url) || `https://api.dicebear.com/7.x/avataaars/png?seed=${host.id}`;
 
   const coinsPerMin = adminCoinRate;
 
@@ -347,7 +347,7 @@ export default function RandomScreen() {
     if (!matchedHost) return;
     setPhase("idle");
 
-    const avatarUri = resolveMediaUrl(matchedHost.avatar_url) || `https://api.dicebear.com/7.x/avataaars/svg?seed=${matchedHost.id}`;
+    const avatarUri = resolveMediaUrl(matchedHost.avatar_url) || `https://api.dicebear.com/7.x/avataaars/png?seed=${matchedHost.id}`;
 
     // adminCoinRate is set by admin in Settings → Random Call Rates
     initiateCall(
@@ -576,3 +576,8 @@ const styles = StyleSheet.create({
   matchAccept: { width: 68, height: 68, borderRadius: 34, alignItems: "center", justifyContent: "center" },
   matchBtnIco: { width: 28, height: 28 },
 });
+
+
+// Per-screen error boundary — contains a render crash to this screen
+// (retry / go back) instead of blanking the whole app. See components/RouteErrorBoundary.
+export { ErrorBoundary } from "@/components/RouteErrorBoundary";

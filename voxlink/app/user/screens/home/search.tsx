@@ -23,7 +23,7 @@ function mapApiHost(h: any) {
   return {
     id: h.id,
     name: h.display_name || h.name || "Host",
-    avatar: resolveMediaUrl(h.avatar_url) || `https://api.dicebear.com/7.x/avataaars/svg?seed=${h.id}`,
+    avatar: resolveMediaUrl(h.avatar_url) || `https://api.dicebear.com/7.x/avataaars/png?seed=${h.id}`,
     bio: h.bio || "",
     rating: Number(h.rating) || 0,
     reviewCount: Number(h.review_count) || 0,
@@ -319,3 +319,8 @@ const styles = StyleSheet.create({
   modalOptText: { fontSize: 15, fontFamily: "Poppins_500Medium", color: DARK },
   modalCheck: { width: 10, height: 10, borderRadius: 5, backgroundColor: ACCENT },
 });
+
+
+// Per-screen error boundary — contains a render crash to this screen
+// (retry / go back) instead of blanking the whole app. See components/RouteErrorBoundary.
+export { ErrorBoundary } from "@/components/RouteErrorBoundary";

@@ -3,6 +3,7 @@ import { AppState } from "react-native";
 import { setItem, getItem, removeItem, StorageKeys } from "@/utils/storage";
 import { apiRequest, API } from "@/services/api";
 import { registerForPushNotifications, notifyLowCoins } from "@/services/NotificationService";
+import { onTokenRefresh } from "@/services/fcm";
 import { setServerCurrency } from "@/utils/currency";
 
 const LOW_COINS_THRESHOLD = 10;
@@ -157,6 +158,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
     return () => sub.remove();
   }, []);
+
+  // Keep the backend FCM token in sync when the native token rotates. Without
+  // this, a rotated token never reaches the server and push delivery silently
+  // dies mid-session (the launch/login syncPushToken only runs once). No-op on
+  // web (onTokenRefresh returns a noop unsubscribe there).
+  useEffect(() => {
+    if (!state.isLoggedIn) return;
+    const unsubscribe = onTokenRefresh((token) => {
+      (async () => {
+        try {
+          await apiRequest("PATCH", "/api/user/me", { fcm_token: token });
+          await setItem(StorageKeys.PUSH_TOKEN, token);
+          console.log("[AuthContext] FCM token rotated — synced to backend");
+        } catch (e) {
+          console.warn("[AuthContext] FCM token rotation sync failed:", e);
+        }
+      })();
+    });
+    return unsubscribe;
+  }, [state.isLoggedIn]);
 
   const loginWithToken = useCallback(async (token: string, user: UserProfile) => {
     await Promise.all([

@@ -246,3 +246,8 @@ const styles = StyleSheet.create({
   switch: {},
   divider: { height: StyleSheet.hairlineWidth, marginLeft: 50 },
 });
+
+
+// Per-screen error boundary — contains a render crash to this screen
+// (retry / go back) instead of blanking the whole app. See components/RouteErrorBoundary.
+export { ErrorBoundary } from "@/components/RouteErrorBoundary";

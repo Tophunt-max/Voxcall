@@ -158,7 +158,7 @@ export default function HostDetailScreen() {
 
   /* ─── Derived fields ─── */
   const hostName = host.display_name || host.name || "Host";
-  const hostAvatar = resolveMediaUrl(host.avatar_url) || `https://api.dicebear.com/7.x/avataaars/svg?seed=${host.id}`;
+  const hostAvatar = resolveMediaUrl(host.avatar_url) || `https://api.dicebear.com/7.x/avataaars/png?seed=${host.id}`;
   const uniqueId = `VX${String(host.id).slice(-6).padStart(6, "0")}`;
   const callCount = host.total_minutes ? Math.floor(host.total_minutes / 30) : host.review_count * 2;
   const experience = `${Math.max(1, Math.floor((host.total_minutes ?? 0) / 5000))}+`;
@@ -386,7 +386,7 @@ export default function HostDetailScreen() {
                 <View style={s.reviewDot}>
                   <View style={s.reviewAvatarCircle}>
                     <Image
-                      source={{ uri: resolveMediaUrl(r.avatar_url) ?? `https://api.dicebear.com/7.x/avataaars/svg?seed=${r.user_id ?? i}` }}
+                      source={{ uri: resolveMediaUrl(r.avatar_url) ?? `https://api.dicebear.com/7.x/avataaars/png?seed=${r.user_id ?? i}` }}
                       style={s.reviewAvatarImg}
                     />
                   </View>
@@ -682,3 +682,8 @@ const sht = StyleSheet.create({
   chipIco: { width: 16, height: 16 },
   chipTxt: { fontSize: 12, fontFamily: "Poppins_600SemiBold", color: ORANGE },
 });
+
+
+// Per-screen error boundary — contains a render crash to this screen
+// (retry / go back) instead of blanking the whole app. See components/RouteErrorBoundary.
+export { ErrorBoundary } from "@/components/RouteErrorBoundary";

@@ -159,3 +159,8 @@ const styles = StyleSheet.create({
   textAreaWrap: { minHeight: 100 },
   input: { fontSize: 15, fontFamily: "Poppins_400Regular", padding: 0 },
 });
+
+
+// Per-screen error boundary — contains a render crash to this screen
+// (retry / go back) instead of blanking the whole app. See components/RouteErrorBoundary.
+export { ErrorBoundary } from "@/components/RouteErrorBoundary";
