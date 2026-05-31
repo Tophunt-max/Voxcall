@@ -77,7 +77,19 @@ export default function HostWalletScreen() {
   const [stats, setStats] = useState<EarningsStats>({ thisWeek: 0, sessions: 0, withdrawn: 0, totalEarnings: 0 });
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  // #10: minimum withdrawal comes from server app_settings (single source of
+  // truth) instead of a hardcoded constant that can drift from the backend.
+  const [minWithdraw, setMinWithdraw] = useState(100);
   const topPad = insets.top;
+
+  useEffect(() => {
+    API.getAppConfig()
+      .then((cfg) => {
+        const m = parseInt(cfg?.min_withdrawal_coins ?? "", 10);
+        if (Number.isFinite(m) && m > 0) setMinWithdraw(m);
+      })
+      .catch(() => { /* keep default */ });
+  }, []);
 
   const load = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
@@ -117,8 +129,8 @@ export default function HostWalletScreen() {
       showWarningToast("Please enter a valid amount.", "Invalid Amount");
       return;
     }
-    if (amt < 100) {
-      showWarningToast("Minimum withdrawal is 100 coins.", "Too Low");
+    if (amt < minWithdraw) {
+      showWarningToast(`Minimum withdrawal is ${minWithdraw} coins.`, "Too Low");
       return;
     }
     if (amt > (user?.coins ?? 0)) {
@@ -140,7 +152,7 @@ export default function HostWalletScreen() {
     } finally {
       setWithdrawing(false);
     }
-  }, [withdrawAmt, user, load]);
+  }, [withdrawAmt, user, load, minWithdraw]);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
@@ -310,7 +322,7 @@ export default function HostWalletScreen() {
           <View style={[styles.noteCard, { backgroundColor: "#FFF8E1" }]}>
             <Text style={[styles.noteTitle, { color: "#FFA100" }]}>Note</Text>
             <Text style={[styles.noteText, { color: colors.mutedForeground }]}>
-              Minimum withdrawal is 100 coins. Processing takes 2-3 business days.
+              Minimum withdrawal is {minWithdraw} coins. Processing takes 2-3 business days.
             </Text>
           </View>
 

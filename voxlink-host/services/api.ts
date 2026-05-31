@@ -282,6 +282,12 @@ export const API = {
       recommendMessage: string;
     }>('GET', `/api/app/version?app=${app}`),
 
+  // Public app config (coin rate, min withdrawal, etc.) — single source of
+  // truth from the server's app_settings, so the client never hardcodes
+  // economy values that can drift from the backend.
+  getAppConfig: () =>
+    apiRequest<Record<string, string>>('GET', '/api/app-config', undefined, false),
+
   // Chat
   getChatRooms: () => apiRequest<any[]>('GET', '/api/chat/rooms'),
   createChatRoom: (host_id: string) => apiRequest<any>('POST', '/api/chat/rooms', { host_id }),

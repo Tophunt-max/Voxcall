@@ -1,25 +1,32 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'wouter';
 import { api } from '@/lib/api';
-import { Save, Smartphone, AlertTriangle, Globe, Zap, Shield, Bell, RefreshCw } from 'lucide-react';
+import { Save, Smartphone, AlertTriangle, Mail, RefreshCw, ArrowRight } from 'lucide-react';
 
+// IMPORTANT: every key below is one the backend actually persists
+// (api-server admin /settings allowlist) AND consumes:
+//   - app_*_version_* / app_download_url_* / app_update_*  → GET /api/app/version
+//   - maintenance_mode / maintenance_message               → maintenance gate
+//   - support_email                                        → app support screen
+//
+// Economy settings (coin rate, host revenue share, withdrawals) are managed on
+// the dedicated Settings page using the canonical keys (coin_to_usd_rate,
+// host_revenue_share, min_withdrawal_coins). They are intentionally NOT
+// duplicated here — the previous version edited `coin_to_inr_rate` /
+// `host_payout_percent`, which the backend silently dropped and which used a
+// different representation (percent vs fraction) than billing expects.
 const DEFAULTS = {
-  min_android_version: '2.0.0',
-  min_ios_version: '2.0.0',
-  force_update_android: false,
-  force_update_ios: false,
-  maintenance_mode: false,
+  app_min_version_user: '0.0.0',
+  app_latest_version_user: '0.0.0',
+  app_download_url_user: 'https://play.google.com/store',
+  app_min_version_host: '0.0.0',
+  app_latest_version_host: '0.0.0',
+  app_download_url_host: 'https://play.google.com/store',
+  app_update_block_message: 'Please update to the latest version to continue.',
+  app_update_recommend_message: 'A new version is available with improvements.',
+  maintenance_mode: 'false',
   maintenance_message: 'We are performing scheduled maintenance. Back in 30 minutes.',
-  announcement_text: '',
-  announcement_active: false,
-  coin_to_inr_rate: '0.10',
-  host_payout_percent: '70',
-  min_withdrawal_coins: '1000',
-  max_call_duration_mins: '60',
-  free_coins_on_signup: '50',
-  guest_daily_call_limit: '3',
   support_email: 'support@voxlink.app',
-  app_store_url: 'https://play.google.com/store',
-  ios_store_url: 'https://apps.apple.com',
 };
 
 type Config = typeof DEFAULTS;
@@ -57,10 +64,9 @@ function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) =>
   );
 }
 
-function Input({ value, onChange, type = 'text', prefix }: { value: string; onChange: (v: string) => void; type?: string; prefix?: string }) {
+function Input({ value, onChange, type = 'text' }: { value: string; onChange: (v: string) => void; type?: string }) {
   return (
-    <div className="flex items-center border border-border rounded-xl overflow-hidden bg-background w-48">
-      {prefix && <span className="px-3 text-sm text-muted-foreground bg-secondary border-r border-border">{prefix}</span>}
+    <div className="flex items-center border border-border rounded-xl overflow-hidden bg-background w-56">
       <input type={type} value={value} onChange={e => onChange(e.target.value)}
         className="flex-1 px-3 py-2 text-sm bg-transparent focus:outline-none min-w-0 w-full" />
     </div>
@@ -76,12 +82,17 @@ export default function AppConfig() {
   useEffect(() => {
     api.settings().then(data => {
       if (data && Object.keys(data).length > 0) {
-        setConfig(prev => ({ ...prev, ...data }));
+        // Only hydrate keys this page manages; everything is stored as strings.
+        const next: Partial<Config> = {};
+        (Object.keys(DEFAULTS) as (keyof Config)[]).forEach(k => {
+          if (data[k] !== undefined && data[k] !== null) next[k] = String(data[k]);
+        });
+        setConfig(prev => ({ ...prev, ...next }));
       }
     }).catch(() => {});
   }, []);
 
-  const update = (key: keyof Config, value: any) => {
+  const update = (key: keyof Config, value: string) => {
     setConfig(prev => ({ ...prev, [key]: value }));
     setHasChanges(true);
   };
@@ -104,6 +115,8 @@ export default function AppConfig() {
     }
   };
 
+  const maintenanceOn = config.maintenance_mode === 'true';
+
   return (
     <div className="space-y-5">
       {toast && (
@@ -124,76 +137,68 @@ export default function AppConfig() {
         </button>
       </div>
 
-      {config.maintenance_mode && (
+      {maintenanceOn && (
         <div className="flex items-center gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl">
           <AlertTriangle size={18} className="text-amber-500 flex-shrink-0" />
           <p className="text-sm font-semibold text-amber-700">Maintenance mode is ON — app is inaccessible to users</p>
         </div>
       )}
 
+      {/* Economy is managed on the dedicated Settings page (canonical keys). */}
+      <Link href="/settings" className="flex items-center justify-between gap-3 p-4 bg-violet-50 border border-violet-200 rounded-xl hover:bg-violet-100 transition-colors">
+        <p className="text-sm text-violet-700">
+          <span className="font-semibold">Coins &amp; Economy</span> (coin rate, host revenue share, minimum withdrawal) are managed on the Settings page.
+        </p>
+        <ArrowRight size={18} className="text-violet-600 flex-shrink-0" />
+      </Link>
+
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
-        <Section title="App Version & Force Update" icon={Smartphone}>
-          <Field label="Min Android Version" desc="Users below this are prompted to update">
-            <Input value={config.min_android_version} onChange={v => update('min_android_version', v)} />
+        <Section title="User App — Version Gate" icon={Smartphone}>
+          <Field label="Minimum Supported Version" desc="Users below this are force-blocked until they update">
+            <Input value={config.app_min_version_user} onChange={v => update('app_min_version_user', v)} />
           </Field>
-          <Field label="Min iOS Version" desc="Users below this are prompted to update">
-            <Input value={config.min_ios_version} onChange={v => update('min_ios_version', v)} />
+          <Field label="Latest Stable Version" desc="Users below this get a non-blocking update nudge">
+            <Input value={config.app_latest_version_user} onChange={v => update('app_latest_version_user', v)} />
           </Field>
-          <Field label="Force Update (Android)" desc="Block app usage until updated">
-            <Toggle value={config.force_update_android} onChange={v => update('force_update_android', v)} />
-          </Field>
-          <Field label="Force Update (iOS)" desc="Block app usage until updated">
-            <Toggle value={config.force_update_ios} onChange={v => update('force_update_ios', v)} />
-          </Field>
-          <Field label="Play Store URL" desc="Link for Android update">
-            <Input value={config.app_store_url} onChange={v => update('app_store_url', v)} />
+          <Field label="Download URL" desc="Where the update CTA sends users">
+            <Input value={config.app_download_url_user} onChange={v => update('app_download_url_user', v)} />
           </Field>
         </Section>
 
-        <Section title="Maintenance Mode" icon={AlertTriangle}>
+        <Section title="Host App — Version Gate" icon={Smartphone}>
+          <Field label="Minimum Supported Version" desc="Hosts below this are force-blocked until they update">
+            <Input value={config.app_min_version_host} onChange={v => update('app_min_version_host', v)} />
+          </Field>
+          <Field label="Latest Stable Version" desc="Hosts below this get a non-blocking update nudge">
+            <Input value={config.app_latest_version_host} onChange={v => update('app_latest_version_host', v)} />
+          </Field>
+          <Field label="Download URL" desc="Where the update CTA sends hosts">
+            <Input value={config.app_download_url_host} onChange={v => update('app_download_url_host', v)} />
+          </Field>
+        </Section>
+
+        <Section title="Update Messages" icon={AlertTriangle}>
+          <div>
+            <label className="text-sm font-semibold block mb-1.5">Force-Update (blocking) Message</label>
+            <textarea rows={2} value={config.app_update_block_message} onChange={e => update('app_update_block_message', e.target.value)}
+              className="w-full px-3 py-2.5 border border-border rounded-xl text-sm bg-background focus:outline-none resize-none" />
+          </div>
+          <div>
+            <label className="text-sm font-semibold block mb-1.5">Recommended-Update (nudge) Message</label>
+            <textarea rows={2} value={config.app_update_recommend_message} onChange={e => update('app_update_recommend_message', e.target.value)}
+              className="w-full px-3 py-2.5 border border-border rounded-xl text-sm bg-background focus:outline-none resize-none" />
+          </div>
+        </Section>
+
+        <Section title="Maintenance & Support" icon={Mail}>
           <Field label="Maintenance Mode" desc="Show maintenance screen to all users">
-            <Toggle value={config.maintenance_mode} onChange={v => update('maintenance_mode', v)} />
+            <Toggle value={maintenanceOn} onChange={v => update('maintenance_mode', v ? 'true' : 'false')} />
           </Field>
           <div>
             <label className="text-sm font-semibold block mb-1.5">Maintenance Message</label>
             <textarea rows={3} value={config.maintenance_message} onChange={e => update('maintenance_message', e.target.value)}
               className="w-full px-3 py-2.5 border border-border rounded-xl text-sm bg-background focus:outline-none resize-none" />
           </div>
-          <Field label="Announcement Banner" desc="Show a notice banner in the app">
-            <Toggle value={config.announcement_active} onChange={v => update('announcement_active', v)} />
-          </Field>
-          {config.announcement_active && (
-            <div>
-              <label className="text-sm font-semibold block mb-1.5">Announcement Text</label>
-              <input value={config.announcement_text} onChange={e => update('announcement_text', e.target.value)}
-                placeholder="e.g. Server maintenance tonight at 11 PM"
-                className="w-full px-3 py-2.5 border border-border rounded-xl text-sm bg-background focus:outline-none" />
-            </div>
-          )}
-        </Section>
-
-        <Section title="Coins & Economy" icon={Zap}>
-          <Field label="Coin → INR Rate" desc="1 coin = this many rupees">
-            <Input value={config.coin_to_inr_rate} onChange={v => update('coin_to_inr_rate', v)} prefix="₹" />
-          </Field>
-          <Field label="Host Payout %" desc="Percentage of coins hosts receive">
-            <Input value={config.host_payout_percent} onChange={v => update('host_payout_percent', v)} prefix="%" />
-          </Field>
-          <Field label="Min Withdrawal (coins)" desc="Minimum coins to request payout">
-            <Input value={config.min_withdrawal_coins} onChange={v => update('min_withdrawal_coins', v)} type="number" />
-          </Field>
-          <Field label="Signup Bonus Coins" desc="Coins given to new users">
-            <Input value={config.free_coins_on_signup} onChange={v => update('free_coins_on_signup', v)} type="number" />
-          </Field>
-        </Section>
-
-        <Section title="Call Limits & Rules" icon={Shield}>
-          <Field label="Max Call Duration (mins)" desc="Auto-end calls after this duration">
-            <Input value={config.max_call_duration_mins} onChange={v => update('max_call_duration_mins', v)} type="number" />
-          </Field>
-          <Field label="Guest Daily Call Limit" desc="Max calls for guest/Quick Login users">
-            <Input value={config.guest_daily_call_limit} onChange={v => update('guest_daily_call_limit', v)} type="number" />
-          </Field>
           <Field label="Support Email" desc="Shown in app for user support">
             <Input value={config.support_email} onChange={v => update('support_email', v)} />
           </Field>

@@ -241,3 +241,19 @@ Re-ran and stress-tested the above changes; tightened test coverage and surfaced
 - **#14 Host withdrawal is mocked:** `voxlink-host/services/PaymentService.ts` `withdrawEarnings()` is a `setTimeout` mock that writes to local AsyncStorage and **never calls `POST /api/coins/withdraw`**. The real server withdrawal flow (with coin-freezing + admin approval) exists but the host app isn't wired to it. Hosts' in-app withdrawals do not actually reach the backend. **High priority** — decide and wire the real endpoint.
 - **#15 `AppConfig.tsx` is largely non-functional:** it `POST`s keys (`min_android_version`, `coin_to_inr_rate`, `host_payout_percent`, `free_coins_on_signup`, `guest_daily_call_limit`, `force_update_*`, …) that are NOT in the backend's `ALLOWED_APP_CONFIG_KEYS`/`ALLOWED_SETTINGS` allowlist, so they are silently dropped server-side. Admins believe they're changing config that never persists. Either extend the backend allowlist AND wire those keys into behaviour, or remove the dead fields and consolidate on `SettingsPage.tsx`.
 - **#16 Two overlapping admin economy editors:** `SettingsPage.tsx` (correct keys) and `AppConfig.tsx` (wrong keys) both edit "coin rate / payout %", inviting drift and confusion. Consolidate into one.
+
+
+---
+
+## Double-check (round 3, 2026-05-31) — frontend + remaining items RESOLVED
+
+Acted on the "fix everything" follow-up. Investigated the round-2 frontend findings (one was mis-scoped) and fixed them. **All three packages verified green:** api-server (typecheck + 69 tests + dry-run build), admin-panel (typecheck + vite build), voxlink-host (typecheck).
+
+- **#14 corrected + cleaned up** — the host **wallet already uses the real API** (`API.requestWithdrawal` → `POST /api/coins/withdraw`); the round-2 note over-stated this. `PaymentService.ts` was **100% dead code** (no imports anywhere) whose `COIN_TO_INR_RATE = 0.5` contradicted the server's `0.01`. **Deleted the dead file.**
+- **#10 host single-source-of-truth** — the host wallet's minimum-withdrawal threshold (was hardcoded `100`) now comes from `GET /api/app-config` (`min_withdrawal_coins`), falling back to 100. The live coin→fiat helper already used `0.01` (consistent with the server), so nothing else needed changing once the dead 0.5 constant was removed.
+- **#15 admin config made functional + honest** — extended the backend `ALLOWED_SETTINGS` allowlist with the version-gate keys the live `GET /api/app/version` endpoint actually reads (`app_min_version_user|host`, `app_latest_version_user|host`, `app_download_url_user|host`, `app_update_block_message`, `app_update_recommend_message`). Rewrote `AppConfig.tsx` to edit **only** persisted+consumed keys (version gate, maintenance, support email); removed all dead fields (announcement / call-duration / guest-limit / signup-bonus had no backend consumer).
+- **#16 economy consolidated** — removed the dangerous duplicate economy fields from `AppConfig.tsx`. In particular `host_payout_percent` (0–100 percent) collided with the canonical `host_revenue_share` (0–1 fraction) billing uses, so a naive save could have paid hosts 100×. Economy is now edited only on `SettingsPage.tsx`; AppConfig links to it.
+
+### Still deferred (genuinely risky / broader change)
+- **#5 WS token client migration** — the server already accepts the token via `Sec-WebSocket-Protocol`. Moving the mobile clients off `?token=` also needs the Durable Objects to echo the negotiated subprotocol on the 101 handshake; getting that wrong breaks realtime calls/notifications for **all** users, so it's left for a dedicated, separately-tested change. Interim: scrub `token` from logged URLs / lower log retention.
+- **D1 → Postgres** before significant call-volume growth (single-writer ceiling).

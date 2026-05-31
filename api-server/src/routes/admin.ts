@@ -303,6 +303,13 @@ admin.patch('/settings', async (c) => {
     'terms_url', 'privacy_url', 'razorpay_webhook_secret', 'stripe_webhook_secret',
     'generic_webhook_secret', 'referrer_reward', 'new_user_reward',
     'min_calls_to_unlock', 'referral_active', 'free_chat_messages',
+    // FIX #15: app version / force-update gate keys consumed by GET /api/app/version.
+    // Previously NO admin endpoint could set these, so the force-update gate was
+    // un-configurable from the panel (and AppConfig.tsx silently dropped them).
+    'app_min_version_user', 'app_min_version_host',
+    'app_latest_version_user', 'app_latest_version_host',
+    'app_download_url_user', 'app_download_url_host',
+    'app_update_block_message', 'app_update_recommend_message',
   ];
   const stmts = Object.entries(body)
     .filter(([k]) => ALLOWED_SETTINGS.includes(k))
