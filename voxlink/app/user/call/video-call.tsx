@@ -865,7 +865,10 @@ export default function VideoCallScreen() {
             Active-state colors:
               • Mute / Cam off → red ring (destructive-style toggle)
               • Speaker on    → blue ring (informational toggle) */}
-        <BlurView intensity={Platform.OS === "ios" ? 60 : 90} tint="dark" style={uiS.controlBar}>
+        {/* FIX (UI: Chamet-style controls): individual floating frosted circles
+            instead of one pill — reads more like a live video-chat app. End
+            button stays red + larger (dominant action). */}
+        <View style={uiS.controlRow} pointerEvents="box-none">
           <View style={uiS.ctrlItem}>
             <TouchableOpacity
               onPress={() => { Haptics?.impactAsync?.(Haptics?.ImpactFeedbackStyle?.Light); toggleCamera(); }}
@@ -930,7 +933,7 @@ export default function VideoCallScreen() {
             </TouchableOpacity>
             <Text style={uiS.ctrlLabel}>{activeCall?.isSpeakerOn ? "Speaker" : "Earpiece"}</Text>
           </View>
-        </BlurView>
+        </View>
       </Animated.View>
 
       <Modal visible={showRechargePopup} transparent animationType="slide">
@@ -1203,23 +1206,22 @@ const uiS = StyleSheet.create({
   // Pill containing all five call controls. Items have equal flex so the
   // layout stays balanced on small phones (375px wide is the tightest
   // common case — fits 5 × ~48px buttons + gap comfortably).
-  controlBar: {
+  controlRow: {
     flexDirection: "row", justifyContent: "space-between", alignItems: "center",
-    paddingHorizontal: 12, paddingVertical: 12,
-    borderRadius: 36, overflow: "hidden",
-    backgroundColor: Platform.OS === "web" ? "rgba(0,0,0,0.55)" : "rgba(0,0,0,0.3)",
-    borderWidth: 1, borderColor: "rgba(255,255,255,0.1)",
     alignSelf: "center",
     minWidth: 320, maxWidth: 460,
     width: "92%",
   },
   ctrlItem: { alignItems: "center", gap: 5, flex: 1 },
-  // 52x52 base — exceeds WCAG AAA 48px touch target with comfortable padding.
+  // 56x56 floating frosted circle — dark translucent so it reads over bright
+  // video; subtle border + shadow gives the "floating" Chamet look.
   ctrlBtn: {
-    width: 52, height: 52, borderRadius: 26,
-    backgroundColor: "rgba(255,255,255,0.18)",
+    width: 56, height: 56, borderRadius: 28,
+    backgroundColor: "rgba(18,16,38,0.55)",
     alignItems: "center", justifyContent: "center",
-    borderWidth: 1.5, borderColor: "transparent",
+    borderWidth: 1.5, borderColor: "rgba(255,255,255,0.18)",
+    shadowColor: "#000", shadowOpacity: 0.3, shadowRadius: 6, shadowOffset: { width: 0, height: 2 },
+    elevation: 4,
   },
   // Destructive-style toggle (mute on, camera off) — red ring.
   ctrlBtnDanger: {

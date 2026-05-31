@@ -308,6 +308,8 @@ export default function HomeScreen() {
           <TouchableOpacity
             onPress={() => router.push("/user/screens/home/profile")}
             style={styles.avatarBorderWrapper}
+            accessibilityRole="button"
+            accessibilityLabel="Open your profile"
           >
             <View style={[styles.avatarBorder, { borderColor: colors.primary }]}>
               <Image
@@ -341,6 +343,8 @@ export default function HomeScreen() {
           <TouchableOpacity
             onPress={() => router.push("/user/payment/checkout")}
             style={[styles.coinBadge, { backgroundColor: "#FFF2D9" }]}
+            accessibilityRole="button"
+            accessibilityLabel={`Coin balance ${(user?.coins ?? 0).toLocaleString()}. Buy coins`}
           >
             <Image
               source={require("@/assets/icons/ic_coin.png")}
@@ -355,6 +359,8 @@ export default function HomeScreen() {
           <TouchableOpacity
             onPress={() => router.push("/user/search-hosts")}
             style={[styles.bellBtn, { backgroundColor: colors.muted }]}
+            accessibilityRole="button"
+            accessibilityLabel="Search hosts"
           >
             <Image source={require("@/assets/icons/ic_search.png")} style={{ width: 18, height: 18 }} tintColor={colors.text} resizeMode="contain" />
           </TouchableOpacity>
@@ -362,6 +368,8 @@ export default function HomeScreen() {
           <TouchableOpacity
             onPress={() => router.push("/user/notifications")}
             style={[styles.bellBtn, { backgroundColor: colors.muted }]}
+            accessibilityRole="button"
+            accessibilityLabel="Notifications"
           >
             <Image source={require("@/assets/icons/ic_notify.png")} style={{ width: 18, height: 18, tintColor: colors.text }} resizeMode="contain" />
           </TouchableOpacity>

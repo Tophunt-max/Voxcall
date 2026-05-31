@@ -33,6 +33,7 @@ export interface Conversation {
 interface ChatContextValue {
   conversations: Conversation[];
   sendMessage: (conversationId: string, content: string, type?: MessageType) => Promise<void>;
+  retryMessage: (conversationId: string, messageId: string) => Promise<void>;
   markRead: (conversationId: string) => void;
   loadConversations: (userId: string) => Promise<void>;
   loadMessages: (conversationId: string, roomId: string) => Promise<void>;
@@ -165,6 +166,35 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     }
   }, [conversations]);
 
+  // Re-attempt a previously-failed message in place (tap-to-retry). Reuses the
+  // existing optimistic bubble (same id) instead of appending a duplicate.
+  const retryMessage = useCallback(async (conversationId: string, messageId: string) => {
+    const convo = conversations.find((c) => c.id === conversationId || c.roomId === conversationId);
+    if (!convo) return;
+    const roomId = convo.roomId ?? conversationId;
+    const msg = convo.messages.find((m) => m.id === messageId);
+    if (!msg || msg.status !== "failed") return;
+
+    const setStatus = (status: MessageStatus, patch?: Partial<Message>) =>
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === convo.id
+            ? { ...c, messages: c.messages.map((m) => (m.id === messageId ? { ...m, status, ...patch } : m)) }
+            : c
+        )
+      );
+
+    setStatus("sending");
+    try {
+      const sent = await API.sendMessage(roomId, msg.content);
+      setStatus("sent", { id: sent.id ?? msg.id, senderId: sent.sender_id ?? "me" });
+    } catch (e) {
+      console.warn("retryMessage API error:", e);
+      setStatus("failed");
+      showErrorToast("Still couldn't send. Please try again.");
+    }
+  }, [conversations]);
+
   const markRead = useCallback((conversationId: string) => {
     setConversations((prev) =>
       prev.map((c) =>
@@ -200,7 +230,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   }, [conversations]);
 
   return (
-    <ChatContext.Provider value={{ conversations, sendMessage, markRead, loadConversations, loadMessages, getOrCreateConversation, totalUnread }}>
+    <ChatContext.Provider value={{ conversations, sendMessage, retryMessage, markRead, loadConversations, loadMessages, getOrCreateConversation, totalUnread }}>
       {children}
     </ChatContext.Provider>
   );

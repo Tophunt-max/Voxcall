@@ -831,11 +831,10 @@ export default function VideoCallScreen() {
           </View>
         </View>
 
-        {/* FIX (UI redesign): pill-shaped frosted-glass control bar. End
-            button retains red accent + larger size for the dominant-action
-            pattern (FaceTime / WhatsApp). Mute/Cam-off → red ring; Speaker
-            on → blue ring. */}
-        <BlurView intensity={Platform.OS === "ios" ? 60 : 90} tint="dark" style={uiS.controlBar}>
+        {/* FIX (UI: Chamet-style controls): individual floating frosted circles
+            instead of one pill. End button stays red + larger (dominant
+            action). Mirrors voxlink/app/user/call/video-call.tsx. */}
+        <View style={uiS.controlRow} pointerEvents="box-none">
           <View style={uiS.ctrlItem}>
             <TouchableOpacity
               onPress={() => { Haptics?.impactAsync?.(Haptics?.ImpactFeedbackStyle?.Light); toggleCamera(); }}
@@ -900,7 +899,7 @@ export default function VideoCallScreen() {
             </TouchableOpacity>
             <Text style={uiS.ctrlLabel}>{activeCall?.isSpeakerOn ? "Speaker" : "Earpiece"}</Text>
           </View>
-        </BlurView>
+        </View>
       </Animated.View>
 
     </View>
@@ -1128,23 +1127,21 @@ const uiS = StyleSheet.create({
   bars: { flexDirection: "row", alignItems: "flex-end", gap: 2, height: 18 },
   bar: { width: 3, borderRadius: 1.5 },
 
-  // ─── Glass control bar ─────────────────────────────────────────────────
-  controlBar: {
+  // ─── Floating control circles (Chamet-style) ───────────────────────────
+  controlRow: {
     flexDirection: "row", justifyContent: "space-between", alignItems: "center",
-    paddingHorizontal: 12, paddingVertical: 12,
-    borderRadius: 36, overflow: "hidden",
-    backgroundColor: Platform.OS === "web" ? "rgba(0,0,0,0.55)" : "rgba(0,0,0,0.3)",
-    borderWidth: 1, borderColor: "rgba(255,255,255,0.1)",
     alignSelf: "center",
     minWidth: 320, maxWidth: 460,
     width: "92%",
   },
   ctrlItem: { alignItems: "center", gap: 5, flex: 1 },
   ctrlBtn: {
-    width: 52, height: 52, borderRadius: 26,
-    backgroundColor: "rgba(255,255,255,0.18)",
+    width: 56, height: 56, borderRadius: 28,
+    backgroundColor: "rgba(18,16,38,0.55)",
     alignItems: "center", justifyContent: "center",
-    borderWidth: 1.5, borderColor: "transparent",
+    borderWidth: 1.5, borderColor: "rgba(255,255,255,0.18)",
+    shadowColor: "#000", shadowOpacity: 0.3, shadowRadius: 6, shadowOffset: { width: 0, height: 2 },
+    elevation: 4,
   },
   ctrlBtnDanger: {
     backgroundColor: "rgba(239,68,68,0.85)",

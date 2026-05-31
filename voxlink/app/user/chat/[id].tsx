@@ -20,7 +20,7 @@ export default function ChatScreen() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user } = useAuth();
-  const { conversations, sendMessage, markRead, loadMessages } = useChat();
+  const { conversations, sendMessage, retryMessage, markRead, loadMessages } = useChat();
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
   const [participantName, setParticipantName] = useState("Chat");
@@ -76,7 +76,14 @@ export default function ChatScreen() {
               <Text style={[styles.bubbleStatus, { color: "rgba(255,255,255,0.7)" }]}>Sending…</Text>
             )}
             {isMe && item.status === "failed" && (
-              <Text style={[styles.bubbleStatus, { color: "#FFD2D2" }]}>Not sent</Text>
+              <TouchableOpacity
+                onPress={() => retryMessage(convo?.id ?? (id as string), item.id)}
+                accessibilityRole="button"
+                accessibilityLabel="Retry sending message"
+                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+              >
+                <Text style={[styles.bubbleStatus, { color: "#FFD2D2", textDecorationLine: "underline" }]}>Tap to retry</Text>
+              </TouchableOpacity>
             )}
           </View>
         </View>
@@ -87,7 +94,7 @@ export default function ChatScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { paddingTop: insets.top + 8, borderBottomColor: colors.border }]}>
-        <TouchableOpacity onPress={() => router.back()}>
+        <TouchableOpacity onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Go back">
           <Image source={require("@/assets/icons/ic_back.png")} style={{ width: 22, height: 22, tintColor: colors.foreground }} resizeMode="contain" />
         </TouchableOpacity>
         <Image source={{ uri: participantAvatar }} style={styles.headerAvatar} />
@@ -122,7 +129,7 @@ export default function ChatScreen() {
         )}
 
         <View style={[styles.inputBar, { borderTopColor: colors.border, backgroundColor: colors.background, paddingBottom: insets.bottom + 8 }]}>
-          <TouchableOpacity style={[styles.iconBtn, { backgroundColor: colors.muted }]}>
+          <TouchableOpacity style={[styles.iconBtn, { backgroundColor: colors.muted }]} accessibilityRole="button" accessibilityLabel="Attach photo">
             <Image source={require("@/assets/icons/ic_photo.png")} style={{ width: 18, height: 18, tintColor: colors.mutedForeground }} resizeMode="contain" />
           </TouchableOpacity>
           <View style={[styles.inputWrap, { backgroundColor: colors.muted }]}>
@@ -143,6 +150,8 @@ export default function ChatScreen() {
             onPress={handleSend}
             disabled={!text.trim()}
             style={[styles.sendBtn, { backgroundColor: text.trim() ? colors.primary : colors.muted }]}
+            accessibilityRole="button"
+            accessibilityLabel="Send message"
           >
             <Image source={require("@/assets/icons/ic_send.png")} style={{ width: 18, height: 18, tintColor: text.trim() ? "#fff" : colors.mutedForeground }} resizeMode="contain" />
           </TouchableOpacity>

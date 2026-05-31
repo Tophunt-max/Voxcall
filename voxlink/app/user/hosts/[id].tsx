@@ -11,6 +11,7 @@ import {
   Dimensions,
   Platform,
   ActivityIndicator,
+  useColorScheme,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
@@ -72,27 +73,32 @@ function TalkNowSheet({
 }) {
   const audioRate = host?.audio_coins_per_minute ?? host?.coinsPerMinute ?? 5;
   const videoRate = host?.video_coins_per_minute ?? (audioRate + 5);
+  const colors = useColors();
+  const isDark = useColorScheme() === "dark";
+  const boxBg = isDark ? colors.card : "#fff";
+  const txtColor = isDark ? colors.text : "#111329";
+  const dividerColor = isDark ? colors.border : "#eee";
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <TouchableOpacity style={sht.overlay} activeOpacity={1} onPress={onClose}>
-        <View style={sht.box}>
+        <View style={[sht.box, { backgroundColor: boxBg }]}>
           <View style={sht.handle} />
-          <Text style={sht.title}>Select Call Type</Text>
+          <Text style={[sht.title, { color: txtColor, borderBottomColor: dividerColor }]}>Select Call Type</Text>
 
           <TouchableOpacity onPress={onAudio} style={sht.row} activeOpacity={0.8}>
             <Image source={require("@/assets/icons/ic_call_gradient.png")} style={sht.ico} resizeMode="contain" />
-            <Text style={sht.label}>Audio Call</Text>
+            <Text style={[sht.label, { color: txtColor }]}>Audio Call</Text>
             <View style={sht.chip}>
               <Image source={require("@/assets/icons/ic_coin.png")} style={sht.chipIco} resizeMode="contain" />
               <Text style={sht.chipTxt}>{audioRate} Coin/min</Text>
             </View>
           </TouchableOpacity>
 
-          <View style={sht.divider} />
+          <View style={[sht.divider, { backgroundColor: dividerColor }]} />
 
           <TouchableOpacity onPress={onVideo} style={sht.row} activeOpacity={0.8}>
             <Image source={require("@/assets/icons/ic_video_gradient.png")} style={sht.ico} resizeMode="contain" />
-            <Text style={sht.label}>Video Call</Text>
+            <Text style={[sht.label, { color: txtColor }]}>Video Call</Text>
             <View style={sht.chip}>
               <Image source={require("@/assets/icons/ic_coin.png")} style={sht.chipIco} resizeMode="contain" />
               <Text style={sht.chipTxt}>{videoRate} Coin/min</Text>
@@ -117,6 +123,22 @@ const LEVEL_CONFIG: Record<number, { name: string; badge: string; color: string 
 export default function HostDetailScreen() {
   const insets = useSafeAreaInsets();
   const colors = useColors();
+  // Dark-mode theming: keep the branded LIGHT look exactly as-is in light mode
+  // (isDark === false → original Flutter-matched constants), and swap surfaces
+  // + text to palette tokens in dark mode so the screen isn't a wall of white.
+  const isDark = useColorScheme() === "dark";
+  const screenBg = isDark ? colors.background : "#fff";
+  const infoBg = isDark ? colors.card : INFO_BG;
+  const cardBg = isDark ? colors.surface : CARD_BG;
+  const cardBorder = isDark ? colors.border : BORDER;
+  const reviewBg = isDark ? colors.surface : REVIEW_BG;
+  const reviewBorder = isDark ? colors.border : REVIEW_BORDER;
+  const titleColor = isDark ? colors.text : "#111329";
+  const subColor = isDark ? colors.mutedForeground : PROFILE_LANG;
+  const bioColor = isDark ? colors.mutedForeground : PROFILE_TEXT;
+  const barBg = isDark ? colors.card : "#fff";
+  const sheetBg = isDark ? colors.card : "#fff";
+  const dottedBorder = isDark ? colors.border : "#111329";
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user } = useAuth();
   const { initiateCall } = useCall();
@@ -258,7 +280,7 @@ export default function HostDetailScreen() {
   const BOTTOM_H = insets.bottom + 70;
 
   return (
-    <View style={s.root}>
+    <View style={[s.root, { backgroundColor: screenBg }]}>
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: BOTTOM_H + 16 }}
@@ -267,7 +289,7 @@ export default function HostDetailScreen() {
         <LinearGradient colors={COVER_GRAD} style={[s.hero, { paddingTop: insets.top + 8 }]}>
           {/* Back button + Report */}
           <View style={s.heroTopRow}>
-            <TouchableOpacity onPress={() => router.back()} style={s.backBtn} activeOpacity={0.85}>
+            <TouchableOpacity onPress={() => router.back()} style={s.backBtn} activeOpacity={0.85} accessibilityRole="button" accessibilityLabel="Go back">
               <Image
                 source={require("@/assets/icons/ic_back.png")}
                 style={s.backIco}
@@ -279,6 +301,8 @@ export default function HostDetailScreen() {
               onPress={() => setReportModal(true)}
               style={s.reportBtn}
               activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel={`Report ${hostName}`}
             >
               <Image source={require("@/assets/icons/ic_flag.png")} style={{ width: 18, height: 18, tintColor: "#fff" }} resizeMode="contain" />
             </TouchableOpacity>
@@ -303,10 +327,10 @@ export default function HostDetailScreen() {
         </LinearGradient>
 
         {/* ══════ UserProfileInfoView ══════ */}
-        <View style={s.infoCard}>
+        <View style={[s.infoCard, { backgroundColor: infoBg }]}>
           <View style={s.infoTopRow}>
             {/* Avatar dotted (small, 50x50) */}
-            <View style={s.infoDotBorder}>
+            <View style={[s.infoDotBorder, { borderColor: dottedBorder }]}>
               <View style={s.infoAvatarCircle}>
                 <Image source={{ uri: hostAvatar }} style={s.infoAvatarImg} resizeMode="cover" />
               </View>
@@ -314,7 +338,7 @@ export default function HostDetailScreen() {
 
             {/* Name + status + ID */}
             <View style={s.infoMid}>
-              <Text style={s.infoName} numberOfLines={1}>{hostName}</Text>
+              <Text style={[s.infoName, { color: titleColor }]} numberOfLines={1}>{hostName}</Text>
               <View style={s.statusRow}>
                 {/* Status pill */}
                 <View style={[s.statusPill, { backgroundColor: host.is_online ? GREEN : "#EDEDEF" }]}>
@@ -341,13 +365,13 @@ export default function HostDetailScreen() {
           </View>
 
           {/* Bio */}
-          <Text style={s.bioTxt}>{host.bio}</Text>
+          <Text style={[s.bioTxt, { color: bioColor }]}>{host.bio}</Text>
 
           {/* Language */}
           <View style={s.langRow}>
             <Image source={require("@/assets/icons/ic_language.png")} style={s.langIco} resizeMode="contain" />
-            <Text style={s.langLabel}>Language : </Text>
-            <Text style={s.langVal} numberOfLines={2}>{(host.languages ?? []).join(", ")}</Text>
+            <Text style={[s.langLabel, { color: subColor }]}>Language : </Text>
+            <Text style={[s.langVal, { color: titleColor }]} numberOfLines={2}>{(host.languages ?? []).join(", ")}</Text>
           </View>
 
           {/* Topics */}
@@ -358,8 +382,8 @@ export default function HostDetailScreen() {
             style={s.topicsScroll}
           >
             {(host.specialties ?? []).map((sp: string) => (
-              <View key={sp} style={s.topicTag}>
-                <Text style={s.topicTxt}>{sp}</Text>
+              <View key={sp} style={[s.topicTag, { backgroundColor: cardBg }]}>
+                <Text style={[s.topicTxt, { color: subColor }]}>{sp}</Text>
               </View>
             ))}
           </ScrollView>
@@ -368,10 +392,10 @@ export default function HostDetailScreen() {
         {/* ══════ StatusView — 3 stat boxes ══════ */}
         <View style={s.statsRow}>
           {statsList.map((item, i) => (
-            <View key={i} style={s.statBox}>
+            <View key={i} style={[s.statBox, { backgroundColor: cardBg, borderColor: cardBorder }]}>
               <Image source={item.image} style={s.statIco} resizeMode="contain" />
-              <Text style={s.statLbl}>{item.title}</Text>
-              <Text style={s.statVal}>{item.count}</Text>
+              <Text style={[s.statLbl, { color: subColor }]}>{item.title}</Text>
+              <Text style={[s.statVal, { color: titleColor }]}>{item.count}</Text>
             </View>
           ))}
         </View>
@@ -379,19 +403,19 @@ export default function HostDetailScreen() {
         {/* ══════ ReviewShow ══════ */}
         <View style={s.reviewSec}>
           <View style={s.reviewHeader}>
-            <Text style={s.reviewHeaderTxt}>Reviews</Text>
+            <Text style={[s.reviewHeaderTxt, { color: titleColor }]}>Reviews</Text>
           </View>
 
           {reviews.length === 0 && (
-            <Text style={{ color: PROFILE_LANG, fontFamily: "Poppins_400Regular", fontSize: 13, textAlign: "center", paddingVertical: 16 }}>
+            <Text style={{ color: subColor, fontFamily: "Poppins_400Regular", fontSize: 13, textAlign: "center", paddingVertical: 16 }}>
               No reviews yet
             </Text>
           )}
 
           {reviews.slice(0, 5).map((r: any, i: number) => (
-            <View key={r.id ?? i} style={s.reviewCard}>
+            <View key={r.id ?? i} style={[s.reviewCard, { backgroundColor: reviewBg, borderColor: reviewBorder }]}>
               <View style={s.reviewTop}>
-                <View style={s.reviewDot}>
+                <View style={[s.reviewDot, { borderColor: dottedBorder }]}>
                   <View style={s.reviewAvatarCircle}>
                     <Image
                       source={{ uri: resolveMediaUrl(r.avatar_url) ?? `https://api.dicebear.com/7.x/avataaars/png?seed=${r.user_id ?? i}` }}
@@ -400,21 +424,21 @@ export default function HostDetailScreen() {
                   </View>
                 </View>
                 <View style={s.reviewInfo}>
-                  <Text style={s.reviewName}>{r.name ?? "User"}</Text>
+                  <Text style={[s.reviewName, { color: titleColor }]}>{r.name ?? "User"}</Text>
                   <StarRating rating={r.stars ?? r.rating ?? 5} size={16} />
                 </View>
                 <View style={s.timeBadge}>
                   <Text style={s.timeTxt}>{r.created_at ? new Date(r.created_at * 1000).toLocaleDateString() : "Recent"}</Text>
                 </View>
               </View>
-              {r.comment ? <Text style={s.reviewTxt}>{r.comment}</Text> : null}
+              {r.comment ? <Text style={[s.reviewTxt, { color: subColor }]}>{r.comment}</Text> : null}
             </View>
           ))}
         </View>
       </ScrollView>
 
       {/* ══════ ProfileBottomButtonView ══════ */}
-      <View style={[s.bottomBar, { paddingBottom: insets.bottom + 10 }]}>
+      <View style={[s.bottomBar, { paddingBottom: insets.bottom + 10, backgroundColor: barBg }]}>
         <TouchableOpacity onPress={handleChat} style={[s.bottomBtn, { backgroundColor: chatUnlocked ? GREEN : "#9CA3AF" }]} activeOpacity={0.85}>
           <Text style={s.bottomBtnTxt}>{chatUnlocked ? "Chat Now" : "🔒 Chat"}</Text>
         </TouchableOpacity>
@@ -448,9 +472,9 @@ export default function HostDetailScreen() {
 
       <Modal visible={reportModal} transparent animationType="slide" onRequestClose={() => setReportModal(false)}>
         <TouchableOpacity style={s.reportOverlay} activeOpacity={1} onPress={() => setReportModal(false)}>
-          <View style={s.reportSheet}>
+          <View style={[s.reportSheet, { backgroundColor: sheetBg }]}>
             <View style={s.reportHandle} />
-            <Text style={s.reportTitle}>Report {hostName}</Text>
+            <Text style={[s.reportTitle, { color: titleColor }]}>Report {hostName}</Text>
             <Text style={s.reportSubtitle}>Why are you reporting this host?</Text>
             {[
               { label: "Inappropriate Content", reason: "Inappropriate Content", category: "inappropriate_content" },
@@ -462,10 +486,10 @@ export default function HostDetailScreen() {
               <TouchableOpacity
                 key={opt.label}
                 onPress={() => { setReportModal(false); handleReport(opt.reason, opt.category); }}
-                style={s.reportOption}
+                style={[s.reportOption, { borderBottomColor: cardBorder }]}
                 activeOpacity={0.7}
               >
-                <Text style={s.reportOptionTxt}>{opt.label}</Text>
+                <Text style={[s.reportOptionTxt, { color: titleColor }]}>{opt.label}</Text>
                 <Image source={require("@/assets/icons/ic_back.png")} style={{ width: 16, height: 16, tintColor: "#9CA3AF", transform: [{ rotate: "180deg" }] }} resizeMode="contain" />
               </TouchableOpacity>
             ))}
