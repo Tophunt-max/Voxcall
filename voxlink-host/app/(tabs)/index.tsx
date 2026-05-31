@@ -3,6 +3,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity, Image,
   ScrollView, Switch, RefreshControl
 } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useFocusEffect } from "expo-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -73,6 +74,13 @@ export default function HostHomeScreen() {
 
   const audioRate = Number(hostMe?.audio_coins_per_minute ?? hostMe?.coins_per_minute ?? 5);
   const videoRate = Number(hostMe?.video_coins_per_minute ?? (Number(hostMe?.coins_per_minute ?? 5) + 5));
+
+  // Hide the "Permissions Required" block once everything is granted — a wall of
+  // green "Granted" rows is just noise for a fully set-up host.
+  const allPermsGranted =
+    permissions.microphone.status === "granted" &&
+    permissions.camera.status === "granted" &&
+    permissions.notifications.status === "granted";
 
   // FIX: Unread notification count for bell badge
   const { data: unreadCount = 0 } = useQuery({
@@ -205,22 +213,27 @@ export default function HostHomeScreen() {
       </View>
 
       {/* Online status toggle banner */}
-      <View style={[styles.statusBanner, {
-        backgroundColor: isOnline ? colors.online : colors.primary,
-        marginHorizontal: 16,
-      }]}>
+      <LinearGradient
+        colors={isOnline ? ["#0BAF23", "#07901C"] : [colors.gradientStart, colors.gradientEnd]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={[styles.statusBanner, { marginHorizontal: 16 }]}
+      >
+        <View style={styles.statusIconWrap}>
+          <View style={styles.statusPulse} />
+        </View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.statusTitle}>{isOnline ? "You are Online" : "Go Online"}</Text>
-          <Text style={styles.statusSub}>{isOnline ? "You can receive calls now" : "Toggle to start accepting calls"}</Text>
+          <Text style={styles.statusTitle}>{isOnline ? "You're Online" : "You're Offline"}</Text>
+          <Text style={styles.statusSub}>{isOnline ? "Available to receive calls" : "Toggle to start accepting calls"}</Text>
         </View>
         <Switch
           value={isOnline}
           onValueChange={handleOnlineToggle}
           disabled={togglingOnline}
-          trackColor={{ false: "rgba(255,255,255,0.3)", true: "rgba(255,255,255,0.6)" }}
+          trackColor={{ false: "rgba(255,255,255,0.3)", true: "rgba(255,255,255,0.55)" }}
           thumbColor={togglingOnline ? "rgba(255,255,255,0.5)" : "#fff"}
         />
-      </View>
+      </LinearGradient>
 
       {/* Level system card — current level + progress to next */}
       <LevelCard
@@ -235,13 +248,16 @@ export default function HostHomeScreen() {
       ) : (
         <View style={[styles.statsCard, { backgroundColor: colors.card, marginHorizontal: 16 }]}>
           {[
-            { label: "Total Calls", value: stats.calls },
-            { label: "Total Hours", value: stats.hours },
-            { label: "Earnings", value: stats.earnings },
+            { label: "Total Calls", value: stats.calls, icon: require("@/assets/icons/ic_call.png"), tint: colors.blue },
+            { label: "Total Hours", value: stats.hours, icon: require("@/assets/icons/ic_experience.png"), tint: colors.accent },
+            { label: "Earnings", value: stats.earnings, icon: require("@/assets/icons/ic_coin.png"), tint: colors.coinGold, noTint: true },
           ].map((s, i) => (
             <React.Fragment key={s.label}>
               {i > 0 && <View style={[styles.statDiv, { backgroundColor: colors.border }]} />}
               <View style={styles.stat}>
+                <View style={[styles.statIconChip, { backgroundColor: s.tint + "1A" }]}>
+                  <Image source={s.icon} style={styles.statIconImg} tintColor={(s as any).noTint ? undefined : s.tint} resizeMode="contain" />
+                </View>
                 <Text style={[styles.statValue, { color: colors.text }]}>{s.value}</Text>
                 <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>{s.label}</Text>
               </View>
@@ -267,14 +283,18 @@ export default function HostHomeScreen() {
         </View>
         <View style={styles.ratesRow}>
           <View style={[styles.rateItem, { backgroundColor: colors.surface }]}>
-            <Text style={styles.rateEmoji}>🎙️</Text>
+            <View style={[styles.rateIconChip, { backgroundColor: colors.blue + "1A" }]}>
+              <Image source={require("@/assets/icons/ic_call.png")} style={styles.rateIconImg} tintColor={colors.blue} resizeMode="contain" />
+            </View>
             <View>
               <Text style={[styles.rateValue, { color: colors.text }]}>{audioRate}</Text>
               <Text style={[styles.rateUnit, { color: colors.mutedForeground }]}>Audio / min</Text>
             </View>
           </View>
           <View style={[styles.rateItem, { backgroundColor: colors.surface }]}>
-            <Text style={styles.rateEmoji}>📹</Text>
+            <View style={[styles.rateIconChip, { backgroundColor: colors.accent + "1A" }]}>
+              <Image source={require("@/assets/icons/ic_video.png")} style={styles.rateIconImg} tintColor={colors.accent} resizeMode="contain" />
+            </View>
             <View>
               <Text style={[styles.rateValue, { color: colors.text }]}>{videoRate}</Text>
               <Text style={[styles.rateUnit, { color: colors.mutedForeground }]}>Video / min</Text>
@@ -288,23 +308,27 @@ export default function HostHomeScreen() {
         <Text style={[styles.quickTitle, { color: colors.text }]}>Manage</Text>
         <View style={styles.quickGrid}>
           {([
-            { icon: "💰", label: "Call Rates", desc: "Set your price", onPress: () => router.push("/call-rates") },
-            { icon: "🏷️", label: "My Topics", desc: "Reach more users", onPress: () => router.push("/manage-topics") },
-            { icon: "📈", label: "Earnings", desc: "View history", onPress: () => router.push("/earnings-history") },
-            { icon: "🏦", label: "Payouts", desc: "Withdraw coins", onPress: () => router.push("/payout-method") },
-            { icon: "💼", label: "Wallet", desc: "Balance & withdraw", onPress: () => router.push("/(tabs)/wallet") },
-            { icon: "📞", label: "Call History", desc: "Past calls", onPress: () => router.push("/calls/history") },
-            { icon: "🎁", label: "Refer & Earn", desc: "Invite friends", onPress: () => router.push("/referral") },
-            { icon: "👤", label: "Profile", desc: "Edit details", onPress: () => router.push("/(tabs)/profile") },
-            { icon: "⚙️", label: "Settings", desc: "App preferences", onPress: () => router.push("/settings") },
-          ] as const).map((q) => (
+            { icon: require("@/assets/icons/ic_coin.png"), tint: colors.coinGold, noTint: true, label: "Call Rates", desc: "Set your price", onPress: () => router.push("/call-rates") },
+            { icon: require("@/assets/icons/ic_topic.png"), tint: colors.accent, label: "My Topics", desc: "Reach more users", onPress: () => router.push("/manage-topics") },
+            { icon: require("@/assets/icons/ic_transaction.png"), tint: colors.green, label: "Earnings", desc: "View history", onPress: () => router.push("/earnings-history") },
+            { icon: require("@/assets/icons/ic_withdraw.png"), tint: colors.blue, label: "Payouts", desc: "Withdraw coins", onPress: () => router.push("/payout-method") },
+            { icon: require("@/assets/icons/ic_wallet.png"), tint: colors.accent, label: "Wallet", desc: "Balance & withdraw", onPress: () => router.push("/(tabs)/wallet") },
+            { icon: require("@/assets/icons/ic_call.png"), tint: colors.blue, label: "Call History", desc: "Past calls", onPress: () => router.push("/calls/history") },
+            { icon: require("@/assets/icons/ic_bonus.png"), tint: colors.orange, noTint: true, label: "Refer & Earn", desc: "Invite friends", onPress: () => router.push("/referral") },
+            { icon: require("@/assets/icons/ic_profile.png"), tint: colors.primary, label: "Profile", desc: "Edit details", onPress: () => router.push("/(tabs)/profile") },
+            { icon: require("@/assets/icons/ic_settings.png"), tint: colors.mutedForeground, label: "Settings", desc: "App preferences", onPress: () => router.push("/settings") },
+          ] as { icon: any; tint: string; noTint?: boolean; label: string; desc: string; onPress: () => void }[]).map((q) => (
             <TouchableOpacity
               key={q.label}
               style={[styles.quickCard, { backgroundColor: colors.card }]}
               onPress={q.onPress}
               activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityLabel={q.label}
             >
-              <Text style={styles.quickIcon}>{q.icon}</Text>
+              <View style={[styles.quickIconWrap, { backgroundColor: q.tint + "1A" }]}>
+                <Image source={q.icon} style={styles.quickIconImg} tintColor={q.noTint ? undefined : q.tint} resizeMode="contain" />
+              </View>
               <Text style={[styles.quickLabel, { color: colors.text }]}>{q.label}</Text>
               <Text style={[styles.quickDesc, { color: colors.mutedForeground }]}>{q.desc}</Text>
             </TouchableOpacity>
@@ -345,7 +369,8 @@ export default function HostHomeScreen() {
         />
       )}
 
-      {/* Permission reminders */}
+      {/* Permission reminders — only while something still needs granting */}
+      {!allPermsGranted && (
       <View style={styles.permSection}>
         <Text style={[styles.permTitle, { color: colors.text }]}>Permissions Required</Text>
         {([
@@ -390,6 +415,7 @@ export default function HostHomeScreen() {
           </TouchableOpacity>
         ))}
       </View>
+      )}
 
       {/* Tips for hosts */}
       <View style={[styles.tipsCard, { backgroundColor: colors.accentLight, marginHorizontal: 16 }]}>
@@ -445,12 +471,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 3, borderWidth: 1.5, borderColor: "#fff",
   },
   notifBadgeText: { color: "#fff", fontSize: 9, fontFamily: "Poppins_700Bold" },
-  statusBanner: { borderRadius: 16, padding: 16, flexDirection: "row", alignItems: "center", marginBottom: 16 },
+  statusBanner: { borderRadius: 18, padding: 16, flexDirection: "row", alignItems: "center", gap: 14, marginBottom: 16 },
+  statusIconWrap: { width: 40, height: 40, borderRadius: 20, backgroundColor: "rgba(255,255,255,0.2)", alignItems: "center", justifyContent: "center" },
+  statusPulse: { width: 14, height: 14, borderRadius: 7, backgroundColor: "#fff" },
   statusTitle: { color: "#fff", fontSize: 16, fontFamily: "Poppins_700Bold" },
   statusSub: { color: "rgba(255,255,255,0.8)", fontSize: 12, fontFamily: "Poppins_400Regular", marginTop: 2 },
-  statsCard: { borderRadius: 16, padding: 16, flexDirection: "row", alignItems: "center", justifyContent: "space-around", marginBottom: 16 },
-  stat: { alignItems: "center", gap: 4 },
-  statValue: { fontSize: 20, fontFamily: "Poppins_700Bold" },
+  statsCard: { borderRadius: 16, padding: 18, flexDirection: "row", alignItems: "center", justifyContent: "space-around", marginBottom: 16 },
+  stat: { alignItems: "center", gap: 5, flex: 1 },
+  statIconChip: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center", marginBottom: 2 },
+  statIconImg: { width: 17, height: 17 },
+  statValue: { fontSize: 19, fontFamily: "Poppins_700Bold" },
   statLabel: { fontSize: 11, fontFamily: "Poppins_400Regular" },
   statDiv: { width: 1, height: 40 },
   ratesCard: { borderRadius: 16, padding: 16, marginBottom: 16, gap: 14 },
@@ -461,15 +491,17 @@ const styles = StyleSheet.create({
   editBtnText: { fontSize: 13, fontFamily: "Poppins_600SemiBold" },
   ratesRow: { flexDirection: "row", gap: 12 },
   rateItem: { flex: 1, borderRadius: 12, padding: 12, flexDirection: "row", alignItems: "center", gap: 10 },
-  rateEmoji: { fontSize: 22 },
+  rateIconChip: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
+  rateIconImg: { width: 18, height: 18 },
   rateValue: { fontSize: 18, fontFamily: "Poppins_700Bold" },
   rateUnit: { fontSize: 11, fontFamily: "Poppins_400Regular", marginTop: -2 },
   promoImg: { width: "100%", height: 160, marginBottom: 16 },
   quickSection: { paddingHorizontal: 16, marginBottom: 16 },
   quickTitle: { fontSize: 16, fontFamily: "Poppins_700Bold", marginBottom: 12 },
   quickGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: 12 },
-  quickCard: { width: "31.5%", borderRadius: 14, paddingVertical: 16, paddingHorizontal: 8, alignItems: "center", gap: 3 },
-  quickIcon: { fontSize: 24, marginBottom: 3 },
+  quickCard: { width: "31.5%", borderRadius: 14, paddingVertical: 16, paddingHorizontal: 8, alignItems: "center", gap: 5 },
+  quickIconWrap: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center", marginBottom: 4 },
+  quickIconImg: { width: 22, height: 22 },
   quickLabel: { fontSize: 12, fontFamily: "Poppins_600SemiBold", textAlign: "center" },
   quickDesc: { fontSize: 9.5, fontFamily: "Poppins_400Regular", textAlign: "center" },
   permSection: { paddingHorizontal: 16, gap: 10, marginBottom: 16 },
