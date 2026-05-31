@@ -144,6 +144,8 @@ export default function OutgoingCallScreen() {
           style={s.endBtn}
           onPress={cancelCall}
           activeOpacity={0.85}
+          accessibilityRole="button"
+          accessibilityLabel="Cancel call"
         >
           <Image source={require("@/assets/icons/ic_call_end.png")} style={s.endIcon} resizeMode="contain" />
         </TouchableOpacity>

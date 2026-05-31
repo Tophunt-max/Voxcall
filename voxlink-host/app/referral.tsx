@@ -61,7 +61,7 @@ export default function ReferralScreen() {
         colors={["#A00EE7", "#6A00B8"]}
         style={[styles.header, { paddingTop: insets.top + 12 }]}
       >
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+        <TouchableOpacity onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Go back" style={styles.backBtn}>
           <IconView name="arrow-left" size={22} color="#fff" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Refer & Earn</Text>

@@ -319,3 +319,22 @@ Cleared most of the documented Low-priority items; verified with `voxlink-host` 
 - **App-wide accessibility sweep** — remaining icon-only buttons across settings/profile/secondary screens (critical call flow, home, incoming, and call controls are already covered).
 - **#5 WS token in connect URL** — needs the Durable Object to echo the negotiated subprotocol on the 101 handshake; risky (touches realtime for all hosts), so kept as a dedicated, separately-tested change.
 - **`become.tsx` specialty max** — only a "≥1" minimum is enforced; no max is defined in code, so adding one is a product decision (not invented here).
+
+
+---
+
+## Host App — round 8: final two items completed (2026-05-31)
+
+Both previously-deferred items are now done. Verified: api-server (typecheck + 69 tests + dry-run build) and voxlink-host (typecheck) all green.
+
+### #5 — WebSocket token moved out of the URL (security)
+The JWT no longer rides in the `?token=` query string (where it leaked into Workers request logs / proxies / history). It's now sent as a WebSocket **subprotocol** and echoed safely:
+- **Client (`SocketService`)** connects with `new WebSocket(url, ["jwt", token])`; `userId` stays in the query (not secret — the server cross-checks it against the verified token subject).
+- **Server route** already read the token from `Sec-WebSocket-Protocol` (`extractWsToken`).
+- **Durable Objects (`NotificationHub`, `CallSignaling`)** now echo the scheme marker (`jwt`) — never the token — on the 101 handshake, which browsers require. `negotiateWsSubprotocol()` returns `null` when no subprotocol is offered, so **old clients on `?token=` keep working** (backward-compatible rollout). The user app can migrate the same way later with no server change.
+
+### Accessibility sweep (icon-only controls)
+Added `accessibilityRole="button"` + `accessibilityLabel` to the back buttons across ~23 secondary screens (about, settings, notifications, referral, help-center, language, privacy, call-rates, earnings-history, manage-topics, payout-method, profile/edit, calls/history, chat, auth/{become,kyc,register,status,profile-setup,forgot-password}) and the outgoing-call "Cancel" button. Combined with earlier rounds (home header, incoming accept/decline, audio/video call controls, level-benefits retry), the host app's interactive controls are now screen-reader labelled.
+
+### Remaining (product decision only)
+- `become.tsx` specialty **maximum** — only a "≥1" minimum is enforced; no max is defined anywhere in code, so any cap is a product decision (not invented here).

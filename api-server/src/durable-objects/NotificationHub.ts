@@ -3,6 +3,22 @@
 // without losing connected WebSocket clients (getWebSockets() survives hibernation).
 import type { Env } from '../types';
 
+// Negotiate the WebSocket subprotocol: clients now send the JWT as a
+// subprotocol (["jwt", "<token>"]) instead of a ?token= query param so the
+// token never lands in request logs / proxies. Browsers require the server to
+// echo ONE of the offered protocols on the 101 response, so we echo the scheme
+// marker (never the token). Old clients send no subprotocol → returns null →
+// response is unchanged (backward compatible).
+function negotiateWsSubprotocol(request: Request): string | null {
+  const raw = request.headers.get('Sec-WebSocket-Protocol');
+  if (!raw) return null;
+  const offered = raw.split(',').map((s) => s.trim());
+  for (const scheme of ['bearer', 'jwt', 'access_token']) {
+    if (offered.includes(scheme)) return scheme;
+  }
+  return null;
+}
+
 export class NotificationHub {
   private state: DurableObjectState;
   private env: Env;
@@ -49,7 +65,10 @@ export class NotificationHub {
     // Attach userId so we can identify which user disconnected on close.
     // serializeAttachment survives DO hibernation alongside the WS.
     server.serializeAttachment({ userId });
-    return new Response(null, { status: 101, webSocket: client });
+    const subprotocol = negotiateWsSubprotocol(request);
+    const init: ResponseInit & { webSocket: WebSocket } = { status: 101, webSocket: client };
+    if (subprotocol) init.headers = { 'Sec-WebSocket-Protocol': subprotocol };
+    return new Response(null, init);
   }
 
   // Cloudflare Hibernatable WS handlers — called when DO wakes from hibernation

@@ -32,6 +32,19 @@
 //     so it survives hibernation along with the socket itself.
 //   - Read live sockets from `state.getWebSockets()` (which the runtime
 //     keeps populated across hibernation cycles) for every fan-out.
+// See NotificationHub for the rationale — clients send the JWT as a WebSocket
+// subprotocol; we echo the scheme marker (never the token) on the 101 so
+// browsers accept the handshake. Backward compatible: no subprotocol → null.
+function negotiateWsSubprotocol(request: Request): string | null {
+  const raw = request.headers.get('Sec-WebSocket-Protocol');
+  if (!raw) return null;
+  const offered = raw.split(',').map((s) => s.trim());
+  for (const scheme of ['bearer', 'jwt', 'access_token']) {
+    if (offered.includes(scheme)) return scheme;
+  }
+  return null;
+}
+
 export class CallSignaling {
   private state: DurableObjectState;
 
@@ -121,7 +134,10 @@ export class CallSignaling {
     this.state.acceptWebSocket(server);
     // Store identity on the socket itself — survives DO hibernation.
     server.serializeAttachment({ userId, role });
-    return new Response(null, { status: 101, webSocket: client });
+    const subprotocol = negotiateWsSubprotocol(request);
+    const init: ResponseInit & { webSocket: WebSocket } = { status: 101, webSocket: client };
+    if (subprotocol) init.headers = { 'Sec-WebSocket-Protocol': subprotocol };
+    return new Response(null, init);
   }
 
   // ──────────────────────────────────────────────────────────────────────────

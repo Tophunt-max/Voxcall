@@ -242,6 +242,8 @@ export default function HostStatusScreen() {
       <View style={[s.header, { paddingTop: insets.top + 10 }]}>
         <TouchableOpacity
           onPress={() => router.canGoBack() ? router.back() : router.replace("/auth/login")}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
           style={s.backBtn}
           activeOpacity={0.8}
         >

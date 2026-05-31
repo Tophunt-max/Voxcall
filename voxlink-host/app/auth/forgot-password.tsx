@@ -85,7 +85,7 @@ export default function ForgotPasswordScreen() {
         >
           {/* ── Dark top section ── */}
           <View style={[s.top, { paddingTop: insets.top + 10 }]}>
-            <TouchableOpacity onPress={() => router.back()} style={s.backBtn} activeOpacity={0.8}>
+            <TouchableOpacity onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Go back" style={s.backBtn} activeOpacity={0.8}>
               <Image source={require("@/assets/icons/ic_back.png")} style={s.backIcon} tintColor="rgba(255,255,255,0.85)" resizeMode="contain" />
             </TouchableOpacity>
 
@@ -182,7 +182,7 @@ export default function ForgotPasswordScreen() {
                     <Text style={s.primaryBtnTxt}>{loading ? "Sending..." : "Send OTP"}</Text>
                   </LinearGradient>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => router.back()} style={s.backToLogin}>
+                <TouchableOpacity onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Go back" style={s.backToLogin}>
                   <Text style={s.backToLoginTxt}>
                     Back to <Text style={s.backToLoginLink}>Sign In</Text>
                   </Text>

@@ -65,7 +65,7 @@ export default function HostBecomeScreen() {
     <View style={{ flex: 1, backgroundColor: "#fff" }}>
       {/* ── Dark gradient header ── */}
       <LinearGradient colors={[BG, "#1A1C3A"]} style={[s.header, { paddingTop: insets.top + 10 }]}>
-        <TouchableOpacity onPress={() => router.back()} style={s.backBtn} activeOpacity={0.8}>
+        <TouchableOpacity onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Go back" style={s.backBtn} activeOpacity={0.8}>
           <Image source={require("@/assets/icons/ic_back.png")} style={s.backIcon} tintColor="#fff" resizeMode="contain" />
         </TouchableOpacity>
 
