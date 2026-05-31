@@ -19,6 +19,7 @@ import * as ClipboardModule from "expo-clipboard";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
+import * as Application from "expo-application";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -137,6 +138,7 @@ export default function ProfileScreen() {
   const topPad = insets.top;
   const bottomPad = insets.bottom;
   const uniqueId = user?.id?.slice(0, 8).toUpperCase() ?? "00000000";
+  const appVersion = Application.nativeApplicationVersion ?? "1.0.0";
 
   const notificationsGranted = permissions.notifications.status === "granted";
   const notifBlocked =
@@ -433,7 +435,13 @@ export default function ProfileScreen() {
 
         {/* Stats row */}
         <View style={[styles.statsRow, { borderTopColor: colors.border }]}>
-          <View style={styles.stat}>
+          <TouchableOpacity
+            style={styles.stat}
+            onPress={() => router.push("/user/payment/checkout")}
+            accessibilityRole="button"
+            accessibilityLabel="Buy coins"
+            activeOpacity={0.7}
+          >
             <View style={styles.statValueRow}>
               <Image
                 source={require("@/assets/icons/ic_coin.png")}
@@ -445,7 +453,7 @@ export default function ProfileScreen() {
               </Text>
             </View>
             <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>Coins</Text>
-          </View>
+          </TouchableOpacity>
           <View style={[styles.statDiv, { backgroundColor: colors.border }]} />
           <View style={styles.stat}>
             <Text style={[styles.statValue, { color: colors.text }]}>{callCount}</Text>
@@ -472,7 +480,14 @@ export default function ProfileScreen() {
         <MenuItem
           iconSource={require("@/assets/icons/ic_wallet.png")}
           label="My Wallet"
+          value={`${(user?.coins ?? 0).toLocaleString()} coins`}
           onPress={() => router.push("/user/payment/checkout")}
+        />
+        <MenuItem
+          iconName="credit-card"
+          label="Coin History"
+          subLabel="Purchases & spending"
+          onPress={() => router.push("/user/coin-history")}
         />
         {notifBlocked ? (
           <MenuItem
@@ -556,6 +571,11 @@ export default function ProfileScreen() {
           danger
         />
       </View>
+
+      {/* App version */}
+      <Text style={[styles.versionText, { color: colors.mutedForeground }]}>
+        VoxLink v{appVersion}
+      </Text>
     </ScrollView>
   );
 }
@@ -655,6 +675,7 @@ const styles = StyleSheet.create({
   menuSubLabel: { fontSize: 11, fontFamily: "Poppins_400Regular", marginTop: 1 },
   menuRight: { flexDirection: "row", alignItems: "center", gap: 4 },
   menuValue: { fontSize: 12, fontFamily: "Poppins_400Regular" },
+  versionText: { textAlign: "center", fontSize: 11, fontFamily: "Poppins_400Regular", marginTop: 2 },
 });
 
 
