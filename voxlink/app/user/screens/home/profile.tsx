@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -10,7 +10,10 @@ import {
   Alert,
   Switch,
   ActivityIndicator,
+  RefreshControl,
+  Linking,
 } from "react-native";
+import { Feather } from "@expo/vector-icons";
 import { crossShare, appendFileToFormData } from "@/utils/fileUpload";
 import * as ClipboardModule from "expo-clipboard";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -72,6 +75,12 @@ function MenuItem({
             tintColor={danger ? colors.destructive : colors.text}
             resizeMode="contain"
           />
+        ) : iconName ? (
+          <Feather
+            name={iconName as any}
+            size={18}
+            color={danger ? colors.destructive : colors.text}
+          />
         ) : null}
       </View>
       <View style={{ flex: 1 }}>
@@ -113,7 +122,7 @@ function MenuItem({
 export default function ProfileScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { user, logout, updateProfile } = useAuth();
+  const { user, logout, updateProfile, refreshBalance } = useAuth();
   const { permissions, requestNotifications, requestMediaLibrary, openSettings } = usePermissions();
   const { language } = useLanguage();
   const currentLangLabel = LANGUAGES.find((l) => l.code === language)?.name ?? "English";
@@ -123,6 +132,7 @@ export default function ProfileScreen() {
   const [avatarUri, setAvatarUri] = useState<string | null>(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [callCount, setCallCount] = useState<number>(0);
+  const [refreshing, setRefreshing] = useState(false);
 
   const topPad = insets.top;
   const bottomPad = insets.bottom;
@@ -139,16 +149,29 @@ export default function ProfileScreen() {
     (permissions.mediaLibrary.status === "denied" &&
       !permissions.mediaLibrary.canAskAgain);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const history = await API.getCallHistory();
-        setCallCount(Array.isArray(history) ? history.length : 0);
-      } catch {
-        setCallCount(0);
-      }
-    })();
+  const loadCallCount = useCallback(async () => {
+    try {
+      const history = await API.getCallHistory();
+      setCallCount(Array.isArray(history) ? history.length : 0);
+    } catch {
+      setCallCount(0);
+    }
   }, []);
+
+  useEffect(() => {
+    loadCallCount();
+  }, [loadCallCount]);
+
+  // Pull-to-refresh: coins (from the server, not the possibly-stale cached
+  // user) and the call count, so the stats row reflects reality.
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([refreshBalance().catch(() => {}), loadCallCount()]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refreshBalance, loadCallCount]);
 
   const handleLogout = () => {
     Alert.alert("Sign Out", "Are you sure you want to sign out?", [
@@ -165,8 +188,43 @@ export default function ProfileScreen() {
   };
 
   const copyId = async () => {
-    await ClipboardModule.setStringAsync(uniqueId);
-    showSuccessToast("Your unique ID has been copied.", "Copied");
+    try {
+      await ClipboardModule.setStringAsync(uniqueId);
+      showSuccessToast("Your unique ID has been copied.", "Copied");
+    } catch {
+      showErrorToast("Couldn't copy your ID. Please try again.");
+    }
+  };
+
+  // "Rate the App" — actually open the store now (was a no-op alert button).
+  // Android deep-links to the Play listing; iOS/web fall back to the site
+  // since we don't have the numeric App Store id here.
+  const handleRate = async () => {
+    const pkg = "com.voxlink.app";
+    try {
+      if (Platform.OS === "android") {
+        const market = `market://details?id=${pkg}`;
+        const canOpen = await Linking.canOpenURL(market);
+        await Linking.openURL(canOpen ? market : `https://play.google.com/store/apps/details?id=${pkg}`);
+      } else {
+        await Linking.openURL("https://voxlink.app");
+      }
+    } catch {
+      showErrorToast("Couldn't open the store. Please try again.");
+    }
+  };
+
+  const handleShareApp = async () => {
+    try {
+      await crossShare({
+        message:
+          "Join VoxLink - Connect with amazing hosts for audio & video calls! Download now: https://voxlink.app",
+        title: "VoxLink",
+        url: "https://voxlink.app",
+      });
+    } catch {
+      // user dismissed the share sheet or it failed — non-fatal
+    }
   };
 
   const handleAvatarPress = async () => {
@@ -240,6 +298,14 @@ export default function ProfileScreen() {
       style={{ flex: 1, backgroundColor: colors.background }}
       contentContainerStyle={{ paddingBottom: bottomPad + 90 }}
       showsVerticalScrollIndicator={false}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={colors.primary}
+          colors={[colors.primary]}
+        />
+      }
     >
       <PermissionDialog
         visible={showNotifDialog}
@@ -277,6 +343,8 @@ export default function ProfileScreen() {
         <TouchableOpacity
           onPress={() => router.push("/user/profile/edit")}
           style={[styles.editBtn, { backgroundColor: colors.surface }]}
+          accessibilityRole="button"
+          accessibilityLabel="Edit profile"
         >
           <Image
             source={require("@/assets/icons/ic_edit.png")}
@@ -306,6 +374,8 @@ export default function ProfileScreen() {
           onPress={handleAvatarPress}
           activeOpacity={0.85}
           style={styles.avatarOuter}
+          accessibilityRole="button"
+          accessibilityLabel="Change profile photo"
         >
           <View style={[styles.dottedBorder, { borderColor: colors.primary }]}>
             <Image
@@ -340,6 +410,8 @@ export default function ProfileScreen() {
         <TouchableOpacity
           onPress={copyId}
           style={[styles.idBadge, { backgroundColor: "#F0E4F8" }]}
+          accessibilityRole="button"
+          accessibilityLabel={`Copy your ID ${uniqueId}`}
         >
           <Image
             source={require("@/assets/icons/ic_id_badge.png")}
@@ -463,25 +535,12 @@ export default function ProfileScreen() {
         <MenuItem
           iconName="star"
           label="Rate the App"
-          onPress={() =>
-            Alert.alert(
-              "Rate VoxLink",
-              "Thank you for using VoxLink! Please rate us on the App Store.",
-              [{ text: "Rate Now", style: "default" }, { text: "Later", style: "cancel" }]
-            )
-          }
+          onPress={handleRate}
         />
         <MenuItem
           iconSource={require("@/assets/images/icon_share.png")}
           label="Share App"
-          onPress={() =>
-            crossShare({
-              message:
-                "Join VoxLink - Connect with amazing hosts for audio & video calls! Download now: https://voxlink.app",
-              title: "VoxLink",
-              url: "https://voxlink.app",
-            })
-          }
+          onPress={handleShareApp}
         />
       </View>
 
