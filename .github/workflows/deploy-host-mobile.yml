@@ -42,7 +42,7 @@ jobs:
 
       - name: Export Expo Web App (Host)
         working-directory: voxlink-host
-        run: pnpm exec expo export --platform web --output-dir dist
+        run: pnpm run build
         env:
           NODE_ENV: production
           EXPO_PUBLIC_API_URL: ${{ vars.EXPO_PUBLIC_API_URL }}
@@ -56,7 +56,7 @@ jobs:
 
       - name: Copy Service Worker to dist
         run: |
-          cp voxlink-host/public/firebase-messaging-sw.js voxlink-host/dist/firebase-messaging-sw.js
+          cp voxlink-host/public/firebase-messaging-sw.js voxlink-host/static-build/firebase-messaging-sw.js
           echo "✅ Service worker copied to dist"
 
       - name: Deploy to Cloudflare Pages
@@ -65,6 +65,5 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ vars.CF_ACCOUNT_ID }}
           projectName: voxlink-host-mobile
-          directory: voxlink-host/dist
+          directory: voxlink-host/static-build
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
-          wranglerVersion: '3'

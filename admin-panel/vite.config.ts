@@ -10,7 +10,8 @@ if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
-const basePath = process.env.BASE_PATH ?? "/admin-panel/";
+// Use / for Cloudflare Pages root deployment, /admin-panel/ for other environments
+const basePath = process.env.BASE_PATH ?? (process.env.NODE_ENV === 'production' ? '/' : '/admin-panel/');
 
 export default defineConfig({
   base: basePath,
@@ -55,7 +56,7 @@ export default defineConfig({
   },
   root: path.resolve(import.meta.dirname),
   build: {
-    outDir: path.resolve(import.meta.dirname, "dist/public"),
+    outDir: path.resolve(import.meta.dirname, "dist"),
     emptyOutDir: true,
   },
   server: {
@@ -67,9 +68,8 @@ export default defineConfig({
       deny: ["**/.*"],
     },
     proxy: {
-      [`${basePath}api`]: {
+      '/api': {
         target: process.env.CLOUDFLARE_WORKER_URL ?? 'https://voxlink-api.ssunilkumarmohanta3.workers.dev',
-        rewrite: (path: string) => path.replace(new RegExp(`^${basePath}api`), '/api'),
         changeOrigin: true,
         secure: false,
       },

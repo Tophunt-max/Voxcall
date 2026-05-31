@@ -42,12 +42,9 @@ jobs:
 
       - name: Build Admin Panel
         working-directory: admin-panel
-        run: pnpm --filter @workspace/admin-panel run build
+        run: pnpm build
         env:
-          PORT: '4173'
-          BASE_PATH: '/'
           NODE_ENV: production
-          VITE_API_URL: ${{ vars.VITE_API_URL }}
 
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/pages-action@v1
@@ -55,6 +52,5 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ vars.CF_ACCOUNT_ID }}
           projectName: voxlink-admin
-          directory: admin-panel/dist/public
+          directory: admin-panel/dist
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
-          wranglerVersion: '3'
