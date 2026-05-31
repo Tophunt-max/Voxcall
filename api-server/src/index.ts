@@ -383,26 +383,36 @@ async function maybeRecalcLevelsDaily(env: Env): Promise<void> {
 async function maybeRefreshFxRates(env: Env): Promise<void> {
   try {
     const now = Math.floor(Date.now() / 1000);
+    const REFRESH_INTERVAL = 12 * 3600;
+    const RETRY_INTERVAL = 3600; // on failure, retry in ~1h instead of waiting 12h
     const row = await env.DB.prepare("SELECT value FROM app_settings WHERE key = 'fx_rates_updated'").first<{ value: string }>();
     const last = row?.value ? parseInt(row.value, 10) || 0 : 0;
-    if (now - last < 12 * 3600) return;
+    if (now - last < REFRESH_INTERVAL) return;
     // Claim the slot first so overlapping cron ticks don't double-fetch.
     await env.DB.prepare(
       "INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('fx_rates_updated', ?, unixepoch())"
     ).bind(String(now)).run();
 
+    // On any failure, roll the timestamp back so the next tick retries in
+    // ~RETRY_INTERVAL rather than holding the stale claim for the full 12h.
+    const scheduleRetry = async () => {
+      await env.DB.prepare(
+        "INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('fx_rates_updated', ?, unixepoch())"
+      ).bind(String(now - REFRESH_INTERVAL + RETRY_INTERVAL)).run().catch(() => {});
+    };
+
     const res = await fetch('https://open.er-api.com/v6/latest/USD');
-    if (!res.ok) { console.warn('[Cron] FX refresh HTTP', res.status); return; }
+    if (!res.ok) { console.warn('[Cron] FX refresh HTTP', res.status); await scheduleRetry(); return; }
     const data = await res.json<any>();
     const rates = data?.rates;
-    if (!rates || typeof rates !== 'object') { console.warn('[Cron] FX refresh: malformed payload'); return; }
+    if (!rates || typeof rates !== 'object') { console.warn('[Cron] FX refresh: malformed payload'); await scheduleRetry(); return; }
 
     const filtered: Record<string, number> = {};
     for (const code of Object.keys(USD_TO_FOREIGN)) {
       const v = Number(rates[code]);
       if (Number.isFinite(v) && v > 0) filtered[code] = v;
     }
-    if (Object.keys(filtered).length < 5) { console.warn('[Cron] FX refresh: too few rates, skipping store'); return; }
+    if (Object.keys(filtered).length < 5) { console.warn('[Cron] FX refresh: too few rates, skipping store'); await scheduleRetry(); return; }
     await env.DB.prepare(
       "INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('fx_rates_usd', ?, unixepoch())"
     ).bind(JSON.stringify(filtered)).run();

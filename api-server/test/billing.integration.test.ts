@@ -77,3 +77,50 @@ describe('atomicCallTransfer', () => {
     expect(await coins('caller')).toBe(100);
   });
 });
+
+
+// ─── chargeCallerAffordable — partial/best-effort billing (FIX #1) ───────────
+// This is the core fairness fix: when a caller overruns their balance, the host
+// must still be paid for the talk-time (their share of what was actually
+// collected), instead of the old all-or-nothing behaviour that paid the host 0.
+import { chargeCallerAffordable } from '../src/lib/billing';
+
+describe('chargeCallerAffordable', () => {
+  it('charges the full amount + pays host share when the caller can afford it', async () => {
+    const res = await chargeCallerAffordable(db as any, {
+      callerId: 'caller',
+      hostUserId: 'host',
+      coinsCharged: 50,
+      earningShare: 0.7,
+    });
+    expect(res).toEqual({ charged: 50, hostEarned: 35 });
+    expect(await coins('caller')).toBe(50);
+    expect(await coins('host')).toBe(35);
+  });
+
+  it('caps the charge at the caller balance and STILL pays the host (overrun)', async () => {
+    db.applySchema("UPDATE users SET coins = 30 WHERE id = 'caller';");
+    const res = await chargeCallerAffordable(db as any, {
+      callerId: 'caller',
+      hostUserId: 'host',
+      coinsCharged: 50, // owed more than they have
+      earningShare: 0.7,
+    });
+    // Charged what they had (30); host earns floor(30 * 0.7) = 21 — NOT 0.
+    expect(res).toEqual({ charged: 30, hostEarned: 21 });
+    expect(await coins('caller')).toBe(0);
+    expect(await coins('host')).toBe(21);
+  });
+
+  it('charges nothing when the caller has zero coins', async () => {
+    db.applySchema("UPDATE users SET coins = 0 WHERE id = 'caller';");
+    const res = await chargeCallerAffordable(db as any, {
+      callerId: 'caller',
+      hostUserId: 'host',
+      coinsCharged: 50,
+      earningShare: 0.7,
+    });
+    expect(res).toEqual({ charged: 0, hostEarned: 0 });
+    expect(await coins('host')).toBe(0);
+  });
+});

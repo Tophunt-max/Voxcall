@@ -222,3 +222,22 @@ All `api-server` changes below ship together; `typecheck`, `lint` (0 errors), `v
 - **#10 host-app rate:** `voxlink-host/services/PaymentService.ts` hardcodes `COIN_TO_INR_RATE = 0.5` and `MINIMUM_WITHDRAWAL = 500`, which disagree with the server (`coin_to_usd_rate = 0.01`, `min_withdrawal_coins = 100`). Decide the payout currency + single source of truth, then have the host app read the rate from the API. **Not changed here** to avoid altering real payout values blindly. (Also: `admin-panel/AppConfig.tsx` uses keys the backend doesn't accept — `coin_to_inr_rate`, `host_payout_percent` — so edits there silently no-op; reconcile with `SettingsPage.tsx`.)
 - **#5:** scrub `token` from logged URLs and complete client migration to the subprotocol header.
 - **#13:** ensure prod `TURN_KEY_ID`/`TURN_KEY_TOKEN` are set; consider prioritizing the D1 → Postgres migration before call-volume growth.
+
+---
+
+## Double-check (round 2, 2026-05-31)
+
+Re-ran and stress-tested the above changes; tightened test coverage and surfaced deeper issues.
+
+### Verified / hardened
+- **Test coverage added for the new code** (now **69 tests**, all green, run repeatedly for stability):
+  - `chargeCallerAffordable` (FIX #1) — proves a caller who overruns is charged up to their balance and the host is paid their share (e.g. owed 50, balance 30 → host earns 21, **not 0**).
+  - `registerHit` / `checkRateLimit` (FIX #7) — proves the atomic upsert increments correctly, caps at the right hit, resets an expired window, and fails open when the table is missing.
+  - Promo `max_uses` (FIX #2) and gateway signatures (FIX #3) already covered.
+- **Flaky pre-existing test fixed** — `jwt.test.ts` "tampered token" flipped the **last** base64url char of the signature, which decodes to identical bytes ~⅓ of the time (spare-bit alignment), so the tampered token was sometimes still valid and the test failed intermittently. Now tampers the payload's first char (deterministic). This flakiness could have let a red build slip through the new CI deploy gate.
+- **FX refresh retry** — a failed refresh now retries in ~1h instead of holding the stale 12h claim.
+
+### Newly surfaced (need product decision — NOT changed blindly)
+- **#14 Host withdrawal is mocked:** `voxlink-host/services/PaymentService.ts` `withdrawEarnings()` is a `setTimeout` mock that writes to local AsyncStorage and **never calls `POST /api/coins/withdraw`**. The real server withdrawal flow (with coin-freezing + admin approval) exists but the host app isn't wired to it. Hosts' in-app withdrawals do not actually reach the backend. **High priority** — decide and wire the real endpoint.
+- **#15 `AppConfig.tsx` is largely non-functional:** it `POST`s keys (`min_android_version`, `coin_to_inr_rate`, `host_payout_percent`, `free_coins_on_signup`, `guest_daily_call_limit`, `force_update_*`, …) that are NOT in the backend's `ALLOWED_APP_CONFIG_KEYS`/`ALLOWED_SETTINGS` allowlist, so they are silently dropped server-side. Admins believe they're changing config that never persists. Either extend the backend allowlist AND wire those keys into behaviour, or remove the dead fields and consolidate on `SettingsPage.tsx`.
+- **#16 Two overlapping admin economy editors:** `SettingsPage.tsx` (correct keys) and `AppConfig.tsx` (wrong keys) both edit "coin rate / payout %", inviting drift and confusion. Consolidate into one.

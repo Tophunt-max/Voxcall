@@ -24,9 +24,13 @@ describe('verifyToken rejects invalid tokens', () => {
 
   it('throws when the token has been tampered with', async () => {
     const token = await signToken({ sub: 'u1', role: 'user' } as any, SECRET);
-    // Flip a character in the signature segment.
+    // Tamper the PAYLOAD segment so the signature can no longer match.
+    // (Flipping the LAST char of the signature is unreliable: base64url's final
+    // character carries spare bits that decode to the same bytes ~⅓ of the time,
+    // leaving a still-valid signature — the source of a flaky test.)
     const parts = token.split('.');
-    parts[2] = parts[2].slice(0, -1) + (parts[2].endsWith('a') ? 'b' : 'a');
+    const firstChar = parts[1][0];
+    parts[1] = (firstChar === 'A' ? 'B' : 'A') + parts[1].slice(1);
     await expect(verifyToken(parts.join('.'), SECRET)).rejects.toBeTruthy();
   });
 
