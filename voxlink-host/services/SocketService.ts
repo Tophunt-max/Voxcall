@@ -42,6 +42,18 @@ class SocketService {
   // WS upgrade only issues one /api/auth/refresh request.
   private _didOpenThisAttempt = false;
   private _authRefreshAttempted = false;
+  // Zombie-socket watchdog: a WebSocket can sit in readyState OPEN long after
+  // the underlying connection is dead (TCP half-open) — `send()` won't throw
+  // and `onclose` may not fire for minutes, during which a host SILENTLY MISSES
+  // INCOMING CALLS. The server's NotificationHub replies to our `ping` with a
+  // `pong`, so any live connection sees inbound traffic every heartbeat cycle.
+  // We track the last inbound activity and, if nothing arrives within
+  // WATCHDOG_MS (~2.5 missed cycles), treat the socket as dead and force a
+  // reconnect. A genuinely-idle-but-alive connection still receives pongs, so
+  // this never false-positives.
+  private _lastActivityAt = 0;
+  private static readonly HEARTBEAT_MS = 30000;
+  private static readonly WATCHDOG_MS = 75000;
 
   static getInstance(): SocketService {
     if (!SocketService.instance) {
@@ -90,6 +102,7 @@ class SocketService {
       ws.onopen = () => {
         this._connected = true;
         this._didOpenThisAttempt = true;
+        this._lastActivityAt = Date.now();
         // Successful open proves the token is valid right now — re-arm the
         // refresh attempt so a future expiry can recover via refresh again.
         this._authRefreshAttempted = false;
@@ -100,6 +113,8 @@ class SocketService {
       };
 
       ws.onmessage = (event) => {
+        // Any inbound frame (including the server's `pong`) proves liveness.
+        this._lastActivityAt = Date.now();
         try {
           const msg = JSON.parse(typeof event.data === "string" ? event.data : "{}");
           this._handleServerMessage(msg);
@@ -283,12 +298,22 @@ class SocketService {
         this.stopHeartbeat();
         return;
       }
+      // Zombie-socket watchdog: if no inbound frame (not even a pong) has
+      // arrived within WATCHDOG_MS, the connection is dead despite a stale
+      // OPEN readyState. Force-close it so onclose fires and we reconnect —
+      // otherwise the host could miss incoming calls indefinitely.
+      if (this._lastActivityAt && Date.now() - this._lastActivityAt > SocketService.WATCHDOG_MS) {
+        console.warn("[Socket] Heartbeat watchdog: no pong — forcing reconnect");
+        try { this.ws.close(); } catch {}
+        // onclose handler will run stopHeartbeat() + scheduleReconnect().
+        return;
+      }
       try {
         if (this.ws.readyState === WebSocket.OPEN) {
           this.ws.send(JSON.stringify({ type: "ping" }));
         }
       } catch {}
-    }, 30000);
+    }, SocketService.HEARTBEAT_MS);
   }
 
   private stopHeartbeat(): void {
