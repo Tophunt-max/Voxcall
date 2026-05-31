@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useRef } from "react";
 import { API } from "@/services/api";
+import { showErrorToast } from "@/components/Toast";
 
 export type MessageType = "text" | "image" | "audio";
 
@@ -11,6 +12,8 @@ export interface Message {
   type: MessageType;
   timestamp: number;
   isRead: boolean;
+  /** Set when the optimistic send failed at the API so the UI can flag it. */
+  failed?: boolean;
 }
 
 export interface Conversation {
@@ -134,7 +137,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
             ...c,
             messages: c.messages.map((m) =>
               m.id === tempId
-                ? { ...m, id: sent.id ?? m.id, senderId: sent.sender_id ?? "me" }
+                ? { ...m, id: sent.id ?? m.id, senderId: sent.sender_id ?? "me", failed: false }
                 : m
             ),
           };
@@ -142,6 +145,18 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       );
     } catch (e) {
       console.warn("sendMessage API error:", e);
+      // FIX (M3): mark the optimistic bubble as failed instead of leaving it
+      // looking delivered, and let the user know it didn't send.
+      setConversations((prev) =>
+        prev.map((c) => {
+          if (c.id !== conversationId) return c;
+          return {
+            ...c,
+            messages: c.messages.map((m) => (m.id === tempId ? { ...m, failed: true } : m)),
+          };
+        })
+      );
+      showErrorToast("Message failed to send. Tap to retry or check your connection.");
     }
   }, [conversations]);
 

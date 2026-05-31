@@ -56,8 +56,8 @@ const queryClient = new QueryClient({
   },
 });
 
-function FCMNotificationTapBridge({ seenCallIds }: { seenCallIds: React.MutableRefObject<Set<string>> }) {
-  const { receiveCall, activeCall } = useCall();
+function FCMNotificationTapBridge({ seenCallIds, activeCallRef }: { seenCallIds: React.MutableRefObject<Set<string>>; activeCallRef: React.MutableRefObject<any> }) {
+  const { receiveCall } = useCall();
 
   useEffect(() => {
     if (!RNMessaging) return;
@@ -66,7 +66,7 @@ function FCMNotificationTapBridge({ seenCallIds }: { seenCallIds: React.MutableR
       if (!data) return;
       if (data.type === "incoming_call") {
         const callId = String(data.session_id ?? "");
-        if (!activeCall && callId && !seenCallIds.current.has(callId)) {
+        if (!activeCallRef.current && callId && !seenCallIds.current.has(callId)) {
           seenCallIds.current.add(callId);
           receiveCall(
             { id: String(data.caller_id ?? ""), name: data.caller_name ?? "Caller", role: "user" },
@@ -105,8 +105,8 @@ function FCMNotificationTapBridge({ seenCallIds }: { seenCallIds: React.MutableR
   return null;
 }
 
-function WebNotificationBridge({ seenCallIds }: { seenCallIds: React.MutableRefObject<Set<string>> }) {
-  const { receiveCall, activeCall } = useCall();
+function WebNotificationBridge({ seenCallIds, activeCallRef }: { seenCallIds: React.MutableRefObject<Set<string>>; activeCallRef: React.MutableRefObject<any> }) {
+  const { receiveCall } = useCall();
 
   useEffect(() => {
     if (Platform.OS !== "web" || typeof navigator === "undefined") return;
@@ -116,7 +116,7 @@ function WebNotificationBridge({ seenCallIds }: { seenCallIds: React.MutableRefO
       const data = event.data?.data ?? {};
       if (data.type === "incoming_call") {
         const callId = String(data.session_id ?? "");
-        if (!activeCall && callId && !seenCallIds.current.has(callId)) {
+        if (!activeCallRef.current && callId && !seenCallIds.current.has(callId)) {
           seenCallIds.current.add(callId);
           receiveCall(
             { id: String(data.caller_id ?? ""), name: data.caller_name ?? "Caller", role: "user" },
@@ -249,8 +249,8 @@ function AppBridge() {
 
   return (
     <>
-      {Platform.OS !== "web" && <FCMNotificationTapBridge seenCallIds={seenCallIds} />}
-      {Platform.OS === "web" && <WebNotificationBridge seenCallIds={seenCallIds} />}
+      {Platform.OS !== "web" && <FCMNotificationTapBridge seenCallIds={seenCallIds} activeCallRef={activeCallRef} />}
+      {Platform.OS === "web" && <WebNotificationBridge seenCallIds={seenCallIds} activeCallRef={activeCallRef} />}
     </>
   );
 }

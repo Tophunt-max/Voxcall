@@ -3,7 +3,6 @@
 // Web: Firebase Web SDK messaging + Service Worker
 
 import { Platform } from 'react-native';
-import { setItem, getItem, StorageKeys } from '@/utils/storage';
 
 // ─── Native FCM (Android / iOS) ────────────────────────────────────────────
 
@@ -101,37 +100,6 @@ export async function getFCMToken(): Promise<string | null> {
   }
 }
 
-// ─── Register token to backend ─────────────────────────────────────────────
-
-export async function registerFCMTokenToBackend(
-  apiBase: string,
-  authToken: string
-): Promise<void> {
-  try {
-    const token = await getFCMToken();
-    if (!token) return;
-
-    const stored = await getItem<string>(StorageKeys.PUSH_TOKEN);
-    if (stored === token) return;
-
-    const res = await fetch(`${apiBase}/api/user/profile`, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${authToken}`,
-      },
-      body: JSON.stringify({ fcm_token: token }),
-    });
-
-    if (res.ok) {
-      await setItem(StorageKeys.PUSH_TOKEN, token);
-      console.log('[FCM] Token registered to backend');
-    }
-  } catch (e) {
-    console.warn('[FCM] Backend token registration failed:', e);
-  }
-}
-
 // ─── Foreground Message Handler ─────────────────────────────────────────────
 
 export function onForegroundMessage(
@@ -178,26 +146,23 @@ export function setupBackgroundMessageHandler(): void {
 }
 
 // ─── Token Refresh Listener ─────────────────────────────────────────────────
+//
+// FCM rotates device tokens periodically. If the rotated token never reaches
+// the backend, push delivery silently stops until the next fresh login. The
+// caller (AuthContext) wires this up while logged in and pushes the new token
+// to the server via the app's standard apiRequest (correct /api/user/me path).
 
 export function onTokenRefresh(
-  apiBase: string,
-  getAuthToken: () => string | null
+  onToken: (token: string) => void | Promise<void>
 ): () => void {
   if (Platform.OS === 'web' || !RNFirebaseMessaging) return () => {};
   try {
     return RNFirebaseMessaging().onTokenRefresh(async (token: string) => {
-      const authToken = getAuthToken();
-      if (!authToken) return;
-      await fetch(`${apiBase}/api/user/profile`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${authToken}`,
-        },
-        body: JSON.stringify({ fcm_token: token }),
-      });
-      await setItem(StorageKeys.PUSH_TOKEN, token);
-      console.log('[FCM] Token refreshed and updated');
+      try {
+        await onToken(token);
+      } catch (e) {
+        console.warn('[FCM] onTokenRefresh callback failed:', e);
+      }
     });
   } catch {
     return () => {};

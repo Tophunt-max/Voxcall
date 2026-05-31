@@ -70,8 +70,11 @@ export default function HostStatusScreen() {
   const [justApproved, setJustApproved] = useState(false);
 
   const pollRef      = useRef<ReturnType<typeof setInterval> | null>(null);
+  const isMountedRef = useRef(true);
   const scaleAnim   = useRef(new Animated.Value(0.6)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => () => { isMountedRef.current = false; }, []);
 
   const stopPolling = () => {
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
@@ -88,6 +91,7 @@ export default function HostStatusScreen() {
     if (isRefresh) setRefreshing(true);
     try {
       const res = await API.getHostAppStatus();
+      if (!isMountedRef.current) return;
       const prevStatus = data?.status;
       setData(res);
 
@@ -103,10 +107,12 @@ export default function HostStatusScreen() {
         await AsyncStorage.removeItem("hostAppPending");
       }
     } catch {
-      showErrorToast("Failed to load application status.");
+      if (isMountedRef.current) showErrorToast("Failed to load application status.");
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, [data, refreshProfile]);
 

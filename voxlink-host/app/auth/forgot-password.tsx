@@ -30,6 +30,9 @@ export default function ForgotPasswordScreen() {
   useEffect(() => () => { if (timerRef.current) clearInterval(timerRef.current); }, []);
 
   const startCooldown = () => {
+    // Clear any in-flight timer first — otherwise a second call (e.g. resend)
+    // orphans the previous interval (memory leak) and double-decrements cooldown.
+    if (timerRef.current) clearInterval(timerRef.current);
     setCooldown(60);
     timerRef.current = setInterval(() => {
       setCooldown((prev) => {
@@ -151,7 +154,7 @@ export default function ForgotPasswordScreen() {
                   </LinearGradient>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  onPress={() => { if (cooldown > 0 || loading) return; startCooldown(); handleSend(); }}
+                  onPress={() => { if (cooldown > 0 || loading) return; handleSend(); }}
                   style={s.resendRow}
                   disabled={loading || cooldown > 0}
                 >

@@ -3,6 +3,7 @@ import { AppState } from "react-native";
 import { setItem, getItem, removeItem, StorageKeys } from "@/utils/storage";
 import { apiRequest, API } from "@/services/api";
 import { registerForPushNotifications } from "@/services/NotificationService";
+import { onTokenRefresh } from "@/services/fcm";
 import { setServerCurrency } from "@/utils/currency";
 
 // Module-level logout callback so fetchFreshProfile can trigger auto-logout
@@ -210,6 +211,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Keep ref in sync so the session-expired callback always calls the latest logout
   useEffect(() => { logoutRef.current = logout; }, [logout]);
+
+  // FIX (H3): keep the backend's FCM token fresh. Firebase rotates device
+  // tokens periodically; without this listener the rotated token never reaches
+  // the server and push delivery silently dies until the next fresh login.
+  // Wired only while logged in; the native listener is torn down on logout.
+  useEffect(() => {
+    if (!state.isLoggedIn) return;
+    const unsub = onTokenRefresh(async (token) => {
+      try {
+        await apiRequest("PATCH", "/api/user/me", { fcm_token: token });
+        await setItem(StorageKeys.PUSH_TOKEN, token);
+      } catch {
+        // best-effort — next app launch re-syncs via syncPushToken()
+      }
+    });
+    return unsub;
+  }, [state.isLoggedIn]);
 
   const updateProfile = useCallback(async (updates: Partial<UserProfile>) => {
     const backendUpdates: Record<string, unknown> = {};

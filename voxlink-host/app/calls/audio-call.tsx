@@ -406,7 +406,7 @@ export default function AudioCallScreen() {
         <Animated.View style={[styles.avatarRing, { transform: [{ scale: pulse }] }]}>
           <View style={styles.avatarInner}>
             <Image
-              source={{ uri: activeCall?.participant.avatar ?? `https://api.dicebear.com/7.x/avataaars/svg?seed=${activeCall?.participant.id}` }}
+              source={{ uri: activeCall?.participant.avatar ?? `https://api.dicebear.com/7.x/avataaars/png?seed=${activeCall?.participant.id}` }}
               style={styles.avatar}
             />
           </View>

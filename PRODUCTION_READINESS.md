@@ -274,3 +274,30 @@ Focused review of the Expo/React Native host app. It's already mature (WebRTC te
 - **Client-side FX table + `0.01` coin rate (`utils/currency.ts`)** — mirrors the server's static table and coin→USD rate; could be fetched from `GET /api/app-config` so it never drifts. Cosmetic (display only), low priority.
 - **WS zombie-socket detection** — FIXED: the client now tracks last inbound activity (the NotificationHub DO already replies to `ping` with `pong`) and force-reconnects if nothing arrives within ~75s, so a half-open socket no longer leaves a host silently unable to receive calls. A genuinely-idle-but-alive connection still gets pongs each cycle, so it never false-positives.
 - **WebRTC service recreation on video toggle** — `useWebRTC` keys its effect on `isVideo`, so flipping video tears down and rebuilds the whole `WebRTCService`. Works, but could be optimized to renegotiate in place.
+
+
+---
+
+## Host App — full file-by-file deep review (2026-05-31, round 6)
+
+Audited every host-app file (contexts, layouts, all screens, components, hooks, services, utils). Fixed the Critical/High + high-value Medium issues; all changes verified with `voxlink-host` typecheck (clean).
+
+### Critical / High (fixed)
+- **C1 forgot-password timer leak** — "Resend OTP" called `startCooldown()` AND `handleSend()` (which also starts the cooldown), orphaning the first `setInterval` → leak + 2× countdown speed. `startCooldown()` now clears any in-flight timer; removed the redundant call in the resend handler.
+- **H1 stale-closure in push bridges** — `FCMNotificationTapBridge` / `WebNotificationBridge` read `activeCall` inside a `[]`-deps effect, so tapping a push during an active call could launch a duplicate incoming-call screen. Now use the shared `activeCallRef`.
+- **H2 profile-setup stuck spinner** — `await updateProfile()` (re-throws on API error) had no try/catch → permanent loading spinner + unhandled rejection. Wrapped in try/catch/finally with an error toast.
+- **H3/H4 FCM token refresh never wired + wrong endpoint** — `onTokenRefresh`/`registerFCMTokenToBackend` were dead code that also PATCHed a non-existent `/api/user/profile`. Rotated FCM tokens never reached the backend → push silently dies over time. Removed the dead registration fn, refactored `onTokenRefresh` to a callback, and wired it in `AuthContext` (while logged in) to PATCH the correct `/api/user/me`.
+
+### Medium (fixed)
+- **M1 broken avatars on native** — 9 screens used DiceBear `/avataaars/svg`, which RN `<Image>`/expo-image cannot render (blank/gray). Switched all to `/png` (matching the 2 screens that already used png).
+- **M2 tab bar ignored dark mode** — `(tabs)/_layout.tsx` imported `useColors` but hardcoded a white bar + grey border. Now uses `colors.card` / `colors.border` / `colors.primary` / `colors.mutedForeground`.
+- **M3 chat failed-send looked delivered** — a failed `sendMessage` left the optimistic bubble looking sent. Added a `failed` flag, an error toast, and a "Not sent" indicator on the bubble.
+- **M4 status.tsx setState-after-unmount** — the 10s KYC-status poll could `setState` after unmount. Added an `isMountedRef` guard around the post-await state updates.
+- **M5 level-benefits infinite spinner** — a query error left `isLoading=false, data=undefined` → spinner forever. Added an error state with a Retry button.
+
+### Remaining (Low — documented, lower priority)
+- App-wide accessibility sweep: many icon-only buttons across settings/profile/forms still lack `accessibilityLabel`/`Role` (critical call flow + home are now covered).
+- `KeyboardAvoidingView` missing on the login/register forms.
+- Dead modules: `services/r2.ts`, `services/firestoreUser.ts`, `services/AuthService.ts` (sends `isOnline` not `is_online`), `services/ChatService.ts` mock; duplicate util modules (`format.ts` vs `formatters.ts`).
+- Inconsistent password min length (6 in one place, 8 in another); `become.tsx` 1–5 specialty cap not enforced; `referral.tsx` un-awaited share/clipboard; `PermissionDialog` Modal missing `onRequestClose` (Android back).
+- WS token still in the connect URL query (#5) — needs the DO to echo the subprotocol on the 101 handshake; deferred as a dedicated, separately-tested change.

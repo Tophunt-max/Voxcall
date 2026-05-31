@@ -121,7 +121,7 @@ export default function HostProfileScreen() {
 
   const displayAvatar = avatarUri
     ?? resolveMediaUrl(user?.avatar)
-    ?? `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.id ?? "host"}`;
+    ?? `https://api.dicebear.com/7.x/avataaars/png?seed=${user?.id ?? "host"}`;
 
   const CHEVRON_ROTATE = { transform: [{ rotate: "180deg" }] } as const;
 

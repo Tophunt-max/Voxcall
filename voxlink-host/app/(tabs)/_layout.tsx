@@ -24,12 +24,12 @@ export default function HostTabLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: "#A00EE7",
-        tabBarInactiveTintColor: "#AAAACC",
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.mutedForeground,
         tabBarStyle: {
-          backgroundColor: "#FFFFFF",
+          backgroundColor: colors.card,
           borderTopWidth: 0.5,
-          borderTopColor: "#E9E9E9",
+          borderTopColor: colors.border,
           height: (Platform.OS === "web" ? 60 : 60 + insets.bottom),
           paddingBottom: Platform.OS === "web" ? 8 : insets.bottom,
           paddingTop: 8,

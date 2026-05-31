@@ -176,7 +176,7 @@ export default function HostHomeScreen() {
         <View style={styles.headerLeft}>
           <View style={[styles.dottedBorder, { borderColor: colors.primary }]}>
             <Image
-              source={{ uri: resolveMediaUrl(user?.avatar) ?? `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.id ?? "host"}` }}
+              source={{ uri: resolveMediaUrl(user?.avatar) ?? `https://api.dicebear.com/7.x/avataaars/png?seed=${user?.id ?? "host"}` }}
               style={styles.headerAvatar}
             />
           </View>

@@ -88,7 +88,7 @@ export default function HostChatScreen() {
           >
             <View style={{ position: "relative" }}>
               <Image
-                source={{ uri: resolveMediaUrl(item.participantAvatar) ?? `https://api.dicebear.com/7.x/avataaars/svg?seed=${item.participantId}` }}
+                source={{ uri: resolveMediaUrl(item.participantAvatar) ?? `https://api.dicebear.com/7.x/avataaars/png?seed=${item.participantId}` }}
                 style={styles.avatar}
               />
             </View>

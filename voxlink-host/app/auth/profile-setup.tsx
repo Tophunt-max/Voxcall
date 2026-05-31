@@ -160,9 +160,14 @@ export default function HostProfileSetupScreen() {
       showErrorToast("Please enter a valid mobile number.", "Invalid Phone"); return;
     }
     setLoading(true);
-    await updateProfile({ name: displayName.trim(), gender: gender as any, phone: phone.trim(), ...(avatarUrl ? { avatar: avatarUrl } : {}) });
-    setLoading(false);
-    router.push({ pathname: "/auth/become", params: { dob: dob.trim() } });
+    try {
+      await updateProfile({ name: displayName.trim(), gender: gender as any, phone: phone.trim(), ...(avatarUrl ? { avatar: avatarUrl } : {}) });
+      router.push({ pathname: "/auth/become", params: { dob: dob.trim() } });
+    } catch (err: any) {
+      showErrorToast(err?.message || "Could not save your profile. Please try again.", "Save Failed");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (

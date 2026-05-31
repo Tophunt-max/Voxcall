@@ -28,7 +28,7 @@ export default function OutgoingCallScreen() {
   const hostId    = params.hostId   ?? "host";
   const callType  = params.callType ?? "audio";
   const hostName  = params.hostName ?? "Host";
-  const hostAvatar = resolveMediaUrl(params.hostAvatar) ?? `https://api.dicebear.com/7.x/avataaars/svg?seed=${hostId}`;
+  const hostAvatar = resolveMediaUrl(params.hostAvatar) ?? `https://api.dicebear.com/7.x/avataaars/png?seed=${hostId}`;
   const specialty = params.specialty ?? "";
 
   const [status, setStatus] = useState<"connecting" | "ringing" | "declined" | "no_answer">("connecting");

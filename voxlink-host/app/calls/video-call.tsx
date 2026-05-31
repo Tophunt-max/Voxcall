@@ -458,7 +458,7 @@ export default function VideoCallScreen() {
   })();
 
   const remoteAvatarUri = activeCall?.participant.avatar ??
-    `https://api.dicebear.com/7.x/avataaars/svg?seed=${activeCall?.participant.id ?? "host"}`;
+    `https://api.dicebear.com/7.x/avataaars/png?seed=${activeCall?.participant.id ?? "host"}`;
 
   const handleFlip = () => {
     Haptics?.impactAsync?.(Haptics?.ImpactFeedbackStyle?.Light);

@@ -62,7 +62,7 @@ export default function HostCallsScreen() {
       const mapped: CallItem[] = (data ?? []).map((c: any) => ({
         id: c.id,
         userName: c.user_name ?? c.caller_name ?? "User",
-        userAvatar: resolveMediaUrl(c.user_avatar ?? c.caller_avatar) ?? `https://api.dicebear.com/7.x/avataaars/svg?seed=${c.user_id ?? c.id}`,
+        userAvatar: resolveMediaUrl(c.user_avatar ?? c.caller_avatar) ?? `https://api.dicebear.com/7.x/avataaars/png?seed=${c.user_id ?? c.id}`,
         type: (c.type ?? c.call_type ?? "audio") as "audio" | "video",
         status: mapStatus(c.status ?? ""),
         durationSecs: Number(c.duration_secs ?? c.duration ?? 0),

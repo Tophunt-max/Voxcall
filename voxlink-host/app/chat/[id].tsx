@@ -25,7 +25,7 @@ export default function ChatScreen() {
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
   const [participantName, setParticipantName] = useState("Chat");
-  const [participantAvatar, setParticipantAvatar] = useState(`https://api.dicebear.com/7.x/avataaars/svg?seed=${id}`);
+  const [participantAvatar, setParticipantAvatar] = useState(`https://api.dicebear.com/7.x/avataaars/png?seed=${id}`);
   const listRef = useRef<FlatList>(null);
 
   const convo = conversations.find((c) => c.id === id || c.roomId === id);
@@ -69,7 +69,7 @@ export default function ChatScreen() {
         ]}>
           <Text style={[styles.bubbleText, { color: isMe ? "#fff" : colors.foreground }]}>{item.content}</Text>
           <Text style={[styles.bubbleTime, { color: isMe ? "rgba(255,255,255,0.6)" : colors.mutedForeground }]}>
-            {formatTime(item.timestamp)}
+            {item.failed ? "Not sent" : formatTime(item.timestamp)}
           </Text>
         </View>
       </View>

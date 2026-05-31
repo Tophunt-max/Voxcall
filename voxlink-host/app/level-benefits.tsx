@@ -111,7 +111,7 @@ function LevelRow({
 
 export default function LevelBenefitsScreen() {
   const colors = useColors();
-  const { data, isLoading } = useQuery<HostLevelResponse>({
+  const { data, isLoading, isError, refetch, isFetching } = useQuery<HostLevelResponse>({
     queryKey: ["host-level"],
     queryFn: () => API.getHostLevel(),
     staleTime: 2 * 60_000,
@@ -129,9 +129,25 @@ export default function LevelBenefitsScreen() {
         }
       />
 
-      {isLoading || !data ? (
+      {isLoading ? (
         <View style={styles.loading}>
           <ActivityIndicator color={colors.accent} />
+        </View>
+      ) : isError || !data ? (
+        // FIX: a query error left an infinite spinner (isLoading=false, data=undefined).
+        // Show a retry affordance instead of hanging forever.
+        <View style={styles.loading}>
+          <Text style={[styles.summarySub, { color: colors.mutedForeground, textAlign: "center", marginBottom: 12 }]}>
+            Couldn't load level benefits. Check your connection and try again.
+          </Text>
+          <TouchableOpacity
+            onPress={() => refetch()}
+            style={[styles.infoChip, { backgroundColor: colors.card, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border }]}
+            accessibilityRole="button"
+            accessibilityLabel="Retry loading level benefits"
+          >
+            <Text style={[styles.infoChipText, { color: colors.accent }]}>{isFetching ? "Retrying…" : "Retry"}</Text>
+          </TouchableOpacity>
         </View>
       ) : (
         <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 48, gap: 14 }} showsVerticalScrollIndicator={false}>
