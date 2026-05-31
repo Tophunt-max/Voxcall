@@ -91,6 +91,7 @@ export function PermissionDialog({
       transparent
       animationType="fade"
       statusBarTranslucent
+      onRequestClose={onDeny}
     >
       <View style={styles.overlay}>
         <View style={[styles.sheet, { backgroundColor: colors.card }]}>

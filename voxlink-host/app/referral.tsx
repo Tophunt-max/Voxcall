@@ -30,21 +30,29 @@ export default function ReferralScreen() {
       .finally(() => setLoading(false));
   }, []);
 
-  const handleCopy = () => {
+  const handleCopy = async () => {
     if (!referral?.code) return;
-    ClipboardModule.setStringAsync(referral.code);
-    setCopied(true);
-    showSuccessToast("Referral code copied!", "Copied");
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      await ClipboardModule.setStringAsync(referral.code);
+      setCopied(true);
+      showSuccessToast("Referral code copied!", "Copied");
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      showErrorToast("Couldn't copy the code. Please try again.");
+    }
   };
 
-  const handleShare = () => {
+  const handleShare = async () => {
     if (!referral?.code) return;
-    crossShare({
-      message: `Join me on VoxLink as a host and start earning from audio & video calls!\n\nUse my referral code: ${referral.code} to get a bonus when you sign up as a host!\n\nDownload now: https://voxlink.app/host`,
-      title: "Join VoxLink as a Host",
-      url: "https://voxlink.app/host",
-    });
+    try {
+      await crossShare({
+        message: `Join me on VoxLink as a host and start earning from audio & video calls!\n\nUse my referral code: ${referral.code} to get a bonus when you sign up as a host!\n\nDownload now: https://voxlink.app/host`,
+        title: "Join VoxLink as a Host",
+        url: "https://voxlink.app/host",
+      });
+    } catch {
+      // user dismissed the share sheet or it's unavailable — non-fatal
+    }
   };
 
   return (

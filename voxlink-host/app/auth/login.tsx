@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  ScrollView, Platform, ActivityIndicator, Image,
+  ScrollView, Platform, ActivityIndicator, Image, KeyboardAvoidingView,
 } from "react-native";
 import AppInput from "@/components/AppInput";
 import { showErrorToast, showInfoToast } from "@/components/Toast";
@@ -124,6 +124,7 @@ export default function HostLoginScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: BG }}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={{ flexGrow: 1 }}
@@ -238,6 +239,7 @@ export default function HostLoginScreen() {
           </View>
         </View>
       </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }

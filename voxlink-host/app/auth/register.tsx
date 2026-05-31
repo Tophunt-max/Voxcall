@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  Platform, ActivityIndicator, Image,
+  Platform, ActivityIndicator, Image, KeyboardAvoidingView,
 } from "react-native";
 import AppInput from "@/components/AppInput";
 import { showErrorToast, showInfoToast, showWarningToast } from "@/components/Toast";
@@ -161,6 +161,7 @@ export default function HostRegisterScreen() {
       </LinearGradient>
 
       {/* ── Form ── */}
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={[s.form, { paddingBottom: insets.bottom + 30 }]}
@@ -230,6 +231,7 @@ export default function HostRegisterScreen() {
           </TouchableOpacity>
         </View>
       </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }

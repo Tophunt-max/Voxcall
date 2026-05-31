@@ -301,3 +301,21 @@ Audited every host-app file (contexts, layouts, all screens, components, hooks, 
 - Dead modules: `services/r2.ts`, `services/firestoreUser.ts`, `services/AuthService.ts` (sends `isOnline` not `is_online`), `services/ChatService.ts` mock; duplicate util modules (`format.ts` vs `formatters.ts`).
 - Inconsistent password min length (6 in one place, 8 in another); `become.tsx` 1–5 specialty cap not enforced; `referral.tsx` un-awaited share/clipboard; `PermissionDialog` Modal missing `onRequestClose` (Android back).
 - WS token still in the connect URL query (#5) — needs the DO to echo the subprotocol on the 101 handshake; deferred as a dedicated, separately-tested change.
+
+
+---
+
+## Host App — round 7 (remaining Low items, 2026-05-31)
+
+Cleared most of the documented Low-priority items; verified with `voxlink-host` typecheck (clean).
+
+- **Dead-module cleanup** — deleted unused `services/r2.ts`, `services/firestoreUser.ts`, `services/AuthService.ts` (also had a `isOnline` vs `is_online` bug), `services/ChatService.ts` (mock), and `utils/formatters.ts` (duplicate of `utils/format.ts`). Confirmed zero imports before deleting; typecheck stays green.
+- **Password min length consistency** — `utils/validators.ts validatePassword` raised from 6 → 8 to match `register.tsx` / `forgot-password.tsx`.
+- **`PermissionDialog` Android back** — added `onRequestClose={onDeny}` to the `<Modal>` (RN requires it on Android; back press now dismisses).
+- **`referral.tsx` un-awaited promises** — `clipboard.setStringAsync` and `crossShare` are now awaited inside try/catch (no unhandled rejections; copy shows an error toast on failure).
+- **Login & Register keyboard handling** — wrapped both forms' `ScrollView` in `KeyboardAvoidingView` (iOS `padding`) so inputs aren't hidden behind the keyboard.
+
+### Still open (deliberately deferred)
+- **App-wide accessibility sweep** — remaining icon-only buttons across settings/profile/secondary screens (critical call flow, home, incoming, and call controls are already covered).
+- **#5 WS token in connect URL** — needs the Durable Object to echo the negotiated subprotocol on the 101 handshake; risky (touches realtime for all hosts), so kept as a dedicated, separately-tested change.
+- **`become.tsx` specialty max** — only a "≥1" minimum is enforced; no max is defined in code, so adding one is a product decision (not invented here).
