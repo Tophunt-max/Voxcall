@@ -84,7 +84,7 @@ export default function ChatScreen() {
         </TouchableOpacity>
         <Image source={{ uri: participantAvatar }} style={styles.headerAvatar} />
         <View style={styles.headerInfo}>
-          <Text style={[styles.headerName, { color: colors.foreground }]}>{participantName}</Text>
+          <Text style={[styles.headerName, { color: colors.foreground }]} numberOfLines={1}>{participantName}</Text>
           <Text style={[styles.headerStatus, { color: colors.online }]}>Online</Text>
         </View>
         <SvgIcon name="info" size={20} color={colors.mutedForeground} />

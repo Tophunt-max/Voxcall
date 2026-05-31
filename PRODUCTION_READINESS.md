@@ -338,3 +338,32 @@ Added `accessibilityRole="button"` + `accessibilityLabel` to the back buttons ac
 
 ### Remaining (product decision only)
 - `become.tsx` specialty **maximum** — only a "≥1" minimum is enforced; no max is defined anywhere in code, so any cap is a product decision (not invented here).
+
+
+---
+
+## Host App — round 9: deep UI analysis + dark-mode / overflow fixes (2026-05-31)
+
+Full UI/UX audit of every screen + component. Dark mode IS user-reachable (`useColors()` switches on the device appearance via `useColorScheme()`, and `constants/colors.ts` defines a full `dark` palette), so screens hardcoding light hex were broken for dark-mode users. Fixed the highest-impact issues; verified via `voxlink-host` typecheck (clean).
+
+### Dark-mode breakage fixed (hardcoded light hex → theme token)
+- **`Toast.tsx`** (app-wide, was the worst — light pastel bg + theme text = invisible text in dark): backgrounds now use `colors.surface` in dark mode (pastels kept in light); colored left border still signals type. Added a11y label to the dismiss button.
+- **`(tabs)/index.tsx`**: Host Tips card `#F0E4F8` → `colors.accentLight`; online banner `#0BAF23` → `colors.online`.
+- **`call-rates.tsx`**: earnings-estimate box `#F0E4F8` → `colors.accentLight`.
+- **`help-center.tsx`**: banner `#F3E6FF` → `colors.accentLight`.
+- **`language.tsx`**: selected-row `#F0E4F8` → `colors.accentLight`.
+- **`(tabs)/wallet.tsx`**: withdraw note `#FFF8E1` → `colors.coinGoldBg`.
+
+### Text overflow fixed (`numberOfLines={1}` on dynamic single-line text)
+Caller/host/participant names + descriptions that could overflow rows/headers: `(tabs)/calls.tsx` (userName), `(tabs)/chat.tsx` (chatName), `(tabs)/wallet.tsx` (histName), `calls/history.tsx` (hostName), `(tabs)/index.tsx` (header name), `chat/[id].tsx` (participant name).
+
+### Layout fixed (content hidden behind tab bar)
+- `(tabs)/chat.tsx` FlatList and `(tabs)/wallet.tsx` withdraw ScrollView now add `paddingBottom: 100` so the last row / action button isn't covered by the tab bar.
+
+### Remaining UI items (documented, lower priority)
+- More hardcoded "light island" pastels on cards/badges (`HostCard` status badge + video-call button `#111329` which blends into the dark surface; permission-row wells; `earnings-history`/`history` type badges; `PermissionDialog` icon wells) — readable but not theme-aware; swap to tokens (`accentLight`, `surface`, `online`, `coinGoldBg`) in a follow-up.
+- Hardcoded `#A00EE7` in spinners/`RefreshControl`/`selectionColor` across several screens → `colors.accent`.
+- Missing loading states on `chat`, `calls/history`, `notifications` initial fetch (show skeleton/spinner instead of the empty state); `calls.tsx` masks fetch errors as an empty list.
+- Touch targets <44px without `hitSlop` (home bell 38, profile gear 36, chat back).
+- `app/index.tsx` splash + `+not-found.tsx` are always-dark (look wrong in light mode).
+- Auth flow is intentionally a fixed dark-hero + white-card palette (does not adapt to dark mode) — confirm if that's the intended brand treatment.

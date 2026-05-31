@@ -78,7 +78,7 @@ export default function CallHistoryScreen() {
       <Image source={{ uri: item.hostAvatar }} style={styles.avatar} />
       <View style={styles.info}>
         <View style={styles.nameRow}>
-          <Text style={[styles.name, { color: colors.text }]}>{item.hostName}</Text>
+          <Text style={[styles.name, { color: colors.text }]} numberOfLines={1}>{item.hostName}</Text>
           <Text style={[styles.date, { color: colors.mutedForeground }]}>{item.createdAt ? formatTimestamp(item.createdAt) : "—"}</Text>
         </View>
         <View style={styles.detailRow}>

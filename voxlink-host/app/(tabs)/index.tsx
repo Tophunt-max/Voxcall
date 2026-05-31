@@ -181,7 +181,7 @@ export default function HostHomeScreen() {
             />
           </View>
           <View style={{ gap: 2 }}>
-            <Text style={[styles.headerName, { color: colors.text }]}>{user?.name ?? "Host"}</Text>
+            <Text style={[styles.headerName, { color: colors.text }]} numberOfLines={1}>{user?.name ?? "Host"}</Text>
             <View style={[styles.idBadge, { backgroundColor: "#F0E4F8" }]}>
               <Image source={require("@/assets/icons/ic_id_badge.png")} style={styles.idIcon} tintColor="#9D82B6" resizeMode="contain" />
               <Text style={[styles.idText, { color: "#9D82B6" }]}>ID: {(user?.id ?? "00000000").slice(0,8).toUpperCase()}</Text>
@@ -206,7 +206,7 @@ export default function HostHomeScreen() {
 
       {/* Online status toggle banner */}
       <View style={[styles.statusBanner, {
-        backgroundColor: isOnline ? "#0BAF23" : colors.primary,
+        backgroundColor: isOnline ? colors.online : colors.primary,
         marginHorizontal: 16,
       }]}>
         <View style={{ flex: 1 }}>
@@ -392,7 +392,7 @@ export default function HostHomeScreen() {
       </View>
 
       {/* Tips for hosts */}
-      <View style={[styles.tipsCard, { backgroundColor: "#F0E4F8", marginHorizontal: 16 }]}>
+      <View style={[styles.tipsCard, { backgroundColor: colors.accentLight, marginHorizontal: 16 }]}>
         <Text style={[styles.tipsTitle, { color: colors.text }]}>Host Tips</Text>
         {[
           "Be online during peak hours (6PM - 10PM)",

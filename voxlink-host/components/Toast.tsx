@@ -9,6 +9,7 @@ import {
   Animated,
   TouchableOpacity,
   Platform,
+  useColorScheme,
 } from "react-native";
 
 import { useColors } from "@/hooks/useColors";
@@ -32,13 +33,18 @@ interface ToastProps {
 
 function ToastItem({ toast, onDismiss }: ToastProps) {
   const colors = useColors();
+  const isDark = useColorScheme() === "dark";
   const anim = useRef(new Animated.Value(0)).current;
 
+  // FIX (dark mode): the previous hardcoded pastel backgrounds paired with the
+  // theme text token made toasts unreadable in dark mode (near-white text on a
+  // near-white pastel). Use a dark surface in dark mode; light pastels stay in
+  // light mode. The colored left border still conveys the toast type.
   const typeColors: Record<ToastType, { bg: string; border: string }> = {
-    success: { bg: "#E8FAF0", border: colors.green },
-    error: { bg: "#FFE8EF", border: colors.red },
-    warning: { bg: "#FFF8E8", border: colors.orange },
-    info: { bg: "#E8F4FF", border: colors.blue },
+    success: { bg: isDark ? colors.surface : "#E8FAF0", border: colors.green },
+    error: { bg: isDark ? colors.surface : "#FFE8EF", border: colors.red },
+    warning: { bg: isDark ? colors.surface : "#FFF8E8", border: colors.orange },
+    info: { bg: isDark ? colors.surface : "#E8F4FF", border: colors.blue },
   };
 
   const typeIcons: Record<ToastType, string> = {
@@ -102,7 +108,7 @@ function ToastItem({ toast, onDismiss }: ToastProps) {
           {toast.message}
         </Text>
       </View>
-      <TouchableOpacity onPress={dismiss} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+      <TouchableOpacity onPress={dismiss} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityRole="button" accessibilityLabel="Dismiss notification">
         <Text style={[styles.closeBtn, { color: colors.mutedForeground }]}>X</Text>
       </TouchableOpacity>
     </Animated.View>

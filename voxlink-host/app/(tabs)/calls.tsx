@@ -88,7 +88,7 @@ export default function HostCallsScreen() {
     <View style={[styles.callCard, { backgroundColor: colors.card }]}>
       <Image source={{ uri: item.userAvatar }} style={styles.avatar} />
       <View style={{ flex: 1, gap: 4 }}>
-        <Text style={[styles.userName, { color: colors.text }]}>{item.userName}</Text>
+        <Text style={[styles.userName, { color: colors.text }]} numberOfLines={1}>{item.userName}</Text>
         <View style={styles.metaRow}>
           <Image
             source={item.type === "video"

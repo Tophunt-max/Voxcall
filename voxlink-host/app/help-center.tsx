@@ -54,7 +54,7 @@ export default function HelpCenterScreen() {
       </View>
 
       <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 40, gap: 12 }} showsVerticalScrollIndicator={false}>
-        <View style={[styles.banner, { backgroundColor: "#F3E6FF" }]}>
+        <View style={[styles.banner, { backgroundColor: colors.accentLight }]}>
           <Image source={require("@/assets/images/help_blur.png")} style={styles.bannerImg} resizeMode="contain" />
           <View style={{ flex: 1 }}>
             <Text style={[styles.bannerTitle, { color: colors.text }]}>Host Help & FAQ</Text>

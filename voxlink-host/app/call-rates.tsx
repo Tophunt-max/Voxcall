@@ -200,7 +200,7 @@ export default function CallRatesScreen() {
           colors={colors}
         />
 
-        <View style={[styles.estBox, { backgroundColor: "#F0E4F8" }]}>
+        <View style={[styles.estBox, { backgroundColor: colors.accentLight }]}>
           <Text style={[styles.estTitle, { color: colors.text }]}>Earnings estimate</Text>
           <Text style={[styles.estRow, { color: colors.text }]}>
             10-min audio call ≈ {clamp(parseInt(audio, 10) || 0) * 10} coins

@@ -68,7 +68,7 @@ export default function LanguageScreen() {
               style={[
                 styles.langRow,
                 {
-                  backgroundColor: isSelected ? "#F0E4F8" : colors.card,
+                  backgroundColor: isSelected ? colors.accentLight : colors.card,
                   borderColor: isSelected ? colors.accent : colors.border,
                   opacity: isAvailable ? 1 : 0.6,
                 }

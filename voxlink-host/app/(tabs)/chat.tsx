@@ -72,7 +72,7 @@ export default function HostChatScreen() {
       <FlatList
         data={filtered}
         keyExtractor={c => c.id}
-        contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 8, gap: 2 }}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 8, gap: 2, paddingBottom: 100 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={ACCENT} />}
         ListEmptyComponent={
           <View style={styles.empty}>
@@ -93,7 +93,7 @@ export default function HostChatScreen() {
               />
             </View>
             <View style={{ flex: 1, gap: 3 }}>
-              <Text style={[styles.chatName, { color: colors.text }]}>{item.participantName}</Text>
+              <Text style={[styles.chatName, { color: colors.text }]} numberOfLines={1}>{item.participantName}</Text>
               <Text style={[styles.chatLast, { color: colors.mutedForeground }]} numberOfLines={1}>
                 {item.lastMessage || "No messages yet"}
               </Text>

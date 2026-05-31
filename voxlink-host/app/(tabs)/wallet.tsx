@@ -242,7 +242,7 @@ export default function HostWalletScreen() {
                   />
                 </View>
                 <View style={{ flex: 1, gap: 3 }}>
-                  <Text style={[styles.histName, { color: colors.text }]}>{item.user}</Text>
+                  <Text style={[styles.histName, { color: colors.text }]} numberOfLines={1}>{item.user}</Text>
                   <Text style={[styles.histMeta, { color: colors.mutedForeground }]}>{item.duration} • {item.date}</Text>
                 </View>
                 <View style={styles.earnedRow}>
@@ -254,7 +254,7 @@ export default function HostWalletScreen() {
           />
         )
       ) : (
-        <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 12, gap: 12 }}>
+        <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 12, gap: 12, paddingBottom: 100 }}>
           <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Quick Select Amount</Text>
           <View style={styles.withdrawGrid}>
             {WITHDRAW_OPTIONS.map((amt) => (
@@ -319,7 +319,7 @@ export default function HostWalletScreen() {
             )}
           </TouchableOpacity>
 
-          <View style={[styles.noteCard, { backgroundColor: "#FFF8E1" }]}>
+          <View style={[styles.noteCard, { backgroundColor: colors.coinGoldBg }]}>
             <Text style={[styles.noteTitle, { color: "#FFA100" }]}>Note</Text>
             <Text style={[styles.noteText, { color: colors.mutedForeground }]}>
               Minimum withdrawal is {minWithdraw} coins. Processing takes 2-3 business days.
