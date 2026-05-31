@@ -1,0 +1,3 @@
+[build]
+command = "pnpm install && pnpm --filter @workspace/admin-panel build"
+publish = "admin-panel/dist"
