@@ -61,7 +61,10 @@ export default function EditProfileScreen() {
       const fileName = `avatar_${user?.id ?? "user"}.${ext}`;
       await appendFileToFormData(formData, "file", asset.uri, fileName, `image/${ext}`);
       formData.append("path", `avatars/${user?.id ?? "user"}/avatar.${ext}`);
-      const uploadData = await API.uploadFile(formData);
+      // Use the dedicated avatar endpoint (NOT uploadFile → /api/upload/media):
+      // it stores under avatars/, sets avatar_url server-side, and deletes the
+      // previous avatar blob. uploadFile would orphan every old avatar in R2.
+      const uploadData = await API.updateAvatar(formData);
       if (uploadData?.url) {
         // Match profile.tsx — store a fully-resolved URL so the avatar still
         // loads if the server returns a relative path.
