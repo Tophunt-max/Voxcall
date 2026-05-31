@@ -18,6 +18,11 @@ export interface Env {
   FIREBASE_SERVICE_ACCOUNT: string;
   GOOGLE_PLAY_SERVICE_ACCOUNT_JSON?: string;
   RESEND_API_KEY?: string;
+  // FIX #6: Optional comma-separated list of EXACT allowed CORS origins for
+  // production (e.g. "https://admin.voxlink.com,https://voxlink.com"). When set,
+  // it REPLACES the broad built-in dev patterns (which allow any *.pages.dev /
+  // *.replit.dev). Leave unset in dev to keep the permissive fallback.
+  CORS_ALLOWED_ORIGINS?: string;
 }
 
 export interface JWTPayload {

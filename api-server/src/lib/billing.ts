@@ -64,6 +64,56 @@ export function hostShareOf(coinsCharged: number, earningShare: number): number 
 }
 
 /**
+ * The coins actually chargeable to a caller, capped at their current balance.
+ *
+ * FIX #1 (partial / best-effort billing): the original atomicCallTransfer was
+ * all-or-nothing — if a caller overran their balance (talked longer than they
+ * could afford), the EXISTS guard failed and ZERO coins moved, so the host
+ * earned nothing for real talk-time. We now charge what the caller CAN afford
+ * (`min(coinsCharged, balance)`) so the host is always paid for the work done.
+ */
+export function affordableCoins(coinsCharged: number, callerBalance: number): number {
+  if (!Number.isFinite(coinsCharged) || coinsCharged <= 0) return 0;
+  const bal = Number.isFinite(callerBalance) && callerBalance > 0 ? callerBalance : 0;
+  return Math.min(coinsCharged, bal);
+}
+
+/**
+ * Best-effort caller→host settlement: charge the caller what they can afford
+ * (capped at their balance) and pay the host their level-based share of the
+ * amount actually collected. Returns the amounts that really moved (0/0 if the
+ * caller had no coins or a concurrent debit drained them).
+ *
+ * Shared by POST /api/calls/end, POST /api/calls/:id/end, the heartbeat
+ * force-end, and the cron reaper so all four bill identically.
+ */
+export async function chargeCallerAffordable(
+  db: D1Database,
+  params: {
+    callerId: string;
+    hostUserId: string;
+    coinsCharged: number;
+    earningShare: number;
+  },
+): Promise<{ charged: number; hostEarned: number }> {
+  if (!(params.coinsCharged > 0) || !params.hostUserId) return { charged: 0, hostEarned: 0 };
+  const callerRow = await db
+    .prepare('SELECT coins FROM users WHERE id = ?')
+    .bind(params.callerId)
+    .first<{ coins: number }>();
+  const chargeable = affordableCoins(params.coinsCharged, callerRow?.coins ?? 0);
+  if (chargeable <= 0) return { charged: 0, hostEarned: 0 };
+  const hostShare = hostShareOf(chargeable, params.earningShare);
+  const ok = await atomicCallTransfer(db, {
+    callerId: params.callerId,
+    hostUserId: params.hostUserId,
+    coinsCharged: chargeable,
+    hostShare,
+  });
+  return ok ? { charged: chargeable, hostEarned: hostShare } : { charged: 0, hostEarned: 0 };
+}
+
+/**
  * Atomically move coins from caller to host in a SINGLE SQL statement.
  *
  * A single UPDATE with a CASE expression and an EXISTS guard:

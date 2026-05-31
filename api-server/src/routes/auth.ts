@@ -7,6 +7,7 @@ import { hashPassword, verifyPassword, generateOTP, generateId, timingSafeEqual 
 import { sendEmail, otpEmailHtml } from '../lib/email';
 import { detectCountryFromRequest, currencyForCountry } from '../lib/currency';
 import { verifyFirebaseIdToken, projectIdFromServiceAccount, decodeJwtPayloadUnsafe } from '../lib/firebaseVerify';
+import { registerHit } from '../lib/rateLimit';
 import type { Env } from '../types';
 import { authMiddleware } from '../middleware/auth';
 
@@ -33,22 +34,11 @@ function makeRateLimit(maxAttempts: number, windowSecs: number) {
         await c.env.DB.prepare('DELETE FROM rate_limits WHERE window_reset < ?').bind(now).run();
       }
 
-      const row = await c.env.DB.prepare(
-        'SELECT attempts, window_reset FROM rate_limits WHERE id = ?'
-      ).bind(key).first<{ attempts: number; window_reset: number }>();
-
-      if (row && row.window_reset > now) {
-        if (row.attempts >= maxAttempts) {
-          const waitMins = Math.ceil((row.window_reset - now) / 60);
-          return c.json({ error: `Too many requests. Please try again in ${waitMins} minute${waitMins > 1 ? 's' : ''}.` }, 429);
-        }
-        await c.env.DB.prepare(
-          'UPDATE rate_limits SET attempts = attempts + 1 WHERE id = ?'
-        ).bind(key).run();
-      } else {
-        await c.env.DB.prepare(
-          'INSERT OR REPLACE INTO rate_limits (id, attempts, window_reset) VALUES (?, 1, ?)'
-        ).bind(key, now + windowSecs).run();
+      // FIX #7: atomic check-and-increment (no read-then-write TOCTOU).
+      const { limited, retryAfterSec } = await registerHit(c.env.DB, key, maxAttempts, windowSecs);
+      if (limited) {
+        const waitMins = Math.ceil(retryAfterSec / 60);
+        return c.json({ error: `Too many requests. Please try again in ${waitMins} minute${waitMins > 1 ? 's' : ''}.` }, 429);
       }
     } catch (e) {
       // Rate limit table may not exist yet (pre-migration boot) or D1 had a

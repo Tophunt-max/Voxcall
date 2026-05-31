@@ -1,18 +1,35 @@
 import { Hono } from 'hono';
 import type { Env, JWTPayload } from '../types';
 import { authMiddleware } from '../middleware/auth';
+import { timingSafeEqual } from '../lib/hash';
+import {
+  verifyRazorpaySignature,
+  verifyStripeSignature,
+  verifyPhonePeXVerify,
+  verifyPhonePeAuthorization,
+  verifyPaytmChecksum,
+} from '../lib/gatewayVerify';
 
 type Variables = { user: JWTPayload };
 
 const payment = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 // ─── Shared: Approve a pending coin_purchase and credit coins to user ──────────
+//
+// Promo enforcement (FIX #2): a promo's bonus is baked into coin_purchases.bonus_coins
+// at creation time, but the live flows (manual-deposit, gateway initiate) never
+// advanced promo_codes.used_count — so a capped `max_uses` promo could be
+// redeemed unlimited times. We now consume one promo use ATOMICALLY at credit
+// time (the single chokepoint all real credits pass through), and if the quota
+// is already exhausted by the time this deposit is approved, we strip the promo
+// bonus from the credited total instead of granting coins beyond the limit.
 async function approveDeposit(db: D1Database, purchaseId: string, source: string, note?: string): Promise<{ ok: boolean; already?: boolean; notFound?: boolean; coins?: number }> {
-  const purchase = await db.prepare('SELECT id, user_id, coins, bonus_coins, status FROM coin_purchases WHERE id = ?').bind(purchaseId).first<any>();
+  const purchase = await db.prepare('SELECT id, user_id, coins, bonus_coins, promo_code, status FROM coin_purchases WHERE id = ?').bind(purchaseId).first<any>();
   if (!purchase) return { ok: false, notFound: true };
   if (purchase.status === 'success') return { ok: true, already: true };
-  const totalCoins = (purchase.coins || 0) + (purchase.bonus_coins || 0);
-  // Atomic CAS: only update if status is still not 'success' — prevents double-credit on concurrent webhook retries
+  let totalCoins = (purchase.coins || 0) + (purchase.bonus_coins || 0);
+  // Atomic CAS: only update if status is still not 'success' — prevents double-credit on concurrent webhook retries.
+  // The winner of this CAS is the ONLY caller that proceeds to credit + promo consumption below.
   const casUpdate = await db.prepare(
     "UPDATE coin_purchases SET status = 'success', payment_method = COALESCE(payment_method, ?), updated_at = unixepoch() WHERE id = ? AND status != 'success'"
   ).bind(source, purchaseId).run();
@@ -20,6 +37,28 @@ async function approveDeposit(db: D1Database, purchaseId: string, source: string
     // Another webhook already processed this purchase
     return { ok: true, already: true };
   }
+
+  // FIX #2: consume one promo use atomically (only succeeds while quota remains).
+  if (purchase.promo_code) {
+    try {
+      const promo = await db.prepare(
+        'SELECT id, type, bonus_coins, max_uses, used_count FROM promo_codes WHERE UPPER(code) = UPPER(?)'
+      ).bind(String(purchase.promo_code).trim()).first<any>();
+      if (promo) {
+        const inc = await db.prepare(
+          'UPDATE promo_codes SET used_count = used_count + 1, updated_at = unixepoch() WHERE id = ? AND (max_uses IS NULL OR used_count < max_uses)'
+        ).bind(promo.id).run();
+        if (!inc.meta?.changes && promo.type === 'bonus' && (promo.bonus_coins || 0) > 0) {
+          // Quota exhausted before this deposit was credited — do not grant the
+          // promo bonus. Floor at the base coins so we never go below what was paid for.
+          totalCoins = Math.max(purchase.coins || 0, totalCoins - (promo.bonus_coins || 0));
+        }
+      }
+    } catch (e) {
+      console.warn('[approveDeposit] promo usage enforcement failed (crediting base):', e);
+    }
+  }
+
   await db.batch([
     db.prepare('UPDATE users SET coins = coins + ?, updated_at = unixepoch() WHERE id = ?').bind(totalCoins, purchase.user_id),
     db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)').bind(
@@ -32,14 +71,6 @@ async function approveDeposit(db: D1Database, purchaseId: string, source: string
 // ─── Find purchase by gateway order ID ────────────────────────────────────────
 async function findPurchaseByOrderId(db: D1Database, gatewayOrderId: string): Promise<any | null> {
   return db.prepare("SELECT id, status FROM coin_purchases WHERE gateway_order_id = ? ORDER BY created_at DESC LIMIT 1").bind(gatewayOrderId).first<any>();
-}
-
-// ─── HMAC-SHA256 signature verification (Razorpay) ────────────────────────────
-async function hmacSha256(key: string, data: string): Promise<string> {
-  const enc = new TextEncoder();
-  const cryptoKey = await crypto.subtle.importKey('raw', enc.encode(key), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-  const sig = await crypto.subtle.sign('HMAC', cryptoKey, enc.encode(data));
-  return Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
 // ─── POST /api/payment/webhook/razorpay ──────────────────────────────────────
@@ -57,8 +88,10 @@ payment.post('/webhook/razorpay', async (c) => {
       return c.json({ error: 'Webhook secret not configured' }, 500);
     }
     if (!sig) return c.json({ error: 'Missing signature' }, 401);
-    const expected = await hmacSha256(secret.value, body);
-    if (expected !== sig) return c.json({ error: 'Invalid signature' }, 401);
+    // FIX #4: constant-time signature comparison (see lib/gatewayVerify).
+    if (!(await verifyRazorpaySignature(body, sig, secret.value))) {
+      return c.json({ error: 'Invalid signature' }, 401);
+    }
     const payload = JSON.parse(body);
     const event = payload.event as string;
     if (!event.startsWith('payment')) return c.json({ ok: true });
@@ -82,7 +115,8 @@ payment.post('/webhook/razorpay', async (c) => {
     const result = await approveDeposit(c.env.DB, purchase.id, 'razorpay', `Razorpay payment ${razorpayPaymentId} captured`);
     return c.json({ ok: result.ok, already: result.already, coins: result.coins });
   } catch (e: any) {
-    return c.json({ error: e.message }, 500);
+    console.error('[Webhook] Razorpay handler error:', e);
+    return c.json({ error: 'Webhook processing failed' }, 500);
   }
 });
 
@@ -101,19 +135,10 @@ payment.post('/webhook/stripe', async (c) => {
       return c.json({ error: 'Webhook secret not configured' }, 500);
     }
     if (!sig) return c.json({ error: 'Missing signature' }, 401);
-    const parts: Record<string, string> = {};
-    sig.split(',').forEach(p => { const [k, v] = p.split('='); if (k && v) parts[k] = v; });
-    const timestamp = parts['t'];
-    if (!timestamp || !parts['v1']) return c.json({ error: 'Malformed signature header' }, 401);
-    // Reject signatures older than 5 minutes — prevents replay attacks
-    const ageSec = Math.floor(Date.now() / 1000) - parseInt(timestamp, 10);
-    // FIX #31: tighten future-clock tolerance from 60s to 10s. Anything earlier
-    // than -10s is almost certainly a malformed/forged timestamp.
-    if (Number.isNaN(ageSec) || ageSec > 300 || ageSec < -10) {
-      return c.json({ error: 'Stale signature timestamp' }, 401);
+    // FIX #4 / #31: constant-time HMAC + replay window enforced in lib/gatewayVerify.
+    if (!(await verifyStripeSignature(body, sig, secret.value, Math.floor(Date.now() / 1000)))) {
+      return c.json({ error: 'Invalid or stale signature' }, 401);
     }
-    const expected = await hmacSha256(secret.value, `${timestamp}.${body}`);
-    if (expected !== parts['v1']) return c.json({ error: 'Invalid signature' }, 401);
     const payload = JSON.parse(body);
     const event = payload.type as string;
     if (event !== 'checkout.session.completed' && event !== 'payment_intent.succeeded') return c.json({ ok: true });
@@ -128,33 +153,60 @@ payment.post('/webhook/stripe', async (c) => {
     const result = await approveDeposit(c.env.DB, purchase.id, 'stripe', `Stripe ${event} — ${stripeId}`);
     return c.json({ ok: result.ok, already: result.already, coins: result.coins });
   } catch (e: any) {
-    return c.json({ error: e.message }, 500);
+    console.error('[Webhook] Stripe handler error:', e);
+    return c.json({ error: 'Webhook processing failed' }, 500);
   }
 });
 
 // ─── POST /api/payment/webhook/phonepe ───────────────────────────────────────
-// Webhook URL: https://voxlink-api.ssunilkumarmohanta3.workers.dev/api/payment/webhook/phonepe
+// Supports BOTH PhonePe schemes (depends on your integration version):
+//   • Legacy S2S callback — body `{ response: "<base64>" }`, header
+//       `X-VERIFY: sha256(base64Response + saltKey)###saltIndex`
+//     Configure the salt key as app_settings `phonepe_salt_key`
+//     (or legacy `phonepe_webhook_secret`).
+//   • Standard Checkout webhook — JSON body, header
+//       `Authorization: sha256(username:password)`
+//     Configure `phonepe_webhook_username` + `phonepe_webhook_password`.
+// FIX #3/#4: correct provider schemes + constant-time comparison (lib/gatewayVerify).
 payment.post('/webhook/phonepe', async (c) => {
   try {
     const body = await c.req.text();
-    const xVerify = c.req.header('X-Verify') || '';
-    // SECURITY FIX: Reject webhook entirely if no secret configured or no signature provided.
-    // Previous behaviour silently accepted unsigned webhooks → forged "PAYMENT_SUCCESS" possible.
-    const secret = await c.env.DB.prepare("SELECT value FROM app_settings WHERE key = 'phonepe_webhook_secret'").first<any>();
-    if (!secret?.value) {
-      console.error('[Webhook] PhonePe webhook secret not configured — rejecting');
-      return c.json({ error: 'Webhook secret not configured' }, 500);
+    const xVerify = c.req.header('X-Verify') || c.req.header('X-VERIFY') || '';
+    const authHeader = c.req.header('Authorization') || '';
+
+    const saltRow = await c.env.DB.prepare(
+      "SELECT value FROM app_settings WHERE key IN ('phonepe_salt_key','phonepe_webhook_secret') ORDER BY key = 'phonepe_salt_key' DESC LIMIT 1"
+    ).first<any>();
+    const userRow = await c.env.DB.prepare("SELECT value FROM app_settings WHERE key = 'phonepe_webhook_username'").first<any>();
+    const passRow = await c.env.DB.prepare("SELECT value FROM app_settings WHERE key = 'phonepe_webhook_password'").first<any>();
+
+    let verified = false;
+    let payload: any = null;
+
+    if (authHeader && userRow?.value && passRow?.value) {
+      // Standard Checkout webhook — Authorization = sha256(username:password)
+      verified = await verifyPhonePeAuthorization(authHeader, userRow.value, passRow.value);
+      if (verified) payload = JSON.parse(body);
+    } else if (xVerify && saltRow?.value) {
+      // Legacy S2S — verify sha256(base64Response + saltKey).
+      const outer = JSON.parse(body);
+      const base64Response: string = outer.response || '';
+      if (!base64Response) return c.json({ error: 'Missing response payload' }, 400);
+      verified = await verifyPhonePeXVerify(base64Response, xVerify, saltRow.value);
+      if (verified) payload = JSON.parse(atob(base64Response));
+    } else {
+      console.error('[Webhook] PhonePe verification credentials not configured — rejecting');
+      return c.json({ error: 'Webhook verification not configured' }, 500);
     }
-    if (!xVerify) return c.json({ error: 'Missing X-Verify header' }, 401);
-    const [sigPart] = xVerify.split('###');
-    if (!sigPart) return c.json({ error: 'Malformed X-Verify header' }, 401);
-    const expected = await hmacSha256(secret.value, body);
-    if (expected !== sigPart) return c.json({ error: 'Invalid signature' }, 401);
-    const payload = JSON.parse(body);
-    const data = payload.data || {};
-    const txnStatus = data.code || payload.code;
-    if (txnStatus !== 'PAYMENT_SUCCESS' && txnStatus !== 'SUCCESS') return c.json({ ok: true });
-    const merchantTxnId = data.merchantTransactionId || data.transactionId;
+
+    if (!verified || !payload) return c.json({ error: 'Invalid signature' }, 401);
+
+    // Success indicator + identifiers across both schemes.
+    const data = payload.data || payload.payload || {};
+    const txnStatus = data.state || data.code || payload.code || payload.state;
+    const isSuccess = txnStatus === 'PAYMENT_SUCCESS' || txnStatus === 'SUCCESS' || txnStatus === 'COMPLETED';
+    if (!isSuccess) return c.json({ ok: true });
+    const merchantTxnId = data.merchantTransactionId || data.merchantOrderId || data.orderId;
     const utr = data.transactionId || data.utr;
     let purchase: any = null;
     if (merchantTxnId) purchase = await findPurchaseByOrderId(c.env.DB, merchantTxnId);
@@ -164,39 +216,40 @@ payment.post('/webhook/phonepe', async (c) => {
     const result = await approveDeposit(c.env.DB, purchase.id, 'phonepe', `PhonePe payment ${utr || merchantTxnId} success`);
     return c.json({ ok: result.ok, already: result.already, coins: result.coins });
   } catch (e: any) {
-    return c.json({ error: e.message }, 500);
+    console.error('[Webhook] PhonePe handler error:', e);
+    return c.json({ error: 'Webhook processing failed' }, 500);
   }
 });
 
 // ─── POST /api/payment/webhook/paytm ─────────────────────────────────────────
-// Paytm checksum verification uses HMAC-SHA256 of sorted param values with merchant key.
-async function verifyPaytmChecksum(payload: Record<string, string>, merchantKey: string): Promise<boolean> {
-  const checksum = payload['CHECKSUMHASH'];
-  if (!checksum) return false;
-  const sortedValues = Object.keys(payload)
-    .filter(k => k !== 'CHECKSUMHASH')
-    .sort()
-    .map(k => (payload[k] === undefined || payload[k] === null ? 'null' : payload[k]))
-    .join('|');
-  const expected = await hmacSha256(merchantKey, sortedValues);
-  return expected === checksum;
-}
-
+// FIX #3: Paytm checksum verification (AES-128-CBC + SHA256) now lives in
+// lib/gatewayVerify and matches Paytm's documented PaytmChecksum algorithm.
+// Accepts both JSON and form-encoded callbacks.
 payment.post('/webhook/paytm', async (c) => {
   try {
-    const body = await c.req.text();
-    const payload = JSON.parse(body);
+    const raw = await c.req.text();
+    let payload: Record<string, any>;
+    const contentType = c.req.header('Content-Type') || '';
+    if (contentType.includes('application/x-www-form-urlencoded')) {
+      payload = Object.fromEntries(new URLSearchParams(raw));
+    } else {
+      try {
+        payload = JSON.parse(raw);
+      } catch {
+        payload = Object.fromEntries(new URLSearchParams(raw));
+      }
+    }
 
     // SECURITY FIX: Always require both the merchant key AND a CHECKSUMHASH.
-    // Previous behaviour bypassed verification when no merchant key was configured,
-    // allowing forged "TXN_SUCCESS" payloads to credit coins.
     const merchantKeyRow = await c.env.DB.prepare("SELECT value FROM app_settings WHERE key = 'paytm_merchant_key'").first<any>();
     if (!merchantKeyRow?.value) {
       console.error('[Webhook] Paytm merchant key not configured — rejecting');
       return c.json({ error: 'Paytm merchant key not configured' }, 500);
     }
-    if (!payload['CHECKSUMHASH']) return c.json({ error: 'Missing CHECKSUMHASH' }, 401);
-    const valid = await verifyPaytmChecksum(payload, merchantKeyRow.value);
+    const checksum = payload['CHECKSUMHASH'];
+    if (!checksum) return c.json({ error: 'Missing CHECKSUMHASH' }, 401);
+    // FIX #4: comparison is constant-time inside verifyPaytmChecksum.
+    const valid = await verifyPaytmChecksum(payload, merchantKeyRow.value, String(checksum));
     if (!valid) return c.json({ error: 'Invalid checksum' }, 401);
 
     const orderId = payload.ORDERID as string;
@@ -210,7 +263,8 @@ payment.post('/webhook/paytm', async (c) => {
     const result = await approveDeposit(c.env.DB, purchase.id, 'paytm', `Paytm TXN_SUCCESS — ${txnId}`);
     return c.json({ ok: result.ok, already: result.already, coins: result.coins });
   } catch (e: any) {
-    return c.json({ error: e.message }, 500);
+    console.error('[Webhook] Paytm handler error:', e);
+    return c.json({ error: 'Webhook processing failed' }, 500);
   }
 });
 
@@ -228,12 +282,16 @@ payment.post('/webhook/generic', async (c) => {
       console.error('[Webhook] Generic webhook secret not configured — rejecting');
       return c.json({ error: 'Generic webhook secret not configured' }, 500);
     }
-    if (!secret || secret !== storedSecret.value) return c.json({ error: 'Invalid secret' }, 401);
+    // FIX #4: constant-time secret comparison to avoid leaking the secret via timing.
+    if (!secret || !timingSafeEqual(String(secret), String(storedSecret.value))) {
+      return c.json({ error: 'Invalid secret' }, 401);
+    }
     if (!purchase_id) return c.json({ error: 'purchase_id required' }, 400);
     const result = await approveDeposit(c.env.DB, purchase_id, 'generic', note || 'Auto-matched via generic webhook');
     return c.json({ ok: result.ok, already: result.already, coins: result.coins, notFound: result.notFound });
   } catch (e: any) {
-    return c.json({ error: e.message }, 500);
+    console.error('[Webhook] Generic handler error:', e);
+    return c.json({ error: 'Webhook processing failed' }, 500);
   }
 });
 
@@ -408,7 +466,8 @@ payment.post('/verify-google-play', authMiddleware, async (c) => {
     const result = await approveDeposit(c.env.DB, purchaseId, 'google_play', `Google Play product ${product_id} verified`);
     return c.json({ success: result.ok, purchase_id: purchaseId, coins_added: result.coins, already_credited: result.already });
   } catch (e: any) {
-    return c.json({ error: 'Google Play verification failed', detail: e.message }, 500);
+    console.error('[/verify-google-play] verification failed:', e);
+    return c.json({ error: 'Google Play verification failed' }, 500);
   }
 });
 

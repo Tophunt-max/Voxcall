@@ -42,11 +42,22 @@ coin.get('/plans', async (c) => {
     }
   }
 
+  // FIX #12: prefer cron-refreshed live FX rates (cached in app_settings) over
+  // the static fallback table. A missing/old cache simply falls through to the
+  // static rates inside convertFromUSD.
+  let fxOverrides: Record<string, number> | null = null;
+  if (currency !== 'USD') {
+    try {
+      const fxRow = await c.env.DB.prepare("SELECT value FROM app_settings WHERE key = 'fx_rates_usd'").first<{ value: string }>();
+      if (fxRow?.value) fxOverrides = JSON.parse(fxRow.value);
+    } catch { /* fall back to static rates */ }
+  }
+
   const localized = (plans.results as any[]).map((p) => {
     // Plan rows store amount in USD (legacy currency column defaults to 'USD'
     // and the seeds use USD prices — see migrations/0001_initial.sql).
     const usdPrice = Number(p.price ?? 0);
-    const priceLocal = convertFromUSD(usdPrice, currency);
+    const priceLocal = convertFromUSD(usdPrice, currency, fxOverrides);
     return {
       ...p,
       // Original USD preserved for admin/analytics

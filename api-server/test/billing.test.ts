@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { billedMinutes, coinsForCall, hostShareOf } from '../src/lib/billing';
+import { billedMinutes, coinsForCall, hostShareOf, affordableCoins } from '../src/lib/billing';
 
 describe('billedMinutes — minutes are rounded UP, any started minute is billed', () => {
   it('bills 0 for non-positive / invalid durations', () => {
@@ -55,5 +55,24 @@ describe('hostShareOf — host cut always rounds DOWN, never pays a coin not col
     expect(hostShareOf(-50, 0.8)).toBe(0);
     expect(hostShareOf(100, 0)).toBe(0);
     expect(hostShareOf(100, Number.NaN)).toBe(0);
+  });
+});
+
+describe('affordableCoins — partial billing caps the charge at the caller balance (FIX #1)', () => {
+  it('charges the full amount when the caller can afford it', () => {
+    expect(affordableCoins(50, 100)).toBe(50);
+    expect(affordableCoins(100, 100)).toBe(100);
+  });
+
+  it('caps at the balance when the caller overran (so host still gets paid)', () => {
+    expect(affordableCoins(300, 50)).toBe(50); // owed 300, only has 50
+    expect(affordableCoins(10, 0)).toBe(0);
+  });
+
+  it('is defensive against invalid inputs', () => {
+    expect(affordableCoins(0, 100)).toBe(0);
+    expect(affordableCoins(-5, 100)).toBe(0);
+    expect(affordableCoins(Number.NaN, 100)).toBe(0);
+    expect(affordableCoins(100, -10)).toBe(0);
   });
 });

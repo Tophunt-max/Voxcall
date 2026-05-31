@@ -73,10 +73,18 @@ export function currencyForCountry(country: string | null | undefined): string {
  * Convert a USD amount to the target currency. Returns the original number
  * unchanged for USD so we never introduce floating-point noise on prices
  * that were already authored in USD.
+ *
+ * `overrides` (optional) lets callers pass live/cached rates (e.g. the cron-
+ * refreshed `fx_rates_usd` blob from app_settings — see FIX #12) which take
+ * precedence over the static fallback table below.
  */
-export function convertFromUSD(usdAmount: number, toCurrency: string): number {
+export function convertFromUSD(
+  usdAmount: number,
+  toCurrency: string,
+  overrides?: Record<string, number> | null,
+): number {
   if (toCurrency === 'USD') return usdAmount;
-  const rate = USD_TO_FOREIGN[toCurrency];
+  const rate = (overrides && overrides[toCurrency]) || USD_TO_FOREIGN[toCurrency];
   if (!rate) return usdAmount; // Unknown currency — return original; client will format with USD symbol
   return usdAmount * rate;
 }

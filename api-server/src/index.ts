@@ -24,7 +24,8 @@ import { NotificationHub } from './durable-objects/NotificationHub';
 import { ensureUsersSchema } from './lib/schemaGuard';
 import { getLevelConfig, getEarningShare } from './lib/levels';
 import { recalcAllHostLevels } from './lib/levelService';
-import { billedMinutes, coinsForCall, hostShareOf, atomicCallTransfer } from './lib/billing';
+import { billedMinutes, coinsForCall, chargeCallerAffordable } from './lib/billing';
+import { USD_TO_FOREIGN } from './lib/currency';
 
 // Re-export Durable Objects (required by wrangler)
 export { ChatRoom, CallSignaling, NotificationHub };
@@ -43,7 +44,20 @@ const ALLOWED_ORIGINS = [
   /\.pages\.dev$/,
 ];
 
-function isOriginAllowed(origin: string): boolean {
+// FIX #6: In production set CORS_ALLOWED_ORIGINS to a comma-separated list of
+// exact origins. When present it takes precedence over the broad dev patterns
+// above (which allow ANY *.pages.dev / *.replit.dev — fine for dev, too loose
+// for prod since anyone can deploy to those shared platforms).
+function buildExactAllowlist(env: Env): Set<string> | null {
+  const raw = env.CORS_ALLOWED_ORIGINS?.trim();
+  if (!raw) return null;
+  const list = raw.split(',').map((s) => s.trim().replace(/\/$/, '')).filter(Boolean);
+  return list.length ? new Set(list) : null;
+}
+
+function isOriginAllowed(origin: string, env: Env): boolean {
+  const exact = buildExactAllowlist(env);
+  if (exact) return exact.has(origin.replace(/\/$/, ''));
   return ALLOWED_ORIGINS.some(p => p.test(origin));
 }
 
@@ -51,10 +65,10 @@ const app = new Hono<{ Bindings: Env }>();
 
 // Global middleware
 app.use('*', cors({
-  origin: (origin) => {
+  origin: (origin, c) => {
     // Mobile apps (React Native) don't send Origin — allow all no-origin requests
     if (!origin) return '*';
-    return isOriginAllowed(origin) ? origin : null;
+    return isOriginAllowed(origin, c.env) ? origin : null;
   },
   allowHeaders: ['Content-Type', 'Authorization'],
   allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
@@ -126,9 +140,27 @@ async function verifyWsToken(token: string | null, secret: string): Promise<stri
   }
 }
 
+// FIX #5: Prefer the token from the `Sec-WebSocket-Protocol` header (sent by the
+// client as a subprotocol, e.g. ["bearer", "<jwt>"]) over the URL `?token=`
+// query param. Query-string tokens leak into Workers request logs / proxies /
+// browser history; the subprotocol header does not. The query param is still
+// accepted for backward compatibility with older clients — migrate clients to
+// the header form, then drop query support.
+function extractWsToken(c: any): string | null {
+  const proto = c.req.header('Sec-WebSocket-Protocol');
+  if (proto) {
+    const parts = proto.split(',').map((s: string) => s.trim()).filter(Boolean);
+    // Accept ["bearer", "<jwt>"] / ["jwt", "<jwt>"] or a single JWT-looking value.
+    if (parts.length >= 2 && /^(bearer|jwt|access_token)$/i.test(parts[0])) return parts[1];
+    const jwtLike = parts.find((p: string) => p.split('.').length === 3);
+    if (jwtLike) return jwtLike;
+  }
+  return c.req.query('token') || c.req.header('Authorization')?.replace('Bearer ', '') || null;
+}
+
 // WebSocket: notification hub per user — BUG 3 FIX: require JWT auth
 app.get('/api/ws/notifications', async (c) => {
-  const token = c.req.query('token') || c.req.header('Authorization')?.replace('Bearer ', '') || null;
+  const token = extractWsToken(c);
   const userId = c.req.query('userId');
   if (!userId) return c.json({ error: 'userId required' }, 400);
   const verifiedUserId = await verifyWsToken(token, c.env.JWT_SECRET);
@@ -147,7 +179,7 @@ app.get('/api/ws/notifications', async (c) => {
 // to impersonate the OTHER party (caller posing as host or vice versa).
 app.get('/api/ws/call/:sessionId', async (c) => {
   const { sessionId } = c.req.param();
-  const token = c.req.query('token') || c.req.header('Authorization')?.replace('Bearer ', '') || null;
+  const token = extractWsToken(c);
   const verifiedUserId = await verifyWsToken(token, c.env.JWT_SECRET);
   if (!verifiedUserId) {
     return c.json({ error: 'Unauthorized' }, 401);
@@ -235,22 +267,18 @@ async function reapStaleCalls(env: Env): Promise<void> {
       let actualHostEarnings = 0;
 
       if (coinsCharged > 0) {
-        const hostEarnings = hostShareOf(coinsCharged, getEarningShare(call.host_level ?? 1, levelCfg));
-
-        // Atomic transfer (single UPDATE, EXISTS-guarded) — shared with the
-        // live /end path. See lib/billing.ts → atomicCallTransfer.
-        const ok = await atomicCallTransfer(db, {
+        // FIX #1: best-effort (partial) billing — pay the host for the talk-time
+        // even if the caller overran their balance. See lib/billing.ts.
+        const { charged, hostEarned } = await chargeCallerAffordable(db, {
           callerId: call.caller_id,
           hostUserId: call.host_user_id,
           coinsCharged,
-          hostShare: hostEarnings,
+          earningShare: getEarningShare(call.host_level ?? 1, levelCfg),
         });
-
-        if (ok) {
-          actualCoinsCharged = coinsCharged;
-          actualHostEarnings = hostEarnings;
-        } else {
-          console.warn('[Cron] Atomic transfer failed for call', call.id, '- caller may have insufficient coins');
+        actualCoinsCharged = charged;
+        actualHostEarnings = hostEarned;
+        if (charged === 0) {
+          console.warn('[Cron] Caller had no coins to charge for call', call.id);
         }
       }
 
@@ -281,6 +309,49 @@ async function reapStaleCalls(env: Env): Promise<void> {
   }
 }
 
+// FIX #9: Reconcile calls that were claimed (ended_at set) but never finalized
+// (status still 'active'/'pending'). This happens if the worker isolate dies
+// between atomicCallTransfer and the bookkeeping batch in /end or the reaper:
+// coins may have moved but the session stays stuck and the 30-min active cutoff
+// won't re-select a freshly-started call for a long time. We finalize such rows
+// WITHOUT re-charging (never double-charge): if a 'spend' ledger row already
+// exists for the session the money moved, so we trust that amount; otherwise we
+// close it as 0 and log for manual review.
+async function reconcileStuckEndedCalls(env: Env): Promise<void> {
+  const db = env.DB;
+  const now = Math.floor(Date.now() / 1000);
+  // 120s grace so we never race a legitimately in-flight /end request.
+  const cutoff = now - 120;
+  try {
+    const stuck = await db
+      .prepare(
+        `SELECT id, ended_at, started_at FROM call_sessions
+         WHERE ended_at IS NOT NULL AND status IN ('active','pending') AND ended_at < ?
+         LIMIT 50`,
+      )
+      .bind(cutoff)
+      .all<any>();
+    for (const row of stuck.results) {
+      const ledger = await db
+        .prepare("SELECT amount FROM coin_transactions WHERE ref_id = ? AND type = 'spend' LIMIT 1")
+        .bind(row.id)
+        .first<{ amount: number }>();
+      const charged = ledger ? Math.abs(ledger.amount) : 0;
+      const durationSec = row.started_at ? Math.max(0, (row.ended_at as number) - row.started_at) : 0;
+      await db
+        .prepare("UPDATE call_sessions SET status = 'ended', duration_seconds = ?, coins_charged = ? WHERE id = ? AND status IN ('active','pending')")
+        .bind(durationSec, charged, row.id)
+        .run();
+      if (!ledger) {
+        console.warn('[Cron] Reconciled stuck call with no ledger row (closed as 0):', row.id);
+      }
+    }
+    if (stuck.results.length) console.log(`[Cron] Reconciled ${stuck.results.length} stuck-ended call(s)`);
+  } catch (err) {
+    console.error('[Cron] Stuck-call reconciliation error:', err);
+  }
+}
+
 // Level-up safety net — runs at most once per 24h even though the cron fires
 // every minute. The auto level-up engine handles promotions in real time on
 // each rating; this backfill catches anything missed (e.g. a rating write that
@@ -304,10 +375,49 @@ async function maybeRecalcLevelsDaily(env: Env): Promise<void> {
   }
 }
 
+// FIX #12: Refresh FX rates at most once every 12h from a free, no-key API and
+// cache them in app_settings (`fx_rates_usd` JSON + `fx_rates_updated` ts). The
+// static USD_TO_FOREIGN table in lib/currency stays as the fallback, so a failed
+// fetch or unconfigured network never breaks pricing. Only currencies we already
+// support are stored, keeping the blob small.
+async function maybeRefreshFxRates(env: Env): Promise<void> {
+  try {
+    const now = Math.floor(Date.now() / 1000);
+    const row = await env.DB.prepare("SELECT value FROM app_settings WHERE key = 'fx_rates_updated'").first<{ value: string }>();
+    const last = row?.value ? parseInt(row.value, 10) || 0 : 0;
+    if (now - last < 12 * 3600) return;
+    // Claim the slot first so overlapping cron ticks don't double-fetch.
+    await env.DB.prepare(
+      "INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('fx_rates_updated', ?, unixepoch())"
+    ).bind(String(now)).run();
+
+    const res = await fetch('https://open.er-api.com/v6/latest/USD');
+    if (!res.ok) { console.warn('[Cron] FX refresh HTTP', res.status); return; }
+    const data = await res.json<any>();
+    const rates = data?.rates;
+    if (!rates || typeof rates !== 'object') { console.warn('[Cron] FX refresh: malformed payload'); return; }
+
+    const filtered: Record<string, number> = {};
+    for (const code of Object.keys(USD_TO_FOREIGN)) {
+      const v = Number(rates[code]);
+      if (Number.isFinite(v) && v > 0) filtered[code] = v;
+    }
+    if (Object.keys(filtered).length < 5) { console.warn('[Cron] FX refresh: too few rates, skipping store'); return; }
+    await env.DB.prepare(
+      "INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('fx_rates_usd', ?, unixepoch())"
+    ).bind(JSON.stringify(filtered)).run();
+    console.log(`[Cron] FX rates refreshed (${Object.keys(filtered).length} currencies)`);
+  } catch (e) {
+    console.error('[Cron] FX refresh error:', e);
+  }
+}
+
 export default {
   fetch: app.fetch,
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil(reapStaleCalls(env));
+    ctx.waitUntil(reconcileStuckEndedCalls(env));
     ctx.waitUntil(maybeRecalcLevelsDaily(env));
+    ctx.waitUntil(maybeRefreshFxRates(env));
   },
 };

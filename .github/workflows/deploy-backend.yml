@@ -46,7 +46,11 @@ jobs:
 
       - name: Apply D1 Migrations
         working-directory: api-server
-        run: pnpm exec wrangler d1 migrations apply voxlink-db
+        # FIX #8: `--remote` targets the PRODUCTION D1 database. Without it,
+        # `wrangler d1 migrations apply` runs against the LOCAL dev DB and the
+        # production schema silently drifts (the root cause the runtime
+        # ensureUsersSchema hack was papering over).
+        run: pnpm exec wrangler d1 migrations apply voxlink-db --remote
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 

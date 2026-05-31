@@ -3,6 +3,7 @@ import { authMiddleware, adminMiddleware } from '../middleware/auth';
 import { sendFCMPush, getFCMTokens } from '../lib/fcm';
 import { getLevelConfig, normalizeLevelConfig } from '../lib/levels';
 import { recalcAllHostLevels } from '../lib/levelService';
+import { approveDeposit } from './payment';
 import type { Env, JWTPayload } from '../types';
 
 const admin = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
@@ -588,6 +589,24 @@ admin.get('/deposits', async (c) => {
 admin.patch('/deposits/:id', async (c) => {
   const { id } = c.req.param();
   const body = await c.req.json() as any;
+  if (body.status === 'success') {
+    // FIX #2: delegate to the shared approveDeposit chokepoint so manual admin
+    // approvals get the SAME idempotent CAS + promo max_uses enforcement as the
+    // gateway webhooks (previously this path credited coins inline and ignored
+    // promo usage limits entirely).
+    const exists = await db(c).prepare('SELECT id FROM coin_purchases WHERE id = ?').bind(id).first<any>();
+    if (!exists) return c.json({ error: 'Deposit not found' }, 404);
+    const result = await approveDeposit(db(c), id, 'manual-admin', 'Deposit approved by admin');
+    if (result.already) return c.json({ error: 'Deposit already marked as success' }, 400);
+    // Persist the admin note if one was supplied (approveDeposit doesn't touch it).
+    if (body.admin_note !== undefined) {
+      await db(c).prepare('UPDATE coin_purchases SET admin_note = ?, updated_at = unixepoch() WHERE id = ?').bind(body.admin_note ?? null, id).run();
+    }
+    const u = c.get('user');
+    await auditLog(db(c), u.sub, u.email || 'Admin', u.email || '', 'update', 'deposit', id, `Deposit ${id} approved`);
+    return c.json({ success: true, coins: result.coins });
+  }
+
   const sets: string[] = [];
   const vals: any[] = [];
   if (body.status !== undefined) { sets.push('status = ?'); vals.push(body.status); }
@@ -595,19 +614,7 @@ admin.patch('/deposits/:id', async (c) => {
   if (sets.length === 0) return c.json({ error: 'Nothing to update' }, 400);
   sets.push('updated_at = unixepoch()');
   vals.push(id);
-  if (body.status === 'success') {
-    const purchase = await db(c).prepare('SELECT user_id, coins, bonus_coins, status FROM coin_purchases WHERE id = ?').bind(id).first<any>();
-    if (!purchase) return c.json({ error: 'Deposit not found' }, 404);
-    if (purchase.status === 'success') return c.json({ error: 'Deposit already marked as success' }, 400);
-    const totalCoins = (purchase.coins || 0) + (purchase.bonus_coins || 0);
-    await db(c).batch([
-      db(c).prepare(`UPDATE coin_purchases SET ${sets.join(', ')} WHERE id = ?`).bind(...vals),
-      db(c).prepare('UPDATE users SET coins = coins + ?, updated_at = unixepoch() WHERE id = ?').bind(totalCoins, purchase.user_id),
-      db(c).prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)').bind(
-        crypto.randomUUID(), purchase.user_id, 'purchase', totalCoins, `Deposit approved by admin`, id
-      ),
-    ]);
-  } else if (body.status === 'refunded') {
+  if (body.status === 'refunded') {
     const purchase = await db(c).prepare('SELECT user_id, coins, bonus_coins, status FROM coin_purchases WHERE id = ?').bind(id).first<any>();
     if (!purchase) return c.json({ error: 'Deposit not found' }, 404);
     if (purchase.status === 'refunded') return c.json({ error: 'Deposit already refunded' }, 400);

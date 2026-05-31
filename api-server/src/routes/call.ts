@@ -6,7 +6,8 @@ import { createCFCalls, CFCallsTrack } from '../lib/cf-calls';
 import { sendFCMPush } from '../lib/fcm';
 import { getLevelConfig, getEarningShare } from '../lib/levels';
 import { applyLevelUp } from '../lib/levelService';
-import { billedMinutes, coinsForCall, hostShareOf, atomicCallTransfer } from '../lib/billing';
+import { billedMinutes, coinsForCall, chargeCallerAffordable } from '../lib/billing';
+import { registerHit } from '../lib/rateLimit';
 import type { Env, JWTPayload, HostRow, CallSessionRow, CallerData, HostData } from '../types';
 
 const call = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
@@ -121,15 +122,10 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
   // Rate limit: max 5 call initiations per user per minute to prevent host spam
   const rlKey = `rl:initiate:${sub}:${Math.floor(Date.now() / 60000)}`;
   try {
-    const rlRow = await db.prepare('SELECT attempts, window_reset FROM rate_limits WHERE id = ?').bind(rlKey).first<{ attempts: number; window_reset: number }>();
-    const now = Math.floor(Date.now() / 1000);
-    if (rlRow && rlRow.window_reset > now && rlRow.attempts >= 5) {
+    // FIX #7: atomic check-and-increment (no read-then-write TOCTOU).
+    const { limited } = await registerHit(db, rlKey, 5, 60);
+    if (limited) {
       return c.json({ error: 'Too many call requests. Please wait before trying again.' }, 429);
-    }
-    if (rlRow && rlRow.window_reset > now) {
-      await db.prepare('UPDATE rate_limits SET attempts = attempts + 1 WHERE id = ?').bind(rlKey).run();
-    } else {
-      await db.prepare('INSERT OR REPLACE INTO rate_limits (id, attempts, window_reset) VALUES (?, 1, ?)').bind(rlKey, now + 60).run();
     }
   } catch (e) {
     // Rate limit table may not exist — don't block but log the error
@@ -312,28 +308,25 @@ call.post('/end', async (c) => {
     // Level-based earning share — higher-level hosts keep a larger cut.
     // Defaults to the historical 70% (level 1) so low-level hosts are unaffected.
     const levelCfg = await getLevelConfig(c.env.DB);
-    const hostShare = hostShareOf(coinsCharged, getEarningShare(hostRow.level ?? 1, levelCfg));
 
-    // Atomic caller→host coin transfer (single UPDATE, EXISTS-guarded).
-    // See lib/billing.ts → atomicCallTransfer for the full rationale (why a
-    // single CASE+EXISTS statement is the only crash-safe way to do this).
+    // FIX #1: best-effort (partial) billing — charge what the caller can afford
+    // and pay the host their share of the amount actually collected. Previously
+    // an overrun caller (talked past their balance) caused the all-or-nothing
+    // transfer to move ZERO coins, so the host earned nothing for real talk-time.
+    // See lib/billing.ts → chargeCallerAffordable / atomicCallTransfer.
     let actualCoinsCharged = 0;
     let actualHostShare = 0;
     if (coinsCharged > 0 && hostRow?.user_id) {
-      const ok = await atomicCallTransfer(db, {
+      const { charged, hostEarned } = await chargeCallerAffordable(db, {
         callerId: session.caller_id,
         hostUserId: hostRow.user_id,
         coinsCharged,
-        hostShare,
+        earningShare: getEarningShare(hostRow.level ?? 1, levelCfg),
       });
-
-      // ok === true → both caller and host rows updated (success).
-      // ok === false → caller had insufficient coins; nothing moved.
-      if (ok) {
-        actualCoinsCharged = coinsCharged;
-        actualHostShare = hostShare;
-      } else {
-        console.warn('[/end] Atomic transfer failed (insufficient coins). Caller:', session.caller_id, 'wanted:', coinsCharged);
+      actualCoinsCharged = charged;
+      actualHostShare = hostEarned;
+      if (charged === 0) {
+        console.warn('[/end] Caller had no coins to charge. Caller:', session.caller_id, 'wanted:', coinsCharged);
       }
     }
 
@@ -834,25 +827,22 @@ call.post('/:id/end', async (c) => {
     // Level-based earning share — higher-level hosts keep a larger cut.
     // Defaults to the historical 70% (level 1) so low-level hosts are unaffected.
     const levelCfg = await getLevelConfig(c.env.DB);
-    const hostShare = hostShareOf(coinsCharged, getEarningShare(hostRow.level ?? 1, levelCfg));
 
-    // BUG #2 FIX: Use atomic coin transfer instead of non-atomic batch
+    // FIX #1: best-effort (partial) billing — see lib/billing.ts.
     let actualCoinsCharged = 0;
     let actualHostShare = 0;
 
     if (coinsCharged > 0 && hostRow?.user_id) {
-      const ok = await atomicCallTransfer(db, {
+      const { charged, hostEarned } = await chargeCallerAffordable(db, {
         callerId: session.caller_id,
         hostUserId: hostRow.user_id,
         coinsCharged,
-        hostShare,
+        earningShare: getEarningShare(hostRow.level ?? 1, levelCfg),
       });
-
-      if (ok) {
-        actualCoinsCharged = coinsCharged;
-        actualHostShare = hostShare;
-      } else {
-        console.warn('[/:id/end] Atomic transfer failed (insufficient coins). Caller:', session.caller_id, 'wanted:', coinsCharged);
+      actualCoinsCharged = charged;
+      actualHostShare = hostEarned;
+      if (charged === 0) {
+        console.warn('[/:id/end] Caller had no coins to charge. Caller:', session.caller_id, 'wanted:', coinsCharged);
       }
     }
 
@@ -938,6 +928,107 @@ call.post('/:id/end', async (c) => {
     console.error('[/:id/end] error:', e);
     return c.json({ error: e.message || 'Failed to end call' }, 500);
   }
+});
+
+// FIX #1: Mid-call heartbeat — server-side balance cap enforcement.
+// The client posts this periodically (e.g. every 20–30s) during an active call.
+// Billing still settles at /end (best-effort/partial), but this endpoint caps
+// runaway calls server-side: once elapsed time exceeds what the caller's balance
+// can pay for, the call is force-ended and settled, so an honest client can't
+// silently overrun and a misbehaving one is bounded to one heartbeat interval.
+call.post('/:id/heartbeat', async (c) => {
+  const { sub } = c.get('user');
+  const sessionId = c.req.param('id');
+  const db = c.env.DB;
+
+  const result = await deriveRole(db, sessionId, sub);
+  if (!result) return c.json({ error: 'Session not found or access denied' }, 403);
+  const { session } = result;
+  if (session.status !== 'active') {
+    return c.json({ ok: true, ended: session.status === 'ended', status: session.status });
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  const startedAt = session.started_at ?? now;
+  const elapsed = Math.max(0, now - startedAt);
+  const rate = session.rate_per_minute ?? 5;
+  const caller = await db.prepare('SELECT coins FROM users WHERE id = ?').bind(session.caller_id).first<{ coins: number }>();
+  const balance = caller?.coins ?? 0;
+  const maxSeconds = rate > 0 ? Math.floor((balance / rate) * 60) : 0;
+  const remaining = Math.max(0, maxSeconds - elapsed);
+
+  if (remaining > 0) {
+    return c.json({ ok: true, ended: false, remaining_seconds: remaining, max_seconds: maxSeconds });
+  }
+
+  // Balance exhausted → force-end + settle (partial). Atomic guard via ended_at.
+  const guard = await db.prepare(
+    "UPDATE call_sessions SET ended_at = ? WHERE id = ? AND status = 'active' AND ended_at IS NULL"
+  ).bind(now, sessionId).run();
+  if (!guard.meta?.changes) {
+    return c.json({ ok: true, ended: true, reason: 'already_ending' });
+  }
+
+  const durationSec = session.started_at ? now - session.started_at : 0;
+  const durationMin = billedMinutes(durationSec);
+  const hostRow = await db.prepare('SELECT user_id, level FROM hosts WHERE id = ?').bind(session.host_id).first<{ user_id: string; level: number }>();
+  const levelCfg = await getLevelConfig(db);
+  const coinsCharged = coinsForCall({ status: 'active', durationSec, ratePerMinute: rate });
+
+  let actualCoinsCharged = 0;
+  let actualHostShare = 0;
+  if (coinsCharged > 0 && hostRow?.user_id) {
+    const { charged, hostEarned } = await chargeCallerAffordable(db, {
+      callerId: session.caller_id,
+      hostUserId: hostRow.user_id,
+      coinsCharged,
+      earningShare: getEarningShare(hostRow.level ?? 1, levelCfg),
+    });
+    actualCoinsCharged = charged;
+    actualHostShare = hostEarned;
+  }
+
+  const batchOps: any[] = [
+    db.prepare('UPDATE call_sessions SET status = ?, duration_seconds = ?, coins_charged = ? WHERE id = ?')
+      .bind('ended', durationSec, actualCoinsCharged, sessionId),
+  ];
+  if (actualCoinsCharged > 0 && hostRow?.user_id) {
+    batchOps.push(
+      db.prepare('UPDATE hosts SET total_minutes = total_minutes + ?, total_earnings = total_earnings + ? WHERE id = ?')
+        .bind(durationMin, actualHostShare, session.host_id),
+      db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
+        .bind(crypto.randomUUID(), session.caller_id, 'spend', -actualCoinsCharged, `${session.type || 'audio'} call — ${durationMin} min (balance limit)`, sessionId),
+      db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
+        .bind(crypto.randomUUID(), hostRow.user_id, 'bonus', actualHostShare, `${session.type || 'audio'} call — ${durationMin} min (balance limit)`, sessionId),
+    );
+  }
+  await db.batch(batchOps);
+
+  // Notify both parties the call ended (balance exhausted).
+  for (const uid of [session.caller_id, hostRow?.user_id]) {
+    if (!uid) continue;
+    try {
+      const stub = c.env.NOTIFICATION_HUB.get(c.env.NOTIFICATION_HUB.idFromName(uid));
+      await stub.fetch('https://dummy/notify', {
+        method: 'POST',
+        body: JSON.stringify({ type: 'call_ended', session_id: sessionId, reason: 'balance_exhausted' }),
+      });
+    } catch (e) {
+      console.warn('[/:id/heartbeat] notify failed:', e);
+    }
+  }
+
+  // Best-effort: close CF sessions so media tears down promptly.
+  const cfCalls = createCFCalls(c.env);
+  if (cfCalls) {
+    for (const sid of [session.cf_session_id, session.cf_host_session_id]) {
+      if (sid) {
+        try { await cfCalls.closeSession(sid); } catch (e) { console.warn('[/:id/heartbeat] CF close failed:', e); }
+      }
+    }
+  }
+
+  return c.json({ ok: true, ended: true, reason: 'balance_exhausted', coins_charged: actualCoinsCharged, duration_seconds: durationSec });
 });
 
 // Polling fallback: host checks if there's a pending incoming call for them

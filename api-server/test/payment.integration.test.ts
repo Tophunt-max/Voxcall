@@ -25,6 +25,18 @@ beforeEach(() => {
       bonus_coins INTEGER NOT NULL DEFAULT 0,
       status TEXT NOT NULL DEFAULT 'pending',
       payment_method TEXT,
+      promo_code TEXT,
+      updated_at INTEGER
+    );
+    CREATE TABLE promo_codes (
+      id TEXT PRIMARY KEY,
+      code TEXT NOT NULL,
+      type TEXT NOT NULL DEFAULT 'bonus',
+      discount_pct INTEGER DEFAULT 0,
+      bonus_coins INTEGER DEFAULT 0,
+      max_uses INTEGER,
+      used_count INTEGER NOT NULL DEFAULT 0,
+      active INTEGER NOT NULL DEFAULT 1,
       updated_at INTEGER
     );
     CREATE TABLE coin_transactions (
@@ -83,5 +95,34 @@ describe('approveDeposit', () => {
     expect(res.ok).toBe(false);
     expect(res.notFound).toBe(true);
     expect(await txCount()).toBe(0);
+  });
+});
+
+describe('approveDeposit promo max_uses enforcement (FIX #2)', () => {
+  async function promoUsed(code: string): Promise<number> {
+    const row = await db.prepare('SELECT used_count FROM promo_codes WHERE code = ?').bind(code).first<{ used_count: number }>();
+    return Number(row?.used_count ?? -1);
+  }
+
+  it('consumes one promo use at credit time and grants the bonus while quota remains', async () => {
+    db.applySchema(`
+      INSERT INTO promo_codes (id, code, type, bonus_coins, max_uses, used_count) VALUES ('pr1', 'WELCOME', 'bonus', 20, 5, 0);
+      INSERT INTO coin_purchases (id, user_id, coins, bonus_coins, status, promo_code) VALUES ('p2', 'u1', 100, 20, 'pending', 'WELCOME');
+    `);
+    const res = await approveDeposit(db as any, 'p2', 'razorpay');
+    expect(res.ok).toBe(true);
+    expect(res.coins).toBe(120); // base 100 + promo bonus 20 granted
+    expect(await promoUsed('WELCOME')).toBe(1); // usage advanced
+  });
+
+  it('strips the promo bonus when the quota is already exhausted', async () => {
+    db.applySchema(`
+      INSERT INTO promo_codes (id, code, type, bonus_coins, max_uses, used_count) VALUES ('pr2', 'MAXED', 'bonus', 20, 1, 1);
+      INSERT INTO coin_purchases (id, user_id, coins, bonus_coins, status, promo_code) VALUES ('p3', 'u1', 100, 20, 'pending', 'MAXED');
+    `);
+    const res = await approveDeposit(db as any, 'p3', 'razorpay');
+    expect(res.ok).toBe(true);
+    expect(res.coins).toBe(100); // promo bonus (20) stripped — quota was full
+    expect(await promoUsed('MAXED')).toBe(1); // not incremented beyond max
   });
 });

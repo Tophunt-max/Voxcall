@@ -31,7 +31,7 @@ const settingGroups = [
   {
     group: 'Economy',
     settings: [
-      { key: 'coin_to_usd_rate', label: 'Coin → INR Rate', type: 'number', hint: '1 means 100 coins = ₹100', step: '0.001' },
+      { key: 'coin_to_usd_rate', label: 'Coin → Payout Rate', type: 'number', hint: 'Value of 1 coin in the payout currency. 0.01 → 100 coins = 1.00 (used to compute host withdrawal amounts)', step: '0.001' },
       { key: 'host_revenue_share', label: 'Host Revenue Share', type: 'number', hint: '0.70 means hosts receive 70% of earned coins', step: '0.01' },
       { key: 'min_withdrawal_coins', label: 'Minimum Withdrawal (Coins)', type: 'number', hint: 'Minimum coins a host must have to request a payout' },
     ],

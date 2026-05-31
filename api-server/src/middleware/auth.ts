@@ -1,6 +1,7 @@
 import { createMiddleware } from 'hono/factory';
 import { verifyToken, extractBearer } from '../lib/jwt';
 import { detectCountryFromRequest, currencyForCountry } from '../lib/currency';
+import { registerHit } from '../lib/rateLimit';
 import type { Env, JWTPayload } from '../types';
 
 type Variables = { user: JWTPayload };
@@ -98,26 +99,14 @@ export const adminMiddleware = createMiddleware<{ Bindings: Env; Variables: Vari
     const key = `rl:admin:${adminId}:${windowSlot}`;
 
     try {
-      const row = await c.env.DB.prepare(
-        'SELECT attempts, window_reset FROM rate_limits WHERE id = ?'
-      ).bind(key).first<{ attempts: number; window_reset: number }>();
-
-      if (row && row.window_reset > now) {
-        if (row.attempts >= ADMIN_MAX_ATTEMPTS) {
-          const waitSec = Math.max(1, row.window_reset - now);
-          console.warn('[admin-rate-limit] admin', adminId, 'hit cap, attempts=', row.attempts);
-          return c.json(
-            { error: `Admin rate limit exceeded. Please retry in ${waitSec}s.` },
-            429
-          );
-        }
-        await c.env.DB.prepare(
-          'UPDATE rate_limits SET attempts = attempts + 1 WHERE id = ?'
-        ).bind(key).run();
-      } else {
-        await c.env.DB.prepare(
-          'INSERT OR REPLACE INTO rate_limits (id, attempts, window_reset) VALUES (?, 1, ?)'
-        ).bind(key, now + ADMIN_WINDOW_SECS).run();
+      // FIX #7: atomic check-and-increment (no read-then-write TOCTOU).
+      const { limited, retryAfterSec } = await registerHit(c.env.DB, key, ADMIN_MAX_ATTEMPTS, ADMIN_WINDOW_SECS);
+      if (limited) {
+        console.warn('[admin-rate-limit] admin', adminId, 'hit cap');
+        return c.json(
+          { error: `Admin rate limit exceeded. Please retry in ${retryAfterSec}s.` },
+          429
+        );
       }
     } catch (e) {
       // Same fail-open semantics as the auth-route limiter: don't 500 if the
