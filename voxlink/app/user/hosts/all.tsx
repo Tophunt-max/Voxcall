@@ -16,8 +16,9 @@ export default function AllHostsScreen() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // FIX: API.getHosts now returns { hosts, nextCursor } — read .hosts before mapping
-    API.getHosts().then((res) => {
+    // FIX: API.getHosts now returns { hosts, nextCursor } — read .hosts before mapping.
+    // Explicit limit so the full roster loads (no infinite scroll on this screen).
+    API.getHosts({ limit: 100 }).then((res) => {
       const list = res?.hosts ?? [];
       const mapped = list.map((h: any) => ({
         ...h,

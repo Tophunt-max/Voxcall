@@ -164,7 +164,7 @@ export default function ListenerScreen() {
 
   const loadHosts = useCallback(async () => {
     try {
-      const params: any = {};
+      const params: any = { limit: 100 };
       if (selectedTopic !== "All") params.topic = selectedTopic;
       // FIX: API.getHosts returns { hosts, nextCursor } — read .hosts before mapping
       const res = await API.getHosts(params);

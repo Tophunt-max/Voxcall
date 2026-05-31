@@ -345,6 +345,17 @@ export default function RandomScreen() {
   // Accept match → proper call flow using admin-set coin rate
   const handleAccept = useCallback(() => {
     if (!matchedHost) return;
+
+    // Consistency with hosts/[id]: require ~2 minutes of balance up-front so we
+    // don't drop the user into a call that auto-disconnects immediately.
+    if ((user?.coins ?? 0) < adminCoinRate * 2) {
+      setPhase("idle");
+      setMatchedHost(null);
+      showErrorToast(`You need at least ${adminCoinRate * 2} coins to start this call.`, "Not enough coins");
+      router.push("/user/payment/checkout");
+      return;
+    }
+
     setPhase("idle");
 
     const avatarUri = resolveMediaUrl(matchedHost.avatar_url) || `https://api.dicebear.com/7.x/avataaars/png?seed=${matchedHost.id}`;
@@ -365,7 +376,7 @@ export default function RandomScreen() {
         specialty: matchedHost.specialties[0] ?? "",
       },
     });
-  }, [matchedHost, callType, initiateCall, adminCoinRate]);
+  }, [matchedHost, callType, initiateCall, adminCoinRate, user?.coins]);
 
   const handleDecline = useCallback(() => {
     setPhase("idle");

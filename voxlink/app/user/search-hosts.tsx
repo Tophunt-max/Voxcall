@@ -6,7 +6,7 @@ import {
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
-import { API } from "@/services/api";
+import { API, resolveMediaUrl } from "@/services/api";
 import { showErrorToast } from "@/components/Toast";
 
 const LANGUAGES = ["All", "English", "Hindi", "Chinese", "Arabic", "Spanish"];
@@ -27,8 +27,10 @@ export default function SearchHostsScreen() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // FIX: API.getHosts returns { hosts, nextCursor } — extract .hosts before setting
-    API.getHosts()
+    // FIX: API.getHosts returns { hosts, nextCursor } — extract .hosts before setting.
+    // Pass an explicit limit so the roster isn't silently truncated to the
+    // backend's small default page (this screen has no infinite scroll).
+    API.getHosts({ limit: 100 })
       .then((res) => setHosts(res?.hosts ?? []))
       .catch(() => { setHosts([]); showErrorToast("Failed to load hosts."); })
       .finally(() => setLoading(false));
@@ -39,9 +41,13 @@ export default function SearchHostsScreen() {
       const name = (h.display_name ?? h.name ?? "").toLowerCase();
       const q = query.toLowerCase();
       const topicStr = Array.isArray(h.topics) ? h.topics.join(" ") : String(h.topics ?? "");
+      const langStr = Array.isArray(h.languages) ? h.languages.join(" ") : String(h.languages ?? "");
       const matchName = !q || name.includes(q);
       const matchTopic = selectedTopic === "All" || topicStr.toLowerCase().includes(selectedTopic.toLowerCase());
-      const matchLang = selectedLang === "All";
+      // FIX: the language filter was dead — matchLang was hardcoded to
+      // `selectedLang === "All"`, ignoring the selection entirely. Now it
+      // actually filters against the host's languages.
+      const matchLang = selectedLang === "All" || langStr.toLowerCase().includes(selectedLang.toLowerCase());
       const matchStatus = selectedStatus === "All" ||
         (selectedStatus === "Online" && h.is_online) ||
         (selectedStatus === "Offline" && !h.is_online);
@@ -54,7 +60,7 @@ export default function SearchHostsScreen() {
 
   const renderHost = ({ item }: { item: any }) => {
     const name = item.display_name ?? item.name ?? "Host";
-    const avatar = item.avatar_url ?? `https://api.dicebear.com/7.x/avataaars/png?seed=${item.id}`;
+    const avatar = resolveMediaUrl(item.avatar_url) || `https://api.dicebear.com/7.x/avataaars/png?seed=${item.id}`;
     const rating = (item.rating ?? 4.5).toFixed(1);
     const rate = item.audio_coins_per_minute ?? item.coinsPerMinute ?? 5;
     const topicsArr = Array.isArray(item.topics) ? item.topics : (item.topics ? String(item.topics).split(",") : []);
@@ -164,6 +170,18 @@ export default function SearchHostsScreen() {
                 onPress={() => setSelectedStatus(s)}
               >
                 <Text style={[styles.chipText, { color: selectedStatus === s ? "#fff" : colors.text }]}>{s}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <Text style={[styles.filterGroupLabel, { color: colors.mutedForeground }]}>Language</Text>
+          <View style={styles.chipRow}>
+            {LANGUAGES.map((l) => (
+              <TouchableOpacity
+                key={l}
+                style={[styles.chip, { backgroundColor: selectedLang === l ? colors.primary : colors.surface, borderColor: selectedLang === l ? colors.primary : colors.border }]}
+                onPress={() => setSelectedLang(l)}
+              >
+                <Text style={[styles.chipText, { color: selectedLang === l ? "#fff" : colors.text }]}>{l}</Text>
               </TouchableOpacity>
             ))}
           </View>
