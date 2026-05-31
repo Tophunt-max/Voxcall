@@ -4,6 +4,7 @@ import { setItem, getItem, removeItem, StorageKeys } from "@/utils/storage";
 import { apiRequest, API } from "@/services/api";
 import { registerForPushNotifications, notifyLowCoins } from "@/services/NotificationService";
 import { onTokenRefresh } from "@/services/fcm";
+import { setErrorReporterToken } from "@/services/ErrorReporter";
 import { setServerCurrency } from "@/utils/currency";
 
 const LOW_COINS_THRESHOLD = 10;
@@ -94,6 +95,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         const user = await getItem<UserProfile>(StorageKeys.USER);
         if (user) {
+          // Attribute production error reports to this user (best-effort).
+          const savedToken = await getItem<string>(StorageKeys.AUTH_TOKEN);
+          if (savedToken) setErrorReporterToken(savedToken);
           setState({ user, isLoggedIn: true, isLoading: false });
           // Silently refresh balance + push token in parallel
           const [balResult] = await Promise.all([
@@ -184,6 +188,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setItem(StorageKeys.AUTH_TOKEN, token),
       setItem(StorageKeys.USER, user),
     ]);
+    setErrorReporterToken(token);
     setState({ user, isLoggedIn: true, isLoading: false });
     // Sync push token in background after login
     syncPushToken().catch(() => {});
@@ -211,6 +216,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       removeItem(StorageKeys.AUTH_TOKEN),
       removeItem(StorageKeys.USER),
     ]);
+    setErrorReporterToken(null);
     setState({ user: null, isLoggedIn: false, isLoading: false });
   }, []);
 

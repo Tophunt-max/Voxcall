@@ -4,6 +4,7 @@ import { setItem, getItem, removeItem, StorageKeys } from "@/utils/storage";
 import { apiRequest, API } from "@/services/api";
 import { registerForPushNotifications } from "@/services/NotificationService";
 import { onTokenRefresh } from "@/services/fcm";
+import { setErrorReporterToken } from "@/services/ErrorReporter";
 import { setServerCurrency } from "@/utils/currency";
 
 // Module-level logout callback so fetchFreshProfile can trigger auto-logout
@@ -138,6 +139,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         const user = await getItem<UserProfile>(StorageKeys.USER);
         if (user) {
+          // Attribute production error reports to this user (best-effort).
+          const savedToken = await getItem<string>(StorageKeys.AUTH_TOKEN);
+          if (savedToken) setErrorReporterToken(savedToken);
           // Fetch fresh profile (including role) BEFORE clearing isLoading.
           // This prevents the router from redirecting to the wrong screen
           // based on a stale cached role (e.g. pending host who was just approved).
@@ -184,6 +188,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setItem(StorageKeys.AUTH_TOKEN, token),
       setItem(StorageKeys.USER, user),
     ]);
+    setErrorReporterToken(token);
     setState({ user, isLoggedIn: true, isLoading: false });
     syncPushToken().catch(() => {});
   }, []);
@@ -206,6 +211,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       removeItem(StorageKeys.AUTH_TOKEN),
       removeItem(StorageKeys.USER),
     ]);
+    setErrorReporterToken(null);
     setState({ user: null, isLoggedIn: false, isLoading: false });
   }, []);
 
