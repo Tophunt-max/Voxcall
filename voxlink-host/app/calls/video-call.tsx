@@ -792,43 +792,43 @@ export default function VideoCallScreen() {
             </View>
           )}
 
-          {/* FIX (UI redesign): glassmorphism header card. See voxlink/app/user/
-              call/video-call.tsx for the full rationale. ConnectionBars right
-              of the name give an at-a-glance signal indicator (3 green / 2
-              yellow / 1 red). */}
-          <BlurView intensity={Platform.OS === "ios" ? 50 : 80} tint="dark" style={uiS.headerCard}>
-            <View style={uiS.headerLeft}>
-              <Text style={uiS.headerName} numberOfLines={1}>
-                {activeCall?.participant.name ?? "Connecting..."}
-              </Text>
-              {status === "active" ? (
-                <View style={uiS.headerMetaRow}>
-                  <View style={uiS.liveBadge}>
-                    <View style={uiS.liveDot} />
-                    <Text style={uiS.liveText}>LIVE</Text>
-                  </View>
-                  <Text style={uiS.timer}>{formatTime(elapsed)}</Text>
-                  {remainingLabel && (
-                    <View style={[uiS.remainPill, remaining != null && remaining <= 60 && uiS.remainPillLow]}>
-                      <Text
-                        style={[
-                          uiS.remainText,
-                          remaining != null && remaining <= 60 && { color: "#FF6B6B" },
-                        ]}
-                      >
-                        {remainingLabel}
-                      </Text>
+          {/* FIX (UI: Chamet-style header): caller info anchored top-LEFT with a
+              circular avatar (live-stream style); connection/remaining anchored
+              top-RIGHT. Mirrors voxlink/app/user/call/video-call.tsx (the user
+              side also shows a coin balance there; the host earns, so we show
+              the signal pill instead). */}
+          <View style={uiS.topRow} pointerEvents="box-none">
+            <BlurView intensity={Platform.OS === "ios" ? 50 : 80} tint="dark" style={uiS.callerPill}>
+              <Image source={{ uri: remoteAvatarUri }} style={uiS.callerAvatar} />
+              <View style={uiS.callerInfo}>
+                <Text style={uiS.callerName} numberOfLines={1}>
+                  {activeCall?.participant.name ?? "Connecting..."}
+                </Text>
+                {status === "active" ? (
+                  <View style={uiS.callerMetaRow}>
+                    <View style={uiS.liveBadge}>
+                      <View style={uiS.liveDot} />
+                      <Text style={uiS.liveText}>LIVE</Text>
                     </View>
-                  )}
-                </View>
-              ) : (
-                <Text style={uiS.headerSub}>
-                  {status === "connecting" ? "Setting up secure connection..." : "Waiting for response..."}
+                    <Text style={uiS.timer}>{formatTime(elapsed)}</Text>
+                  </View>
+                ) : (
+                  <Text style={uiS.headerSub} numberOfLines={1}>
+                    {status === "connecting" ? "Setting up secure connection..." : "Waiting for response..."}
+                  </Text>
+                )}
+              </View>
+            </BlurView>
+
+            <BlurView intensity={Platform.OS === "ios" ? 50 : 80} tint="dark" style={uiS.signalPill}>
+              {remainingLabel && (
+                <Text style={[uiS.remainInline, remaining != null && remaining <= 60 && { color: "#FF6B6B" }]}>
+                  {remainingLabel}
                 </Text>
               )}
-            </View>
-            <ConnectionBars state={webrtc.connectionState} />
-          </BlurView>
+              <ConnectionBars state={webrtc.connectionState} />
+            </BlurView>
+          </View>
         </View>
 
         {/* FIX (UI redesign): pill-shaped frosted-glass control bar. End
@@ -1054,6 +1054,39 @@ const uiS = StyleSheet.create({
   // warning banner above the header card; `alignItems: center` keeps both
   // horizontally centered like before. Mirrors the user app fix.
   topGroup: { gap: 10, alignItems: "center" },
+
+  // ─── Chamet-style top row (caller info left + signal right) ───────────────
+  topRow: {
+    flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start",
+    width: "100%", gap: 10,
+  },
+  callerPill: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    paddingVertical: 6, paddingLeft: 6, paddingRight: 16,
+    borderRadius: 32, overflow: "hidden",
+    backgroundColor: Platform.OS === "web" ? "rgba(0,0,0,0.45)" : "rgba(0,0,0,0.28)",
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.14)",
+    maxWidth: "66%",
+  },
+  callerAvatar: {
+    width: 40, height: 40, borderRadius: 20,
+    borderWidth: 1.5, borderColor: "rgba(255,255,255,0.7)",
+    backgroundColor: "#1a1a2e",
+  },
+  callerInfo: { flexShrink: 1, gap: 2 },
+  callerName: {
+    color: "#fff", fontSize: 15, fontFamily: "Poppins_700Bold",
+    textShadowColor: "rgba(0,0,0,0.6)", textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4,
+  },
+  callerMetaRow: { flexDirection: "row", alignItems: "center", gap: 7 },
+  signalPill: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    paddingVertical: 7, paddingHorizontal: 12,
+    borderRadius: 30, overflow: "hidden",
+    backgroundColor: Platform.OS === "web" ? "rgba(0,0,0,0.45)" : "rgba(0,0,0,0.28)",
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.14)",
+  },
+  remainInline: { color: "rgba(255,255,255,0.85)", fontSize: 10, fontFamily: "Poppins_600SemiBold" },
 
   // ─── Glass header card ─────────────────────────────────────────────────
   headerCard: {

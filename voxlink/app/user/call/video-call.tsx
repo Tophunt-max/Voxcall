@@ -8,6 +8,7 @@ import { BlurView } from "expo-blur";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { useCall } from "@/context/CallContext";
+import { useAuth } from "@/context/AuthContext";
 import { useCallTimer } from "@/hooks/useCallTimer";
 import { usePermissions } from "@/hooks/usePermissions";
 import { PermissionDialog, PERMISSION_CONFIGS } from "@/components/PermissionDialog";
@@ -143,6 +144,7 @@ type PermStep = "camera" | "microphone" | "done";
 export default function VideoCallScreen() {
   const insets = useSafeAreaInsets();
   const { activeCall, endCall, toggleMute, toggleCamera, toggleSpeaker, markCallActive } = useCall();
+  const { user } = useAuth();
   const [status, setStatus] = useState<"connecting" | "ringing" | "active">("connecting");
 
   const [permStep, setPermStep] = useState<PermStep | null>(null);
@@ -811,47 +813,48 @@ export default function VideoCallScreen() {
             </View>
           )}
 
-          {/* FIX (UI redesign): glassmorphism header card.
-              BlurView on native gives a true frosted-glass effect; on web the
-              tint+intensity props degrade to a translucent dark pill which
-              still reads correctly over bright remote video. ConnectionBars
-              on the right give an at-a-glance signal indicator (3 green/2
-              yellow/1 red) so the user knows the call quality without reading
-              text. The right-aligned remaining-time pill stacks under the
-              timer instead of fighting it for horizontal space. */}
-          <BlurView intensity={Platform.OS === "ios" ? 50 : 80} tint="dark" style={uiS.headerCard}>
-            <View style={uiS.headerLeft}>
-              <Text style={uiS.headerName} numberOfLines={1}>
-                {activeCall?.participant.name ?? "Connecting..."}
-              </Text>
-              {status === "active" ? (
-                <View style={uiS.headerMetaRow}>
-                  <View style={uiS.liveBadge}>
-                    <View style={uiS.liveDot} />
-                    <Text style={uiS.liveText}>LIVE</Text>
-                  </View>
-                  <Text style={uiS.timer}>{formatTime(elapsed)}</Text>
-                  {remainingLabel && (
-                    <View style={[uiS.remainPill, remaining != null && remaining <= 60 && uiS.remainPillLow]}>
-                      <Text
-                        style={[
-                          uiS.remainText,
-                          remaining != null && remaining <= 60 && { color: "#FF6B6B" },
-                        ]}
-                      >
-                        {remainingLabel}
-                      </Text>
-                    </View>
-                  )}
-                </View>
-              ) : (
-                <Text style={uiS.headerSub}>
-                  {status === "connecting" ? "Setting up secure connection..." : "Waiting for response..."}
+          {/* FIX (UI: Chamet-style header): caller info anchored top-LEFT with a
+              circular avatar (live-stream style), and the user's coin balance +
+              signal anchored top-RIGHT. Replaces the single centered glass card
+              so it reads like a modern live video-chat app. */}
+          <View style={uiS.topRow} pointerEvents="box-none">
+            <BlurView intensity={Platform.OS === "ios" ? 50 : 80} tint="dark" style={uiS.callerPill}>
+              <Image source={{ uri: remoteAvatarUri }} style={uiS.callerAvatar} />
+              <View style={uiS.callerInfo}>
+                <Text style={uiS.callerName} numberOfLines={1}>
+                  {activeCall?.participant.name ?? "Connecting..."}
                 </Text>
-              )}
+                {status === "active" ? (
+                  <View style={uiS.callerMetaRow}>
+                    <View style={uiS.liveBadge}>
+                      <View style={uiS.liveDot} />
+                      <Text style={uiS.liveText}>LIVE</Text>
+                    </View>
+                    <Text style={uiS.timer}>{formatTime(elapsed)}</Text>
+                  </View>
+                ) : (
+                  <Text style={uiS.headerSub} numberOfLines={1}>
+                    {status === "connecting" ? "Connecting..." : "Waiting for response..."}
+                  </Text>
+                )}
+              </View>
+            </BlurView>
+
+            <View style={uiS.topRight} pointerEvents="box-none">
+              <BlurView intensity={Platform.OS === "ios" ? 50 : 80} tint="dark" style={uiS.coinPill}>
+                <Image source={require("@/assets/icons/ic_coin.png")} style={uiS.coinPillIcon} resizeMode="contain" />
+                <Text style={uiS.coinPillText}>{(user?.coins ?? 0).toLocaleString()}</Text>
+              </BlurView>
+              <View style={uiS.signalRow}>
+                {remainingLabel && (
+                  <Text style={[uiS.remainInline, remaining != null && remaining <= 60 && { color: "#FF6B6B" }]}>
+                    {remainingLabel}
+                  </Text>
+                )}
+                <ConnectionBars state={webrtc.connectionState} />
+              </View>
             </View>
-            <ConnectionBars state={webrtc.connectionState} />
-          </BlurView>
+          </View>
         </View>
 
         {/* FIX (UI redesign): bottom control bar is now a single pill-shaped
@@ -1113,6 +1116,43 @@ const uiS = StyleSheet.create({
   // warning banner above the header card; `alignItems: center` keeps both
   // horizontally centered like before.
   topGroup: { gap: 10, alignItems: "center" },
+
+  // ─── Chamet-style top row (caller info left + coins/signal right) ──────────
+  topRow: {
+    flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start",
+    width: "100%", gap: 10,
+  },
+  callerPill: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    paddingVertical: 6, paddingLeft: 6, paddingRight: 16,
+    borderRadius: 32, overflow: "hidden",
+    backgroundColor: Platform.OS === "web" ? "rgba(0,0,0,0.45)" : "rgba(0,0,0,0.28)",
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.14)",
+    maxWidth: "64%",
+  },
+  callerAvatar: {
+    width: 40, height: 40, borderRadius: 20,
+    borderWidth: 1.5, borderColor: "rgba(255,255,255,0.7)",
+    backgroundColor: "#1a1a2e",
+  },
+  callerInfo: { flexShrink: 1, gap: 2 },
+  callerName: {
+    color: "#fff", fontSize: 15, fontFamily: "Poppins_700Bold",
+    textShadowColor: "rgba(0,0,0,0.6)", textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4,
+  },
+  callerMetaRow: { flexDirection: "row", alignItems: "center", gap: 7 },
+  topRight: { alignItems: "flex-end", gap: 7 },
+  coinPill: {
+    flexDirection: "row", alignItems: "center", gap: 5,
+    paddingVertical: 6, paddingHorizontal: 12,
+    borderRadius: 30, overflow: "hidden",
+    backgroundColor: Platform.OS === "web" ? "rgba(0,0,0,0.45)" : "rgba(0,0,0,0.28)",
+    borderWidth: 1, borderColor: "rgba(255,209,102,0.4)",
+  },
+  coinPillIcon: { width: 16, height: 16 },
+  coinPillText: { color: "#FFD166", fontSize: 13, fontFamily: "Poppins_700Bold" },
+  signalRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  remainInline: { color: "rgba(255,255,255,0.85)", fontSize: 10, fontFamily: "Poppins_600SemiBold" },
 
   // ─── Glass header card ─────────────────────────────────────────────────
   // Floating frosted-glass pill at the top with name, LIVE badge, timer,
