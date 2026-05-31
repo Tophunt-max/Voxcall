@@ -169,7 +169,8 @@ export function setupBackgroundMessageHandler(): void {
   if (Platform.OS === 'web' || !RNFirebaseMessaging) return;
   try {
     RNFirebaseMessaging().setBackgroundMessageHandler(async (remoteMessage: any) => {
-      console.log('[FCM] Background message:', remoteMessage);
+      // Don't log the full payload in production (may contain PII / message content).
+      if (__DEV__) console.log('[FCM] Background message:', remoteMessage);
     });
   } catch (e) {
     console.warn('[FCM] setBackgroundMessageHandler failed:', e);

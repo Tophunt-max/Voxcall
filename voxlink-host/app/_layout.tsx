@@ -89,7 +89,8 @@ function FCMNotificationTapBridge({ seenCallIds }: { seenCallIds: React.MutableR
     });
 
     const unsubForeground = onForegroundMessage(({ title, body, data }) => {
-      console.log("[FCM Foreground]", title, body, data);
+      // Don't log notification content in production (privacy + perf).
+      if (__DEV__) console.log("[FCM Foreground]", title, body, data);
     });
 
     setupBackgroundMessageHandler();

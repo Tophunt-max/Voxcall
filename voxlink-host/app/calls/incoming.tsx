@@ -103,13 +103,13 @@ export default function IncomingCallScreen() {
       <View style={styles.actions}>
         <View style={styles.actionRow}>
           <View style={styles.actionItem}>
-            <TouchableOpacity onPress={handleDecline} style={styles.declineBtn}>
+            <TouchableOpacity onPress={handleDecline} style={styles.declineBtn} accessibilityRole="button" accessibilityLabel="Decline call" hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
               <Image source={require("@/assets/icons/ic_call_end.png")} style={styles.actionIcon} tintColor="#fff" resizeMode="contain" />
             </TouchableOpacity>
             <Text style={styles.actionLabel}>Decline</Text>
           </View>
           <View style={styles.actionItem}>
-            <TouchableOpacity onPress={handleAccept} style={styles.acceptBtn}>
+            <TouchableOpacity onPress={handleAccept} style={styles.acceptBtn} accessibilityRole="button" accessibilityLabel="Accept call" hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
               <Image source={require("@/assets/icons/ic_call.png")} style={styles.actionIcon} tintColor="#fff" resizeMode="contain" />
             </TouchableOpacity>
             <Text style={styles.actionLabel}>Accept</Text>

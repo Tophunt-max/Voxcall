@@ -189,11 +189,11 @@ export default function HostHomeScreen() {
           </View>
         </View>
         <View style={styles.headerRight}>
-          <TouchableOpacity onPress={() => router.push("/(tabs)/wallet")} activeOpacity={0.8} style={[styles.coinBadge, { backgroundColor: colors.primary }]}>
+          <TouchableOpacity onPress={() => router.push("/(tabs)/wallet")} activeOpacity={0.8} style={[styles.coinBadge, { backgroundColor: colors.primary }]} accessibilityRole="button" accessibilityLabel={`Wallet, ${user?.coins ?? 0} coins`}>
             <Image source={require("@/assets/icons/ic_coin.png")} style={styles.coinIcon} resizeMode="contain" />
             <Text style={styles.coinText}>{user?.coins ?? 0}</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => router.push("/notifications")} style={[styles.bellBtn, { backgroundColor: colors.surface }]}>
+          <TouchableOpacity onPress={() => router.push("/notifications")} style={[styles.bellBtn, { backgroundColor: colors.surface }]} accessibilityRole="button" accessibilityLabel={(unreadCount as number) > 0 ? `Notifications, ${unreadCount} unread` : "Notifications"}>
             <Image source={require("@/assets/icons/ic_notify.png")} style={styles.bellIcon} tintColor={colors.text} resizeMode="contain" />
             {(unreadCount as number) > 0 && (
               <View style={styles.notifBadge}>
@@ -485,7 +485,4 @@ const styles = StyleSheet.create({
   tipRow: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
   tipDot: { width: 7, height: 7, borderRadius: 3.5, marginTop: 6 },
   tipText: { flex: 1, fontSize: 13, fontFamily: "Poppins_400Regular", lineHeight: 20 },
-  switchBtn: { borderRadius: 14, padding: 14, flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1.5, justifyContent: "center" },
-  switchIcon: { width: 18, height: 18 },
-  switchText: { fontSize: 14, fontFamily: "Poppins_500Medium" },
 });

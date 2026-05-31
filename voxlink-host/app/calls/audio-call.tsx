@@ -438,6 +438,9 @@ export default function AudioCallScreen() {
             <TouchableOpacity
               onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); toggleMute(); }}
               style={[styles.ctrlBtn, activeCall?.isMuted && styles.ctrlBtnActive]}
+              accessibilityRole="button"
+              accessibilityState={{ selected: !!activeCall?.isMuted }}
+              accessibilityLabel={activeCall?.isMuted ? "Unmute microphone" : "Mute microphone"}
             >
               <Image source={require("@/assets/icons/ic_mic.png")} style={styles.ctrlIcon} tintColor={activeCall?.isMuted ? "#FFD166" : "#fff"} resizeMode="contain" />
             </TouchableOpacity>
@@ -447,6 +450,8 @@ export default function AudioCallScreen() {
           <TouchableOpacity
             onPress={() => { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning); handleEndCall(); }}
             style={styles.endBtn}
+            accessibilityRole="button"
+            accessibilityLabel="End call"
           >
             <Image source={require("@/assets/icons/ic_call_end.png")} style={styles.endIcon} tintColor="#fff" resizeMode="contain" />
           </TouchableOpacity>
@@ -455,6 +460,9 @@ export default function AudioCallScreen() {
             <TouchableOpacity
               onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); toggleSpeaker(); }}
               style={[styles.ctrlBtn, activeCall?.isSpeakerOn && styles.ctrlBtnActive]}
+              accessibilityRole="button"
+              accessibilityState={{ selected: !!activeCall?.isSpeakerOn }}
+              accessibilityLabel={activeCall?.isSpeakerOn ? "Turn speaker off" : "Turn speaker on"}
             >
               <Image
                 source={activeCall?.isSpeakerOn ? require("@/assets/icons/ic_speaker_on.png") : require("@/assets/icons/ic_speaker_off.png")}
