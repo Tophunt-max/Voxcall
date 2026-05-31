@@ -125,7 +125,7 @@ export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const { user, logout, updateProfile, refreshBalance } = useAuth();
   const { permissions, requestNotifications, requestMediaLibrary, openSettings } = usePermissions();
-  const { language } = useLanguage();
+  const { language, t } = useLanguage();
   const currentLangLabel = LANGUAGES.find((l) => l.code === language)?.name ?? "English";
 
   const [showNotifDialog, setShowNotifDialog] = useState(false);
@@ -344,7 +344,7 @@ export default function ProfileScreen() {
 
       {/* Header */}
       <View style={[styles.header, { paddingTop: topPad + 12 }]}>
-        <Text style={[styles.title, { color: colors.text }]}>My Profile</Text>
+        <Text style={[styles.title, { color: colors.text }]}>{t.profile.myProfile}</Text>
         <TouchableOpacity
           onPress={() => router.push("/user/profile/edit")}
           style={[styles.editBtn, { backgroundColor: colors.surface }]}
@@ -452,7 +452,7 @@ export default function ProfileScreen() {
                 {(user?.coins ?? 0).toLocaleString()}
               </Text>
             </View>
-            <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>Coins</Text>
+            <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>{t.wallet.coins}</Text>
           </TouchableOpacity>
           <View style={[styles.statDiv, { backgroundColor: colors.border }]} />
           <View style={styles.stat}>
@@ -471,59 +471,56 @@ export default function ProfileScreen() {
 
       {/* Account section */}
       <View style={[styles.section, { backgroundColor: colors.card }]}>
-        <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Account</Text>
+        <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>{t.settings.account}</Text>
         <MenuItem
           iconSource={require("@/assets/icons/ic_edit.png")}
-          label="Edit Profile"
+          label={t.profile.editProfile}
           onPress={() => router.push("/user/profile/edit")}
         />
         <MenuItem
           iconSource={require("@/assets/icons/ic_wallet.png")}
-          label="My Wallet"
-          value={`${(user?.coins ?? 0).toLocaleString()} coins`}
+          label={t.wallet.wallet}
+          value={`${(user?.coins ?? 0).toLocaleString()} ${t.wallet.coins.toLowerCase()}`}
           onPress={() => router.push("/user/payment/checkout")}
         />
         <MenuItem
           iconName="credit-card"
-          label="Coin History"
-          subLabel="Purchases & spending"
+          label={t.wallet.coinHistory}
           onPress={() => router.push("/user/coin-history")}
         />
         {notifBlocked ? (
           <MenuItem
             iconName="bell"
-            label="Notifications"
+            label={t.settings.notifications}
             value="Blocked"
-            subLabel="Tap to open Settings"
             onPress={() => setShowNotifDialog(true)}
           />
         ) : (
           <MenuItem
             iconName="bell"
-            label="Notifications"
+            label={t.settings.notifications}
             isSwitch
             switchValue={notificationsGranted}
             onSwitchChange={handleNotifToggle}
             onPress={() => handleNotifToggle(!notificationsGranted)}
-            subLabel={!notificationsGranted ? "Tap to enable" : undefined}
           />
         )}
         <MenuItem
           iconSource={require("@/assets/icons/ic_language.png")}
-          label="Language"
+          label={t.profile.language}
           value={currentLangLabel}
           onPress={() => router.push("/user/language")}
         />
         <MenuItem
           iconName="settings"
-          label="Settings"
+          label={t.profile.settings}
           onPress={() => router.push("/user/settings")}
         />
       </View>
 
       {/* More section */}
       <View style={[styles.section, { backgroundColor: colors.card }]}>
-        <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>More</Text>
+        <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>{t.common.more}</Text>
         <MenuItem
           iconName="gift"
           label="Refer Friends & Earn"
@@ -532,32 +529,32 @@ export default function ProfileScreen() {
         />
         <MenuItem
           iconName="clock"
-          label="Call History"
+          label={t.profile.callHistory}
           onPress={() => router.push("/user/call/history")}
         />
         <MenuItem
           iconName="help-circle"
-          label="Help & FAQ"
+          label={t.profile.helpCenter}
           onPress={() => router.push("/user/help-center")}
         />
         <MenuItem
           iconName="shield"
-          label="Privacy Policy"
+          label={t.profile.privacy}
           onPress={() => router.push("/user/privacy")}
         />
         <MenuItem
           iconName="info"
-          label="About VoxLink"
+          label={t.profile.about}
           onPress={() => router.push("/user/about")}
         />
         <MenuItem
           iconName="star"
-          label="Rate the App"
+          label={t.profile.rateApp}
           onPress={handleRate}
         />
         <MenuItem
           iconSource={require("@/assets/images/icon_share.png")}
-          label="Share App"
+          label={t.profile.shareApp}
           onPress={handleShareApp}
         />
       </View>
@@ -566,7 +563,7 @@ export default function ProfileScreen() {
       <View style={[styles.section, { backgroundColor: colors.card }]}>
         <MenuItem
           iconSource={require("@/assets/images/icon_logout.png")}
-          label="Sign Out"
+          label={t.profile.logout}
           onPress={handleLogout}
           danger
         />
