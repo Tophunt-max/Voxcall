@@ -126,6 +126,15 @@ admin.patch('/users/:id', async (c) => {
   sets.push('updated_at = unixepoch()');
   vals.push(id);
   await db(c).prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`).bind(...vals).run();
+  // Audit the semantic change (coins/role/ban) — the middleware only records the
+  // request envelope; this captures the actual values for forensics/compliance.
+  const changes: Record<string, any> = {};
+  if (coins !== undefined) changes.coins = parseInt(coins);
+  if (role !== undefined) changes.role = role;
+  if (is_verified !== undefined) changes.is_verified = is_verified ? 1 : 0;
+  if (status !== undefined) changes.status = status;
+  const u = c.get('user');
+  await auditLog(db(c), u.sub, u.email || 'Admin', u.email || '', 'update', 'user', id, `User ${id} updated: ${JSON.stringify(changes)}`, c.req.header('CF-Connecting-IP') ?? '');
   return c.json({ success: true });
 });
 
@@ -156,6 +165,14 @@ admin.patch('/hosts/:id', async (c) => {
   sets.push('updated_at = unixepoch()');
   vals.push(id);
   await db(c).prepare(`UPDATE hosts SET ${sets.join(', ')} WHERE id = ?`).bind(...vals).run();
+  // Audit the semantic change (rates / verification / active status are
+  // trust- and money-sensitive) with the actual values.
+  const hChanges: Record<string, any> = {};
+  for (const [k, v] of Object.entries({ is_active, is_top_rated, identity_verified, level, audio_coins_per_minute, video_coins_per_minute, coins_per_minute })) {
+    if (v !== undefined) hChanges[k] = v;
+  }
+  const hu = c.get('user');
+  await auditLog(db(c), hu.sub, hu.email || 'Admin', hu.email || '', 'update', 'host', id, `Host ${id} updated: ${JSON.stringify(hChanges)}`, c.req.header('CF-Connecting-IP') ?? '');
   return c.json({ success: true });
 });
 
@@ -165,6 +182,8 @@ admin.post('/hosts/:id/level', async (c) => {
   const { level } = await c.req.json<{ level: number }>();
   const lvl = Math.min(5, Math.max(1, parseInt(String(level))));
   await db(c).prepare('UPDATE hosts SET level = ?, updated_at = unixepoch() WHERE id = ?').bind(lvl, id).run();
+  const lu = c.get('user');
+  await auditLog(db(c), lu.sub, lu.email || 'Admin', lu.email || '', 'update', 'host', id, `Host ${id} level set to ${lvl}`, c.req.header('CF-Connecting-IP') ?? '');
   return c.json({ success: true, level: lvl });
 });
 
@@ -232,6 +251,8 @@ admin.patch('/withdrawals/:id', async (c) => {
         crypto.randomUUID(), wr.user_id, 'refund', wr.coins, `Withdrawal rejected by admin — ${wr.coins} coins refunded`, id
       ),
     ]);
+    const ru = c.get('user');
+    await auditLog(d, ru.sub, ru.email || 'Admin', ru.email || '', 'update', 'withdrawal', id, `Withdrawal ${id} rejected — ${wr.coins} coins refunded${admin_note ? ` (note: ${admin_note})` : ''}`, c.req.header('CF-Connecting-IP') ?? '');
     return c.json({ success: true, refunded_coins: wr.coins });
   }
 
@@ -249,6 +270,8 @@ admin.patch('/withdrawals/:id', async (c) => {
   await d.prepare(
     "UPDATE withdrawal_requests SET status = ?, admin_note = ?, updated_at = unixepoch() WHERE id = ? AND status NOT IN ('paid', 'completed', 'rejected')"
   ).bind(status, admin_note ?? null, id).run();
+  const pu = c.get('user');
+  await auditLog(d, pu.sub, pu.email || 'Admin', pu.email || '', 'update', 'withdrawal', id, `Withdrawal ${id} marked ${status}${admin_note ? ` (ref: ${admin_note})` : ''}`, c.req.header('CF-Connecting-IP') ?? '');
   return c.json({ success: true });
 });
 
