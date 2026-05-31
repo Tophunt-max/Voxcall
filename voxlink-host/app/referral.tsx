@@ -58,7 +58,7 @@ export default function ReferralScreen() {
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
       <LinearGradient
-        colors={["#A00EE7", "#6A00B8"]}
+        colors={[colors.accent, "#6A00B8"]}
         style={[styles.header, { paddingTop: insets.top + 12 }]}
       >
         <TouchableOpacity onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Go back" style={styles.backBtn}>
@@ -80,14 +80,14 @@ export default function ReferralScreen() {
         <Text style={[styles.sectionTitle, { color: colors.text }]}>Your Referral Code</Text>
         {loading ? (
           <View style={styles.codeLoading}>
-            <ActivityIndicator color="#A00EE7" />
+            <ActivityIndicator color={colors.accent} />
           </View>
         ) : (
-          <View style={[styles.codeCard, { backgroundColor: colors.card, borderColor: "#A00EE7" }]}>
-            <Text style={[styles.code, { color: "#A00EE7" }]}>{referral?.code ?? "—"}</Text>
+          <View style={[styles.codeCard, { backgroundColor: colors.card, borderColor: colors.accent }]}>
+            <Text style={[styles.code, { color: colors.accent }]}>{referral?.code ?? "—"}</Text>
             <TouchableOpacity
               onPress={handleCopy}
-              style={[styles.copyBtn, { backgroundColor: copied ? "#0BAF23" : "#A00EE7" }]}
+              style={[styles.copyBtn, { backgroundColor: copied ? "#0BAF23" : colors.accent }]}
             >
               <IconView name={copied ? "check" : "copy"} size={16} color="#fff" />
               <Text style={styles.copyBtnText}>{copied ? "Copied!" : "Copy"}</Text>
@@ -97,7 +97,7 @@ export default function ReferralScreen() {
 
         <TouchableOpacity
           onPress={handleShare}
-          style={[styles.shareBtn, { backgroundColor: "#A00EE7" }]}
+          style={[styles.shareBtn, { backgroundColor: colors.accent }]}
           activeOpacity={0.88}
         >
           <IconView name="share-2" size={18} color="#fff" />
@@ -107,7 +107,7 @@ export default function ReferralScreen() {
         <Text style={[styles.sectionTitle, { color: colors.text }]}>Your Referral Stats</Text>
         <View style={styles.statsRow}>
           <View style={[styles.statCard, { backgroundColor: colors.card }]}>
-            <Text style={[styles.statNum, { color: "#A00EE7" }]}>{referral?.referred ?? 0}</Text>
+            <Text style={[styles.statNum, { color: colors.accent }]}>{referral?.referred ?? 0}</Text>
             <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>Hosts Referred</Text>
           </View>
           <View style={[styles.statCard, { backgroundColor: colors.card }]}>
@@ -128,10 +128,10 @@ export default function ReferralScreen() {
             { step: "4", icon: "gift", text: "You both receive bonus coins instantly!" },
           ].map((item) => (
             <View key={item.step} style={styles.stepRow}>
-              <View style={[styles.stepNum, { backgroundColor: "#A00EE7" }]}>
+              <View style={[styles.stepNum, { backgroundColor: colors.accent }]}>
                 <Text style={styles.stepNumText}>{item.step}</Text>
               </View>
-              <IconView name={item.icon} size={20} color="#A00EE7" />
+              <IconView name={item.icon} size={20} color={colors.accent} />
               <Text style={[styles.stepText, { color: colors.text }]}>{item.text}</Text>
             </View>
           ))}

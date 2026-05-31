@@ -53,10 +53,12 @@ export default function HostCallsScreen() {
   const [calls, setCalls] = useState<CallItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState(false);
 
   const load = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
     else setLoading(true);
+    setError(false);
     try {
       const data = await API.getCallHistory() as any[];
       const mapped: CallItem[] = (data ?? []).map((c: any) => ({
@@ -72,6 +74,7 @@ export default function HostCallsScreen() {
       setCalls(mapped);
     } catch {
       setCalls([]);
+      setError(true);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -136,17 +139,19 @@ export default function HostCallsScreen() {
 
       {loading ? (
         <View style={styles.center}>
-          <ActivityIndicator color="#A00EE7" size="large" />
+          <ActivityIndicator color={colors.accent} size="large" />
         </View>
       ) : (
         <FlashList
           data={filtered}
           keyExtractor={c => c.id}
           contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 100, paddingTop: 8 }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor="#A00EE7" />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={colors.accent} />}
           ListEmptyComponent={
             <View style={styles.empty}>
-              <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>No calls yet</Text>
+              <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
+                {error ? "Couldn't load calls. Pull to refresh." : "No calls yet"}
+              </Text>
             </View>
           }
           renderItem={renderItem}

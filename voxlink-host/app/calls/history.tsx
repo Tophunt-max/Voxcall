@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
-  Image, Platform
+  Image, Platform, ActivityIndicator
 } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -46,6 +46,7 @@ export default function CallHistoryScreen() {
   const insets = useSafeAreaInsets();
   const [filter, setFilter] = useState<"all" | "audio" | "video">("all");
   const [callHistory, setCallHistory] = useState<CallHistoryItem[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const topPad = insets.top;
 
@@ -64,7 +65,8 @@ export default function CallHistoryScreen() {
           createdAt: c.created_at || 0,
         })));
       })
-      .catch(() => { setCallHistory([]); showErrorToast("Failed to load call history."); });
+      .catch(() => { setCallHistory([]); showErrorToast("Failed to load call history."); })
+      .finally(() => setLoading(false));
   }, []);
 
   const filtered = filter === "all" ? callHistory : callHistory.filter(c => c.type === filter);
@@ -82,13 +84,13 @@ export default function CallHistoryScreen() {
           <Text style={[styles.date, { color: colors.mutedForeground }]}>{item.createdAt ? formatTimestamp(item.createdAt) : "—"}</Text>
         </View>
         <View style={styles.detailRow}>
-          <View style={[styles.typeBadge, { backgroundColor: item.type === "video" ? "#E8D5FF" : "#D5F0FF" }]}>
+          <View style={[styles.typeBadge, { backgroundColor: item.type === "video" ? colors.accentLight : colors.accentLight }]}>
             <Image
                 source={item.type === "video" ? require("@/assets/icons/ic_video.png") : require("@/assets/icons/ic_call.png")}
-                style={{ width: 10, height: 10, tintColor: item.type === "video" ? "#7B2FF7" : "#0078CC" }}
+                style={{ width: 10, height: 10, tintColor: item.type === "video" ? colors.accent : colors.accent }}
                 resizeMode="contain"
               />
-            <Text style={[styles.typeText, { color: item.type === "video" ? "#7B2FF7" : "#0078CC" }]}>
+            <Text style={[styles.typeText, { color: item.type === "video" ? colors.accent : colors.accent }]}>
               {item.type === "video" ? "Video" : "Audio"}
             </Text>
           </View>
@@ -135,7 +137,11 @@ export default function CallHistoryScreen() {
         ))}
       </View>
 
-      {filtered.length === 0 ? (
+      {loading ? (
+        <View style={styles.empty}>
+          <ActivityIndicator color={colors.accent} size="large" />
+        </View>
+      ) : filtered.length === 0 ? (
         <View style={styles.empty}>
           <Image source={require("@/assets/images/empty_history.png")} style={styles.emptyImg} resizeMode="contain" />
           <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>No call history found</Text>

@@ -104,7 +104,7 @@ export default function EarningsHistoryScreen() {
     const cfg = TYPE_CONFIG[item.type] ?? TYPE_CONFIG.earn;
     return (
       <View style={[styles.item, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-        <View style={[styles.iconCircle, { backgroundColor: cfg.bg }]}>
+        <View style={[styles.iconCircle, { backgroundColor: colors.surface }]}>
           <IconView name={cfg.icon} size={18} color={cfg.color} />
         </View>
         <View style={styles.info}>
@@ -134,7 +134,7 @@ export default function EarningsHistoryScreen() {
         <View style={{ width: 40 }} />
       </View>
 
-      <View style={[styles.summaryCard, { backgroundColor: "#A00EE7" }]}>
+      <View style={[styles.summaryCard, { backgroundColor: colors.accent }]}>
         <View style={styles.summaryLeft}>
           <Text style={styles.summaryLabel}>Total Earnings</Text>
           <View style={styles.summaryBalance}>
@@ -169,7 +169,7 @@ export default function EarningsHistoryScreen() {
 
       {loading ? (
         <View style={styles.empty}>
-          <ActivityIndicator color="#A00EE7" size="large" />
+          <ActivityIndicator color={colors.accent} size="large" />
         </View>
       ) : filtered.length === 0 ? (
         <View style={styles.empty}>
@@ -183,7 +183,7 @@ export default function EarningsHistoryScreen() {
           renderItem={renderItem}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingBottom: 30 }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor="#A00EE7" />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={colors.accent} />}
         />
       )}
     </View>

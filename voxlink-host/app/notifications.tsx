@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, Platform, RefreshControl } from "react-native";
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, Platform, RefreshControl, ActivityIndicator } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { IconView } from "@/components/IconView";
@@ -106,7 +106,11 @@ export default function NotificationsScreen() {
               <IconView name="bell-off" size={40} color={colors.mutedForeground} />
               <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>No notifications yet</Text>
             </View>
-          ) : null
+          ) : (
+            <View style={styles.empty}>
+              <ActivityIndicator color={colors.accent} size="large" />
+            </View>
+          )
         }
       />
     </View>

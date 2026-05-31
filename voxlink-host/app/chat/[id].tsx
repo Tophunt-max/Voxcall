@@ -79,7 +79,7 @@ export default function ChatScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { paddingTop: insets.top + 8, borderBottomColor: colors.border }]}>
-        <TouchableOpacity onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Go back">
+        <TouchableOpacity onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Go back" hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <Image source={require("@/assets/icons/ic_back.png")} style={{ width: 22, height: 22, tintColor: colors.foreground }} resizeMode="contain" />
         </TouchableOpacity>
         <Image source={{ uri: participantAvatar }} style={styles.headerAvatar} />
@@ -127,7 +127,7 @@ export default function ChatScreen() {
               multiline
               returnKeyType="send"
               onSubmitEditing={handleSend}
-              selectionColor="#A00EE7"
+              selectionColor={colors.accent}
               underlineColorAndroid="transparent"
             />
           </View>

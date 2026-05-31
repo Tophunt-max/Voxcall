@@ -72,7 +72,6 @@ export default function HostWalletScreen() {
   const [withdrawAmt, setWithdrawAmt] = useState("");
   const [bankAccount, setBankAccount] = useState("");
   const [withdrawing, setWithdrawing] = useState(false);
-  const ACCENT = "#A00EE7";
   const [earnings, setEarnings] = useState<EarningTx[]>([]);
   const [stats, setStats] = useState<EarningsStats>({ thisWeek: 0, sessions: 0, withdrawn: 0, totalEarnings: 0 });
   const [loading, setLoading] = useState(true);
@@ -218,7 +217,7 @@ export default function HostWalletScreen() {
       {tab === "history" ? (
         loading ? (
           <View style={styles.loadingCenter}>
-            <ActivityIndicator color="#A00EE7" size="large" />
+            <ActivityIndicator color={colors.accent} size="large" />
           </View>
         ) : earnings.length === 0 ? (
           <View style={styles.loadingCenter}>
@@ -230,7 +229,7 @@ export default function HostWalletScreen() {
             keyExtractor={(e) => e.id}
             contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 12, gap: 10 }}
             showsVerticalScrollIndicator={false}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor="#A00EE7" />}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={colors.accent} />}
             renderItem={({ item }) => (
               <View style={[styles.historyCard, { backgroundColor: colors.card }]}>
                 <View style={[styles.callIconWrap, { backgroundColor: item.type === "video" ? "#F1F0FF" : "#E8CFFF" }]}>
@@ -282,7 +281,7 @@ export default function HostWalletScreen() {
               value={withdrawAmt}
               onChangeText={setWithdrawAmt}
               keyboardType="numeric"
-              selectionColor={ACCENT}
+              selectionColor={colors.accent}
               underlineColorAndroid="transparent"
             />
           </View>
@@ -298,7 +297,7 @@ export default function HostWalletScreen() {
               onChangeText={setBankAccount}
               autoCapitalize="none"
               autoCorrect={false}
-              selectionColor={ACCENT}
+              selectionColor={colors.accent}
               underlineColorAndroid="transparent"
             />
           </View>

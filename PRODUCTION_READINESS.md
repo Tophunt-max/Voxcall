@@ -367,3 +367,17 @@ Caller/host/participant names + descriptions that could overflow rows/headers: `
 - Touch targets <44px without `hitSlop` (home bell 38, profile gear 36, chat back).
 - `app/index.tsx` splash + `+not-found.tsx` are always-dark (look wrong in light mode).
 - Auth flow is intentionally a fixed dark-hero + white-card palette (does not adapt to dark mode) — confirm if that's the intended brand treatment.
+
+---
+
+## Host App — round 10: remaining UI polish (2026-05-31)
+
+Cleared the remaining UI items from round 9. Verified via `voxlink-host` typecheck (clean).
+
+- Hardcoded accent `#A00EE7` -> `colors.accent` in spinners / RefreshControl / selectionColor / module ACCENT consts across calls, wallet, chat, earnings-history, referral, chat/[id]. (A few remain inside StyleSheet.create where `colors` isn't in scope.)
+- Dark-mode "light island" wells -> `colors.surface` (colored icons kept): HostCard status badge, home + profile permission/menu wells, PermissionDialog icon circle, earnings-history type circles, calls/history type badge. HostCard Video-Call button `#111329` -> `colors.accent` (was invisible against the dark surface). Home + profile ID badge `#F0E4F8` -> `colors.accentLight`.
+- Always-dark screens -> theme-aware: app/index.tsx splash and app/+not-found.tsx now use colors.background / colors.text / colors.accent.
+- Touch targets: added hitSlop to the home notification bell, profile settings gear, and chat back button.
+- Loading states: notifications and calls/history show a centered spinner during the initial fetch; (tabs)/calls distinguishes a load error from a genuinely empty list.
+
+Remaining (Low, cosmetic): a few pastels still inside StyleSheet.create (calls filter chips, wallet history icon wells, referral hero card, avatar placeholders); chat.tsx initial-load spinner skipped (no loading flag in ChatContext); auth flow is a fixed dark-hero + white-card palette by design.

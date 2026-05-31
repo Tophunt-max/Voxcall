@@ -97,7 +97,7 @@ export function PermissionDialog({
         <View style={[styles.sheet, { backgroundColor: colors.card }]}>
           {/* Icon */}
           <View
-            style={[styles.iconCircle, { backgroundColor: config.iconBg }]}
+            style={[styles.iconCircle, { backgroundColor: colors.surface }]}
           >
             <Image
               source={config.iconImage}

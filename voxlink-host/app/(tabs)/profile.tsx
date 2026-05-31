@@ -147,7 +147,7 @@ export default function HostProfileScreen() {
 
       <View style={[styles.header, { paddingTop: topPad + 12 }]}>
         <Text style={[styles.title, { color: colors.text }]}>My Profile</Text>
-        <TouchableOpacity onPress={() => router.push("/settings")} style={[styles.settingsBtn, { backgroundColor: colors.surface }]}>
+        <TouchableOpacity onPress={() => router.push("/settings")} style={[styles.settingsBtn, { backgroundColor: colors.surface }]} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <Image source={require("@/assets/icons/ic_settings.png")} style={styles.settingsIcon} tintColor={colors.primary} resizeMode="contain" />
         </TouchableOpacity>
       </View>
@@ -168,7 +168,7 @@ export default function HostProfileScreen() {
 
         <Text style={[styles.name, { color: colors.text }]}>{user?.name ?? "Host"}</Text>
         <Text style={[styles.role, { color: colors.accent }]}>Professional Host</Text>
-        <View style={[styles.idBadge, { backgroundColor: "#F0E4F8" }]}>
+        <View style={[styles.idBadge, { backgroundColor: colors.accentLight }]}>
           <Image source={require("@/assets/icons/ic_id_badge.png")} style={styles.idIcon} tintColor="#9D82B6" resizeMode="contain" />
           <Text style={[styles.idText, { color: "#9D82B6" }]}>ID: {uniqueId}</Text>
         </View>
@@ -192,7 +192,7 @@ export default function HostProfileScreen() {
 
       <View style={[styles.section, { backgroundColor: colors.card }]}>
         <View style={[styles.menuItem, { borderBottomColor: colors.border }]}>
-          <View style={[styles.menuIcon, { backgroundColor: isOnline ? "#E8F5E9" : colors.surface }]}>
+          <View style={[styles.menuIcon, { backgroundColor: isOnline ? colors.surface : colors.surface }]}>
             <Image source={require("@/assets/icons/ic_available.png")} style={styles.menuIconImg} tintColor={isOnline ? "#0BAF23" : colors.text} resizeMode="contain" />
           </View>
           <Text style={[styles.menuLabel, { color: colors.text }]}>Online Status</Text>
@@ -224,7 +224,7 @@ export default function HostProfileScreen() {
           />
         </View>
         <View style={[styles.menuItem, { borderBottomColor: colors.border }]}>
-          <View style={[styles.menuIcon, { backgroundColor: notificationsGranted ? "#E8F5E9" : colors.surface }]}>
+          <View style={[styles.menuIcon, { backgroundColor: notificationsGranted ? colors.surface : colors.surface }]}>
             <Image source={require("@/assets/icons/ic_notify.png")} style={styles.menuIconImg} tintColor={notificationsGranted ? "#0BAF23" : colors.text} resizeMode="contain" />
           </View>
           <Text style={[styles.menuLabel, { color: colors.text }]}>Push Notifications</Text>
@@ -297,7 +297,7 @@ export default function HostProfileScreen() {
 
       <View style={[styles.section, { backgroundColor: colors.card }]}>
         <TouchableOpacity style={[styles.menuItem, { borderBottomColor: colors.border }]} onPress={handleLogout} activeOpacity={0.75}>
-          <View style={[styles.menuIcon, { backgroundColor: "#FFF3F3" }]}>
+          <View style={[styles.menuIcon, { backgroundColor: colors.surface }]}>
             <Image source={require("@/assets/images/icon_logout.png")} style={styles.menuIconImg} tintColor="#E84855" resizeMode="contain" />
           </View>
           <Text style={[styles.menuLabel, { color: "#E84855" }]}>Sign Out</Text>

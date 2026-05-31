@@ -182,7 +182,7 @@ export default function HostHomeScreen() {
           </View>
           <View style={{ gap: 2 }}>
             <Text style={[styles.headerName, { color: colors.text }]} numberOfLines={1}>{user?.name ?? "Host"}</Text>
-            <View style={[styles.idBadge, { backgroundColor: "#F0E4F8" }]}>
+            <View style={[styles.idBadge, { backgroundColor: colors.accentLight }]}>
               <Image source={require("@/assets/icons/ic_id_badge.png")} style={styles.idIcon} tintColor="#9D82B6" resizeMode="contain" />
               <Text style={[styles.idText, { color: "#9D82B6" }]}>ID: {(user?.id ?? "00000000").slice(0,8).toUpperCase()}</Text>
             </View>
@@ -193,7 +193,7 @@ export default function HostHomeScreen() {
             <Image source={require("@/assets/icons/ic_coin.png")} style={styles.coinIcon} resizeMode="contain" />
             <Text style={styles.coinText}>{user?.coins ?? 0}</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => router.push("/notifications")} style={[styles.bellBtn, { backgroundColor: colors.surface }]} accessibilityRole="button" accessibilityLabel={(unreadCount as number) > 0 ? `Notifications, ${unreadCount} unread` : "Notifications"}>
+          <TouchableOpacity onPress={() => router.push("/notifications")} style={[styles.bellBtn, { backgroundColor: colors.surface }]} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityRole="button" accessibilityLabel={(unreadCount as number) > 0 ? `Notifications, ${unreadCount} unread` : "Notifications"}>
             <Image source={require("@/assets/icons/ic_notify.png")} style={styles.bellIcon} tintColor={colors.text} resizeMode="contain" />
             {(unreadCount as number) > 0 && (
               <View style={styles.notifBadge}>
@@ -377,7 +377,7 @@ export default function HostHomeScreen() {
             onPress={() => { if (!p.granted) setPermDialog(p.key); }}
             activeOpacity={p.granted ? 1 : 0.75}
           >
-            <View style={[styles.permIconWrap, { backgroundColor: p.granted ? "#E8F5E9" : "#FFF3F3" }]}>
+            <View style={[styles.permIconWrap, { backgroundColor: p.granted ? colors.surface : colors.surface }]}>
               <Image source={p.icon} style={styles.permIcon} tintColor={p.granted ? "#0BAF23" : "#E84855"} resizeMode="contain" />
             </View>
             <View style={{ flex: 1 }}>

@@ -11,8 +11,6 @@ import { useChat } from "@/context/ChatContext";
 import { useAuth } from "@/context/AuthContext";
 import { resolveMediaUrl } from "@/services/api";
 
-const ACCENT = "#A00EE7";
-
 function formatTime(ts?: number): string {
   if (!ts) return "";
   const d = new Date(ts);
@@ -64,7 +62,7 @@ export default function HostChatScreen() {
           placeholderTextColor={colors.mutedForeground}
           value={search}
           onChangeText={setSearch}
-          selectionColor={ACCENT}
+          selectionColor={colors.accent}
           underlineColorAndroid="transparent"
         />
       </View>
@@ -73,7 +71,7 @@ export default function HostChatScreen() {
         data={filtered}
         keyExtractor={c => c.id}
         contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 8, gap: 2, paddingBottom: 100 }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={ACCENT} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
         ListEmptyComponent={
           <View style={styles.empty}>
             <Image source={require("@/assets/images/empty_chat.png")} style={styles.emptyImg} resizeMode="contain" />
@@ -103,7 +101,7 @@ export default function HostChatScreen() {
                 {formatTime(item.lastMessageTime)}
               </Text>
               {item.unreadCount > 0 && (
-                <View style={[styles.badge, { backgroundColor: ACCENT }]}>
+                <View style={[styles.badge, { backgroundColor: colors.accent }]}>
                   <Text style={styles.badgeText}>{item.unreadCount}</Text>
                 </View>
               )}

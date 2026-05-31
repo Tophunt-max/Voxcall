@@ -23,7 +23,7 @@ interface Props {
 function StatusBadge({ isOnline, isBusy }: { isOnline: boolean; isBusy?: boolean }) {
   const colors = useColors();
   const label = isBusy ? "Busy" : isOnline ? "Available" : "Offline";
-  const bg = isBusy ? colors.coinGoldBg : isOnline ? "#E6F9EA" : "#F2F2F2";
+  const bg = isBusy ? colors.coinGoldBg : isOnline ? colors.surface : colors.surface;
   const txtColor = isBusy ? colors.coinGold : isOnline ? colors.online : colors.mutedForeground;
   const dotColor = isBusy ? colors.coinGold : isOnline ? colors.online : colors.offline;
 
@@ -161,7 +161,7 @@ export function HostCard({ host, onPress, compact = false, onTalkNow, onAudioCal
           </TouchableOpacity>
           <TouchableOpacity
             onPress={onVideoCall ?? onTalkNow ?? onPress}
-            style={[styles.callBtn, { backgroundColor: "#111329" }]}
+            style={[styles.callBtn, { backgroundColor: colors.accent }]}
             activeOpacity={0.85}
           >
             <Image
