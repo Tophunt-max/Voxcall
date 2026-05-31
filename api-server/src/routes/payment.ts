@@ -14,6 +14,38 @@ type Variables = { user: JWTPayload };
 
 const payment = new Hono<{ Bindings: Env; Variables: Variables }>();
 
+// ─── Promo eligibility (pure, unit-tested) ────────────────────────────────────
+// Single source of truth for "what does this promo grant RIGHT NOW", enforcing
+// active flag + expiry + usage cap. Extracted so /initiate, and any future
+// pricing path, can reuse identical rules — and so the rules are testable in
+// isolation (see test/promo.test.ts). expires_at is a unix-seconds timestamp.
+export interface PromoRow {
+  type?: string;
+  bonus_coins?: number | null;
+  discount_pct?: number | null;
+  max_uses?: number | null;
+  used_count?: number | null;
+  expires_at?: number | null;
+  active?: number | null;
+}
+
+export function evaluatePromo(
+  promo: PromoRow | null | undefined,
+  planPrice: number,
+  now: number = Math.floor(Date.now() / 1000),
+): { bonus: number; discount: number } {
+  if (!promo) return { bonus: 0, discount: 0 };
+  if (promo.active === 0) return { bonus: 0, discount: 0 };
+  const expired = promo.expires_at != null && promo.expires_at < now;
+  const maxed = promo.max_uses != null && (promo.used_count ?? 0) >= promo.max_uses;
+  if (expired || maxed) return { bonus: 0, discount: 0 };
+  if (promo.type === 'bonus') return { bonus: promo.bonus_coins ?? 0, discount: 0 };
+  if (promo.type === 'percent') {
+    return { bonus: 0, discount: Math.round((planPrice * (promo.discount_pct ?? 0)) / 100) };
+  }
+  return { bonus: 0, discount: 0 };
+}
+
 // ─── Shared: Approve a pending coin_purchase and credit coins to user ──────────
 //
 // Promo enforcement (FIX #2): a promo's bonus is baked into coin_purchases.bonus_coins
@@ -308,11 +340,12 @@ payment.post('/initiate', authMiddleware, async (c) => {
   const gateway = gateway_id ? await c.env.DB.prepare('SELECT * FROM payment_gateways WHERE id = ? AND is_active = 1').bind(gateway_id).first<any>() : null;
   let promoBonus = 0, promoDiscount = 0;
   if (promo_code) {
-    const promo = await c.env.DB.prepare('SELECT * FROM promo_codes WHERE UPPER(code) = UPPER(?) AND active = 1').bind(promo_code.trim()).first<any>();
-    if (promo) {
-      if (promo.type === 'bonus') promoBonus = promo.bonus_coins ?? 0;
-      if (promo.type === 'percent') promoDiscount = Math.round(plan.price * (promo.discount_pct ?? 0) / 100);
-    }
+    // FIX: enforce active + expiry + usage cap here too (via the shared
+    // evaluatePromo helper). Previously /initiate only checked `active = 1`,
+    // so an EXPIRED or fully-redeemed promo still granted its bonus/discount
+    // through the gateway checkout flow — inconsistent with /api/coins/*.
+    const promo = await c.env.DB.prepare('SELECT * FROM promo_codes WHERE UPPER(code) = UPPER(?) AND active = 1').bind(promo_code.trim()).first<PromoRow>();
+    ({ bonus: promoBonus, discount: promoDiscount } = evaluatePromo(promo, plan.price));
   }
   const purchaseId = crypto.randomUUID();
   const finalPrice = Math.max(0, plan.price - promoDiscount);

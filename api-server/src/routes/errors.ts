@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { checkRateLimit } from '../lib/rateLimit';
 import type { Env } from '../types';
 
 const errors = new Hono<{ Bindings: Env }>();
@@ -8,15 +9,15 @@ const errors = new Hono<{ Bindings: Env }>();
 // SECURITY FIX: Rate limit to prevent DB flood attacks (unauthenticated endpoint)
 errors.post('/', async (c) => {
   try {
-    // Simple IP-based rate limit: max 10 error reports per IP per minute
+    // Simple IP-based rate limit: max 10 error reports per IP per minute.
+    // FIX #7 (consistency): use the shared atomic check-and-increment limiter
+    // like every other route. The previous read-then-write here had the exact
+    // TOCTOU undercount registerHit was written to eliminate, and it reset
+    // window_reset on every hit. checkRateLimit fails open on DB error.
     const ip = c.req.header('CF-Connecting-IP') || c.req.header('X-Forwarded-For') || 'unknown';
     const rlKey = `rl:errors:${ip}:${Math.floor(Date.now() / 60000)}`;
-    try {
-      const rl = await c.env.DB.prepare('SELECT attempts FROM rate_limits WHERE id = ?').bind(rlKey).first<any>();
-      if (rl && rl.attempts >= 10) return c.json({ error: 'Too many error reports' }, 429);
-      await c.env.DB.prepare('INSERT OR REPLACE INTO rate_limits (id, attempts, window_reset) VALUES (?, COALESCE((SELECT attempts FROM rate_limits WHERE id = ?), 0) + 1, ?)')
-        .bind(rlKey, rlKey, Math.floor(Date.now() / 1000) + 60).run();
-    } catch {}
+    const { limited } = await checkRateLimit(c.env.DB, rlKey, 10, 60);
+    if (limited) return c.json({ error: 'Too many error reports' }, 429);
 
     const body = await c.req.json().catch(() => ({}));
     const { message, stack, context, platform, app_version, extra } = body as {
