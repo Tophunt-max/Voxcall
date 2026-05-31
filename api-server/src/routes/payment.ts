@@ -46,6 +46,86 @@ export function evaluatePromo(
   return { bonus: 0, discount: 0 };
 }
 
+// ─── Promo input validation (pure, unit-tested) ───────────────────────────────
+// Guards the admin promo-code create/update endpoints. Without this an admin
+// could persist nonsensical promos that flow straight into the money path:
+//   - discount_pct: 500  → a "500% off" code (price clamps to 0 = free coins)
+//   - bonus_coins: -100  → a code that DEDUCTS coins on redemption
+//   - max_uses: 0 / -5   → unredeemable or undefined-behaviour caps
+// On create we additionally require `code` and the value matching the type.
+// On update (partial) we only range-check whatever fields are present.
+export interface PromoInput {
+  code?: unknown;
+  type?: unknown;
+  discount_pct?: unknown;
+  bonus_coins?: unknown;
+  max_uses?: unknown;
+  expires_at?: unknown;
+}
+
+export function validatePromoInput(
+  input: PromoInput,
+  opts: { create?: boolean } = {},
+): { ok: true } | { ok: false; error: string } {
+  const create = opts.create === true;
+
+  if (input.code !== undefined) {
+    if (typeof input.code !== 'string' || !input.code.trim()) {
+      return { ok: false, error: 'code must be a non-empty string' };
+    }
+    if (input.code.trim().length > 40) {
+      return { ok: false, error: 'code must be 40 characters or fewer' };
+    }
+  } else if (create) {
+    return { ok: false, error: 'code is required' };
+  }
+
+  let type = input.type;
+  if (type === undefined && create) type = 'percent';
+  if (type !== undefined && type !== 'percent' && type !== 'bonus') {
+    return { ok: false, error: "type must be 'percent' or 'bonus'" };
+  }
+
+  if (input.discount_pct !== undefined && input.discount_pct !== null) {
+    const pct = Number(input.discount_pct);
+    if (!Number.isFinite(pct) || pct <= 0 || pct > 100) {
+      return { ok: false, error: 'discount_pct must be a number between 1 and 100' };
+    }
+  }
+
+  if (input.bonus_coins !== undefined && input.bonus_coins !== null) {
+    const bonus = Number(input.bonus_coins);
+    if (!Number.isInteger(bonus) || bonus <= 0 || bonus > 10_000_000) {
+      return { ok: false, error: 'bonus_coins must be a positive integer' };
+    }
+  }
+
+  if (input.max_uses !== undefined && input.max_uses !== null) {
+    const mu = Number(input.max_uses);
+    if (!Number.isInteger(mu) || mu <= 0) {
+      return { ok: false, error: 'max_uses must be a positive integer or null (unlimited)' };
+    }
+  }
+
+  if (input.expires_at !== undefined && input.expires_at !== null) {
+    const exp = Number(input.expires_at);
+    if (!Number.isFinite(exp) || exp <= 0) {
+      return { ok: false, error: 'expires_at must be a positive unix timestamp (seconds) or null' };
+    }
+  }
+
+  if (create) {
+    if (type === 'percent' && (input.discount_pct === undefined || input.discount_pct === null)) {
+      return { ok: false, error: 'discount_pct is required for a percent promo' };
+    }
+    if (type === 'bonus' && (input.bonus_coins === undefined || input.bonus_coins === null)) {
+      return { ok: false, error: 'bonus_coins is required for a bonus promo' };
+    }
+  }
+
+  return { ok: true };
+}
+
 // ─── Shared: Approve a pending coin_purchase and credit coins to user ──────────
 //
 // Promo enforcement (FIX #2): a promo's bonus is baked into coin_purchases.bonus_coins

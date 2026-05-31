@@ -62,3 +62,66 @@ describe('evaluatePromo', () => {
     expect(evaluatePromo(promo, 100, NOW)).toEqual({ bonus: 0, discount: 0 });
   });
 });
+
+
+
+import { validatePromoInput } from '../src/routes/payment';
+
+// Guards the admin promo-code create/update endpoints. The bug this prevents:
+// previously POST/PATCH /api/admin/promo-codes had NO validation, so an admin
+// could persist a "500% off" or negative-bonus code that flows into the
+// coin-credit money path.
+describe('validatePromoInput', () => {
+  it('accepts a valid percent promo on create', () => {
+    expect(validatePromoInput({ code: 'SAVE20', type: 'percent', discount_pct: 20 }, { create: true })).toEqual({ ok: true });
+  });
+
+  it('accepts a valid bonus promo on create', () => {
+    expect(validatePromoInput({ code: 'WELCOME', type: 'bonus', bonus_coins: 50 }, { create: true })).toEqual({ ok: true });
+  });
+
+  it('defaults type to percent on create (requires discount_pct)', () => {
+    expect(validatePromoInput({ code: 'X', discount_pct: 10 }, { create: true })).toEqual({ ok: true });
+    expect(validatePromoInput({ code: 'X' }, { create: true }).ok).toBe(false);
+  });
+
+  it('requires a code on create', () => {
+    expect(validatePromoInput({ type: 'percent', discount_pct: 10 }, { create: true }).ok).toBe(false);
+    expect(validatePromoInput({ code: '   ', discount_pct: 10 }, { create: true }).ok).toBe(false);
+  });
+
+  it('rejects a discount above 100% (the "500% off" bug)', () => {
+    expect(validatePromoInput({ code: 'X', type: 'percent', discount_pct: 500 }, { create: true }).ok).toBe(false);
+    expect(validatePromoInput({ discount_pct: 0 }).ok).toBe(false);
+    expect(validatePromoInput({ discount_pct: -5 }).ok).toBe(false);
+  });
+
+  it('rejects a negative or non-integer bonus (the "deduct coins" bug)', () => {
+    expect(validatePromoInput({ code: 'X', type: 'bonus', bonus_coins: -100 }, { create: true }).ok).toBe(false);
+    expect(validatePromoInput({ bonus_coins: 1.5 }).ok).toBe(false);
+    expect(validatePromoInput({ bonus_coins: 0 }).ok).toBe(false);
+  });
+
+  it('rejects a non-positive max_uses but allows null (unlimited)', () => {
+    expect(validatePromoInput({ max_uses: 0 }).ok).toBe(false);
+    expect(validatePromoInput({ max_uses: -1 }).ok).toBe(false);
+    expect(validatePromoInput({ max_uses: null }).ok).toBe(true);
+    expect(validatePromoInput({ max_uses: 100 }).ok).toBe(true);
+  });
+
+  it('rejects an unknown promo type', () => {
+    expect(validatePromoInput({ code: 'X', type: 'mystery', discount_pct: 10 }, { create: true }).ok).toBe(false);
+  });
+
+  it('rejects an invalid expires_at but allows null', () => {
+    expect(validatePromoInput({ expires_at: 0 }).ok).toBe(false);
+    expect(validatePromoInput({ expires_at: -1 }).ok).toBe(false);
+    expect(validatePromoInput({ expires_at: null }).ok).toBe(true);
+    expect(validatePromoInput({ expires_at: 1_900_000_000 }).ok).toBe(true);
+  });
+
+  it('allows a partial update with only one field (no create requirements)', () => {
+    expect(validatePromoInput({ active: 1 })).toEqual({ ok: true });
+    expect(validatePromoInput({ discount_pct: 30 })).toEqual({ ok: true });
+  });
+});

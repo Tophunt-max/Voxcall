@@ -3,7 +3,7 @@ import { authMiddleware, adminMiddleware } from '../middleware/auth';
 import { sendFCMPush, getFCMTokens } from '../lib/fcm';
 import { getLevelConfig, normalizeLevelConfig } from '../lib/levels';
 import { recalcAllHostLevels } from '../lib/levelService';
-import { approveDeposit } from './payment';
+import { approveDeposit, validatePromoInput } from './payment';
 import type { Env, JWTPayload } from '../types';
 
 const admin = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
@@ -653,6 +653,10 @@ admin.get('/promo-codes', async (c) => {
 });
 admin.post('/promo-codes', async (c) => {
   const body = await c.req.json() as any;
+  // FIX: validate before persisting — an unvalidated promo (e.g. discount_pct:500
+  // or bonus_coins:-100) flows straight into the coin-credit money path.
+  const v = validatePromoInput(body, { create: true });
+  if (!v.ok) return c.json({ error: v.error }, 400);
   const id = crypto.randomUUID();
   await db(c).prepare(
     'INSERT INTO promo_codes (id, code, type, discount_pct, bonus_coins, max_uses, expires_at, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
@@ -664,6 +668,10 @@ admin.post('/promo-codes', async (c) => {
 admin.patch('/promo-codes/:id', async (c) => {
   const { id } = c.req.param();
   const body = await c.req.json() as any;
+  // FIX: range-check any provided fields so an edit can't introduce invalid
+  // values (negative bonus, >100% discount, non-positive max_uses, etc.).
+  const v = validatePromoInput(body);
+  if (!v.ok) return c.json({ error: v.error }, 400);
   const fields = ['code', 'type', 'discount_pct', 'bonus_coins', 'max_uses', 'expires_at', 'active'];
   const sets: string[] = []; const vals: any[] = [];
   for (const f of fields) {
