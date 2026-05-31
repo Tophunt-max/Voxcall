@@ -35,13 +35,13 @@ export default function MessagesScreen() {
   );
 
   return (
-    <View style={[styles.container, { backgroundColor: "#F3E4FF" }]}>
-      <View style={[styles.header, { paddingTop: insets.top + 14, backgroundColor: "#F3E4FF" }]}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <View style={[styles.header, { paddingTop: insets.top + 14, backgroundColor: colors.background }]}>
         {showSearch ? (
-          <View accessible={false} style={styles.searchBar}>
+          <View accessible={false} style={[styles.searchBar, { backgroundColor: colors.card }]}>
             <Image source={require("@/assets/icons/ic_search.png")} style={{ width: 18, height: 18, tintColor: colors.mutedForeground }} resizeMode="contain" />
             <TextInput
-              style={styles.searchInput}
+              style={[styles.searchInput, { color: colors.text }]}
               value={search}
               onChangeText={setSearch}
               placeholder="Search conversations..."
@@ -56,9 +56,9 @@ export default function MessagesScreen() {
           </View>
         ) : (
           <View style={styles.headerRow}>
-            <Text style={styles.headerTitle}>Chats</Text>
-            <TouchableOpacity onPress={() => setShowSearch(true)} style={styles.searchBtn}>
-              <Image source={require("@/assets/icons/ic_search.png")} style={{ width: 20, height: 20, tintColor: "#111329" }} resizeMode="contain" />
+            <Text style={[styles.headerTitle, { color: colors.text }]}>Chats</Text>
+            <TouchableOpacity onPress={() => setShowSearch(true)} style={[styles.searchBtn, { backgroundColor: colors.muted }]}>
+              <Image source={require("@/assets/icons/ic_search.png")} style={{ width: 20, height: 20, tintColor: colors.text }} resizeMode="contain" />
             </TouchableOpacity>
           </View>
         )}
@@ -92,7 +92,6 @@ export default function MessagesScreen() {
                   source={{ uri: `https://api.dicebear.com/7.x/avataaars/png?seed=${item.participantId}` }}
                   style={styles.avatar}
                 />
-                <View style={[styles.onlineDot, { backgroundColor: colors.online, borderColor: colors.background }]} />
               </View>
               <View style={styles.info}>
                 <View style={styles.topRow}>

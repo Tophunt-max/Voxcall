@@ -14,7 +14,9 @@ import {
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
+import * as Clipboard from "expo-clipboard";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { useCall } from "@/context/CallContext";
 import { useChat } from "@/context/ChatContext";
@@ -114,6 +116,7 @@ const LEVEL_CONFIG: Record<number, { name: string; badge: string; color: string 
 /* ═══════════════════ MAIN SCREEN ═══════════════════ */
 export default function HostDetailScreen() {
   const insets = useSafeAreaInsets();
+  const colors = useColors();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user } = useAuth();
   const { initiateCall } = useCall();
@@ -142,16 +145,16 @@ export default function HostDetailScreen() {
 
   if (loading) {
     return (
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#fff" }}>
-        <ActivityIndicator size="large" color={APP_COLOR} />
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.background }}>
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
 
   if (!host) {
     return (
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#fff" }}>
-        <Text style={{ color: APP_COLOR, fontFamily: "Poppins_500Medium" }}>Host not found</Text>
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.background }}>
+        <Text style={{ color: colors.text, fontFamily: "Poppins_500Medium" }}>Host not found</Text>
       </View>
     );
   }
@@ -227,8 +230,13 @@ export default function HostDetailScreen() {
     }
   };
 
-  const copyId = () => {
-    try { require("react-native").Clipboard?.setString(uniqueId); } catch (_) {}
+  const copyId = async () => {
+    try {
+      await Clipboard.setStringAsync(uniqueId);
+      showSuccessToast("Host ID copied to clipboard.", "Copied");
+    } catch {
+      // Clipboard write can fail on some web/permission contexts — non-fatal.
+    }
   };
 
   const handleReport = async (reason: string, category: string) => {

@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform, Image, 
 import * as ImagePicker from "expo-image-picker";
 import { appendFileToFormData } from "@/utils/fileUpload";
 import AppInput from "@/components/AppInput";
-import { showSuccessToast } from "@/components/Toast";
+import { showSuccessToast, showErrorToast } from "@/components/Toast";
 import { router } from "expo-router";
 import { API, resolveMediaUrl } from "@/services/api";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -30,6 +30,10 @@ export default function EditProfileScreen() {
       await updateProfile({ name, bio });
       showSuccessToast("Your profile has been updated.", "Profile Saved");
       router.back();
+    } catch (e: any) {
+      // Don't fail silently — the spinner stopping with no feedback looks like
+      // the save "worked". Tell the user so they can retry.
+      showErrorToast(e?.message || "Could not save your profile. Please try again.", "Save Failed");
     } finally {
       setLoading(false);
     }
@@ -59,7 +63,9 @@ export default function EditProfileScreen() {
       formData.append("path", `avatars/${user?.id ?? "user"}/avatar.${ext}`);
       const uploadData = await API.uploadFile(formData);
       if (uploadData?.url) {
-        await updateProfile({ avatar: uploadData.url });
+        // Match profile.tsx — store a fully-resolved URL so the avatar still
+        // loads if the server returns a relative path.
+        await updateProfile({ avatar: resolveMediaUrl(uploadData.url) || uploadData.url });
       }
     } catch {
       Alert.alert("Upload Failed", "Could not upload avatar. Please try again.");

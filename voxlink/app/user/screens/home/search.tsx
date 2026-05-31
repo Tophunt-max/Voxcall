@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
+import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { useCall } from "@/context/CallContext";
 import { API, resolveMediaUrl } from "@/services/api";
@@ -58,10 +59,11 @@ function StatusBadge({ isOnline }: { isOnline: boolean }) {
 }
 
 function ListenerCard({ host, onPress, onAudioCall, onVideoCall }: { host: ReturnType<typeof mapApiHost>; onPress: () => void; onAudioCall?: () => void; onVideoCall?: () => void }) {
+  const colors = useColors();
   return (
-    <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.88}>
+    <TouchableOpacity style={[styles.card, { backgroundColor: colors.card }]} onPress={onPress} activeOpacity={0.88}>
       <View style={styles.cardContent}>
-        <View style={styles.avatarWrap}>
+        <View style={[styles.avatarWrap, { backgroundColor: colors.muted }]}>
           <Image
             source={{ uri: host.avatar }}
             style={styles.avatar}
@@ -70,12 +72,12 @@ function ListenerCard({ host, onPress, onAudioCall, onVideoCall }: { host: Retur
         </View>
         <View style={styles.info}>
           <View style={styles.nameRow}>
-            <Text style={styles.name} numberOfLines={1}>{host.name}</Text>
+            <Text style={[styles.name, { color: colors.text }]} numberOfLines={1}>{host.name}</Text>
             <StatusBadge isOnline={host.isOnline} />
           </View>
           <View style={styles.langRow}>
-            <Image source={require("@/assets/icons/ic_language.png")} style={styles.smallIcon} tintColor={GREY} resizeMode="contain" />
-            <Text style={styles.langText}>{host.languages.join(", ")}</Text>
+            <Image source={require("@/assets/icons/ic_language.png")} style={styles.smallIcon} tintColor={colors.mutedForeground} resizeMode="contain" />
+            <Text style={[styles.langText, { color: colors.mutedForeground }]}>{host.languages.join(", ")}</Text>
           </View>
           <View style={styles.topicsRow}>
             {host.specialties.slice(0, 2).map((t: string) => (
@@ -88,18 +90,18 @@ function ListenerCard({ host, onPress, onAudioCall, onVideoCall }: { host: Retur
             <Image source={require("@/assets/icons/ic_coin.png")} style={styles.coinIcon} resizeMode="contain" />
             <Text style={styles.coinText}>{host.coinsPerMinute}/min</Text>
             <View style={styles.callCountWrap}>
-              <Image source={require("@/assets/icons/ic_call.png")} style={styles.smallIcon} tintColor={GREY} resizeMode="contain" />
-              <Text style={styles.callCountText}>{(host.totalMinutes / 60).toFixed(0)} hrs</Text>
+              <Image source={require("@/assets/icons/ic_call.png")} style={styles.smallIcon} tintColor={colors.mutedForeground} resizeMode="contain" />
+              <Text style={[styles.callCountText, { color: colors.mutedForeground }]}>{(host.totalMinutes / 60).toFixed(0)} hrs</Text>
             </View>
           </View>
         </View>
       </View>
-      <View style={styles.cardActions}>
+      <View style={[styles.cardActions, { borderTopColor: colors.border }]}>
         <TouchableOpacity onPress={onPress} style={styles.viewProfileBtn}>
-          <Text style={styles.viewProfileText}>View Profile</Text>
+          <Text style={[styles.viewProfileText, { color: colors.mutedForeground }]}>View Profile</Text>
         </TouchableOpacity>
         {host.isOnline && (
-          <View style={styles.callBtnsRow}>
+          <View style={[styles.callBtnsRow, { borderLeftColor: colors.border }]}>
             <TouchableOpacity onPress={onAudioCall} style={styles.audioCallBtn}>
               <Image source={require("@/assets/icons/ic_call.png")} style={styles.talkNowIcon} tintColor="#fff" resizeMode="contain" />
               <Text style={styles.callBtnTxt}>Audio</Text>
@@ -116,14 +118,15 @@ function ListenerCard({ host, onPress, onAudioCall, onVideoCall }: { host: Retur
 }
 
 function FilterModal({ title, options, selected, onSelect, onClose, visible }: { title: string; options: string[]; selected: string; onSelect: (v: string) => void; onClose: () => void; visible: boolean }) {
+  const colors = useColors();
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={onClose}>
-        <View style={styles.modalSheet}>
-          <Text style={styles.modalTitle}>{title}</Text>
+        <View style={[styles.modalSheet, { backgroundColor: colors.card }]}>
+          <Text style={[styles.modalTitle, { color: colors.text }]}>{title}</Text>
           {options.map((opt) => (
-            <TouchableOpacity key={opt} onPress={() => { onSelect(opt); onClose(); }} style={styles.modalOpt}>
-              <Text style={[styles.modalOptText, selected === opt && { color: ACCENT, fontFamily: "Poppins_600SemiBold" }]}>{opt}</Text>
+            <TouchableOpacity key={opt} onPress={() => { onSelect(opt); onClose(); }} style={[styles.modalOpt, { borderBottomColor: colors.border }]}>
+              <Text style={[styles.modalOptText, { color: colors.text }, selected === opt && { color: ACCENT, fontFamily: "Poppins_600SemiBold" }]}>{opt}</Text>
               {selected === opt && <View style={styles.modalCheck} />}
             </TouchableOpacity>
           ))}
@@ -135,6 +138,7 @@ function FilterModal({ title, options, selected, onSelect, onClose, visible }: {
 
 export default function ListenerScreen() {
   const insets = useSafeAreaInsets();
+  const colors = useColors();
   const { user } = useAuth();
   const { initiateCall } = useCall();
   const [selectedLang, setSelectedLang] = useState("All");
@@ -184,28 +188,28 @@ export default function ListenerScreen() {
   }, [loadHosts]);
 
   return (
-    <View style={styles.container}>
-      <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
-        <Text style={styles.headerTitle}>All Listeners</Text>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <View style={[styles.header, { paddingTop: insets.top + 16, backgroundColor: colors.background }]}>
+        <Text style={[styles.headerTitle, { color: colors.text }]}>All Listeners</Text>
       </View>
 
-      <View style={styles.filterRow}>
-        <TouchableOpacity style={styles.filterBtn} onPress={() => setShowLangModal(true)} activeOpacity={0.8}>
+      <View style={[styles.filterRow, { backgroundColor: colors.background }]}>
+        <TouchableOpacity style={[styles.filterBtn, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={() => setShowLangModal(true)} activeOpacity={0.8}>
           <Image source={require("@/assets/icons/ic_language.png")} style={styles.filterIcon} tintColor="#FF8C00" resizeMode="contain" />
-          <Text style={styles.filterBtnText}>{selectedLang === "All" ? "Language" : selectedLang}</Text>
-          <Image source={require("@/assets/icons/ic_back.png")} style={styles.filterArrow} tintColor="#999" resizeMode="contain" />
+          <Text style={[styles.filterBtnText, { color: colors.text }]}>{selectedLang === "All" ? "Language" : selectedLang}</Text>
+          <Image source={require("@/assets/icons/ic_back.png")} style={styles.filterArrow} tintColor={colors.mutedForeground} resizeMode="contain" />
         </TouchableOpacity>
-        <TouchableOpacity style={styles.filterBtn} onPress={() => setShowTopicModal(true)} activeOpacity={0.8}>
+        <TouchableOpacity style={[styles.filterBtn, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={() => setShowTopicModal(true)} activeOpacity={0.8}>
           <Image source={require("@/assets/icons/ic_chat.png")} style={styles.filterIcon} tintColor="#1499F1" resizeMode="contain" />
-          <Text style={styles.filterBtnText}>{selectedTopic === "All" ? "Talk About" : selectedTopic}</Text>
-          <Image source={require("@/assets/icons/ic_back.png")} style={styles.filterArrow} tintColor="#999" resizeMode="contain" />
+          <Text style={[styles.filterBtnText, { color: colors.text }]}>{selectedTopic === "All" ? "Talk About" : selectedTopic}</Text>
+          <Image source={require("@/assets/icons/ic_back.png")} style={styles.filterArrow} tintColor={colors.mutedForeground} resizeMode="contain" />
         </TouchableOpacity>
       </View>
 
       {filtered.length === 0 ? (
         <View style={styles.emptyWrap}>
           <Image source={require("@/assets/images/empty_hosts.png")} style={styles.emptyImg} resizeMode="contain" />
-          <Text style={styles.emptyText}>No listeners found</Text>
+          <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>No listeners found</Text>
         </View>
       ) : (
         <ScrollView
