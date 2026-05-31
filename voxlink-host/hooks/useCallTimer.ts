@@ -32,19 +32,20 @@ export function useCallTimer({ isActive, maxSeconds, startTimeMs, onAutoEnd }: U
     hasPopupRef.current = false;
     hasEndedRef.current = false;
 
-    // FIX: initialize elapsed from server's started_at so the display timer matches
-    // what the server is billing. Without this, the timer starts from 0 even though
-    // the server already started charging 5-15 seconds ago (WebRTC negotiation time).
-    const initialElapsed = startTimeMs
-      ? Math.max(0, Math.floor((Date.now() - startTimeMs) / 1000))
-      : 0;
-    setElapsed(initialElapsed);
+    // FIX (timer drift): compute elapsed from a fixed wall-clock start on every
+    // tick instead of incrementing a counter. setInterval is throttled while the
+    // app is backgrounded / the JS thread is busy, so `prev + 1` silently drifts
+    // behind real time — which matters here because onAutoEnd (the balance-cap
+    // auto-end) fires off this value. Anchoring to the server's started_at (or
+    // local now() as a fallback) keeps the display AND the auto-end accurate,
+    // and self-corrects the instant the app returns to the foreground.
+    const startMs = startTimeMs && startTimeMs > 0 ? startTimeMs : Date.now();
+    const tick = () => setElapsed(Math.max(0, Math.floor((Date.now() - startMs) / 1000)));
+    tick();
     setShowLowCoinWarning(false);
     setShowRechargePopup(false);
 
-    const interval = setInterval(() => {
-      setElapsed((prev) => prev + 1);
-    }, 1000);
+    const interval = setInterval(tick, 1000);
 
     return () => clearInterval(interval);
   }, [isActive, startTimeMs]);

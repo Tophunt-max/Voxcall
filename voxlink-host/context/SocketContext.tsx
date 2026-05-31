@@ -20,11 +20,6 @@ interface SocketContextValue {
   isConnected: boolean;
   sendMessage: (chatId: string, senderName: string, text: string) => void;
   onEvent: (event: string, handler: (...args: any[]) => void) => () => void;
-  simulateIncomingCall: (
-    hostName: string,
-    hostAvatar: string,
-    type?: "audio" | "video"
-  ) => void;
 }
 
 const SocketContext = createContext<SocketContextValue | null>(null);
@@ -101,16 +96,9 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
-  const simulateIncomingCall = useCallback(
-    (hostName: string, hostAvatar: string, type: "audio" | "video" = "audio") => {
-      socketService.simulateIncomingCall(hostName, hostAvatar, type);
-    },
-    []
-  );
-
   return (
     <SocketContext.Provider
-      value={{ isConnected, sendMessage, onEvent, simulateIncomingCall }}
+      value={{ isConnected, sendMessage, onEvent }}
     >
       {children}
     </SocketContext.Provider>

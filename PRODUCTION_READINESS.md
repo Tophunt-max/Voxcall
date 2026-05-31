@@ -257,3 +257,20 @@ Acted on the "fix everything" follow-up. Investigated the round-2 frontend findi
 ### Still deferred (genuinely risky / broader change)
 - **#5 WS token client migration** — the server already accepts the token via `Sec-WebSocket-Protocol`. Moving the mobile clients off `?token=` also needs the Durable Objects to echo the negotiated subprotocol on the 101 handshake; getting that wrong breaks realtime calls/notifications for **all** users, so it's left for a dedicated, separately-tested change. Interim: scrub `token` from logged URLs / lower log retention.
 - **D1 → Postgres** before significant call-volume growth (single-writer ceiling).
+
+
+---
+
+## Host App (voxlink-host) review (2026-05-31)
+
+Focused review of the Expo/React Native host app. It's already mature (WebRTC teardown stops tracks + closes the peer connection + releases InCallManager; ringtones unload on unmount; socket has token-refresh + 50-retry reconnect; ErrorBoundary present). Fixed two concrete issues; rest documented.
+
+### Fixed
+- **Call-timer drift (`hooks/useCallTimer.ts`)** — the timer incremented a counter every `setInterval(1000)` tick (`prev + 1`). `setInterval` is throttled while the app is backgrounded or the JS thread is busy, so the displayed duration AND the balance-cap `onAutoEnd` silently drifted behind real time. Rewrote it to compute `elapsed` from a fixed wall-clock start (`startTimeMs` from the server's `started_at`, or local `now()` fallback) on every tick — accurate display + auto-end, and self-correcting the instant the app returns to the foreground.
+- **Dead `simulate*` helpers removed** — `SocketService` shipped five `simulate*` methods (e.g. `simulateCoinDeduct` emitting fake coin-update events) that were never called in production, plus the `simulateIncomingCall` passthrough in `SocketContext`. Removed both to shrink the bundle and the misuse surface.
+
+### Recommended (documented — risk/product decision)
+- **WS token in query string (`SocketService.getWsUrl`)** — same as #5: the token rides in `?token=`. Migrating to the `Sec-WebSocket-Protocol` header also needs the Durable Object to echo the negotiated subprotocol on the 101 handshake; mishandled it breaks realtime for all hosts, so do it as a dedicated, separately-tested change.
+- **Client-side FX table + `0.01` coin rate (`utils/currency.ts`)** — mirrors the server's static table and coin→USD rate; could be fetched from `GET /api/app-config` so it never drifts. Cosmetic (display only), low priority.
+- **WS zombie-socket detection** — the heartbeat sends `ping` every 30s but never times out on a missing reply, so a half-open socket (OPEN but server gone) only recovers when `onclose` eventually fires. Adding a last-activity watchdog would speed recovery, but needs defined server pong semantics to avoid false reconnects.
+- **WebRTC service recreation on video toggle** — `useWebRTC` keys its effect on `isVideo`, so flipping video tears down and rebuilds the whole `WebRTCService`. Works, but could be optimized to renegotiate in place.
