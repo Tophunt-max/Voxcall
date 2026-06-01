@@ -58,6 +58,8 @@ const settingGroups = [
       { key: 'daily_streak_enabled', label: 'Daily streak rewards enabled', type: 'text', hint: 'Set to 1 to enable, 0 to kill-switch the feature without removing config.' },
       { key: 'daily_streak_schedule', label: 'Reward schedule (JSON array)', type: 'text', hint: 'Coins awarded on each day of the cycle. e.g. [5,10,15,20,30,50,100] = Day 1 gets 5 coins, Day 7 gets 100, Day 8 wraps back to 5.' },
       { key: 'daily_streak_milestones', label: 'Milestone bonuses (JSON map)', type: 'text', hint: 'One-time bonus on top of base reward when streak hits a specific day. e.g. {"7":50,"14":100,"30":500}.' },
+      { key: 'daily_streak_variable_enabled', label: 'Variable "lucky wheel" reward', type: 'text', hint: 'Set to 1 to randomize the daily base reward via a multiplier wheel. EXPECTED payout stays equal to the schedule (budget-neutral) — only the variance/dopamine changes. 0 = fixed reward.' },
+      { key: 'daily_streak_variable_table', label: 'Lucky wheel table (JSON)', type: 'text', hint: 'Multiplier→probability tiers, e.g. [{"m":0.5,"p":0.35},{"m":1,"p":0.2},{"m":5,"p":0.05}]. The server rescales by 1/E[m] so the average payout always equals the scheduled base.' },
     ],
   },
   {
@@ -90,6 +92,13 @@ const settingGroups = [
       { key: 'reengagement_max_per_run', label: 'Max users per run', type: 'number', hint: 'Cap on how many users are nudged in a single cron run (hard-capped at 500 server-side).', step: '1' },
       { key: 'reengagement_max_idle_days', label: 'Stop-pestering threshold (days)', type: 'number', hint: 'Users idle longer than this are considered churned-dead and are no longer nudged.', step: '1' },
       { key: 'reengagement_interval_hours', label: 'Run interval (hours)', type: 'number', hint: 'How often the re-engagement job runs (1–24). The cron fires every minute but the job self-gates to this interval.', step: '1' },
+    ],
+  },
+  {
+    group: 'Engagement — Random Match Ranking',
+    settings: [
+      { key: 'match_weighting_enabled', label: 'Quality-weighted matchmaking', type: 'text', hint: 'Set to 1 to weight random matches by host quality (rating/level/popularity), freshness and demand-balancing. 0 = legacy uniform random pick.' },
+      { key: 'match_weights', label: 'Match weights (JSON object)', type: 'text', hint: 'Keys: base, rating, rank_boost, popularity, freshness, demand_balance. Higher base = more uniform/fair; higher demand_balance spreads calls across more hosts. Malformed JSON falls back to defaults.' },
     ],
   },
 ];
@@ -131,6 +140,12 @@ const DEFAULTS: Record<string, string> = {
   reengagement_max_per_run: '200',
   reengagement_max_idle_days: '45',
   reengagement_interval_hours: '6',
+  // Priority 3 — quality-weighted matchmaking (mirror lib/matchWeight.ts).
+  match_weighting_enabled: '1',
+  match_weights: '{"base":1,"rating":1.2,"rank_boost":0.8,"popularity":0.4,"freshness":0.6,"demand_balance":1}',
+  // Priority 4 — variable daily reward (mirror lib/streak.ts). OFF by default.
+  daily_streak_variable_enabled: '0',
+  daily_streak_variable_table: '[{"m":0.5,"p":0.35},{"m":0.8,"p":0.25},{"m":1,"p":0.2},{"m":2,"p":0.15},{"m":5,"p":0.05}]',
 };
 
 // ─── safe arithmetic evaluator (no eval / new Function) ──────────────────────

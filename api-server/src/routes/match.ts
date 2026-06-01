@@ -36,9 +36,16 @@ import {
   rankBoostCaseSql,
   getRandomAudioRate,
   getRandomVideoRate,
+  getRankBoost,
   type LevelDef,
 } from '../lib/levels';
 import { checkRateLimit } from '../lib/rateLimit';
+import {
+  computeMatchWeight,
+  weightedSample,
+  normalizeMatchWeights,
+  type MatchWeights,
+} from '../lib/matchWeight';
 import type { Env, JWTPayload } from '../types';
 
 const match = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
@@ -83,6 +90,27 @@ async function readIntSetting(
     return Number.isFinite(n) && n >= 0 ? n : fallback;
   } catch {
     return fallback;
+  }
+}
+
+/**
+ * Read a boolean feature flag from `app_settings`. Any value other than the
+ * string '0' counts as enabled; a missing row falls back to `fallbackEnabled`.
+ */
+async function readBoolSetting(
+  db: D1Database,
+  key: string,
+  fallbackEnabled: boolean,
+): Promise<boolean> {
+  try {
+    const row = await db
+      .prepare('SELECT value FROM app_settings WHERE key = ?')
+      .bind(key)
+      .first<{ value: string }>();
+    if (row?.value == null) return fallbackEnabled;
+    return row.value !== '0';
+  } catch {
+    return fallbackEnabled;
   }
 }
 
@@ -330,6 +358,107 @@ async function pickRandomHost(
   }
 }
 
+// Recent demand window (minutes) for the demand-balancing penalty. Hosts who
+// were matched a lot inside this window get a dampened selection weight so
+// demand spreads across the roster instead of piling onto a few hosts.
+const MATCH_DEMAND_WINDOW_MIN = 60;
+
+/**
+ * Quality-weighted host pick (Priority 3). Fetches a bounded random candidate
+ * window from the filtered pool, computes a selection weight per host
+ * (quality + freshness − recent-demand), and samples one. Falls back to the
+ * legacy filter on a missing-schema error, same as pickRandomHost.
+ *
+ * Returns `totalOnline` = the full filtered count (for the UI's
+ * filtered_count), independent of the bounded candidate window.
+ */
+async function pickWeightedHost(
+  db: D1Database,
+  filter: { where: string; params: any[] },
+  legacyFallback: () => { where: string; params: any[] },
+  config: LevelDef[],
+  weights: MatchWeights,
+): Promise<{ host: any | null; totalOnline: number }> {
+  const now = Math.floor(Date.now() / 1000);
+  const maxRankBoost = Math.max(1, ...config.map((l) => getRankBoost(l.level, config)));
+
+  const runWith = async (f: { where: string; params: any[] }) => {
+    const countRow = await db
+      .prepare(`SELECT COUNT(*) as cnt FROM hosts h JOIN users u ON u.id = h.user_id WHERE ${f.where}`)
+      .bind(...f.params)
+      .first<{ cnt: number }>();
+    const totalOnline = countRow?.cnt ?? 0;
+    if (totalOnline === 0) return { host: null, totalOnline: 0 };
+
+    // Bounded random candidate window. ORDER BY RANDOM() is fine here because
+    // the *online + filtered* pool is small relative to the whole hosts table.
+    const poolSize = Math.min(40, totalOnline);
+    const pool = await db
+      .prepare(
+        `SELECT h.*, u.name, u.avatar_url, u.gender, u.bio
+         FROM hosts h JOIN users u ON u.id = h.user_id
+         WHERE ${f.where}
+         ORDER BY RANDOM() LIMIT ?`,
+      )
+      .bind(...f.params, poolSize)
+      .all<any>();
+    const rows = pool.results ?? [];
+    if (!rows.length) return { host: null, totalOnline };
+
+    // Recent-match counts for demand balancing — best-effort.
+    const recentByHost = new Map<string, number>();
+    try {
+      const ids = rows.map((r) => r.id);
+      const ph = ids.map(() => '?').join(',');
+      const since = now - MATCH_DEMAND_WINDOW_MIN * 60;
+      const rc = await db
+        .prepare(
+          `SELECT host_id, COUNT(*) as cnt FROM random_match_history
+           WHERE created_at >= ? AND host_id IN (${ph}) GROUP BY host_id`,
+        )
+        .bind(since, ...ids)
+        .all<{ host_id: string; cnt: number }>();
+      for (const r of rc.results ?? []) recentByHost.set(r.host_id, Number(r.cnt) || 0);
+    } catch (err) {
+      console.warn('[match] demand-window query failed (non-fatal):', err);
+    }
+
+    const picked = weightedSample(
+      rows,
+      (r) =>
+        computeMatchWeight(
+          {
+            rating: Number(r.rating) || 0,
+            review_count: Number(r.review_count) || 0,
+            created_at: Number(r.created_at) || 0,
+            rank_boost_norm: getRankBoost(r.level ?? 1, config) / maxRankBoost,
+            recent_matches: recentByHost.get(r.id) ?? 0,
+          },
+          weights,
+          { now },
+        ),
+      Math.random,
+    );
+    return { host: picked ?? rows[0], totalOnline };
+  };
+
+  try {
+    return await runWith(filter);
+  } catch (err) {
+    const msg = String((err as any)?.message || err);
+    if (/no such (column|table)/i.test(msg)) {
+      console.warn('[match] weighted pool query failed on missing schema, falling back:', msg);
+      try {
+        return await runWith(legacyFallback());
+      } catch (legacyErr) {
+        console.warn('[match] legacy weighted pool query also failed:', legacyErr);
+        return { host: null, totalOnline: 0 };
+      }
+    }
+    throw err;
+  }
+}
+
 /**
  * Hosts the caller has matched with within the no-repeat window — passed
  * into the pool filter as a NOT IN clause. Capped to a sensible list
@@ -440,12 +569,40 @@ match.post('/find', async (c) => {
   };
   const filter = buildPoolFilter(sub, filters);
 
-  // 6. Pick a host (with race retry) — we ALSO want a count for the UI,
-  //    so report the size of the un-filtered online pool separately. Both
-  //    the pool query and the count query are wrapped so a missing
+  // 6. Resolve discovery strategy + pick a host. Quality-weighted selection
+  //    (Priority 3) is the default; admins can revert to uniform random via
+  //    `match_weighting_enabled = 0`. Weights live in `match_weights` (JSON)
+  //    and fall back to DEFAULT_MATCH_WEIGHTS when missing/malformed.
+  //    We ALSO want a count for the UI, so report the size of the un-filtered
+  //    online pool separately. Every query is wrapped so a missing
   //    migration-0026 column never crashes the route.
+  const [levelCfg, weightingEnabled, matchWeightsRaw] = await Promise.all([
+    getLevelConfig(db),
+    readBoolSetting(db, 'match_weighting_enabled', true),
+    (async () => {
+      try {
+        const row = await db
+          .prepare("SELECT value FROM app_settings WHERE key = 'match_weights'")
+          .first<{ value: string }>();
+        return row?.value ?? null;
+      } catch {
+        return null;
+      }
+    })(),
+  ]);
+  let matchWeights: MatchWeights;
+  try {
+    matchWeights = normalizeMatchWeights(matchWeightsRaw ? JSON.parse(matchWeightsRaw) : undefined);
+  } catch {
+    matchWeights = normalizeMatchWeights(undefined);
+  }
+
+  const pickPromise = weightingEnabled
+    ? pickWeightedHost(db, filter, () => buildPoolFilter(sub, filters, true), levelCfg, matchWeights)
+    : pickRandomHost(db, filter, () => buildPoolFilter(sub, filters, true));
+
   const [pick, totalOnlineRow] = await Promise.all([
-    pickRandomHost(db, filter, () => buildPoolFilter(sub, filters, true)),
+    pickPromise,
     (async () => {
       try {
         return await db
@@ -480,8 +637,7 @@ match.post('/find', async (c) => {
     });
   }
 
-  // 7. Resolve per-level random rate
-  const levelCfg = await getLevelConfig(db);
+  // 7. Resolve per-level random rate (levelCfg already loaded in step 6).
   const rate = await resolveRandomRate(db, pick.host.level ?? 1, callType, levelCfg);
   const enriched = enrichHost(pick.host, levelCfg);
 

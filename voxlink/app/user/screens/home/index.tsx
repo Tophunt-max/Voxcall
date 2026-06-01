@@ -211,6 +211,23 @@ export default function HomeScreen() {
     staleTime: 10 * 60_000,
   });
 
+  // Personalized "Recommended for you" rail. Best-effort: if the endpoint
+  // errors (e.g. older backend), the query just yields [] and the rail hides.
+  const { data: recommendedData } = useQuery({
+    queryKey: ['recommended-hosts'],
+    queryFn: async () => {
+      const res = await API.getRecommendedHosts(20);
+      return (res.hosts ?? []).map((h: any) => ({
+        host: mapApiHost(h),
+        reason: typeof h.reason === 'string' ? (h.reason as string) : undefined,
+      }));
+    },
+    staleTime: 60_000,
+    refetchInterval: 120_000,
+    retry: 1,
+  });
+  const recommended = recommendedData ?? [];
+
   // OPTIMIZATION #7: Banners — cached 5 min
   const { data: bannersData = [] } = useQuery({
     queryKey: ['banners', 'home'],
@@ -385,6 +402,39 @@ export default function HomeScreen() {
       >
         {/* Unified Auto/Manual Banner Slider */}
         <BannerSlider slides={slides} />
+
+        {/* Recommended for you — personalized rail (see services/api.getRecommendedHosts) */}
+        {recommended.length > 0 && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Recommended for you</Text>
+            </View>
+            <FlatList
+              data={recommended}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              keyExtractor={(it) => it.host.id}
+              renderItem={({ item }) => (
+                <View style={styles.recoItem}>
+                  <HostCard
+                    host={item.host}
+                    compact
+                    onPress={() => {
+                      prefetchHost(item.host.id);
+                      router.push(`/user/hosts/${item.host.id}`);
+                    }}
+                  />
+                  {item.reason ? (
+                    <Text numberOfLines={1} style={[styles.recoReason, { color: colors.primary }]}>
+                      {item.reason}
+                    </Text>
+                  ) : null}
+                </View>
+              )}
+              contentContainerStyle={{ paddingRight: 16, paddingLeft: 2 }}
+            />
+          </View>
+        )}
 
         {/* Top Listeners section — OPTIMIZATION #8: skeleton cards while loading */}
         {hostsLoading ? (
@@ -641,6 +691,8 @@ const styles = StyleSheet.create({
   section: { marginBottom: 20, gap: 12 },
   sectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   sectionTitle: { fontSize: 16, fontFamily: "Poppins_600SemiBold" },
+  recoItem: { marginRight: 0 },
+  recoReason: { fontSize: 10, fontFamily: "Poppins_500Medium", marginTop: 4, marginLeft: 4, maxWidth: 150 },
   seeAll: { fontSize: 12, fontFamily: "Poppins_500Medium" },
   countText: { fontSize: 12, fontFamily: "Poppins_400Regular" },
   chip: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20 },

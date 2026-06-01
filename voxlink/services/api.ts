@@ -139,6 +139,9 @@ export const API = {
       schedule: number[];
       milestones: Record<string, number>;
       enabled: boolean;
+      // Variable "lucky wheel" mode (Priority 4) — optional; older backends omit.
+      variable_enabled?: boolean;
+      variable_table?: Array<{ m: number; p: number }>;
     }>('GET', '/api/user/streak'),
   claimDailyStreak: () =>
     apiRequest<{
@@ -152,6 +155,9 @@ export const API = {
       milestone_bonus: number;
       next_claim_at: number;
       new_balance?: number;
+      // Set when the lucky-wheel determined the reward (Priority 4).
+      variable?: boolean;
+      multiplier?: number;
     }>('POST', '/api/user/streak/claim', {}),
 
   // Call quality sample ingestion — caller's app posts every ~30s during
@@ -222,6 +228,12 @@ export const API = {
     if (params?.limit) q.set('limit', String(params.limit));
     return apiRequest<{ hosts: any[]; nextCursor: string | null }>('GET', `/api/hosts?${q}`);
   },
+  // Personalized "For You" rail. Server ranks hosts per-user (favorites,
+  // call history, language/specialty/gender affinity + new-host exploration);
+  // see api-server lib/recommend.ts. `personalized:false` means the server fell
+  // back to the standard ordering (feature disabled) — render it the same way.
+  getRecommendedHosts: (limit = 20) =>
+    apiRequest<{ personalized: boolean; hosts: any[] }>('GET', `/api/hosts/recommended?limit=${limit}`),
   getHost: (id: string) => apiRequest<any>('GET', `/api/hosts/${id}`),
   getHostReviews: (id: string) => apiRequest<any[]>('GET', `/api/hosts/${id}/reviews`),
   becomeHost: (data: any) => apiRequest('POST', '/api/user/become-host', data),

@@ -120,17 +120,26 @@ A scheduled job that finds idle users and nudges them back.
 - **Delivery:** reuses `notifications` insert + `NotificationHub` realtime +
   `sendFCMPush`.
 
-### 🥉 Priority 3 — Quality-weighted Random Matchmaking (planned)
-Replace the uniform `OFFSET RANDOM` pick in `match.ts` with a weighted draw:
-`weight = f(rating, acceptance_rate, caller_affinity, demand_balancing)`. Spread
-demand so a few top hosts don't absorb everything and newer hosts still get
-random calls. Keep all existing anti-abuse guards.
+### 🥉 Priority 3 — Quality-weighted Random Matchmaking (SHIPPED)
+Replaced the uniform `OFFSET RANDOM` pick in `match.ts` with a weighted draw
+over a bounded candidate window. `lib/matchWeight.ts` computes a per-host
+selection weight = quality (rating + level rank_boost + popularity) + freshness
+(new-host cold-start) − a multiplicative **demand-balancing** penalty for hosts
+matched a lot in the last hour, so demand spreads across the roster instead of
+piling onto a few. A `base` floor keeps every eligible host in play
+(exploration). All existing anti-abuse guards, filters, and schema-heal
+fallbacks are preserved. Toggle via `match_weighting_enabled`; weights live in
+`match_weights`.
 
-### Priority 4 — Variable Reward Engine (planned)
-Turn the fixed daily-streak schedule into a probabilistic reward with an
-admin-controlled expected value (the payout curve stays budget-neutral; only
-the *presentation* becomes a spin/scratch). Add streak-freeze and targeted
-"low balance / high churn-risk" discount offers.
+### Priority 4 — Variable Reward Engine (SHIPPED)
+The daily-streak base reward can now be drawn from a "lucky wheel" of
+multipliers (`lib/streak.ts`). The realized base = `round(base × m / E[m])`, so
+the **expected payout always equals the scheduled base** (budget-neutral) while
+individual claims swing for the dopamine; milestone bonuses stay guaranteed.
+OFF by default (`daily_streak_variable_enabled`), table tunable via
+`daily_streak_variable_table`. The claim response returns `multiplier` so a
+future client spin animation can reveal "2x!". (Spin UI itself is a follow-up;
+the user app's streak API types are already forward-compatible.)
 
 ### Priority 5 — User XP / VIP Tiers (planned)
 Mirror the host level system for callers: XP from calls/minutes/spend → badges
@@ -155,6 +164,10 @@ host also called…") to feed the Priority 1 recommender as another signal.
 | `reengagement_cooldown_days` | `3` | Min gap between re-engagement pushes per user. |
 | `reengagement_max_per_run` | `200` | Cap on users processed per cron run. |
 | `reengagement_interval_hours` | `6` | Min hours between cron runs. |
+| `match_weighting_enabled` | `1` | Quality-weighted matchmaking (`0` = uniform random). |
+| `match_weights` | JSON | Match scoring weights (`lib/matchWeight.ts` `DEFAULT_MATCH_WEIGHTS`). |
+| `daily_streak_variable_enabled` | `0` | Variable "lucky wheel" daily reward. |
+| `daily_streak_variable_table` | JSON | Multiplier→probability tiers for the wheel. |
 
 All keys are tunable from the Admin panel (**Settings → Engagement —
 Recommendations & Re-engagement**) and fall back to safe defaults when unset.

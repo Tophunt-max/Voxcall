@@ -31,6 +31,23 @@ const DEFAULT_MILESTONES: Readonly<Record<string, number>> = {
   '100': 5000,
 };
 
+// Variable-reward "lucky wheel" (Priority 4). Each entry maps a multiplier to
+// a relative probability weight. The realized base reward = round(base * m /
+// E[m]), so the EXPECTED payout always equals the scheduled base regardless of
+// the table — the economy stays budget-neutral; only the *variance* (and the
+// dopamine) changes. Rare high multipliers create the jackpot feeling.
+interface VariableTier {
+  m: number;
+  p: number;
+}
+const DEFAULT_VARIABLE_TABLE: ReadonlyArray<VariableTier> = [
+  { m: 0.5, p: 0.35 },
+  { m: 0.8, p: 0.25 },
+  { m: 1.0, p: 0.2 },
+  { m: 2.0, p: 0.15 },
+  { m: 5.0, p: 0.05 },
+];
+
 export interface StreakStatus {
   streak_days: number;
   last_claim_at: number;
@@ -49,6 +66,14 @@ export interface StreakStatus {
   milestones: Record<string, number>;
   /** Whether the daily streak feature is currently enabled by admin. */
   enabled: boolean;
+  /** Whether the variable "lucky wheel" reward mode is active (Priority 4). */
+  variable_enabled: boolean;
+  /**
+   * The wheel segments [{m,p}] so the client can render a spin animation.
+   * Expected payout still equals `next_reward_base`; the multiplier only
+   * shifts variance, not the average. Empty when variable mode is off.
+   */
+  variable_table: VariableTier[];
 }
 
 export interface StreakClaimResult {
@@ -63,6 +88,10 @@ export interface StreakClaimResult {
   next_claim_at: number;
   /** New coin balance after the credit (caller can update local state). */
   new_balance?: number;
+  /** True when the variable "lucky wheel" determined this reward (Priority 4). */
+  variable?: boolean;
+  /** The drawn multiplier (e.g. 2 = "2x!"). 1 when variable mode is off. */
+  multiplier?: number;
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────
@@ -93,14 +122,18 @@ async function loadConfig(db: D1Database): Promise<{
   schedule: number[];
   milestones: Record<string, number>;
   enabled: boolean;
+  variableEnabled: boolean;
+  variableTable: VariableTier[];
 }> {
   // Each piece falls back to its DEFAULT_* if the row is missing or the JSON
   // is malformed. The streak system must keep working even when admin
   // settings are mid-edit / missing / corrupted.
-  const [schStr, msStr, enStr] = await Promise.all([
+  const [schStr, msStr, enStr, varEnStr, varTblStr] = await Promise.all([
     readSetting(db, 'daily_streak_schedule'),
     readSetting(db, 'daily_streak_milestones'),
     readSetting(db, 'daily_streak_enabled'),
+    readSetting(db, 'daily_streak_variable_enabled'),
+    readSetting(db, 'daily_streak_variable_table'),
   ]);
 
   let schedule: number[] = [...DEFAULT_SCHEDULE];
@@ -143,7 +176,62 @@ async function loadConfig(db: D1Database): Promise<{
   // string '0' as enabled (default behaviour).
   const enabled = enStr === null ? true : enStr !== '0';
 
-  return { schedule, milestones, enabled };
+  // Variable-reward mode is OFF by default — enabling it changes the *feel*
+  // (variance) but never the average payout. Admins opt in explicitly.
+  const variableEnabled = varEnStr === '1';
+  const variableTable = normalizeVariableTable(varTblStr);
+
+  return { schedule, milestones, enabled, variableEnabled, variableTable };
+}
+
+// ─── Variable reward (lucky wheel) helpers ─────────────────────────────────
+
+/** Parse/sanitize the variable table; fall back to the default on any issue. */
+function normalizeVariableTable(json: string | null): VariableTier[] {
+  if (!json) return [...DEFAULT_VARIABLE_TABLE];
+  try {
+    const parsed = JSON.parse(json);
+    if (Array.isArray(parsed)) {
+      const cleaned: VariableTier[] = [];
+      for (const row of parsed) {
+        const m = Number(row?.m);
+        const p = Number(row?.p);
+        if (Number.isFinite(m) && m > 0 && Number.isFinite(p) && p > 0) {
+          cleaned.push({ m, p });
+        }
+      }
+      if (cleaned.length > 0) return cleaned;
+    }
+  } catch {
+    /* fall through to default */
+  }
+  return [...DEFAULT_VARIABLE_TABLE];
+}
+
+/** Probability-weighted expected multiplier E[m] of a table (always > 0). */
+function tableExpectedValue(table: VariableTier[]): number {
+  let weightSum = 0;
+  let evSum = 0;
+  for (const t of table) {
+    weightSum += t.p;
+    evSum += t.m * t.p;
+  }
+  if (weightSum <= 0) return 1;
+  const ev = evSum / weightSum;
+  return ev > 0 ? ev : 1;
+}
+
+/** Draw one multiplier from the table by its relative probabilities. */
+function drawVariableMultiplier(table: VariableTier[], rng: () => number = Math.random): number {
+  let total = 0;
+  for (const t of table) total += t.p;
+  if (total <= 0) return 1;
+  let r = rng() * total;
+  for (const t of table) {
+    r -= t.p;
+    if (r <= 0) return t.m;
+  }
+  return table[table.length - 1].m;
 }
 
 function computeReward(
@@ -208,6 +296,8 @@ export async function getStreakStatus(
     schedule: cfg.schedule,
     milestones: cfg.milestones,
     enabled: cfg.enabled,
+    variable_enabled: cfg.variableEnabled,
+    variable_table: cfg.variableEnabled ? cfg.variableTable : [],
   };
 }
 
@@ -277,7 +367,19 @@ export async function claimDailyStreak(
   const continued = lastClaim > 0 && lastClaimDay === todayStart - SECONDS_PER_DAY;
   const newStreak = continued ? (Number(user.streak_days) || 0) + 1 : 1;
   const { base, milestone } = computeReward(newStreak, cfg.schedule, cfg.milestones);
-  const totalReward = base + milestone;
+
+  // Variable-reward mode (Priority 4): draw a multiplier and rescale the BASE
+  // by m / E[m] so the expected payout stays exactly the scheduled base
+  // (budget-neutral) while individual claims swing for the dopamine. Milestone
+  // bonuses are NOT randomized — they stay a guaranteed celebration.
+  let multiplier = 1;
+  let realizedBase = base;
+  if (cfg.variableEnabled && base > 0) {
+    multiplier = drawVariableMultiplier(cfg.variableTable);
+    const ev = tableExpectedValue(cfg.variableTable);
+    realizedBase = Math.max(1, Math.round((base * multiplier) / ev));
+  }
+  const totalReward = realizedBase + milestone;
 
   // CAS — only update if last_streak_claim_at is still strictly before the
   // start of today's IST day. Concurrent claim attempts collapse onto
@@ -316,8 +418,10 @@ export async function claimDailyStreak(
         'bonus',
         totalReward,
         milestone > 0
-          ? `Daily streak Day ${newStreak} (+${base} base, +${milestone} milestone)`
-          : `Daily streak Day ${newStreak}`,
+          ? `Daily streak Day ${newStreak} (+${realizedBase} base, +${milestone} milestone)`
+          : multiplier !== 1
+            ? `Daily streak Day ${newStreak} (${multiplier}x lucky reward)`
+            : `Daily streak Day ${newStreak}`,
       )
       .run();
   } catch (err) {
@@ -330,9 +434,11 @@ export async function claimDailyStreak(
     code: 'OK',
     streak_days: newStreak,
     reward: totalReward,
-    base_reward: base,
+    base_reward: realizedBase,
     milestone_bonus: milestone,
     next_claim_at: nextIstMidnight(now),
     new_balance: (Number(user.coins) || 0) + totalReward,
+    variable: cfg.variableEnabled && base > 0,
+    multiplier,
   };
 }

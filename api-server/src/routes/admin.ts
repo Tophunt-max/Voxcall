@@ -384,6 +384,9 @@ admin.patch('/settings', async (c) => {
     'reengagement_enabled', 'reengagement_idle_days', 'reengagement_winback_days',
     'reengagement_cooldown_days', 'reengagement_max_per_run',
     'reengagement_max_idle_days', 'reengagement_interval_hours',
+    // Priority 3 — quality-weighted matchmaking. Priority 4 — variable reward.
+    'match_weighting_enabled', 'match_weights',
+    'daily_streak_variable_enabled', 'daily_streak_variable_table',
   ];
   const stmts = Object.entries(body)
     .filter(([k]) => ALLOWED_SETTINGS.includes(k))
@@ -1355,6 +1358,9 @@ admin.put('/app-config', async (c) => {
     'reengagement_enabled', 'reengagement_idle_days', 'reengagement_winback_days',
     'reengagement_cooldown_days', 'reengagement_max_per_run',
     'reengagement_max_idle_days', 'reengagement_interval_hours',
+    // Priority 3 — quality-weighted matchmaking. Priority 4 — variable reward.
+    'match_weighting_enabled', 'match_weights',
+    'daily_streak_variable_enabled', 'daily_streak_variable_table',
   ]);
   const stmts = Object.entries(body)
     .filter(([k]) => ALLOWED_APP_CONFIG_KEYS.has(k))

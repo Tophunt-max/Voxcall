@@ -475,6 +475,33 @@ const ENGAGEMENT_DEFAULT_SETTINGS: ReadonlyArray<{ key: string; value: string }>
   { key: 'reengagement_max_per_run', value: '200' },
   { key: 'reengagement_max_idle_days', value: '45' },
   { key: 'reengagement_interval_hours', value: '6' },
+  // Quality-weighted random matchmaking (Priority 3, lib/matchWeight.ts).
+  // '0' reverts /match/find to the legacy uniform random draw.
+  { key: 'match_weighting_enabled', value: '1' },
+  {
+    key: 'match_weights',
+    value: JSON.stringify({
+      base: 1.0,
+      rating: 1.2,
+      rank_boost: 0.8,
+      popularity: 0.4,
+      freshness: 0.6,
+      demand_balance: 1.0,
+    }),
+  },
+  // Variable "lucky wheel" daily reward (Priority 4, lib/streak.ts). OFF by
+  // default — enabling only changes variance, not the average payout.
+  { key: 'daily_streak_variable_enabled', value: '0' },
+  {
+    key: 'daily_streak_variable_table',
+    value: JSON.stringify([
+      { m: 0.5, p: 0.35 },
+      { m: 0.8, p: 0.25 },
+      { m: 1.0, p: 0.2 },
+      { m: 2.0, p: 0.15 },
+      { m: 5.0, p: 0.05 },
+    ]),
+  },
 ];
 
 export function ensureEngagementSchema(db: D1Database): Promise<boolean> {
