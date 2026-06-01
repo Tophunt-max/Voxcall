@@ -184,12 +184,21 @@ export default function VideoCallScreen() {
     enabled: webrtcReady && !!activeCall?.sessionId,
   });
 
+  // FIX (host/user "Connecting..." desync): go "active" the moment the SERVER
+  // marks the call active. started_at is stamped at host-accept and reaches
+  // BOTH apps (call_accepted WS / answer response) BEFORE we navigate here, so
+  // activeCall.startTime is already set on mount. Previously each side waited
+  // for its OWN webrtc.isConnected, so the caller sat on "Connecting..." for
+  // several seconds (while being billed) even though the host's timer was
+  // already running. Anchoring "active" to the shared server startTime makes
+  // both timers start in lock-step. webrtc.isConnected stays as a fallback.
   useEffect(() => {
-    if (webrtc.isConnected && status !== "active") {
+    if (status === "active") return;
+    if (activeCall?.startTime || webrtc.isConnected) {
       setStatus("active");
       markCallActive();
     }
-  }, [webrtc.isConnected, status, markCallActive]);
+  }, [activeCall?.startTime, webrtc.isConnected, status, markCallActive]);
 
   const pulse = useRef(new Animated.Value(1)).current;
   // FIX: stop the avatar pulse when the remote video stream arrives. Before
@@ -327,21 +336,23 @@ export default function VideoCallScreen() {
     return () => clearTimeout(t);
   }, [webrtc.connectionState, status, webrtc.cleanup, endCall]);
 
-  // FIX (connecting timeout): if WebRTC never reaches `connected` state within
-  // 30 s of mount, the call is stalled (CF Calls negotiation hung, ICE timed
-  // out, etc.). Auto-end gracefully so the user is not stuck on "Connecting...".
+  // FIX (connecting timeout): if WebRTC media never reaches `connected` state
+  // within 30 s, the call is stalled (CF Calls negotiation hung, ICE timed out,
+  // etc.). Auto-end gracefully. NOTE: gated on the REAL webrtc.isConnected, NOT
+  // on `status` — `status` now flips to "active" off the server startTime before
+  // media is actually up, so gating on status would disable this safety net.
   useEffect(() => {
-    if (status === "active") return;
+    if (webrtc.isConnected) return;
     if (!webrtcReady) return;
     const t = setTimeout(() => {
       if (!webrtc.isConnected) {
-        console.warn("[video-call] Did not connect within 30s — auto-ending");
+        console.warn("[video-call] Media did not connect within 30s — auto-ending");
         webrtc.cleanup();
         endCall(true);
       }
     }, 30000);
     return () => clearTimeout(t);
-  }, [status, webrtcReady, webrtc.isConnected, webrtc.cleanup, endCall]);
+  }, [webrtcReady, webrtc.isConnected, webrtc.cleanup, endCall]);
 
   // FIX (call-disconnect propagation safety net #2): poll the server every 10s
   // while active. Catches sessions that ended server-side (cron reaper, /end

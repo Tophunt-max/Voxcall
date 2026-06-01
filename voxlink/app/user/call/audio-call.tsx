@@ -78,12 +78,24 @@ export default function AudioCallScreen() {
     enabled: webrtcReady && !!activeCall?.sessionId,
   });
 
+  // FIX (host/user "Connecting..." desync): the call is "active" the moment
+  // the SERVER marks it active. started_at is stamped at host-accept and reaches
+  // BOTH apps (call_accepted WS event / answer response) BEFORE we navigate to
+  // this screen, so activeCall.startTime is already set on mount. Previously
+  // each side waited for its OWN webrtc.isConnected to flip "active", so the
+  // caller — which only begins negotiating after navigating in from the ringing
+  // screen — sat on "Connecting..." for several seconds (while being billed)
+  // even though the host's timer was already running. Driving "active" off the
+  // shared server startTime makes both timers start from the SAME anchor, in
+  // lock-step. webrtc.isConnected stays as a fallback for any path that reaches
+  // this screen without a server startTime.
   useEffect(() => {
-    if (webrtc.isConnected && status !== "active") {
+    if (status === "active") return;
+    if (activeCall?.startTime || webrtc.isConnected) {
       setStatus("active");
       markCallActive();
     }
-  }, [webrtc.isConnected, status, markCallActive]);
+  }, [activeCall?.startTime, webrtc.isConnected, status, markCallActive]);
 
   // FIX (permission flash bug): see voxlink/hooks/usePermissions.ts. We now
   // wait for the hook's `loaded` flag instead of running a second redundant
@@ -199,21 +211,24 @@ export default function AudioCallScreen() {
     return () => clearTimeout(t);
   }, [webrtc.connectionState, status, webrtc.cleanup, endCall]);
 
-  // FIX (connecting timeout): if WebRTC never reaches `connected` state within
-  // 30 s of mount, the call is stalled (CF Calls negotiation hung, ICE timed
-  // out, etc.). Auto-end gracefully so the user is not stuck on "Connecting...".
+  // FIX (connecting timeout): if WebRTC media never reaches `connected` state
+  // within 30 s, the call is stalled (CF Calls negotiation hung, ICE timed out,
+  // etc.). Auto-end gracefully. NOTE: this is gated on the REAL
+  // webrtc.isConnected, NOT on `status` — because `status` now flips to "active"
+  // off the server startTime before media is actually up, so gating on status
+  // would silently disable this safety net.
   useEffect(() => {
-    if (status === "active") return;
+    if (webrtc.isConnected) return;
     if (!webrtcReady) return;
     const t = setTimeout(() => {
       if (!webrtc.isConnected) {
-        console.warn("[audio-call] Did not connect within 30s — auto-ending");
+        console.warn("[audio-call] Media did not connect within 30s — auto-ending");
         webrtc.cleanup();
         endCall(true);
       }
     }, 30000);
     return () => clearTimeout(t);
-  }, [status, webrtcReady, webrtc.isConnected, webrtc.cleanup, endCall]);
+  }, [webrtcReady, webrtc.isConnected, webrtc.cleanup, endCall]);
 
   // FIX (call-disconnect propagation safety net #2): poll the server every 10 s
   // while the call is active. If the session is reported as ended/missed/
