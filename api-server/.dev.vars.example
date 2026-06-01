@@ -3,3 +3,8 @@
 
 JWT_SECRET=your-strong-random-secret-min-32-chars
 CF_CALLS_APP_SECRET=your-cloudflare-calls-app-secret
+
+# Marks local dev as NOT production so /api/calls/ice-config keeps serving the
+# public Open Relay TURN fallback (handy when you have not configured the
+# Cloudflare TURN key locally). Omit/keep as "development" in dev.
+ENVIRONMENT=development

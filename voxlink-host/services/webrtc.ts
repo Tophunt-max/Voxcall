@@ -356,14 +356,19 @@ export class WebRTCService {
       this.pc.addEventListener('connectionstatechange', () => {
         const state = this.pc?.connectionState || 'unknown';
         this.callbacks.onConnectionStateChange?.(state);
-        if (state === 'disconnected' || state === 'failed') {
-          this._scheduleIceRestart(state === 'failed');
-          if (state === 'failed') this._emitQuality('lost');
+        this._handleConnectivity(state);
+      });
+
+      // Secondary connectivity signal. On some react-native-webrtc (Android)
+      // builds connectionState never advances to 'connected' even when ICE and
+      // media are fully up — so we also drive reconnection + the UI state off
+      // the ICE connection state, surfacing 'connected' when ICE is up.
+      this.pc.addEventListener('iceconnectionstatechange', () => {
+        const ice = this.pc?.iceConnectionState || 'unknown';
+        if ((ice === 'connected' || ice === 'completed') && this.pc?.connectionState !== 'connected') {
+          this.callbacks.onConnectionStateChange?.('connected');
         }
-        if (state === 'connected') {
-          this._clearIceRestartTimer();
-          this._startQualityMonitor();
-        }
+        this._handleConnectivity(ice);
       });
 
       // FIX (camera fails to start / "Camera off"): acquire local media with a
@@ -611,15 +616,15 @@ export class WebRTCService {
   }
 
   private _scheduleIceRestart(immediate = false): void {
-    if (this.destroyed || this.iceRestartAttempts >= this.MAX_ICE_RESTART_ATTEMPTS) {
-      if (this.iceRestartAttempts >= this.MAX_ICE_RESTART_ATTEMPTS) {
-        this.callbacks.onError?.(new Error('Connection failed after multiple reconnect attempts'));
-      }
+    if (this.destroyed) return;
+    if (this.iceRestartTimer) return; // an attempt is already queued — don't thrash
+    if (this.iceRestartAttempts >= this.MAX_ICE_RESTART_ATTEMPTS) {
+      this.callbacks.onError?.(new Error('Connection failed after multiple reconnect attempts'));
       return;
     }
-    this._clearIceRestartTimer();
     const delay = immediate ? 1000 : 3000 + (this.iceRestartAttempts * 2000);
     this.iceRestartTimer = setTimeout(async () => {
+      this.iceRestartTimer = null;
       if (this.destroyed || !this.pc) return;
       try {
         this.iceRestartAttempts++;
@@ -664,6 +669,16 @@ export class WebRTCService {
       } catch (err) {
         console.warn('[WebRTC] ICE restart failed:', err);
       }
+      // If we still aren't connected, queue the next bounded attempt. This
+      // self-cancels when a 'connected' state fires (_resetIceRestart), so the
+      // chain only continues while the connection is genuinely down — and stops
+      // after MAX_ICE_RESTART_ATTEMPTS with an onError.
+      if (!this.destroyed && this.pc &&
+          this.pc.connectionState !== 'connected' &&
+          this.pc.iceConnectionState !== 'connected' &&
+          this.pc.iceConnectionState !== 'completed') {
+        this._scheduleIceRestart(false);
+      }
     }, delay);
   }
 
@@ -672,7 +687,34 @@ export class WebRTCService {
       clearTimeout(this.iceRestartTimer);
       this.iceRestartTimer = null;
     }
+  }
+
+  // Full reset — clears any pending restart AND zeroes the attempt counter.
+  // Called only when we reach a genuinely connected state, so the bounded retry
+  // budget (MAX_ICE_RESTART_ATTEMPTS) survives across a single outage instead of
+  // being reset on every state re-fire — which previously made the "give up
+  // after N attempts" guard ineffective (it could retry indefinitely).
+  private _resetIceRestart(): void {
+    this._clearIceRestartTimer();
     this.iceRestartAttempts = 0;
+  }
+
+  // Drive reconnection + quality from a connectivity state value. Fed by BOTH
+  // connectionstatechange and iceconnectionstatechange because some
+  // react-native-webrtc (Android) builds never advance connectionState past
+  // 'connecting' even though ICE — and media — are fully established.
+  private _handleConnectivity(state: string): void {
+    if (state === 'connected' || state === 'completed') {
+      this._resetIceRestart();
+      this._startQualityMonitor();
+    } else if (state === 'failed') {
+      this._emitQuality('lost');
+      this._scheduleIceRestart(true);
+    } else if (state === 'disconnected') {
+      // Often transient on mobile — schedule with a normal (non-immediate)
+      // delay so a self-healing blip cancels it before it fires.
+      this._scheduleIceRestart(false);
+    }
   }
 
   // FIX (video clarity): apply the outbound video sender's bitrate/framerate
