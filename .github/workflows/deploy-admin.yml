@@ -1,5 +1,19 @@
 name: Deploy Admin Panel (Cloudflare Pages)
 
+# CI for the Cloudflare Pages deployment of the admin panel.
+#
+# Migrated from `cloudflare/pages-action@v1` (deprecated, Node 20-only) to
+# `cloudflare/wrangler-action@v3` with `command: pages deploy …`. The old
+# action started failing in mid-2025 once Cloudflare started rejecting its
+# auth flow, and it ships a deprecation notice in the runner logs. Wrangler
+# 3 is the official replacement and is what `wrangler pages deploy` runs
+# under the hood.
+#
+# Required GitHub secrets / variables (Settings → Secrets and variables):
+#   - secrets.CLOUDFLARE_API_TOKEN  Workers + Pages: Edit scope. If this
+#     401s, regenerate at dash.cloudflare.com → My Profile → API Tokens.
+#   - vars.CF_ACCOUNT_ID            Cloudflare account ID (b592b3b…).
+
 on:
   push:
     branches:
@@ -7,6 +21,8 @@ on:
     paths:
       - 'admin-panel/**'
       - 'lib/**'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
       - '.github/workflows/deploy-admin.yml'
   workflow_dispatch:
 
@@ -34,7 +50,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'pnpm'
 
       - name: Install dependencies
@@ -45,12 +61,18 @@ jobs:
         run: pnpm build
         env:
           NODE_ENV: production
+          # BASE_PATH=/ so the static bundle works at the Pages root URL.
+          # vite.config.ts already defaults to '/' when NODE_ENV=production
+          # and BASE_PATH is unset; we set it explicitly here for clarity.
+          BASE_PATH: '/'
 
       - name: Deploy to Cloudflare Pages
-        uses: cloudflare/pages-action@v1
+        uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ vars.CF_ACCOUNT_ID }}
-          projectName: voxlink-admin
-          directory: admin-panel/dist
-          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          # `pages deploy` is the supported successor to the deprecated
+          # `cloudflare/pages-action@v1`. --branch=main makes this a
+          # production deployment (default behaviour) — be explicit so a
+          # future ref change doesn't silently demote it to a preview.
+          command: pages deploy admin-panel/dist --project-name=voxlink-admin --branch=main

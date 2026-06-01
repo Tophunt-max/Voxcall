@@ -1,5 +1,9 @@
 name: Deploy Host Mobile Web (Cloudflare Pages)
 
+# Migrated from `cloudflare/pages-action@v1` (deprecated, started 401-ing
+# from Cloudflare in mid-2025) to `cloudflare/wrangler-action@v3` with
+# `command: pages deploy …`. See deploy-admin.yml for the full rationale.
+
 on:
   push:
     branches:
@@ -7,6 +11,8 @@ on:
     paths:
       - 'voxlink-host/**'
       - 'lib/**'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
       - '.github/workflows/deploy-host-mobile.yml'
   workflow_dispatch:
 
@@ -26,15 +32,11 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         # Read pnpm version from `packageManager` in root package.json.
-        # Specifying `version` here AND in package.json makes
-        # pnpm/action-setup@v4 refuse to install with
-        # `ERR_PNPM_BAD_PM_VERSION`. Removing the inline `with: version`
-        # makes packageManager the single source of truth.
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'pnpm'
 
       - name: Install dependencies
@@ -57,13 +59,11 @@ jobs:
       - name: Copy Service Worker to dist
         run: |
           cp voxlink-host/public/firebase-messaging-sw.js voxlink-host/static-build/firebase-messaging-sw.js
-          echo "✅ Service worker copied to dist"
+          echo "Service worker copied to static-build"
 
       - name: Deploy to Cloudflare Pages
-        uses: cloudflare/pages-action@v1
+        uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ vars.CF_ACCOUNT_ID }}
-          projectName: voxlink-host-mobile
-          directory: voxlink-host/static-build
-          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          command: pages deploy voxlink-host/static-build --project-name=voxlink-host-mobile --branch=main
