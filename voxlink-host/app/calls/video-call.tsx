@@ -824,6 +824,7 @@ export default function VideoCallScreen() {
                       <Text style={uiS.liveText}>LIVE</Text>
                     </View>
                     <Text style={uiS.timer}>{formatTime(elapsed)}</Text>
+                    {webrtc.remoteMuted && <Text style={{ fontSize: 12, marginLeft: 4 }}>🔇</Text>}
                   </View>
                 ) : (
                   <Text style={uiS.headerSub} numberOfLines={1}>
