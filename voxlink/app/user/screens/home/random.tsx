@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, Image,
   Animated, Dimensions, Modal, ScrollView, ActivityIndicator,
@@ -22,16 +22,76 @@ const GRAD: [string, string] = ["#CF00FD", "#8400FF"];
 const AVATAR_SIZE = SH * 0.065;
 const CIRCLE_IMG_SIZE = 270;
 
+/**
+ * Hard cap on /match/find polls per searching session. At 2.5s/poll this
+ * gives roughly a 50-second search window before we stop hammering the
+ * server and surface a friendly "no host available" state.
+ */
+const MAX_POLL_ATTEMPTS = 20;
+/** How often to refresh the floating-cards "who's online" list. */
+const ONLINE_HOSTS_REFRESH_MS = 30_000;
+
 type CallType = "audio" | "video";
 type Phase = "idle" | "searching" | "found" | "no_hosts";
 
+type GenderFilter = "any" | "male" | "female";
+type RatingFilter = 0 | 3 | 4 | 4.5;
+
+interface MatchFilters {
+  gender: GenderFilter;
+  minRating: RatingFilter;
+}
+
 interface HostCard {
   id: string;
+  user_id?: string;
   name: string;
   avatar_url?: string;
   rating: number;
   coins_per_minute: number;
   specialties: string[];
+}
+
+/**
+ * Fisher-Yates in-place shuffle. The previous `sort(() => Math.random() - 0.5)`
+ * approach is biased — V8's TimSort uses the comparator transitively so some
+ * permutations end up far more likely than others, making the same hosts
+ * cluster on the floating cards. Fisher-Yates picks a uniformly random index
+ * for each remaining slot, so every permutation is equally likely.
+ */
+function shuffle<T>(input: T[]): T[] {
+  const a = input.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+/**
+ * Map a stable server `code` to a user-visible message. The backend never
+ * sends localized strings any more — the client owns the wording so it can
+ * translate (and the server stays language-agnostic).
+ */
+function searchingMessageForCode(code: string | undefined, onlineCount: number): string {
+  switch (code) {
+    case "INSUFFICIENT_COINS":
+      return "Not enough coins to start a random call.";
+    case "RATE_LIMITED":
+      return "Slow down a moment, then try again…";
+    case "DAILY_LIMIT_REACHED":
+      return "You've reached today's random-match limit.";
+    case "DECLINE_COOLDOWN":
+      return "Too many declines — please take a short break.";
+    case "NO_MATCH_WITH_FILTERS":
+      return "No host matches your filters — relaxing them may help.";
+    case "NO_HOST_AVAILABLE":
+      return onlineCount > 0
+        ? "Searching among online listeners…"
+        : "No listeners online right now — still searching…";
+    default:
+      return "Finding your match…";
+  }
 }
 
 /* ─── Ripple rings (background) ─── */
@@ -156,6 +216,89 @@ function CallTypeDialog({ visible, selected, onSelect, onClose }: {
   );
 }
 
+/* ─── Filters bottom sheet ─── */
+function FiltersDialog({ visible, value, onChange, onClose }: {
+  visible: boolean;
+  value: MatchFilters;
+  onChange: (v: MatchFilters) => void;
+  onClose: () => void;
+}) {
+  const genderOptions: { key: GenderFilter; label: string; emoji: string }[] = [
+    { key: "any", label: "Any", emoji: "✨" },
+    { key: "male", label: "Male", emoji: "👨" },
+    { key: "female", label: "Female", emoji: "👩" },
+  ];
+  const ratingOptions: { key: RatingFilter; label: string }[] = [
+    { key: 0, label: "Any rating" },
+    { key: 3, label: "3★ +" },
+    { key: 4, label: "4★ +" },
+    { key: 4.5, label: "4.5★ +" },
+  ];
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <TouchableOpacity style={styles.dialogOverlay} activeOpacity={1} onPress={onClose}>
+        <TouchableOpacity activeOpacity={1} onPress={() => { /* swallow */ }} style={styles.filtersSheet}>
+          <Text style={styles.dialogTitle}>Match Filters</Text>
+
+          <Text style={styles.filterLabel}>Gender</Text>
+          <View style={styles.filterChipsRow}>
+            {genderOptions.map((opt) => {
+              const active = value.gender === opt.key;
+              return (
+                <TouchableOpacity
+                  key={opt.key}
+                  onPress={() => onChange({ ...value, gender: opt.key })}
+                  activeOpacity={0.85}
+                  style={[styles.filterPill, active && styles.filterPillActive]}
+                >
+                  <Text style={[styles.filterPillTxt, active && styles.filterPillTxtActive]}>
+                    {opt.emoji}  {opt.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <Text style={[styles.filterLabel, { marginTop: 16 }]}>Minimum rating</Text>
+          <View style={styles.filterChipsRow}>
+            {ratingOptions.map((opt) => {
+              const active = value.minRating === opt.key;
+              return (
+                <TouchableOpacity
+                  key={opt.key}
+                  onPress={() => onChange({ ...value, minRating: opt.key })}
+                  activeOpacity={0.85}
+                  style={[styles.filterPill, active && styles.filterPillActive]}
+                >
+                  <Text style={[styles.filterPillTxt, active && styles.filterPillTxtActive]}>
+                    {opt.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <View style={styles.filtersFooter}>
+            <TouchableOpacity
+              onPress={() => onChange({ gender: "any", minRating: 0 })}
+              activeOpacity={0.7}
+              style={styles.filtersResetBtn}
+            >
+              <Text style={styles.filtersResetTxt}>Reset</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={onClose} activeOpacity={0.85} style={styles.filtersDoneBtn}>
+              <LinearGradient colors={GRAD} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.filtersDoneBtnInner}>
+                <Text style={styles.filtersDoneTxt}>Done</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </Modal>
+  );
+}
+
 /* ─── Match found ripple ─── */
 function MatchRipple() {
   const m0 = useRef(new Animated.Value(0)).current;
@@ -184,8 +327,10 @@ function MatchRipple() {
 }
 
 /* ─── Match found screen overlay ─── */
-function MatchFoundScreen({ host, callType, adminCoinRate, onAccept, onDecline }: {
-  host: HostCard; callType: CallType; adminCoinRate: number; onAccept: () => void; onDecline: () => void;
+function MatchFoundScreen({ host, callType, adminCoinRate, busy, onAccept, onDecline, onSkip }: {
+  host: HostCard; callType: CallType; adminCoinRate: number;
+  busy: boolean;
+  onAccept: () => void; onDecline: () => void; onSkip: () => void;
 }) {
   const scale = useRef(new Animated.Value(0.7)).current;
   useEffect(() => {
@@ -236,18 +381,35 @@ function MatchFoundScreen({ host, callType, adminCoinRate, onAccept, onDecline }
 
           <View style={styles.matchBtns}>
             <View style={styles.matchBtnItem}>
-              <TouchableOpacity onPress={onDecline} style={styles.matchDecline} activeOpacity={0.8}>
+              <TouchableOpacity onPress={onDecline} style={styles.matchDecline} activeOpacity={0.8} disabled={busy}>
                 <Image source={require("@/assets/icons/ic_call_end.png")} style={styles.matchBtnIco} tintColor="#fff" resizeMode="contain" />
               </TouchableOpacity>
               <Text style={styles.matchBtnLabel}>Decline</Text>
             </View>
             <View style={styles.matchBtnItem}>
-              <TouchableOpacity onPress={onAccept} activeOpacity={0.8}>
+              <TouchableOpacity
+                onPress={onSkip}
+                activeOpacity={0.8}
+                disabled={busy}
+                accessibilityLabel="Skip and find another match"
+              >
+                <View style={styles.matchSkip}>
+                  <Image source={require("@/assets/icons/ic_shuffle.png")} style={styles.matchBtnIco} tintColor="#fff" resizeMode="contain" />
+                </View>
+              </TouchableOpacity>
+              <Text style={styles.matchBtnLabel}>Skip / Next</Text>
+            </View>
+            <View style={styles.matchBtnItem}>
+              <TouchableOpacity onPress={onAccept} activeOpacity={0.8} disabled={busy}>
                 <LinearGradient colors={GRAD} style={styles.matchAccept} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-                  <Image source={require("@/assets/icons/ic_call_gradient.png")} style={styles.matchBtnIco} tintColor="#fff" resizeMode="contain" />
+                  {busy ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Image source={require("@/assets/icons/ic_call_gradient.png")} style={styles.matchBtnIco} tintColor="#fff" resizeMode="contain" />
+                  )}
                 </LinearGradient>
               </TouchableOpacity>
-              <Text style={styles.matchBtnLabel}>Accept</Text>
+              <Text style={styles.matchBtnLabel}>{busy ? "Checking…" : "Accept"}</Text>
             </View>
           </View>
         </Animated.View>
@@ -265,9 +427,15 @@ export default function RandomScreen() {
   const [phase, setPhase]         = useState<Phase>("idle");
   const [callType, setCallType]   = useState<CallType>("audio");
   const [dialogVisible, setDialog] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filters, setFilters] = useState<MatchFilters>({ gender: "any", minRating: 0 });
   const [matchedHost, setMatchedHost] = useState<HostCard | null>(null);
   const [adminCoinRate, setAdminCoinRate] = useState<number>(5);
-  const [noHostMsg, setNoHostMsg]  = useState("");
+  const [statusMsg, setStatusMsg]  = useState("");
+  const [statusCode, setStatusCode] = useState<string | undefined>(undefined);
+  const [onlineCount, setOnlineCount] = useState<number>(0);
+  // True when matched host's live status check fails — gate Accept on this.
+  const [hostCheckBusy, setHostCheckBusy] = useState(false);
 
   // Floating card hosts (real API)
   const [cardHosts, setCardHosts] = useState<HostCard[]>([]);
@@ -275,25 +443,43 @@ export default function RandomScreen() {
   const [cardKeys, setCardKeys]   = useState([0, 1, 2, 3]);
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollAttemptsRef = useRef(0);
   const isMounted = useRef(true);
   useEffect(() => { isMounted.current = true; return () => { isMounted.current = false; }; }, []);
 
-  // Load online hosts for floating cards
+  // Load + periodically refresh online-host list (powers both the floating
+  // cards and the "N listeners online" pill). Uses Fisher-Yates so the same
+  // hosts don't cluster on the cards.
   useEffect(() => {
+    let intervalId: ReturnType<typeof setInterval> | null = null;
     const load = async () => {
       try {
-        const hosts = await API.matchOnlineHosts();
+        const res = await API.matchOnlineHosts();
         if (!isMounted.current) return;
+        const hosts = res?.hosts ?? [];
+        setOnlineCount(res?.online_count ?? hosts.length);
         if (hosts.length >= 4) {
-          const shuffled = [...hosts].sort(() => Math.random() - 0.5);
+          const shuffled = shuffle(hosts);
           setCardHosts(shuffled);
           currentHosts.current = shuffled.slice(0, 4);
+        } else if (hosts.length > 0) {
+          setCardHosts(hosts);
+          currentHosts.current = hosts.slice(0, Math.min(4, hosts.length));
         }
       } catch {
-        showErrorToast("Failed to load available hosts.");
+        // First load failure surfaces a toast; subsequent refreshes stay
+        // quiet so a brief network blip doesn't spam the user.
+        if (cardHosts.length === 0) {
+          showErrorToast("Failed to load available hosts.");
+        }
       }
     };
     load();
+    intervalId = setInterval(load, ONLINE_HOSTS_REFRESH_MS);
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleReplace = useCallback((index: number) => {
@@ -305,49 +491,101 @@ export default function RandomScreen() {
     }
   }, [cardHosts]);
 
-  // Start polling for match
+  const stopSearching = useCallback(() => {
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+    pollAttemptsRef.current = 0;
+    setPhase("idle");
+    setMatchedHost(null);
+    setStatusMsg("");
+    setStatusCode(undefined);
+  }, []);
+
+  // Build the request filters payload from the controlled state. Empty fields
+  // are omitted so the server falls through to "any" matching.
+  const buildFilterPayload = useCallback(() => {
+    const payload: { gender?: "male" | "female"; min_rating?: number } = {};
+    if (filters.gender !== "any") payload.gender = filters.gender;
+    if (filters.minRating > 0) payload.min_rating = filters.minRating;
+    return payload;
+  }, [filters]);
+
+  // Start polling for match. Each poll runs against the configured filters;
+  // a hard cap prevents an idle screen from hammering the server forever.
   const startSearching = useCallback(() => {
     setPhase("searching");
     setMatchedHost(null);
+    setStatusMsg(searchingMessageForCode(undefined, onlineCount));
+    setStatusCode(undefined);
+    pollAttemptsRef.current = 0;
 
     const poll = async () => {
+      if (!isMounted.current) return;
+      pollAttemptsRef.current += 1;
       try {
-        const res = await API.matchFind(callType);
+        const res = await API.matchFind(callType, buildFilterPayload());
         if (!isMounted.current) return;
+
+        if (typeof res.online_count === "number") setOnlineCount(res.online_count);
+
         if (res.matched && res.host) {
           setMatchedHost(res.host);
-          // FIX: matchFind response shape is { matched, host?, message? } — there is
-          // no top-level coins_per_minute. Read it off the host object only.
-          setAdminCoinRate(res.host?.coins_per_minute ?? 5);
+          setAdminCoinRate(res.coins_per_minute ?? res.host?.coins_per_minute ?? 5);
           setPhase("found");
           if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
-        } else {
-          // No hosts yet — keep polling
-          setNoHostMsg(res.message ?? "No hosts available right now, still searching...");
+          return;
+        }
+
+        // Hard-stop conditions — keep polling won't help.
+        if (
+          res.code === "INSUFFICIENT_COINS" ||
+          res.code === "DAILY_LIMIT_REACHED" ||
+          res.code === "DECLINE_COOLDOWN"
+        ) {
+          setStatusMsg(searchingMessageForCode(res.code, onlineCount));
+          setStatusCode(res.code);
+          if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+          setPhase("idle");
+          showErrorToast(searchingMessageForCode(res.code, onlineCount));
+          // Insufficient coins → nudge to the wallet (consistent with the
+          // legacy direct-call flow).
+          if (res.code === "INSUFFICIENT_COINS") router.push("/user/payment/checkout");
+          return;
+        }
+
+        // Soft "still searching" states — keep polling until the cap.
+        setStatusMsg(searchingMessageForCode(res.code, res.online_count ?? onlineCount));
+        setStatusCode(res.code);
+
+        if (pollAttemptsRef.current >= MAX_POLL_ATTEMPTS) {
+          if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+          setPhase("idle");
+          setStatusMsg("No host found right now. Try again in a bit.");
+          showErrorToast("No host found right now. Try again in a bit.");
         }
       } catch {
-        if (isMounted.current) setNoHostMsg("Network error, retrying...");
+        if (!isMounted.current) return;
+        setStatusMsg("Network error, retrying…");
+        if (pollAttemptsRef.current >= MAX_POLL_ATTEMPTS) {
+          if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+          setPhase("idle");
+          showErrorToast("Couldn't reach the server. Please try again.");
+        }
       }
     };
 
     poll(); // immediate first call
     pollRef.current = setInterval(poll, 2500);
-  }, [callType]);
-
-  const stopSearching = useCallback(() => {
-    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
-    setPhase("idle");
-    setMatchedHost(null);
-  }, []);
+  }, [callType, buildFilterPayload, onlineCount]);
 
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
 
-  // Accept match → proper call flow using admin-set coin rate
-  const handleAccept = useCallback(() => {
+  // Accept match → live host status re-check before placing the call. The
+  // few seconds between /match/find and Accept can be enough for the host
+  // to go offline or join another call; without this re-check the user's
+  // call would silently fail at /call/initiate.
+  const handleAccept = useCallback(async () => {
     if (!matchedHost) return;
 
-    // Consistency with hosts/[id]: require ~2 minutes of balance up-front so we
-    // don't drop the user into a call that auto-disconnects immediately.
     if ((user?.coins ?? 0) < adminCoinRate * 2) {
       setPhase("idle");
       setMatchedHost(null);
@@ -356,15 +594,37 @@ export default function RandomScreen() {
       return;
     }
 
+    setHostCheckBusy(true);
+    try {
+      const status = await API.matchHostStatus(matchedHost.id);
+      if (!status.available) {
+        showErrorToast(
+          status.code === "HOST_BUSY"
+            ? "Host just got busy — finding another match."
+            : status.code === "HOST_OFFLINE"
+              ? "Host went offline — finding another match."
+              : "Host unavailable — finding another match.",
+        );
+        // Roll the user back into a fresh search instead of leaving them
+        // staring at a dead Match Found overlay.
+        setPhase("idle");
+        setMatchedHost(null);
+        startSearching();
+        return;
+      }
+    } catch {
+      // Status endpoint failure — proceed optimistically; /call/initiate
+      // will surface the real error if the host is genuinely unavailable.
+    } finally {
+      setHostCheckBusy(false);
+    }
+
     setPhase("idle");
-
     const avatarUri = resolveMediaUrl(matchedHost.avatar_url) || `https://api.dicebear.com/7.x/avataaars/png?seed=${matchedHost.id}`;
-
-    // adminCoinRate is set by admin in Settings → Random Call Rates
     initiateCall(
       { id: matchedHost.id, name: matchedHost.name, avatar: avatarUri, role: "host" },
       callType,
-      adminCoinRate
+      adminCoinRate,
     );
     router.push({
       pathname: "/user/call/outgoing",
@@ -376,12 +636,25 @@ export default function RandomScreen() {
         specialty: matchedHost.specialties[0] ?? "",
       },
     });
-  }, [matchedHost, callType, initiateCall, adminCoinRate, user?.coins]);
+  }, [matchedHost, callType, initiateCall, adminCoinRate, user?.coins, startSearching]);
 
   const handleDecline = useCallback(() => {
+    if (matchedHost) {
+      // Best-effort decline relay so the cooldown guard counts it. We don't
+      // await — failure here must never block the UI from going back to idle.
+      API.matchDecline(matchedHost.id).catch(() => {});
+    }
     setPhase("idle");
     setMatchedHost(null);
-  }, []);
+  }, [matchedHost]);
+
+  // "Skip / Next match" — same as Decline but immediately re-enters the
+  // search so the user never has to bounce back to the home screen.
+  const handleSkipNext = useCallback(() => {
+    if (matchedHost) API.matchDecline(matchedHost.id).catch(() => {});
+    setMatchedHost(null);
+    startSearching();
+  }, [matchedHost, startSearching]);
 
   const dotTop    = SH * 0.2;
   const cardTop   = SH * 0.18;
@@ -446,26 +719,54 @@ export default function RandomScreen() {
       {phase === "searching" && (
         <View style={styles.searchingBadge}>
           <ActivityIndicator size="small" color={GRAD[1]} />
-          <Text style={styles.searchingText}>{noHostMsg || "Finding your match..."}</Text>
+          <Text style={styles.searchingText}>{statusMsg || "Finding your match…"}</Text>
+        </View>
+      )}
+
+      {/* Online listeners count — visible whenever idle so user knows
+          whether it's worth starting a search. Hidden during searching to
+          avoid duplicating the searching badge. */}
+      {phase === "idle" && onlineCount > 0 && (
+        <View style={styles.onlineCountPill}>
+          <View style={styles.onlineDot} />
+          <Text style={styles.onlineCountTxt}>
+            {onlineCount} {onlineCount === 1 ? "listener" : "listeners"} online
+          </Text>
         </View>
       )}
 
       {/* Bottom Buttons */}
       <View style={[styles.bottomBtns, { paddingBottom: insets.bottom + 16 }]}>
-        <TouchableOpacity
-          onPress={() => setDialog(true)}
-          style={styles.callTypeBtn}
-          activeOpacity={0.85}
-          disabled={phase === "searching"}
-        >
-          <Image
-            source={callType === "audio" ? require("@/assets/icons/ic_call_gradient.png") : require("@/assets/icons/ic_chat_video.png")}
-            style={styles.callTypeBtnIcon}
-            resizeMode="contain"
-          />
-          <Text style={styles.callTypeBtnTxt}>{callType === "audio" ? "Voice Call" : "Video Call"}</Text>
-          <Image source={require("@/assets/icons/ic_back.png")} style={styles.dropArrow} tintColor="#111329" resizeMode="contain" />
-        </TouchableOpacity>
+        <View style={styles.bottomChipsRow}>
+          <TouchableOpacity
+            onPress={() => setDialog(true)}
+            style={styles.callTypeBtn}
+            activeOpacity={0.85}
+            disabled={phase === "searching"}
+          >
+            <Image
+              source={callType === "audio" ? require("@/assets/icons/ic_call_gradient.png") : require("@/assets/icons/ic_chat_video.png")}
+              style={styles.callTypeBtnIcon}
+              resizeMode="contain"
+            />
+            <Text style={styles.callTypeBtnTxt}>{callType === "audio" ? "Voice Call" : "Video Call"}</Text>
+            <Image source={require("@/assets/icons/ic_back.png")} style={styles.dropArrow} tintColor="#111329" resizeMode="contain" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() => setFiltersOpen(true)}
+            style={styles.filterChip}
+            activeOpacity={0.85}
+            disabled={phase === "searching"}
+            accessibilityLabel="Match filters"
+          >
+            <Text style={styles.filterChipTxt}>
+              ⚙️ {filters.gender === "any" && filters.minRating === 0
+                ? "Filters"
+                : `Filters (${[filters.gender !== "any" ? filters.gender : null, filters.minRating > 0 ? `${filters.minRating}★+` : null].filter(Boolean).join(" · ")})`}
+            </Text>
+          </TouchableOpacity>
+        </View>
 
         {phase === "searching" ? (
           <TouchableOpacity onPress={stopSearching} activeOpacity={0.85} style={styles.randomBtnWrap}>
@@ -490,13 +791,22 @@ export default function RandomScreen() {
         onClose={() => setDialog(false)}
       />
 
+      <FiltersDialog
+        visible={filtersOpen}
+        value={filters}
+        onChange={setFilters}
+        onClose={() => setFiltersOpen(false)}
+      />
+
       {phase === "found" && matchedHost && (
         <MatchFoundScreen
           host={matchedHost}
           callType={callType}
           adminCoinRate={adminCoinRate}
+          busy={hostCheckBusy}
           onAccept={handleAccept}
           onDecline={handleDecline}
+          onSkip={handleSkipNext}
         />
       )}
     </View>
@@ -540,6 +850,28 @@ const styles = StyleSheet.create({
   // Searching badge
   searchingBadge: { position: "absolute", top: SH * 0.42, alignSelf: "center", flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "rgba(255,255,255,0.92)", paddingHorizontal: 18, paddingVertical: 10, borderRadius: 30, shadowColor: "#000", shadowOpacity: 0.08, shadowRadius: 12, elevation: 4 },
   searchingText: { fontSize: 13, fontFamily: "Poppins_500Medium", color: "#111329" },
+  // Online listeners count pill — visible on idle to set caller expectations
+  onlineCountPill: { position: "absolute", top: SH * 0.43, alignSelf: "center", flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "rgba(255,255,255,0.92)", paddingHorizontal: 14, paddingVertical: 8, borderRadius: 24, shadowColor: "#000", shadowOpacity: 0.08, shadowRadius: 12, elevation: 4 },
+  onlineDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#0BAF23" },
+  onlineCountTxt: { fontSize: 12, fontFamily: "Poppins_600SemiBold", color: "#111329" },
+  // Filter chip
+  bottomChipsRow: { flexDirection: "row", alignItems: "center", gap: 8, justifyContent: "center" },
+  filterChip: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 30, paddingVertical: 10, paddingHorizontal: 14, shadowColor: "#000", shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.1, shadowRadius: 18, elevation: 6 },
+  filterChipTxt: { fontSize: 13, fontFamily: "Poppins_500Medium", color: "#111329" },
+  // Filters sheet
+  filtersSheet: { width: SW - 48, backgroundColor: "#fff", borderRadius: 26, padding: 20, gap: 8 },
+  filterLabel: { fontSize: 12, fontFamily: "Poppins_600SemiBold", color: "#757396", textTransform: "uppercase", letterSpacing: 0.5 },
+  filterChipsRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 8 },
+  filterPill: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 22, borderWidth: 1, borderColor: "#E0DCEB", backgroundColor: "#FAFAFC" },
+  filterPillActive: { borderColor: "#8400FF", backgroundColor: "rgba(160,14,231,0.08)" },
+  filterPillTxt: { fontSize: 13, fontFamily: "Poppins_500Medium", color: "#111329" },
+  filterPillTxtActive: { color: "#8400FF", fontFamily: "Poppins_700Bold" },
+  filtersFooter: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 18 },
+  filtersResetBtn: { paddingVertical: 10, paddingHorizontal: 14 },
+  filtersResetTxt: { fontSize: 13, fontFamily: "Poppins_600SemiBold", color: "#757396" },
+  filtersDoneBtn: { flex: 1, marginLeft: 12 },
+  filtersDoneBtnInner: { paddingVertical: 12, borderRadius: 22, alignItems: "center" },
+  filtersDoneTxt: { color: "#fff", fontSize: 14, fontFamily: "Poppins_600SemiBold" },
   // Bottom
   bottomBtns: { position: "absolute", bottom: 0, left: 0, right: 0, alignItems: "center", gap: 0 },
   callTypeBtn: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 30, paddingVertical: 10, paddingHorizontal: 20, gap: 8, shadowColor: "#000", shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.1, shadowRadius: 18, elevation: 6 },
@@ -580,10 +912,11 @@ const styles = StyleSheet.create({
   matchTopicTag: { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20, marginHorizontal: 5 },
   matchTopicTxt: { fontSize: 12, fontFamily: "Poppins_500Medium", color: "#fff" },
   matchCallType: { fontSize: 14, fontFamily: "Poppins_500Medium", color: "#757396", marginVertical: 4 },
-  matchBtns: { flexDirection: "row", gap: 48, marginTop: 12 },
+  matchBtns: { flexDirection: "row", gap: 24, marginTop: 12 },
   matchBtnItem: { alignItems: "center", gap: 8 },
   matchBtnLabel: { fontSize: 12, fontFamily: "Poppins_500Medium", color: "#111329" },
   matchDecline: { width: 68, height: 68, borderRadius: 34, backgroundColor: "#FF025F", alignItems: "center", justifyContent: "center" },
+  matchSkip: { width: 68, height: 68, borderRadius: 34, backgroundColor: "#7C7C8A", alignItems: "center", justifyContent: "center" },
   matchAccept: { width: 68, height: 68, borderRadius: 34, alignItems: "center", justifyContent: "center" },
   matchBtnIco: { width: 28, height: 28 },
 });

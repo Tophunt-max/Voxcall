@@ -9,12 +9,13 @@ import { IconView } from "@/components/IconView";
 import { SvgIcon } from "@/components/SvgIcon";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
-import { apiRequest } from "@/services/api";
+import { apiRequest, API } from "@/services/api";
 import { usePermissions } from "@/hooks/usePermissions";
 import { PermissionDialog, PERMISSION_CONFIGS } from "@/components/PermissionDialog";
 import { useLanguage } from "@/context/LanguageContext";
 import { LANGUAGES } from "@/localization";
 import { useHostSettings } from "@/utils/hostSettings";
+import { showErrorToast } from "@/components/Toast";
 
 function Row({
   icon, iconImg, label, value, onPress, isSwitch, switchVal, onSwitch, danger
@@ -83,6 +84,74 @@ export default function HostSettingsScreen() {
   const handleCoinNotif = useCallback((v: boolean) => update({ coinNotif: v }), [update]);
   const handleAutoOnline = useCallback((v: boolean) => update({ autoOnline: v }), [update]);
   const handleDndMode = useCallback((v: boolean) => update({ dndMode: v }), [update]);
+
+  // ─── Random-call opt-ins ───────────────────────────────────────────────
+  // Backed by hosts.accepts_random_calls / hosts.allows_video on the server
+  // (migration 0026). Stored as INTEGER 0/1 there but exposed as booleans on
+  // the client. We load once on mount from /api/host/me (which returns the
+  // raw row) and persist via PATCH /api/host/me.
+  //
+  // Optimistic update pattern: flip the local toggle immediately so the UI
+  // never feels laggy, and roll back on API failure.
+  const [randomLoaded, setRandomLoaded] = useState(false);
+  const [acceptsRandomCalls, setAcceptsRandomCalls] = useState(true);
+  const [allowsVideo, setAllowsVideo] = useState(true);
+  // Saving = a PATCH is currently in flight; we disable both switches so
+  // a quick double-flip can't race two requests against each other.
+  const [randomSaving, setRandomSaving] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const me: any = await API.getHostMe();
+        if (cancelled) return;
+        // Migration 0026 columns default to 1; treat anything ≠ 0 as on so
+        // legacy rows (where the column may be NULL on a not-yet-migrated DB)
+        // still render correctly.
+        setAcceptsRandomCalls(me?.accepts_random_calls !== 0);
+        setAllowsVideo(me?.allows_video !== 0);
+        setRandomLoaded(true);
+      } catch {
+        // Quietly fall back to the optimistic defaults — the user can still
+        // flip the switches and the PATCH will surface any real error.
+        setRandomLoaded(true);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const persistRandomToggle = useCallback(
+    async (next: { accepts_random_calls?: boolean; allows_video?: boolean }) => {
+      setRandomSaving(true);
+      try {
+        await API.updateHostProfile(next);
+      } catch (e: any) {
+        showErrorToast(e?.message || "Couldn't save the change. Please try again.");
+        // Roll back the optimistic flip on failure so on-screen state matches
+        // the server again.
+        if (next.accepts_random_calls !== undefined) {
+          setAcceptsRandomCalls(!next.accepts_random_calls);
+        }
+        if (next.allows_video !== undefined) {
+          setAllowsVideo(!next.allows_video);
+        }
+      } finally {
+        setRandomSaving(false);
+      }
+    },
+    [],
+  );
+
+  const handleAcceptsRandom = useCallback((v: boolean) => {
+    setAcceptsRandomCalls(v);
+    void persistRandomToggle({ accepts_random_calls: v });
+  }, [persistRandomToggle]);
+
+  const handleAllowsVideo = useCallback((v: boolean) => {
+    setAllowsVideo(v);
+    void persistRandomToggle({ allows_video: v });
+  }, [persistRandomToggle]);
 
   const handlePushNotifToggle = (value: boolean) => {
     if (value) {
@@ -190,6 +259,53 @@ export default function HostSettingsScreen() {
               "Availability Schedule",
               "Scheduled availability is coming in a future update. For now, use Do Not Disturb Mode to mute notifications when you're unavailable, or toggle online/offline manually."
             )}
+          />
+        </View>
+
+        {/* Random Match controls — server-side opt-ins persisted on the host
+            row. Independent from local notification preferences because they
+            affect who can match with you, not just what alerts you see. */}
+        <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Random Calls</Text>
+        <View style={[styles.card, { backgroundColor: colors.card }]}>
+          <Row
+            icon="shuffle"
+            iconImg={require("@/assets/icons/ic_shuffle.png")}
+            label="Available for Random Calls"
+            value={
+              !randomLoaded
+                ? "Loading…"
+                : acceptsRandomCalls
+                  ? "On — included in random match pool"
+                  : "Off — only direct calls"
+            }
+            isSwitch
+            switchVal={acceptsRandomCalls}
+            onSwitch={(v) => {
+              if (randomSaving) return;
+              handleAcceptsRandom(v);
+            }}
+            onPress={() => {}}
+          />
+          <Row
+            icon="video"
+            iconImg={require("@/assets/icons/ic_chat_video.png")}
+            label="Allow Video Random Calls"
+            value={
+              !randomLoaded
+                ? "Loading…"
+                : !acceptsRandomCalls
+                  ? "Disabled — random calls are off"
+                  : allowsVideo
+                    ? "On — accepts video random calls"
+                    : "Off — audio random calls only"
+            }
+            isSwitch
+            switchVal={acceptsRandomCalls && allowsVideo}
+            onSwitch={(v) => {
+              if (randomSaving || !acceptsRandomCalls) return;
+              handleAllowsVideo(v);
+            }}
+            onPress={() => {}}
           />
         </View>
 

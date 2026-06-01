@@ -8,6 +8,8 @@ import {
   getMaxVideoRate,
   getHostAudioRateCeiling,
   getHostVideoRateCeiling,
+  getRandomAudioRate,
+  getRandomVideoRate,
   normalizeLevelConfig,
   BASE_EARNING_SHARE,
   ABSOLUTE_MAX_RATE,
@@ -209,5 +211,79 @@ describe('variable-length ladder (admin add/remove rungs)', () => {
       DEFAULT_LEVEL_CONFIG[i] ?? { ...DEFAULT_LEVEL_CONFIG[DEFAULT_LEVEL_CONFIG.length - 1], level: i + 1 },
     );
     expect(normalizeLevelConfig(atCap)).toHaveLength(MAX_LEVELS);
+  });
+});
+
+
+describe('per-level random call rates', () => {
+  it('reads admin-set random_audio_rate / random_video_rate from the ladder', () => {
+    // Seeded defaults — keep in sync with DEFAULT_LEVEL_CONFIG.
+    expect(getRandomAudioRate(1, DEFAULT_LEVEL_CONFIG)).toBe(5);
+    expect(getRandomVideoRate(1, DEFAULT_LEVEL_CONFIG)).toBe(8);
+    expect(getRandomAudioRate(5, DEFAULT_LEVEL_CONFIG)).toBe(25);
+    expect(getRandomVideoRate(5, DEFAULT_LEVEL_CONFIG)).toBe(40);
+  });
+
+  it('respects custom per-level random rates set by the admin', () => {
+    const custom = DEFAULT_LEVEL_CONFIG.map((l, i) => ({
+      ...l,
+      perks: {
+        ...l.perks,
+        random_audio_rate: 10 + i * 5, // 10, 15, 20, 25, 30
+        random_video_rate: 20 + i * 10, // 20, 30, 40, 50, 60
+      },
+    }));
+    const out = normalizeLevelConfig(custom);
+    expect(getRandomAudioRate(1, out)).toBe(10);
+    expect(getRandomVideoRate(1, out)).toBe(20);
+    expect(getRandomAudioRate(5, out)).toBe(30);
+    expect(getRandomVideoRate(5, out)).toBe(60);
+  });
+
+  it('falls back to the seeded default when older configs omit random rates', () => {
+    // Simulate a config saved before random_audio_rate / random_video_rate
+    // existed. normalizePerks should backfill from DEFAULT_LEVEL_CONFIG.
+    const legacy = DEFAULT_LEVEL_CONFIG.map((l) => ({
+      ...l,
+      perks: {
+        max_rate: l.perks.max_rate,
+        max_audio_rate: l.perks.max_audio_rate,
+        max_video_rate: l.perks.max_video_rate,
+        earning_share: l.perks.earning_share,
+        rank_boost: l.perks.rank_boost,
+      },
+    })) as any;
+    const out = normalizeLevelConfig(legacy);
+    // Each rung should pick up the seed default for its slot.
+    expect(out[0].perks.random_audio_rate).toBe(DEFAULT_LEVEL_CONFIG[0].perks.random_audio_rate);
+    expect(out[0].perks.random_video_rate).toBe(DEFAULT_LEVEL_CONFIG[0].perks.random_video_rate);
+    expect(out[4].perks.random_audio_rate).toBe(DEFAULT_LEVEL_CONFIG[4].perks.random_audio_rate);
+    expect(out[4].perks.random_video_rate).toBe(DEFAULT_LEVEL_CONFIG[4].perks.random_video_rate);
+  });
+
+  it('clamps random rates to the absolute ceiling', () => {
+    const huge = DEFAULT_LEVEL_CONFIG.map((l) => ({
+      ...l,
+      perks: { ...l.perks, random_audio_rate: 99999, random_video_rate: 99999 },
+    }));
+    const out = normalizeLevelConfig(huge);
+    expect(out[0].perks.random_audio_rate).toBe(ABSOLUTE_MAX_RATE);
+    expect(out[0].perks.random_video_rate).toBe(ABSOLUTE_MAX_RATE);
+  });
+
+  it('extended ladders synthesize random rates that do not regress below seed level 5', () => {
+    const extended = [
+      ...DEFAULT_LEVEL_CONFIG,
+      { level: 6, name: 'L6', badge: '🏆', color: '#000', min_calls: 2000, min_rating: 4.85, coin_reward: 1500, description: '', perks: {} as any },
+      { level: 7, name: 'L7', badge: '🏆', color: '#000', min_calls: 3000, min_rating: 4.9, coin_reward: 2000, description: '', perks: {} as any },
+    ];
+    const out = normalizeLevelConfig(extended);
+    expect(out).toHaveLength(7);
+    // Synthesized rungs should never be cheaper than the previous level's
+    // random rate (the admin can lower them explicitly later if they want).
+    for (let i = 1; i < out.length; i++) {
+      expect(out[i].perks.random_audio_rate).toBeGreaterThanOrEqual(out[i - 1].perks.random_audio_rate);
+      expect(out[i].perks.random_video_rate).toBeGreaterThanOrEqual(out[i - 1].perks.random_video_rate);
+    }
   });
 });

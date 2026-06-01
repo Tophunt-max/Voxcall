@@ -6,6 +6,10 @@ interface LevelPerks {
   max_rate: number; // legacy combined cap (kept for back-compat = max of audio/video)
   max_audio_rate: number;
   max_video_rate: number;
+  /** Coins/min charged on a random AUDIO match against a host at this level. */
+  random_audio_rate: number;
+  /** Coins/min charged on a random VIDEO match against a host at this level. */
+  random_video_rate: number;
   earning_share: number; // fraction 0–1 (platform keeps the rest)
   rank_boost: number;
 }
@@ -23,11 +27,11 @@ interface LevelDef {
 }
 
 const DEFAULT_CONFIG: LevelDef[] = [
-  { level: 1, name: 'Newcomer', badge: '🌱', color: '#6B7280', min_calls: 0,    min_rating: 0,   coin_reward: 0,    description: 'New to the platform', perks: { max_rate: 100, max_audio_rate: 100, max_video_rate: 100, earning_share: 0.70, rank_boost: 0 } },
-  { level: 2, name: 'Rising',   badge: '⭐', color: '#F59E0B', min_calls: 50,   min_rating: 4.0, coin_reward: 100,  description: 'Getting established',  perks: { max_rate: 150, max_audio_rate: 150, max_video_rate: 150, earning_share: 0.70, rank_boost: 1 } },
-  { level: 3, name: 'Expert',   badge: '🔥', color: '#EF4444', min_calls: 200,  min_rating: 4.3, coin_reward: 300,  description: 'Proven expertise',    perks: { max_rate: 250, max_audio_rate: 250, max_video_rate: 250, earning_share: 0.72, rank_boost: 2 } },
-  { level: 4, name: 'Pro',      badge: '💎', color: '#8B5CF6', min_calls: 500,  min_rating: 4.6, coin_reward: 500,  description: 'Professional tier',   perks: { max_rate: 400, max_audio_rate: 400, max_video_rate: 400, earning_share: 0.75, rank_boost: 3 } },
-  { level: 5, name: 'Elite',    badge: '👑', color: '#D97706', min_calls: 1000, min_rating: 4.8, coin_reward: 1000, description: 'Top performer',       perks: { max_rate: 500, max_audio_rate: 500, max_video_rate: 500, earning_share: 0.80, rank_boost: 5 } },
+  { level: 1, name: 'Newcomer', badge: '🌱', color: '#6B7280', min_calls: 0,    min_rating: 0,   coin_reward: 0,    description: 'New to the platform', perks: { max_rate: 100, max_audio_rate: 100, max_video_rate: 100, random_audio_rate: 5,  random_video_rate: 8,  earning_share: 0.70, rank_boost: 0 } },
+  { level: 2, name: 'Rising',   badge: '⭐', color: '#F59E0B', min_calls: 50,   min_rating: 4.0, coin_reward: 100,  description: 'Getting established',  perks: { max_rate: 150, max_audio_rate: 150, max_video_rate: 150, random_audio_rate: 8,  random_video_rate: 12, earning_share: 0.70, rank_boost: 1 } },
+  { level: 3, name: 'Expert',   badge: '🔥', color: '#EF4444', min_calls: 200,  min_rating: 4.3, coin_reward: 300,  description: 'Proven expertise',    perks: { max_rate: 250, max_audio_rate: 250, max_video_rate: 250, random_audio_rate: 12, random_video_rate: 18, earning_share: 0.72, rank_boost: 2 } },
+  { level: 4, name: 'Pro',      badge: '💎', color: '#8B5CF6', min_calls: 500,  min_rating: 4.6, coin_reward: 500,  description: 'Professional tier',   perks: { max_rate: 400, max_audio_rate: 400, max_video_rate: 400, random_audio_rate: 18, random_video_rate: 28, earning_share: 0.75, rank_boost: 3 } },
+  { level: 5, name: 'Elite',    badge: '👑', color: '#D97706', min_calls: 1000, min_rating: 4.8, coin_reward: 1000, description: 'Top performer',       perks: { max_rate: 500, max_audio_rate: 500, max_video_rate: 500, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.80, rank_boost: 5 } },
 ];
 
 /**
@@ -58,6 +62,10 @@ function generateNewLevelDefaults(level: number): LevelDef {
   const min_rating = Math.min(5, base.min_rating + overflow * 0.05);
   const coin_reward = base.coin_reward + overflow * 500;
   const earning_share = Math.min(0.95, base.perks.earning_share + overflow * 0.02);
+  // Random rates climb so a freshly added top tier isn't accidentally
+  // cheaper than the previous one (matches the server-side default).
+  const random_audio_rate = Math.min(500, base.perks.random_audio_rate + overflow * 10);
+  const random_video_rate = Math.min(500, base.perks.random_video_rate + overflow * 15);
   return {
     level,
     name: `Tier ${level}`,
@@ -71,6 +79,8 @@ function generateNewLevelDefaults(level: number): LevelDef {
       max_rate: 500,
       max_audio_rate: 500,
       max_video_rate: 500,
+      random_audio_rate,
+      random_video_rate,
       earning_share,
       rank_boost: base.perks.rank_boost + overflow,
     },
@@ -127,6 +137,10 @@ export default function LevelConfig() {
             const legacyMax = Number(savedPerks.max_rate) || fallback.perks.max_rate;
             const audio = Number(savedPerks.max_audio_rate) || legacyMax;
             const video = Number(savedPerks.max_video_rate) || legacyMax;
+            // Random rates: fall back to seeded defaults for older saved
+            // configs that pre-date these fields (no migration needed).
+            const randomAudio = Number(savedPerks.random_audio_rate) || fallback.perks.random_audio_rate;
+            const randomVideo = Number(savedPerks.random_video_rate) || fallback.perks.random_video_rate;
             return {
               ...fallback,
               ...l,
@@ -139,6 +153,8 @@ export default function LevelConfig() {
                 max_audio_rate: audio,
                 max_video_rate: video,
                 max_rate: Math.max(audio, video),
+                random_audio_rate: randomAudio,
+                random_video_rate: randomVideo,
               },
             };
           }));
@@ -180,7 +196,11 @@ export default function LevelConfig() {
         perks.max_audio_rate = m;
         perks.max_video_rate = m;
       } else if (field === 'rank_boost') perks.rank_boost = Math.max(0, parseInt(val) || 0);
-      else if (field === 'earning_share') {
+      else if (field === 'random_audio_rate') {
+        perks.random_audio_rate = Math.min(500, Math.max(1, parseInt(val) || 1));
+      } else if (field === 'random_video_rate') {
+        perks.random_video_rate = Math.min(500, Math.max(1, parseInt(val) || 1));
+      } else if (field === 'earning_share') {
         const pct = Math.min(95, Math.max(10, parseFloat(val) || 0));
         perks.earning_share = Math.round(pct) / 100;
       }
@@ -472,6 +492,37 @@ export default function LevelConfig() {
               </div>
             </div>
 
+            {/* Random call rates per level — applied when a caller hits
+                /match/find and is matched to a host at this level. Lets
+                admins reward higher-level hosts with a richer per-minute
+                random rate instead of the historical flat fallback. */}
+            <div className="px-5 pt-3">
+              <label className="block text-[11px] font-semibold text-muted-foreground mb-2 uppercase tracking-wide">
+                Random call rates (charged on /match/find)
+              </label>
+              <div className="grid grid-cols-2 gap-4">
+                <Field
+                  label="Random Audio Rate (coins/min)"
+                  value={lvl.perks.random_audio_rate}
+                  type="number"
+                  min={1}
+                  max={500}
+                  onChange={v => updatePerk(idx, 'random_audio_rate', v)}
+                />
+                <Field
+                  label="Random Video Rate (coins/min)"
+                  value={lvl.perks.random_video_rate}
+                  type="number"
+                  min={1}
+                  max={500}
+                  onChange={v => updatePerk(idx, 'random_video_rate', v)}
+                />
+              </div>
+              <p className="mt-1.5 text-[11px] text-muted-foreground">
+                Falls back to the global Settings → Random Call Rates if blank or invalid. Higher levels typically charge more.
+              </p>
+            </div>
+
             {/* Description row */}
             <div className="px-5 pb-5">
               <label className="block text-xs font-medium text-muted-foreground mb-1">Description</label>
@@ -493,14 +544,14 @@ export default function LevelConfig() {
                 <span>
                   Requires: <strong>{lvl.min_calls}+ calls</strong> and <strong>{lvl.min_rating}+ rating</strong> to unlock
                   {lvl.coin_reward > 0 && <> · Reward: <strong className="text-amber-600">{lvl.coin_reward} coins</strong></>}
-                  {' '}· Perks: <strong className="text-emerald-600">{Math.round(lvl.perks.earning_share * 100)}% earnings</strong>, audio up to <strong>{lvl.perks.max_audio_rate}/min</strong>, video up to <strong>{lvl.perks.max_video_rate}/min</strong>, rank +{lvl.perks.rank_boost}
+                  {' '}· Perks: <strong className="text-emerald-600">{Math.round(lvl.perks.earning_share * 100)}% earnings</strong>, audio up to <strong>{lvl.perks.max_audio_rate}/min</strong>, video up to <strong>{lvl.perks.max_video_rate}/min</strong>, random <strong className="text-violet-600">{lvl.perks.random_audio_rate}/{lvl.perks.random_video_rate}</strong>, rank +{lvl.perks.rank_boost}
                 </span>
               </div>
             )}
             {idx === 0 && (
               <div className="px-5 pb-4 flex items-center gap-2 text-xs text-muted-foreground">
                 <ChevronRight size={13} />
-                <span>Starting level — all new hosts begin here, no requirements · Perks: <strong className="text-emerald-600">{Math.round(lvl.perks.earning_share * 100)}% earnings</strong>, audio up to <strong>{lvl.perks.max_audio_rate}/min</strong>, video up to <strong>{lvl.perks.max_video_rate}/min</strong>, rank +{lvl.perks.rank_boost}</span>
+                <span>Starting level — all new hosts begin here, no requirements · Perks: <strong className="text-emerald-600">{Math.round(lvl.perks.earning_share * 100)}% earnings</strong>, audio up to <strong>{lvl.perks.max_audio_rate}/min</strong>, video up to <strong>{lvl.perks.max_video_rate}/min</strong>, random <strong className="text-violet-600">{lvl.perks.random_audio_rate}/{lvl.perks.random_video_rate}</strong>, rank +{lvl.perks.rank_boost}</span>
               </div>
             )}
           </div>

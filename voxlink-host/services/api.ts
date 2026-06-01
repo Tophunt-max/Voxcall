@@ -310,9 +310,9 @@ export const API = {
 
   // Matchmaking
   matchFind: (call_type: 'audio' | 'video') =>
-    apiRequest<{ matched: boolean; host?: any; message?: string }>('POST', '/api/match/find', { call_type }),
+    apiRequest<{ matched: boolean; host?: any; coins_per_minute?: number; online_count?: number; code?: string }>('POST', '/api/match/find', { call_type }),
   matchOnlineHosts: () =>
-    apiRequest<any[]>('GET', '/api/match/online-hosts'),
+    apiRequest<{ hosts: any[]; online_count: number }>('GET', '/api/match/online-hosts'),
 
   // Promo codes
   applyPromoCode: (code: string, plan_id?: string) =>

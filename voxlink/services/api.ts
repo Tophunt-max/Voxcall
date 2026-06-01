@@ -266,10 +266,44 @@ export const API = {
     apiRequest<{ unlocked: boolean; reason: string }>('GET', `/api/hosts/${host_id}/chat-status`),
 
   // Matchmaking
-  matchFind: (call_type: 'audio' | 'video') =>
-    apiRequest<{ matched: boolean; host?: any; message?: string }>('POST', '/api/match/find', { call_type }),
+  matchFind: (
+    call_type: 'audio' | 'video',
+    filters?: { gender?: 'male' | 'female'; languages?: string[]; min_rating?: number },
+  ) =>
+    apiRequest<{
+      matched: boolean;
+      host?: any;
+      coins_per_minute?: number;
+      online_count?: number;
+      filtered_count?: number;
+      // Stable error code so the client can localize the user-facing
+      // message rather than parsing server strings:
+      //   NO_HOST_AVAILABLE, NO_MATCH_WITH_FILTERS, RATE_LIMITED,
+      //   INSUFFICIENT_COINS, DAILY_LIMIT_REACHED, DECLINE_COOLDOWN
+      code?: string;
+      retry_after_sec?: number;
+      coins?: number;
+      min_needed?: number;
+    }>('POST', '/api/match/find', { call_type, ...(filters ?? {}) }),
   matchOnlineHosts: () =>
-    apiRequest<any[]>('GET', '/api/match/online-hosts'),
+    apiRequest<{ hosts: any[]; online_count: number }>('GET', '/api/match/online-hosts'),
+  /**
+   * Live re-check before the user hits Accept on the Match Found overlay —
+   * the host may have gone offline / busy between /find and Accept. Used to
+   * gate Accept and surface a "find another match" hint when stale.
+   */
+  matchHostStatus: (host_id: string) =>
+    apiRequest<{
+      available: boolean;
+      is_online?: boolean;
+      in_call?: boolean;
+      accepts_random_calls?: boolean;
+      allows_video?: boolean;
+      code: string;
+    }>('GET', `/api/match/host-status/${host_id}`),
+  /** Records a decline so the post-decline cooldown can count it. */
+  matchDecline: (host_id: string) =>
+    apiRequest<{ success: boolean }>('POST', '/api/match/decline', { host_id }),
 
   // Promo codes
   applyPromoCode: (code: string, plan_id?: string) =>

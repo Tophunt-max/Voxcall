@@ -39,8 +39,17 @@ const settingGroups = [
   {
     group: 'Random Call Rates',
     settings: [
-      { key: 'random_call_audio_rate', label: 'Audio Call Rate (Coins/min)', type: 'number', hint: 'Coins deducted per minute for random Voice calls', step: '1' },
-      { key: 'random_call_video_rate', label: 'Video Call Rate (Coins/min)', type: 'number', hint: 'Coins deducted per minute for random Video calls', step: '1' },
+      { key: 'random_call_audio_rate', label: 'Audio Call Rate (Coins/min) — fallback', type: 'number', hint: 'Fallback rate when a host\'s level config doesn\'t define one. Per-level rates are set in Level System Configuration.', step: '1' },
+      { key: 'random_call_video_rate', label: 'Video Call Rate (Coins/min) — fallback', type: 'number', hint: 'Fallback rate when a host\'s level config doesn\'t define one. Per-level rates are set in Level System Configuration.', step: '1' },
+    ],
+  },
+  {
+    group: 'Random Call Anti-abuse',
+    settings: [
+      { key: 'random_calls_per_day_limit', label: 'Daily matches per user', type: 'number', hint: 'Max successful /match/find calls a single user may make in a 24-hour rolling window. 0 disables the cap.', step: '1' },
+      { key: 'random_decline_cooldown_count', label: 'Decline cooldown threshold', type: 'number', hint: 'Number of consecutive declines (incl. timeouts) that triggers the cooldown. 0 disables.', step: '1' },
+      { key: 'random_decline_cooldown_min', label: 'Decline cooldown minutes', type: 'number', hint: 'How long a user is blocked from /match/find after hitting the threshold above.', step: '1' },
+      { key: 'random_match_repeat_block_min', label: 'No-repeat window (minutes)', type: 'number', hint: 'A user won\'t be matched with the same host again within this window.', step: '1' },
     ],
   },
 ];
@@ -53,6 +62,12 @@ const DEFAULTS: Record<string, string> = {
   app_version: '1.0.0',
   random_call_audio_rate: '5',
   random_call_video_rate: '8',
+  // Random-call anti-abuse defaults — preserve historical behaviour
+  // (no limits, no cooldown) so a fresh deployment doesn't surprise users.
+  random_calls_per_day_limit: '0',
+  random_decline_cooldown_count: '0',
+  random_decline_cooldown_min: '5',
+  random_match_repeat_block_min: '30',
 };
 
 // ─── safe arithmetic evaluator (no eval / new Function) ──────────────────────

@@ -14,6 +14,12 @@ const updateProfileSchema = z.object({
   coins_per_minute: z.number().int().min(1).max(500).optional(),
   audio_coins_per_minute: z.number().int().min(1).max(500).optional(),
   video_coins_per_minute: z.number().int().min(1).max(500).optional(),
+  // Random-call opt-in toggles (migration 0026). `accepts_random_calls`
+  // controls whether the host appears in the /match/find pool;
+  // `allows_video` lets a host stay available for audio random calls but
+  // opt out of video-only matches.
+  accepts_random_calls: z.boolean().optional(),
+  allows_video: z.boolean().optional(),
   // FIX: payout method storage so the Settings > Payout Method screen has a
   // real persistence layer instead of the previous "Coming Soon" alert.
   // Validation lives here in zod (rather than a CHECK constraint on the column)
@@ -233,7 +239,7 @@ hostProtected.patch('/me', zValidator('json', updateProfileSchema), async (c) =>
     MAX_AUDIO = getHostAudioRateCeiling(lvl, cfg);
     MAX_VIDEO = getHostVideoRateCeiling(lvl, cfg);
   }
-  const allowed = ['display_name', 'specialties', 'languages', 'coins_per_minute', 'audio_coins_per_minute', 'video_coins_per_minute', 'payout_method', 'payout_details'];
+  const allowed = ['display_name', 'specialties', 'languages', 'coins_per_minute', 'audio_coins_per_minute', 'video_coins_per_minute', 'accepts_random_calls', 'allows_video', 'payout_method', 'payout_details'];
   const sets: string[] = [];
   const vals: any[] = [];
   for (const key of allowed) {
@@ -247,6 +253,9 @@ hostProtected.patch('/me', zValidator('json', updateProfileSchema), async (c) =>
         val = JSON.stringify(body[key] ?? {});
       } else if (Array.isArray(body[key])) {
         val = JSON.stringify(body[key]);
+      } else if (key === 'accepts_random_calls' || key === 'allows_video') {
+        // Stored as INTEGER 0/1 to match the migration default.
+        val = body[key] ? 1 : 0;
       } else {
         val = body[key];
       }

@@ -358,6 +358,13 @@ admin.patch('/settings', async (c) => {
     'app_latest_version_user', 'app_latest_version_host',
     'app_download_url_user', 'app_download_url_host',
     'app_update_block_message', 'app_update_recommend_message',
+    // Random-call rate fallbacks (per-level rates live in level_config) +
+    // anti-abuse knobs read by /api/match/find (daily cap, decline cooldown,
+    // no-repeat window).
+    'random_call_audio_rate', 'random_call_video_rate',
+    'random_calls_per_day_limit',
+    'random_decline_cooldown_count', 'random_decline_cooldown_min',
+    'random_match_repeat_block_min',
   ];
   const stmts = Object.entries(body)
     .filter(([k]) => ALLOWED_SETTINGS.includes(k))
@@ -1314,6 +1321,11 @@ admin.put('/app-config', async (c) => {
     'paytm_merchant_key', 'generic_webhook_secret',
     'referrer_reward', 'new_user_reward', 'min_calls_to_unlock',
     'referral_active', 'free_chat_messages', 'level_config',
+    // Random-call settings (mirror the /admin/settings allowlist).
+    'random_call_audio_rate', 'random_call_video_rate',
+    'random_calls_per_day_limit',
+    'random_decline_cooldown_count', 'random_decline_cooldown_min',
+    'random_match_repeat_block_min',
   ]);
   const stmts = Object.entries(body)
     .filter(([k]) => ALLOWED_APP_CONFIG_KEYS.has(k))

@@ -35,6 +35,16 @@ export interface LevelPerks {
   max_audio_rate: number;
   /** Max coins/min a host at this level may charge for VIDEO calls. */
   max_video_rate: number;
+  /**
+   * Coins/min charged for an AUDIO call when the caller used /match/find
+   * (random matchmaking) and was assigned a host at THIS level. Lets admins
+   * reward higher-level hosts with a richer per-minute rate on random calls
+   * instead of the historical flat `random_call_audio_rate`. Falls back to
+   * the global `random_call_audio_rate` setting when null/undefined.
+   */
+  random_audio_rate: number;
+  /** Same as `random_audio_rate` but for VIDEO random calls. */
+  random_video_rate: number;
   /** Host's share of coins charged per call (0–1). Platform keeps the rest. */
   earning_share: number;
   /** Search/discovery ranking weight — higher = shown earlier to users. */
@@ -90,11 +100,11 @@ export const MAX_LEVELS = 20;
  * default length are seeded by {@link generateLevelDefault} when missing.
  */
 export const DEFAULT_LEVEL_CONFIG: LevelDef[] = [
-  { level: 1, name: 'Newcomer', badge: '🌱', color: '#6B7280', min_calls: 0,    min_rating: 0.0, coin_reward: 0,    description: 'New to the platform',  perks: { max_rate: 100, max_audio_rate: 100, max_video_rate: 100, earning_share: 0.70, rank_boost: 0 } },
-  { level: 2, name: 'Rising',   badge: '⭐', color: '#F59E0B', min_calls: 50,   min_rating: 4.0, coin_reward: 100,  description: 'Getting established',   perks: { max_rate: 150, max_audio_rate: 150, max_video_rate: 150, earning_share: 0.70, rank_boost: 1 } },
-  { level: 3, name: 'Expert',   badge: '🔥', color: '#EF4444', min_calls: 200,  min_rating: 4.3, coin_reward: 300,  description: 'Proven expertise',     perks: { max_rate: 250, max_audio_rate: 250, max_video_rate: 250, earning_share: 0.72, rank_boost: 2 } },
-  { level: 4, name: 'Pro',      badge: '💎', color: '#8B5CF6', min_calls: 500,  min_rating: 4.6, coin_reward: 500,  description: 'Professional tier',    perks: { max_rate: 400, max_audio_rate: 400, max_video_rate: 400, earning_share: 0.75, rank_boost: 3 } },
-  { level: 5, name: 'Elite',    badge: '👑', color: '#D97706', min_calls: 1000, min_rating: 4.8, coin_reward: 1000, description: 'Top performer',        perks: { max_rate: 500, max_audio_rate: 500, max_video_rate: 500, earning_share: 0.80, rank_boost: 5 } },
+  { level: 1, name: 'Newcomer', badge: '🌱', color: '#6B7280', min_calls: 0,    min_rating: 0.0, coin_reward: 0,    description: 'New to the platform',  perks: { max_rate: 100, max_audio_rate: 100, max_video_rate: 100, random_audio_rate: 5,  random_video_rate: 8,  earning_share: 0.70, rank_boost: 0 } },
+  { level: 2, name: 'Rising',   badge: '⭐', color: '#F59E0B', min_calls: 50,   min_rating: 4.0, coin_reward: 100,  description: 'Getting established',   perks: { max_rate: 150, max_audio_rate: 150, max_video_rate: 150, random_audio_rate: 8,  random_video_rate: 12, earning_share: 0.70, rank_boost: 1 } },
+  { level: 3, name: 'Expert',   badge: '🔥', color: '#EF4444', min_calls: 200,  min_rating: 4.3, coin_reward: 300,  description: 'Proven expertise',     perks: { max_rate: 250, max_audio_rate: 250, max_video_rate: 250, random_audio_rate: 12, random_video_rate: 18, earning_share: 0.72, rank_boost: 2 } },
+  { level: 4, name: 'Pro',      badge: '💎', color: '#8B5CF6', min_calls: 500,  min_rating: 4.6, coin_reward: 500,  description: 'Professional tier',    perks: { max_rate: 400, max_audio_rate: 400, max_video_rate: 400, random_audio_rate: 18, random_video_rate: 28, earning_share: 0.75, rank_boost: 3 } },
+  { level: 5, name: 'Elite',    badge: '👑', color: '#D97706', min_calls: 1000, min_rating: 4.8, coin_reward: 1000, description: 'Top performer',        perks: { max_rate: 500, max_audio_rate: 500, max_video_rate: 500, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.80, rank_boost: 5 } },
 ];
 
 /**
@@ -120,6 +130,16 @@ function generateLevelDefault(level: number): LevelDef {
   // the safest default; admins can lower it explicitly if they want.
   const max_audio_rate = ABSOLUTE_MAX_RATE;
   const max_video_rate = ABSOLUTE_MAX_RATE;
+  // Random rates also scale up so a freshly-added top tier isn't
+  // accidentally cheaper than the previous one.
+  const random_audio_rate = Math.min(
+    ABSOLUTE_MAX_RATE,
+    base.perks.random_audio_rate + overflow * 10,
+  );
+  const random_video_rate = Math.min(
+    ABSOLUTE_MAX_RATE,
+    base.perks.random_video_rate + overflow * 15,
+  );
   return {
     level,
     name: `Tier ${level}`,
@@ -133,6 +153,8 @@ function generateLevelDefault(level: number): LevelDef {
       max_rate: Math.max(max_audio_rate, max_video_rate),
       max_audio_rate,
       max_video_rate,
+      random_audio_rate,
+      random_video_rate,
       earning_share,
       rank_boost: base.perks.rank_boost + overflow,
     },
@@ -164,12 +186,31 @@ function normalizePerks(input: any, fallback: LevelPerks): LevelPerks {
   // Keep legacy `max_rate` in sync (= max of the two channel caps) so any
   // old reader still gets a sensible upper bound.
   const max_rate = Math.max(max_audio_rate, max_video_rate);
+  // Per-level random call rates. Older configs (pre-migration) didn't have
+  // them — fall back to the seeded defaults so existing data keeps charging
+  // the same flat rate everyone is used to.
+  const random_audio_rate = Math.min(
+    ABSOLUTE_MAX_RATE,
+    Math.max(1, parseInt(String(p.random_audio_rate)) || fallback.random_audio_rate),
+  );
+  const random_video_rate = Math.min(
+    ABSOLUTE_MAX_RATE,
+    Math.max(1, parseInt(String(p.random_video_rate)) || fallback.random_video_rate),
+  );
   // earning_share clamped to a sane 0.1–0.95 band; platform always keeps ≥5%.
   let share = parseFloat(String(p.earning_share));
   if (!isFinite(share) || share <= 0) share = fallback.earning_share;
   const earning_share = Math.min(0.95, Math.max(0.1, share));
   const rank_boost = Math.max(0, parseInt(String(p.rank_boost)) || fallback.rank_boost);
-  return { max_rate, max_audio_rate, max_video_rate, earning_share, rank_boost };
+  return {
+    max_rate,
+    max_audio_rate,
+    max_video_rate,
+    random_audio_rate,
+    random_video_rate,
+    earning_share,
+    rank_boost,
+  };
 }
 
 /**
@@ -296,6 +337,25 @@ export function getHostAudioRateCeiling(level: number, config: LevelDef[]): numb
  */
 export function getHostVideoRateCeiling(level: number, config: LevelDef[]): number {
   return Math.min(ABSOLUTE_MAX_RATE, getMaxVideoRate(level, config) + HOST_RATE_BONUS);
+}
+
+/**
+ * Per-level random AUDIO rate (admin-set). What a caller who hits
+ * /match/find and is matched to a host at this level will be charged per
+ * minute. Falls back to the seeded default for the level if the field is
+ * missing on a stored perk blob.
+ */
+export function getRandomAudioRate(level: number, config: LevelDef[]): number {
+  const perks = getLevelPerks(level, config);
+  const fallback = (DEFAULT_LEVEL_CONFIG[Math.max(0, Math.min(DEFAULT_LEVEL_CONFIG.length - 1, level - 1))]?.perks.random_audio_rate) ?? 5;
+  return perks.random_audio_rate ?? fallback;
+}
+
+/** Same as {@link getRandomAudioRate} but for video random calls. */
+export function getRandomVideoRate(level: number, config: LevelDef[]): number {
+  const perks = getLevelPerks(level, config);
+  const fallback = (DEFAULT_LEVEL_CONFIG[Math.max(0, Math.min(DEFAULT_LEVEL_CONFIG.length - 1, level - 1))]?.perks.random_video_rate) ?? 8;
+  return perks.random_video_rate ?? fallback;
 }
 
 /** Search/discovery ranking weight for a level — higher = shown earlier. */

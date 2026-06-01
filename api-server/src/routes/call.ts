@@ -210,15 +210,38 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
   // No other transaction can sneak in between, so two concurrent callers on
   // the same host can never both succeed.
   const sessionId = crypto.randomUUID();
+  // Detect whether this initiate is the result of a recent /match/find
+  // result. If so, stamp `is_random_match = 1` on the call_sessions row
+  // so analytics + the host UI can tell random matches apart from direct
+  // calls. We also flip the corresponding random_match_history row to
+  // 'accepted' (best-effort, post-insert) so the decline-cooldown guard
+  // doesn't count this as a decline.
+  //
+  // 5 min window — generous enough for a slow user, tight enough that an
+  // unrelated direct call right after a different random match isn't
+  // accidentally tagged.
+  const RANDOM_MATCH_WINDOW_SEC = 300;
+  const recentMatchedSince = Math.floor(Date.now() / 1000) - RANDOM_MATCH_WINDOW_SEC;
+  const recentMatchRow = await db
+    .prepare(
+      `SELECT id FROM random_match_history
+       WHERE user_id = ? AND host_id = ? AND outcome = 'matched' AND created_at >= ?
+       ORDER BY created_at DESC LIMIT 1`,
+    )
+    .bind(sub, body.host_id, recentMatchedSince)
+    .first<{ id: string }>()
+    .catch(() => null); // table missing in legacy DBs — treat as not random
+  const isRandomMatch = recentMatchRow ? 1 : 0;
+
   const insertResult = await db.prepare(
-    `INSERT INTO call_sessions (id, caller_id, host_id, type, status, cf_session_id, cf_host_session_id, rate_per_minute)
-     SELECT ?1, ?2, ?3, ?4, 'pending', NULL, NULL, ?5
+    `INSERT INTO call_sessions (id, caller_id, host_id, type, status, cf_session_id, cf_host_session_id, rate_per_minute, is_random_match)
+     SELECT ?1, ?2, ?3, ?4, 'pending', NULL, NULL, ?5, ?6
      WHERE NOT EXISTS (
        SELECT 1 FROM call_sessions
        WHERE status IN ('pending', 'active')
          AND (caller_id = ?2 OR host_id = ?3)
      )`
-  ).bind(sessionId, sub, body.host_id, callType, ratePerMin).run();
+  ).bind(sessionId, sub, body.host_id, callType, ratePerMin, isRandomMatch).run();
 
   if (!insertResult.meta?.changes) {
     // Race lost — another concurrent /initiate took the slot. Re-query to
@@ -230,6 +253,20 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
       return c.json({ error: 'You are already in a call. Please end it before starting a new one.' }, 409);
     }
     return c.json({ error: 'Host is currently busy. Please try again later.' }, 409);
+  }
+
+  // Mark the originating random match as 'accepted' so the decline-cooldown
+  // guard doesn't count it as a decline. Best-effort — failure here is not
+  // user-visible, the call still proceeds.
+  if (recentMatchRow) {
+    try {
+      await db
+        .prepare("UPDATE random_match_history SET outcome = 'accepted' WHERE id = ?")
+        .bind(recentMatchRow.id)
+        .run();
+    } catch (e) {
+      console.warn('[initiate] random_match_history accept update failed:', e);
+    }
   }
 
   // WebSocket notification (foreground/background)
