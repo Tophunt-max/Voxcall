@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { authMiddleware, adminMiddleware } from '../middleware/auth';
 import { sendFCMPush, getFCMTokens } from '../lib/fcm';
-import { getLevelConfig, normalizeLevelConfig } from '../lib/levels';
+import { getLevelConfig, normalizeLevelConfig, MIN_LEVELS, MAX_LEVELS } from '../lib/levels';
 import { recalcAllHostLevels } from '../lib/levelService';
 import { approveDeposit, validatePromoInput } from './payment';
 import type { Env, JWTPayload } from '../types';
@@ -157,7 +157,17 @@ admin.patch('/hosts/:id', async (c) => {
   if (is_active !== undefined) { sets.push('is_active = ?'); vals.push(is_active); }
   if (is_top_rated !== undefined) { sets.push('is_top_rated = ?'); vals.push(is_top_rated); }
   if (identity_verified !== undefined) { sets.push('identity_verified = ?'); vals.push(identity_verified); }
-  if (level !== undefined) { sets.push('level = ?'); vals.push(Math.min(5, Math.max(1, parseInt(level)))); }
+  if (level !== undefined) {
+    // Clamp the requested level against the configured ladder length so it
+    // is always a valid rung. Falls back to MAX_LEVELS as the upper bound
+    // if the config can't be loaded — that still keeps level <= 20 (the
+    // schema-level cap) and avoids storing a level the host could never
+    // legitimately reach.
+    const cfg = await getLevelConfig(c.env.DB).catch(() => null);
+    const upper = Math.min(MAX_LEVELS, Math.max(MIN_LEVELS, cfg?.length ?? MAX_LEVELS));
+    sets.push('level = ?');
+    vals.push(Math.min(upper, Math.max(MIN_LEVELS, parseInt(level))));
+  }
   if (audio_coins_per_minute !== undefined) { sets.push('audio_coins_per_minute = ?'); vals.push(Math.min(500, Math.max(1, parseInt(audio_coins_per_minute)))); }
   if (video_coins_per_minute !== undefined) { sets.push('video_coins_per_minute = ?'); vals.push(Math.min(500, Math.max(1, parseInt(video_coins_per_minute)))); }
   if (coins_per_minute !== undefined) { sets.push('coins_per_minute = ?'); vals.push(Math.min(500, Math.max(1, parseInt(coins_per_minute)))); }
@@ -180,7 +190,12 @@ admin.patch('/hosts/:id', async (c) => {
 admin.post('/hosts/:id/level', async (c) => {
   const { id } = c.req.param();
   const { level } = await c.req.json<{ level: number }>();
-  const lvl = Math.min(5, Math.max(1, parseInt(String(level))));
+  // Clamp against the live ladder length — admins shouldn't be able to set a
+  // level higher than any rung that actually exists. Best-effort: if the
+  // config can't be loaded we fall back to the schema-level MAX_LEVELS cap.
+  const cfg = await getLevelConfig(db(c)).catch(() => null);
+  const upper = Math.min(MAX_LEVELS, Math.max(MIN_LEVELS, cfg?.length ?? MAX_LEVELS));
+  const lvl = Math.min(upper, Math.max(MIN_LEVELS, parseInt(String(level))));
   await db(c).prepare('UPDATE hosts SET level = ?, updated_at = unixepoch() WHERE id = ?').bind(lvl, id).run();
   const lu = c.get('user');
   await auditLog(db(c), lu.sub, lu.email || 'Admin', lu.email || '', 'update', 'host', id, `Host ${id} level set to ${lvl}`, c.req.header('CF-Connecting-IP') ?? '');
@@ -199,7 +214,17 @@ admin.get('/level-config', async (c) => {
 // PUT /api/admin/level-config
 admin.put('/level-config', async (c) => {
   const body = await c.req.json<unknown>();
-  if (!Array.isArray(body) || body.length !== 5) return c.json({ error: 'Invalid config: must be array of 5 levels' }, 400);
+  // Accept any ladder of MIN_LEVELS..MAX_LEVELS rungs. Any other shape is
+  // either a client bug (e.g. empty array, or > MAX_LEVELS) or the legacy
+  // "missing" case that should fall back to defaults — both are explicit
+  // 400s so the admin panel can surface a real error instead of silently
+  // overwriting their config with the seed.
+  if (!Array.isArray(body) || body.length < MIN_LEVELS || body.length > MAX_LEVELS) {
+    return c.json(
+      { error: `Invalid config: must be an array of ${MIN_LEVELS}–${MAX_LEVELS} levels` },
+      400,
+    );
+  }
   const normalized = normalizeLevelConfig(body);
   await db(c).prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('level_config', ?, unixepoch())")
     .bind(JSON.stringify(normalized)).run();

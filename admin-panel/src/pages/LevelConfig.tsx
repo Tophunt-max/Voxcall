@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
-import { Trophy, Save, RefreshCw, Info, ChevronRight, Coins } from 'lucide-react';
+import { Trophy, Save, RefreshCw, Info, ChevronRight, Coins, Plus, Trash2 } from 'lucide-react';
 
 interface LevelPerks {
   max_rate: number; // legacy combined cap (kept for back-compat = max of audio/video)
@@ -37,6 +37,46 @@ const DEFAULT_CONFIG: LevelDef[] = [
  */
 const HOST_RATE_BONUS = 5;
 
+/**
+ * Bounds on the configurable ladder. Mirrors MIN_LEVELS / MAX_LEVELS in
+ * api-server/src/lib/levels.ts — keep these in sync.
+ */
+const MIN_LEVELS = 1;
+const MAX_LEVELS = 20;
+
+/**
+ * Build a sensible default LevelDef for a brand-new rung being appended in
+ * the admin UI. Mirrors the server-side `generateLevelDefault` helper —
+ * thresholds and rewards scale linearly off the last seeded rung so a freshly
+ * added tier is always "harder" than the one before it. Admins can edit any
+ * field after creation.
+ */
+function generateNewLevelDefaults(level: number): LevelDef {
+  const base = DEFAULT_CONFIG[DEFAULT_CONFIG.length - 1];
+  const overflow = Math.max(0, level - DEFAULT_CONFIG.length);
+  const min_calls = base.min_calls + overflow * 1000;
+  const min_rating = Math.min(5, base.min_rating + overflow * 0.05);
+  const coin_reward = base.coin_reward + overflow * 500;
+  const earning_share = Math.min(0.95, base.perks.earning_share + overflow * 0.02);
+  return {
+    level,
+    name: `Tier ${level}`,
+    badge: '🏆',
+    color: base.color,
+    min_calls,
+    min_rating,
+    coin_reward,
+    description: 'Custom tier — edit name, badge, perks below',
+    perks: {
+      max_rate: 500,
+      max_audio_rate: 500,
+      max_video_rate: 500,
+      earning_share,
+      rank_boost: base.perks.rank_boost + overflow,
+    },
+  };
+}
+
 function Field({ label, value, onChange, type = 'text', min, max, step, readOnly }: {
   label: string; value: string | number; onChange?: (v: string) => void;
   type?: string; min?: number; max?: number; step?: number; readOnly?: boolean;
@@ -71,21 +111,30 @@ export default function LevelConfig() {
   useEffect(() => {
     api.getLevelConfig()
       .then(data => {
-        if (Array.isArray(data) && data.length === 5) {
+        if (Array.isArray(data) && data.length >= MIN_LEVELS && data.length <= MAX_LEVELS) {
           // Backfill perks defensively so the editor never reads undefined,
           // even if an older saved config predates the perks field. Older
           // saved configs only had `max_rate` — we mirror it into the new
           // channel-specific fields so admins see consistent values.
+          //
+          // For slots covered by DEFAULT_CONFIG (the seeded 5 rungs) we use
+          // those values as the fallback; for slots beyond that (admins
+          // having added custom rungs) we synthesize a fallback via
+          // generateNewLevelDefaults so the form is always populated.
           setConfig(data.map((l: any, i: number) => {
+            const fallback = DEFAULT_CONFIG[i] ?? generateNewLevelDefaults(i + 1);
             const savedPerks = l?.perks || {};
-            const legacyMax = Number(savedPerks.max_rate) || DEFAULT_CONFIG[i].perks.max_rate;
+            const legacyMax = Number(savedPerks.max_rate) || fallback.perks.max_rate;
             const audio = Number(savedPerks.max_audio_rate) || legacyMax;
             const video = Number(savedPerks.max_video_rate) || legacyMax;
             return {
-              ...DEFAULT_CONFIG[i],
+              ...fallback,
               ...l,
+              // Always renumber `level` to position so add/remove ops on
+              // the server side can never produce gaps.
+              level: i + 1,
               perks: {
-                ...DEFAULT_CONFIG[i].perks,
+                ...fallback.perks,
                 ...savedPerks,
                 max_audio_rate: audio,
                 max_video_rate: video,
@@ -149,6 +198,39 @@ export default function LevelConfig() {
     } finally {
       setSaving(false);
     }
+  };
+
+  // Append a new rung to the end of the ladder. Caps at MAX_LEVELS so the
+  // backend (which mirrors the same cap) never sees an over-long payload.
+  const handleAddLevel = () => {
+    setConfig(prev => {
+      if (prev.length >= MAX_LEVELS) {
+        showToast(`Maximum ${MAX_LEVELS} levels allowed.`, false);
+        return prev;
+      }
+      const next = generateNewLevelDefaults(prev.length + 1);
+      return [...prev, next];
+    });
+  };
+
+  // Remove a rung. Refuses to drop below MIN_LEVELS and refuses to delete
+  // level 1 specifically (it's the floor every new host begins at and several
+  // backend code paths assume it always exists). After removal, every
+  // remaining rung is renumbered so `level` always equals position.
+  const handleRemoveLevel = (idx: number) => {
+    setConfig(prev => {
+      if (prev.length <= MIN_LEVELS) {
+        showToast(`At least ${MIN_LEVELS} level is required.`, false);
+        return prev;
+      }
+      if (idx === 0) {
+        showToast('Level 1 is the starting level and cannot be removed.', false);
+        return prev;
+      }
+      return prev
+        .filter((_, i) => i !== idx)
+        .map((l, i) => ({ ...l, level: i + 1 }));
+    });
   };
 
   const handleRecalculate = async () => {
@@ -217,6 +299,7 @@ export default function LevelConfig() {
           <strong>How levels work:</strong> Hosts are <strong>auto-promoted in real time</strong> when their rated calls + rating cross a level's thresholds — the one-time Coin Reward is credited automatically.
           Level 1 is the starting level (no requirements). <strong>Perks</strong> per level: <strong>Max Audio Rate</strong> and <strong>Max Video Rate</strong> (highest coins/min a host may charge for each call type), <strong>Earning Share</strong> (host's cut of each call), and <strong>Rank Boost</strong> (higher = shown earlier in listings &amp; matchmaking).
           A host can charge up to <strong>+{HOST_RATE_BONUS} coins/min</strong> above each cap (effective ceiling shown next to each input).
+          You can <strong>add or remove levels</strong> ({MIN_LEVELS}–{MAX_LEVELS} total) using the controls below; level 1 cannot be removed.
           Use <strong>"Recalculate All Host Levels"</strong> to back-fill existing hosts after changing thresholds.
         </div>
       </div>
@@ -275,6 +358,25 @@ export default function LevelConfig() {
                 <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">earns</span>
                 <span className="text-sm font-bold text-emerald-700 dark:text-emerald-400">{Math.round(lvl.perks.earning_share * 100)}%</span>
               </div>
+              {/* Remove level — disabled for level 1 (the floor every new
+                  host begins at) and when only the minimum number of levels
+                  remains. */}
+              <button
+                type="button"
+                onClick={() => handleRemoveLevel(idx)}
+                disabled={idx === 0 || config.length <= MIN_LEVELS}
+                title={
+                  idx === 0
+                    ? 'Level 1 is the starting level and cannot be removed'
+                    : config.length <= MIN_LEVELS
+                      ? `At least ${MIN_LEVELS} level is required`
+                      : `Remove level ${lvl.level}`
+                }
+                className="p-2 rounded-lg border border-border bg-card hover:bg-red-50 dark:hover:bg-red-950/30 hover:border-red-300 dark:hover:border-red-800 text-muted-foreground hover:text-red-600 dark:hover:text-red-400 transition-all disabled:opacity-40 disabled:hover:bg-card disabled:hover:text-muted-foreground disabled:hover:border-border disabled:cursor-not-allowed"
+                aria-label={`Remove level ${lvl.level}`}
+              >
+                <Trash2 size={15} />
+              </button>
             </div>
 
             {/* Fields grid */}
@@ -403,6 +505,24 @@ export default function LevelConfig() {
             )}
           </div>
         ))}
+
+        {/* Add level — dashed-outline card lives at the end of the ladder.
+            Disabled when the ladder is at MAX_LEVELS so we can never POST a
+            payload the backend would reject. */}
+        <button
+          type="button"
+          onClick={handleAddLevel}
+          disabled={config.length >= MAX_LEVELS}
+          className="w-full flex items-center justify-center gap-2 px-5 py-6 rounded-2xl border-2 border-dashed border-border hover:border-violet-400 dark:hover:border-violet-600 hover:bg-violet-50/40 dark:hover:bg-violet-950/20 text-muted-foreground hover:text-violet-600 dark:hover:text-violet-400 transition-all disabled:opacity-50 disabled:hover:border-border disabled:hover:bg-transparent disabled:hover:text-muted-foreground disabled:cursor-not-allowed"
+          aria-label="Add a new level"
+        >
+          <Plus size={18} />
+          <span className="text-sm font-semibold">
+            {config.length >= MAX_LEVELS
+              ? `Maximum ${MAX_LEVELS} levels reached`
+              : `Add Level ${config.length + 1}`}
+          </span>
+        </button>
       </div>
 
       {/* Color reference */}

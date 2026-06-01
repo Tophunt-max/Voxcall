@@ -12,6 +12,8 @@ import {
   BASE_EARNING_SHARE,
   ABSOLUTE_MAX_RATE,
   HOST_RATE_BONUS,
+  MIN_LEVELS,
+  MAX_LEVELS,
 } from '../src/lib/levels';
 
 const cfg = DEFAULT_LEVEL_CONFIG;
@@ -112,7 +114,18 @@ describe('normalizeLevelConfig — never returns a corrupt ladder', () => {
   it('returns the default ladder for invalid input', () => {
     expect(normalizeLevelConfig(null)).toBe(DEFAULT_LEVEL_CONFIG);
     expect(normalizeLevelConfig('nope')).toBe(DEFAULT_LEVEL_CONFIG);
-    expect(normalizeLevelConfig([{ level: 1 }])).toBe(DEFAULT_LEVEL_CONFIG); // wrong length
+    expect(normalizeLevelConfig([])).toBe(DEFAULT_LEVEL_CONFIG); // empty -> fallback
+  });
+
+  it('rejects ladders larger than MAX_LEVELS by returning the seeded default', () => {
+    // Build an array longer than MAX_LEVELS — must fall back, not silently
+    // truncate (the admin panel and PUT endpoint enforce the same bound, so
+    // an oversized payload is a client bug we never want to persist).
+    const oversized = Array.from({ length: MAX_LEVELS + 1 }, (_, i) => ({
+      ...DEFAULT_LEVEL_CONFIG[0],
+      level: i + 1,
+    }));
+    expect(normalizeLevelConfig(oversized)).toBe(DEFAULT_LEVEL_CONFIG);
   });
 
   it('clamps earning_share into the safe 0.1–0.95 band', () => {
@@ -140,5 +153,61 @@ describe('normalizeLevelConfig — never returns a corrupt ladder', () => {
     const out = normalizeLevelConfig(input);
     expect(out[0].perks.earning_share).toBe(DEFAULT_LEVEL_CONFIG[0].perks.earning_share);
     expect(out[4].perks.max_rate).toBe(DEFAULT_LEVEL_CONFIG[4].perks.max_rate);
+  });
+});
+
+describe('variable-length ladder (admin add/remove rungs)', () => {
+  it('accepts a single-rung ladder (just level 1)', () => {
+    const single = [DEFAULT_LEVEL_CONFIG[0]];
+    const out = normalizeLevelConfig(single);
+    expect(out).toHaveLength(1);
+    expect(out[0].level).toBe(1);
+    expect(out[0].name).toBe('Newcomer');
+    // evaluateLevel should never promote past the top rung available.
+    expect(evaluateLevel({ review_count: 99999, rating: 5 }, out)).toBe(1);
+  });
+
+  it('accepts ladders shorter than the seed (e.g. 3 rungs)', () => {
+    const three = DEFAULT_LEVEL_CONFIG.slice(0, 3);
+    const out = normalizeLevelConfig(three);
+    expect(out).toHaveLength(3);
+    expect(out.map((l) => l.level)).toEqual([1, 2, 3]);
+    // A host with stats matching level 5 of the seed ladder should still
+    // cap at 3 because that's the highest configured rung now.
+    expect(evaluateLevel({ review_count: 1000, rating: 4.8 }, out)).toBe(3);
+  });
+
+  it('accepts ladders longer than the seed (up to MAX_LEVELS)', () => {
+    // Build an extended ladder by appending custom rungs after the seed.
+    const extended = [
+      ...DEFAULT_LEVEL_CONFIG,
+      { level: 6, name: 'Legend', badge: '🏆', color: '#000', min_calls: 2000, min_rating: 4.9, coin_reward: 2000, description: '', perks: { max_rate: 500, max_audio_rate: 500, max_video_rate: 500, earning_share: 0.85, rank_boost: 6 } },
+      { level: 7, name: 'Mythic', badge: '🏆', color: '#000', min_calls: 5000, min_rating: 4.95, coin_reward: 5000, description: '', perks: { max_rate: 500, max_audio_rate: 500, max_video_rate: 500, earning_share: 0.90, rank_boost: 7 } },
+    ];
+    const out = normalizeLevelConfig(extended);
+    expect(out).toHaveLength(7);
+    expect(out[5].name).toBe('Legend');
+    expect(out[6].name).toBe('Mythic');
+    expect(out[6].perks.earning_share).toBe(0.90);
+    // Highest rung whose thresholds are met should now reach level 7.
+    expect(evaluateLevel({ review_count: 5000, rating: 5 }, out)).toBe(7);
+  });
+
+  it('renumbers `level` to position so admin-side reorders never produce gaps', () => {
+    // Simulate a payload where the client mis-numbered the rungs (e.g. after
+    // a buggy remove). Position-based renumbering should fix it on the way in.
+    const messy = DEFAULT_LEVEL_CONFIG.map((l) => ({ ...l, level: 99 }));
+    const out = normalizeLevelConfig(messy);
+    expect(out.map((l) => l.level)).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it('respects MIN_LEVELS / MAX_LEVELS constants', () => {
+    expect(MIN_LEVELS).toBeGreaterThanOrEqual(1);
+    expect(MAX_LEVELS).toBeGreaterThan(MIN_LEVELS);
+    // Exactly MAX_LEVELS rungs is accepted (boundary case).
+    const atCap = Array.from({ length: MAX_LEVELS }, (_, i) =>
+      DEFAULT_LEVEL_CONFIG[i] ?? { ...DEFAULT_LEVEL_CONFIG[DEFAULT_LEVEL_CONFIG.length - 1], level: i + 1 },
+    );
+    expect(normalizeLevelConfig(atCap)).toHaveLength(MAX_LEVELS);
   });
 });

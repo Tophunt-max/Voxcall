@@ -2,9 +2,12 @@
 // Host Level System — single source of truth
 // ============================================================================
 //
-// Host levels (1–5) are stored in `hosts.level`. The thresholds, names, badges,
+// Host levels start at 1 (the floor every new host begins at) and run up to
+// the length of the admin-configured ladder. The thresholds, names, badges,
 // colors, coin rewards and PERKS are configurable by admins and persisted as
-// JSON in `app_settings.level_config`. This module centralizes:
+// JSON in `app_settings.level_config`. Admins may add or remove rungs (within
+// MIN_LEVELS..MAX_LEVELS) — see the admin panel and `normalizeLevelConfig`.
+// This module centralizes:
 //
 //   • DEFAULT_LEVEL_CONFIG — the fallback ladder used when nothing is saved
 //   • getLevelConfig(db)   — loads (and validates) the saved config or default
@@ -63,12 +66,28 @@ export const BASE_EARNING_SHARE = 0.7;
 export const HOST_RATE_BONUS = 5;
 
 /**
- * Fallback ladder — must always be exactly 5 entries (level 1..5).
+ * Minimum number of rungs a configured ladder may have. Level 1 (the
+ * starting tier every new host begins at) must always exist.
+ */
+export const MIN_LEVELS = 1;
+/**
+ * Maximum number of rungs admins may configure. Cap exists to bound payload
+ * size on `app_settings.level_config`, prevent unbounded UI growth in the
+ * admin panel, and keep `hosts.level` values within a reasonable range.
+ * Tune up here (and re-deploy) if 20 ever proves too tight in production.
+ */
+export const MAX_LEVELS = 20;
+
+/**
+ * Fallback ladder — the seed shipped before admins could add/remove rungs.
  *
  * Perk tiers are intentionally conservative so existing low-level hosts see NO
  * regression: level 1 keeps the historical 70% share, and the level-1 rate cap
  * (100) is far above what new hosts realistically charge. Higher levels earn a
  * larger share, may charge more, and rank higher — the tangible reward ladder.
+ *
+ * Admins may now grow this ladder (up to {@link MAX_LEVELS}); rungs above the
+ * default length are seeded by {@link generateLevelDefault} when missing.
  */
 export const DEFAULT_LEVEL_CONFIG: LevelDef[] = [
   { level: 1, name: 'Newcomer', badge: '🌱', color: '#6B7280', min_calls: 0,    min_rating: 0.0, coin_reward: 0,    description: 'New to the platform',  perks: { max_rate: 100, max_audio_rate: 100, max_video_rate: 100, earning_share: 0.70, rank_boost: 0 } },
@@ -77,6 +96,57 @@ export const DEFAULT_LEVEL_CONFIG: LevelDef[] = [
   { level: 4, name: 'Pro',      badge: '💎', color: '#8B5CF6', min_calls: 500,  min_rating: 4.6, coin_reward: 500,  description: 'Professional tier',    perks: { max_rate: 400, max_audio_rate: 400, max_video_rate: 400, earning_share: 0.75, rank_boost: 3 } },
   { level: 5, name: 'Elite',    badge: '👑', color: '#D97706', min_calls: 1000, min_rating: 4.8, coin_reward: 1000, description: 'Top performer',        perks: { max_rate: 500, max_audio_rate: 500, max_video_rate: 500, earning_share: 0.80, rank_boost: 5 } },
 ];
+
+/**
+ * Build a sensible default LevelDef for a rung that has no entry in
+ * {@link DEFAULT_LEVEL_CONFIG}. Used when admins extend the ladder past the
+ * five seeded tiers and the saved/posted config omits some fields.
+ *
+ * The values scale linearly off the last seeded rung (level 5) so call/rating
+ * thresholds, rewards and rate caps keep climbing — but everything is also
+ * clamped to safe bounds (max_rating <= 5, max_rate <= ABSOLUTE_MAX_RATE).
+ */
+function generateLevelDefault(level: number): LevelDef {
+  const base = DEFAULT_LEVEL_CONFIG[DEFAULT_LEVEL_CONFIG.length - 1];
+  const overflow = Math.max(0, level - DEFAULT_LEVEL_CONFIG.length);
+  // Ascending thresholds — never below the last default rung.
+  const min_calls = base.min_calls + overflow * 1000;
+  // Cap min_rating at 5.0 — the score is a 1-5 scale, asking for >5 stars
+  // would make the rung permanently unreachable.
+  const min_rating = Math.min(5, base.min_rating + overflow * 0.05);
+  const coin_reward = base.coin_reward + overflow * 500;
+  const earning_share = Math.min(0.95, base.perks.earning_share + overflow * 0.02);
+  // Rate caps already at the absolute ceiling for level 5 — staying there is
+  // the safest default; admins can lower it explicitly if they want.
+  const max_audio_rate = ABSOLUTE_MAX_RATE;
+  const max_video_rate = ABSOLUTE_MAX_RATE;
+  return {
+    level,
+    name: `Tier ${level}`,
+    badge: '🏆',
+    color: base.color,
+    min_calls,
+    min_rating,
+    coin_reward,
+    description: 'Custom tier — configure in admin panel',
+    perks: {
+      max_rate: Math.max(max_audio_rate, max_video_rate),
+      max_audio_rate,
+      max_video_rate,
+      earning_share,
+      rank_boost: base.perks.rank_boost + overflow,
+    },
+  };
+}
+
+/**
+ * Resolve the fallback LevelDef for slot `i` (0-indexed). Uses the seeded
+ * defaults for slots covered by {@link DEFAULT_LEVEL_CONFIG} and a generated
+ * tier for any slot beyond that.
+ */
+function fallbackForSlot(i: number): LevelDef {
+  return DEFAULT_LEVEL_CONFIG[i] ?? generateLevelDefault(i + 1);
+}
 
 function normalizePerks(input: any, fallback: LevelPerks): LevelPerks {
   const p = input ?? {};
@@ -103,24 +173,37 @@ function normalizePerks(input: any, fallback: LevelPerks): LevelPerks {
 }
 
 /**
- * Normalize an arbitrary saved/posted config into a strict 5-entry ladder.
- * Missing/invalid fields fall back to the default for that slot so a partially
- * corrupted row can never crash a read path. Perks are backfilled from the
- * defaults when older saved configs predate the perks field.
+ * Normalize an arbitrary saved/posted config into a strict ascending ladder
+ * of {@link MIN_LEVELS}..{@link MAX_LEVELS} entries. `level` is always
+ * renumbered to match position (1..N) so admin-side reorders or deletions
+ * never produce gaps. Missing/invalid fields fall back to the seeded default
+ * for that slot — or a generated default for slots above the seeded length —
+ * so a partially corrupted row can never crash a read path. Perks are
+ * backfilled from the defaults when older saved configs predate the perks
+ * field.
+ *
+ * Inputs that are not arrays, are empty, or exceed {@link MAX_LEVELS} fall
+ * back to the full {@link DEFAULT_LEVEL_CONFIG}.
  */
 export function normalizeLevelConfig(input: unknown): LevelDef[] {
-  if (!Array.isArray(input) || input.length !== 5) return DEFAULT_LEVEL_CONFIG;
-  return input.map((l: any, i: number) => ({
-    level: i + 1,
-    name: String(l?.name || DEFAULT_LEVEL_CONFIG[i].name),
-    badge: String(l?.badge || DEFAULT_LEVEL_CONFIG[i].badge),
-    color: String(l?.color || DEFAULT_LEVEL_CONFIG[i].color),
-    min_calls: Math.max(0, parseInt(String(l?.min_calls)) || 0),
-    min_rating: Math.min(5, Math.max(0, parseFloat(String(l?.min_rating)) || 0)),
-    coin_reward: Math.max(0, parseInt(String(l?.coin_reward)) || 0),
-    description: String(l?.description ?? ''),
-    perks: normalizePerks(l?.perks, DEFAULT_LEVEL_CONFIG[i].perks),
-  }));
+  if (!Array.isArray(input)) return DEFAULT_LEVEL_CONFIG;
+  if (input.length < MIN_LEVELS || input.length > MAX_LEVELS) return DEFAULT_LEVEL_CONFIG;
+  return input.map((l: any, i: number) => {
+    const fallback = fallbackForSlot(i);
+    return {
+      // Always renumber sequentially so add/remove operations on the admin
+      // side don't leak gaps or duplicates into stored data.
+      level: i + 1,
+      name: String(l?.name || fallback.name),
+      badge: String(l?.badge || fallback.badge),
+      color: String(l?.color || fallback.color),
+      min_calls: Math.max(0, parseInt(String(l?.min_calls)) || 0),
+      min_rating: Math.min(5, Math.max(0, parseFloat(String(l?.min_rating)) || 0)),
+      coin_reward: Math.max(0, parseInt(String(l?.coin_reward)) || 0),
+      description: String(l?.description ?? ''),
+      perks: normalizePerks(l?.perks, fallback.perks),
+    };
+  });
 }
 
 /** Load the saved level config from app_settings, or the default ladder. */
@@ -134,11 +217,15 @@ export async function getLevelConfig(d: D1Database): Promise<LevelDef[]> {
   return DEFAULT_LEVEL_CONFIG;
 }
 
-/** Sort + sanity-check a config into an ascending 5-rung ladder. */
+/**
+ * Sort + sanity-check a config into an ascending ladder of length
+ * {@link MIN_LEVELS}..{@link MAX_LEVELS}. Falls back to the seeded default
+ * ladder only when the input is missing or out of bounds — every function
+ * that consumes the ladder otherwise works for any number of rungs.
+ */
 function asLadder(config: LevelDef[]): LevelDef[] {
-  return (config && config.length === 5 ? config : DEFAULT_LEVEL_CONFIG)
-    .slice()
-    .sort((a, b) => a.level - b.level);
+  const valid = Array.isArray(config) && config.length >= MIN_LEVELS && config.length <= MAX_LEVELS;
+  return (valid ? config : DEFAULT_LEVEL_CONFIG).slice().sort((a, b) => a.level - b.level);
 }
 
 export interface HostLevelStats {
@@ -232,7 +319,7 @@ export interface LevelInfo {
  */
 export function buildLevelInfo(config: LevelDef[], level: number | null | undefined): LevelInfo {
   const ladder = asLadder(config);
-  const lvl = level && level >= 1 && level <= 5 ? level : 1;
+  const lvl = level && level >= 1 && level <= ladder.length ? level : 1;
   const def = ladder.find((l) => l.level === lvl) ?? ladder[0];
   return { level: def.level, name: def.name, badge: def.badge, color: def.color };
 }
@@ -294,7 +381,7 @@ export function computeLevelProgress(
 
   const earned = evaluateLevel(stats, ladder);
   // Prefer the stored level when it is a valid rung; never show below earned.
-  const stored = storedLevel && storedLevel >= 1 && storedLevel <= 5 ? storedLevel : earned;
+  const stored = storedLevel && storedLevel >= 1 && storedLevel <= ladder.length ? storedLevel : earned;
   const levelNum = Math.max(stored, earned);
 
   const current = ladder.find((l) => l.level === levelNum) ?? ladder[0];
