@@ -3,6 +3,7 @@ import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth';
 import { getLevelConfig, computeLevelProgress, getHostAudioRateCeiling, getHostVideoRateCeiling, getRankBoost, buildLevelInfo, rankBoostCaseSql, ABSOLUTE_MAX_RATE, type LevelDef } from '../lib/levels';
+import { scoreHosts, normalizeWeights, type CandidateHost, type UserAffinity } from '../lib/recommend';
 import type { Env, JWTPayload } from '../types';
 
 const host = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
@@ -79,6 +80,160 @@ host.get('/featured', async (c) => {
       'Cache-Control': 'public, s-maxage=120, stale-while-revalidate=300',
     },
   });
+});
+
+// GET /api/hosts/recommended — PERSONALIZED "For You" rail (Priority 1).
+//
+// Unlike GET /api/hosts (same order for everyone, CDN-cached), this is a
+// per-user ranking that blends quality (rating/level/popularity), availability
+// (online now), affinity (favorites, prior calls, inferred language/specialty/
+// gender preferences) and exploration (cold-start boost for new hosts + a
+// small jitter). Authenticated so we can read the caller's affinity signals.
+// Scoring weights + on/off flag live in app_settings (reco_weights/reco_enabled)
+// so admins can retune without a deploy. See lib/recommend.ts.
+//
+// Must be declared BEFORE GET /:id so "recommended" isn't captured as an id.
+host.get('/recommended', authMiddleware, async (c) => {
+  const { sub } = c.get('user');
+  const db = c.env.DB;
+  const limit = Math.min(parseInt(c.req.query('limit') || '20') || 20, 40);
+  const config = await getLevelConfig(db);
+  const rb = rankBoostCase(config);
+
+  // Feature flag + weights — both best-effort with safe fallbacks.
+  const [enabledRow, weightsRow] = await Promise.all([
+    db.prepare("SELECT value FROM app_settings WHERE key = 'reco_enabled'").first<{ value: string }>().catch(() => null),
+    db.prepare("SELECT value FROM app_settings WHERE key = 'reco_weights'").first<{ value: string }>().catch(() => null),
+  ]);
+  const enabled = enabledRow?.value == null ? true : enabledRow.value !== '0';
+
+  // Kill-switch path: fall back to the public-list ordering (still no PII /
+  // affinity used), so the rail keeps working if admins disable personalization.
+  if (!enabled) {
+    const fb = await db.prepare(
+      `SELECT h.*, u.name, u.avatar_url, u.gender, u.bio FROM hosts h
+       JOIN users u ON u.id = h.user_id WHERE h.is_active = 1
+       ORDER BY h.is_online DESC, ${rb} DESC, h.rating DESC, h.total_minutes DESC LIMIT ?`
+    ).bind(limit).all();
+    return c.json({
+      personalized: false,
+      hosts: fb.results.map((h) => ({ ...enrichHost(h, config), reason: 'Recommended for you' })),
+    });
+  }
+
+  let weights;
+  try {
+    weights = normalizeWeights(weightsRow?.value ? JSON.parse(weightsRow.value) : undefined);
+  } catch {
+    weights = normalizeWeights(undefined);
+  }
+
+  // 1. Candidate pool (bounded): top hosts by availability/level/rating, the
+  //    newest hosts (freshness/exploration), and the caller's affinity history.
+  const [topPool, freshPool, favRows, callRows] = await Promise.all([
+    db.prepare(
+      `SELECT h.*, u.name, u.avatar_url, u.gender, u.bio FROM hosts h
+       JOIN users u ON u.id = h.user_id WHERE h.is_active = 1
+       ORDER BY h.is_online DESC, ${rb} DESC, h.rating DESC, h.review_count DESC LIMIT 70`
+    ).all(),
+    db.prepare(
+      `SELECT h.*, u.name, u.avatar_url, u.gender, u.bio FROM hosts h
+       JOIN users u ON u.id = h.user_id WHERE h.is_active = 1
+       ORDER BY h.created_at DESC LIMIT 20`
+    ).all(),
+    db.prepare('SELECT host_id FROM user_favorites WHERE user_id = ?').bind(sub).all<{ host_id: string }>(),
+    db.prepare(
+      `SELECT cs.host_id AS host_id, COUNT(*) AS cnt,
+              h.languages AS languages, h.specialties AS specialties, u.gender AS gender
+       FROM call_sessions cs
+       JOIN hosts h ON h.id = cs.host_id
+       JOIN users u ON u.id = h.user_id
+       WHERE cs.caller_id = ? AND cs.status = 'ended'
+       GROUP BY cs.host_id ORDER BY cnt DESC LIMIT 100`
+    ).bind(sub).all<any>(),
+  ]);
+
+  // Merge pools into a unique id → raw-row map.
+  const rawById = new Map<string, any>();
+  for (const h of [...(topPool.results ?? []), ...(freshPool.results ?? [])]) {
+    if (!rawById.has((h as any).id)) rawById.set((h as any).id, h);
+  }
+
+  // Pull in favorited / previously-called hosts that didn't make the pools so
+  // strong affinity signals are never missed (capped to keep it bounded).
+  const favoriteHostIds = new Set<string>((favRows.results ?? []).map((r) => r.host_id));
+  const callCountByHost = new Map<string, number>();
+  for (const r of callRows.results ?? []) callCountByHost.set(r.host_id, Number(r.cnt) || 0);
+
+  const missingIds = [...new Set<string>([...favoriteHostIds, ...callCountByHost.keys()])]
+    .filter((id) => !rawById.has(id))
+    .slice(0, 40);
+  if (missingIds.length) {
+    const placeholders = missingIds.map(() => '?').join(',');
+    const extra = await db.prepare(
+      `SELECT h.*, u.name, u.avatar_url, u.gender, u.bio FROM hosts h
+       JOIN users u ON u.id = h.user_id
+       WHERE h.is_active = 1 AND h.id IN (${placeholders})`
+    ).bind(...missingIds).all();
+    for (const h of extra.results ?? []) {
+      if (!rawById.has((h as any).id)) rawById.set((h as any).id, h);
+    }
+  }
+
+  // 2. Derive the caller's inferred preferences from who they've called.
+  const langCounts = new Map<string, number>();
+  const specCounts = new Map<string, number>();
+  const genderCounts = new Map<string, number>();
+  for (const r of callRows.results ?? []) {
+    const cnt = Number(r.cnt) || 1;
+    for (const l of safeParse(r.languages, []) as string[]) {
+      const k = String(l).trim().toLowerCase();
+      if (k) langCounts.set(k, (langCounts.get(k) ?? 0) + cnt);
+    }
+    for (const s of safeParse(r.specialties, []) as string[]) {
+      const k = String(s).trim().toLowerCase();
+      if (k) specCounts.set(k, (specCounts.get(k) ?? 0) + cnt);
+    }
+    const g = String(r.gender ?? '').trim().toLowerCase();
+    if (g) genderCounts.set(g, (genderCounts.get(g) ?? 0) + cnt);
+  }
+  const topGender = [...genderCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+
+  const affinity: UserAffinity = {
+    favoriteHostIds,
+    callCountByHost,
+    preferredLanguages: new Set(langCounts.keys()),
+    preferredSpecialties: new Set(specCounts.keys()),
+    preferredGender: topGender,
+  };
+
+  // 3. Score + rank. Build CandidateHost shapes with parsed arrays.
+  const candidates: CandidateHost[] = [...rawById.values()].map((h) => ({
+    id: h.id,
+    user_id: h.user_id,
+    level: h.level ?? 1,
+    rating: Number(h.rating) || 0,
+    review_count: Number(h.review_count) || 0,
+    is_online: h.is_online ? 1 : 0,
+    created_at: Number(h.created_at) || 0,
+    gender: h.gender ?? null,
+    languages: safeParse(h.languages, []),
+    specialties: safeParse(h.specialties, []),
+  }));
+
+  // Seed the exploration jitter with the current 6-hour bucket so the rail
+  // shuffles a little between sessions but stays stable within one.
+  const seed = Math.floor(Date.now() / (6 * 3600 * 1000));
+  const ranked = scoreHosts(candidates, affinity, weights, config, { limit, seed });
+
+  const hosts = ranked.map((r) => ({
+    ...enrichHost(rawById.get(r.host.id), config),
+    reason: r.reason,
+    // Rounded score for client-side debugging / sorting transparency.
+    reco_score: Math.round(r.score * 1000) / 1000,
+  }));
+
+  return c.json({ personalized: true, hosts });
 });
 
 // GET /api/hosts — public list with cursor-based pagination

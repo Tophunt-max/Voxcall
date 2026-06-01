@@ -430,3 +430,86 @@ export function ensureRandomCallSchema(db: D1Database): Promise<boolean> {
 
   return randomSchemaReadyPromise;
 }
+
+
+// ============================================================================
+// Engagement schema guard — recommender + re-engagement defaults.
+// ============================================================================
+//
+// No new columns: the personalized recommender (lib/recommend.ts) and the
+// re-engagement cron (lib/reengagement.ts) work off existing tables. This guard
+// only seeds their tunable app_settings (so the admin panel can edit them) and
+// ensures a supporting index for the re-engagement dedup query
+// (notifications by user_id + type + time). Idempotent — same pattern as the
+// other ensure* guards.
+
+let engagementSchemaReadyPromise: Promise<boolean> | null = null;
+
+const ENGAGEMENT_DEFAULT_SETTINGS: ReadonlyArray<{ key: string; value: string }> = [
+  // Personalized "For You" rail (GET /api/hosts/recommended). '0' falls back to
+  // the public-list ordering.
+  { key: 'reco_enabled', value: '1' },
+  // Scoring weights — mirrors lib/recommend.ts DEFAULT_WEIGHTS. Malformed JSON
+  // falls back to defaults on read, so this is just the editable seed.
+  {
+    key: 'reco_weights',
+    value: JSON.stringify({
+      online: 1.0,
+      rating: 0.6,
+      rank_boost: 0.5,
+      popularity: 0.3,
+      favorite: 1.2,
+      past_calls: 0.8,
+      language: 0.4,
+      specialty: 0.4,
+      gender: 0.3,
+      freshness: 0.5,
+      exploration: 0.15,
+    }),
+  },
+  // Re-engagement / churn cron knobs (lib/reengagement.ts). '0' disables.
+  { key: 'reengagement_enabled', value: '1' },
+  { key: 'reengagement_idle_days', value: '3' },
+  { key: 'reengagement_winback_days', value: '7' },
+  { key: 'reengagement_cooldown_days', value: '3' },
+  { key: 'reengagement_max_per_run', value: '200' },
+  { key: 'reengagement_max_idle_days', value: '45' },
+  { key: 'reengagement_interval_hours', value: '6' },
+];
+
+export function ensureEngagementSchema(db: D1Database): Promise<boolean> {
+  if (engagementSchemaReadyPromise) return engagementSchemaReadyPromise;
+
+  engagementSchemaReadyPromise = (async () => {
+    try {
+      // Seed defaults via INSERT OR IGNORE — never overwrites admin-tuned values.
+      for (const s of ENGAGEMENT_DEFAULT_SETTINGS) {
+        try {
+          await db
+            .prepare("INSERT OR IGNORE INTO app_settings (key, value, updated_at) VALUES (?, ?, unixepoch())")
+            .bind(s.key, s.value)
+            .run();
+        } catch (err) {
+          console.warn(`[schemaGuard] seed app_settings.${s.key} failed:`, err);
+        }
+      }
+
+      // Supporting index for the re-engagement dedup NOT EXISTS lookup.
+      try {
+        await db
+          .prepare('CREATE INDEX IF NOT EXISTS idx_notifications_user_type_time ON notifications(user_id, type, created_at DESC)')
+          .run();
+      } catch (err) {
+        console.warn('[schemaGuard] idx_notifications_user_type_time creation failed:', err);
+      }
+
+      return true;
+    } catch (err) {
+      console.error('[schemaGuard] ensureEngagementSchema failed:', err);
+      engagementSchemaReadyPromise = null;
+      return false;
+    }
+  })();
+
+  return engagementSchemaReadyPromise;
+}

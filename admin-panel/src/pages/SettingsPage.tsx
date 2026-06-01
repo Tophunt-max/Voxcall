@@ -73,6 +73,25 @@ const settingGroups = [
       { key: 'low_balance_warn_seconds', label: 'Low-balance warning threshold (seconds)', type: 'number', hint: 'Heartbeat pushes call_low_balance WS event to caller when fewer than this many seconds of coins remain — drives the mid-call top-up modal.', step: '1' },
     ],
   },
+  {
+    group: 'Engagement — Recommendations (For You rail)',
+    settings: [
+      { key: 'reco_enabled', label: 'Personalized recommendations enabled', type: 'text', hint: 'Set to 1 to enable GET /api/hosts/recommended personalization, 0 to fall back to the standard public-list ordering.' },
+      { key: 'reco_weights', label: 'Scoring weights (JSON object)', type: 'text', hint: 'Linear-model weights. Keys: online, rating, rank_boost, popularity, favorite, past_calls, language, specialty, gender, freshness, exploration. Higher = more influence. Malformed JSON falls back to defaults.' },
+    ],
+  },
+  {
+    group: 'Engagement — Re-engagement / Win-back',
+    settings: [
+      { key: 'reengagement_enabled', label: 'Re-engagement push enabled', type: 'text', hint: 'Set to 1 to enable the scheduled churn-prevention nudges, 0 to kill-switch them.' },
+      { key: 'reengagement_idle_days', label: 'Idle threshold (days)', type: 'number', hint: 'A user with no activity for this many days becomes eligible for a soft re-engagement nudge.', step: '1' },
+      { key: 'reengagement_winback_days', label: 'Win-back threshold (days)', type: 'number', hint: 'At/after this many idle days the user gets the stronger win-back message instead of the soft nudge.', step: '1' },
+      { key: 'reengagement_cooldown_days', label: 'Per-user cooldown (days)', type: 'number', hint: 'Minimum gap between re-engagement pushes to the same user, so we never spam.', step: '1' },
+      { key: 'reengagement_max_per_run', label: 'Max users per run', type: 'number', hint: 'Cap on how many users are nudged in a single cron run (hard-capped at 500 server-side).', step: '1' },
+      { key: 'reengagement_max_idle_days', label: 'Stop-pestering threshold (days)', type: 'number', hint: 'Users idle longer than this are considered churned-dead and are no longer nudged.', step: '1' },
+      { key: 'reengagement_interval_hours', label: 'Run interval (hours)', type: 'number', hint: 'How often the re-engagement job runs (1–24). The cron fires every minute but the job self-gates to this interval.', step: '1' },
+    ],
+  },
 ];
 
 const DEFAULTS: Record<string, string> = {
@@ -100,6 +119,18 @@ const DEFAULTS: Record<string, string> = {
   billing_granularity_sec: '60',
   // Heartbeat threshold for the call_low_balance WS event (seconds).
   low_balance_warn_seconds: '60',
+  // Engagement — recommendation rail (mirror lib/recommend.ts DEFAULT_WEIGHTS).
+  reco_enabled: '1',
+  reco_weights:
+    '{"online":1,"rating":0.6,"rank_boost":0.5,"popularity":0.3,"favorite":1.2,"past_calls":0.8,"language":0.4,"specialty":0.4,"gender":0.3,"freshness":0.5,"exploration":0.15}',
+  // Engagement — re-engagement / win-back cron (mirror lib/reengagement.ts).
+  reengagement_enabled: '1',
+  reengagement_idle_days: '3',
+  reengagement_winback_days: '7',
+  reengagement_cooldown_days: '3',
+  reengagement_max_per_run: '200',
+  reengagement_max_idle_days: '45',
+  reengagement_interval_hours: '6',
 };
 
 // ─── safe arithmetic evaluator (no eval / new Function) ──────────────────────

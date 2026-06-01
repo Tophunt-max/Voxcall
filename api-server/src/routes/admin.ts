@@ -377,6 +377,13 @@ admin.patch('/settings', async (c) => {
     //   low_balance_warn_seconds → push call_low_balance WS event when
     //                              caller has < N seconds of coins left
     'billing_granularity_sec', 'low_balance_warn_seconds',
+    // Engagement — personalized recommendation rail + re-engagement/churn cron.
+    //   reco_*          → GET /api/hosts/recommended (lib/recommend.ts)
+    //   reengagement_*  → scheduled churn-prevention job (lib/reengagement.ts)
+    'reco_enabled', 'reco_weights',
+    'reengagement_enabled', 'reengagement_idle_days', 'reengagement_winback_days',
+    'reengagement_cooldown_days', 'reengagement_max_per_run',
+    'reengagement_max_idle_days', 'reengagement_interval_hours',
   ];
   const stmts = Object.entries(body)
     .filter(([k]) => ALLOWED_SETTINGS.includes(k))
@@ -1343,6 +1350,11 @@ admin.put('/app-config', async (c) => {
     // First-call-free + calling-system observability.
     'first_call_free_minutes',
     'billing_granularity_sec', 'low_balance_warn_seconds',
+    // Engagement — recommendation rail + re-engagement/churn cron.
+    'reco_enabled', 'reco_weights',
+    'reengagement_enabled', 'reengagement_idle_days', 'reengagement_winback_days',
+    'reengagement_cooldown_days', 'reengagement_max_per_run',
+    'reengagement_max_idle_days', 'reengagement_interval_hours',
   ]);
   const stmts = Object.entries(body)
     .filter(([k]) => ALLOWED_APP_CONFIG_KEYS.has(k))

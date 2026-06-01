@@ -21,10 +21,11 @@ import paymentRouter from './routes/payment';
 import { ChatRoom } from './durable-objects/ChatRoom';
 import { CallSignaling } from './durable-objects/CallSignaling';
 import { NotificationHub } from './durable-objects/NotificationHub';
-import { ensureUsersSchema, ensureRandomCallSchema, ensureStreakSchema, ensureFirstCallFreeSchema, ensureCallObservabilitySchema } from './lib/schemaGuard';
+import { ensureUsersSchema, ensureRandomCallSchema, ensureStreakSchema, ensureFirstCallFreeSchema, ensureCallObservabilitySchema, ensureEngagementSchema } from './lib/schemaGuard';
 import { getLevelConfig, getEarningShare } from './lib/levels';
 import { recalcAllHostLevels } from './lib/levelService';
 import { billedMinutes, coinsForCall, chargeCallerWithFreePool } from './lib/billing';
+import { runReengagement } from './lib/reengagement';
 import { createCFCalls } from './lib/cf-calls';
 import { USD_TO_FOREIGN } from './lib/currency';
 
@@ -95,6 +96,7 @@ app.use('/api/*', async (c, next) => {
     ensureStreakSchema(c.env.DB),
     ensureFirstCallFreeSchema(c.env.DB),
     ensureCallObservabilitySchema(c.env.DB),
+    ensureEngagementSchema(c.env.DB),
   ]);
   return next();
 });
@@ -464,6 +466,41 @@ async function maybeRefreshFxRates(env: Env): Promise<void> {
   }
 }
 
+// Re-engagement / churn-prevention — runs at most once every
+// `reengagement_interval_hours` (default 6h) even though the cron fires every
+// minute. Finds idle users and nudges them back with a push + in-app
+// notification (see lib/reengagement.ts). Gated via a `last_reengagement_run`
+// timestamp in app_settings; the slot is claimed BEFORE running so overlapping
+// cron ticks don't double-send. Entirely best-effort — a failure here must
+// never affect the billing-critical reaper jobs above.
+async function maybeRunReengagement(env: Env): Promise<void> {
+  try {
+    const now = Math.floor(Date.now() / 1000);
+    const intervalRow = await env.DB
+      .prepare("SELECT value FROM app_settings WHERE key = 'reengagement_interval_hours'")
+      .first<{ value: string }>();
+    const parsedInterval = parseInt(intervalRow?.value ?? '', 10);
+    // Clamp to a sane 1–24h band; default 6h.
+    const intervalHours = Number.isFinite(parsedInterval) && parsedInterval >= 1 && parsedInterval <= 24 ? parsedInterval : 6;
+
+    const lastRow = await env.DB
+      .prepare("SELECT value FROM app_settings WHERE key = 'last_reengagement_run'")
+      .first<{ value: string }>();
+    const last = lastRow?.value ? parseInt(lastRow.value, 10) || 0 : 0;
+    if (now - last < intervalHours * 3600) return; // already ran within the window
+
+    // Claim the slot first so a second cron tick in the same window is a no-op.
+    await env.DB.prepare(
+      "INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('last_reengagement_run', ?, unixepoch())"
+    ).bind(String(now)).run();
+
+    const res = await runReengagement(env);
+    console.log('[Cron] Re-engagement:', JSON.stringify(res));
+  } catch (e) {
+    console.error('[Cron] Re-engagement error:', e);
+  }
+}
+
 export default {
   fetch: app.fetch,
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
@@ -471,5 +508,6 @@ export default {
     ctx.waitUntil(reconcileStuckEndedCalls(env));
     ctx.waitUntil(maybeRecalcLevelsDaily(env));
     ctx.waitUntil(maybeRefreshFxRates(env));
+    ctx.waitUntil(maybeRunReengagement(env));
   },
 };
