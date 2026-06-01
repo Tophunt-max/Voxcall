@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { authMiddleware } from '../middleware/auth';
 import { verifyPassword } from '../lib/hash';
+import { getStreakStatus, claimDailyStreak } from '../lib/streak';
 import type { Env, JWTPayload } from '../types';
 
 const user = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
@@ -46,6 +47,32 @@ user.patch('/me', async (c) => {
   vals.push(sub);
   await c.env.DB.prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`).bind(...vals).run();
   return c.json({ success: true });
+});
+
+// GET /api/user/streak — read-only daily streak snapshot for the UI.
+//
+// Used by the wallet / home screen to render the "Daily Reward" card. Exposes
+// the reward schedule, milestone bonuses, current streak, whether the Claim
+// button should be enabled, and (when on cooldown) the IST midnight at which
+// the next claim window opens.
+user.get('/streak', async (c) => {
+  const { sub } = c.get('user');
+  const status = await getStreakStatus(c.env.DB, sub);
+  if (!status) return c.json({ error: 'User not found' }, 404);
+  return c.json(status);
+});
+
+// POST /api/user/streak/claim — atomic claim of today's streak reward.
+//
+// Idempotent within an IST calendar day: a second call before the next IST
+// midnight returns `claimed=false, code=ALREADY_CLAIMED` (HTTP 200) instead
+// of an error. Real failures (feature disabled / user missing) are also 200
+// with their own code; the client switches on `code` rather than HTTP status
+// to render the right toast.
+user.post('/streak/claim', async (c) => {
+  const { sub } = c.get('user');
+  const result = await claimDailyStreak(c.env.DB, sub);
+  return c.json(result);
 });
 
 // GET /api/user/notifications

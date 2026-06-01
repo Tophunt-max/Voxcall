@@ -21,7 +21,7 @@ import paymentRouter from './routes/payment';
 import { ChatRoom } from './durable-objects/ChatRoom';
 import { CallSignaling } from './durable-objects/CallSignaling';
 import { NotificationHub } from './durable-objects/NotificationHub';
-import { ensureUsersSchema, ensureRandomCallSchema } from './lib/schemaGuard';
+import { ensureUsersSchema, ensureRandomCallSchema, ensureStreakSchema } from './lib/schemaGuard';
 import { getLevelConfig, getEarningShare } from './lib/levels';
 import { recalcAllHostLevels } from './lib/levelService';
 import { billedMinutes, coinsForCall, chargeCallerAffordable } from './lib/billing';
@@ -92,6 +92,7 @@ app.use('/api/*', async (c, next) => {
   await Promise.all([
     ensureUsersSchema(c.env.DB),
     ensureRandomCallSchema(c.env.DB),
+    ensureStreakSchema(c.env.DB),
   ]);
   return next();
 });

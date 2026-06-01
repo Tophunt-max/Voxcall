@@ -73,8 +73,68 @@ export function ensureUsersSchema(db: D1Database): Promise<boolean> {
 
 
 // ============================================================================
-// Random Call schema guard — auto-heal migration 0026 on cold start.
+// Daily streak schema guard — auto-heal migration 0027 on cold start.
 // ============================================================================
+//
+// Mirrors ensureRandomCallSchema(). Adds the two streak columns on `users`
+// and seeds the default schedule / milestones / enabled flag in app_settings
+// when missing. Idempotent — safe to call on every request.
+
+let streakSchemaReadyPromise: Promise<boolean> | null = null;
+
+const REQUIRED_USER_STREAK_COLUMNS: ReadonlyArray<{ name: string; ddl: string }> = [
+  { name: 'streak_days',          ddl: 'ALTER TABLE users ADD COLUMN streak_days INTEGER DEFAULT 0' },
+  { name: 'last_streak_claim_at', ddl: 'ALTER TABLE users ADD COLUMN last_streak_claim_at INTEGER DEFAULT 0' },
+];
+
+const STREAK_DEFAULT_SETTINGS: ReadonlyArray<{ key: string; value: string }> = [
+  { key: 'daily_streak_schedule',    value: '[5,10,15,20,30,50,100]' },
+  { key: 'daily_streak_milestones',  value: '{"7":50,"14":100,"30":500,"60":1500,"100":5000}' },
+  { key: 'daily_streak_enabled',     value: '1' },
+];
+
+export function ensureStreakSchema(db: D1Database): Promise<boolean> {
+  if (streakSchemaReadyPromise) return streakSchemaReadyPromise;
+
+  streakSchemaReadyPromise = (async () => {
+    try {
+      const userInfo = await db.prepare('PRAGMA table_info(users)').all<{ name: string }>();
+      const cols = new Set((userInfo.results ?? []).map((r) => r.name));
+      for (const col of REQUIRED_USER_STREAK_COLUMNS) {
+        if (!cols.has(col.name)) {
+          try {
+            await db.prepare(col.ddl).run();
+            console.log(`[schemaGuard] added users.${col.name}`);
+          } catch (err) {
+            console.warn(`[schemaGuard] add users.${col.name} failed (may be a race):`, err);
+          }
+        }
+      }
+
+      // Seed defaults via INSERT OR IGNORE — never overwrites an admin's
+      // tuned values, only fills gaps.
+      for (const s of STREAK_DEFAULT_SETTINGS) {
+        try {
+          await db
+            .prepare("INSERT OR IGNORE INTO app_settings (key, value, updated_at) VALUES (?, ?, unixepoch())")
+            .bind(s.key, s.value)
+            .run();
+        } catch (err) {
+          console.warn(`[schemaGuard] seed app_settings.${s.key} failed:`, err);
+        }
+      }
+
+      return true;
+    } catch (err) {
+      console.error('[schemaGuard] ensureStreakSchema failed:', err);
+      streakSchemaReadyPromise = null;
+      return false;
+    }
+  })();
+
+  return streakSchemaReadyPromise;
+}
+
 //
 // The Random Call overhaul added columns + a new table:
 //   - hosts.accepts_random_calls      INTEGER DEFAULT 1

@@ -52,6 +52,14 @@ const settingGroups = [
       { key: 'random_match_repeat_block_min', label: 'No-repeat window (minutes)', type: 'number', hint: 'A user won\'t be matched with the same host again within this window.', step: '1' },
     ],
   },
+  {
+    group: 'Engagement — Daily Streak',
+    settings: [
+      { key: 'daily_streak_enabled', label: 'Daily streak rewards enabled', type: 'text', hint: 'Set to 1 to enable, 0 to kill-switch the feature without removing config.' },
+      { key: 'daily_streak_schedule', label: 'Reward schedule (JSON array)', type: 'text', hint: 'Coins awarded on each day of the cycle. e.g. [5,10,15,20,30,50,100] = Day 1 gets 5 coins, Day 7 gets 100, Day 8 wraps back to 5.' },
+      { key: 'daily_streak_milestones', label: 'Milestone bonuses (JSON map)', type: 'text', hint: 'One-time bonus on top of base reward when streak hits a specific day. e.g. {"7":50,"14":100,"30":500}.' },
+    ],
+  },
 ];
 
 const DEFAULTS: Record<string, string> = {
@@ -68,6 +76,11 @@ const DEFAULTS: Record<string, string> = {
   random_decline_cooldown_count: '0',
   random_decline_cooldown_min: '5',
   random_match_repeat_block_min: '30',
+  // Daily-streak defaults (mirror lib/streak.ts DEFAULT_SCHEDULE / DEFAULT_MILESTONES).
+  // schedule = 7-day cycle, milestones = one-time bonuses on key days.
+  daily_streak_enabled: '1',
+  daily_streak_schedule: '[5,10,15,20,30,50,100]',
+  daily_streak_milestones: '{"7":50,"14":100,"30":500,"60":1500,"100":5000}',
 };
 
 // ─── safe arithmetic evaluator (no eval / new Function) ──────────────────────

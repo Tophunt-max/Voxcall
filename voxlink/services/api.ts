@@ -122,6 +122,37 @@ export const API = {
   submitHostApp: (data: any) => apiRequest<any>('POST', '/api/host-app/submit', data),
   me: () => apiRequest<any>('GET', '/api/user/me'),
   updateProfile: (data: any) => apiRequest('PATCH', '/api/user/me', data),
+
+  // Daily streak — Layer 4 engagement reward. Caller renders a "Daily
+  // Reward" card from getStreak(); when the user taps Claim, calls
+  // claimDailyStreak() and credits coins. Both endpoints are idempotent
+  // within an IST calendar day so a fast double-tap won't double-credit.
+  getStreak: () =>
+    apiRequest<{
+      streak_days: number;
+      last_claim_at: number;
+      can_claim_now: boolean;
+      next_claim_at: number;
+      next_reward: number;
+      next_reward_base: number;
+      next_reward_milestone: number;
+      schedule: number[];
+      milestones: Record<string, number>;
+      enabled: boolean;
+    }>('GET', '/api/user/streak'),
+  claimDailyStreak: () =>
+    apiRequest<{
+      success: boolean;
+      claimed: boolean;
+      // OK | ALREADY_CLAIMED | FEATURE_DISABLED | USER_NOT_FOUND
+      code: string;
+      streak_days: number;
+      reward: number;
+      base_reward: number;
+      milestone_bonus: number;
+      next_claim_at: number;
+      new_balance?: number;
+    }>('POST', '/api/user/streak/claim', {}),
   updateAvatar: async (formData: FormData, _retry = true): Promise<any> => {
     // Bug 6 Fix: Use shared token getter with 401 auto-refresh (same as apiRequest)
     let token = await getToken();

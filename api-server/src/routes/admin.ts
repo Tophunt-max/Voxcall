@@ -365,6 +365,11 @@ admin.patch('/settings', async (c) => {
     'random_calls_per_day_limit',
     'random_decline_cooldown_count', 'random_decline_cooldown_min',
     'random_match_repeat_block_min',
+    // Daily-streak engagement layer — feature toggle + reward schedule
+    // (JSON array) + milestone bonuses (JSON map). Validated leniently by
+    // lib/streak.ts on every read so a malformed value falls back to
+    // sensible defaults instead of breaking the streak system.
+    'daily_streak_enabled', 'daily_streak_schedule', 'daily_streak_milestones',
   ];
   const stmts = Object.entries(body)
     .filter(([k]) => ALLOWED_SETTINGS.includes(k))
@@ -1326,6 +1331,8 @@ admin.put('/app-config', async (c) => {
     'random_calls_per_day_limit',
     'random_decline_cooldown_count', 'random_decline_cooldown_min',
     'random_match_repeat_block_min',
+    // Daily-streak engagement layer.
+    'daily_streak_enabled', 'daily_streak_schedule', 'daily_streak_milestones',
   ]);
   const stmts = Object.entries(body)
     .filter(([k]) => ALLOWED_APP_CONFIG_KEYS.has(k))
