@@ -320,17 +320,17 @@ export default function HostHomeScreen() {
           ] as { icon: any; tint: string; noTint?: boolean; label: string; desc: string; onPress: () => void }[]).map((q) => (
             <TouchableOpacity
               key={q.label}
-              style={[styles.quickCard, { backgroundColor: colors.card }]}
+              style={[styles.quickCard, { backgroundColor: colors.card, borderColor: colors.borderLight }]}
               onPress={q.onPress}
-              activeOpacity={0.8}
+              activeOpacity={0.7}
               accessibilityRole="button"
               accessibilityLabel={q.label}
             >
               <View style={[styles.quickIconWrap, { backgroundColor: q.tint + "1A" }]}>
                 <Image source={q.icon} style={styles.quickIconImg} tintColor={q.noTint ? undefined : q.tint} resizeMode="contain" />
               </View>
-              <Text style={[styles.quickLabel, { color: colors.text }]}>{q.label}</Text>
-              <Text style={[styles.quickDesc, { color: colors.mutedForeground }]}>{q.desc}</Text>
+              <Text style={[styles.quickLabel, { color: colors.text }]} numberOfLines={1}>{q.label}</Text>
+              <Text style={[styles.quickDesc, { color: colors.mutedForeground }]} numberOfLines={1}>{q.desc}</Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -497,12 +497,25 @@ const styles = StyleSheet.create({
   rateUnit: { fontSize: 11, fontFamily: "Poppins_400Regular", marginTop: -2 },
   promoImg: { width: "100%", height: 160, marginBottom: 16 },
   quickSection: { paddingHorizontal: 16, marginBottom: 16 },
-  quickTitle: { fontSize: 16, fontFamily: "Poppins_700Bold", marginBottom: 12 },
+  quickTitle: { fontSize: 17, fontFamily: "Poppins_700Bold", marginBottom: 14 },
   quickGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: 12 },
-  quickCard: { width: "31.5%", borderRadius: 14, paddingVertical: 16, paddingHorizontal: 8, alignItems: "center", gap: 5 },
-  quickIconWrap: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center", marginBottom: 4 },
-  quickIconImg: { width: 22, height: 22 },
-  quickLabel: { fontSize: 12, fontFamily: "Poppins_600SemiBold", textAlign: "center" },
+  quickCard: {
+    width: "31.5%",
+    borderRadius: 18,
+    paddingVertical: 18,
+    paddingHorizontal: 6,
+    alignItems: "center",
+    gap: 7,
+    borderWidth: 1,
+    shadowColor: "#111329",
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
+  },
+  quickIconWrap: { width: 50, height: 50, borderRadius: 16, alignItems: "center", justifyContent: "center", marginBottom: 2 },
+  quickIconImg: { width: 24, height: 24 },
+  quickLabel: { fontSize: 12.5, fontFamily: "Poppins_600SemiBold", textAlign: "center" },
   quickDesc: { fontSize: 9.5, fontFamily: "Poppins_400Regular", textAlign: "center" },
   permSection: { paddingHorizontal: 16, gap: 10, marginBottom: 16 },
   permTitle: { fontSize: 16, fontFamily: "Poppins_700Bold", marginBottom: 4 },
