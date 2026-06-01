@@ -27,6 +27,10 @@ export const SocketEvents = {
   CALL_END: "call:end",
   CALL_BUSY: "call:busy",
   CALL_TIMEOUT: "call:timeout",
+  // Pushed by /api/calls/:id/heartbeat when caller has fewer than
+  // app_settings.low_balance_warn_seconds of coins left. Drives the mid-call
+  // top-up modal so the user can recharge before the call hard-stops.
+  CALL_LOW_BALANCE: "call:low_balance",
   CALL_STATE_UPDATE: "call:state_update",
   CALL_DURATION_TICK: "call:duration_tick",
   CALL_COIN_DEDUCT: "call:coin_deduct",

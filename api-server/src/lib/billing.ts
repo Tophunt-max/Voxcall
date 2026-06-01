@@ -33,6 +33,48 @@ export function billedMinutes(durationSec: number): number {
 }
 
 /**
+ * Granularity-aware billable units for a call.
+ *
+ * `granularitySec` is how many real seconds equal one billing unit:
+ *   - 60 → per-minute (legacy, default). Returns whole minutes (round up).
+ *   - 1  → per-second. Returns whole seconds (round up so a 0.4s call still
+ *          counts as 1).
+ *   - any other value → grid round-up to the next granularity bucket.
+ *
+ * The corresponding `ratePerUnit` for each granularity is computed by
+ * {@link rateForGranularity} so the caller can use the same downstream math
+ * regardless of the chosen unit.
+ *
+ * This is the building block for the admin-tunable
+ * `app_settings.billing_granularity_sec` (default 60). All billing helpers
+ * route through here so a future per-second admin flip (or per-100-millisecond
+ * test mode) doesn't require code changes.
+ */
+export function billedUnits(durationSec: number, granularitySec: number): number {
+  if (!Number.isFinite(durationSec) || durationSec <= 0) return 0;
+  const g = Number.isFinite(granularitySec) && granularitySec > 0 ? granularitySec : 60;
+  // Floor at 1 unit so a sub-granularity call (e.g. 0.5s on per-second
+  // billing) still costs the host's smallest unit — same fairness rule
+  // as the legacy 1-minute floor.
+  return Math.max(1, Math.ceil(durationSec / g));
+}
+
+/**
+ * Convert a per-minute rate into the per-unit rate for a given granularity.
+ * `rateForGranularity(10, 60) = 10`  (per-minute, identical)
+ * `rateForGranularity(10, 1)  = 10/60 ≈ 0.1667`  (per-second)
+ *
+ * Coin amounts are integers — we return a fractional rate here so the caller
+ * can multiply units × rate, then round/floor exactly once at the end of the
+ * full coin calculation. This avoids "round each second then sum" drift.
+ */
+export function rateForGranularity(ratePerMinute: number, granularitySec: number): number {
+  if (!Number.isFinite(ratePerMinute) || ratePerMinute <= 0) return 0;
+  const g = Number.isFinite(granularitySec) && granularitySec > 0 ? granularitySec : 60;
+  return (ratePerMinute * g) / 60;
+}
+
+/**
  * Coins the caller is charged for a call.
  *
  * Only 'active' calls that actually ran (durationSec > 0) cost coins; a
@@ -152,6 +194,14 @@ export async function chargeCallerWithFreePool(
     durationSec: number;
     ratePerMinute: number;
     earningShare: number;
+    /**
+     * Billing granularity in seconds — 60 (default) for per-minute round-up,
+     * 1 for whole-second precision. Read from app_settings by the call sites,
+     * passed through here so the math stays a pure function. Caller-side
+     * uniform default keeps backward-compat: omit this param and the helper
+     * behaves exactly like the legacy per-minute version.
+     */
+    granularitySec?: number;
   },
 ): Promise<{
   charged: number;
@@ -159,16 +209,30 @@ export async function chargeCallerWithFreePool(
   free_minutes_used: number;
   billed_minutes: number;
 }> {
-  const totalMinutes = billedMinutes(params.durationSec);
-  if (totalMinutes <= 0 || !params.hostUserId) {
+  const granularity = params.granularitySec ?? 60;
+  // For audit + the existing caller-app contract we keep returning
+  // `billed_minutes` (the legacy field name) but it's actually the number of
+  // billing UNITS — at granularity=60 that's literally minutes; at
+  // granularity=1 it's seconds. Existing call sites store this as
+  // call_sessions.duration_seconds when granularity=1, so the column name
+  // agnostic naming holds.
+  const totalUnits = billedUnits(params.durationSec, granularity);
+  if (totalUnits <= 0 || !params.hostUserId) {
     return { charged: 0, hostEarned: 0, free_minutes_used: 0, billed_minutes: 0 };
   }
-  const rate = Number.isFinite(params.ratePerMinute) && params.ratePerMinute > 0
-    ? params.ratePerMinute
-    : 0;
-  if (rate === 0) {
-    return { charged: 0, hostEarned: 0, free_minutes_used: 0, billed_minutes: totalMinutes };
+  // Per-unit rate for the chosen granularity. Per-minute (60s) → identical
+  // rate; per-second (1s) → rate/60.
+  const ratePerUnit = rateForGranularity(params.ratePerMinute, granularity);
+  if (ratePerUnit <= 0) {
+    return { charged: 0, hostEarned: 0, free_minutes_used: 0, billed_minutes: totalUnits };
   }
+
+  // Free pool is denominated in MINUTES (users.free_call_minutes column +
+  // admin setting). Convert to UNITS at the chosen granularity so the
+  // free-trial pool math stays consistent across granularities.
+  //   per-minute: 5 free minutes → 5 free units
+  //   per-second: 5 free minutes → 300 free units
+  const freePoolUnitsPerFreeMinute = 60 / granularity;
 
   // 1. Read caller balance + free-pool size in one round-trip. We tolerate
   //    a missing free_call_minutes column (legacy DB pre migration 0028)
@@ -192,16 +256,29 @@ export async function chargeCallerWithFreePool(
     freePool = 0;
   }
 
-  // 2. Split free vs paid minutes.
-  const freeUsed = Math.min(freePool, totalMinutes);
-  const paidMinutes = totalMinutes - freeUsed;
-  const callerOwes = paidMinutes * rate;
-  // Host is paid for ALL minutes (free + paid) — platform absorbs the
-  // free-portion cost. host_earnings is computed from the FULL call coins
-  // so the host's per-minute payout is identical regardless of how many
-  // free minutes the caller used.
-  const fullCallCoins = totalMinutes * rate;
+  // 2. Split free vs paid units.
+  // Free pool stored as MINUTES, converted to UNITS at the active
+  // granularity. At per-minute billing (60), one free minute = 1 unit; at
+  // per-second billing, one free minute = 60 units. The decrement back into
+  // users.free_call_minutes is converted in reverse (units → ceil(minutes))
+  // so a partial-minute consumption still leaves the user's pool clamped to
+  // whole minutes (the column is INTEGER).
+  const freePoolUnits = freePool * freePoolUnitsPerFreeMinute;
+  const freeUnitsUsed = Math.min(freePoolUnits, totalUnits);
+  const paidUnits = totalUnits - freeUnitsUsed;
+  // Caller pays integer coins for paid portion (round to nearest whole coin
+  // — fractional rates × integer units can produce decimals on per-second
+  // billing). Math.floor preserves the platform-never-overcharges guarantee.
+  const callerOwes = Math.floor(paidUnits * ratePerUnit);
+  // Host paid for ALL units (free + paid) — platform absorbs the
+  // free-portion cost. Multiply once at the end so per-second billing
+  // doesn't accumulate sub-coin rounding drift.
+  const fullCallCoins = totalUnits * ratePerUnit;
   const hostEarn = hostShareOf(fullCallCoins, params.earningShare);
+  // Convert free units back to whole minutes for the column decrement.
+  // ceil so a fractional minute (e.g. 1.5 minutes worth of seconds) burns
+  // 2 free minutes — fair to the platform's free-trial budget.
+  const freeMinutesToDecrement = Math.ceil(freeUnitsUsed / freePoolUnitsPerFreeMinute);
 
   // 3. Best-effort cap on the caller's debit (same partial-billing model
   //    as chargeCallerAffordable).
@@ -210,11 +287,11 @@ export async function chargeCallerWithFreePool(
   // 4. Atomic batch: decrement free pool + debit caller + credit host.
   //    SQLite/D1 batches are transactional — either all three land or none.
   const ops: D1PreparedStatement[] = [];
-  if (freeUsed > 0) {
+  if (freeMinutesToDecrement > 0) {
     ops.push(
       db
         .prepare('UPDATE users SET free_call_minutes = MAX(0, COALESCE(free_call_minutes, 0) - ?) WHERE id = ?')
-        .bind(freeUsed, params.callerId),
+        .bind(freeMinutesToDecrement, params.callerId),
     );
   }
   if (callerActuallyPays > 0) {
@@ -236,15 +313,15 @@ export async function chargeCallerWithFreePool(
       await db.batch(ops);
     } catch (err) {
       console.warn('[billing] free-pool batch failed:', err);
-      return { charged: 0, hostEarned: 0, free_minutes_used: 0, billed_minutes: totalMinutes };
+      return { charged: 0, hostEarned: 0, free_minutes_used: 0, billed_minutes: totalUnits };
     }
   }
 
   return {
     charged: callerActuallyPays,
     hostEarned: hostEarn,
-    free_minutes_used: freeUsed,
-    billed_minutes: totalMinutes,
+    free_minutes_used: freeMinutesToDecrement,
+    billed_minutes: totalUnits,
   };
 }
 

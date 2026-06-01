@@ -153,6 +153,16 @@ export const API = {
       next_claim_at: number;
       new_balance?: number;
     }>('POST', '/api/user/streak/claim', {}),
+
+  // Call quality sample ingestion — caller's app posts every ~30s during
+  // an active call. NULL fields are allowed (early in the call before
+  // RTCP gives us a real measurement). Best-effort — failure must never
+  // break the active call.
+  postCallQuality: (
+    sessionId: string,
+    sample: { jitter_ms?: number | null; packet_loss_pct?: number | null; rtt_ms?: number | null; codec?: string | null },
+  ) =>
+    apiRequest<{ ok: boolean; recorded: boolean }>('POST', `/api/calls/${sessionId}/quality`, sample),
   updateAvatar: async (formData: FormData, _retry = true): Promise<any> => {
     // Bug 6 Fix: Use shared token getter with 401 auto-refresh (same as apiRequest)
     let token = await getToken();

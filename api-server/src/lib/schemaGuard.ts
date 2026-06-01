@@ -136,6 +136,112 @@ export function ensureStreakSchema(db: D1Database): Promise<boolean> {
 }
 
 // ============================================================================
+// Calling-system observability schema guard — auto-heal migration 0029.
+// ============================================================================
+//
+// Adds the end-reason column on call_sessions, the call_quality table for
+// per-call jitter/loss/rtt samples, and two new app_settings rows
+// (billing_granularity_sec, low_balance_warn_seconds). Idempotent — same
+// pattern as ensureRandomCallSchema / ensureStreakSchema /
+// ensureFirstCallFreeSchema.
+
+let callObsSchemaReadyPromise: Promise<boolean> | null = null;
+
+const REQUIRED_CALL_OBS_COLUMNS: ReadonlyArray<{ name: string; ddl: string }> = [
+  { name: 'end_reason', ddl: 'ALTER TABLE call_sessions ADD COLUMN end_reason TEXT' },
+];
+
+const CALL_QUALITY_DDL = `
+  CREATE TABLE IF NOT EXISTS call_quality (
+    id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+    call_session_id TEXT NOT NULL REFERENCES call_sessions(id),
+    user_id TEXT NOT NULL REFERENCES users(id),
+    role TEXT NOT NULL CHECK(role IN ('caller','host')),
+    jitter_ms REAL,
+    packet_loss_pct REAL,
+    rtt_ms REAL,
+    codec TEXT,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+  )
+`;
+
+const CALL_OBS_DEFAULT_SETTINGS: ReadonlyArray<{ key: string; value: string }> = [
+  // Billing granularity (60 = per-minute round-up; 1 = whole-second precision).
+  // Admin can flip via Settings without a code change. Default preserves
+  // historical behaviour exactly.
+  { key: 'billing_granularity_sec', value: '60' },
+  // Heartbeat pushes a call_low_balance WS event when caller has fewer
+  // than this many seconds of coins left, so the client can surface a
+  // mid-call top-up modal before the call hard-stops.
+  { key: 'low_balance_warn_seconds', value: '60' },
+];
+
+export function ensureCallObservabilitySchema(db: D1Database): Promise<boolean> {
+  if (callObsSchemaReadyPromise) return callObsSchemaReadyPromise;
+
+  callObsSchemaReadyPromise = (async () => {
+    try {
+      // 1. Add end_reason column if missing.
+      const csInfo = await db.prepare('PRAGMA table_info(call_sessions)').all<{ name: string }>();
+      const csCols = new Set((csInfo.results ?? []).map((r) => r.name));
+      for (const col of REQUIRED_CALL_OBS_COLUMNS) {
+        if (!csCols.has(col.name)) {
+          try {
+            await db.prepare(col.ddl).run();
+            console.log(`[schemaGuard] added call_sessions.${col.name}`);
+          } catch (err) {
+            console.warn(`[schemaGuard] add call_sessions.${col.name} failed:`, err);
+          }
+        }
+      }
+
+      // 2. Create call_quality table if missing — IF NOT EXISTS makes
+      //    re-running safe.
+      try {
+        await db.prepare(CALL_QUALITY_DDL).run();
+      } catch (err) {
+        console.warn('[schemaGuard] call_quality create failed:', err);
+      }
+
+      // 3. Indexes — partial on end_reason saves space on the dominant
+      //    NULL value, full on call_quality for per-host aggregations.
+      const indexes = [
+        `CREATE INDEX IF NOT EXISTS idx_call_sessions_end_reason ON call_sessions(end_reason) WHERE end_reason IS NOT NULL`,
+        'CREATE INDEX IF NOT EXISTS idx_call_quality_session ON call_quality(call_session_id)',
+        'CREATE INDEX IF NOT EXISTS idx_call_quality_user_time ON call_quality(user_id, created_at DESC)',
+      ];
+      for (const ddl of indexes) {
+        try {
+          await db.prepare(ddl).run();
+        } catch (err) {
+          console.warn('[schemaGuard] index creation failed:', err);
+        }
+      }
+
+      // 4. Seed default settings via INSERT OR IGNORE — never overwrites.
+      for (const s of CALL_OBS_DEFAULT_SETTINGS) {
+        try {
+          await db
+            .prepare("INSERT OR IGNORE INTO app_settings (key, value, updated_at) VALUES (?, ?, unixepoch())")
+            .bind(s.key, s.value)
+            .run();
+        } catch (err) {
+          console.warn(`[schemaGuard] seed app_settings.${s.key} failed:`, err);
+        }
+      }
+
+      return true;
+    } catch (err) {
+      console.error('[schemaGuard] ensureCallObservabilitySchema failed:', err);
+      callObsSchemaReadyPromise = null;
+      return false;
+    }
+  })();
+
+  return callObsSchemaReadyPromise;
+}
+
+// ============================================================================
 // First-call-free schema guard — auto-heal migration 0028 on cold start.
 // ============================================================================
 //

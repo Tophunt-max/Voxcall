@@ -21,7 +21,7 @@ import paymentRouter from './routes/payment';
 import { ChatRoom } from './durable-objects/ChatRoom';
 import { CallSignaling } from './durable-objects/CallSignaling';
 import { NotificationHub } from './durable-objects/NotificationHub';
-import { ensureUsersSchema, ensureRandomCallSchema, ensureStreakSchema, ensureFirstCallFreeSchema } from './lib/schemaGuard';
+import { ensureUsersSchema, ensureRandomCallSchema, ensureStreakSchema, ensureFirstCallFreeSchema, ensureCallObservabilitySchema } from './lib/schemaGuard';
 import { getLevelConfig, getEarningShare } from './lib/levels';
 import { recalcAllHostLevels } from './lib/levelService';
 import { billedMinutes, coinsForCall, chargeCallerWithFreePool } from './lib/billing';
@@ -94,6 +94,7 @@ app.use('/api/*', async (c, next) => {
     ensureRandomCallSchema(c.env.DB),
     ensureStreakSchema(c.env.DB),
     ensureFirstCallFreeSchema(c.env.DB),
+    ensureCallObservabilitySchema(c.env.DB),
   ]);
   return next();
 });
@@ -308,7 +309,7 @@ async function reapStaleCalls(env: Env): Promise<void> {
       // their bonus row still update.
       const batchOps: any[] = [
         db.prepare(
-          `UPDATE call_sessions SET status = 'ended', duration_seconds = ?, coins_charged = ?, free_minutes_used = ? WHERE id = ?`
+          `UPDATE call_sessions SET status = 'ended', duration_seconds = ?, coins_charged = ?, free_minutes_used = ?, end_reason = 'cron_reaped' WHERE id = ?`
         ).bind(durationSec, actualCoinsCharged, freeMinutesUsed, call.id),
       ];
 

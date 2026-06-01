@@ -410,14 +410,22 @@ call.post('/end', async (c) => {
       }
     }
 
+    // End-reason taxonomy: tag who hung up so analytics + the call-summary
+    // screen can distinguish caller-initiated vs host-initiated hangups
+    // without parsing description strings. The voluntary /end path is
+    // always one of these two; cron-reaped + balance-zero stamps happen
+    // elsewhere (cron reaper / heartbeat force-end).
+    const endReason: 'caller_hangup' | 'host_hangup' =
+      sub === session.caller_id ? 'caller_hangup' : 'host_hangup';
+
     // Now record bookkeeping in a single batch (atomic at D1 batch level).
     // Only insert coin_transactions / update host stats if money actually moved.
     // Note: freeMinutesUsed > 0 with caller charged === 0 is a valid state
     // (caller burned the freebie, host still gets paid by the platform) — we
     // record the host credit + stats but no caller spend row.
     const txs: any[] = [
-      db.prepare('UPDATE call_sessions SET status = ?, duration_seconds = ?, coins_charged = ?, free_minutes_used = ? WHERE id = ?')
-        .bind('ended', durationSec, actualCoinsCharged, freeMinutesUsed, session_id),
+      db.prepare('UPDATE call_sessions SET status = ?, duration_seconds = ?, coins_charged = ?, free_minutes_used = ?, end_reason = ? WHERE id = ?')
+        .bind('ended', durationSec, actualCoinsCharged, freeMinutesUsed, endReason, session_id),
     ];
     if (actualCoinsCharged > 0 || actualHostShare > 0) {
       txs.push(
@@ -601,7 +609,11 @@ call.post('/:id/answer', async (c) => {
   if (!hostCheck) return c.json({ error: 'Not authorized — you are not the host of this session' }, 403);
 
   if (!accepted) {
-    await db.prepare('UPDATE call_sessions SET status = ?, ended_at = unixepoch() WHERE id = ?').bind('declined', sessionId).run();
+    // Stamp end_reason='declined' for analytics symmetry with the
+    // hangup paths. Status='declined' is the canonical signal but a
+    // single end_reason column means analytics dashboards don't have to
+    // case on (status, end_reason) tuples.
+    await db.prepare("UPDATE call_sessions SET status = ?, ended_at = unixepoch(), end_reason = 'declined' WHERE id = ?").bind('declined', sessionId).run();
     // Bug 3 fix: notify caller that call was declined
     try {
       const notifId = c.env.NOTIFICATION_HUB.idFromName(session.caller_id);
@@ -999,10 +1011,14 @@ call.post('/:id/end', async (c) => {
       }
     }
 
+    // End-reason — same caller-vs-host attribution as the main /end path.
+    const endReason: 'caller_hangup' | 'host_hangup' =
+      sub === session.caller_id ? 'caller_hangup' : 'host_hangup';
+
     // Bookkeeping transactions
     const batchOps: any[] = [
-      db.prepare('UPDATE call_sessions SET status = ?, duration_seconds = ?, coins_charged = ?, free_minutes_used = ? WHERE id = ?')
-        .bind('ended', durationSec, actualCoinsCharged, freeMinutesUsed, sessionId),
+      db.prepare('UPDATE call_sessions SET status = ?, duration_seconds = ?, coins_charged = ?, free_minutes_used = ?, end_reason = ? WHERE id = ?')
+        .bind('ended', durationSec, actualCoinsCharged, freeMinutesUsed, endReason, sessionId),
     ];
 
     if (actualCoinsCharged > 0 || actualHostShare > 0) {
@@ -1119,7 +1135,47 @@ call.post('/:id/heartbeat', async (c) => {
   const remaining = Math.max(0, maxSeconds - elapsed);
 
   if (remaining > 0) {
-    return c.json({ ok: true, ended: false, remaining_seconds: remaining, max_seconds: maxSeconds });
+    // Low-balance early warning — when the caller has fewer than the
+    // admin-configured threshold of seconds left, push a WS event so the
+    // client can surface a "Quick Recharge" modal before the call hard-stops
+    // at the next heartbeat. Best-effort — failure must not break the
+    // heartbeat response itself.
+    let warnSeconds = 60;
+    try {
+      const row = await db
+        .prepare("SELECT value FROM app_settings WHERE key = 'low_balance_warn_seconds'")
+        .first<{ value: string }>();
+      const n = parseInt(row?.value ?? '');
+      if (Number.isFinite(n) && n > 0) warnSeconds = n;
+    } catch { /* keep default */ }
+
+    if (remaining <= warnSeconds) {
+      try {
+        const stub = c.env.NOTIFICATION_HUB.get(c.env.NOTIFICATION_HUB.idFromName(session.caller_id));
+        await stub.fetch('https://dummy/notify', {
+          method: 'POST',
+          body: JSON.stringify({
+            type: 'call_low_balance',
+            session_id: sessionId,
+            remaining_seconds: remaining,
+            rate_per_minute: rate,
+          }),
+        });
+      } catch (e) {
+        console.warn('[/:id/heartbeat] low-balance notify failed:', e);
+      }
+    }
+
+    return c.json({
+      ok: true,
+      ended: false,
+      remaining_seconds: remaining,
+      max_seconds: maxSeconds,
+      // Surface the threshold so the client can also render the warning
+      // banner without polling app-config; saves a round-trip on the hot
+      // path. Equivalent to remaining_seconds <= low_balance_warn_seconds.
+      low_balance: remaining <= warnSeconds,
+    });
   }
 
   // Balance exhausted → force-end + settle (partial). Atomic guard via ended_at.
@@ -1153,7 +1209,7 @@ call.post('/:id/heartbeat', async (c) => {
   }
 
   const batchOps: any[] = [
-    db.prepare('UPDATE call_sessions SET status = ?, duration_seconds = ?, coins_charged = ?, free_minutes_used = ? WHERE id = ?')
+    db.prepare("UPDATE call_sessions SET status = ?, duration_seconds = ?, coins_charged = ?, free_minutes_used = ?, end_reason = 'balance_zero' WHERE id = ?")
       .bind('ended', durationSec, actualCoinsCharged, freeMinutesUsed, sessionId),
   ];
   if ((actualCoinsCharged > 0 || actualHostShare > 0) && hostRow?.user_id) {
@@ -1202,6 +1258,75 @@ call.post('/:id/heartbeat', async (c) => {
 
   return c.json({ ok: true, ended: true, reason: 'balance_exhausted', coins_charged: actualCoinsCharged, duration_seconds: durationSec });
 });
+
+// POST /api/calls/:id/quality — ingest a per-call quality sample.
+//
+// Both parties' clients post this every ~30s during an active call. Used
+// for per-host quality dashboards (avg jitter / p95 packet loss) so the
+// admin can spot hosts whose calls drop a lot, and for the future "Top
+// quality hosts" listing filter.
+//
+// Best-effort: a malformed sample doesn't fail the call, just gets
+// dropped. Clients that don't have network info yet (early in the call)
+// can post NULLs for any field. The deriveRole() check ensures only the
+// two participants of THIS call can write samples to it — no spoofing.
+call.post('/:id/quality', async (c) => {
+  const { sub } = c.get('user');
+  const sessionId = c.req.param('id');
+  const body = await c.req.json<{
+    jitter_ms?: number | null;
+    packet_loss_pct?: number | null;
+    rtt_ms?: number | null;
+    codec?: string | null;
+  }>().catch(() => ({} as any));
+
+  const db = c.env.DB;
+  const result = await deriveRole(db, sessionId, sub);
+  if (!result) return c.json({ error: 'Session not found or access denied' }, 403);
+  const { role } = result;
+
+  // Sanitize: clamp the few fields that have natural bounds + cap codec
+  // length so a malicious client can't write arbitrary text into the row.
+  const jitter = sanitizeMetric(body.jitter_ms, 0, 10_000);     // ms
+  const loss   = sanitizeMetric(body.packet_loss_pct, 0, 100);  // %
+  const rtt    = sanitizeMetric(body.rtt_ms, 0, 10_000);        // ms
+  const codec  = typeof body.codec === 'string' ? body.codec.slice(0, 16) : null;
+
+  // Skip the insert entirely if every field is null — saves a DB write
+  // when the client posted before any real measurement was available.
+  if (jitter === null && loss === null && rtt === null && !codec) {
+    return c.json({ ok: true, recorded: false });
+  }
+
+  try {
+    await db
+      .prepare(
+        `INSERT INTO call_quality (call_session_id, user_id, role, jitter_ms, packet_loss_pct, rtt_ms, codec)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .bind(sessionId, sub, role, jitter, loss, rtt, codec)
+      .run();
+  } catch (err) {
+    // Schema not yet healed (migration 0029) — fail open, don't break
+    // the call.
+    console.warn('[/:id/quality] insert failed (non-fatal):', err);
+    return c.json({ ok: true, recorded: false });
+  }
+
+  return c.json({ ok: true, recorded: true });
+});
+
+/**
+ * Clamp a numeric quality metric into a sane bound. Returns null for missing
+ * / non-finite values so the column stores SQL NULL (vs. an invalid 0 that
+ * would skew "avg jitter" aggregations).
+ */
+function sanitizeMetric(v: unknown, lo: number, hi: number): number | null {
+  if (v === null || v === undefined) return null;
+  const n = Number(v);
+  if (!Number.isFinite(n)) return null;
+  return Math.max(lo, Math.min(hi, n));
+}
 
 // Polling fallback: host checks if there's a pending incoming call for them
 // Used by the host app when WebSocket is not connected or as a reliability backup

@@ -60,6 +60,19 @@ const settingGroups = [
       { key: 'daily_streak_milestones', label: 'Milestone bonuses (JSON map)', type: 'text', hint: 'One-time bonus on top of base reward when streak hits a specific day. e.g. {"7":50,"14":100,"30":500}.' },
     ],
   },
+  {
+    group: 'Engagement — First-call-free Trial',
+    settings: [
+      { key: 'first_call_free_minutes', label: 'Free minutes for new signups', type: 'number', hint: 'Each newly registered user gets this many free call minutes. The host is paid in full for those minutes; the platform absorbs the cost as customer acquisition. Set to 0 to disable.', step: '1' },
+    ],
+  },
+  {
+    group: 'Calling System — Billing & UX',
+    settings: [
+      { key: 'billing_granularity_sec', label: 'Billing granularity (seconds)', type: 'number', hint: 'How real seconds map to one billable unit. 60 = per-minute round-up (default, traditional). 1 = whole-second precision (more lenient to caller). Math: caller_owes = ceil(duration / N) * (rate * N / 60).', step: '1' },
+      { key: 'low_balance_warn_seconds', label: 'Low-balance warning threshold (seconds)', type: 'number', hint: 'Heartbeat pushes call_low_balance WS event to caller when fewer than this many seconds of coins remain — drives the mid-call top-up modal.', step: '1' },
+    ],
+  },
 ];
 
 const DEFAULTS: Record<string, string> = {
@@ -81,6 +94,12 @@ const DEFAULTS: Record<string, string> = {
   daily_streak_enabled: '1',
   daily_streak_schedule: '[5,10,15,20,30,50,100]',
   daily_streak_milestones: '{"7":50,"14":100,"30":500,"60":1500,"100":5000}',
+  // First-call-free trial pool — per-user free minutes set on signup.
+  first_call_free_minutes: '5',
+  // Billing granularity (60 = per-minute, 1 = per-second).
+  billing_granularity_sec: '60',
+  // Heartbeat threshold for the call_low_balance WS event (seconds).
+  low_balance_warn_seconds: '60',
 };
 
 // ─── safe arithmetic evaluator (no eval / new Function) ──────────────────────

@@ -191,6 +191,17 @@ class SocketService {
           timestamp: Date.now(),
         });
         break;
+      case "call_low_balance":
+        // Server's heartbeat detected the caller has < N seconds of coins
+        // left. Drives the mid-call top-up modal in the user app — listener
+        // is wired up in app/_layout.tsx (AppBridge).
+        this.emit(SocketEvents.CALL_LOW_BALANCE, {
+          sessionId: msg.session_id,
+          remainingSeconds: msg.remaining_seconds,
+          ratePerMinute: msg.rate_per_minute,
+          timestamp: Date.now(),
+        });
+        break;
       case "message":
       case "chat_message":
         this.emit(SocketEvents.MESSAGE_RECEIVED, {

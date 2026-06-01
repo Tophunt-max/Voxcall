@@ -370,6 +370,13 @@ admin.patch('/settings', async (c) => {
     // lib/streak.ts on every read so a malformed value falls back to
     // sensible defaults instead of breaking the streak system.
     'daily_streak_enabled', 'daily_streak_schedule', 'daily_streak_milestones',
+    // First-call-free trial pool (per-user free minutes set on signup).
+    'first_call_free_minutes',
+    // Calling-system observability + UX knobs (migration 0029):
+    //   billing_granularity_sec  → 60 (per-minute) or 1 (per-second)
+    //   low_balance_warn_seconds → push call_low_balance WS event when
+    //                              caller has < N seconds of coins left
+    'billing_granularity_sec', 'low_balance_warn_seconds',
   ];
   const stmts = Object.entries(body)
     .filter(([k]) => ALLOWED_SETTINGS.includes(k))
@@ -1333,6 +1340,9 @@ admin.put('/app-config', async (c) => {
     'random_match_repeat_block_min',
     // Daily-streak engagement layer.
     'daily_streak_enabled', 'daily_streak_schedule', 'daily_streak_milestones',
+    // First-call-free + calling-system observability.
+    'first_call_free_minutes',
+    'billing_granularity_sec', 'low_balance_warn_seconds',
   ]);
   const stmts = Object.entries(body)
     .filter(([k]) => ALLOWED_APP_CONFIG_KEYS.has(k))
