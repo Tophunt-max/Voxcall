@@ -4,9 +4,14 @@ import {
   evaluateLevel,
   getEarningShare,
   getMaxRate,
+  getMaxAudioRate,
+  getMaxVideoRate,
+  getHostAudioRateCeiling,
+  getHostVideoRateCeiling,
   normalizeLevelConfig,
   BASE_EARNING_SHARE,
   ABSOLUTE_MAX_RATE,
+  HOST_RATE_BONUS,
 } from '../src/lib/levels';
 
 const cfg = DEFAULT_LEVEL_CONFIG;
@@ -51,6 +56,58 @@ describe('getMaxRate', () => {
   });
 });
 
+describe('per-channel rate caps', () => {
+  it('getMaxAudioRate / getMaxVideoRate return the per-level admin caps', () => {
+    expect(getMaxAudioRate(1, cfg)).toBe(100);
+    expect(getMaxVideoRate(1, cfg)).toBe(100);
+    expect(getMaxAudioRate(5, cfg)).toBe(500);
+    expect(getMaxVideoRate(5, cfg)).toBe(500);
+  });
+
+  it('host rate ceilings add HOST_RATE_BONUS, clamped to ABSOLUTE_MAX_RATE', () => {
+    // Level 1 cap 100 -> host can charge up to 100 + 5
+    expect(getHostAudioRateCeiling(1, cfg)).toBe(100 + HOST_RATE_BONUS);
+    expect(getHostVideoRateCeiling(1, cfg)).toBe(100 + HOST_RATE_BONUS);
+    // Level 5 cap is already at ABSOLUTE_MAX_RATE -> bonus must NOT push past 500
+    expect(getHostAudioRateCeiling(5, cfg)).toBe(ABSOLUTE_MAX_RATE);
+    expect(getHostVideoRateCeiling(5, cfg)).toBe(ABSOLUTE_MAX_RATE);
+  });
+
+  it('audio + video can be set independently per level', () => {
+    const custom = DEFAULT_LEVEL_CONFIG.map((l, i) => ({
+      ...l,
+      perks: {
+        ...l.perks,
+        max_audio_rate: 50 + i * 10, // 50, 60, 70, 80, 90
+        max_video_rate: 200 + i * 20, // 200, 220, 240, 260, 280
+      },
+    }));
+    const out = normalizeLevelConfig(custom);
+    expect(getMaxAudioRate(1, out)).toBe(50);
+    expect(getMaxVideoRate(1, out)).toBe(200);
+    expect(getMaxAudioRate(5, out)).toBe(90);
+    expect(getMaxVideoRate(5, out)).toBe(280);
+    // Legacy combined cap should be the larger of the two channel caps.
+    expect(getMaxRate(5, out)).toBe(280);
+  });
+
+  it('falls back to legacy max_rate when channel caps are missing (older configs)', () => {
+    // Simulate a config saved before max_audio_rate / max_video_rate existed.
+    const legacy = DEFAULT_LEVEL_CONFIG.map((l) => ({
+      ...l,
+      perks: {
+        max_rate: 123,
+        earning_share: l.perks.earning_share,
+        rank_boost: l.perks.rank_boost,
+      },
+    })) as any;
+    const out = normalizeLevelConfig(legacy);
+    expect(out[0].perks.max_audio_rate).toBe(123);
+    expect(out[0].perks.max_video_rate).toBe(123);
+    expect(out[0].perks.max_rate).toBe(123);
+  });
+});
+
 describe('normalizeLevelConfig — never returns a corrupt ladder', () => {
   it('returns the default ladder for invalid input', () => {
     expect(normalizeLevelConfig(null)).toBe(DEFAULT_LEVEL_CONFIG);
@@ -70,10 +127,12 @@ describe('normalizeLevelConfig — never returns a corrupt ladder', () => {
   it('clamps max_rate to the absolute ceiling', () => {
     const input = DEFAULT_LEVEL_CONFIG.map((l) => ({
       ...l,
-      perks: { ...l.perks, max_rate: 99999 },
+      perks: { ...l.perks, max_rate: 99999, max_audio_rate: 99999, max_video_rate: 99999 },
     }));
     const out = normalizeLevelConfig(input);
     expect(out[0].perks.max_rate).toBe(ABSOLUTE_MAX_RATE);
+    expect(out[0].perks.max_audio_rate).toBe(ABSOLUTE_MAX_RATE);
+    expect(out[0].perks.max_video_rate).toBe(ABSOLUTE_MAX_RATE);
   });
 
   it('backfills perks from defaults when an older saved config omits them', () => {

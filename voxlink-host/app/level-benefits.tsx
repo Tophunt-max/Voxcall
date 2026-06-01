@@ -96,7 +96,14 @@ function LevelRow({
             <Text style={[styles.infoChipText, { color: colors.text }]}>💰 {sharePct}% earnings</Text>
           </View>
           <View style={[styles.infoChip, { backgroundColor: colors.surface }]}>
-            <Text style={[styles.infoChipText, { color: colors.text }]}>📈 Up to {def.perks?.max_rate ?? 100}/min</Text>
+            <Text style={[styles.infoChipText, { color: colors.text }]}>
+              🎙️ Audio up to {def.perks?.max_audio_rate ?? def.perks?.max_rate ?? 100}/min
+            </Text>
+          </View>
+          <View style={[styles.infoChip, { backgroundColor: colors.surface }]}>
+            <Text style={[styles.infoChipText, { color: colors.text }]}>
+              📹 Video up to {def.perks?.max_video_rate ?? def.perks?.max_rate ?? 100}/min
+            </Text>
           </View>
           {(def.perks?.rank_boost ?? 0) > 0 ? (
             <View style={[styles.infoChip, { backgroundColor: colors.surface }]}>

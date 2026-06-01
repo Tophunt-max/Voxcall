@@ -98,7 +98,12 @@ export async function apiRequest<T>(
 
 // ─── Host level system types ───────────────────────────────────────────────
 export interface HostLevelPerks {
+  /** Legacy combined cap (= max of audio/video). Kept for back-compat. */
   max_rate: number;
+  /** Admin-set max coins/min for AUDIO calls at this level. */
+  max_audio_rate: number;
+  /** Admin-set max coins/min for VIDEO calls at this level. */
+  max_video_rate: number;
   earning_share: number;
   rank_boost: number;
 }

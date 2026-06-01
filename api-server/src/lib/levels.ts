@@ -22,8 +22,16 @@
 
 /** Per-level benefits unlocked when a host reaches that level. */
 export interface LevelPerks {
-  /** Max coins/min a host at this level may charge (rate cap). */
+  /**
+   * Legacy combined max coins/min cap — kept as a back-compat summary
+   * (= max(max_audio_rate, max_video_rate)). New code should prefer the
+   * channel-specific caps below.
+   */
   max_rate: number;
+  /** Max coins/min a host at this level may charge for AUDIO calls. */
+  max_audio_rate: number;
+  /** Max coins/min a host at this level may charge for VIDEO calls. */
+  max_video_rate: number;
   /** Host's share of coins charged per call (0–1). Platform keeps the rest. */
   earning_share: number;
   /** Search/discovery ranking weight — higher = shown earlier to users. */
@@ -46,6 +54,13 @@ export interface LevelDef {
 export const ABSOLUTE_MAX_RATE = 500;
 /** Baseline host earning share (level 1) — preserves historical behaviour. */
 export const BASE_EARNING_SHARE = 0.7;
+/**
+ * Headroom (coins/min) a host may charge ABOVE the admin-configured level cap.
+ * Lets a host nudge their rate up to N coins past `max_audio_rate` /
+ * `max_video_rate` so the level cap acts as a soft target rather than a hard
+ * lid. Still clamped to ABSOLUTE_MAX_RATE.
+ */
+export const HOST_RATE_BONUS = 5;
 
 /**
  * Fallback ladder — must always be exactly 5 entries (level 1..5).
@@ -56,22 +71,35 @@ export const BASE_EARNING_SHARE = 0.7;
  * larger share, may charge more, and rank higher — the tangible reward ladder.
  */
 export const DEFAULT_LEVEL_CONFIG: LevelDef[] = [
-  { level: 1, name: 'Newcomer', badge: '🌱', color: '#6B7280', min_calls: 0,    min_rating: 0.0, coin_reward: 0,    description: 'New to the platform',  perks: { max_rate: 100, earning_share: 0.70, rank_boost: 0 } },
-  { level: 2, name: 'Rising',   badge: '⭐', color: '#F59E0B', min_calls: 50,   min_rating: 4.0, coin_reward: 100,  description: 'Getting established',   perks: { max_rate: 150, earning_share: 0.70, rank_boost: 1 } },
-  { level: 3, name: 'Expert',   badge: '🔥', color: '#EF4444', min_calls: 200,  min_rating: 4.3, coin_reward: 300,  description: 'Proven expertise',     perks: { max_rate: 250, earning_share: 0.72, rank_boost: 2 } },
-  { level: 4, name: 'Pro',      badge: '💎', color: '#8B5CF6', min_calls: 500,  min_rating: 4.6, coin_reward: 500,  description: 'Professional tier',    perks: { max_rate: 400, earning_share: 0.75, rank_boost: 3 } },
-  { level: 5, name: 'Elite',    badge: '👑', color: '#D97706', min_calls: 1000, min_rating: 4.8, coin_reward: 1000, description: 'Top performer',        perks: { max_rate: 500, earning_share: 0.80, rank_boost: 5 } },
+  { level: 1, name: 'Newcomer', badge: '🌱', color: '#6B7280', min_calls: 0,    min_rating: 0.0, coin_reward: 0,    description: 'New to the platform',  perks: { max_rate: 100, max_audio_rate: 100, max_video_rate: 100, earning_share: 0.70, rank_boost: 0 } },
+  { level: 2, name: 'Rising',   badge: '⭐', color: '#F59E0B', min_calls: 50,   min_rating: 4.0, coin_reward: 100,  description: 'Getting established',   perks: { max_rate: 150, max_audio_rate: 150, max_video_rate: 150, earning_share: 0.70, rank_boost: 1 } },
+  { level: 3, name: 'Expert',   badge: '🔥', color: '#EF4444', min_calls: 200,  min_rating: 4.3, coin_reward: 300,  description: 'Proven expertise',     perks: { max_rate: 250, max_audio_rate: 250, max_video_rate: 250, earning_share: 0.72, rank_boost: 2 } },
+  { level: 4, name: 'Pro',      badge: '💎', color: '#8B5CF6', min_calls: 500,  min_rating: 4.6, coin_reward: 500,  description: 'Professional tier',    perks: { max_rate: 400, max_audio_rate: 400, max_video_rate: 400, earning_share: 0.75, rank_boost: 3 } },
+  { level: 5, name: 'Elite',    badge: '👑', color: '#D97706', min_calls: 1000, min_rating: 4.8, coin_reward: 1000, description: 'Top performer',        perks: { max_rate: 500, max_audio_rate: 500, max_video_rate: 500, earning_share: 0.80, rank_boost: 5 } },
 ];
 
 function normalizePerks(input: any, fallback: LevelPerks): LevelPerks {
   const p = input ?? {};
-  const max_rate = Math.min(ABSOLUTE_MAX_RATE, Math.max(1, parseInt(String(p.max_rate)) || fallback.max_rate));
+  // Legacy combined cap — used as the fallback for the new channel-specific
+  // caps when an older saved config predates them.
+  const legacyMax = Math.min(ABSOLUTE_MAX_RATE, Math.max(1, parseInt(String(p.max_rate)) || fallback.max_rate));
+  const max_audio_rate = Math.min(
+    ABSOLUTE_MAX_RATE,
+    Math.max(1, parseInt(String(p.max_audio_rate)) || legacyMax),
+  );
+  const max_video_rate = Math.min(
+    ABSOLUTE_MAX_RATE,
+    Math.max(1, parseInt(String(p.max_video_rate)) || legacyMax),
+  );
+  // Keep legacy `max_rate` in sync (= max of the two channel caps) so any
+  // old reader still gets a sensible upper bound.
+  const max_rate = Math.max(max_audio_rate, max_video_rate);
   // earning_share clamped to a sane 0.1–0.95 band; platform always keeps ≥5%.
   let share = parseFloat(String(p.earning_share));
   if (!isFinite(share) || share <= 0) share = fallback.earning_share;
   const earning_share = Math.min(0.95, Math.max(0.1, share));
   const rank_boost = Math.max(0, parseInt(String(p.rank_boost)) || fallback.rank_boost);
-  return { max_rate, earning_share, rank_boost };
+  return { max_rate, max_audio_rate, max_video_rate, earning_share, rank_boost };
 }
 
 /**
@@ -150,9 +178,37 @@ export function getEarningShare(level: number, config: LevelDef[]): number {
   return isFinite(share) && share > 0 ? share : BASE_EARNING_SHARE;
 }
 
-/** Max coins/min a host at this level may charge. */
+/** Max coins/min a host at this level may charge (legacy combined cap). */
 export function getMaxRate(level: number, config: LevelDef[]): number {
   return getLevelPerks(level, config).max_rate;
+}
+
+/** Max coins/min a host at this level may charge for AUDIO calls (admin-set). */
+export function getMaxAudioRate(level: number, config: LevelDef[]): number {
+  const perks = getLevelPerks(level, config);
+  return perks.max_audio_rate ?? perks.max_rate;
+}
+
+/** Max coins/min a host at this level may charge for VIDEO calls (admin-set). */
+export function getMaxVideoRate(level: number, config: LevelDef[]): number {
+  const perks = getLevelPerks(level, config);
+  return perks.max_video_rate ?? perks.max_rate;
+}
+
+/**
+ * Effective AUDIO rate ceiling a host is allowed to set on themselves —
+ * admin level cap + HOST_RATE_BONUS, clamped to ABSOLUTE_MAX_RATE.
+ */
+export function getHostAudioRateCeiling(level: number, config: LevelDef[]): number {
+  return Math.min(ABSOLUTE_MAX_RATE, getMaxAudioRate(level, config) + HOST_RATE_BONUS);
+}
+
+/**
+ * Effective VIDEO rate ceiling a host is allowed to set on themselves —
+ * admin level cap + HOST_RATE_BONUS, clamped to ABSOLUTE_MAX_RATE.
+ */
+export function getHostVideoRateCeiling(level: number, config: LevelDef[]): number {
+  return Math.min(ABSOLUTE_MAX_RATE, getMaxVideoRate(level, config) + HOST_RATE_BONUS);
 }
 
 /** Search/discovery ranking weight for a level — higher = shown earlier. */

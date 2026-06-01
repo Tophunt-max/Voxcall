@@ -3,7 +3,9 @@ import { api } from '@/lib/api';
 import { Trophy, Save, RefreshCw, Info, ChevronRight, Coins } from 'lucide-react';
 
 interface LevelPerks {
-  max_rate: number;
+  max_rate: number; // legacy combined cap (kept for back-compat = max of audio/video)
+  max_audio_rate: number;
+  max_video_rate: number;
   earning_share: number; // fraction 0–1 (platform keeps the rest)
   rank_boost: number;
 }
@@ -21,12 +23,19 @@ interface LevelDef {
 }
 
 const DEFAULT_CONFIG: LevelDef[] = [
-  { level: 1, name: 'Newcomer', badge: '🌱', color: '#6B7280', min_calls: 0,    min_rating: 0,   coin_reward: 0,    description: 'New to the platform', perks: { max_rate: 100, earning_share: 0.70, rank_boost: 0 } },
-  { level: 2, name: 'Rising',   badge: '⭐', color: '#F59E0B', min_calls: 50,   min_rating: 4.0, coin_reward: 100,  description: 'Getting established',  perks: { max_rate: 150, earning_share: 0.70, rank_boost: 1 } },
-  { level: 3, name: 'Expert',   badge: '🔥', color: '#EF4444', min_calls: 200,  min_rating: 4.3, coin_reward: 300,  description: 'Proven expertise',    perks: { max_rate: 250, earning_share: 0.72, rank_boost: 2 } },
-  { level: 4, name: 'Pro',      badge: '💎', color: '#8B5CF6', min_calls: 500,  min_rating: 4.6, coin_reward: 500,  description: 'Professional tier',   perks: { max_rate: 400, earning_share: 0.75, rank_boost: 3 } },
-  { level: 5, name: 'Elite',    badge: '👑', color: '#D97706', min_calls: 1000, min_rating: 4.8, coin_reward: 1000, description: 'Top performer',       perks: { max_rate: 500, earning_share: 0.80, rank_boost: 5 } },
+  { level: 1, name: 'Newcomer', badge: '🌱', color: '#6B7280', min_calls: 0,    min_rating: 0,   coin_reward: 0,    description: 'New to the platform', perks: { max_rate: 100, max_audio_rate: 100, max_video_rate: 100, earning_share: 0.70, rank_boost: 0 } },
+  { level: 2, name: 'Rising',   badge: '⭐', color: '#F59E0B', min_calls: 50,   min_rating: 4.0, coin_reward: 100,  description: 'Getting established',  perks: { max_rate: 150, max_audio_rate: 150, max_video_rate: 150, earning_share: 0.70, rank_boost: 1 } },
+  { level: 3, name: 'Expert',   badge: '🔥', color: '#EF4444', min_calls: 200,  min_rating: 4.3, coin_reward: 300,  description: 'Proven expertise',    perks: { max_rate: 250, max_audio_rate: 250, max_video_rate: 250, earning_share: 0.72, rank_boost: 2 } },
+  { level: 4, name: 'Pro',      badge: '💎', color: '#8B5CF6', min_calls: 500,  min_rating: 4.6, coin_reward: 500,  description: 'Professional tier',   perks: { max_rate: 400, max_audio_rate: 400, max_video_rate: 400, earning_share: 0.75, rank_boost: 3 } },
+  { level: 5, name: 'Elite',    badge: '👑', color: '#D97706', min_calls: 1000, min_rating: 4.8, coin_reward: 1000, description: 'Top performer',       perks: { max_rate: 500, max_audio_rate: 500, max_video_rate: 500, earning_share: 0.80, rank_boost: 5 } },
 ];
+
+/**
+ * Headroom (coins/min) the host app grants on top of the admin-set per-level
+ * cap. Mirrors HOST_RATE_BONUS in api-server/src/lib/levels.ts so the admin UI
+ * can show the host "effective max" they will actually be allowed to charge.
+ */
+const HOST_RATE_BONUS = 5;
 
 function Field({ label, value, onChange, type = 'text', min, max, step, readOnly }: {
   label: string; value: string | number; onChange?: (v: string) => void;
@@ -64,12 +73,26 @@ export default function LevelConfig() {
       .then(data => {
         if (Array.isArray(data) && data.length === 5) {
           // Backfill perks defensively so the editor never reads undefined,
-          // even if an older saved config predates the perks field.
-          setConfig(data.map((l: any, i: number) => ({
-            ...DEFAULT_CONFIG[i],
-            ...l,
-            perks: { ...DEFAULT_CONFIG[i].perks, ...(l?.perks || {}) },
-          })));
+          // even if an older saved config predates the perks field. Older
+          // saved configs only had `max_rate` — we mirror it into the new
+          // channel-specific fields so admins see consistent values.
+          setConfig(data.map((l: any, i: number) => {
+            const savedPerks = l?.perks || {};
+            const legacyMax = Number(savedPerks.max_rate) || DEFAULT_CONFIG[i].perks.max_rate;
+            const audio = Number(savedPerks.max_audio_rate) || legacyMax;
+            const video = Number(savedPerks.max_video_rate) || legacyMax;
+            return {
+              ...DEFAULT_CONFIG[i],
+              ...l,
+              perks: {
+                ...DEFAULT_CONFIG[i].perks,
+                ...savedPerks,
+                max_audio_rate: audio,
+                max_video_rate: video,
+                max_rate: Math.max(audio, video),
+              },
+            };
+          }));
         }
       })
       .catch(() => showToast('Failed to load level config', false))
@@ -87,12 +110,27 @@ export default function LevelConfig() {
 
   // Perks are nested; earning_share is edited as a percentage (10–95) but
   // stored as a fraction (0.10–0.95) to match the backend schema.
+  // max_audio_rate / max_video_rate are admin-set per-channel ceilings; the
+  // legacy `max_rate` field is kept in sync (= max of audio/video) for any
+  // older reader still expecting the combined cap.
   const updatePerk = (idx: number, field: keyof LevelPerks, val: string) => {
     setConfig(prev => prev.map((l, i) => {
       if (i !== idx) return l;
       const perks = { ...l.perks };
-      if (field === 'max_rate') perks.max_rate = Math.min(500, Math.max(1, parseInt(val) || 1));
-      else if (field === 'rank_boost') perks.rank_boost = Math.max(0, parseInt(val) || 0);
+      if (field === 'max_audio_rate') {
+        perks.max_audio_rate = Math.min(500, Math.max(1, parseInt(val) || 1));
+        perks.max_rate = Math.max(perks.max_audio_rate, perks.max_video_rate);
+      } else if (field === 'max_video_rate') {
+        perks.max_video_rate = Math.min(500, Math.max(1, parseInt(val) || 1));
+        perks.max_rate = Math.max(perks.max_audio_rate, perks.max_video_rate);
+      } else if (field === 'max_rate') {
+        // Legacy combined field — keep editable for completeness, but also
+        // mirror into both channel caps so older clients see a sane value.
+        const m = Math.min(500, Math.max(1, parseInt(val) || 1));
+        perks.max_rate = m;
+        perks.max_audio_rate = m;
+        perks.max_video_rate = m;
+      } else if (field === 'rank_boost') perks.rank_boost = Math.max(0, parseInt(val) || 0);
       else if (field === 'earning_share') {
         const pct = Math.min(95, Math.max(10, parseFloat(val) || 0));
         perks.earning_share = Math.round(pct) / 100;
@@ -177,7 +215,8 @@ export default function LevelConfig() {
         <Info size={16} className="text-blue-500 mt-0.5 flex-shrink-0" />
         <div className="text-blue-700 dark:text-blue-300">
           <strong>How levels work:</strong> Hosts are <strong>auto-promoted in real time</strong> when their rated calls + rating cross a level's thresholds — the one-time Coin Reward is credited automatically.
-          Level 1 is the starting level (no requirements). <strong>Perks</strong> per level: <strong>Max Rate</strong> (highest coins/min a host may charge), <strong>Earning Share</strong> (host's cut of each call), and <strong>Rank Boost</strong> (higher = shown earlier in listings &amp; matchmaking).
+          Level 1 is the starting level (no requirements). <strong>Perks</strong> per level: <strong>Max Audio Rate</strong> and <strong>Max Video Rate</strong> (highest coins/min a host may charge for each call type), <strong>Earning Share</strong> (host's cut of each call), and <strong>Rank Boost</strong> (higher = shown earlier in listings &amp; matchmaking).
+          A host can charge up to <strong>+{HOST_RATE_BONUS} coins/min</strong> above each cap (effective ceiling shown next to each input).
           Use <strong>"Recalculate All Host Levels"</strong> to back-fill existing hosts after changing thresholds.
         </div>
       </div>
@@ -286,15 +325,33 @@ export default function LevelConfig() {
               <label className="block text-[11px] font-semibold text-muted-foreground mb-2 uppercase tracking-wide">
                 Perks / Benefits unlocked at this level
               </label>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                <Field
-                  label="Max Rate (coins/min)"
-                  value={lvl.perks.max_rate}
-                  type="number"
-                  min={1}
-                  max={500}
-                  onChange={v => updatePerk(idx, 'max_rate', v)}
-                />
+              <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div>
+                  <Field
+                    label="Max Audio Rate (coins/min)"
+                    value={lvl.perks.max_audio_rate}
+                    type="number"
+                    min={1}
+                    max={500}
+                    onChange={v => updatePerk(idx, 'max_audio_rate', v)}
+                  />
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    Host can set up to <strong>{Math.min(500, lvl.perks.max_audio_rate + HOST_RATE_BONUS)}</strong> (cap +{HOST_RATE_BONUS}).
+                  </p>
+                </div>
+                <div>
+                  <Field
+                    label="Max Video Rate (coins/min)"
+                    value={lvl.perks.max_video_rate}
+                    type="number"
+                    min={1}
+                    max={500}
+                    onChange={v => updatePerk(idx, 'max_video_rate', v)}
+                  />
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    Host can set up to <strong>{Math.min(500, lvl.perks.max_video_rate + HOST_RATE_BONUS)}</strong> (cap +{HOST_RATE_BONUS}).
+                  </p>
+                </div>
                 <Field
                   label="Earning Share %"
                   value={Math.round(lvl.perks.earning_share * 100)}
@@ -334,14 +391,14 @@ export default function LevelConfig() {
                 <span>
                   Requires: <strong>{lvl.min_calls}+ calls</strong> and <strong>{lvl.min_rating}+ rating</strong> to unlock
                   {lvl.coin_reward > 0 && <> · Reward: <strong className="text-amber-600">{lvl.coin_reward} coins</strong></>}
-                  {' '}· Perks: <strong className="text-emerald-600">{Math.round(lvl.perks.earning_share * 100)}% earnings</strong>, up to <strong>{lvl.perks.max_rate}/min</strong>, rank +{lvl.perks.rank_boost}
+                  {' '}· Perks: <strong className="text-emerald-600">{Math.round(lvl.perks.earning_share * 100)}% earnings</strong>, audio up to <strong>{lvl.perks.max_audio_rate}/min</strong>, video up to <strong>{lvl.perks.max_video_rate}/min</strong>, rank +{lvl.perks.rank_boost}
                 </span>
               </div>
             )}
             {idx === 0 && (
               <div className="px-5 pb-4 flex items-center gap-2 text-xs text-muted-foreground">
                 <ChevronRight size={13} />
-                <span>Starting level — all new hosts begin here, no requirements · Perks: <strong className="text-emerald-600">{Math.round(lvl.perks.earning_share * 100)}% earnings</strong>, up to <strong>{lvl.perks.max_rate}/min</strong>, rank +{lvl.perks.rank_boost}</span>
+                <span>Starting level — all new hosts begin here, no requirements · Perks: <strong className="text-emerald-600">{Math.round(lvl.perks.earning_share * 100)}% earnings</strong>, audio up to <strong>{lvl.perks.max_audio_rate}/min</strong>, video up to <strong>{lvl.perks.max_video_rate}/min</strong>, rank +{lvl.perks.rank_boost}</span>
               </div>
             )}
           </div>

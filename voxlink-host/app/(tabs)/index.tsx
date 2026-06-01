@@ -439,7 +439,17 @@ export default function HostHomeScreen() {
         onClose={() => setRatesSheetOpen(false)}
         initialAudio={audioRate}
         initialVideo={videoRate}
-        maxRate={levelData?.perks?.max_rate ?? 500}
+        // Effective per-channel ceilings = admin level cap + 5 bonus headroom,
+        // clamped to the global 500 coins/min absolute max. Falls back to the
+        // legacy combined max_rate when an older API response is in flight.
+        maxAudioRate={Math.min(
+          500,
+          (levelData?.perks?.max_audio_rate ?? levelData?.perks?.max_rate ?? 500) + 5,
+        )}
+        maxVideoRate={Math.min(
+          500,
+          (levelData?.perks?.max_video_rate ?? levelData?.perks?.max_rate ?? 500) + 5,
+        )}
         onSaved={() => {
           queryClient.invalidateQueries({ queryKey: ['host-me'] });
         }}

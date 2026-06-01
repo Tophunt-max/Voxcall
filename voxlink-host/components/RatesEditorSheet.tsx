@@ -25,7 +25,21 @@ interface RatesEditorSheetProps {
   onClose: () => void;
   initialAudio: number;
   initialVideo: number;
-  /** Level-based rate cap (coins/min). Defaults to the global max. */
+  /**
+   * Effective AUDIO cap (coins/min) — usually the host's level audio cap +5
+   * bonus headroom from the admin config. Defaults to the global ceiling.
+   */
+  maxAudioRate?: number;
+  /**
+   * Effective VIDEO cap (coins/min) — usually the host's level video cap +5
+   * bonus headroom from the admin config. Defaults to the global ceiling.
+   */
+  maxVideoRate?: number;
+  /**
+   * @deprecated Pass `maxAudioRate` and `maxVideoRate` instead. When provided
+   * (and the channel-specific props are not), this single value is used for
+   * BOTH channels — kept so callers using the old prop don't break.
+   */
   maxRate?: number;
   /** Called with the saved (clamped) rates after a successful update. */
   onSaved?: (rates: { audio: number; video: number }) => void;
@@ -93,26 +107,33 @@ export default function RatesEditorSheet({
   onClose,
   initialAudio,
   initialVideo,
-  maxRate = ABS_MAX_RATE,
+  maxAudioRate,
+  maxVideoRate,
+  maxRate,
   onSaved,
 }: RatesEditorSheetProps) {
   const colors = useColors();
-  const [audio, setAudio] = useState(String(clamp(initialAudio, maxRate)));
-  const [video, setVideo] = useState(String(clamp(initialVideo, maxRate)));
+  // Resolve effective channel caps. Prefer the new channel-specific props;
+  // fall back to the legacy combined `maxRate` for older callers.
+  const audioCap = Math.min(ABS_MAX_RATE, Math.max(MIN_RATE, maxAudioRate ?? maxRate ?? ABS_MAX_RATE));
+  const videoCap = Math.min(ABS_MAX_RATE, Math.max(MIN_RATE, maxVideoRate ?? maxRate ?? ABS_MAX_RATE));
+  const [audio, setAudio] = useState(String(clamp(initialAudio, audioCap)));
+  const [video, setVideo] = useState(String(clamp(initialVideo, videoCap)));
   const [saving, setSaving] = useState(false);
 
   // Re-sync inputs whenever the sheet is (re)opened with new values.
   useEffect(() => {
     if (visible) {
-      setAudio(String(clamp(initialAudio, maxRate)));
-      setVideo(String(clamp(initialVideo, maxRate)));
+      setAudio(String(clamp(initialAudio, audioCap)));
+      setVideo(String(clamp(initialVideo, videoCap)));
     }
-  }, [visible, initialAudio, initialVideo, maxRate]);
+  }, [visible, initialAudio, initialVideo, audioCap, videoCap]);
 
   const step = useCallback((which: "audio" | "video", delta: number) => {
     const setter = which === "audio" ? setAudio : setVideo;
-    setter((prev) => String(clamp((parseInt(prev, 10) || 0) + delta, maxRate)));
-  }, [maxRate]);
+    const cap = which === "audio" ? audioCap : videoCap;
+    setter((prev) => String(clamp((parseInt(prev, 10) || 0) + delta, cap)));
+  }, [audioCap, videoCap]);
 
   const onChangeRate = useCallback((which: "audio" | "video", raw: string) => {
     const digits = raw.replace(/[^0-9]/g, "").slice(0, 3);
@@ -120,8 +141,8 @@ export default function RatesEditorSheet({
   }, []);
 
   const handleSave = useCallback(async () => {
-    const a = clamp(parseInt(audio, 10), maxRate);
-    const v = clamp(parseInt(video, 10), maxRate);
+    const a = clamp(parseInt(audio, 10), audioCap);
+    const v = clamp(parseInt(video, 10), videoCap);
     setSaving(true);
     try {
       await API.updateHostProfile({
@@ -138,18 +159,25 @@ export default function RatesEditorSheet({
     } finally {
       setSaving(false);
     }
-  }, [audio, video, maxRate, onSaved, onClose]);
+  }, [audio, video, audioCap, videoCap, onSaved, onClose]);
 
-  const audioNum = clamp(parseInt(audio, 10) || 0, maxRate);
-  const videoNum = clamp(parseInt(video, 10) || 0, maxRate);
+  const audioNum = clamp(parseInt(audio, 10) || 0, audioCap);
+  const videoNum = clamp(parseInt(video, 10) || 0, videoCap);
 
   return (
     <BottomSheet visible={visible} onClose={onClose} title="Edit Call Rates">
       <View style={{ gap: 12, paddingBottom: 8 }}>
         <Text style={[styles.help, { color: colors.mutedForeground }]}>
           Set how many coins users pay you per minute. Video usually earns more
-          than audio. Your level lets you charge up to {maxRate} coins/min — reach
-          higher levels to raise this cap.
+          than audio. At your current level you can charge up to{" "}
+          <Text style={{ fontFamily: "Poppins_600SemiBold", color: colors.text }}>
+            {audioCap} coins/min for audio
+          </Text>{" "}
+          and{" "}
+          <Text style={{ fontFamily: "Poppins_600SemiBold", color: colors.text }}>
+            {videoCap} coins/min for video
+          </Text>{" "}
+          (admin level cap +5 bonus). Reach higher levels to raise these caps.
         </Text>
 
         <RateStepper

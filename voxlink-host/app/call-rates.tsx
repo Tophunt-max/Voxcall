@@ -16,12 +16,17 @@ import { API } from "@/services/api";
 import { showErrorToast, showSuccessToast } from "@/components/Toast";
 
 const MIN_RATE = 1;
-const MAX_RATE = 500;
+const ABS_MAX_RATE = 500;
+/**
+ * Headroom (coins/min) the host may charge ABOVE the admin-set per-level cap.
+ * Mirrors HOST_RATE_BONUS in api-server/src/lib/levels.ts.
+ */
+const HOST_RATE_BONUS = 5;
 
 // Clamp + sanitize a raw text value into a valid integer rate string.
-function clamp(n: number): number {
+function clamp(n: number, max: number = ABS_MAX_RATE): number {
   if (isNaN(n)) return MIN_RATE;
-  return Math.min(MAX_RATE, Math.max(MIN_RATE, Math.round(n)));
+  return Math.min(max, Math.max(MIN_RATE, Math.round(n)));
 }
 
 interface RateRowProps {
@@ -86,17 +91,42 @@ export default function CallRatesScreen() {
   const [audio, setAudio] = useState("5");
   const [video, setVideo] = useState("10");
   const [levelLabel, setLevelLabel] = useState<string | null>(null);
+  // Per-channel effective ceilings = admin level cap + HOST_RATE_BONUS,
+  // clamped to ABS_MAX_RATE. Default to the global cap until the level
+  // endpoint resolves.
+  const [maxAudio, setMaxAudio] = useState(ABS_MAX_RATE);
+  const [maxVideo, setMaxVideo] = useState(ABS_MAX_RATE);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const me: any = await API.getHostMe();
+        const [me, level] = await Promise.all([
+          API.getHostMe() as Promise<any>,
+          // Level perks carry the admin-set per-channel caps. We tolerate this
+          // call failing — the host can still edit, just without a tighter cap.
+          API.getHostLevel().catch(() => null) as Promise<any>,
+        ]);
         if (cancelled) return;
         const a = Number(me?.audio_coins_per_minute ?? me?.coins_per_minute ?? 5);
         const v = Number(me?.video_coins_per_minute ?? (Number(me?.coins_per_minute ?? 5) + 5));
-        setAudio(String(clamp(a)));
-        setVideo(String(clamp(v)));
+
+        // Resolve per-channel caps: prefer the new audio/video fields and fall
+        // back to legacy `max_rate` for older configs.
+        const perks = level?.perks ?? level?.current?.perks;
+        const adminAudio = Number(perks?.max_audio_rate ?? perks?.max_rate);
+        const adminVideo = Number(perks?.max_video_rate ?? perks?.max_rate);
+        const effAudio = isFinite(adminAudio) && adminAudio > 0
+          ? Math.min(ABS_MAX_RATE, adminAudio + HOST_RATE_BONUS)
+          : ABS_MAX_RATE;
+        const effVideo = isFinite(adminVideo) && adminVideo > 0
+          ? Math.min(ABS_MAX_RATE, adminVideo + HOST_RATE_BONUS)
+          : ABS_MAX_RATE;
+        setMaxAudio(effAudio);
+        setMaxVideo(effVideo);
+
+        setAudio(String(clamp(a, effAudio)));
+        setVideo(String(clamp(v, effVideo)));
         // /api/host/me returns `level` (number) and optionally `level_info`.
         const li = me?.level_info;
         if (li?.name) setLevelLabel(`${li.badge ?? "⭐"} ${li.name} host`);
@@ -112,8 +142,9 @@ export default function CallRatesScreen() {
 
   const step = useCallback((which: "audio" | "video", delta: number) => {
     const setter = which === "audio" ? setAudio : setVideo;
-    setter((prev) => String(clamp((parseInt(prev, 10) || 0) + delta)));
-  }, []);
+    const cap = which === "audio" ? maxAudio : maxVideo;
+    setter((prev) => String(clamp((parseInt(prev, 10) || 0) + delta, cap)));
+  }, [maxAudio, maxVideo]);
 
   // Allow free typing (incl. empty while editing); only sanitize digits here.
   const onChangeRate = useCallback((which: "audio" | "video", raw: string) => {
@@ -122,8 +153,8 @@ export default function CallRatesScreen() {
   }, []);
 
   const handleSave = useCallback(async () => {
-    const a = clamp(parseInt(audio, 10));
-    const v = clamp(parseInt(video, 10));
+    const a = clamp(parseInt(audio, 10), maxAudio);
+    const v = clamp(parseInt(video, 10), maxVideo);
     setSaving(true);
     try {
       await API.updateHostProfile({
@@ -143,7 +174,7 @@ export default function CallRatesScreen() {
     } finally {
       setSaving(false);
     }
-  }, [audio, video]);
+  }, [audio, video, maxAudio, maxVideo]);
 
   if (loading) {
     return (
@@ -169,7 +200,15 @@ export default function CallRatesScreen() {
       <ScrollView contentContainerStyle={{ paddingBottom: 130 }} keyboardShouldPersistTaps="handled">
         <Text style={[styles.helpText, { color: colors.mutedForeground }]}>
           Set how many coins users pay you per minute. Video calls usually earn
-          more than audio. You can change this anytime ({MIN_RATE}–{MAX_RATE} coins/min).
+          more than audio. At your current level you can charge up to{" "}
+          <Text style={{ fontFamily: "Poppins_600SemiBold", color: colors.text }}>
+            {maxAudio} coins/min for audio
+          </Text>{" "}
+          and{" "}
+          <Text style={{ fontFamily: "Poppins_600SemiBold", color: colors.text }}>
+            {maxVideo} coins/min for video
+          </Text>{" "}
+          (admin level cap +{HOST_RATE_BONUS} bonus). Reach higher levels to raise these caps.
         </Text>
 
         {levelLabel ? (
@@ -203,10 +242,10 @@ export default function CallRatesScreen() {
         <View style={[styles.estBox, { backgroundColor: colors.accentLight }]}>
           <Text style={[styles.estTitle, { color: colors.text }]}>Earnings estimate</Text>
           <Text style={[styles.estRow, { color: colors.text }]}>
-            10-min audio call ≈ {clamp(parseInt(audio, 10) || 0) * 10} coins
+            10-min audio call ≈ {clamp(parseInt(audio, 10) || 0, maxAudio) * 10} coins
           </Text>
           <Text style={[styles.estRow, { color: colors.text }]}>
-            10-min video call ≈ {clamp(parseInt(video, 10) || 0) * 10} coins
+            10-min video call ≈ {clamp(parseInt(video, 10) || 0, maxVideo) * 10} coins
           </Text>
           <Text style={[styles.estNote, { color: colors.mutedForeground }]}>
             Coins are added to your earnings after each completed call.

@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth';
-import { getLevelConfig, computeLevelProgress, getMaxRate, getRankBoost, buildLevelInfo, rankBoostCaseSql, ABSOLUTE_MAX_RATE, type LevelDef } from '../lib/levels';
+import { getLevelConfig, computeLevelProgress, getHostAudioRateCeiling, getHostVideoRateCeiling, getRankBoost, buildLevelInfo, rankBoostCaseSql, ABSOLUTE_MAX_RATE, type LevelDef } from '../lib/levels';
 import type { Env, JWTPayload } from '../types';
 
 const host = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
@@ -220,13 +220,18 @@ hostProtected.patch('/me', zValidator('json', updateProfileSchema), async (c) =>
   // FIX: Use validated body from zValidator, not raw c.req.json() which bypasses validation
   const body = c.req.valid('json') as Record<string, any>;
   const rateKeys = ['coins_per_minute', 'audio_coins_per_minute', 'video_coins_per_minute'];
-  // Level-based rate cap: a host may only charge up to their level's max_rate
-  // (a level perk). Resolved only when a rate field is actually being changed.
-  let MAX_RATE = ABSOLUTE_MAX_RATE;
+  // Level-based rate caps: a host may charge up to their level's audio/video
+  // ceiling (admin-set max + HOST_RATE_BONUS headroom). Resolved only when a
+  // rate field is actually being changed. The legacy `coins_per_minute` column
+  // is treated as an audio fallback so it shares the audio ceiling.
+  let MAX_AUDIO = ABSOLUTE_MAX_RATE;
+  let MAX_VIDEO = ABSOLUTE_MAX_RATE;
   if (rateKeys.some((k) => body[k] !== undefined)) {
     const hostRow = await c.env.DB.prepare('SELECT level FROM hosts WHERE user_id = ?').bind(sub).first<{ level: number }>();
     const cfg = await getLevelConfig(c.env.DB);
-    MAX_RATE = getMaxRate(hostRow?.level ?? 1, cfg);
+    const lvl = hostRow?.level ?? 1;
+    MAX_AUDIO = getHostAudioRateCeiling(lvl, cfg);
+    MAX_VIDEO = getHostVideoRateCeiling(lvl, cfg);
   }
   const allowed = ['display_name', 'specialties', 'languages', 'coins_per_minute', 'audio_coins_per_minute', 'video_coins_per_minute', 'payout_method', 'payout_details'];
   const sets: string[] = [];
@@ -245,11 +250,13 @@ hostProtected.patch('/me', zValidator('json', updateProfileSchema), async (c) =>
       } else {
         val = body[key];
       }
-      // Cap rate fields to the host's level max_rate (clamped, non-breaking).
+      // Cap rate fields to the host's per-channel level ceiling. Audio and the
+      // legacy combined column share the audio cap; video uses its own.
       if (rateKeys.includes(key)) {
         const num = Number(val);
         if (isNaN(num) || num < 1) return c.json({ error: `${key} must be at least 1` }, 400);
-        val = Math.min(num, MAX_RATE);
+        const cap = key === 'video_coins_per_minute' ? MAX_VIDEO : MAX_AUDIO;
+        val = Math.min(num, cap);
       }
       sets.push(`${key} = ?`);
       vals.push(val);
@@ -259,7 +266,14 @@ hostProtected.patch('/me', zValidator('json', updateProfileSchema), async (c) =>
   sets.push('updated_at = unixepoch()');
   vals.push(sub);
   await c.env.DB.prepare(`UPDATE hosts SET ${sets.join(', ')} WHERE user_id = ?`).bind(...vals).run();
-  return c.json({ success: true, max_rate: MAX_RATE });
+  return c.json({
+    success: true,
+    // Legacy field — kept for older clients reading `max_rate` off the
+    // response. New clients should use the channel-specific values.
+    max_rate: Math.max(MAX_AUDIO, MAX_VIDEO),
+    max_audio_rate: MAX_AUDIO,
+    max_video_rate: MAX_VIDEO,
+  });
 });
 
 // PATCH /api/host/status — go online/offline
