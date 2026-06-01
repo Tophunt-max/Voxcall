@@ -23,6 +23,7 @@ import { InsufficientCoinsPopup } from "@/components/InsufficientCoinsPopup";
 import { SkeletonHostCard, SkeletonHostCardCompact } from "@/components/SkeletonCard";
 import { Host } from "@/data/mockData";
 import { API, resolveMediaUrl } from "@/services/api";
+import { fetchAppConfig } from "@/hooks/useAppConfig";
 import { showErrorToast } from "@/components/Toast";
 import { RefreshControl } from "react-native";
 
@@ -172,10 +173,25 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [coinPopup, setCoinPopup] = useState(false);
   const [coinPopupRequired, setCoinPopupRequired] = useState(0);
+  // Admin-configured platform floor for starting a call (min_coins_for_call).
+  // The server enforces it on /initiate; we mirror it in the UI gate so the
+  // user sees the InsufficientCoins popup instead of a failed call.
+  const [minCoinsForCall, setMinCoinsForCall] = useState(0);
+
+  useEffect(() => {
+    fetchAppConfig()
+      .then((cfg) => {
+        const m = parseInt(cfg?.min_coins_for_call ?? "", 10);
+        if (Number.isFinite(m) && m > 0) setMinCoinsForCall(m);
+      })
+      .catch(() => { /* keep default */ });
+  }, []);
 
   const startCall = useCallback((host: Host, type: "audio" | "video") => {
     const rate = host.coinsPerMinute || 1;
-    const required = rate * 2;
+    // Require at least the admin floor (min_coins_for_call) OR ~2 minutes at
+    // the host's rate, whichever is higher.
+    const required = Math.max(rate * 2, minCoinsForCall);
     if ((user?.coins ?? 0) < required) {
       setCoinPopupRequired(required);
       setCoinPopup(true);
@@ -184,7 +200,7 @@ export default function HomeScreen() {
     const avatar = host.avatar || `https://api.dicebear.com/7.x/avataaars/png?seed=${host.id}`;
     initiateCall({ id: host.id, name: host.name, avatar, role: "host" }, type, rate);
     router.push({ pathname: "/user/call/outgoing", params: { hostId: host.id, callType: type, hostName: host.name, hostAvatar: avatar, specialty: host.specialties?.[0] ?? "" } });
-  }, [user?.coins, initiateCall]);
+  }, [user?.coins, initiateCall, minCoinsForCall]);
 
   const topPad = insets.top;
   const bottomPad = insets.bottom;

@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   Image, Platform, Linking
@@ -6,8 +6,10 @@ import {
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
+import { fetchAppConfig } from "@/hooks/useAppConfig";
 
 const APP_VERSION = "1.0.0";
+const DEFAULT_SUPPORT_EMAIL = "hello@voxlink.app";
 
 const STATS = [
   { value: "50K+", label: "Active Users" },
@@ -36,6 +38,14 @@ export default function AboutScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const topPad = insets.top;
+
+  // Admin-managed support email drives the "Contact Us" link.
+  const [supportEmail, setSupportEmail] = useState(DEFAULT_SUPPORT_EMAIL);
+  useEffect(() => {
+    fetchAppConfig()
+      .then((cfg) => { if (cfg?.support_email) setSupportEmail(cfg.support_email); })
+      .catch(() => { /* keep default */ });
+  }, []);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
@@ -111,7 +121,7 @@ export default function AboutScreen() {
             <TouchableOpacity
               key={l.label}
               style={[styles.linkRow, { borderBottomColor: colors.border }]}
-              onPress={() => Linking.openURL(l.url)}
+              onPress={() => Linking.openURL(l.label === "Contact Us" ? `mailto:${supportEmail}` : l.url)}
             >
               <View style={[styles.linkIcon, { backgroundColor: colors.surface }]}>
                 <Image source={l.icon} style={{ width: 17, height: 17, tintColor: colors.primary }} resizeMode="contain" />

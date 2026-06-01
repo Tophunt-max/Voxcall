@@ -339,6 +339,10 @@ export const API = {
   // Talk topics (public)
   getTalkTopics: () => apiRequest<any[]>('GET', '/api/talk-topics', undefined, false),
 
+  // Admin-managed FAQs (public) — rendered in the Help Center. Falls back to a
+  // bundled list in the screen if this is empty / errors.
+  getFaqs: () => apiRequest<any[]>('GET', '/api/faqs', undefined, false),
+
   // Notifications
   getNotifications: () => apiRequest<any[]>('GET', '/api/user/notifications'),
   markNotificationsRead: () => apiRequest('PATCH', '/api/user/notifications/read', {}),

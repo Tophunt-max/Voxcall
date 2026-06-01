@@ -383,6 +383,16 @@ export const API = {
   // Talk topics (public)
   getTalkTopics: () => apiRequest<any[]>('GET', '/api/talk-topics', undefined, false),
 
+  // Public app config (economy values + operator settings: maintenance gate,
+  // support_email, legal links). Single source of truth from app_settings so
+  // the client never hardcodes values that can drift from the backend / admin.
+  getAppConfig: () =>
+    apiRequest<Record<string, string>>('GET', '/api/app-config', undefined, false),
+
+  // Admin-managed FAQs (public) — rendered in the Help Center. Falls back to a
+  // bundled list in the screen if this is empty / errors.
+  getFaqs: () => apiRequest<any[]>('GET', '/api/faqs', undefined, false),
+
   // Notifications
   getNotifications: () => apiRequest<any[]>('GET', '/api/user/notifications'),
   markNotificationsRead: () => apiRequest('PATCH', '/api/user/notifications/read', {}),

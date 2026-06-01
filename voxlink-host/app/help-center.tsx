@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, Image,
   ScrollView, Linking
@@ -7,8 +7,14 @@ import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { SvgIcon } from "@/components/SvgIcon";
+import { API } from "@/services/api";
+import { fetchAppConfig } from "@/hooks/useAppConfig";
 
-const FAQS = [
+const DEFAULT_SUPPORT_EMAIL = "host-support@voxlink.app";
+
+// Fallback FAQs — shown only if the admin-managed list (GET /api/faqs) is
+// empty or fails to load. Admin edits in the panel take precedence.
+const FALLBACK_FAQS = [
   { q: "How do I start receiving calls?", a: "Make sure your profile is complete and you've set your status to Online from the Profile tab. Users will then be able to see your profile and initiate calls with you." },
   { q: "How are my earnings calculated?", a: "You earn coins for every minute of calls you complete. Your per-minute rate is set during profile setup and can be updated in Profile settings. Coins are converted to cash during withdrawal." },
   { q: "When can I withdraw my earnings?", a: "You can request a withdrawal from the Wallet tab. Minimum withdrawal amount and processing times depend on your selected payout method. Payouts are processed within 3-5 business days." },
@@ -43,6 +49,27 @@ export default function HelpCenterScreen() {
   const insets = useSafeAreaInsets();
   const topPad = insets.top;
 
+  // Admin-managed FAQs + support email. Both fall back to bundled defaults so
+  // the screen is never empty if the network/admin config is unavailable.
+  const [faqs, setFaqs] = useState<{ q: string; a: string }[]>(FALLBACK_FAQS);
+  const [supportEmail, setSupportEmail] = useState(DEFAULT_SUPPORT_EMAIL);
+
+  useEffect(() => {
+    API.getFaqs()
+      .then((rows: any[]) => {
+        if (Array.isArray(rows) && rows.length > 0) {
+          const mapped = rows
+            .map((r) => ({ q: r.question ?? r.q ?? "", a: r.answer ?? r.a ?? "" }))
+            .filter((f) => f.q && f.a);
+          if (mapped.length > 0) setFaqs(mapped);
+        }
+      })
+      .catch(() => { /* keep fallback */ });
+    fetchAppConfig()
+      .then((cfg) => { if (cfg?.support_email) setSupportEmail(cfg.support_email); })
+      .catch(() => { /* keep default */ });
+  }, []);
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <View style={[styles.header, { paddingTop: topPad + 8 }]}>
@@ -62,18 +89,18 @@ export default function HelpCenterScreen() {
           </View>
         </View>
 
-        <TouchableOpacity style={[styles.contactCard, { backgroundColor: colors.card }]} activeOpacity={0.8} onPress={() => Linking.openURL("mailto:host-support@voxlink.app")}>
+        <TouchableOpacity style={[styles.contactCard, { backgroundColor: colors.card }]} activeOpacity={0.8} onPress={() => Linking.openURL(`mailto:${supportEmail}`)}>
           <Image source={require("@/assets/images/help_person.png")} style={styles.contactImg} resizeMode="contain" />
           <View style={{ flex: 1, gap: 4 }}>
             <Text style={[styles.contactTitle, { color: colors.text }]}>Contact Host Support</Text>
-            <Text style={[styles.contactSub, { color: colors.mutedForeground }]}>host-support@voxlink.app</Text>
+            <Text style={[styles.contactSub, { color: colors.mutedForeground }]}>{supportEmail}</Text>
           </View>
           <Image source={require("@/assets/icons/ic_back.png")} style={[styles.chevron, { transform: [{ rotate: "180deg" }] }]} tintColor={colors.mutedForeground} resizeMode="contain" />
         </TouchableOpacity>
 
         <Text style={[styles.faqTitle, { color: colors.text }]}>Frequently Asked Questions</Text>
 
-        {FAQS.map((faq, i) => <FAQItem key={i} q={faq.q} a={faq.a} />)}
+        {faqs.map((faq, i) => <FAQItem key={i} q={faq.q} a={faq.a} />)}
       </ScrollView>
     </View>
   );

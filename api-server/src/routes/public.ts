@@ -188,15 +188,22 @@ pub.get('/search', async (c) => {
   return c.json(results);
 });
 
-// GET /api/app-config — cached 5 min (FIX #10 + UPGRADE: Cloudflare edge cache)
+// GET /api/app-config — cached: economy values + operator app settings
+// (maintenance gate, support email, legal links). Short TTL (60s edge) so an
+// admin flipping maintenance_mode propagates to clients within ~1 min.
 pub.get('/app-config', async (c) => {
   const KEY = 'app_config';
   const mem = memGet<Record<string, string>>(KEY);
-  if (mem) return cachedJson(mem);
+  if (mem) return cachedJson(mem, 60, 120);
   const edge = await edgeGet(KEY);
-  if (edge) { memSet(KEY, edge); return cachedJson(edge); }
+  if (edge) { memSet(KEY, edge); return cachedJson(edge, 60, 120); }
   const settings = await c.env.DB.prepare(
-    "SELECT key, value FROM app_settings WHERE key IN ('min_coins_for_call','coin_to_usd_rate','host_revenue_share','min_withdrawal_coins','registration_bonus_coins')"
+    // Economy keys + operator-facing app settings that the mobile apps consume:
+    //   maintenance_mode / maintenance_message → in-app maintenance gate
+    //   support_email                          → Help Center / About contact CTA
+    //   terms_url / privacy_url                → legal links
+    //   app_name                               → display name
+    "SELECT key, value FROM app_settings WHERE key IN ('min_coins_for_call','coin_to_usd_rate','host_revenue_share','min_withdrawal_coins','registration_bonus_coins','maintenance_mode','maintenance_message','support_email','terms_url','privacy_url','app_name')"
   ).all();
   const config: Record<string, string> = {};
   for (const row of settings.results as any[]) {
@@ -204,7 +211,7 @@ pub.get('/app-config', async (c) => {
   }
   memSet(KEY, config);
   await edgePut(KEY, config);
-  return cachedJson(config);
+  return cachedJson(config, 60, 120);
 });
 
 // GET /api/payment/active-qr — returns active manual QR codes with time-based rotation (no auth)

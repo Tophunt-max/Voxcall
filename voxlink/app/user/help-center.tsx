@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, Image,
   ScrollView, Platform, Animated, Linking
@@ -6,7 +6,14 @@ import {
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
-const FAQS = [
+import { API } from "@/services/api";
+import { fetchAppConfig } from "@/hooks/useAppConfig";
+
+const DEFAULT_SUPPORT_EMAIL = "support@voxlink.app";
+
+// Fallback FAQs — shown only if the admin-managed list (GET /api/faqs) is
+// empty or fails to load. Admin edits in the panel take precedence.
+const FALLBACK_FAQS = [
   { q: "What is VoxLink?", a: "VoxLink is a social platform where you can connect with professional listeners and hosts via audio or video calls. Get personalized support on topics like relationships, career, life coaching, and more." },
   { q: "Who are Hosts/Listeners?", a: "Hosts are verified professionals or experienced individuals who provide support and conversation. They specialize in various topics and are available for audio and video calls." },
   { q: "How can I make a call?", a: "Browse available hosts on the home screen, tap a host card to view their profile, then tap 'Talk Now' to start an audio or video call. Calls are charged in coins per minute." },
@@ -40,6 +47,27 @@ export default function HelpCenterScreen() {
   const insets = useSafeAreaInsets();
   const topPad = insets.top;
 
+  // Admin-managed FAQs + support email. Both fall back to bundled defaults so
+  // the screen is never empty if the network/admin config is unavailable.
+  const [faqs, setFaqs] = useState<{ q: string; a: string }[]>(FALLBACK_FAQS);
+  const [supportEmail, setSupportEmail] = useState(DEFAULT_SUPPORT_EMAIL);
+
+  useEffect(() => {
+    API.getFaqs()
+      .then((rows: any[]) => {
+        if (Array.isArray(rows) && rows.length > 0) {
+          const mapped = rows
+            .map((r) => ({ q: r.question ?? r.q ?? "", a: r.answer ?? r.a ?? "" }))
+            .filter((f) => f.q && f.a);
+          if (mapped.length > 0) setFaqs(mapped);
+        }
+      })
+      .catch(() => { /* keep fallback */ });
+    fetchAppConfig()
+      .then((cfg) => { if (cfg?.support_email) setSupportEmail(cfg.support_email); })
+      .catch(() => { /* keep default */ });
+  }, []);
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <View style={[styles.header, { paddingTop: topPad + 8 }]}>
@@ -61,11 +89,11 @@ export default function HelpCenterScreen() {
         </View>
 
         {/* Contact Support */}
-        <TouchableOpacity style={[styles.contactCard, { backgroundColor: colors.card }]} activeOpacity={0.8} onPress={() => Linking.openURL("mailto:support@voxlink.app")}>
+        <TouchableOpacity style={[styles.contactCard, { backgroundColor: colors.card }]} activeOpacity={0.8} onPress={() => Linking.openURL(`mailto:${supportEmail}`)}>
           <Image source={require("@/assets/images/help_person.png")} style={styles.contactImg} resizeMode="contain" />
           <View style={{ flex: 1, gap: 4 }}>
             <Text style={[styles.contactTitle, { color: colors.text }]}>Have an Issue?</Text>
-            <Text style={[styles.contactSub, { color: colors.mutedForeground }]}>Contact our support team via email</Text>
+            <Text style={[styles.contactSub, { color: colors.mutedForeground }]}>{supportEmail}</Text>
           </View>
           <Image source={require("@/assets/icons/ic_back.png")} style={[styles.chevron, { transform: [{ rotate: "180deg" }] }]} tintColor={colors.mutedForeground} resizeMode="contain" />
         </TouchableOpacity>
@@ -73,7 +101,7 @@ export default function HelpCenterScreen() {
         {/* FAQ */}
         <Text style={[styles.faqTitle, { color: colors.text }]}>Frequently Asked Questions</Text>
 
-        {FAQS.map((faq, i) => <FAQItem key={i} q={faq.q} a={faq.a} />)}
+        {faqs.map((faq, i) => <FAQItem key={i} q={faq.q} a={faq.a} />)}
       </ScrollView>
     </View>
   );

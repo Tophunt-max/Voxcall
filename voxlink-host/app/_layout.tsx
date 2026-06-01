@@ -20,6 +20,7 @@ import { loadHostSettings, getHostSettingsSync } from "@/utils/hostSettings";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ToastContainer } from "@/components/Toast";
 import { OfflineBanner } from "@/components/OfflineBanner";
+import MaintenanceGate from "@/components/MaintenanceGate";
 import { AuthProvider } from "@/context/AuthContext";
 import { CallProvider } from "@/context/CallContext";
 import { ChatProvider } from "@/context/ChatContext";
@@ -295,6 +296,9 @@ function RootLayoutNav() {
       </Stack>
       <ToastContainer />
       <OfflineBanner />
+      {/* Admin maintenance gate — renders LAST so it overlays everything when
+          maintenance_mode is ON in the admin panel. */}
+      <MaintenanceGate />
     </>
   );
 }
