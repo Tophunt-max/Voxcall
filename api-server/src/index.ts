@@ -21,7 +21,7 @@ import paymentRouter from './routes/payment';
 import { ChatRoom } from './durable-objects/ChatRoom';
 import { CallSignaling } from './durable-objects/CallSignaling';
 import { NotificationHub } from './durable-objects/NotificationHub';
-import { ensureUsersSchema } from './lib/schemaGuard';
+import { ensureUsersSchema, ensureRandomCallSchema } from './lib/schemaGuard';
 import { getLevelConfig, getEarningShare } from './lib/levels';
 import { recalcAllHostLevels } from './lib/levelService';
 import { billedMinutes, coinsForCall, chargeCallerAffordable } from './lib/billing';
@@ -85,7 +85,14 @@ app.use('*', prettyJSON());
 // Belt-and-suspenders for the case where `wrangler d1 migrations apply`
 // in CI didn't reach the production DB (e.g. missing `--remote` flag).
 app.use('/api/*', async (c, next) => {
-  await ensureUsersSchema(c.env.DB);
+  // Both healers cache their first successful run for the isolate, so
+  // subsequent requests pay only a microtask cost. They never throw —
+  // if D1 is genuinely unavailable, downstream queries surface the real
+  // error and the cached Promise clears so the next request retries.
+  await Promise.all([
+    ensureUsersSchema(c.env.DB),
+    ensureRandomCallSchema(c.env.DB),
+  ]);
   return next();
 });
 

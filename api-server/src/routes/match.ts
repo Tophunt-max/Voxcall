@@ -133,61 +133,69 @@ async function checkAbuseGuards(
   db: D1Database,
   userId: string,
 ): Promise<AbuseCheckResult> {
-  const [dailyLimit, cooldownCount, cooldownMin] = await Promise.all([
-    readIntSetting(db, 'random_calls_per_day_limit', 0),
-    readIntSetting(db, 'random_decline_cooldown_count', 0),
-    readIntSetting(db, 'random_decline_cooldown_min', 5),
-  ]);
+  try {
+    const [dailyLimit, cooldownCount, cooldownMin] = await Promise.all([
+      readIntSetting(db, 'random_calls_per_day_limit', 0),
+      readIntSetting(db, 'random_decline_cooldown_count', 0),
+      readIntSetting(db, 'random_decline_cooldown_min', 5),
+    ]);
 
-  // Daily cap — count successful matches (matched/accepted) in the last 24h.
-  if (dailyLimit > 0) {
-    const since = Math.floor(Date.now() / 1000) - 24 * 3600;
-    const row = await db
-      .prepare(
-        `SELECT COUNT(*) as cnt FROM random_match_history
-         WHERE user_id = ? AND outcome IN ('matched','accepted') AND created_at >= ?`,
-      )
-      .bind(userId, since)
-      .first<{ cnt: number }>();
-    if ((row?.cnt ?? 0) >= dailyLimit) {
-      return {
-        ok: false,
-        code: 'DAILY_LIMIT_REACHED',
-        meta: { daily_limit: dailyLimit, used: row?.cnt ?? 0 },
-      };
-    }
-  }
-
-  // Decline cooldown — if the user's last N entries are all declined/timeout
-  // AND the most recent one is within `cooldownMin` minutes, block.
-  if (cooldownCount > 0) {
-    const recent = await db
-      .prepare(
-        `SELECT outcome, created_at FROM random_match_history
-         WHERE user_id = ? ORDER BY created_at DESC LIMIT ?`,
-      )
-      .bind(userId, cooldownCount)
-      .all<{ outcome: string; created_at: number }>();
-    const rows = recent.results ?? [];
-    if (
-      rows.length >= cooldownCount &&
-      rows.every((r) => r.outcome === 'declined' || r.outcome === 'timeout')
-    ) {
-      const lastAt = rows[0].created_at;
-      const cooldownEnd = lastAt + cooldownMin * 60;
-      const now = Math.floor(Date.now() / 1000);
-      if (now < cooldownEnd) {
+    // Daily cap — count successful matches (matched/accepted) in the last 24h.
+    if (dailyLimit > 0) {
+      const since = Math.floor(Date.now() / 1000) - 24 * 3600;
+      const row = await db
+        .prepare(
+          `SELECT COUNT(*) as cnt FROM random_match_history
+           WHERE user_id = ? AND outcome IN ('matched','accepted') AND created_at >= ?`,
+        )
+        .bind(userId, since)
+        .first<{ cnt: number }>();
+      if ((row?.cnt ?? 0) >= dailyLimit) {
         return {
           ok: false,
-          code: 'DECLINE_COOLDOWN',
-          retryAfterSec: cooldownEnd - now,
-          meta: { cooldown_min: cooldownMin, threshold: cooldownCount },
+          code: 'DAILY_LIMIT_REACHED',
+          meta: { daily_limit: dailyLimit, used: row?.cnt ?? 0 },
         };
       }
     }
-  }
 
-  return { ok: true };
+    // Decline cooldown — if the user's last N entries are all declined/timeout
+    // AND the most recent one is within `cooldownMin` minutes, block.
+    if (cooldownCount > 0) {
+      const recent = await db
+        .prepare(
+          `SELECT outcome, created_at FROM random_match_history
+           WHERE user_id = ? ORDER BY created_at DESC LIMIT ?`,
+        )
+        .bind(userId, cooldownCount)
+        .all<{ outcome: string; created_at: number }>();
+      const rows = recent.results ?? [];
+      if (
+        rows.length >= cooldownCount &&
+        rows.every((r) => r.outcome === 'declined' || r.outcome === 'timeout')
+      ) {
+        const lastAt = rows[0].created_at;
+        const cooldownEnd = lastAt + cooldownMin * 60;
+        const now = Math.floor(Date.now() / 1000);
+        if (now < cooldownEnd) {
+          return {
+            ok: false,
+            code: 'DECLINE_COOLDOWN',
+            retryAfterSec: cooldownEnd - now,
+            meta: { cooldown_min: cooldownMin, threshold: cooldownCount },
+          };
+        }
+      }
+    }
+
+    return { ok: true };
+  } catch (err) {
+    // Schema not yet healed (migration 0026) or transient D1 issue — fail
+    // open. The anti-abuse guards are a polish feature, not a hard
+    // requirement, so a brief healer race window must not break matching.
+    console.warn('[match] checkAbuseGuards failed, allowing through:', err);
+    return { ok: true };
+  }
 }
 
 // ─── Host pool query ────────────────────────────────────────────────────────
@@ -210,18 +218,28 @@ interface MatchFilters {
 function buildPoolFilter(
   callerId: string,
   filters: MatchFilters,
+  /**
+   * When true the WHERE drops the migration-0026 columns (`accepts_random_calls`,
+   * `allows_video`). pickRandomHost calls back into this on a "no such column"
+   * error so a worker that hit production seconds before the schema heal
+   * landed still hands out random matches.
+   */
+  legacyMode = false,
 ): { where: string; params: any[] } {
   const where: string[] = [
     'h.is_active = 1',
     'h.is_online = 1',
     'h.user_id != ?',
-    // accepts_random_calls is added by migration 0026 with DEFAULT 1.
-    // COALESCE makes the filter safe even if the migration hasn't run yet.
-    'COALESCE(h.accepts_random_calls, 1) = 1',
   ];
   const params: any[] = [callerId];
 
-  if (filters.callType === 'video') {
+  if (!legacyMode) {
+    // accepts_random_calls is added by migration 0026 with DEFAULT 1.
+    // COALESCE makes the filter safe even if the migration hasn't run yet.
+    where.push('COALESCE(h.accepts_random_calls, 1) = 1');
+  }
+
+  if (!legacyMode && filters.callType === 'video') {
     where.push('COALESCE(h.allows_video, 1) = 1');
   }
   if (filters.gender === 'male' || filters.gender === 'female') {
@@ -258,34 +276,58 @@ function buildPoolFilter(
  * Pick a random host from the filtered pool. Uses COUNT-then-OFFSET (much
  * cheaper than ORDER BY RANDOM()) with a small retry loop to swallow the
  * race where a host goes offline between the COUNT and the SELECT.
+ *
+ * Falls back to a "legacy" filter (drops the migration 0026 columns) if the
+ * primary query throws "no such column" — keeps random matching alive while
+ * the schema healer races to add them.
  */
 async function pickRandomHost(
   db: D1Database,
   filter: { where: string; params: any[] },
+  legacyFallback: () => { where: string; params: any[] },
 ): Promise<{ host: any | null; totalOnline: number }> {
-  const countRow = await db
-    .prepare(`SELECT COUNT(*) as cnt FROM hosts h JOIN users u ON u.id = h.user_id WHERE ${filter.where}`)
-    .bind(...filter.params)
-    .first<{ cnt: number }>();
-  const totalOnline = countRow?.cnt ?? 0;
-  if (totalOnline === 0) return { host: null, totalOnline: 0 };
+  const runWith = async (f: { where: string; params: any[] }) => {
+    const countRow = await db
+      .prepare(`SELECT COUNT(*) as cnt FROM hosts h JOIN users u ON u.id = h.user_id WHERE ${f.where}`)
+      .bind(...f.params)
+      .first<{ cnt: number }>();
+    const totalOnline = countRow?.cnt ?? 0;
+    if (totalOnline === 0) return { host: null, totalOnline: 0 };
+    // 3 attempts is enough to absorb a couple of concurrent presence flips
+    // without spending too long on this hot endpoint.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const offset = Math.floor(Math.random() * totalOnline);
+      const host = await db
+        .prepare(
+          `SELECT h.*, u.name, u.avatar_url, u.gender, u.bio
+           FROM hosts h JOIN users u ON u.id = h.user_id
+           WHERE ${f.where}
+           LIMIT 1 OFFSET ?`,
+        )
+        .bind(...f.params, offset)
+        .first<any>();
+      if (host) return { host, totalOnline };
+    }
+    return { host: null, totalOnline };
+  };
 
-  // 3 attempts is enough to absorb a couple of concurrent presence flips
-  // without spending too long on this hot endpoint.
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const offset = Math.floor(Math.random() * totalOnline);
-    const host = await db
-      .prepare(
-        `SELECT h.*, u.name, u.avatar_url, u.gender, u.bio
-         FROM hosts h JOIN users u ON u.id = h.user_id
-         WHERE ${filter.where}
-         LIMIT 1 OFFSET ?`,
-      )
-      .bind(...filter.params, offset)
-      .first<any>();
-    if (host) return { host, totalOnline };
+  try {
+    return await runWith(filter);
+  } catch (err) {
+    const msg = String((err as any)?.message || err);
+    // SQLite "no such column" / "no such table" — schema not yet healed.
+    // Try the legacy filter (no opt-in/video columns) once before bailing.
+    if (/no such (column|table)/i.test(msg)) {
+      console.warn('[match] pool query failed on missing schema, falling back:', msg);
+      try {
+        return await runWith(legacyFallback());
+      } catch (legacyErr) {
+        console.warn('[match] legacy pool query also failed:', legacyErr);
+        return { host: null, totalOnline: 0 };
+      }
+    }
+    throw err;
   }
-  return { host: null, totalOnline };
 }
 
 /**
@@ -300,15 +342,22 @@ async function recentlyMatchedHostIds(
 ): Promise<string[]> {
   if (blockMinutes <= 0) return [];
   const since = Math.floor(Date.now() / 1000) - blockMinutes * 60;
-  const rows = await db
-    .prepare(
-      `SELECT DISTINCT host_id FROM random_match_history
-       WHERE user_id = ? AND created_at >= ?
-       ORDER BY created_at DESC LIMIT 50`,
-    )
-    .bind(userId, since)
-    .all<{ host_id: string }>();
-  return (rows.results ?? []).map((r) => r.host_id);
+  try {
+    const rows = await db
+      .prepare(
+        `SELECT DISTINCT host_id FROM random_match_history
+         WHERE user_id = ? AND created_at >= ?
+         ORDER BY created_at DESC LIMIT 50`,
+      )
+      .bind(userId, since)
+      .all<{ host_id: string }>();
+    return (rows.results ?? []).map((r) => r.host_id);
+  } catch (err) {
+    // Schema not yet healed (migration 0026) or transient D1 hiccup —
+    // fall back to "no exclusions" so matching still works.
+    console.warn('[match] recentlyMatchedHostIds failed, falling back to empty list:', err);
+    return [];
+  }
 }
 
 // ─── POST /api/match/find ───────────────────────────────────────────────────
@@ -392,17 +441,33 @@ match.post('/find', async (c) => {
   const filter = buildPoolFilter(sub, filters);
 
   // 6. Pick a host (with race retry) — we ALSO want a count for the UI,
-  //    so report the size of the un-filtered online pool separately.
+  //    so report the size of the un-filtered online pool separately. Both
+  //    the pool query and the count query are wrapped so a missing
+  //    migration-0026 column never crashes the route.
   const [pick, totalOnlineRow] = await Promise.all([
-    pickRandomHost(db, filter),
-    db
-      .prepare(
-        `SELECT COUNT(*) as cnt FROM hosts h JOIN users u ON u.id = h.user_id
-         WHERE h.is_active = 1 AND h.is_online = 1 AND h.user_id != ?
-           AND COALESCE(h.accepts_random_calls, 1) = 1`,
-      )
-      .bind(sub)
-      .first<{ cnt: number }>(),
+    pickRandomHost(db, filter, () => buildPoolFilter(sub, filters, true)),
+    (async () => {
+      try {
+        return await db
+          .prepare(
+            `SELECT COUNT(*) as cnt FROM hosts h JOIN users u ON u.id = h.user_id
+             WHERE h.is_active = 1 AND h.is_online = 1 AND h.user_id != ?
+               AND COALESCE(h.accepts_random_calls, 1) = 1`,
+          )
+          .bind(sub)
+          .first<{ cnt: number }>();
+      } catch {
+        // Fall back without the new column for the brief healer race window.
+        return await db
+          .prepare(
+            `SELECT COUNT(*) as cnt FROM hosts h JOIN users u ON u.id = h.user_id
+             WHERE h.is_active = 1 AND h.is_online = 1 AND h.user_id != ?`,
+          )
+          .bind(sub)
+          .first<{ cnt: number }>()
+          .catch(() => null);
+      }
+    })(),
   ]);
   const onlineCount = totalOnlineRow?.cnt ?? 0;
 
@@ -422,13 +487,20 @@ match.post('/find', async (c) => {
 
   // 8. Record the match (no-repeat / cooldown / daily-cap source of truth).
   //    Done synchronously so a fast follow-up /find can't double-match.
-  await db
-    .prepare(
-      `INSERT INTO random_match_history (user_id, host_id, call_type, outcome)
-       VALUES (?, ?, ?, 'matched')`,
-    )
-    .bind(sub, enriched.id, callType)
-    .run();
+  //    Best-effort: a healer race or transient D1 error must not break the
+  //    user's experience — they still get the match, the cooldown guard
+  //    just won't see this entry.
+  try {
+    await db
+      .prepare(
+        `INSERT INTO random_match_history (user_id, host_id, call_type, outcome)
+         VALUES (?, ?, ?, 'matched')`,
+      )
+      .bind(sub, enriched.id, callType)
+      .run();
+  } catch (err) {
+    console.warn('[match/find] history insert failed (non-fatal):', err);
+  }
 
   return c.json({
     matched: true,
@@ -467,18 +539,23 @@ match.post('/decline', async (c) => {
   const body = await c.req.json<{ host_id?: string }>().catch(() => ({} as any));
   if (!body.host_id) return c.json({ success: false, error: 'host_id required' }, 400);
   // Update only the most recent 'matched' row for this pair to avoid
-  // accidentally rewriting an older accepted call.
-  await c.env.DB
-    .prepare(
-      `UPDATE random_match_history SET outcome = 'declined'
-       WHERE id = (
-         SELECT id FROM random_match_history
-         WHERE user_id = ? AND host_id = ? AND outcome = 'matched'
-         ORDER BY created_at DESC LIMIT 1
-       )`,
-    )
-    .bind(sub, body.host_id)
-    .run();
+  // accidentally rewriting an older accepted call. Best-effort — the table
+  // may not exist yet during the brief schema-healer window.
+  try {
+    await c.env.DB
+      .prepare(
+        `UPDATE random_match_history SET outcome = 'declined'
+         WHERE id = (
+           SELECT id FROM random_match_history
+           WHERE user_id = ? AND host_id = ? AND outcome = 'matched'
+           ORDER BY created_at DESC LIMIT 1
+         )`,
+      )
+      .bind(sub, body.host_id)
+      .run();
+  } catch (err) {
+    console.warn('[match/decline] update failed (non-fatal):', err);
+  }
   return c.json({ success: true });
 });
 
@@ -490,31 +567,50 @@ match.post('/decline', async (c) => {
  * the few seconds since /match/find returned — calling this and gating
  * Accept on the response avoids dropping the user into a doomed call.
  */
+interface HostStatusRow {
+  id: string;
+  is_online: number;
+  is_active: number;
+  user_id: string;
+  accepts_random_calls: number;
+  allows_video: number;
+  in_call: number;
+}
+
 match.get('/host-status/:id', async (c) => {
   const { sub } = c.get('user');
   const hostId = c.req.param('id');
   const db = c.env.DB;
-  const row = await db
-    .prepare(
-      `SELECT h.id, h.is_online, h.is_active, h.user_id,
+  // Try the rich query first (with migration 0026 columns + live in-call
+  // existence sub-select); fall back to a minimal version on missing-column
+  // / missing-table errors so a healer race never breaks the Accept flow.
+  const queryWithOptIns = `SELECT h.id, h.is_online, h.is_active, h.user_id,
               COALESCE(h.accepts_random_calls, 1) as accepts_random_calls,
               COALESCE(h.allows_video, 1) as allows_video,
               EXISTS (
                 SELECT 1 FROM call_sessions cs
                 WHERE cs.host_id = h.id AND cs.status IN ('pending','active')
               ) as in_call
-       FROM hosts h WHERE h.id = ?`,
-    )
-    .bind(hostId)
-    .first<{
-      id: string;
-      is_online: number;
-      is_active: number;
-      user_id: string;
-      accepts_random_calls: number;
-      allows_video: number;
-      in_call: number;
-    }>();
+       FROM hosts h WHERE h.id = ?`;
+  const queryLegacy = `SELECT h.id, h.is_online, h.is_active, h.user_id,
+              1 as accepts_random_calls, 1 as allows_video,
+              EXISTS (
+                SELECT 1 FROM call_sessions cs
+                WHERE cs.host_id = h.id AND cs.status IN ('pending','active')
+              ) as in_call
+       FROM hosts h WHERE h.id = ?`;
+  let row: HostStatusRow | null = null;
+  try {
+    row = await db.prepare(queryWithOptIns).bind(hostId).first<HostStatusRow>();
+  } catch (err) {
+    console.warn('[match/host-status] primary query failed, trying legacy:', err);
+    try {
+      row = await db.prepare(queryLegacy).bind(hostId).first<HostStatusRow>();
+    } catch (legacyErr) {
+      console.warn('[match/host-status] legacy query also failed:', legacyErr);
+      return c.json({ available: false, code: 'HOST_LOOKUP_FAILED' }, 500);
+    }
+  }
   if (!row) return c.json({ available: false, code: 'HOST_NOT_FOUND' }, 404);
   if (row.user_id === sub) {
     // self-match guard — should never reach here, but cheap to enforce.
@@ -546,10 +642,9 @@ match.get('/online-hosts', async (c) => {
   const config = await getLevelConfig(db);
   // Higher-level hosts surface first (rank_boost), then by rating + review
   // count. The opt-in filter mirrors /match/find so the cards never show a
-  // host the matcher would actually skip.
-  const result = await db
-    .prepare(
-      `SELECT h.id, h.display_name, h.specialties, h.rating, h.level,
+  // host the matcher would actually skip. Falls back without the opt-in
+  // columns if the schema healer hasn't run yet.
+  const queryWithOptIns = `SELECT h.id, h.display_name, h.specialties, h.rating, h.level,
               h.audio_coins_per_minute, h.allows_video,
               u.name, u.avatar_url, u.gender
        FROM hosts h
@@ -557,10 +652,27 @@ match.get('/online-hosts', async (c) => {
        WHERE h.is_active = 1 AND h.is_online = 1 AND h.user_id != ?
          AND COALESCE(h.accepts_random_calls, 1) = 1
        ORDER BY ${rankBoostCaseSql(config)} DESC, h.rating DESC, h.review_count DESC
-       LIMIT 12`,
-    )
-    .bind(sub)
-    .all<any>();
+       LIMIT 12`;
+  const queryLegacy = `SELECT h.id, h.display_name, h.specialties, h.rating, h.level,
+              h.audio_coins_per_minute,
+              u.name, u.avatar_url, u.gender
+       FROM hosts h
+       JOIN users u ON u.id = h.user_id
+       WHERE h.is_active = 1 AND h.is_online = 1 AND h.user_id != ?
+       ORDER BY ${rankBoostCaseSql(config)} DESC, h.rating DESC, h.review_count DESC
+       LIMIT 12`;
+  let result;
+  try {
+    result = await db.prepare(queryWithOptIns).bind(sub).all<any>();
+  } catch (err) {
+    console.warn('[match/online-hosts] primary query failed, falling back:', err);
+    try {
+      result = await db.prepare(queryLegacy).bind(sub).all<any>();
+    } catch (legacyErr) {
+      console.warn('[match/online-hosts] legacy query also failed:', legacyErr);
+      return c.json({ hosts: [], online_count: 0 });
+    }
+  }
 
   const hosts = result.results.map((h) => ({
     id: h.id,
@@ -572,7 +684,8 @@ match.get('/online-hosts', async (c) => {
     level: h.level ?? 1,
     level_info: buildLevelInfo(config, h.level ?? 1),
     gender: h.gender ?? null,
-    allows_video: h.allows_video !== 0,
+    // legacy fallback returns no `allows_video` column — default to true.
+    allows_video: h.allows_video === undefined ? true : h.allows_video !== 0,
   }));
 
   return c.json({ hosts, online_count: hosts.length });

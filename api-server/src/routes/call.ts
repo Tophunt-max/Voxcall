@@ -233,15 +233,38 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
     .catch(() => null); // table missing in legacy DBs — treat as not random
   const isRandomMatch = recentMatchRow ? 1 : 0;
 
-  const insertResult = await db.prepare(
-    `INSERT INTO call_sessions (id, caller_id, host_id, type, status, cf_session_id, cf_host_session_id, rate_per_minute, is_random_match)
-     SELECT ?1, ?2, ?3, ?4, 'pending', NULL, NULL, ?5, ?6
-     WHERE NOT EXISTS (
-       SELECT 1 FROM call_sessions
-       WHERE status IN ('pending', 'active')
-         AND (caller_id = ?2 OR host_id = ?3)
-     )`
-  ).bind(sessionId, sub, body.host_id, callType, ratePerMin, isRandomMatch).run();
+  const insertResult = await (async () => {
+    try {
+      return await db.prepare(
+        `INSERT INTO call_sessions (id, caller_id, host_id, type, status, cf_session_id, cf_host_session_id, rate_per_minute, is_random_match)
+         SELECT ?1, ?2, ?3, ?4, 'pending', NULL, NULL, ?5, ?6
+         WHERE NOT EXISTS (
+           SELECT 1 FROM call_sessions
+           WHERE status IN ('pending', 'active')
+             AND (caller_id = ?2 OR host_id = ?3)
+         )`
+      ).bind(sessionId, sub, body.host_id, callType, ratePerMin, isRandomMatch).run();
+    } catch (err) {
+      // is_random_match was added by migration 0026 — if the column isn't
+      // there yet (deploy ran without applying migrations) we still want
+      // calls to work. Fall back to the legacy 8-column INSERT so the rest
+      // of the system keeps running while the schema healer catches up.
+      const msg = String((err as any)?.message || err);
+      if (/no such column: is_random_match/i.test(msg)) {
+        console.warn('[initiate] is_random_match column missing, using legacy INSERT');
+        return await db.prepare(
+          `INSERT INTO call_sessions (id, caller_id, host_id, type, status, cf_session_id, cf_host_session_id, rate_per_minute)
+           SELECT ?1, ?2, ?3, ?4, 'pending', NULL, NULL, ?5
+           WHERE NOT EXISTS (
+             SELECT 1 FROM call_sessions
+             WHERE status IN ('pending', 'active')
+               AND (caller_id = ?2 OR host_id = ?3)
+           )`
+        ).bind(sessionId, sub, body.host_id, callType, ratePerMin).run();
+      }
+      throw err;
+    }
+  })();
 
   if (!insertResult.meta?.changes) {
     // Race lost — another concurrent /initiate took the slot. Re-query to
