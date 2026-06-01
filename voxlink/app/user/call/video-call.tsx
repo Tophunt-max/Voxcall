@@ -576,8 +576,12 @@ export default function VideoCallScreen() {
   // the warning banner. Users now drag it anywhere on screen; we clamp to
   // 12px from each edge so it never goes off-screen on tablets / orientation
   // changes. Default position mirrors the previous static position.
-  const selfPan = useRef(new Animated.ValueXY({ x: SCREEN_W - SELF_W - 16, y: insets.top + 12 })).current;
-  const selfPosition = useRef({ x: SCREEN_W - SELF_W - 16, y: insets.top + 12 });
+  // FIX (UI overlap): default the self-preview BELOW the top header row. It used
+  // to default to insets.top+12 (top-right) — exactly where the coin-balance +
+  // signal-bars cluster sits — so the PiP covered them. +112 clears the header
+  // (and the low-coin warning banner) while still being draggable anywhere.
+  const selfPan = useRef(new Animated.ValueXY({ x: SCREEN_W - SELF_W - 16, y: insets.top + 112 })).current;
+  const selfPosition = useRef({ x: SCREEN_W - SELF_W - 16, y: insets.top + 112 });
 
   const panResponder = useMemo(
     () =>
