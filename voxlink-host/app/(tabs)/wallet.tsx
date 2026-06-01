@@ -79,13 +79,26 @@ export default function HostWalletScreen() {
   // #10: minimum withdrawal comes from server app_settings (single source of
   // truth) instead of a hardcoded constant that can drift from the backend.
   const [minWithdraw, setMinWithdraw] = useState(100);
+  // coin_to_usd_rate = value of 1 coin in the payout currency (admin-set). Used
+  // to show hosts the real-money value of their coins. 0 = not configured/hide.
+  const [payoutRate, setPayoutRate] = useState(0);
   const topPad = insets.top;
+
+  const payoutCurrency = String((user as any)?.currency || "INR").toUpperCase();
+  const currencySymbol = payoutCurrency === "INR" ? "₹" : payoutCurrency === "USD" ? "$" : payoutCurrency === "EUR" ? "€" : payoutCurrency === "GBP" ? "£" : `${payoutCurrency} `;
+  const formatPayout = (coins: number) => {
+    const v = coins * payoutRate;
+    // Show 2 decimals for small values, whole numbers for large amounts.
+    return `${currencySymbol}${v >= 100 ? Math.round(v).toLocaleString() : v.toFixed(2)}`;
+  };
 
   useEffect(() => {
     API.getAppConfig()
       .then((cfg) => {
         const m = parseInt(cfg?.min_withdrawal_coins ?? "", 10);
         if (Number.isFinite(m) && m > 0) setMinWithdraw(m);
+        const r = parseFloat(cfg?.coin_to_usd_rate ?? "");
+        if (Number.isFinite(r) && r > 0) setPayoutRate(r);
       })
       .catch(() => { /* keep default */ });
   }, []);
@@ -176,6 +189,9 @@ export default function HostWalletScreen() {
                   <Text style={styles.coinAmt}>{(user?.coins ?? 0).toLocaleString()}</Text>
                   <Text style={styles.coinUnit}>Coins</Text>
                 </View>
+                {payoutRate > 0 && (
+                  <Text style={styles.payoutValue}>≈ {formatPayout(user?.coins ?? 0)} payout value</Text>
+                )}
               </View>
               <Image source={require("@/assets/images/wallet_graphic.png")} style={styles.walletImg} resizeMode="contain" />
             </View>
@@ -285,6 +301,11 @@ export default function HostWalletScreen() {
               underlineColorAndroid="transparent"
             />
           </View>
+          {payoutRate > 0 && Number(withdrawAmt) > 0 && (
+            <Text style={[styles.payoutHint, { color: colors.accent }]}>
+              ≈ {formatPayout(Number(withdrawAmt))} will be paid to your account
+            </Text>
+          )}
 
           <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Bank Account / UPI ID</Text>
           <View accessible={false} style={[styles.inputWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -322,6 +343,7 @@ export default function HostWalletScreen() {
             <Text style={[styles.noteTitle, { color: "#FFA100" }]}>Note</Text>
             <Text style={[styles.noteText, { color: colors.mutedForeground }]}>
               Minimum withdrawal is {minWithdraw} coins. Processing takes 2-3 business days.
+              {payoutRate > 0 ? ` Current rate: 1 coin ≈ ${formatPayout(1)}.` : ""}
             </Text>
           </View>
 
@@ -350,6 +372,7 @@ const styles = StyleSheet.create({
   coinBig: { width: 28, height: 28 },
   coinAmt: { color: "#fff", fontSize: 32, fontFamily: "Poppins_700Bold" },
   coinUnit: { color: "rgba(255,255,255,0.7)", fontSize: 13, alignSelf: "flex-end", marginBottom: 3 },
+  payoutValue: { color: "rgba(255,255,255,0.85)", fontSize: 12, fontFamily: "Poppins_500Medium", marginTop: 4 },
   walletImg: { width: 52, height: 52, opacity: 0.9 },
   statsRow: { flexDirection: "row", backgroundColor: "rgba(255,255,255,0.15)", borderRadius: 12, padding: 12, justifyContent: "space-around" },
   miniStat: { alignItems: "center", gap: 2 },
@@ -369,6 +392,7 @@ const styles = StyleSheet.create({
   smallCoin: { width: 14, height: 14 },
   earnedAmt: { fontSize: 15, fontFamily: "Poppins_700Bold" },
   sectionLabel: { fontSize: 11, fontFamily: "Poppins_500Medium", textTransform: "uppercase", letterSpacing: 1 },
+  payoutHint: { fontSize: 12, fontFamily: "Poppins_600SemiBold", marginTop: -4 },
   withdrawGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   withdrawChip: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12, borderWidth: 1.5 },
   chipCoin: { width: 16, height: 16 },

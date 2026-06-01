@@ -18,7 +18,17 @@ user.get('/me', async (c) => {
      FROM users u WHERE u.id = ?`
   ).bind(sub).first();
   if (!me) return c.json({ error: 'User not found' }, 404);
-  return c.json(me);
+  // Best-effort: surface the user's remaining first-call-free trial minutes
+  // (migration 0028 — users.free_call_minutes). Done as a separate guarded
+  // query so a legacy DB WITHOUT the column never breaks the critical /me
+  // endpoint — the app treats a missing value as 0 (feature simply hidden).
+  let free_call_minutes = 0;
+  try {
+    const row = await c.env.DB.prepare('SELECT free_call_minutes FROM users WHERE id = ?')
+      .bind(sub).first<{ free_call_minutes: number }>();
+    free_call_minutes = Number(row?.free_call_minutes ?? 0) || 0;
+  } catch { /* column absent on legacy DB — treat as 0 */ }
+  return c.json({ ...me, free_call_minutes });
 });
 
 // PATCH /api/user/me
@@ -166,7 +176,31 @@ user.get('/referral', async (c) => {
   const stats = await db.prepare(
     'SELECT COUNT(*) as referred, COALESCE(SUM(coins_given),0) as coins_earned FROM referral_uses WHERE referrer_id = ?'
   ).bind(sub).first<any>();
-  return c.json({ code: ref.code, referred: Number(stats?.referred ?? 0), coins_earned: Number(stats?.coins_earned ?? 0) });
+
+  // Surface the admin-managed referral reward config so the app shows the
+  // ACTUAL reward amounts ("you get X, your friend gets Y") instead of
+  // hardcoded copy. Defaults mirror the admin endpoint (/admin/referral-config)
+  // so an unconfigured deployment still shows sensible numbers.
+  const cfg = { referrer_reward: 100, new_user_reward: 50, min_calls_to_unlock: 1, active: true };
+  try {
+    const keys = ['referrer_reward', 'new_user_reward', 'min_calls_to_unlock', 'referral_active'];
+    const rows = await db.prepare(
+      `SELECT key, value FROM app_settings WHERE key IN (${keys.map(() => '?').join(',')})`
+    ).bind(...keys).all<any>();
+    for (const r of (rows.results || [])) {
+      if (r.key === 'referral_active') cfg.active = r.value === '1';
+      else if (r.key === 'referrer_reward') cfg.referrer_reward = parseInt(r.value) || cfg.referrer_reward;
+      else if (r.key === 'new_user_reward') cfg.new_user_reward = parseInt(r.value) || cfg.new_user_reward;
+      else if (r.key === 'min_calls_to_unlock') cfg.min_calls_to_unlock = parseInt(r.value) || cfg.min_calls_to_unlock;
+    }
+  } catch { /* app_settings unavailable — fall back to defaults */ }
+
+  return c.json({
+    code: ref.code,
+    referred: Number(stats?.referred ?? 0),
+    coins_earned: Number(stats?.coins_earned ?? 0),
+    config: cfg,
+  });
 });
 
 // POST /api/user/report — submit a content/user report

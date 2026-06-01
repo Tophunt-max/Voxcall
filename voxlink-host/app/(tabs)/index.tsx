@@ -1,7 +1,7 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useRef } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, Image,
-  ScrollView, Switch, RefreshControl
+  ScrollView, Switch, RefreshControl, Linking, Dimensions, FlatList,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
@@ -20,6 +20,93 @@ import { PermissionDialog, PERMISSION_CONFIGS } from "@/components/PermissionDia
 import { SkeletonStatsCard } from "@/components/SkeletonCard";
 import LevelCard from "@/components/LevelCard";
 import RatesEditorSheet from "@/components/RatesEditorSheet";
+
+const BANNER_W = Dimensions.get("window").width - 32;
+
+// Admin-managed promotional banners (GET /api/banners?position=home). Mirrors
+// the user app's home banner rail so operators can run host-facing campaigns
+// (payout boosts, events, announcements). Auto-advances every 4s; tapping a
+// banner with a cta_link opens it. Renders nothing when there are no banners.
+function HostBanners({ banners }: { banners: any[] }) {
+  const listRef = useRef<FlatList<any>>(null);
+  const idx = useRef(0);
+  const [active, setActive] = useState(0);
+
+  React.useEffect(() => {
+    if (!banners || banners.length <= 1) return;
+    const t = setInterval(() => {
+      idx.current = (idx.current + 1) % banners.length;
+      try {
+        listRef.current?.scrollToOffset({ offset: idx.current * BANNER_W, animated: true });
+      } catch { /* list not ready */ }
+      setActive(idx.current);
+    }, 4000);
+    return () => clearInterval(t);
+  }, [banners?.length]);
+
+  if (!banners || banners.length === 0) return null;
+
+  return (
+    <View style={{ marginBottom: 16 }}>
+      <FlatList
+        ref={listRef}
+        data={banners}
+        keyExtractor={(b) => String(b.id)}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        snapToInterval={BANNER_W}
+        decelerationRate="fast"
+        contentContainerStyle={{ paddingHorizontal: 16 }}
+        onMomentumScrollEnd={(e) => {
+          const i = Math.round(e.nativeEvent.contentOffset.x / BANNER_W);
+          idx.current = i;
+          setActive(i);
+        }}
+        renderItem={({ item }) => (
+          <TouchableOpacity
+            activeOpacity={item.cta_link ? 0.85 : 1}
+            onPress={() => { if (item.cta_link) Linking.openURL(item.cta_link).catch(() => {}); }}
+            style={[hostBannerStyles.card, { width: BANNER_W, backgroundColor: item.bg_color || "#6A00B8" }]}
+          >
+            {item.image_url ? (
+              <Image source={{ uri: resolveMediaUrl(item.image_url) }} style={hostBannerStyles.bg} resizeMode="cover" />
+            ) : null}
+            <View style={hostBannerStyles.textWrap}>
+              {item.title ? <Text style={hostBannerStyles.title} numberOfLines={2}>{item.title}</Text> : null}
+              {item.subtitle ? <Text style={hostBannerStyles.subtitle} numberOfLines={2}>{item.subtitle}</Text> : null}
+              {item.cta_text ? (
+                <View style={hostBannerStyles.ctaPill}>
+                  <Text style={hostBannerStyles.ctaText}>{item.cta_text}</Text>
+                </View>
+              ) : null}
+            </View>
+          </TouchableOpacity>
+        )}
+      />
+      {banners.length > 1 && (
+        <View style={hostBannerStyles.dotsRow}>
+          {banners.map((_, i) => (
+            <View key={i} style={[hostBannerStyles.dot, active === i && hostBannerStyles.dotActive]} />
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
+const hostBannerStyles = StyleSheet.create({
+  card: { height: 120, borderRadius: 18, overflow: "hidden", justifyContent: "center" },
+  bg: { ...StyleSheet.absoluteFillObject, width: "100%", height: "100%" },
+  textWrap: { padding: 18, gap: 6 },
+  title: { color: "#fff", fontSize: 17, fontFamily: "Poppins_700Bold" },
+  subtitle: { color: "rgba(255,255,255,0.85)", fontSize: 12, fontFamily: "Poppins_400Regular" },
+  ctaPill: { alignSelf: "flex-start", marginTop: 6, backgroundColor: "rgba(255,255,255,0.25)", paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20 },
+  ctaText: { color: "#fff", fontSize: 12, fontFamily: "Poppins_600SemiBold" },
+  dotsRow: { flexDirection: "row", justifyContent: "center", gap: 6, marginTop: 10 },
+  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "rgba(0,0,0,0.18)" },
+  dotActive: { width: 18, backgroundColor: "#A00EE7" },
+});
 
 export default function HostHomeScreen() {
   const colors = useColors();
@@ -74,6 +161,16 @@ export default function HostHomeScreen() {
 
   const audioRate = Number(hostMe?.audio_coins_per_minute ?? hostMe?.coins_per_minute ?? 5);
   const videoRate = Number(hostMe?.video_coins_per_minute ?? (Number(hostMe?.coins_per_minute ?? 5) + 5));
+
+  // Admin-managed home banners (host-facing campaigns). Best-effort: errors /
+  // empty just hide the rail. Cached 5 min like the user app.
+  const { data: bannersData = [] } = useQuery({
+    queryKey: ['host-banners', 'home'],
+    queryFn: () => API.getBanners('home'),
+    staleTime: 5 * 60_000,
+    retry: 1,
+  });
+  const banners: any[] = (bannersData as any[]) ?? [];
 
   // Hide the "Permissions Required" block once everything is granted — a wall of
   // green "Granted" rows is just noise for a fully set-up host.
@@ -234,6 +331,9 @@ export default function HostHomeScreen() {
           thumbColor={togglingOnline ? "rgba(255,255,255,0.5)" : "#fff"}
         />
       </LinearGradient>
+
+      {/* Admin-managed promotional banners */}
+      <HostBanners banners={banners} />
 
       {/* Level system card — current level + progress to next */}
       <LevelCard

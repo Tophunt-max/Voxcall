@@ -24,9 +24,20 @@ export default function ReferralScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
 
-  const [referral, setReferral] = useState<{ code: string; referred: number; coins_earned: number } | null>(null);
+  const [referral, setReferral] = useState<{
+    code: string;
+    referred: number;
+    coins_earned: number;
+    config?: { referrer_reward: number; new_user_reward: number; min_calls_to_unlock: number; active: boolean };
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
+
+  // Admin-managed reward amounts (with sensible fallbacks so the copy is never
+  // blank while the request is in flight or on an older backend).
+  const referrerReward = referral?.config?.referrer_reward ?? 100;
+  const newUserReward = referral?.config?.new_user_reward ?? 50;
+  const minCalls = referral?.config?.min_calls_to_unlock ?? 1;
 
   useEffect(() => {
     API.getReferral()
@@ -80,7 +91,8 @@ export default function ReferralScreen() {
           <Text style={styles.heroEmoji}>🎁</Text>
           <Text style={[styles.heroTitle, { color: "#6A00B8" }]}>Invite Friends, Earn Coins!</Text>
           <Text style={[styles.heroSub, { color: "#9A74BD" }]}>
-            For every friend who joins VoxLink using your referral code, both of you get bonus coins!
+            For every friend who joins VoxLink with your code, your friend gets{" "}
+            {newUserReward} bonus coins and you earn {referrerReward} coins!
           </Text>
         </View>
 
@@ -134,8 +146,8 @@ export default function ReferralScreen() {
         <View style={[styles.stepsCard, { backgroundColor: colors.card }]}>
           {[
             { step: "1", icon: require("@/assets/icons/ic_arrow_up.png"), text: "Share your unique referral code with friends" },
-            { step: "2", icon: require("@/assets/icons/ic_profile.png"), text: "Friend signs up using your code" },
-            { step: "3", icon: require("@/assets/icons/ic_bonus.png"), text: "You both receive bonus coins instantly!" },
+            { step: "2", icon: require("@/assets/icons/ic_profile.png"), text: `Friend signs up using your code & gets ${newUserReward} coins` },
+            { step: "3", icon: require("@/assets/icons/ic_bonus.png"), text: minCalls > 0 ? `After they complete ${minCalls} call${minCalls === 1 ? "" : "s"}, you earn ${referrerReward} coins!` : `You instantly earn ${referrerReward} coins!` },
           ].map((item) => (
             <View key={item.step} style={styles.stepRow}>
               <View style={[styles.stepNum, { backgroundColor: "#A00EE7" }]}>

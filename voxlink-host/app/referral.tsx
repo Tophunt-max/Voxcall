@@ -19,9 +19,19 @@ export default function ReferralScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
 
-  const [referral, setReferral] = useState<{ code: string; referred: number; coins_earned: number } | null>(null);
+  const [referral, setReferral] = useState<{
+    code: string;
+    referred: number;
+    coins_earned: number;
+    config?: { referrer_reward: number; new_user_reward: number; min_calls_to_unlock: number; active: boolean };
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
+
+  // Admin-managed reward amounts (with sensible fallbacks).
+  const referrerReward = referral?.config?.referrer_reward ?? 100;
+  const newUserReward = referral?.config?.new_user_reward ?? 50;
+  const minCalls = referral?.config?.min_calls_to_unlock ?? 1;
 
   useEffect(() => {
     API.getReferral()
@@ -73,7 +83,8 @@ export default function ReferralScreen() {
           <Text style={styles.heroEmoji}>🎁</Text>
           <Text style={[styles.heroTitle, { color: "#6A00B8" }]}>Refer Hosts, Earn More!</Text>
           <Text style={[styles.heroSub, { color: "#9A74BD" }]}>
-            Invite other hosts to join VoxLink using your referral code. When they complete their first call, you both earn bonus coins!
+            Invite other hosts with your code. When they complete their first call,
+            they get {newUserReward} coins and you earn {referrerReward} coins!
           </Text>
         </View>
 
@@ -124,8 +135,8 @@ export default function ReferralScreen() {
           {[
             { step: "1", icon: "share-2", text: "Share your unique referral code with other hosts" },
             { step: "2", icon: "user-plus", text: "They sign up as a host using your code" },
-            { step: "3", icon: "phone", text: "They complete their first call on VoxLink" },
-            { step: "4", icon: "gift", text: "You both receive bonus coins instantly!" },
+            { step: "3", icon: "phone", text: minCalls > 0 ? `They complete ${minCalls} call${minCalls === 1 ? "" : "s"} on VoxLink` : "They complete their first call on VoxLink" },
+            { step: "4", icon: "gift", text: `You earn ${referrerReward} coins, they get ${newUserReward}!` },
           ].map((item) => (
             <View key={item.step} style={styles.stepRow}>
               <View style={[styles.stepNum, { backgroundColor: colors.accent }]}>

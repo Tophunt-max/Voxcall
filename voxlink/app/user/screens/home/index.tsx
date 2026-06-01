@@ -251,6 +251,18 @@ export default function HomeScreen() {
     staleTime: 5 * 60_000,
   });
 
+  // First-call-free trial — surface the user's remaining free call minutes
+  // (admin sets the pool via first_call_free_minutes; /api/user/me returns the
+  // remaining balance). 0 / older backend simply hides the banner.
+  const { data: freeMinutes = 0 } = useQuery({
+    queryKey: ['free-call-minutes'],
+    queryFn: async () => {
+      try { const me: any = await API.me(); return Number(me?.free_call_minutes ?? 0) || 0; }
+      catch { return 0; }
+    },
+    staleTime: 60_000,
+  });
+
   const hosts: Host[] = hostsData ?? [];
   const banners: any[] = bannersData as any[];
 
@@ -418,6 +430,21 @@ export default function HomeScreen() {
       >
         {/* Unified Auto/Manual Banner Slider */}
         <BannerSlider slides={slides} />
+
+        {/* First-call-free trial — admin-configured free minutes for new users */}
+        {freeMinutes > 0 && (
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: "#F4E8FD", borderRadius: 16, padding: 14, marginBottom: 8 }}>
+            <Text style={{ fontSize: 28 }}>🎁</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 14, fontFamily: "Poppins_700Bold", color: "#6A00B8" }}>
+                {freeMinutes} free call minute{freeMinutes === 1 ? "" : "s"} available!
+              </Text>
+              <Text style={{ fontSize: 12, fontFamily: "Poppins_400Regular", color: "#9A74BD", marginTop: 2 }}>
+                Your first {freeMinutes} minute{freeMinutes === 1 ? "" : "s"} are on us — start a call with any host.
+              </Text>
+            </View>
+          </View>
+        )}
 
         {/* Recommended for you — personalized rail (see services/api.getRecommendedHosts) */}
         {recommended.length > 0 && (

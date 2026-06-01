@@ -321,8 +321,14 @@ export const API = {
       'POST', '/api/coins/apply-promo', { code, plan_id }
     ),
 
-  // Referral
-  getReferral: () => apiRequest<{ code: string; referred: number; coins_earned: number }>('GET', '/api/user/referral'),
+  // Referral — includes the admin-managed reward config so the screen shows
+  // the actual reward amounts instead of hardcoded copy.
+  getReferral: () => apiRequest<{
+    code: string;
+    referred: number;
+    coins_earned: number;
+    config?: { referrer_reward: number; new_user_reward: number; min_calls_to_unlock: number; active: boolean };
+  }>('GET', '/api/user/referral'),
 
   // Reports
   submitReport: (data: { reported_user_id: string; reported_user?: string; reason: string; category?: string; reported_type?: string }) =>
