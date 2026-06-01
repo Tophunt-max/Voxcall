@@ -1742,6 +1742,154 @@ admin.post('/run-migrations', async (c) => {
   return c.json({ success: true, results, total: results.length });
 });
 
+// ─── India Coin-Economy Seed ────────────────────────────────────────────────
+//
+// One-shot admin action to apply the India-tuned defaults discussed in the
+// economy review:
+//   - 8 INR coin plans (₹19 → ₹6999 with progressive volume discount)
+//   - coin_to_usd_rate = 0.10  (1 coin = ₹0.10 host payout)
+//   - min_withdrawal_coins = 500   (= ₹50)
+//   - host_revenue_share fallback = 0.60 (level 1 hosts; per-level overrides)
+//   - level_config retuned for INR economy: 60/65/70/75/80% earning share,
+//     India-scaled max audio/video caps + per-level random call rates
+//
+// Destructive: it WIPES existing coin_plans before re-seeding so admins
+// don't end up with a mixed USD + INR plan list. Existing app_settings
+// values are upserted (keep history of older keys, just point to new
+// values). Existing level_config is replaced.
+//
+// Required:
+//   - confirm=true query param (typo-prevention; admin must opt in)
+//   - X-Confirm-Seed header set to 'india-coin-economy' (extra friction
+//     so a misclicked URL doesn't blow away production plans)
+//
+// Idempotent: re-running yields the same end state. Audit-logged.
+admin.post('/seed/india-defaults', async (c) => {
+  const confirm = c.req.query('confirm');
+  const confirmHeader = c.req.header('X-Confirm-Seed');
+  if (confirm !== 'true' || confirmHeader !== 'india-coin-economy') {
+    return c.json(
+      {
+        error:
+          'Confirmation required. Pass ?confirm=true AND header X-Confirm-Seed: india-coin-economy. This action wipes coin_plans + replaces level_config.',
+      },
+      400,
+    );
+  }
+
+  const database = db(c);
+  const u = c.get('user');
+  const ip = c.req.header('CF-Connecting-IP') ?? '';
+
+  // ─── 1. Coin plans (INR-priced, 8-tier curve) ───────────────────────────
+  // Curve hits psychological price points (₹19, ₹49, ₹99, ₹299, ₹599,
+  // ₹1299, ₹2999, ₹6999) with the bonus % climbing 0% → 25%, replicating
+  // the discount slope of FRND/RealU's India catalogue. The is_popular
+  // marker is on the ₹299 plan (most-bought tier in benchmark data).
+  const indiaPlans: Array<{
+    id: string;
+    name: string;
+    coins: number;
+    price: number;
+    bonus: number;
+    popular: 0 | 1;
+  }> = [
+    { id: 'india-trial',    name: 'Trial',     coins: 25,    price: 19,    bonus: 0,    popular: 0 },
+    { id: 'india-mini',     name: 'Mini',      coins: 75,    price: 49,    bonus: 0,    popular: 0 },
+    { id: 'india-basic',    name: 'Basic',     coins: 175,   price: 99,    bonus: 25,   popular: 0 },
+    { id: 'india-popular',  name: 'Popular',   coins: 600,   price: 299,   bonus: 100,  popular: 1 },
+    { id: 'india-value',    name: 'Value',     coins: 1300,  price: 599,   bonus: 200,  popular: 0 },
+    { id: 'india-pro',      name: 'Pro',       coins: 3000,  price: 1299,  bonus: 500,  popular: 0 },
+    { id: 'india-vip',      name: 'VIP',       coins: 7500,  price: 2999,  bonus: 1500, popular: 0 },
+    { id: 'india-mega',     name: 'Mega',      coins: 20000, price: 6999,  bonus: 5000, popular: 0 },
+  ];
+
+  // ─── 2. App settings — economy + currency ──────────────────────────────
+  // We deliberately upsert via INSERT OR REPLACE on a settled key list. This
+  // does NOT touch other admin-configured keys (random call rates etc.) so a
+  // half-customised deployment isn't reverted to factory defaults.
+  const settingUpserts: Array<[string, string]> = [
+    ['coin_to_usd_rate', '0.10'],
+    ['host_revenue_share', '0.60'],
+    ['min_withdrawal_coins', '500'],
+  ];
+
+  // ─── 3. Level config — India-tuned 5-tier ladder ───────────────────────
+  // Earning share dropped 10pp at L1 (70 → 60) to absorb the higher payout
+  // rate (₹0.10 vs ₹0.01). Top tiers keep their existing high share so
+  // power-host retention isn't punished. Random call rates climb steeply
+  // by level so the user sees a meaningful difference between Newcomer
+  // (10/min audio) and Elite (60/min audio).
+  const indiaLevelConfig = [
+    { level: 1, name: 'Newcomer', badge: '🌱', color: '#6B7280', min_calls: 0,    min_rating: 0.0, coin_reward: 0,    description: 'New to the platform',  perks: { max_rate: 30,  max_audio_rate: 30,  max_video_rate: 50,  random_audio_rate: 10, random_video_rate: 18, earning_share: 0.60, rank_boost: 0 } },
+    { level: 2, name: 'Rising',   badge: '⭐', color: '#F59E0B', min_calls: 50,   min_rating: 4.0, coin_reward: 100,  description: 'Getting established',   perks: { max_rate: 60,  max_audio_rate: 60,  max_video_rate: 100, random_audio_rate: 15, random_video_rate: 25, earning_share: 0.65, rank_boost: 1 } },
+    { level: 3, name: 'Expert',   badge: '🔥', color: '#EF4444', min_calls: 200,  min_rating: 4.3, coin_reward: 300,  description: 'Proven expertise',      perks: { max_rate: 100, max_audio_rate: 100, max_video_rate: 180, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.70, rank_boost: 2 } },
+    { level: 4, name: 'Pro',      badge: '💎', color: '#8B5CF6', min_calls: 500,  min_rating: 4.6, coin_reward: 500,  description: 'Professional tier',     perks: { max_rate: 180, max_audio_rate: 180, max_video_rate: 300, random_audio_rate: 40, random_video_rate: 65, earning_share: 0.75, rank_boost: 3 } },
+    { level: 5, name: 'Elite',    badge: '👑', color: '#D97706', min_calls: 1000, min_rating: 4.8, coin_reward: 1000, description: 'Top performer',         perks: { max_rate: 300, max_audio_rate: 300, max_video_rate: 500, random_audio_rate: 60, random_video_rate: 100, earning_share: 0.80, rank_boost: 5 } },
+  ];
+
+  // ─── Execute as a single batch (atomic at D1 batch level) ──────────────
+  // If any step fails, none of the changes commit and the admin sees a
+  // 500 with the error. Avoids the half-applied state where coin_plans
+  // is wiped but app_settings hasn't been updated.
+  const ops: D1PreparedStatement[] = [];
+
+  // 1. wipe + reseed coin_plans
+  ops.push(database.prepare('DELETE FROM coin_plans'));
+  for (const p of indiaPlans) {
+    ops.push(
+      database
+        .prepare(
+          `INSERT INTO coin_plans (id, name, coins, price, currency, bonus_coins, is_popular, is_active)
+           VALUES (?, ?, ?, ?, 'INR', ?, ?, 1)`,
+        )
+        .bind(p.id, p.name, p.coins, p.price, p.bonus, p.popular),
+    );
+  }
+
+  // 2. upsert app_settings
+  for (const [key, value] of settingUpserts) {
+    ops.push(
+      database
+        .prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES (?, ?, unixepoch())")
+        .bind(key, value),
+    );
+  }
+
+  // 3. replace level_config (single JSON blob — same shape /admin/level-config writes)
+  ops.push(
+    database
+      .prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('level_config', ?, unixepoch())")
+      .bind(JSON.stringify(indiaLevelConfig)),
+  );
+
+  try {
+    await database.batch(ops);
+  } catch (err) {
+    console.error('[seed/india-defaults] batch failed:', err);
+    return c.json({ error: 'Seed failed — partial state likely. Check logs.', details: String(err) }, 500);
+  }
+
+  await auditLog(
+    database,
+    u.sub,
+    u.email || 'Admin',
+    u.email || '',
+    'update',
+    'settings',
+    'india-coin-economy',
+    `Seeded India coin economy: ${indiaPlans.length} INR plans, level_config retuned, coin_to_usd_rate=0.10, min_withdrawal_coins=500`,
+    ip,
+  );
+
+  return c.json({
+    success: true,
+    plans_seeded: indiaPlans.length,
+    level_count: indiaLevelConfig.length,
+    settings_updated: settingUpserts.map(([k]) => k).concat(['level_config']),
+  });
+});
+
 // ─── Stuck Calls Cleanup ───────────────────────────────────────────────────────
 // Marks stale pending (>10 min) and active (>6 hr) calls as ended with 0 coins
 admin.post('/calls/cleanup-stuck', async (c) => {

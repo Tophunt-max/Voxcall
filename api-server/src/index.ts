@@ -21,10 +21,10 @@ import paymentRouter from './routes/payment';
 import { ChatRoom } from './durable-objects/ChatRoom';
 import { CallSignaling } from './durable-objects/CallSignaling';
 import { NotificationHub } from './durable-objects/NotificationHub';
-import { ensureUsersSchema, ensureRandomCallSchema, ensureStreakSchema } from './lib/schemaGuard';
+import { ensureUsersSchema, ensureRandomCallSchema, ensureStreakSchema, ensureFirstCallFreeSchema } from './lib/schemaGuard';
 import { getLevelConfig, getEarningShare } from './lib/levels';
 import { recalcAllHostLevels } from './lib/levelService';
-import { billedMinutes, coinsForCall, chargeCallerAffordable } from './lib/billing';
+import { billedMinutes, coinsForCall, chargeCallerWithFreePool } from './lib/billing';
 import { createCFCalls } from './lib/cf-calls';
 import { USD_TO_FOREIGN } from './lib/currency';
 
@@ -93,6 +93,7 @@ app.use('/api/*', async (c, next) => {
     ensureUsersSchema(c.env.DB),
     ensureRandomCallSchema(c.env.DB),
     ensureStreakSchema(c.env.DB),
+    ensureFirstCallFreeSchema(c.env.DB),
   ]);
   return next();
 });
@@ -280,39 +281,54 @@ async function reapStaleCalls(env: Env): Promise<void> {
       // Track actual coins transferred (0 until confirmed)
       let actualCoinsCharged = 0;
       let actualHostEarnings = 0;
+      let freeMinutesUsed = 0;
 
       if (coinsCharged > 0) {
         // FIX #1: best-effort (partial) billing — pay the host for the talk-time
         // even if the caller overran their balance. See lib/billing.ts.
-        const { charged, hostEarned } = await chargeCallerAffordable(db, {
+        // Layer 4: also consumes from the user's free-call-minutes pool first.
+        const { charged, hostEarned, free_minutes_used } = await chargeCallerWithFreePool(db, {
           callerId: call.caller_id,
           hostUserId: call.host_user_id,
-          coinsCharged,
+          durationSec,
+          ratePerMinute: effectiveRate,
           earningShare: getEarningShare(call.host_level ?? 1, levelCfg),
         });
         actualCoinsCharged = charged;
         actualHostEarnings = hostEarned;
-        if (charged === 0) {
+        freeMinutesUsed = free_minutes_used;
+        if (charged === 0 && hostEarned === 0) {
           console.warn('[Cron] Caller had no coins to charge for call', call.id);
         }
       }
 
-      // Batch: end the call session + record bookkeeping only if money moved
+      // Batch: end the call session + record bookkeeping only if money moved.
+      // Note: a free-trial-only call lands actualCoinsCharged === 0 BUT
+      // actualHostEarnings > 0 (platform absorbed the cost) — host stats and
+      // their bonus row still update.
       const batchOps: any[] = [
         db.prepare(
-          `UPDATE call_sessions SET status = 'ended', duration_seconds = ?, coins_charged = ? WHERE id = ?`
-        ).bind(durationSec, actualCoinsCharged, call.id),
+          `UPDATE call_sessions SET status = 'ended', duration_seconds = ?, coins_charged = ?, free_minutes_used = ? WHERE id = ?`
+        ).bind(durationSec, actualCoinsCharged, freeMinutesUsed, call.id),
       ];
 
-      if (actualCoinsCharged > 0) {
+      if (actualCoinsCharged > 0 || actualHostEarnings > 0) {
         batchOps.push(
           db.prepare(`UPDATE hosts SET total_minutes = total_minutes + ?, total_earnings = total_earnings + ? WHERE id = ?`)
             .bind(durationMin, actualHostEarnings, call.host_id),
-          db.prepare(`INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?,?,?,?,?,?)`)
-            .bind(crypto.randomUUID(), call.caller_id, 'spend', -actualCoinsCharged, `${call.type || 'audio'} call (auto-reaped)`, call.id),
-          db.prepare(`INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?,?,?,?,?,?)`)
-            .bind(crypto.randomUUID(), call.host_user_id, 'bonus', actualHostEarnings, `${call.type || 'audio'} call earnings (auto-reaped)`, call.id),
         );
+        if (actualCoinsCharged > 0) {
+          batchOps.push(
+            db.prepare(`INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?,?,?,?,?,?)`)
+              .bind(crypto.randomUUID(), call.caller_id, 'spend', -actualCoinsCharged, `${call.type || 'audio'} call (auto-reaped)`, call.id),
+          );
+        }
+        if (actualHostEarnings > 0) {
+          batchOps.push(
+            db.prepare(`INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?,?,?,?,?,?)`)
+              .bind(crypto.randomUUID(), call.host_user_id, 'bonus', actualHostEarnings, `${call.type || 'audio'} call earnings (auto-reaped${freeMinutesUsed > 0 ? `, ${freeMinutesUsed} free` : ''})`, call.id),
+          );
+        }
       }
 
       await db.batch(batchOps);

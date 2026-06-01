@@ -97,6 +97,46 @@ export const api = {
   recalculateHostLevels: () => req<any>('POST', '/admin/hosts/recalculate-levels', {}),
   getLevelConfig: () => req<any[]>('GET', '/admin/level-config'),
   updateLevelConfig: (data: any[]) => req<any>('PUT', '/admin/level-config', data),
+
+  // ─── India coin economy seed ─────────────────────────────────────────────
+  // Destructive: wipes coin_plans + replaces level_config + upserts the
+  // India-tuned app_settings (coin_to_usd_rate=0.10, min_withdrawal=500,
+  // host_revenue_share=0.60). The backend requires both ?confirm=true AND
+  // the X-Confirm-Seed header — bare `req()` doesn't pass custom headers,
+  // so we call fetch directly with the same auth/error handling.
+  seedIndiaDefaults: async (): Promise<{
+    success: boolean;
+    plans_seeded: number;
+    level_count: number;
+    settings_updated: string[];
+  }> => {
+    const token = getToken();
+    if (!token) {
+      handleSessionExpired();
+      throw new Error('Session expired. Please log in again.');
+    }
+    const r = await fetch(`${API}/admin/seed/india-defaults?confirm=true`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+        // Backend cross-checks this header against a fixed magic string
+        // before applying the (destructive) seed. Without the header the
+        // endpoint 400s — protects against accidental URL-share clicks.
+        'X-Confirm-Seed': 'india-coin-economy',
+      },
+      body: '{}',
+    });
+    if (r.status === 401) {
+      handleSessionExpired();
+      throw new Error('Session expired. Please log in again.');
+    }
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({ error: r.statusText }));
+      throw new Error((err as any).error || r.statusText);
+    }
+    return r.json();
+  },
   paymentGateways: () => req<any[]>('GET', '/admin/payment-gateways'),
   createPaymentGateway: (data: any) => req<any>('POST', '/admin/payment-gateways', data),
   updatePaymentGateway: (id: string, data: any) => req('PATCH', `/admin/payment-gateways/${id}`, data),

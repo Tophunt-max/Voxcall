@@ -6,7 +6,7 @@ import { createCFCalls, CFCallsTrack } from '../lib/cf-calls';
 import { sendFCMPush } from '../lib/fcm';
 import { getLevelConfig, getEarningShare } from '../lib/levels';
 import { applyLevelUp } from '../lib/levelService';
-import { billedMinutes, coinsForCall, chargeCallerAffordable } from '../lib/billing';
+import { billedMinutes, coinsForCall, chargeCallerWithFreePool } from '../lib/billing';
 import { registerHit } from '../lib/rateLimit';
 import type { Env, JWTPayload, HostRow, CallSessionRow, CallerData, HostData } from '../types';
 
@@ -393,35 +393,49 @@ call.post('/end', async (c) => {
     // See lib/billing.ts → chargeCallerAffordable / atomicCallTransfer.
     let actualCoinsCharged = 0;
     let actualHostShare = 0;
+    let freeMinutesUsed = 0;
     if (coinsCharged > 0 && hostRow?.user_id) {
-      const { charged, hostEarned } = await chargeCallerAffordable(db, {
+      const { charged, hostEarned, free_minutes_used } = await chargeCallerWithFreePool(db, {
         callerId: session.caller_id,
         hostUserId: hostRow.user_id,
-        coinsCharged,
+        durationSec,
+        ratePerMinute: effectiveRate,
         earningShare: getEarningShare(hostRow.level ?? 1, levelCfg),
       });
       actualCoinsCharged = charged;
       actualHostShare = hostEarned;
-      if (charged === 0) {
+      freeMinutesUsed = free_minutes_used;
+      if (charged === 0 && hostEarned === 0) {
         console.warn('[/end] Caller had no coins to charge. Caller:', session.caller_id, 'wanted:', coinsCharged);
       }
     }
 
     // Now record bookkeeping in a single batch (atomic at D1 batch level).
     // Only insert coin_transactions / update host stats if money actually moved.
+    // Note: freeMinutesUsed > 0 with caller charged === 0 is a valid state
+    // (caller burned the freebie, host still gets paid by the platform) — we
+    // record the host credit + stats but no caller spend row.
     const txs: any[] = [
-      db.prepare('UPDATE call_sessions SET status = ?, duration_seconds = ?, coins_charged = ? WHERE id = ?')
-        .bind('ended', durationSec, actualCoinsCharged, session_id),
+      db.prepare('UPDATE call_sessions SET status = ?, duration_seconds = ?, coins_charged = ?, free_minutes_used = ? WHERE id = ?')
+        .bind('ended', durationSec, actualCoinsCharged, freeMinutesUsed, session_id),
     ];
-    if (actualCoinsCharged > 0) {
+    if (actualCoinsCharged > 0 || actualHostShare > 0) {
       txs.push(
         db.prepare('UPDATE hosts SET total_minutes = total_minutes + ?, total_earnings = total_earnings + ? WHERE id = ?')
           .bind(durationMin, actualHostShare, session.host_id),
-        db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
-          .bind(crypto.randomUUID(), session.caller_id, 'spend', -actualCoinsCharged, `${session.type || 'audio'} call — ${durationMin} min`, session_id),
-        db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
-          .bind(crypto.randomUUID(), hostRow.user_id, 'bonus', actualHostShare, `${session.type || 'audio'} call — ${durationMin} min`, session_id),
       );
+      if (actualCoinsCharged > 0) {
+        txs.push(
+          db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
+            .bind(crypto.randomUUID(), session.caller_id, 'spend', -actualCoinsCharged, `${session.type || 'audio'} call — ${durationMin} min`, session_id),
+        );
+      }
+      if (actualHostShare > 0) {
+        txs.push(
+          db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
+            .bind(crypto.randomUUID(), hostRow.user_id, 'bonus', actualHostShare, `${session.type || 'audio'} call — ${durationMin} min${freeMinutesUsed > 0 ? ` (${freeMinutesUsed} free)` : ''}`, session_id),
+        );
+      }
     }
     await db.batch(txs);
 
@@ -967,36 +981,47 @@ call.post('/:id/end', async (c) => {
     // FIX #1: best-effort (partial) billing — see lib/billing.ts.
     let actualCoinsCharged = 0;
     let actualHostShare = 0;
+    let freeMinutesUsed = 0;
 
     if (coinsCharged > 0 && hostRow?.user_id) {
-      const { charged, hostEarned } = await chargeCallerAffordable(db, {
+      const { charged, hostEarned, free_minutes_used } = await chargeCallerWithFreePool(db, {
         callerId: session.caller_id,
         hostUserId: hostRow.user_id,
-        coinsCharged,
+        durationSec,
+        ratePerMinute: effectiveRate,
         earningShare: getEarningShare(hostRow.level ?? 1, levelCfg),
       });
       actualCoinsCharged = charged;
       actualHostShare = hostEarned;
-      if (charged === 0) {
+      freeMinutesUsed = free_minutes_used;
+      if (charged === 0 && hostEarned === 0) {
         console.warn('[/:id/end] Caller had no coins to charge. Caller:', session.caller_id, 'wanted:', coinsCharged);
       }
     }
 
     // Bookkeeping transactions
     const batchOps: any[] = [
-      db.prepare('UPDATE call_sessions SET status = ?, duration_seconds = ?, coins_charged = ? WHERE id = ?')
-        .bind('ended', durationSec, actualCoinsCharged, sessionId),
+      db.prepare('UPDATE call_sessions SET status = ?, duration_seconds = ?, coins_charged = ?, free_minutes_used = ? WHERE id = ?')
+        .bind('ended', durationSec, actualCoinsCharged, freeMinutesUsed, sessionId),
     ];
 
-    if (actualCoinsCharged > 0) {
+    if (actualCoinsCharged > 0 || actualHostShare > 0) {
       batchOps.push(
         db.prepare('UPDATE hosts SET total_minutes = total_minutes + ?, total_earnings = total_earnings + ? WHERE id = ?')
           .bind(durationMin, actualHostShare, session.host_id),
-        db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
-          .bind(crypto.randomUUID(), session.caller_id, 'spend', -actualCoinsCharged, `${session.type} call — ${durationMin} min`, sessionId),
-        db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
-          .bind(crypto.randomUUID(), hostRow.user_id, 'bonus', actualHostShare, `${session.type} call — ${durationMin} min`, sessionId),
       );
+      if (actualCoinsCharged > 0) {
+        batchOps.push(
+          db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
+            .bind(crypto.randomUUID(), session.caller_id, 'spend', -actualCoinsCharged, `${session.type} call — ${durationMin} min`, sessionId),
+        );
+      }
+      if (actualHostShare > 0) {
+        batchOps.push(
+          db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
+            .bind(crypto.randomUUID(), hostRow.user_id, 'bonus', actualHostShare, `${session.type} call — ${durationMin} min${freeMinutesUsed > 0 ? ` (${freeMinutesUsed} free)` : ''}`, sessionId),
+        );
+      }
     }
 
     await db.batch(batchOps);
@@ -1113,30 +1138,41 @@ call.post('/:id/heartbeat', async (c) => {
 
   let actualCoinsCharged = 0;
   let actualHostShare = 0;
+  let freeMinutesUsed = 0;
   if (coinsCharged > 0 && hostRow?.user_id) {
-    const { charged, hostEarned } = await chargeCallerAffordable(db, {
+    const { charged, hostEarned, free_minutes_used } = await chargeCallerWithFreePool(db, {
       callerId: session.caller_id,
       hostUserId: hostRow.user_id,
-      coinsCharged,
+      durationSec,
+      ratePerMinute: rate,
       earningShare: getEarningShare(hostRow.level ?? 1, levelCfg),
     });
     actualCoinsCharged = charged;
     actualHostShare = hostEarned;
+    freeMinutesUsed = free_minutes_used;
   }
 
   const batchOps: any[] = [
-    db.prepare('UPDATE call_sessions SET status = ?, duration_seconds = ?, coins_charged = ? WHERE id = ?')
-      .bind('ended', durationSec, actualCoinsCharged, sessionId),
+    db.prepare('UPDATE call_sessions SET status = ?, duration_seconds = ?, coins_charged = ?, free_minutes_used = ? WHERE id = ?')
+      .bind('ended', durationSec, actualCoinsCharged, freeMinutesUsed, sessionId),
   ];
-  if (actualCoinsCharged > 0 && hostRow?.user_id) {
+  if ((actualCoinsCharged > 0 || actualHostShare > 0) && hostRow?.user_id) {
     batchOps.push(
       db.prepare('UPDATE hosts SET total_minutes = total_minutes + ?, total_earnings = total_earnings + ? WHERE id = ?')
         .bind(durationMin, actualHostShare, session.host_id),
-      db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
-        .bind(crypto.randomUUID(), session.caller_id, 'spend', -actualCoinsCharged, `${session.type || 'audio'} call — ${durationMin} min (balance limit)`, sessionId),
-      db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
-        .bind(crypto.randomUUID(), hostRow.user_id, 'bonus', actualHostShare, `${session.type || 'audio'} call — ${durationMin} min (balance limit)`, sessionId),
     );
+    if (actualCoinsCharged > 0) {
+      batchOps.push(
+        db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
+          .bind(crypto.randomUUID(), session.caller_id, 'spend', -actualCoinsCharged, `${session.type || 'audio'} call — ${durationMin} min (balance limit)`, sessionId),
+      );
+    }
+    if (actualHostShare > 0) {
+      batchOps.push(
+        db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
+          .bind(crypto.randomUUID(), hostRow.user_id, 'bonus', actualHostShare, `${session.type || 'audio'} call — ${durationMin} min (balance limit)${freeMinutesUsed > 0 ? `, ${freeMinutesUsed} free` : ''}`, sessionId),
+      );
+    }
   }
   await db.batch(batchOps);
 

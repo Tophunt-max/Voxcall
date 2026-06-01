@@ -172,6 +172,12 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
+  // Two-stage confirm for the India seed (it WIPES coin_plans + replaces
+  // level_config). First click sets `seedConfirming = true`, the button
+  // morphs into a destructive-styled "Yes, apply" + cancel pair. Second
+  // click actually triggers the network call.
+  const [seedConfirming, setSeedConfirming] = useState(false);
+  const [seeding, setSeeding] = useState(false);
 
   // Computed values rows
   const [computedRows, setComputedRows] = useState<ComputedRow[]>([
@@ -209,6 +215,31 @@ export default function SettingsPage() {
     } catch (e: any) {
       showToast(e?.message || 'Failed to save settings', false);
     } finally { setSaving(false); }
+  };
+
+  // Apply the India coin economy preset:
+  //   1. WIPES coin_plans, inserts 8 INR-priced plans
+  //   2. Replaces level_config with India-tuned 5-tier ladder
+  //   3. Upserts coin_to_usd_rate / min_withdrawal_coins / host_revenue_share
+  // Refreshes the local settings snapshot on success so the UI reflects
+  // the new values without a hard reload.
+  const applyIndiaSeed = async () => {
+    setSeeding(true);
+    try {
+      const res = await api.seedIndiaDefaults();
+      // Refresh settings so the changed coin_to_usd_rate / min_withdrawal
+      // numbers show up in the inputs above.
+      const fresh = await api.settings();
+      setSettings({ ...DEFAULTS, ...fresh });
+      showToast(
+        `India defaults applied — ${res.plans_seeded} plans, ${res.level_count} levels.`,
+      );
+      setSeedConfirming(false);
+    } catch (e: any) {
+      showToast(e?.message || 'Failed to apply India defaults', false);
+    } finally {
+      setSeeding(false);
+    }
   };
 
   // ── computed row helpers ─────────────────────────────────────────────────
@@ -292,6 +323,60 @@ export default function SettingsPage() {
           {saving ? <RefreshCw size={14} className="animate-spin" /> : <Save size={15} />}
           {saving ? 'Saving...' : 'Save Changes'}
         </button>
+      </div>
+
+      {/* India Coin Economy preset card — destructive, two-stage confirm.
+          Lives at the top so admins setting up a fresh deployment see it
+          before scrolling through the granular settings. Once applied,
+          admins can still tune individual values via the groups below. */}
+      <div className="bg-gradient-to-br from-orange-50 to-amber-50 dark:from-orange-950/30 dark:to-amber-950/30 border border-amber-200 dark:border-amber-800/40 rounded-2xl p-5">
+        <div className="flex items-start gap-3">
+          <div className="text-2xl">🇮🇳</div>
+          <div className="flex-1 min-w-0">
+            <h3 className="font-bold text-sm">Apply India coin economy preset</h3>
+            <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+              Wipes existing <strong>coin_plans</strong> and replaces them with 8 INR plans
+              (₹19 → ₹6,999), upserts <code className="bg-amber-100/60 dark:bg-amber-950/60 px-1 rounded">coin_to_usd_rate=0.10</code>,{' '}
+              <code className="bg-amber-100/60 dark:bg-amber-950/60 px-1 rounded">min_withdrawal_coins=500</code>,{' '}
+              <code className="bg-amber-100/60 dark:bg-amber-950/60 px-1 rounded">host_revenue_share=0.60</code>,
+              and replaces the level config with the India-tuned 5-tier ladder
+              (60/65/70/75/80% earning share, audio caps 30→300, random rates 10→60).
+              Existing custom plans will be lost.
+            </p>
+            <div className="mt-3 flex items-center gap-2 flex-wrap">
+              {!seedConfirming ? (
+                <button
+                  onClick={() => setSeedConfirming(true)}
+                  disabled={seeding}
+                  className="px-4 py-2 bg-amber-600 text-white rounded-xl text-xs font-semibold hover:bg-amber-700 disabled:opacity-50 transition-colors shadow-sm"
+                >
+                  Apply India defaults…
+                </button>
+              ) : (
+                <>
+                  <button
+                    onClick={applyIndiaSeed}
+                    disabled={seeding}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-red-600 text-white rounded-xl text-xs font-bold hover:bg-red-700 disabled:opacity-50 transition-colors shadow-sm"
+                  >
+                    {seeding ? <RefreshCw size={13} className="animate-spin" /> : null}
+                    {seeding ? 'Applying…' : 'Yes, wipe & apply'}
+                  </button>
+                  <button
+                    onClick={() => setSeedConfirming(false)}
+                    disabled={seeding}
+                    className="px-4 py-2 bg-secondary text-secondary-foreground rounded-xl text-xs font-semibold hover:bg-secondary/80 disabled:opacity-50 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <span className="text-xs text-red-600 dark:text-red-400 font-medium">
+                    This is destructive — coin_plans will be wiped.
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Setting groups */}

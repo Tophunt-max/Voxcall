@@ -19,6 +19,8 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ToastContainer } from "@/components/Toast";
 import { OfflineBanner } from "@/components/OfflineBanner";
+import DailyRewardModal from "@/components/DailyRewardModal";
+import { useDailyStreak } from "@/hooks/useDailyStreak";
 import { AuthProvider } from "@/context/AuthContext";
 import { useAuth } from "@/context/AuthContext";
 import { CallProvider } from "@/context/CallContext";
@@ -143,6 +145,69 @@ function WebNotificationBridge() {
   return null;
 }
 
+// ─── Daily Reward Gate ──────────────────────────────────────────────────────
+// Auto-shows the Daily Reward modal once per app session when:
+//   - the user is logged in,
+//   - the streak feature is enabled by admin,
+//   - can_claim_now is true (i.e. fresh IST day, not yet claimed).
+//
+// Tapping "Later" sets `dismissed = true` for the rest of the session so we
+// don't nag. After a successful claim the modal stays open in CELEBRATE mode
+// until the user taps "Awesome!" to dismiss. Foreground-resume after a fresh
+// IST midnight re-runs the auto-show via the hook's AppState listener +
+// fresh `can_claim_now` flip.
+function DailyRewardGate() {
+  const { isLoggedIn } = useAuth();
+  const { status, claiming, lastClaim, claim, dismissCelebration } = useDailyStreak();
+  const [visible, setVisible] = React.useState(false);
+  const sessionDismissed = React.useRef(false);
+
+  // Auto-open once per session when the server says "you can claim".
+  React.useEffect(() => {
+    if (!isLoggedIn) return;
+    if (!status?.enabled) return;
+    if (sessionDismissed.current) return;
+    if (visible) return;
+    if (status.can_claim_now) setVisible(true);
+  }, [isLoggedIn, status?.enabled, status?.can_claim_now, visible]);
+
+  // Reset session-dismissed when the user logs out so the next account that
+  // logs in on the same device gets its own auto-prompt.
+  React.useEffect(() => {
+    if (!isLoggedIn) {
+      sessionDismissed.current = false;
+      setVisible(false);
+    }
+  }, [isLoggedIn]);
+
+  const handleClose = React.useCallback(() => {
+    sessionDismissed.current = true;
+    setVisible(false);
+    // Clearing the celebration state ensures next open (rare same-session
+    // open via a future "show daily reward" deep-link) starts on the
+    // claimable view, not still showing the previous celebration.
+    dismissCelebration();
+  }, [dismissCelebration]);
+
+  const handleClaim = React.useCallback(async () => {
+    await claim();
+    // Modal stays open in CELEBRATE mode (driven by lastClaim). User
+    // taps "Awesome!" to close — handled by handleClose above.
+  }, [claim]);
+
+  if (!status) return null;
+  return (
+    <DailyRewardModal
+      visible={visible}
+      status={status}
+      lastClaim={lastClaim}
+      claiming={claiming}
+      onClaim={handleClaim}
+      onClose={handleClose}
+    />
+  );
+}
+
 // ─── AppBridge ───────────────────────────────────────────────────────────────
 // WebSocket CALL_INCOMING → CallContext (all platforms)
 // NOTE: CALL_END is intentionally NOT handled here — audio-call.tsx and
@@ -199,6 +264,7 @@ function RootLayoutNav() {
   return (
     <>
       <AppBridge />
+      <DailyRewardGate />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index" />
 

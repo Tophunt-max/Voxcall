@@ -124,3 +124,150 @@ describe('chargeCallerAffordable', () => {
     expect(await coins('host')).toBe(0);
   });
 });
+
+
+
+// ─── chargeCallerWithFreePool — first-call-free trial billing ────────────────
+// Layer 4 engagement: the user's free_call_minutes pool is consumed BEFORE
+// the coin balance, but the host is paid in full for the entire call (the
+// platform absorbs the free portion as a customer-acquisition expense).
+// These tests pin down all four corner cases so a future billing refactor
+// can't silently regress the trial UX.
+import { chargeCallerWithFreePool } from '../src/lib/billing';
+
+describe('chargeCallerWithFreePool', () => {
+  beforeEach(() => {
+    // Re-seed with a free_call_minutes column so the wrapper can read it.
+    db = createTestDb();
+    db.applySchema(`
+      CREATE TABLE users (
+        id TEXT PRIMARY KEY,
+        coins INTEGER NOT NULL DEFAULT 0,
+        free_call_minutes INTEGER DEFAULT 0
+      );
+      INSERT INTO users (id, coins, free_call_minutes) VALUES ('caller', 1000, 0), ('host', 0, 0);
+    `);
+  });
+
+  async function pool(id: string): Promise<number> {
+    const row = await db
+      .prepare('SELECT free_call_minutes FROM users WHERE id = ?')
+      .bind(id)
+      .first<{ free_call_minutes: number }>();
+    return row?.free_call_minutes ?? -1;
+  }
+
+  it('legacy path: 0 free minutes → behaves like chargeCallerAffordable', async () => {
+    // 5-minute call at 10 coins/min, 70% earning share. Caller has 1000
+    // coins, no free pool. Should charge 50, pay host 35.
+    const res = await chargeCallerWithFreePool(db as any, {
+      callerId: 'caller',
+      hostUserId: 'host',
+      durationSec: 5 * 60,
+      ratePerMinute: 10,
+      earningShare: 0.7,
+    });
+    expect(res.charged).toBe(50);
+    expect(res.hostEarned).toBe(35);
+    expect(res.free_minutes_used).toBe(0);
+    expect(res.billed_minutes).toBe(5);
+    expect(await coins('caller')).toBe(950);
+    expect(await coins('host')).toBe(35);
+  });
+
+  it('all-free path: free pool covers the whole call → caller pays nothing, host paid in full', async () => {
+    db.applySchema("UPDATE users SET free_call_minutes = 5 WHERE id = 'caller';");
+    const res = await chargeCallerWithFreePool(db as any, {
+      callerId: 'caller',
+      hostUserId: 'host',
+      durationSec: 5 * 60,
+      ratePerMinute: 10,
+      earningShare: 0.7,
+    });
+    expect(res.charged).toBe(0);
+    // Host still paid for ALL 5 minutes — platform absorbs the free cost.
+    // 5 × 10 × 0.7 = 35.
+    expect(res.hostEarned).toBe(35);
+    expect(res.free_minutes_used).toBe(5);
+    expect(await coins('caller')).toBe(1000); // unchanged
+    expect(await coins('host')).toBe(35);
+    expect(await pool('caller')).toBe(0); // pool drained
+  });
+
+  it('partial-free path: free pool covers only the first N minutes', async () => {
+    db.applySchema("UPDATE users SET free_call_minutes = 3 WHERE id = 'caller';");
+    // 5-minute call: 3 free + 2 paid → caller charged 2 × 10 = 20.
+    // Host paid for ALL 5 minutes → 5 × 10 × 0.7 = 35 (floor).
+    const res = await chargeCallerWithFreePool(db as any, {
+      callerId: 'caller',
+      hostUserId: 'host',
+      durationSec: 5 * 60,
+      ratePerMinute: 10,
+      earningShare: 0.7,
+    });
+    expect(res.charged).toBe(20);
+    expect(res.hostEarned).toBe(35);
+    expect(res.free_minutes_used).toBe(3);
+    expect(res.billed_minutes).toBe(5);
+    expect(await coins('caller')).toBe(980);
+    expect(await coins('host')).toBe(35);
+    expect(await pool('caller')).toBe(0);
+  });
+
+  it('drains the pool exactly — pool larger than call duration is preserved beyond the call', async () => {
+    db.applySchema("UPDATE users SET free_call_minutes = 10 WHERE id = 'caller';");
+    // 5-minute call uses 5 of 10 free minutes. Caller pays 0, host paid full.
+    // Pool should be 5 after.
+    const res = await chargeCallerWithFreePool(db as any, {
+      callerId: 'caller',
+      hostUserId: 'host',
+      durationSec: 5 * 60,
+      ratePerMinute: 10,
+      earningShare: 0.7,
+    });
+    expect(res.free_minutes_used).toBe(5);
+    expect(res.charged).toBe(0);
+    expect(res.hostEarned).toBe(35);
+    expect(await pool('caller')).toBe(5); // 10 - 5
+  });
+
+  it('respects best-effort billing on partial-free path when caller cannot afford the paid portion', async () => {
+    // Pool = 2 min, call = 5 min, rate = 10/min → 3 paid minutes = 30 coins.
+    // Caller has 15 → only 15 charged; host still paid for ALL 5 min.
+    db.applySchema("UPDATE users SET free_call_minutes = 2, coins = 15 WHERE id = 'caller';");
+    const res = await chargeCallerWithFreePool(db as any, {
+      callerId: 'caller',
+      hostUserId: 'host',
+      durationSec: 5 * 60,
+      ratePerMinute: 10,
+      earningShare: 0.7,
+    });
+    expect(res.free_minutes_used).toBe(2);
+    expect(res.charged).toBe(15); // capped at caller's 15-coin balance
+    // Host paid for ALL 5 minutes from full call coins (5 × 10 = 50, share 0.7 = 35).
+    // Note: this is the "platform absorbs more than the freebie" case — host is
+    // paid more than caller paid in. Acceptable as customer-acquisition cost.
+    expect(res.hostEarned).toBe(35);
+    expect(await coins('caller')).toBe(0);
+    expect(await coins('host')).toBe(35);
+    expect(await pool('caller')).toBe(0);
+  });
+
+  it('returns zeros for a 0-second / pending-style call', async () => {
+    db.applySchema("UPDATE users SET free_call_minutes = 5 WHERE id = 'caller';");
+    const res = await chargeCallerWithFreePool(db as any, {
+      callerId: 'caller',
+      hostUserId: 'host',
+      durationSec: 0,
+      ratePerMinute: 10,
+      earningShare: 0.7,
+    });
+    expect(res.charged).toBe(0);
+    expect(res.hostEarned).toBe(0);
+    expect(res.free_minutes_used).toBe(0);
+    expect(res.billed_minutes).toBe(0);
+    // Pool untouched on a 0-min call.
+    expect(await pool('caller')).toBe(5);
+    expect(await coins('caller')).toBe(1000);
+  });
+});

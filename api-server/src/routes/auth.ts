@@ -13,6 +13,25 @@ import { authMiddleware } from '../middleware/auth';
 
 const auth = new Hono<{ Bindings: Env }>();
 
+/**
+ * Read `app_settings.first_call_free_minutes` for the new-user free-trial
+ * pool size, falling back to 0 if the row is missing or malformed (which
+ * disables the feature without breaking signup). Wrapped in try/catch so a
+ * brief schemaGuard race that hasn't yet seeded the row never breaks
+ * registration.
+ */
+async function readFreeCallMinutesSetting(db: D1Database): Promise<number> {
+  try {
+    const row = await db
+      .prepare("SELECT value FROM app_settings WHERE key = 'first_call_free_minutes'")
+      .first<{ value: string }>();
+    const n = parseInt(row?.value ?? '');
+    return Number.isFinite(n) && n >= 0 ? n : 0;
+  } catch {
+    return 0;
+  }
+}
+
 // ─── Rate Limiting ────────────────────────────────────────────────────────
 // Standard: 10 attempts / 60s per IP per route
 // Strict:   3 attempts / 600s (10 min) — for OTP/password-reset endpoints
@@ -110,12 +129,16 @@ auth.post('/register', rateLimit, zValidator('json', registerSchema), async (c) 
   // change.
   const country = detectCountryFromRequest(c.req.raw);
   const currency = country ? currencyForCountry(country) : null;
+  // First-call-free trial — read the admin-configured pool size and stamp
+  // it on the row so the very first call uses the freebie. Falls back to 0
+  // if the setting is missing / not yet seeded (feature degrades gracefully).
+  const freeCallMinutes = await readFreeCallMinutesSetting(db);
   // SECURITY FIX: Set is_verified=0 at registration. Only set to 1 after OTP verification.
   // Previously was hardcoded to 1, completely bypassing email verification.
   await db.prepare(
-    `INSERT INTO users (id, name, email, password_hash, gender, phone, otp, otp_expires_at, is_verified, country, currency)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
-  ).bind(id, name, email, hash, gender ?? null, phone ?? null, otp, otpExp, country, currency).run();
+    `INSERT INTO users (id, name, email, password_hash, gender, phone, otp, otp_expires_at, is_verified, country, currency, free_call_minutes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`
+  ).bind(id, name, email, hash, gender ?? null, phone ?? null, otp, otpExp, country, currency, freeCallMinutes).run();
   // Bug 3 Fix: Record referral as pending (coins_given=0) — coins awarded only after OTP verification
   // This prevents Sybil attacks where fake accounts are created to farm referral coins.
   if (referral_code) {
@@ -462,10 +485,11 @@ auth.post('/google-login', rateLimit, async (c) => {
     // 4. New user — create account
     const id = 'g_' + generateId().slice(0, 12);
     const av = avatar_url || null;
+    const freeCallMinutes = await readFreeCallMinutesSetting(db);
     await db.prepare(
-      `INSERT INTO users (id, name, email, password_hash, role, coins, is_verified, avatar_url, google_id, device_id, country, currency)
-       VALUES (?, ?, ?, '', 'user', 0, 1, ?, ?, ?, ?, ?)`
-    ).bind(id, name, email, av, google_id, device_id ?? null, detectedCountry, detectedCurrency).run();
+      `INSERT INTO users (id, name, email, password_hash, role, coins, is_verified, avatar_url, google_id, device_id, country, currency, free_call_minutes)
+       VALUES (?, ?, ?, '', 'user', 0, 1, ?, ?, ?, ?, ?, ?)`
+    ).bind(id, name, email, av, google_id, device_id ?? null, detectedCountry, detectedCurrency, freeCallMinutes).run();
     user = { id, name, email, role: 'user', coins: 0, avatar_url: av, country: detectedCountry, currency: detectedCurrency };
   } else {
     // 5. Existing user — update google_id, avatar, device_id, and backfill country/currency if missing
@@ -615,9 +639,10 @@ async function quickLoginHandler(c: any, deviceId: string | null) {
 
   // Bug fix: 0 coins for guest accounts (was 50) — prevents Sybil attack of creating
   // unlimited guest accounts to farm free coins.
+  const guestFreeMinutes = await readFreeCallMinutesSetting(db);
   await db.prepare(
-    `INSERT INTO users (id, name, email, password_hash, coins, is_verified, role, device_id, country, currency) VALUES (?, ?, ?, '', 0, 0, 'user', ?, ?, ?)`
-  ).bind(quickId, quickName, quickEmail, deviceId ?? null, detectedCountry, detectedCurrency).run();
+    `INSERT INTO users (id, name, email, password_hash, coins, is_verified, role, device_id, country, currency, free_call_minutes) VALUES (?, ?, ?, '', 0, 0, 'user', ?, ?, ?, ?)`
+  ).bind(quickId, quickName, quickEmail, deviceId ?? null, detectedCountry, detectedCurrency, guestFreeMinutes).run();
 
   const token = await signToken({ sub: quickId, role: 'user', name: quickName, email: quickEmail }, c.env.JWT_SECRET);
   return c.json({

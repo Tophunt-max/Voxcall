@@ -113,6 +113,141 @@ export async function chargeCallerAffordable(
   return ok ? { charged: chargeable, hostEarned: hostShare } : { charged: 0, hostEarned: 0 };
 }
 
+// ============================================================================
+// First-call-free pool — billing wrapper.
+// ============================================================================
+//
+// Layered on top of chargeCallerAffordable. When a caller still has free
+// minutes left in `users.free_call_minutes` (migration 0028 / Layer 4
+// engagement), the first N billed minutes of the call are taken from the
+// pool instead of the caller's coin balance. The host is still paid in full
+// for the entire call duration — the platform absorbs the free-minute cost
+// as a customer-acquisition expense, which is the standard model used by
+// Indian competitor apps (FRND/RealU/etc.).
+//
+// Math:
+//   total_minutes  = billedMinutes(durationSec)
+//   free_used      = min(user.free_call_minutes, total_minutes)
+//   paid_minutes   = total_minutes - free_used
+//   caller_pays    = paid_minutes × rate          (capped at balance)
+//   host_earns     = floor(total_minutes × rate × earningShare)
+//   platform_cost  = host_earns - caller_pays_via_share
+//
+// Atomicity:
+//   The pool decrement, caller debit, and host credit run as a single
+//   D1 batch (transactional in SQLite). Either all three land or none do —
+//   no window in which the host is credited but the caller is not debited.
+//
+// Backward-compat:
+//   If `users.free_call_minutes` is NULL or 0, this collapses to the legacy
+//   chargeCallerAffordable behaviour exactly. Existing call sites that don't
+//   use the free pool keep working unchanged.
+
+export async function chargeCallerWithFreePool(
+  db: D1Database,
+  params: {
+    callerId: string;
+    hostUserId: string;
+    /** Wall-clock seconds the call ran. Used to compute minutes via billedMinutes. */
+    durationSec: number;
+    ratePerMinute: number;
+    earningShare: number;
+  },
+): Promise<{
+  charged: number;
+  hostEarned: number;
+  free_minutes_used: number;
+  billed_minutes: number;
+}> {
+  const totalMinutes = billedMinutes(params.durationSec);
+  if (totalMinutes <= 0 || !params.hostUserId) {
+    return { charged: 0, hostEarned: 0, free_minutes_used: 0, billed_minutes: 0 };
+  }
+  const rate = Number.isFinite(params.ratePerMinute) && params.ratePerMinute > 0
+    ? params.ratePerMinute
+    : 0;
+  if (rate === 0) {
+    return { charged: 0, hostEarned: 0, free_minutes_used: 0, billed_minutes: totalMinutes };
+  }
+
+  // 1. Read caller balance + free-pool size in one round-trip. We tolerate
+  //    a missing free_call_minutes column (legacy DB pre migration 0028)
+  //    by defaulting to 0 free minutes — feature degrades gracefully.
+  let callerCoins = 0;
+  let freePool = 0;
+  try {
+    const row = await db
+      .prepare('SELECT coins, COALESCE(free_call_minutes, 0) as free_call_minutes FROM users WHERE id = ?')
+      .bind(params.callerId)
+      .first<{ coins: number; free_call_minutes: number }>();
+    callerCoins = Number(row?.coins) || 0;
+    freePool = Math.max(0, Number(row?.free_call_minutes) || 0);
+  } catch {
+    // Column might not exist yet (healer race). Fall back to no-free-pool.
+    const fallback = await db
+      .prepare('SELECT coins FROM users WHERE id = ?')
+      .bind(params.callerId)
+      .first<{ coins: number }>();
+    callerCoins = Number(fallback?.coins) || 0;
+    freePool = 0;
+  }
+
+  // 2. Split free vs paid minutes.
+  const freeUsed = Math.min(freePool, totalMinutes);
+  const paidMinutes = totalMinutes - freeUsed;
+  const callerOwes = paidMinutes * rate;
+  // Host is paid for ALL minutes (free + paid) — platform absorbs the
+  // free-portion cost. host_earnings is computed from the FULL call coins
+  // so the host's per-minute payout is identical regardless of how many
+  // free minutes the caller used.
+  const fullCallCoins = totalMinutes * rate;
+  const hostEarn = hostShareOf(fullCallCoins, params.earningShare);
+
+  // 3. Best-effort cap on the caller's debit (same partial-billing model
+  //    as chargeCallerAffordable).
+  const callerActuallyPays = affordableCoins(callerOwes, callerCoins);
+
+  // 4. Atomic batch: decrement free pool + debit caller + credit host.
+  //    SQLite/D1 batches are transactional — either all three land or none.
+  const ops: D1PreparedStatement[] = [];
+  if (freeUsed > 0) {
+    ops.push(
+      db
+        .prepare('UPDATE users SET free_call_minutes = MAX(0, COALESCE(free_call_minutes, 0) - ?) WHERE id = ?')
+        .bind(freeUsed, params.callerId),
+    );
+  }
+  if (callerActuallyPays > 0) {
+    ops.push(
+      db
+        .prepare('UPDATE users SET coins = coins - ? WHERE id = ? AND coins >= ?')
+        .bind(callerActuallyPays, params.callerId, callerActuallyPays),
+    );
+  }
+  if (hostEarn > 0) {
+    ops.push(
+      db
+        .prepare('UPDATE users SET coins = coins + ? WHERE id = ?')
+        .bind(hostEarn, params.hostUserId),
+    );
+  }
+  if (ops.length > 0) {
+    try {
+      await db.batch(ops);
+    } catch (err) {
+      console.warn('[billing] free-pool batch failed:', err);
+      return { charged: 0, hostEarned: 0, free_minutes_used: 0, billed_minutes: totalMinutes };
+    }
+  }
+
+  return {
+    charged: callerActuallyPays,
+    hostEarned: hostEarn,
+    free_minutes_used: freeUsed,
+    billed_minutes: totalMinutes,
+  };
+}
+
 /**
  * Atomically move coins from caller to host in a SINGLE SQL statement.
  *

@@ -135,6 +135,83 @@ export function ensureStreakSchema(db: D1Database): Promise<boolean> {
   return streakSchemaReadyPromise;
 }
 
+// ============================================================================
+// First-call-free schema guard — auto-heal migration 0028 on cold start.
+// ============================================================================
+//
+// Adds the user-level free-minute pool + the per-call usage counter, and
+// seeds the default pool size in app_settings. Fully idempotent — same
+// pattern as ensureRandomCallSchema / ensureStreakSchema.
+
+let firstCallSchemaReadyPromise: Promise<boolean> | null = null;
+
+const REQUIRED_FIRST_CALL_USER_COLS: ReadonlyArray<{ name: string; ddl: string }> = [
+  { name: 'free_call_minutes', ddl: 'ALTER TABLE users ADD COLUMN free_call_minutes INTEGER DEFAULT 0' },
+];
+
+const REQUIRED_FIRST_CALL_SESSION_COLS: ReadonlyArray<{ name: string; ddl: string }> = [
+  { name: 'free_minutes_used', ddl: 'ALTER TABLE call_sessions ADD COLUMN free_minutes_used INTEGER DEFAULT 0' },
+];
+
+const FIRST_CALL_DEFAULT_SETTINGS: ReadonlyArray<{ key: string; value: string }> = [
+  // Default 5-minute freebie. Set to '0' to kill-switch the feature without
+  // removing the schema; admin can lift the cap to 10/30/etc. via Settings.
+  { key: 'first_call_free_minutes', value: '5' },
+];
+
+export function ensureFirstCallFreeSchema(db: D1Database): Promise<boolean> {
+  if (firstCallSchemaReadyPromise) return firstCallSchemaReadyPromise;
+
+  firstCallSchemaReadyPromise = (async () => {
+    try {
+      const userInfo = await db.prepare('PRAGMA table_info(users)').all<{ name: string }>();
+      const userCols = new Set((userInfo.results ?? []).map((r) => r.name));
+      for (const col of REQUIRED_FIRST_CALL_USER_COLS) {
+        if (!userCols.has(col.name)) {
+          try {
+            await db.prepare(col.ddl).run();
+            console.log(`[schemaGuard] added users.${col.name}`);
+          } catch (err) {
+            console.warn(`[schemaGuard] add users.${col.name} failed:`, err);
+          }
+        }
+      }
+
+      const csInfo = await db.prepare('PRAGMA table_info(call_sessions)').all<{ name: string }>();
+      const csCols = new Set((csInfo.results ?? []).map((r) => r.name));
+      for (const col of REQUIRED_FIRST_CALL_SESSION_COLS) {
+        if (!csCols.has(col.name)) {
+          try {
+            await db.prepare(col.ddl).run();
+            console.log(`[schemaGuard] added call_sessions.${col.name}`);
+          } catch (err) {
+            console.warn(`[schemaGuard] add call_sessions.${col.name} failed:`, err);
+          }
+        }
+      }
+
+      for (const s of FIRST_CALL_DEFAULT_SETTINGS) {
+        try {
+          await db
+            .prepare("INSERT OR IGNORE INTO app_settings (key, value, updated_at) VALUES (?, ?, unixepoch())")
+            .bind(s.key, s.value)
+            .run();
+        } catch (err) {
+          console.warn(`[schemaGuard] seed app_settings.${s.key} failed:`, err);
+        }
+      }
+
+      return true;
+    } catch (err) {
+      console.error('[schemaGuard] ensureFirstCallFreeSchema failed:', err);
+      firstCallSchemaReadyPromise = null;
+      return false;
+    }
+  })();
+
+  return firstCallSchemaReadyPromise;
+}
+
 //
 // The Random Call overhaul added columns + a new table:
 //   - hosts.accepts_random_calls      INTEGER DEFAULT 1
