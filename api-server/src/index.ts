@@ -25,6 +25,7 @@ import { ensureUsersSchema } from './lib/schemaGuard';
 import { getLevelConfig, getEarningShare } from './lib/levels';
 import { recalcAllHostLevels } from './lib/levelService';
 import { billedMinutes, coinsForCall, chargeCallerAffordable } from './lib/billing';
+import { createCFCalls } from './lib/cf-calls';
 import { USD_TO_FOREIGN } from './lib/currency';
 
 // Re-export Durable Objects (required by wrangler)
@@ -235,6 +236,7 @@ async function reapStaleCalls(env: Env): Promise<void> {
     const staleCalls = await db
       .prepare(
         `SELECT cs.id, cs.caller_id, cs.host_id, cs.started_at, cs.created_at, cs.rate_per_minute, cs.type,
+                cs.cf_session_id, cs.cf_host_session_id,
                 h.user_id as host_user_id, h.level as host_level,
                 cs.status
          FROM call_sessions cs
@@ -247,6 +249,11 @@ async function reapStaleCalls(env: Env): Promise<void> {
       .all<any>();
 
     if (!staleCalls.results.length) return;
+
+    // CF Calls sessions idle-timeout on their own, but tearing them down
+    // promptly when we reap a call frees SFU resources immediately instead of
+    // waiting out the idle window.
+    const cfCalls = createCFCalls(env);
 
     for (const call of staleCalls.results) {
       // Atomic guard — use ended_at IS NULL instead of setting status to 'processing'
@@ -301,6 +308,16 @@ async function reapStaleCalls(env: Env): Promise<void> {
       }
 
       await db.batch(batchOps);
+
+      // Best-effort: close the CF Calls sessions for this reaped call so SFU
+      // media tears down right away rather than lingering until idle-timeout.
+      if (cfCalls) {
+        for (const sid of [call.cf_session_id, call.cf_host_session_id]) {
+          if (sid) {
+            try { await cfCalls.closeSession(sid); } catch (e) { console.warn('[Cron] CF closeSession failed for', call.id, e); }
+          }
+        }
+      }
     }
 
     console.log(`[Cron] Reaped ${staleCalls.results.length} stale call(s)`);

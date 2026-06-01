@@ -249,6 +249,14 @@ class SocketService {
           timestamp: Date.now(),
         });
         break;
+      case "peer_media_state":
+        this.emit(SocketEvents.PEER_MEDIA_STATE, {
+          sessionId: msg.session_id,
+          audio: msg.audio !== false, // true = remote mic on (unmuted)
+          video: msg.video !== false, // true = remote camera on
+          timestamp: Date.now(),
+        });
+        break;
       case "presence":
         this.emit(SocketEvents.PRESENCE_UPDATE, {
           userId: msg.user_id,

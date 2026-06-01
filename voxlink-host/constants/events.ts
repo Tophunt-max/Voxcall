@@ -32,6 +32,7 @@ export const SocketEvents = {
   CALL_COIN_DEDUCT: "call:coin_deduct",
   CALL_LOW_COINS: "call:low_coins",
   PEER_TRACKS_READY: "webrtc:peer_tracks_ready",
+  PEER_MEDIA_STATE: "webrtc:peer_media_state",
 
   // Chat Events
   MESSAGE_SEND: "message:send",

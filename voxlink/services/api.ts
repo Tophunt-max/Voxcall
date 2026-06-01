@@ -230,6 +230,11 @@ export const API = {
     apiRequest<{ offer: { type: string; sdp: string } | null; tracks: Array<{ mid?: string; trackName?: string; errorCode?: string }>; role: string; retryable?: boolean }>('POST', `/api/calls/${sessionId}/sdp/pull`, { trackNames }),
   sendPullAnswer: (sessionId: string, sdp: string, type: string) =>
     apiRequest<{ success: boolean }>('POST', `/api/calls/${sessionId}/sdp/answer`, { sdp, type }),
+  // Relay in-call mic/camera state to the other party so their UI updates
+  // instantly (camera-off avatar / muted badge) instead of polling the remote
+  // track's muted flag. Best-effort — fire and forget on each toggle.
+  sendMediaState: (sessionId: string, state: { audio: boolean; video: boolean }) =>
+    apiRequest<{ success: boolean }>('POST', `/api/calls/${sessionId}/media-state`, state),
 
   // App version gate. The mobile app calls this on launch to find out
   // whether it must show a force-update modal (running build below

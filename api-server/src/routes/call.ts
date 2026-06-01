@@ -30,17 +30,28 @@ call.get('/ice-config', async (c) => {
   const keyId = c.env.TURN_KEY_ID;
   const keyToken = c.env.TURN_KEY_TOKEN;
 
-  // Default fallback: STUN + public TURN. Public TURN is rate-limited and
-  // not suitable for production scale but ensures dev / first-deploy users
+  // The public Open Relay TURN servers are convenient for development but are
+  // rate-limited and unreliable — they must NOT be depended on in production.
+  // When CF TURN credentials (TURN_KEY_ID/TURN_KEY_TOKEN) are configured we
+  // mint proper short-lived credentials below; the static fallback therefore
+  // only carries the public relay OUTSIDE production so local/dev calls still
+  // traverse NAT without extra setup.
+  const isProd = c.env.ENVIRONMENT === 'production';
+  const publicTurn = isProd ? [] : [
+    { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+    { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+    { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+  ];
+
+  // Default fallback: STUN (+ public TURN in dev). Public TURN is rate-limited
+  // and not suitable for production scale but ensures dev / first-deploy users
   // are not blocked by NAT issues.
   const fallback = {
     iceServers: [
       { urls: 'stun:stun.cloudflare.com:3478' },
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' },
-      { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-      { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-      { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+      ...publicTurn,
     ],
     iceCandidatePoolSize: 10,
     bundlePolicy: 'max-bundle' as const,
@@ -49,6 +60,12 @@ call.get('/ice-config', async (c) => {
   };
 
   if (!keyId || !keyToken) {
+    if (isProd) {
+      // Loud warning: without CF TURN creds, production clients on UDP-blocked
+      // / symmetric-NAT networks (most mobile carriers) silently fail to
+      // connect media even though signalling succeeds.
+      console.error('[ice-config] PRODUCTION missing TURN_KEY_ID/TURN_KEY_TOKEN — clients behind symmetric NAT / UDP-blocked networks will fail to relay. Configure Cloudflare Realtime TURN credentials.');
+    }
     return c.json(fallback);
   }
 
@@ -588,24 +605,45 @@ call.post('/:id/sdp/push', async (c) => {
   }
 
   let cfSessionId = role === 'host' ? session.cf_host_session_id : session.cf_session_id;
+  const sessionField = role === 'host' ? 'cf_host_session_id' : 'cf_session_id';
+  const trackField = role === 'host' ? 'cf_host_track_names' : 'cf_caller_track_names';
 
   // Lazy session creation: if no CF session ID stored (e.g. call was created before
   // CF_CALLS_APP_ID was configured), create one now and persist it.
+  //
+  // RACE FIX: two concurrent /sdp/push requests for the same role (e.g. the
+  // initial push racing an ICE-restart re-push, or a retried request) could
+  // both observe a null cfSessionId, both call createSession(), and both
+  // UPDATE the row — the second write clobbering the first. Whichever session
+  // lost the write becomes an orphan, and tracks pushed to it are invisible to
+  // the peer (who pulls from the stored session id). We make the persist
+  // atomic with a `WHERE <field> IS NULL` guard so only the first writer wins;
+  // the loser re-reads the winning id and closes its now-orphaned session.
   if (!cfSessionId) {
     try {
       const newSess = await cfCalls.createSession();
-      cfSessionId = newSess.sessionId;
-      const field = role === 'host' ? 'cf_host_session_id' : 'cf_session_id';
-      await db.prepare(`UPDATE call_sessions SET ${field} = ? WHERE id = ?`)
-        .bind(cfSessionId, sessionId).run();
+      const claim = await db.prepare(
+        `UPDATE call_sessions SET ${sessionField} = ? WHERE id = ? AND ${sessionField} IS NULL`
+      ).bind(newSess.sessionId, sessionId).run();
+
+      if (claim.meta?.changes) {
+        cfSessionId = newSess.sessionId;
+      } else {
+        // Lost the race — reuse the session another concurrent push stored and
+        // discard ours so it doesn't linger on CF until idle-timeout.
+        const fresh = await db.prepare(
+          `SELECT ${sessionField} as sid FROM call_sessions WHERE id = ?`
+        ).bind(sessionId).first<{ sid: string | null }>();
+        cfSessionId = fresh?.sid ?? newSess.sessionId;
+        if (cfSessionId !== newSess.sessionId) {
+          try { await cfCalls.closeSession(newSess.sessionId); } catch { /* best-effort orphan cleanup */ }
+        }
+      }
     } catch (e) {
       console.error('Lazy CF session creation error:', e);
       return c.json({ error: 'Failed to create CF session' }, 500);
     }
   }
-
-  const sessionField = role === 'host' ? 'cf_host_session_id' : 'cf_session_id';
-  const trackField = role === 'host' ? 'cf_host_track_names' : 'cf_caller_track_names';
   const trackList = body.tracks.map(t => ({ location: 'local' as const, mid: t.mid, trackName: t.trackName }));
 
   // Helper: notify other party + persist track names after a successful push
@@ -774,6 +812,44 @@ call.post('/:id/sdp/answer', async (c) => {
     console.error('sendAnswer error:', e);
     return c.json({ error: e.message || 'Failed to send answer' }, 500);
   }
+});
+
+// In-call media-state relay. The client posts its current mic / camera state
+// whenever the user toggles mute or camera; we forward it to the OTHER party
+// over their NotificationHub socket so the remote UI updates INSTANTLY
+// (camera-off avatar, "muted" badge) instead of polling the remote track's
+// `muted` flag — which is laggy and fires unreliably across platforms.
+// Best-effort: a delivery failure never fails the toggle. No CF Calls call is
+// involved, so this is cheap and safe even on flaky networks.
+call.post('/:id/media-state', async (c) => {
+  const { sub } = c.get('user');
+  const sessionId = c.req.param('id');
+  const body = await c.req.json<{ audio?: boolean; video?: boolean }>().catch(() => ({} as { audio?: boolean; video?: boolean }));
+  const db = c.env.DB;
+
+  const result = await deriveRole(db, sessionId, sub);
+  if (!result) return c.json({ error: 'Session not found or access denied' }, 403);
+  const { session, role } = result;
+
+  const otherUserId = role === 'host' ? session.caller_id : (session as any).host_user_id;
+  if (otherUserId) {
+    try {
+      const notifId = c.env.NOTIFICATION_HUB.idFromName(otherUserId);
+      const notifStub = c.env.NOTIFICATION_HUB.get(notifId);
+      await notifStub.fetch('https://dummy/notify', {
+        method: 'POST',
+        body: JSON.stringify({
+          type: 'peer_media_state',
+          session_id: sessionId,
+          audio: body.audio !== false, // true = mic on (unmuted)
+          video: body.video !== false, // true = camera on
+        }),
+      });
+    } catch (e) {
+      console.warn('[/:id/media-state] notify failed:', e);
+    }
+  }
+  return c.json({ success: true });
 });
 
 call.post('/:id/end', async (c) => {

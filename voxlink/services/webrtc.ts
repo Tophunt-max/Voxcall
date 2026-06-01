@@ -99,6 +99,61 @@ function preferVideoBitrate(sdp: string, kbps: number): string {
   return out.join(eol);
 }
 
+// FIX (audio robustness on lossy mobile networks): enable Opus in-band FEC
+// (forward error correction) and DTX (discontinuous transmission) on the audio
+// m-section. FEC lets the decoder reconstruct lost packets from redundancy
+// carried in subsequent packets — a big win for voice clarity on cellular /
+// congested Wi-Fi — while DTX trims bitrate during silence. We apply it to
+// every SDP we set locally (push offer + pull answer) so both directions
+// benefit, regardless of how the SFU forwards. Safe no-op when there is no
+// Opus payload.
+function preferAudioRobustness(sdp: string): string {
+  if (!sdp) return sdp;
+  const eol = sdp.includes('\r\n') ? '\r\n' : '\n';
+  const lines = sdp.split(/\r\n|\n/);
+
+  // Resolve the Opus payload type from its rtpmap (e.g. "a=rtpmap:111 opus/48000/2").
+  let opusPt: string | null = null;
+  for (const line of lines) {
+    const m = /^a=rtpmap:(\d+)\s+opus\/48000/i.exec(line);
+    if (m) { opusPt = m[1]; break; }
+  }
+  if (!opusPt) return sdp;
+
+  const want = ['useinbandfec=1', 'usedtx=1'];
+  const out: string[] = [];
+  let patched = false;
+  for (const line of lines) {
+    if (!patched && line.startsWith(`a=fmtp:${opusPt}`)) {
+      let params = line.slice(`a=fmtp:${opusPt}`.length).trim();
+      for (const kv of want) {
+        const key = kv.split('=')[0];
+        if (!new RegExp(`(^|;)\\s*${key}=`).test(params)) {
+          params = params ? `${params};${kv}` : kv;
+        }
+      }
+      out.push(`a=fmtp:${opusPt} ${params}`);
+      patched = true;
+      continue;
+    }
+    out.push(line);
+  }
+
+  // Opus had an rtpmap but no fmtp line — synthesise one right after the rtpmap.
+  if (!patched) {
+    const result: string[] = [];
+    for (const line of out) {
+      result.push(line);
+      if (new RegExp(`^a=rtpmap:${opusPt}\\s+opus/48000`, 'i').test(line)) {
+        result.push(`a=fmtp:${opusPt} ${want.join(';')}`);
+      }
+    }
+    return result.join(eol);
+  }
+
+  return out.join(eol);
+}
+
 // FIX (TURN / no-audio on UDP-blocked networks): even with a serverless SFU
 // (Cloudflare Calls), clients on networks that block UDP outbound can't
 // reach the SFU's edge. TURN-over-TCP/TLS provides a 443 tunnel to the SFU.
@@ -115,10 +170,16 @@ const FALLBACK_ICE_SERVERS = [
   { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
 ];
 
+export type ConnectionQuality = 'excellent' | 'good' | 'poor' | 'lost' | 'unknown';
+
 export interface WebRTCCallbacks {
   onRemoteStream?: (stream: any) => void;
   onConnectionStateChange?: (state: string) => void;
   onError?: (error: Error) => void;
+  // Periodic call-quality signal derived from getStats() (packet loss + RTT +
+  // jitter) while the connection is live, so the UI can show real network bars
+  // instead of a binary connected/disconnected flag.
+  onQualityChange?: (quality: ConnectionQuality, detail?: { rtt?: number; packetLoss?: number; jitter?: number }) => void;
 }
 
 export class WebRTCService {
@@ -141,7 +202,17 @@ export class WebRTCService {
   private pullTimer: ReturnType<typeof setTimeout> | null = null;
   private iceRestartTimer: ReturnType<typeof setTimeout> | null = null;
   private iceRestartAttempts = 0;
-  private readonly MAX_ICE_RESTART_ATTEMPTS = 3;
+  private readonly MAX_ICE_RESTART_ATTEMPTS = 5;
+
+  // Local mic/camera state, mirrored to the peer via API.sendMediaState so the
+  // remote UI reacts instantly (see toggleMute / toggleCamera).
+  private localMuted = false;
+  private localCameraOff = false;
+
+  // getStats()-based quality monitor.
+  private statsTimer: ReturnType<typeof setInterval> | null = null;
+  private lastStatSample: { lost: number; recv: number } | null = null;
+  private currentQuality: ConnectionQuality = 'unknown';
 
   constructor(
     sessionId: string,
@@ -289,9 +360,11 @@ export class WebRTCService {
         // Network drop pe auto ICE restart karo (10s tak retry, phir fail)
         if (state === 'disconnected' || state === 'failed') {
           this._scheduleIceRestart(state === 'failed');
+          if (state === 'failed') this._emitQuality('lost');
         }
         if (state === 'connected') {
           this._clearIceRestartTimer();
+          this._startQualityMonitor();
         }
       });
 
@@ -393,8 +466,12 @@ export class WebRTCService {
   private async _setLocalWithBitrate(desc: any): Promise<void> {
     let finalDesc: any = desc;
     try {
-      if (this.isVideo && desc?.sdp) {
-        const sdp = preferVideoBitrate(desc.sdp, VIDEO_MAX_KBPS);
+      if (desc?.sdp) {
+        // Always raise audio robustness (Opus FEC/DTX); additionally raise the
+        // video bitrate ceiling for video calls. Both directions (push offer +
+        // pull answer) flow through here.
+        let sdp = preferAudioRobustness(desc.sdp);
+        if (this.isVideo) sdp = preferVideoBitrate(sdp, VIDEO_MAX_KBPS);
         finalDesc = RTC?.RTCSessionDescription
           ? new RTC.RTCSessionDescription({ type: desc.type, sdp })
           : { type: desc.type, sdp };
@@ -427,12 +504,19 @@ export class WebRTCService {
         .filter((t: any) => t.sender?.track)
         .map((t: any) => ({
           mid: t.mid || String(transceivers.indexOf(t)),
-          trackName: `${t.sender.track.kind}-${t.mid || transceivers.indexOf(t)}`,
+          // MID-INDEPENDENT track names: name purely by media kind ("audio" /
+          // "video"). The previous `${kind}-${mid}` scheme broke when a
+          // platform assigned MIDs in a different order than the puller assumed
+          // (it hardcoded audio-0 / video-1), so the pull requested a track
+          // name that never existed and media silently never arrived. There is
+          // at most one audio and one video sender per 1:1 call, so the kind
+          // alone is unique within the session and both sides always agree.
+          trackName: t.sender.track.kind,
         }));
     } else {
-      tracks = [{ mid: '0', trackName: 'audio-0' }];
+      tracks = [{ mid: '0', trackName: 'audio' }];
       if (this.isVideo) {
-        tracks.push({ mid: '1', trackName: 'video-1' });
+        tracks.push({ mid: '1', trackName: 'video' });
       }
     }
 
@@ -457,17 +541,22 @@ export class WebRTCService {
   private async pullRemoteTracks(): Promise<void> {
     if (!this.pc || this.destroyed) return;
 
-    const trackNames = ['audio-0'];
+    const trackNames = ['audio'];
     if (this.isVideo) {
-      trackNames.push('video-1');
+      trackNames.push('video');
     }
 
-    // Keep retrying until success or destroyed.
-    // No hard limit — peer_tracks_ready event will restart if needed.
-    // Use exponential-ish backoff capped at 3s so we don't spam CF Calls.
+    // Bounded retry: the remote may not have published yet. We retry with a
+    // short backoff capped at 3s, but no longer loop forever — after
+    // MAX_PULL_ATTEMPTS (~90s) we stop and surface a soft error so the call
+    // screen can react instead of spinning silently and burning CF API calls.
+    // A late peer_tracks_ready socket event still restarts the pull via
+    // triggerPull() with a fresh counter, so this only bounds the *idle* case
+    // where the other side genuinely never connects.
+    const MAX_PULL_ATTEMPTS = 30;
     let attempt = 0;
 
-    while (!this.destroyed) {
+    while (!this.destroyed && attempt < MAX_PULL_ATTEMPTS) {
       try {
         const result = await API.pullTracks(this.sessionId, trackNames);
 
@@ -515,6 +604,12 @@ export class WebRTCService {
     }
 
     this.pullRunning = false;
+    // Exhausted the attempt budget without ever pulling the remote tracks (and
+    // not because we were torn down) — tell the UI the other side never
+    // connected media so it can show an error / offer to retry.
+    if (!this.destroyed && attempt >= MAX_PULL_ATTEMPTS) {
+      this.callbacks.onError?.(new Error('Could not connect to the other participant. Please try again.'));
+    }
   }
 
   private _scheduleIceRestart(immediate = false): void {
@@ -555,7 +650,9 @@ export class WebRTCService {
               .filter((t: any) => t.sender?.track)
               .map((t: any) => ({
                 mid: t.mid || String(transceivers.indexOf(t)),
-                trackName: `${t.sender.track.kind}-${t.mid || transceivers.indexOf(t)}`,
+                // MID-independent name (see pushLocalTracks) so the re-offer
+                // maps to the tracks the SFU already knows.
+                trackName: t.sender.track.kind,
               }))
           : [];
 
@@ -565,6 +662,10 @@ export class WebRTCService {
           const answerDesc = new RTC.RTCSessionDescription(result.answer);
           await this.pc.setRemoteDescription(answerDesc);
         }
+        // A failed/disconnected connection usually drops INBOUND (pulled) media
+        // too, not just our outbound push. Re-run the pull so the remote tracks
+        // are re-attached on the freshly restarted transport.
+        this.triggerPull();
       } catch (err) {
         console.warn('[WebRTC] ICE restart failed:', err);
       }
@@ -611,11 +712,90 @@ export class WebRTCService {
     }
   }
 
+  // ── In-call media-state relay ──────────────────────────────────────────────
+  // Best-effort: tell the other party our current mic/camera state so their UI
+  // updates instantly (camera-off avatar / muted badge). Fire-and-forget;
+  // never throws into the caller and never blocks the local toggle.
+  private _sendMediaState(): void {
+    if (this.destroyed) return;
+    API.sendMediaState(this.sessionId, {
+      audio: !this.localMuted,     // true = mic on
+      video: !this.localCameraOff, // true = camera on
+    }).catch(() => { /* best-effort */ });
+  }
+
+  // ── Call-quality monitor (getStats) ─────────────────────────────────────────
+  // Polls inbound RTP stats every 3s once connected and derives a coarse
+  // quality level from packet loss (per-interval delta), round-trip time and
+  // jitter. Emitted via onQualityChange so the UI can render real signal bars.
+  private _startQualityMonitor(): void {
+    if (this.statsTimer || this.destroyed || !this.pc?.getStats) return;
+    this.lastStatSample = null;
+    this.statsTimer = setInterval(() => { void this._sampleStats(); }, 3000);
+  }
+
+  private _stopQualityMonitor(): void {
+    if (this.statsTimer) {
+      clearInterval(this.statsTimer);
+      this.statsTimer = null;
+    }
+    this.lastStatSample = null;
+  }
+
+  private async _sampleStats(): Promise<void> {
+    if (this.destroyed || !this.pc?.getStats) return;
+    try {
+      const report = await this.pc.getStats();
+      let lost = 0, recv = 0, jitter = 0, rtt = 0;
+      report.forEach((s: any) => {
+        if (s.type === 'inbound-rtp' && !s.isRemote) {
+          lost += s.packetsLost ?? 0;
+          recv += s.packetsReceived ?? 0;
+          if (typeof s.jitter === 'number') jitter = Math.max(jitter, s.jitter);
+        }
+        if (s.type === 'candidate-pair' && (s.nominated || s.state === 'succeeded')) {
+          if (typeof s.currentRoundTripTime === 'number') rtt = s.currentRoundTripTime;
+        }
+      });
+
+      // Loss over the last interval only (delta) so a long, healthy call isn't
+      // dragged down by losses during the initial connection ramp-up.
+      let lossPct = 0;
+      if (this.lastStatSample) {
+        const dLost = Math.max(0, lost - this.lastStatSample.lost);
+        const dRecv = Math.max(0, recv - this.lastStatSample.recv);
+        const total = dLost + dRecv;
+        lossPct = total > 0 ? (dLost / total) * 100 : 0;
+      }
+      this.lastStatSample = { lost, recv };
+
+      const rttMs = rtt * 1000;
+      const jitterMs = jitter * 1000;
+
+      let quality: ConnectionQuality;
+      if (lossPct >= 8 || rttMs >= 500 || jitterMs >= 60) quality = 'poor';
+      else if (lossPct >= 3 || rttMs >= 250 || jitterMs >= 30) quality = 'good';
+      else quality = 'excellent';
+
+      this._emitQuality(quality, { rtt: rttMs, packetLoss: lossPct, jitter: jitterMs });
+    } catch {
+      // getStats can throw transiently during renegotiation — ignore this tick.
+    }
+  }
+
+  private _emitQuality(quality: ConnectionQuality, detail?: { rtt?: number; packetLoss?: number; jitter?: number }): void {
+    if (quality === this.currentQuality) return; // de-dupe stable states
+    this.currentQuality = quality;
+    this.callbacks.onQualityChange?.(quality, detail);
+  }
+
   toggleMute(muted: boolean): void {
     if (!this.localStream) return;
     this.localStream.getAudioTracks().forEach((track: any) => {
       track.enabled = !muted;
     });
+    this.localMuted = muted;
+    this._sendMediaState();
   }
 
   // FIX (#1 — speaker routing): actually switch the call audio between the
@@ -638,6 +818,9 @@ export class WebRTCService {
   // SFU renegotiation; disabling sends "muted" to the remote (camera-off avatar).
   async toggleCamera(enabled: boolean): Promise<void> {
     if (!this.localStream || this.destroyed || !this.isVideo) return;
+
+    this.localCameraOff = !enabled;
+    this._sendMediaState();
 
     if (!enabled) {
       this.localStream.getVideoTracks().forEach((t: any) => { try { t.enabled = false; } catch {} });
@@ -751,6 +934,7 @@ export class WebRTCService {
     this.destroyed = true;
     this.pullRunning = false;
     this._clearIceRestartTimer();
+    this._stopQualityMonitor();
 
     // FIX (#1): release the audio session / reset routing when the call ends.
     try { InCallManager?.stop?.(); } catch {}

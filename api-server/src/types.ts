@@ -15,6 +15,11 @@ export interface Env {
   // relay which is fine for development but rate-limited in production.
   TURN_KEY_ID?: string;
   TURN_KEY_TOKEN?: string;
+  // Deployment environment marker. Set to "production" in the production
+  // wrangler environment so runtime code can tighten behaviour (e.g. the
+  // /api/calls/ice-config endpoint drops the public dev TURN relay and warns
+  // loudly when Cloudflare TURN credentials are not configured).
+  ENVIRONMENT?: string;
   FIREBASE_SERVICE_ACCOUNT: string;
   GOOGLE_PLAY_SERVICE_ACCOUNT_JSON?: string;
   RESEND_API_KEY?: string;

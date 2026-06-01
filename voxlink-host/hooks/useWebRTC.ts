@@ -1,5 +1,7 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
 import { WebRTCService, isWebRTCAvailable } from '@/services/webrtc';
+import { socketService } from '@/services/SocketService';
+import { SocketEvents } from '@/constants/events';
 
 export interface UseWebRTCOptions {
   sessionId: string | undefined;
@@ -11,8 +13,10 @@ export interface UseWebRTCReturn {
   localStream: any;
   remoteStream: any;
   remoteHasVideo: boolean;
+  remoteMuted: boolean;
   localHasVideo: boolean;
   connectionState: string;
+  connectionQuality: string;
   isConnected: boolean;
   isAvailable: boolean;
   error: string | null;
@@ -29,14 +33,25 @@ export function useWebRTC(options: UseWebRTCOptions): UseWebRTCReturn {
   const { sessionId, isVideo, enabled } = options;
   const [localStream, setLocalStream] = useState<any>(null);
   const [remoteStream, setRemoteStream] = useState<any>(null);
-  const [remoteHasVideo, setRemoteHasVideo] = useState(false);
+  // Track-derived remote video presence (polling/event based — see effect below).
+  const [trackHasVideo, setTrackHasVideo] = useState(false);
+  // Explicit remote camera signal from PEER_MEDIA_STATE (null = unknown). When
+  // the remote tells us their camera is off we trust it immediately instead of
+  // waiting for the laggy track-mute polling to catch up.
+  const [remoteVideoSignal, setRemoteVideoSignal] = useState<boolean | null>(null);
+  const [remoteMuted, setRemoteMuted] = useState(false);
   const [localHasVideo, setLocalHasVideo] = useState(false);
   const [connectionState, setConnectionState] = useState('new');
+  const [connectionQuality, setConnectionQuality] = useState<string>('unknown');
   const [error, setError] = useState<string | null>(null);
   const serviceRef = useRef<WebRTCService | null>(null);
   const startedRef = useRef(false);
 
   const available = isWebRTCAvailable();
+
+  // Combine the explicit signal with track detection: an explicit "camera off"
+  // forces false right away; otherwise fall back to what the track tells us.
+  const remoteHasVideo = remoteVideoSignal === false ? false : trackHasVideo;
 
   const cleanup = useCallback(() => {
     if (serviceRef.current) {
@@ -46,9 +61,12 @@ export function useWebRTC(options: UseWebRTCOptions): UseWebRTCReturn {
     startedRef.current = false;
     setLocalStream(null);
     setRemoteStream(null);
-    setRemoteHasVideo(false);
+    setTrackHasVideo(false);
+    setRemoteVideoSignal(null);
+    setRemoteMuted(false);
     setLocalHasVideo(false);
     setConnectionState('closed');
+    setConnectionQuality('unknown');
   }, []);
 
   useEffect(() => {
@@ -66,6 +84,9 @@ export function useWebRTC(options: UseWebRTCOptions): UseWebRTCReturn {
       onError: (err) => {
         setError(err.message);
         console.error('WebRTC error:', err);
+      },
+      onQualityChange: (quality) => {
+        setConnectionQuality(quality);
       },
     });
 
@@ -86,6 +107,20 @@ export function useWebRTC(options: UseWebRTCOptions): UseWebRTCReturn {
       startedRef.current = false;
     };
   }, [enabled, sessionId, isVideo, available]);
+
+  // Instant remote mic/camera state via the PEER_MEDIA_STATE socket event the
+  // other party emits on every toggle. This makes the camera-off avatar and
+  // (optionally) a "muted" badge react immediately rather than waiting on the
+  // 1.5s track-mute poll, which is laggy and unreliable across platforms.
+  useEffect(() => {
+    if (!sessionId) return;
+    const off = socketService.on(SocketEvents.PEER_MEDIA_STATE, (data: any) => {
+      if (data?.sessionId && data.sessionId !== sessionId) return;
+      setRemoteMuted(data?.audio === false);
+      setRemoteVideoSignal(typeof data?.video === 'boolean' ? data.video : null);
+    });
+    return off;
+  }, [sessionId]);
 
   const toggleMute = useCallback((muted: boolean) => {
     serviceRef.current?.toggleMute(muted);
@@ -118,10 +153,11 @@ export function useWebRTC(options: UseWebRTCOptions): UseWebRTCReturn {
   // <video>/RTCView shows pure black instead of falling back to the avatar.
   // Listen to track add/remove and per-track mute/unmute/ended events, with a
   // polling fallback because not every platform fires every event reliably.
+  // (The PEER_MEDIA_STATE signal above is the fast path; this is the backstop.)
   useEffect(() => {
     const stream = remoteStream;
     if (!stream) {
-      setRemoteHasVideo(false);
+      setTrackHasVideo(false);
       return;
     }
 
@@ -134,7 +170,7 @@ export function useWebRTC(options: UseWebRTCOptions): UseWebRTCReturn {
         if (t.muted === true) return false;
         return true;
       });
-      setRemoteHasVideo(active);
+      setTrackHasVideo(active);
     };
 
     recompute();
@@ -194,8 +230,10 @@ export function useWebRTC(options: UseWebRTCOptions): UseWebRTCReturn {
     localStream,
     remoteStream,
     remoteHasVideo,
+    remoteMuted,
     localHasVideo,
     connectionState,
+    connectionQuality,
     isConnected: connectionState === 'connected',
     isAvailable: available,
     error,
