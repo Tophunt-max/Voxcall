@@ -20,15 +20,29 @@ export default function ChatScreen() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user } = useAuth();
-  const { conversations, sendMessage, retryMessage, markRead, loadMessages } = useChat();
+  const { conversations, sendMessage, retryMessage, markRead, loadMessages, sendTyping } = useChat();
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
   const [participantName, setParticipantName] = useState("Chat");
   const [participantAvatar, setParticipantAvatar] = useState(`https://api.dicebear.com/7.x/avataaars/png?seed=${id}`);
   const listRef = useRef<FlatList>(null);
+  // Typing debounce — track whether we've already told the other side
+  // we're typing (so we don't spam the relay) and a timer that auto-stops
+  // typing after the user goes idle.
+  const typingStateRef = useRef<{ active: boolean }>({ active: false });
+  const typingStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const convo = conversations.find((c) => c.id === id || c.roomId === id);
   const roomId = convo?.roomId ?? id ?? "";
+  const convoKey = convo?.id ?? id ?? "";
+  // Header status text + color: typing > online > offline. Default to
+  // "Offline" when we haven't loaded the convo yet so we never show a
+  // stale / fake "Online" pill.
+  const headerStatus: { text: string; color: string } = convo?.isTyping
+    ? { text: "typing\u2026", color: colors.primary }
+    : convo?.participantIsOnline
+      ? { text: "Online", color: colors.online }
+      : { text: "Offline", color: colors.mutedForeground };
 
   useEffect(() => {
     if (!id) return;
@@ -49,11 +63,54 @@ export default function ChatScreen() {
   const messages = convo?.messages ?? [];
   const reversedMessages = useMemo(() => [...messages].reverse(), [messages]);
 
+  // Best-effort "stop typing" cleanup — fire whenever we leave a typing-
+  // active state (sent message, navigated away, app crashed, etc.) so the
+  // other side's "typing…" pill clears immediately instead of waiting for
+  // its safety timeout.
+  const stopTyping = (notifyServer = true) => {
+    if (typingStopTimer.current) {
+      clearTimeout(typingStopTimer.current);
+      typingStopTimer.current = null;
+    }
+    if (typingStateRef.current.active) {
+      typingStateRef.current.active = false;
+      if (notifyServer && convoKey) sendTyping(convoKey, false);
+    }
+  };
+
+  // Notify on unmount so the other side never sees a stuck typing indicator
+  // when the user backs out mid-typing.
+  useEffect(() => {
+    return () => stopTyping();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [convoKey]);
+
+  const handleChangeText = (next: string) => {
+    setText(next);
+    if (!convoKey) return;
+    if (next.trim().length === 0) {
+      // User cleared the input — stop typing right away.
+      stopTyping();
+      return;
+    }
+    if (!typingStateRef.current.active) {
+      typingStateRef.current.active = true;
+      sendTyping(convoKey, true);
+    }
+    // Reset idle timer: if no further keystroke for ~2.5s, signal stop.
+    if (typingStopTimer.current) clearTimeout(typingStopTimer.current);
+    typingStopTimer.current = setTimeout(() => stopTyping(), 2500);
+  };
+
   const handleSend = async () => {
     if (!text.trim() || !id) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const msg = text.trim();
     setText("");
+    // Sending is the natural "stop typing" trigger — clear the indicator
+    // immediately so the other side doesn't see typing… right after the
+    // message bubble lands.
+    stopTyping();
     await sendMessage(convo?.id ?? id, msg);
     setTimeout(() => listRef.current?.scrollToOffset({ offset: 0, animated: true }), 100);
   };
@@ -100,7 +157,15 @@ export default function ChatScreen() {
         <Image source={{ uri: participantAvatar }} style={styles.headerAvatar} />
         <View style={styles.headerInfo}>
           <Text style={[styles.headerName, { color: colors.foreground }]}>{participantName}</Text>
-          <Text style={[styles.headerStatus, { color: colors.online }]}>Online</Text>
+          <Text
+            style={[
+              styles.headerStatus,
+              { color: headerStatus.color, fontStyle: convo?.isTyping ? "italic" : "normal" },
+            ]}
+            accessibilityLiveRegion="polite"
+          >
+            {headerStatus.text}
+          </Text>
         </View>
         <Image source={require("@/assets/icons/ic_notify.png")} style={{ width: 20, height: 20, tintColor: colors.mutedForeground }} resizeMode="contain" />
       </View>
@@ -135,7 +200,7 @@ export default function ChatScreen() {
           <View style={[styles.inputWrap, { backgroundColor: colors.muted }]}>
             <TextInput
               value={text}
-              onChangeText={setText}
+              onChangeText={handleChangeText}
               placeholder="Type a message..."
               placeholderTextColor={colors.mutedForeground}
               style={[styles.input, { color: colors.foreground }]}

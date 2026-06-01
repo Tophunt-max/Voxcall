@@ -258,6 +258,10 @@ export const API = {
     apiRequest<any[]>('GET', `/api/chat/rooms/${room_id}/messages${before ? `?before=${before}` : ''}`),
   sendMessage: (room_id: string, content: string, media_url?: string, media_type?: string) =>
     apiRequest<{ id?: string; sender_id?: string; content?: string; created_at?: number }>('POST', `/api/chat/rooms/${room_id}/messages`, { content, media_url, media_type }),
+  // Typing indicator — best-effort, server relays a chat_typing event to the
+  // other room participant via NotificationHub. Caller should debounce.
+  sendChatTyping: (room_id: string, is_typing: boolean) =>
+    apiRequest<{ success: boolean }>('POST', `/api/chat/rooms/${room_id}/typing`, { is_typing }),
   getChatStatus: (host_id: string) =>
     apiRequest<{ unlocked: boolean; reason: string }>('GET', `/api/hosts/${host_id}/chat-status`),
 

@@ -240,13 +240,23 @@ export default function HostDetailScreen() {
     }
     try {
       const room = await API.createChatRoom(host.id);
-      getOrCreateConversation(host.id, hostName, hostAvatar, room.id);
+      // Pass the freshly-fetched online state + host_user_id so the chat
+      // header has correct presence on first render — without this it would
+      // briefly show "Offline" until the chat list refresh / next presence
+      // event arrives.
+      getOrCreateConversation(host.id, hostName, hostAvatar, room.id, {
+        participantUserId: host.user_id,
+        isOnline: !!host.is_online,
+      });
       router.push(`/user/chat/${room.id}`);
     } catch (e: any) {
       if (e.message?.includes("CHAT_LOCKED") || e.message?.includes("locked")) {
         Alert.alert("🔒 Chat Locked", "Make a call first, then chat will unlock automatically!");
       } else {
-        getOrCreateConversation(host.id, hostName, hostAvatar);
+        getOrCreateConversation(host.id, hostName, hostAvatar, undefined, {
+          participantUserId: host.user_id,
+          isOnline: !!host.is_online,
+        });
         router.push(`/user/chat/${host.id}`);
       }
     }

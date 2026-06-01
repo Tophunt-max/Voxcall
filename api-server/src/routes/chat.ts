@@ -7,19 +7,33 @@ const chat = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
 chat.use('*', authMiddleware);
 
 // GET /api/chat/rooms
+//
+// Returns the user's chat rooms with the OTHER participant's display name,
+// avatar, online status and user_id. The presence flag (`other_is_online`)
+// is the source of truth for the chat header status pill — previously the
+// client hardcoded "Online" because this endpoint did not expose it, which
+// caused the fake "Online" bug for offline hosts.
 chat.get('/rooms', async (c) => {
   const { sub } = c.get('user');
   const result = await c.env.DB.prepare(
-    `SELECT cr.*, 
+    `SELECT cr.*,
       CASE WHEN cr.user_id = ? THEN hu.name ELSE cu.name END as other_name,
-      CASE WHEN cr.user_id = ? THEN hu.avatar_url ELSE cu.avatar_url END as other_avatar
+      CASE WHEN cr.user_id = ? THEN hu.avatar_url ELSE cu.avatar_url END as other_avatar,
+      -- The "other" party's user_id (users.id). Used by the chat header to
+      -- match presence:update events from the WebSocket. Only hosts have an
+      -- is_online column; for host-side rows (caller is the host) the other
+      -- party is a regular user and we surface 0 since users don't track it.
+      CASE WHEN cr.user_id = ? THEN h.user_id ELSE cr.user_id END as other_user_id,
+      CASE WHEN cr.user_id = ? THEN COALESCE(h.is_online, 0) ELSE 0 END as other_is_online,
+      h.user_id as host_user_id,
+      COALESCE(h.is_online, 0) as host_is_online
      FROM chat_rooms cr
      JOIN users cu ON cu.id = cr.user_id
      JOIN hosts h ON h.id = cr.host_id
      JOIN users hu ON hu.id = h.user_id
      WHERE cr.user_id = ? OR h.user_id = ?
      ORDER BY cr.last_message_at DESC LIMIT 50`
-  ).bind(sub, sub, sub, sub).all();
+  ).bind(sub, sub, sub, sub, sub, sub).all();
   return c.json(result.results);
 });
 
@@ -131,6 +145,56 @@ chat.post('/rooms/:id/messages', async (c) => {
   }
 
   return c.json({ id: msgId, room_id: id, sender_id: sub, content, created_at: now });
+});
+
+// POST /api/chat/rooms/:id/typing — typing indicator relay
+//
+// Broadcasts an ephemeral typing event to the OTHER participant via their
+// NotificationHub so the chat header can show "typing…". The signal is
+// fire-and-forget — never persisted, never queued, never pushed to FCM.
+// The client is expected to debounce: emit `is_typing=true` on first
+// keystroke and `is_typing=false` on idle (stop typing) or message send.
+chat.post('/rooms/:id/typing', async (c) => {
+  const { sub, name: senderName } = c.get('user');
+  const { id } = c.req.param();
+  const body = await c.req.json().catch(() => ({})) as { is_typing?: boolean };
+  const isTyping = !!body.is_typing;
+  const db = c.env.DB;
+
+  // Same access check as send-message — never relay typing for a room the
+  // caller doesn't belong to.
+  const room = await db
+    .prepare(
+      `SELECT cr.user_id as user_id, h.user_id as host_user_id
+       FROM chat_rooms cr JOIN hosts h ON h.id = cr.host_id
+       WHERE cr.id = ? AND (cr.user_id = ? OR h.user_id = ?)`
+    )
+    .bind(id, sub, sub)
+    .first<{ user_id: string; host_user_id: string }>();
+  if (!room) return c.json({ error: 'Room not found or access denied' }, 403);
+
+  const recipientId = room.user_id === sub ? room.host_user_id : room.user_id;
+  // No self-notify — typing events go to the OTHER party only.
+  if (recipientId && recipientId !== sub) {
+    try {
+      const stub = c.env.NOTIFICATION_HUB.get(c.env.NOTIFICATION_HUB.idFromName(recipientId));
+      await stub.fetch('https://dummy/notify', {
+        method: 'POST',
+        body: JSON.stringify({
+          type: 'chat_typing',
+          room_id: id,
+          user_id: sub,
+          sender_name: senderName ?? 'User',
+          is_typing: isTyping,
+        }),
+      });
+    } catch (e) {
+      // Typing is best-effort; don't fail the call if the hub is unreachable.
+      console.warn('[chat/typing] relay failed:', e);
+    }
+  }
+
+  return c.json({ success: true });
 });
 
 // WebSocket for chat — proxies to ChatRoom Durable Object

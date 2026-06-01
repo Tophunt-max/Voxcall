@@ -230,6 +230,21 @@ class SocketService {
           timestamp: Date.now(),
         });
         break;
+      case "chat_typing":
+        // Ephemeral typing relay from chat.post('/rooms/:id/typing'). We
+        // re-route through MESSAGE_TYPING / MESSAGE_TYPING_STOP so consumers
+        // can subscribe by intent rather than payload-shape.
+        this.emit(
+          msg.is_typing ? SocketEvents.MESSAGE_TYPING : SocketEvents.MESSAGE_TYPING_STOP,
+          {
+            roomId: msg.room_id,
+            userId: msg.user_id,
+            senderName: msg.sender_name ?? "",
+            isTyping: !!msg.is_typing,
+            timestamp: Date.now(),
+          }
+        );
+        break;
       default:
         break;
     }
