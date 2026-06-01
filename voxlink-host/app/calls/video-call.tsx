@@ -29,9 +29,22 @@ const CONTROLS_HIDE_DELAY = 4000;
 // ─── ConnectionBars ──────────────────────────────────────────────────────────
 // Mirror of the user app's ConnectionBars — see voxlink/app/user/call/video-call.tsx
 // for the full rationale. Three vertical bars indicating WebRTC connection state.
-function ConnectionBars({ state }: { state: string }) {
-  const level = state === "connected" ? 3 : state === "checking" || state === "new" ? 2 : 1;
-  const color = level === 3 ? "#22C55E" : level === 2 ? "#FBBF24" : "#EF4444";
+function ConnectionBars({ state, quality }: { state: string; quality?: string }) {
+  // Prefer the getStats-derived call quality (excellent/good/poor/lost) when
+  // available — it reflects real packet loss / RTT / jitter. Fall back to the
+  // raw connection state until the first quality sample arrives (or if the
+  // platform doesn't support getStats).
+  let level: number;
+  let color: string;
+  switch (quality) {
+    case "excellent": level = 3; color = "#22C55E"; break; // 3 green
+    case "good":      level = 2; color = "#22C55E"; break; // 2 green
+    case "poor":      level = 1; color = "#FBBF24"; break; // 1 amber
+    case "lost":      level = 1; color = "#EF4444"; break; // 1 red
+    default:
+      level = state === "connected" ? 3 : state === "checking" || state === "new" ? 2 : 1;
+      color = level === 3 ? "#22C55E" : level === 2 ? "#FBBF24" : "#EF4444";
+  }
   return (
     <View style={uiS.bars}>
       {[1, 2, 3].map((i) => (
@@ -826,7 +839,7 @@ export default function VideoCallScreen() {
                   {remainingLabel}
                 </Text>
               )}
-              <ConnectionBars state={webrtc.connectionState} />
+              <ConnectionBars state={webrtc.connectionState} quality={webrtc.connectionQuality} />
             </BlurView>
           </View>
         </View>

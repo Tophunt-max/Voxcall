@@ -413,6 +413,9 @@ export default function AudioCallScreen() {
         </Animated.View>
         <Text style={styles.callerName}>{activeCall?.participant.name ?? "Unknown"}</Text>
         <Text style={styles.statusLabel}>{statusLabel}</Text>
+        {webrtc.remoteMuted && status === "active" && (
+          <Text style={styles.mutedHint}>🔇 Muted</Text>
+        )}
 
         <View style={styles.badgeRow}>
           {activeCall?.coinsPerMinute ? (
@@ -526,6 +529,7 @@ const styles = StyleSheet.create({
   avatar: { width: "100%", height: "100%" },
   callerName: { fontSize: 28, fontFamily: "Poppins_700Bold", color: "#fff", marginTop: 8 },
   statusLabel: { fontSize: 16, fontFamily: "Poppins_400Regular", color: "rgba(255,255,255,0.75)" },
+  mutedHint: { fontSize: 13, fontFamily: "Poppins_500Medium", color: "#FFB4B4", marginTop: 2 },
 
   badgeRow: { flexDirection: "row", gap: 8, flexWrap: "wrap", justifyContent: "center" },
   costBadge: {
