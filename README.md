@@ -341,7 +341,7 @@ For native builds, `google-services.json` (Android) and `GoogleService-Info.plis
 | `CF_CALLS_APP_SECRET` | ✅ | Cloudflare Calls App Secret |
 | `FIREBASE_SERVICE_ACCOUNT` | ✅ | Firebase Admin SDK service account JSON (one line) |
 | `RESEND_API_KEY` | ⚠️ | For OTP / password-reset emails |
-| `MIGRATION_SECRET` | ⚠️ | Required only if using the admin `/run-migrations` endpoint |
+| `MIGRATION_SECRET` | — | Deprecated. Migrations now auto-apply on every cold start via `lib/autoMigrate.ts`; the admin `/run-migrations` button delegates to that runner under normal admin auth. Setting this var has no effect. |
 | `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` | ⚠️ | Base64-encoded Google Play service account for in-app purchase verify |
 
 For production, set via the Cloudflare dashboard or `wrangler secret put NAME`.

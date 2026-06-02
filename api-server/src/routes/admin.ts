@@ -1543,400 +1543,51 @@ admin.put('/app-config', async (c) => {
   return c.json({ success: true });
 });
 
-// POST /api/admin/run-migrations — apply missing schema to production DB
-// SECURITY FIX: Require a separate migration secret to prevent accidental or malicious schema changes.
-// Set MIGRATION_SECRET in Cloudflare Worker secrets. Without it, this endpoint is disabled.
+// POST /api/admin/run-migrations — admin "Run Migrations" button entrypoint.
+//
+// Thin shim around the runtime auto-migrator (lib/autoMigrate.ts) preserved
+// for backwards compatibility with the admin panel's SettingsPage > Database
+// Maintenance card, which calls this endpoint via api.runMigrations().
+//
+// History:
+//   - v1: hardcoded ~30 inline DDL statements duplicating /migrations/*.sql,
+//         gated behind a separate MIGRATION_SECRET worker secret. The secret
+//         was rarely set in production, so the button returned 403 and admins
+//         saw "Migration secret required" — exactly the bug this commit fixes.
+//   - v2 (this version): delegates to ensureAllMigrations(), which reads
+//         every migration from the bundled /migrations/*.sql, tracks state
+//         in d1_migrations, and applies only what's pending. Admin auth +
+//         adminMiddleware already gate this route — no extra secret needed.
+//
+// Response shape preserved for the UI:
+//   { success: boolean, total: number, results: string[] }
+// where each entry is one of:
+//   "OK: <name>"   — newly applied this run
+//   "SKIP (already applied): <name>"  — d1_migrations row already existed
+//   "ERR: <name> — <message>"  — apply attempt failed
 admin.post('/run-migrations', async (c) => {
-  const migrationSecret = (c.env as any).MIGRATION_SECRET;
-  const providedSecret = c.req.header('X-Migration-Secret') || '';
-  if (!migrationSecret || !providedSecret || migrationSecret !== providedSecret) {
-    return c.json({ error: 'Migration secret required. Set MIGRATION_SECRET in Worker secrets and pass via X-Migration-Secret header.' }, 403);
-  }
-  const db = c.env.DB;
-  const results: string[] = [];
-
-  const statements = [
-    // Host Applications (KYC)
-    `CREATE TABLE IF NOT EXISTS host_applications (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
-      display_name TEXT,
-      date_of_birth TEXT,
-      gender TEXT,
-      phone TEXT,
-      bio TEXT,
-      specialties TEXT DEFAULT '[]',
-      languages TEXT DEFAULT '["English"]',
-      experience TEXT,
-      -- FIX #23: include application_type so fresh databases match the columns
-      -- routes/hostapp.ts INSERTs into. The ALTER TABLE further down then
-      -- becomes a no-op on new DBs and only fixes existing legacy schemas.
-      application_type TEXT DEFAULT 'both',
-      audio_rate INTEGER DEFAULT 5,
-      video_rate INTEGER DEFAULT 8,
-      aadhar_front_url TEXT,
-      aadhar_back_url TEXT,
-      verification_video_url TEXT,
-      status TEXT DEFAULT 'pending' CHECK(status IN ('pending','under_review','approved','rejected')),
-      rejection_reason TEXT,
-      reviewed_by TEXT,
-      reviewed_at INTEGER,
-      submitted_at INTEGER DEFAULT (unixepoch()),
-      updated_at INTEGER DEFAULT (unixepoch())
-    )`,
-    `CREATE INDEX IF NOT EXISTS idx_host_applications_user ON host_applications(user_id)`,
-    `CREATE INDEX IF NOT EXISTS idx_host_applications_status ON host_applications(status)`,
-    // App Errors
-    `CREATE TABLE IF NOT EXISTS app_errors (
-      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
-      user_id TEXT,
-      error_type TEXT,
-      message TEXT,
-      stack TEXT,
-      context TEXT,
-      platform TEXT,
-      app_version TEXT,
-      created_at INTEGER DEFAULT (unixepoch())
-    )`,
-    // Promo Codes
-    `CREATE TABLE IF NOT EXISTS promo_codes (
-      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
-      code TEXT UNIQUE NOT NULL,
-      type TEXT DEFAULT 'percent' CHECK(type IN ('percent','bonus')),
-      discount_pct INTEGER DEFAULT 0,
-      bonus_coins INTEGER DEFAULT 0,
-      max_uses INTEGER DEFAULT 100,
-      used_count INTEGER DEFAULT 0,
-      expires_at TEXT,
-      active INTEGER DEFAULT 1,
-      created_at INTEGER DEFAULT (unixepoch()),
-      updated_at INTEGER DEFAULT (unixepoch())
-    )`,
-    // Support Tickets
-    `CREATE TABLE IF NOT EXISTS support_tickets (
-      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
-      user_id TEXT,
-      user_name TEXT,
-      user_email TEXT,
-      subject TEXT NOT NULL,
-      category TEXT DEFAULT 'general',
-      priority TEXT DEFAULT 'medium',
-      status TEXT DEFAULT 'open',
-      messages TEXT DEFAULT '[]',
-      created_at INTEGER DEFAULT (unixepoch()),
-      updated_at INTEGER DEFAULT (unixepoch())
-    )`,
-    // Content Reports
-    `CREATE TABLE IF NOT EXISTS content_reports (
-      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
-      reporter_id TEXT,
-      reporter_name TEXT,
-      reported_user_id TEXT,
-      reported_user TEXT,
-      reported_type TEXT DEFAULT 'user',
-      reason TEXT NOT NULL,
-      category TEXT DEFAULT 'harassment',
-      evidence TEXT,
-      status TEXT DEFAULT 'pending',
-      action_taken TEXT,
-      created_at INTEGER DEFAULT (unixepoch()),
-      updated_at INTEGER DEFAULT (unixepoch())
-    )`,
-    // User Bans
-    `CREATE TABLE IF NOT EXISTS user_bans (
-      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
-      user_id TEXT,
-      user_name TEXT,
-      user_email TEXT,
-      type TEXT DEFAULT 'user',
-      reason TEXT NOT NULL,
-      ban_type TEXT DEFAULT 'permanent',
-      device_id TEXT,
-      banned_by TEXT DEFAULT 'Admin',
-      banned_at INTEGER DEFAULT (unixepoch()),
-      expires_at TEXT
-    )`,
-    // Audit Logs
-    `CREATE TABLE IF NOT EXISTS audit_logs (
-      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
-      admin_id TEXT,
-      admin_name TEXT,
-      admin_email TEXT,
-      action TEXT NOT NULL,
-      target_type TEXT,
-      target TEXT,
-      detail TEXT,
-      ip TEXT,
-      created_at INTEGER DEFAULT (unixepoch())
-    )`,
-    // Banners
-    `CREATE TABLE IF NOT EXISTS banners (
-      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
-      title TEXT NOT NULL,
-      subtitle TEXT DEFAULT '',
-      image_url TEXT DEFAULT '',
-      bg_color TEXT DEFAULT '#7C3AED',
-      cta_text TEXT DEFAULT 'Learn More',
-      cta_link TEXT DEFAULT '',
-      position TEXT DEFAULT 'home_top',
-      active INTEGER DEFAULT 1,
-      created_at INTEGER DEFAULT (unixepoch()),
-      updated_at INTEGER DEFAULT (unixepoch())
-    )`,
-    // Referral Codes
-    `CREATE TABLE IF NOT EXISTS referral_codes (
-      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
-      user_id TEXT UNIQUE NOT NULL,
-      code TEXT UNIQUE NOT NULL,
-      created_at INTEGER DEFAULT (unixepoch())
-    )`,
-    // Referral Uses
-    `CREATE TABLE IF NOT EXISTS referral_uses (
-      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
-      referrer_id TEXT NOT NULL,
-      referred_id TEXT NOT NULL,
-      coins_given INTEGER DEFAULT 100,
-      status TEXT DEFAULT 'pending',
-      created_at INTEGER DEFAULT (unixepoch()),
-      UNIQUE(referred_id)
-    )`,
-    // Talk Topics (if not exists)
-    `CREATE TABLE IF NOT EXISTS talk_topics (
-      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
-      name TEXT NOT NULL,
-      description TEXT,
-      icon TEXT DEFAULT '💬',
-      is_active INTEGER DEFAULT 1,
-      sort_order INTEGER DEFAULT 0,
-      created_at INTEGER DEFAULT (unixepoch())
-    )`,
-    // FAQs (if not exists)
-    `CREATE TABLE IF NOT EXISTS faqs (
-      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
-      question TEXT NOT NULL,
-      answer TEXT NOT NULL,
-      category TEXT DEFAULT 'general',
-      is_active INTEGER DEFAULT 1,
-      order_index INTEGER DEFAULT 0,
-      sort_order INTEGER DEFAULT 0,
-      created_at INTEGER DEFAULT (unixepoch())
-    )`,
-    // App Settings (if not exists)
-    `CREATE TABLE IF NOT EXISTS app_settings (
-      key TEXT PRIMARY KEY,
-      value TEXT NOT NULL,
-      updated_at INTEGER DEFAULT (unixepoch())
-    )`,
-    // Coin Plans (if not exists)
-    `CREATE TABLE IF NOT EXISTS coin_plans (
-      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
-      name TEXT NOT NULL,
-      coins INTEGER NOT NULL,
-      bonus_coins INTEGER DEFAULT 0,
-      price REAL NOT NULL,
-      currency TEXT DEFAULT 'USD',
-      is_popular INTEGER DEFAULT 0,
-      is_active INTEGER DEFAULT 1,
-      created_at INTEGER DEFAULT (unixepoch())
-    )`,
-    // Payment Gateways
-    `CREATE TABLE IF NOT EXISTS payment_gateways (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      type TEXT NOT NULL DEFAULT 'manual',
-      icon_emoji TEXT DEFAULT '💳',
-      platforms TEXT DEFAULT '["all"]',
-      instruction TEXT DEFAULT '',
-      redirect_url TEXT DEFAULT '',
-      is_active INTEGER DEFAULT 1,
-      position INTEGER DEFAULT 0,
-      created_at INTEGER DEFAULT (unixepoch()),
-      updated_at INTEGER DEFAULT (unixepoch())
-    )`,
-    // Safe ALTER TABLE additions
-    `ALTER TABLE users ADD COLUMN referral_code TEXT`,
-    `ALTER TABLE users ADD COLUMN google_id TEXT`,
-    `ALTER TABLE users ADD COLUMN device_id TEXT`,
-    `ALTER TABLE users ADD COLUMN status TEXT DEFAULT 'active'`,
-    `ALTER TABLE content_reports ADD COLUMN reported_type TEXT DEFAULT 'user'`,
-    `ALTER TABLE call_sessions ADD COLUMN cf_host_session_id TEXT`,
-    // Track names for WebRTC pull (lazy CF session model)
-    `ALTER TABLE call_sessions ADD COLUMN cf_caller_track_names TEXT`,
-    `ALTER TABLE call_sessions ADD COLUMN cf_host_track_names TEXT`,
-    // Server start time for call timer sync
-    `ALTER TABLE call_sessions ADD COLUMN server_start_time INTEGER`,
-    // Application type for host applications (audio/video/both)
-    `ALTER TABLE host_applications ADD COLUMN application_type TEXT DEFAULT 'both'`,
-    // Index for device_id
-    `CREATE INDEX IF NOT EXISTS idx_users_device_id ON users(device_id) WHERE device_id IS NOT NULL`,
-    // Seed promo codes
-    `INSERT OR IGNORE INTO promo_codes (id, code, type, discount_pct, bonus_coins, max_uses, used_count, expires_at, active) VALUES
-      ('pc1', 'WELCOME50', 'percent', 50, 0, 100, 34, '2026-06-30', 1),
-      ('pc2', 'VOXLINK20', 'percent', 20, 0, 500, 210, '2026-05-15', 1),
-      ('pc3', 'COINS100', 'bonus', 0, 100, 200, 55, '2026-07-31', 1)`,
-    // Seed banners
-    `INSERT OR IGNORE INTO banners (id, title, subtitle, bg_color, cta_text, cta_link, position, active) VALUES
-      ('bn1', 'Weekend Offer — 30% Off Coins!', 'Limited time only. Use code WEEKEND30', '#7C3AED', 'Grab Deal', '/coins', 'home_top', 1),
-      ('bn2', 'New Hosts Available!', 'Explore 20+ new hosts added this week', '#0EA5E9', 'Browse Hosts', '/hosts', 'home_middle', 1)`,
-    // Seed talk topics
-    `INSERT OR IGNORE INTO talk_topics (id, name, icon, is_active, sort_order) VALUES
-      ('t1','Life Coaching','🌱',1,1),
-      ('t2','Relationships','❤️',1,2),
-      ('t3','Career','💼',1,3),
-      ('t4','Wellness','🧘',1,4),
-      ('t5','Mental Health','🧠',1,5),
-      ('t6','Music','🎵',1,6),
-      ('t7','Travel','✈️',1,7),
-      ('t8','Casual Talk','☕',1,8)`,
-    // Manual QR Codes table
-    `CREATE TABLE IF NOT EXISTS manual_qr_codes (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL DEFAULT '',
-      upi_id TEXT NOT NULL DEFAULT '',
-      qr_image_url TEXT NOT NULL DEFAULT '',
-      instructions TEXT DEFAULT '',
-      is_active INTEGER DEFAULT 1,
-      position INTEGER DEFAULT 0,
-      rotate_interval_min INTEGER DEFAULT 30,
-      created_at INTEGER DEFAULT (unixepoch()),
-      updated_at INTEGER DEFAULT (unixepoch())
-    )`,
-    `ALTER TABLE coin_purchases ADD COLUMN screenshot_url TEXT`,
-    `ALTER TABLE coin_purchases ADD COLUMN gateway_order_id TEXT`,
-    `CREATE INDEX IF NOT EXISTS idx_coin_purchases_gateway_order ON coin_purchases(gateway_order_id)`,
-    `CREATE INDEX IF NOT EXISTS idx_coin_purchases_utr ON coin_purchases(utr_id)`,
-    `ALTER TABLE payment_gateways ADD COLUMN webhook_secret TEXT`,
-    // Webhook settings in app_settings are stored as key/value rows (razorpay_webhook_secret, stripe_webhook_secret, etc.)
-    // Coin Purchases (deposit tracking)
-    `CREATE TABLE IF NOT EXISTS coin_purchases (
-      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
-      user_id TEXT NOT NULL,
-      plan_id TEXT,
-      plan_name TEXT,
-      coins INTEGER NOT NULL DEFAULT 0,
-      bonus_coins INTEGER DEFAULT 0,
-      amount REAL NOT NULL DEFAULT 0,
-      currency TEXT DEFAULT 'USD',
-      payment_method TEXT DEFAULT 'unknown',
-      gateway_id TEXT,
-      gateway_name TEXT,
-      payment_ref TEXT,
-      utr_id TEXT,
-      promo_code TEXT,
-      status TEXT DEFAULT 'success' CHECK(status IN ('pending','success','failed','refunded')),
-      admin_note TEXT,
-      created_at INTEGER DEFAULT (unixepoch()),
-      updated_at INTEGER DEFAULT (unixepoch())
-    )`,
-    `CREATE INDEX IF NOT EXISTS idx_coin_purchases_user ON coin_purchases(user_id)`,
-    `CREATE INDEX IF NOT EXISTS idx_coin_purchases_status ON coin_purchases(status)`,
-    // Seed coin plans
-    `INSERT OR IGNORE INTO coin_plans (id, name, coins, bonus_coins, price, currency, is_popular, is_active) VALUES
-      ('cp1', 'Starter', 50, 0, 0.99, 'USD', 0, 1),
-      ('cp2', 'Basic', 100, 10, 1.99, 'USD', 0, 1),
-      ('cp3', 'Popular', 300, 50, 4.99, 'USD', 1, 1),
-      ('cp4', 'Pro', 500, 100, 7.99, 'USD', 0, 1),
-      ('cp5', 'Premium', 1000, 250, 14.99, 'USD', 0, 1),
-      ('cp6', 'Elite', 2000, 600, 24.99, 'USD', 0, 1)`,
-    // Seed FAQs
-    `INSERT OR IGNORE INTO faqs (id, question, answer, category, is_active, order_index) VALUES
-      ('f1','How do coins work?','Coins are used to connect with hosts. Each host charges a per-minute rate.','billing',1,1),
-      ('f2','How do I buy coins?','Tap the coin balance in the app to open the Buy Coins page.','billing',1,2),
-      ('f3','Are calls private?','Yes, all calls are private and end-to-end encrypted.','privacy',1,3)`
+  const report = await ensureAllMigrations(c.env.DB);
+  const results: string[] = [
+    ...report.applied.map((n) => `OK: ${n}`),
+    ...Array.from({ length: report.alreadyApplied }, (_, i) => `SKIP (already applied): #${i + 1}`),
+    ...report.failed.map((n) => `ERR: ${n} — see worker logs for detail`),
   ];
-
-  try {
-    // 1. Fetch current schema to pre-filter and avoid batch-breaking errors
-    const tables = await db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all();
-    const tableNames = (tables.results || []).map((r: any) => r.name);
-    const tableColumns: Record<string, Set<string>> = {};
-
-    if (tableNames.length > 0) {
-      const columnStmts = tableNames.map((name: string) => db.prepare(`PRAGMA table_info(${name})`));
-      const columnResults = await db.batch(columnStmts);
-      tableNames.forEach((name, i) => {
-        tableColumns[name] = new Set((columnResults[i].results || []).map((r: any) => r.name));
-      });
-    }
-
-    const batchStmts: D1PreparedStatement[] = [];
-    const statementMap: { originalIdx: number; batchIdx?: number; skipped: boolean; reason?: string }[] = [];
-
-    // 2. Filter statements
-    for (let i = 0; i < statements.length; i++) {
-      const sql = statements[i];
-      const alterMatch = sql.match(/ALTER\s+TABLE\s+(\w+)\s+ADD\s+COLUMN\s+(\w+)/i);
-      const createMatch = sql.match(/CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+(\w+)/i);
-
-      let skip = false;
-      let reason = "";
-
-      if (alterMatch) {
-        const [, table, column] = alterMatch;
-        if (tableColumns[table]?.has(column)) {
-          skip = true;
-          reason = "already exists";
-        }
-      } else if (createMatch) {
-        const [, table] = createMatch;
-        if (tableNames.includes(table)) {
-          // CREATE TABLE IF NOT EXISTS is safe to execute, but we can skip it if we know it exists
-          // to keep the batch smaller. However, for consistency with original "OK" status,
-          // let's only skip it if we want to be aggressive.
-          // Original code would run it and D1 would say "OK" (no-op).
-          // For now, let's NOT skip CREATE TABLE to match original behavior of returning "OK".
-        }
-      }
-
-      if (skip) {
-        statementMap.push({ originalIdx: i, skipped: true, reason });
-      } else {
-        statementMap.push({ originalIdx: i, skipped: false, batchIdx: batchStmts.length });
-        batchStmts.push(db.prepare(sql));
-      }
-    }
-
-    // 3. Execute batch
-    const batchResults = batchStmts.length > 0 ? await db.batch(batchStmts) : [];
-
-    // 4. Reconstruct results
-    for (let i = 0; i < statements.length; i++) {
-      const sql = statements[i];
-      const map = statementMap[i];
-      if (map.skipped) {
-        results.push(`SKIP (${map.reason}): ${sql.trim().slice(0, 60)}...`);
-      } else {
-        results.push(`OK: ${sql.trim().slice(0, 60)}...`);
-      }
-    }
-  } catch (e: any) {
-    // FALLBACK: If batch/schema-check fails, use original sequential execution
-    console.error("[Migration] Batch failed, falling back to sequential:", e.message);
-    results.length = 0; // clear results for a clean start
-    for (const sql of statements) {
-      try {
-        await db.prepare(sql).run();
-        results.push(`OK: ${sql.trim().slice(0, 60)}...`);
-      } catch (err: any) {
-        if (err?.message?.includes('already exists') || err?.message?.includes('duplicate column')) {
-          results.push(`SKIP (already exists): ${sql.trim().slice(0, 60)}...`);
-        } else {
-          results.push(`ERR: ${err?.message} | SQL: ${sql.trim().slice(0, 60)}...`);
-        }
-      }
-    }
-  }
 
   const u = c.get('user');
   try {
-    await db.prepare(`INSERT INTO audit_logs (id, admin_id, admin_name, action, detail, created_at)
-      VALUES (lower(hex(randomblob(8))), ?, ?, 'run_migrations', ?, unixepoch())`)
-      .bind(u.sub, u.email || 'Admin', `Applied ${results.length} migration steps`).run();
+    await db(c).prepare(
+      `INSERT INTO audit_logs (id, admin_id, admin_name, action, detail, created_at)
+       VALUES (lower(hex(randomblob(8))), ?, ?, 'run_migrations', ?, unixepoch())`,
+    ).bind(
+      u.sub,
+      u.email || 'Admin',
+      `Auto-migrate: ${report.applied.length} applied, ${report.alreadyApplied} already applied, ${report.failed.length} failed`,
+    ).run();
   } catch (err) {
     console.error('[run-migrations] Failed to write audit log:', err);
   }
 
-  return c.json({ success: true, results, total: results.length });
+  return c.json({ success: report.failed.length === 0, results, total: results.length });
 });
 
 // ─── India Coin-Economy Seed ────────────────────────────────────────────────
