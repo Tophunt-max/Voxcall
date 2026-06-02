@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth';
 import { createCFCalls, CFCallsTrack } from '../lib/cf-calls';
 import { sendFCMPush } from '../lib/fcm';
-import { getLevelConfig, getEarningShare, DEFAULT_AUDIO_RATE, DEFAULT_VIDEO_RATE } from '../lib/levels';
+import { getLevelConfig, getEarningShare, getDefaultCallRates, DEFAULT_AUDIO_RATE, DEFAULT_VIDEO_RATE } from '../lib/levels';
 import { applyLevelUp } from '../lib/levelService';
 import { billedMinutes, coinsForCall, chargeCallerWithFreePool } from '../lib/billing';
 import { registerHit } from '../lib/rateLimit';
@@ -178,9 +178,12 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
     return c.json({ error: 'Host is currently busy. Please try again later.' }, 409);
   }
 
+  // Admin-controlled default call rates (App Config → Calling System) — used
+  // when the host has no explicit per-channel / legacy rate set.
+  const defaultRates = await getDefaultCallRates(db);
   const ratePerMin = callType === 'video'
-    ? (host.video_coins_per_minute ?? host.coins_per_minute ?? DEFAULT_VIDEO_RATE)
-    : (host.audio_coins_per_minute ?? host.coins_per_minute ?? DEFAULT_AUDIO_RATE);
+    ? (host.video_coins_per_minute ?? host.coins_per_minute ?? defaultRates.video)
+    : (host.audio_coins_per_minute ?? host.coins_per_minute ?? defaultRates.audio);
 
   const caller = await db.prepare('SELECT coins, name FROM users WHERE id = ?').bind(sub).first<CallerData>();
   // Require at least 2 minutes worth of coins — WebRTC negotiation takes ~15s

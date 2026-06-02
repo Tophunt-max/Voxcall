@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { authMiddleware } from '../middleware/auth';
 import { verifyPassword } from '../lib/hash';
 import { getStreakStatus, claimDailyStreak } from '../lib/streak';
+import { getDefaultCallRates } from '../lib/levels';
 import type { Env, JWTPayload } from '../types';
 
 const user = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
@@ -303,14 +304,18 @@ user.post('/become-host', async (c) => {
     return c.json({ error: 'Please complete KYC verification and wait for admin approval before becoming a host.' }, 403);
   }
   const hostId = `host_${sub}`;
+  // Seed the new host with the admin-controlled default call rates (App Config
+  // → Calling System) instead of a hardcoded value, so newly-onboarded hosts
+  // start at whatever standard rate the operator has configured.
+  const defaultRates = await getDefaultCallRates(db);
   // Race fix: two concurrent become-host requests would both pass the
   // existing-host SELECT above and the second would crash on the PRIMARY
   // KEY collision (host_${sub} is unique on hosts.id). Catch the conflict
   // and return a clean 409 instead of bubbling a 500 to the client.
   try {
     await db.batch([
-      db.prepare('INSERT INTO hosts (id, user_id, display_name, specialties, languages, audio_coins_per_minute, video_coins_per_minute, coins_per_minute) VALUES (?, ?, ?, ?, ?, 25, 40, 25)')
-        .bind(hostId, sub, name, JSON.stringify(specialties ?? []), JSON.stringify(languages ?? ['English'])),
+      db.prepare('INSERT INTO hosts (id, user_id, display_name, specialties, languages, audio_coins_per_minute, video_coins_per_minute, coins_per_minute) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+        .bind(hostId, sub, name, JSON.stringify(specialties ?? []), JSON.stringify(languages ?? ['English']), defaultRates.audio, defaultRates.video, defaultRates.audio),
       db.prepare('UPDATE users SET role = ?, bio = ?, updated_at = unixepoch() WHERE id = ?')
         .bind('host', bio ?? '', sub),
     ]);

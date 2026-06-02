@@ -270,6 +270,36 @@ export async function getLevelConfig(d: D1Database): Promise<LevelDef[]> {
 }
 
 /**
+ * Admin-controlled DEFAULT per-minute call rates (coins) for the calling
+ * system. Read from app_settings.default_audio_rate / default_video_rate
+ * (set in the admin panel → App Config → Calling System). These are the rates
+ * used whenever a host has no explicit per-channel rate set. Falls back to the
+ * hardcoded DEFAULT_AUDIO_RATE / DEFAULT_VIDEO_RATE constants when the keys are
+ * missing or malformed, so the calling system never bills 0 coins/min.
+ */
+export async function getDefaultCallRates(
+  d: D1Database,
+): Promise<{ audio: number; video: number }> {
+  let audio = DEFAULT_AUDIO_RATE;
+  let video = DEFAULT_VIDEO_RATE;
+  try {
+    const rows = await d
+      .prepare("SELECT key, value FROM app_settings WHERE key IN ('default_audio_rate','default_video_rate')")
+      .all<{ key: string; value: string }>();
+    for (const r of rows.results || []) {
+      const n = parseInt(r.value, 10);
+      if (Number.isFinite(n) && n >= 1) {
+        if (r.key === 'default_audio_rate') audio = Math.min(ABSOLUTE_MAX_RATE, n);
+        else if (r.key === 'default_video_rate') video = Math.min(ABSOLUTE_MAX_RATE, n);
+      }
+    }
+  } catch (err) {
+    console.error('[getDefaultCallRates] Error fetching default call rates:', err);
+  }
+  return { audio, video };
+}
+
+/**
  * Sort + sanity-check a config into an ascending ladder of length
  * {@link MIN_LEVELS}..{@link MAX_LEVELS}. Falls back to the seeded default
  * ladder only when the input is missing or out of bounds — every function

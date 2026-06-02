@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { authMiddleware, adminMiddleware } from '../middleware/auth';
 import { sendFCMPush, getFCMTokens } from '../lib/fcm';
-import { getLevelConfig, normalizeLevelConfig, MIN_LEVELS, MAX_LEVELS } from '../lib/levels';
+import { getLevelConfig, normalizeLevelConfig, getDefaultCallRates, MIN_LEVELS, MAX_LEVELS } from '../lib/levels';
 import { recalcAllHostLevels } from '../lib/levelService';
 import { approveDeposit, validatePromoInput } from './payment';
 import type { Env, JWTPayload } from '../types';
@@ -372,6 +372,10 @@ admin.patch('/settings', async (c) => {
     'daily_streak_enabled', 'daily_streak_schedule', 'daily_streak_milestones',
     // First-call-free trial pool (per-user free minutes set on signup).
     'first_call_free_minutes',
+    // Calling system — admin-controlled DEFAULT per-minute call rates (coins)
+    // used when a host has no explicit rate. Read everywhere via
+    // getDefaultCallRates() and surfaced to the apps via /api/app-config.
+    'default_audio_rate', 'default_video_rate',
     // Calling-system observability + UX knobs (migration 0029):
     //   billing_granularity_sec  → 60 (per-minute) or 1 (per-second)
     //   low_balance_warn_seconds → push call_low_balance WS event when
@@ -616,11 +620,14 @@ admin.patch('/host-applications/:id/review', async (c) => {
     const hostId = `host_${app.user_id}`;
     const existing = await d.prepare('SELECT id FROM hosts WHERE user_id = ?').bind(app.user_id).first();
     if (!existing) {
+      // Fall back to the admin-controlled default call rates (App Config →
+      // Calling System) when the application itself didn't specify a rate.
+      const defaultRates = await getDefaultCallRates(d);
       await d.batch([
         d.prepare(
           `INSERT INTO hosts (id, user_id, display_name, specialties, languages, audio_coins_per_minute, video_coins_per_minute, is_active)
            VALUES (?, ?, ?, ?, ?, ?, ?, 1)`
-        ).bind(hostId, app.user_id, app.display_name, app.specialties, app.languages, app.audio_rate ?? 25, app.video_rate ?? 40),
+        ).bind(hostId, app.user_id, app.display_name, app.specialties, app.languages, app.audio_rate ?? defaultRates.audio, app.video_rate ?? defaultRates.video),
         d.prepare(`UPDATE users SET role='host', phone=COALESCE(phone,?), updated_at=unixepoch() WHERE id=?`)
           .bind(app.phone ?? null, app.user_id),
       ]);
@@ -1353,6 +1360,8 @@ admin.put('/app-config', async (c) => {
     // First-call-free + calling-system observability.
     'first_call_free_minutes',
     'billing_granularity_sec', 'low_balance_warn_seconds',
+    // Calling system — admin-controlled default per-minute call rates (coins).
+    'default_audio_rate', 'default_video_rate',
     // Engagement — recommendation rail + re-engagement/churn cron.
     'reco_enabled', 'reco_weights',
     'reengagement_enabled', 'reengagement_idle_days', 'reengagement_winback_days',

@@ -28,6 +28,8 @@ INSERT OR REPLACE INTO app_settings (key, value) VALUES
   ('min_coins_for_call',      '50'),
   ('registration_bonus_coins','50'),
   ('first_call_free_minutes', '5'),
+  ('default_audio_rate',      '25'),  -- standard voice call ≈ ₹5/min
+  ('default_video_rate',      '40'),  -- standard video call ≈ ₹8/min
   ('app_name',                'VoxLink'),
   ('app_version',             '1.0.0');
 

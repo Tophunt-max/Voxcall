@@ -203,7 +203,8 @@ pub.get('/app-config', async (c) => {
     //   support_email                          → Help Center / About contact CTA
     //   terms_url / privacy_url                → legal links
     //   app_name                               → display name
-    "SELECT key, value FROM app_settings WHERE key IN ('min_coins_for_call','coin_to_usd_rate','host_revenue_share','min_withdrawal_coins','registration_bonus_coins','maintenance_mode','maintenance_message','support_email','terms_url','privacy_url','app_name')"
+    //   default_audio_rate / default_video_rate → standard per-minute call rate
+    "SELECT key, value FROM app_settings WHERE key IN ('min_coins_for_call','coin_to_usd_rate','host_revenue_share','min_withdrawal_coins','registration_bonus_coins','maintenance_mode','maintenance_message','support_email','terms_url','privacy_url','app_name','default_audio_rate','default_video_rate')"
   ).all();
   const config: Record<string, string> = {};
   for (const row of settings.results as any[]) {

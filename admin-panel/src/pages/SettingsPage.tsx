@@ -9,7 +9,7 @@ import {
 interface ComputedRow {
   id: string;
   label: string;
-  formula: 'coins_to_usd' | 'host_payout' | 'min_withdrawal_usd' | 'custom';
+  formula: 'coins_to_usd' | 'host_payout' | 'min_withdrawal_usd' | 'default_call_cost' | 'custom';
   customExpr?: string; // for 'custom': a JS expression string evaluated client-side
   editingLabel?: boolean;
 }
@@ -69,6 +69,13 @@ const settingGroups = [
     ],
   },
   {
+    group: 'Calling System — Default Call Rate',
+    settings: [
+      { key: 'default_audio_rate', label: 'Default Audio Rate (Coins/min)', type: 'number', hint: 'Standard per-minute price for a VOICE call, used everywhere a host has no explicit rate (call billing + rate shown in the apps). 25 coins ≈ ₹5/min at the production coin value. Hosts can still set their own rate up to their level cap.', step: '1' },
+      { key: 'default_video_rate', label: 'Default Video Rate (Coins/min)', type: 'number', hint: 'Standard per-minute price for a VIDEO call (used when a host has no explicit video rate). 40 coins ≈ ₹8/min at the production coin value.', step: '1' },
+    ],
+  },
+  {
     group: 'Calling System — Billing & UX',
     settings: [
       { key: 'billing_granularity_sec', label: 'Billing granularity (seconds)', type: 'number', hint: 'How real seconds map to one billable unit. 60 = per-minute round-up (default, traditional). 1 = whole-second precision (more lenient to caller). Math: caller_owes = ceil(duration / N) * (rate * N / 60).', step: '1' },
@@ -124,6 +131,11 @@ const DEFAULTS: Record<string, string> = {
   daily_streak_milestones: '{"7":50,"14":100,"30":500,"60":1500,"100":5000}',
   // First-call-free trial pool — per-user free minutes set on signup.
   first_call_free_minutes: '5',
+  // Calling system — default per-minute call rates (coins). 25 ≈ ₹5/min,
+  // 40 ≈ ₹8/min at the production coin value. Mirror DEFAULT_AUDIO_RATE /
+  // DEFAULT_VIDEO_RATE in api-server/src/lib/levels.ts.
+  default_audio_rate: '25',
+  default_video_rate: '40',
   // Billing granularity (60 = per-minute, 1 = per-second).
   billing_granularity_sec: '60',
   // Heartbeat threshold for the call_low_balance WS event (seconds).
@@ -208,6 +220,11 @@ function evalFormula(formula: ComputedRow['formula'], expr: string | undefined, 
       return { primary: `₹${inr(100, true).toFixed(2)}`, label2: 'Host earns per 100 coins' };
     case 'min_withdrawal_usd':
       return { primary: `₹${inr(minW, true).toFixed(2)}`, label2: `${minW} coins → INR (host share)` };
+    case 'default_call_cost': {
+      const audio = parseInt(s.default_audio_rate || '25');
+      const video = parseInt(s.default_video_rate || '40');
+      return { primary: `₹${inr(audio).toFixed(2)} / ₹${inr(video).toFixed(2)}`, label2: `Default call cost per min (audio / video)` };
+    }
     case 'custom': {
       try {
         const sanitized = (expr || '').trim();
@@ -234,6 +251,7 @@ const FORMULA_OPTIONS: { value: ComputedRow['formula']; label: string }[] = [
   { value: 'coins_to_usd', label: '100 Coins → INR' },
   { value: 'host_payout', label: 'Host Payout per 100 Coins' },
   { value: 'min_withdrawal_usd', label: 'Min Withdrawal in INR' },
+  { value: 'default_call_cost', label: 'Default Call Cost (₹/min)' },
   { value: 'custom', label: 'Custom Expression' },
 ];
 
@@ -255,6 +273,7 @@ export default function SettingsPage() {
     { id: 'cr1', label: '100 Coins in INR', formula: 'coins_to_usd' },
     { id: 'cr2', label: 'Host Payout (per 100 coins)', formula: 'host_payout' },
     { id: 'cr3', label: 'Min Withdrawal Value', formula: 'min_withdrawal_usd' },
+    { id: 'cr4', label: 'Default Call Cost (₹/min)', formula: 'default_call_cost' },
   ]);
   const [editingRow, setEditingRow] = useState<string | null>(null);
   const [editLabel, setEditLabel] = useState('');

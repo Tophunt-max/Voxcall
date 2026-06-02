@@ -177,18 +177,28 @@ export default function HomeScreen() {
   // The server enforces it on /initiate; we mirror it in the UI gate so the
   // user sees the InsufficientCoins popup instead of a failed call.
   const [minCoinsForCall, setMinCoinsForCall] = useState(0);
+  // Admin-set default call rates (App Config → Calling System). Used as the
+  // fallback rate when a host row somehow lacks an explicit rate, so the UI
+  // mirrors exactly what the server will bill.
+  const [defaultRates, setDefaultRates] = useState({ audio: 25, video: 40 });
 
   useEffect(() => {
     fetchAppConfig()
       .then((cfg) => {
         const m = parseInt(cfg?.min_coins_for_call ?? "", 10);
         if (Number.isFinite(m) && m > 0) setMinCoinsForCall(m);
+        const a = parseInt(cfg?.default_audio_rate ?? "", 10);
+        const v = parseInt(cfg?.default_video_rate ?? "", 10);
+        setDefaultRates((prev) => ({
+          audio: Number.isFinite(a) && a > 0 ? a : prev.audio,
+          video: Number.isFinite(v) && v > 0 ? v : prev.video,
+        }));
       })
       .catch(() => { /* keep default */ });
   }, []);
 
   const startCall = useCallback((host: Host, type: "audio" | "video") => {
-    const rate = host.coinsPerMinute || 1;
+    const rate = host.coinsPerMinute || (type === "video" ? defaultRates.video : defaultRates.audio);
     // Require at least the admin floor (min_coins_for_call) OR ~2 minutes at
     // the host's rate, whichever is higher.
     const required = Math.max(rate * 2, minCoinsForCall);
@@ -200,7 +210,7 @@ export default function HomeScreen() {
     const avatar = host.avatar || `https://api.dicebear.com/7.x/avataaars/png?seed=${host.id}`;
     initiateCall({ id: host.id, name: host.name, avatar, role: "host" }, type, rate);
     router.push({ pathname: "/user/call/outgoing", params: { hostId: host.id, callType: type, hostName: host.name, hostAvatar: avatar, specialty: host.specialties?.[0] ?? "" } });
-  }, [user?.coins, initiateCall, minCoinsForCall]);
+  }, [user?.coins, initiateCall, minCoinsForCall, defaultRates]);
 
   const topPad = insets.top;
   const bottomPad = insets.bottom;
