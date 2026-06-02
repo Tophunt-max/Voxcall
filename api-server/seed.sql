@@ -5,21 +5,31 @@
 INSERT OR IGNORE INTO users (id, name, email, password_hash, role, coins, is_verified, bio) VALUES
   ('admin-001', 'Admin', 'ssunilkumarmohanta3@gmail.com', 'MkcBBBS/UCoOEWHtx9EMT6fndhN+mV0ZWwL94V77SnU=', 'admin', 9999, 1, 'Platform administrator');
 
--- Coin plans
-INSERT OR IGNORE INTO coin_plans (id, name, coins, price, bonus_coins, is_popular, is_active) VALUES
-  ('plan-001', 'Starter',  100,   0.99,    0, 0, 1),
-  ('plan-002', 'Basic',    500,   4.99,   50, 0, 1),
-  ('plan-003', 'Popular', 1200,   9.99,  200, 1, 1),
-  ('plan-004', 'Pro',     3000,  24.99,  600, 0, 1),
-  ('plan-005', 'Elite',   7000,  49.99, 2000, 0, 1);
+-- Coin plans — production INR ladder. Prices authored in USD = round(₹/83) so
+-- Indian users see CLEAN ₹ price points (₹49/₹99/₹199/₹499/₹999/₹1999) after
+-- the /api/coins/plans FX conversion. Bigger plans give more bonus coins
+-- (volume discount), dropping the effective cost from ~₹0.20 to ~₹0.15/coin.
+-- See migration 0030_production_inr_coin_economy.sql for the full algorithm.
+INSERT OR IGNORE INTO coin_plans (id, name, coins, price, currency, bonus_coins, is_popular, is_active) VALUES
+  ('plan-in-049',  'Starter',  250,   0.5904, 'USD',    0, 0, 1),  -- ₹49
+  ('plan-in-099',  'Popular',  500,   1.1928, 'USD',   50, 1, 1),  -- ₹99
+  ('plan-in-199',  'Value',   1000,   2.3976, 'USD',  150, 0, 1),  -- ₹199
+  ('plan-in-499',  'Super',   2500,   6.0120, 'USD',  500, 0, 1),  -- ₹499
+  ('plan-in-999',  'Mega',    5000,  12.0361, 'USD', 1250, 0, 1),  -- ₹999
+  ('plan-in-1999', 'Pro',    10000,  24.0843, 'USD', 3000, 0, 1);  -- ₹1999
 
--- App settings
+-- App settings — coin economy knobs (single source of truth; tune in admin).
+--   coin_to_usd_rate 0.0015 → host payout ≈ ₹0.125 gross per coin
+--   host_revenue_share 0.70 → L1 host cut (level system can raise to 0.80)
 INSERT OR REPLACE INTO app_settings (key, value) VALUES
-  ('coin_to_usd_rate',       '0.01'),
-  ('host_revenue_share',     '0.70'),
-  ('min_withdrawal_coins',   '100'),
-  ('app_name',               'VoxLink'),
-  ('app_version',            '1.0.0');
+  ('coin_to_usd_rate',        '0.0015'),
+  ('host_revenue_share',      '0.70'),
+  ('min_withdrawal_coins',    '5000'),
+  ('min_coins_for_call',      '50'),
+  ('registration_bonus_coins','50'),
+  ('first_call_free_minutes', '5'),
+  ('app_name',                'VoxLink'),
+  ('app_version',             '1.0.0');
 
 -- Talk topics
 INSERT OR IGNORE INTO talk_topics (id, name, icon, is_active) VALUES

@@ -12,6 +12,7 @@ import { API } from "@/services/api";
 import { useSocketEvent } from "@/context/SocketContext";
 import { SocketEvents } from "@/constants/events";
 import { showSuccessToast, showErrorToast, showWarningToast } from "@/components/Toast";
+import { formatPrice, getCurrencyCode } from "@/utils/currency";
 
 const WITHDRAW_OPTIONS = [100, 200, 500, 1000];
 
@@ -79,18 +80,16 @@ export default function HostWalletScreen() {
   // #10: minimum withdrawal comes from server app_settings (single source of
   // truth) instead of a hardcoded constant that can drift from the backend.
   const [minWithdraw, setMinWithdraw] = useState(100);
-  // coin_to_usd_rate = value of 1 coin in the payout currency (admin-set). Used
-  // to show hosts the real-money value of their coins. 0 = not configured/hide.
+  // coin_to_usd_rate = value of 1 coin in USD (admin-set). Used to show hosts
+  // the real-money value of their coins. 0 = not configured/hide.
   const [payoutRate, setPayoutRate] = useState(0);
   const topPad = insets.top;
 
-  const payoutCurrency = String((user as any)?.currency || "INR").toUpperCase();
-  const currencySymbol = payoutCurrency === "INR" ? "₹" : payoutCurrency === "USD" ? "$" : payoutCurrency === "EUR" ? "€" : payoutCurrency === "GBP" ? "£" : `${payoutCurrency} `;
-  const formatPayout = (coins: number) => {
-    const v = coins * payoutRate;
-    // Show 2 decimals for small values, whole numbers for large amounts.
-    return `${currencySymbol}${v >= 100 ? Math.round(v).toLocaleString() : v.toFixed(2)}`;
-  };
+  // The payout rate is USD/coin; convert to the host's local currency for
+  // display (formatPrice handles USD→local FX + symbol + rounding). Treating
+  // the rate directly as local currency was an ~83x under-display bug for ₹.
+  const payoutCurrency = String((user as any)?.currency || getCurrencyCode() || "INR").toUpperCase();
+  const formatPayout = (coins: number) => formatPrice(coins * payoutRate, payoutCurrency);
 
   useEffect(() => {
     API.getAppConfig()
@@ -343,7 +342,7 @@ export default function HostWalletScreen() {
             <Text style={[styles.noteTitle, { color: "#FFA100" }]}>Note</Text>
             <Text style={[styles.noteText, { color: colors.mutedForeground }]}>
               Minimum withdrawal is {minWithdraw} coins. Processing takes 2-3 business days.
-              {payoutRate > 0 ? ` Current rate: 1 coin ≈ ${formatPayout(1)}.` : ""}
+              {payoutRate > 0 ? ` Current rate: 1,000 coins ≈ ${formatPayout(1000)}.` : ""}
             </Text>
           </View>
 
