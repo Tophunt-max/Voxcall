@@ -370,6 +370,10 @@ export default function SettingsPage() {
     setSaving(true);
     try {
       await api.updateSettings(settings);
+      // Refresh settings from server to get computed values (coin_value_inr from coin_to_usd_rate)
+      const fresh = await api.settings();
+      setSettings({ ...DEFAULTS, ...fresh });
+      setLastSettingsUpdate(Date.now());
       showToast('Settings saved successfully');
     } catch (e: any) {
       showToast(e?.message || 'Failed to save settings', false);
@@ -406,14 +410,19 @@ export default function SettingsPage() {
   const applyOptimizedEconomy = async () => {
     setSeeding(true);
     try {
+      // Use api.fetch which includes auth headers
+      const token = localStorage.getItem('token');
       const res = await fetch('/api/admin/seed-coin-economy', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
       });
       const data = await res.json();
       
-      if (!data.success) {
-        throw new Error(data.message || 'Failed to seed economy');
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || data.error || 'Failed to seed economy');
       }
       
       // Refresh settings so the new values show up
