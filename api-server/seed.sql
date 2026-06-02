@@ -5,18 +5,18 @@
 INSERT OR IGNORE INTO users (id, name, email, password_hash, role, coins, is_verified, bio) VALUES
   ('admin-001', 'Admin', 'ssunilkumarmohanta3@gmail.com', 'MkcBBBS/UCoOEWHtx9EMT6fndhN+mV0ZWwL94V77SnU=', 'admin', 9999, 1, 'Platform administrator');
 
--- Coin plans — production INR ladder. Prices authored in USD = round(₹/83) so
--- Indian users see CLEAN ₹ price points (₹49/₹99/₹199/₹499/₹999/₹1999) after
--- the /api/coins/plans FX conversion. Bigger plans give more bonus coins
--- (volume discount), dropping the effective cost from ~₹0.20 to ~₹0.15/coin.
--- See migration 0030_production_inr_coin_economy.sql for the full algorithm.
+-- Coin plans — production INR ladder, priced NATIVELY in INR (coin_plans.price
+-- is the rupee amount; /api/coins/plans converts to other currencies only for
+-- non-INR users). Bigger plans give more bonus coins (volume discount),
+-- dropping the effective cost from ~₹0.20 to ~₹0.15/coin. See migration
+-- 0032_coin_plans_inr_native.sql.
 INSERT OR IGNORE INTO coin_plans (id, name, coins, price, currency, bonus_coins, is_popular, is_active) VALUES
-  ('plan-in-049',  'Starter',  250,   0.5904, 'USD',    0, 0, 1),  -- ₹49
-  ('plan-in-099',  'Popular',  500,   1.1928, 'USD',   50, 1, 1),  -- ₹99
-  ('plan-in-199',  'Value',   1000,   2.3976, 'USD',  150, 0, 1),  -- ₹199
-  ('plan-in-499',  'Super',   2500,   6.0120, 'USD',  500, 0, 1),  -- ₹499
-  ('plan-in-999',  'Mega',    5000,  12.0361, 'USD', 1250, 0, 1),  -- ₹999
-  ('plan-in-1999', 'Pro',    10000,  24.0843, 'USD', 3000, 0, 1);  -- ₹1999
+  ('plan-in-049',  'Starter',  250,    49, 'INR',    0, 0, 1),  -- ₹49
+  ('plan-in-099',  'Popular',  500,    99, 'INR',   50, 1, 1),  -- ₹99
+  ('plan-in-199',  'Value',   1000,   199, 'INR',  150, 0, 1),  -- ₹199
+  ('plan-in-499',  'Super',   2500,   499, 'INR',  500, 0, 1),  -- ₹499
+  ('plan-in-999',  'Mega',    5000,   999, 'INR', 1250, 0, 1),  -- ₹999
+  ('plan-in-1999', 'Pro',    10000,  1999, 'INR', 3000, 0, 1);  -- ₹1999
 
 -- App settings — coin economy knobs (single source of truth; tune in admin).
 --   coin_to_usd_rate 0.0015 → host payout ≈ ₹0.125 gross per coin

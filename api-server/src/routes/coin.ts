@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { authMiddleware } from '../middleware/auth';
-import { COUNTRY_TO_CURRENCY, USD_TO_FOREIGN, currencyForCountry, convertFromUSD, detectCountryFromRequest } from '../lib/currency';
+import { COUNTRY_TO_CURRENCY, USD_TO_FOREIGN, currencyForCountry, convertFromUSD, convertCurrency, detectCountryFromRequest } from '../lib/currency';
 import type { Env, JWTPayload } from '../types';
 
 const coin = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
@@ -54,15 +54,20 @@ coin.get('/plans', async (c) => {
   }
 
   const localized = (plans.results as any[]).map((p) => {
-    // Plan rows store amount in USD (legacy currency column defaults to 'USD'
-    // and the seeds use USD prices — see migrations/0001_initial.sql).
-    const usdPrice = Number(p.price ?? 0);
-    const priceLocal = convertFromUSD(usdPrice, currency, fxOverrides);
+    // Plan prices are authored in the plan's OWN currency (coin_plans.currency,
+    // INR for this India-first product; older rows may be 'USD'). Convert from
+    // that base to the viewer's currency — NOT assuming USD, which double-
+    // converted INR-priced plans (₹99 → ₹8217) for Indian users.
+    const planCurrency = (p.currency || 'USD').toUpperCase();
+    const planPrice = Number(p.price ?? 0);
+    const priceLocal = convertCurrency(planPrice, planCurrency, currency, fxOverrides);
     return {
       ...p,
-      // Original USD preserved for admin/analytics
-      price_usd: usdPrice,
-      // What the client should actually show
+      // Original authored amount + its currency, preserved for admin/analytics.
+      price_usd: convertCurrency(planPrice, planCurrency, 'USD', fxOverrides),
+      price_base: planPrice,
+      base_currency: planCurrency,
+      // What the client should actually show.
       price_local: priceLocal,
       currency,
     };

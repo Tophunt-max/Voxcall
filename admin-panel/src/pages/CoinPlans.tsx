@@ -3,7 +3,10 @@ import { api } from '@/lib/api';
 import { Modal } from '@/components/ui/Modal';
 import { Plus, Edit2, Trash2, Zap, Star } from 'lucide-react';
 
-const empty = { name: '', coins: '', price: '', bonus_coins: '0', is_popular: false, is_active: true };
+const empty = { name: '', coins: '', price: '', bonus_coins: '0', currency: 'INR', is_popular: false, is_active: true };
+
+const CURRENCY_SYMBOLS: Record<string, string> = { INR: '₹', USD: '$', EUR: '€', GBP: '£' };
+const sym = (c?: string) => CURRENCY_SYMBOLS[(c || 'INR').toUpperCase()] ?? `${c} `;
 
 interface PlanCardProps { plan: any; onEdit: () => void; onDelete: () => void }
 
@@ -28,7 +31,7 @@ function PlanCard({ plan, onEdit, onDelete }: PlanCardProps) {
         )}
       </div>
       <div className="p-4">
-        <p className="text-2xl font-black text-foreground">₹{plan.price}</p>
+        <p className="text-2xl font-black text-foreground">{sym(plan.currency)}{plan.price?.toLocaleString?.() ?? plan.price}</p>
         <p className="text-xs text-muted-foreground mb-4">{plan.currency || 'INR'}</p>
         <div className="flex items-center justify-between">
           <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${plan.is_active ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
@@ -70,7 +73,7 @@ export default function CoinPlans() {
 
   const openEdit = (p: any) => {
     setEditing(p);
-    setForm({ name: p.name, coins: String(p.coins), price: String(p.price), bonus_coins: String(p.bonus_coins || 0), is_popular: !!p.is_popular, is_active: p.is_active !== 0 });
+    setForm({ name: p.name, coins: String(p.coins), price: String(p.price), bonus_coins: String(p.bonus_coins || 0), currency: (p.currency || 'INR').toUpperCase(), is_popular: !!p.is_popular, is_active: p.is_active !== 0 });
   };
 
   const save = async () => {
@@ -83,7 +86,7 @@ export default function CoinPlans() {
     if (isNaN(coinsVal) || coinsVal <= 0) { showToast('Coins must be a positive number'); return; }
     if (isNaN(priceVal) || priceVal <= 0) { showToast('Price must be a positive number'); return; }
     setSaving(true);
-    const data = { name: form.name.trim(), coins: coinsVal, price: priceVal, bonus_coins: bonusVal, is_popular: form.is_popular ? 1 : 0, is_active: form.is_active ? 1 : 0 };
+    const data = { name: form.name.trim(), coins: coinsVal, price: priceVal, bonus_coins: bonusVal, currency: (form.currency || 'INR').toUpperCase(), is_popular: form.is_popular ? 1 : 0, is_active: form.is_active ? 1 : 0 };
     try {
       if (editing?.id) { await api.updateCoinPlan(editing.id, data); }
       else { await api.createCoinPlan(data); }
@@ -108,7 +111,7 @@ export default function CoinPlans() {
   const fields = [
     { key: 'name', label: 'Plan Name', type: 'text', placeholder: 'e.g. Starter' },
     { key: 'coins', label: 'Coins', type: 'number', placeholder: '100' },
-    { key: 'price', label: 'Price (INR ₹)', type: 'number', placeholder: '99' },
+    { key: 'price', label: `Price (${form.currency} ${sym(form.currency).trim()})`, type: 'number', placeholder: '99' },
     { key: 'bonus_coins', label: 'Bonus Coins', type: 'number', placeholder: '0' },
   ];
 
@@ -150,6 +153,21 @@ export default function CoinPlans() {
               />
             </div>
           ))}
+
+          <div>
+            <label className="text-sm font-semibold block mb-1.5">Currency</label>
+            <select
+              value={form.currency}
+              onChange={e => setForm(prev => ({ ...prev, currency: e.target.value }))}
+              className="w-full border border-border rounded-xl px-3 py-2.5 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
+            >
+              <option value="INR">INR (₹)</option>
+              <option value="USD">USD ($)</option>
+              <option value="EUR">EUR (€)</option>
+              <option value="GBP">GBP (£)</option>
+            </select>
+            <p className="text-xs text-muted-foreground mt-1">The price above is in this currency. Users on other currencies see it auto-converted.</p>
+          </div>
 
           <div className="flex gap-4 pt-1">
             <label className="flex items-center gap-2.5 cursor-pointer">

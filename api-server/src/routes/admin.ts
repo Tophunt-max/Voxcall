@@ -306,18 +306,24 @@ admin.get('/coin-plans', async (c) => {
   return c.json(result.results);
 });
 admin.post('/coin-plans', async (c) => {
-  const { name, coins, price, bonus_coins, is_popular } = await c.req.json();
+  const { name, coins, price, bonus_coins, is_popular, currency } = await c.req.json();
   const id = crypto.randomUUID();
-  await db(c).prepare('INSERT INTO coin_plans (id, name, coins, price, bonus_coins, is_popular) VALUES (?, ?, ?, ?, ?, ?)')
-    .bind(id, name, coins, price, bonus_coins ?? 0, is_popular ?? 0).run();
+  // Coin plan prices are authored in the admin panel in INR (the field is
+  // labelled "Price (INR ₹)"). Persist the currency so /api/coins/plans
+  // converts from the RIGHT base — defaulting to 'INR' for new plans created
+  // here (legacy seeded plans keep their own 'USD'/'INR' value).
+  await db(c).prepare('INSERT INTO coin_plans (id, name, coins, price, currency, bonus_coins, is_popular) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .bind(id, name, coins, price, (currency || 'INR').toUpperCase(), bonus_coins ?? 0, is_popular ?? 0).run();
   return c.json({ id, success: true }, 201);
 });
 admin.patch('/coin-plans/:id', async (c) => {
   const { id } = c.req.param();
-  const { name, coins, price, bonus_coins, is_popular, is_active } = await c.req.json();
+  const { name, coins, price, bonus_coins, is_popular, is_active, currency } = await c.req.json();
   const sets: string[] = []; const vals: any[] = [];
-  const fields = { name, coins, price, bonus_coins, is_popular, is_active };
+  const normalizedCurrency = currency !== undefined ? String(currency).toUpperCase() : undefined;
+  const fields = { name, coins, price, currency: normalizedCurrency, bonus_coins, is_popular, is_active };
   for (const [k, v] of Object.entries(fields)) { if (v !== undefined) { sets.push(`${k} = ?`); vals.push(v); } }
+  if (!sets.length) return c.json({ error: 'Nothing to update' }, 400);
   vals.push(id);
   await db(c).prepare(`UPDATE coin_plans SET ${sets.join(', ')} WHERE id = ?`).bind(...vals).run();
   return c.json({ success: true });

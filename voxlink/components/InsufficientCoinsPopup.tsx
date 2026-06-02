@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { router } from "expo-router";
 import { API } from "@/services/api";
+import { formatLocalAmount } from "@/utils/currency";
 import { showErrorToast } from "@/components/Toast";
 
 const { width: SW } = Dimensions.get("window");
@@ -113,8 +114,9 @@ export function InsufficientCoinsPopup({ visible, onClose, requiredCoins, curren
                     </View>
                     <View style={st.planRight}>
                       <Text style={st.planPrice}>
-                        {plan.currency === "INR" ? "₹" : "$"}
-                        {plan.price}
+                        {plan.price_local != null
+                          ? formatLocalAmount(plan.price_local, plan.currency)
+                          : `${plan.currency === "INR" ? "₹" : plan.currency === "USD" ? "$" : ""}${plan.price}`}
                       </Text>
                     </View>
                   </TouchableOpacity>

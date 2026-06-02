@@ -90,6 +90,37 @@ export function convertFromUSD(
 }
 
 /**
+ * Convert an amount between any two supported currencies, routing through USD.
+ *
+ *   fromCurrency → USD → toCurrency
+ *
+ * Coin plan prices are authored in the plan's own `currency` (INR for this
+ * India-first product). When a user on a DIFFERENT currency views the plans we
+ * convert here. Same-currency is returned unchanged (no FP noise). Unknown
+ * currencies return the original amount so the response shape is always valid.
+ *
+ * `overrides` (optional) supplies live/cached USD-base rates (the cron-refreshed
+ * `fx_rates_usd` blob) which take precedence over the static fallback table.
+ */
+export function convertCurrency(
+  amount: number,
+  fromCurrency: string,
+  toCurrency: string,
+  overrides?: Record<string, number> | null,
+): number {
+  if (!Number.isFinite(amount)) return 0;
+  const from = (fromCurrency || 'USD').toUpperCase();
+  const to = (toCurrency || 'USD').toUpperCase();
+  if (from === to) return amount;
+  const rateFrom = (overrides && overrides[from]) || USD_TO_FOREIGN[from];
+  const rateTo = (overrides && overrides[to]) || USD_TO_FOREIGN[to];
+  if (!rateFrom || !rateTo) return amount; // unknown currency — leave as-is
+  // amount is in `from` units → USD → `to` units.
+  const usd = amount / rateFrom;
+  return usd * rateTo;
+}
+
+/**
  * Read the country code from the incoming request. Tries the Cloudflare cf
  * object first (most reliable in production), falls back to the CF-IPCountry
  * header (also works in wrangler dev with --remote flag). Returns null when
