@@ -345,10 +345,58 @@ admin.get('/settings', async (c) => {
   const result = await db(c).prepare('SELECT * FROM app_settings').all();
   const obj: any = {};
   result.results.forEach((r: any) => { obj[r.key] = r.value; });
+  
+  // MULTI-CURRENCY: Add coin_value_inr for admin panel
+  // Convert stored coin_to_usd_rate to INR for display
+  if (obj.coin_to_usd_rate) {
+    const usdRate = parseFloat(obj.coin_to_usd_rate);
+    // Get live INR rate
+    let inrRate = 83;
+    if (obj.fx_rates_usd) {
+      try {
+        const rates = JSON.parse(obj.fx_rates_usd);
+        inrRate = rates.INR || 83;
+      } catch {}
+    }
+    obj.coin_value_inr = (usdRate * inrRate).toFixed(6);
+    obj.inr_to_usd_rate = inrRate;
+  }
+  
   return c.json(obj);
 });
 admin.patch('/settings', async (c) => {
   const body = await c.req.json();
+  
+  // MULTI-CURRENCY SUPPORT: Admin sets coin value in INR, we convert to USD
+  // This makes it natural for Indian admins: 1 coin = ₹0.05
+  // Backend stores coin_to_usd_rate for consistency
+  let processedBody = { ...body };
+  
+  // If admin sends coin_value_inr, convert to coin_to_usd_rate
+  if (body.coin_value_inr !== undefined) {
+    const inrValue = parseFloat(body.coin_value_inr);
+    if (!isNaN(inrValue) && inrValue > 0) {
+      // Get live INR to USD rate from fx_rates_usd or use default
+      const fxRow = await db(c).prepare(
+        "SELECT value FROM app_settings WHERE key = 'fx_rates_usd'"
+      ).first<{ value: string }>();
+      
+      let inrRate = 83; // Default INR per USD
+      if (fxRow?.value) {
+        try {
+          const rates = JSON.parse(fxRow.value);
+          inrRate = rates.INR || 83;
+        } catch {}
+      }
+      
+      // Convert: INR value → USD value
+      // If 1 coin = ₹0.05 and $1 = ₹83, then 1 coin = $0.0006
+      const usdValue = inrValue / inrRate;
+      processedBody.coin_to_usd_rate = usdValue;
+      delete processedBody.coin_value_inr;
+    }
+  }
+  
   // SECURITY FIX: Only allow known setting keys to prevent arbitrary key injection
   const ALLOWED_SETTINGS = [
     'min_coins_for_call', 'coin_to_usd_rate', 'host_revenue_share',
@@ -357,50 +405,27 @@ admin.patch('/settings', async (c) => {
     'terms_url', 'privacy_url', 'razorpay_webhook_secret', 'stripe_webhook_secret',
     'generic_webhook_secret', 'referrer_reward', 'new_user_reward',
     'min_calls_to_unlock', 'referral_active', 'free_chat_messages',
-    // FIX #15: app version / force-update gate keys consumed by GET /api/app/version.
-    // Previously NO admin endpoint could set these, so the force-update gate was
-    // un-configurable from the panel (and AppConfig.tsx silently dropped them).
     'app_min_version_user', 'app_min_version_host',
     'app_latest_version_user', 'app_latest_version_host',
     'app_download_url_user', 'app_download_url_host',
     'app_update_block_message', 'app_update_recommend_message',
-    // FIX: app_version was missing - frontend sends it but backend rejected it
     'app_version',
-    // Random-call rate fallbacks (per-level rates live in level_config) +
-    // anti-abuse knobs read by /api/match/find (daily cap, decline cooldown,
-    // no-repeat window).
     'random_call_audio_rate', 'random_call_video_rate',
     'random_calls_per_day_limit',
     'random_decline_cooldown_count', 'random_decline_cooldown_min',
     'random_match_repeat_block_min',
-    // Daily-streak engagement layer — feature toggle + reward schedule
-    // (JSON array) + milestone bonuses (JSON map). Validated leniently by
-    // lib/streak.ts on every read so a malformed value falls back to
-    // sensible defaults instead of breaking the streak system.
     'daily_streak_enabled', 'daily_streak_schedule', 'daily_streak_milestones',
-    // First-call-free trial pool (per-user free minutes set on signup).
     'first_call_free_minutes',
-    // Calling system — admin-controlled DEFAULT per-minute call rates (coins)
-    // used when a host has no explicit rate. Read everywhere via
-    // getDefaultCallRates() and surfaced to the apps via /api/app-config.
     'default_audio_rate', 'default_video_rate',
-    // Calling-system observability + UX knobs (migration 0029):
-    //   billing_granularity_sec  → 60 (per-minute) or 1 (per-second)
-    //   low_balance_warn_seconds → push call_low_balance WS event when
-    //                              caller has < N seconds of coins left
     'billing_granularity_sec', 'low_balance_warn_seconds',
-    // Engagement — personalized recommendation rail + re-engagement/churn cron.
-    //   reco_*          → GET /api/hosts/recommended (lib/recommend.ts)
-    //   reengagement_*  → scheduled churn-prevention job (lib/reengagement.ts)
     'reco_enabled', 'reco_weights',
     'reengagement_enabled', 'reengagement_idle_days', 'reengagement_winback_days',
     'reengagement_cooldown_days', 'reengagement_max_per_run',
     'reengagement_max_idle_days', 'reengagement_interval_hours',
-    // Priority 3 — quality-weighted matchmaking. Priority 4 — variable reward.
     'match_weighting_enabled', 'match_weights',
     'daily_streak_variable_enabled', 'daily_streak_variable_table',
   ];
-  const stmts = Object.entries(body)
+  const stmts = Object.entries(processedBody)
     .filter(([k]) => ALLOWED_SETTINGS.includes(k))
     .map(([k, v]) =>
       db(c).prepare('INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES (?, ?, unixepoch())').bind(k, String(v))

@@ -31,7 +31,7 @@ const settingGroups = [
   {
     group: 'Economy',
     settings: [
-      { key: 'coin_to_usd_rate', label: 'Coin Value (USD per coin)', type: 'number', hint: 'The money-worth of 1 coin in USD — the SINGLE source of truth used everywhere: host payout/withdrawal amounts AND every "coin value" shown in the user & host apps. 0.0015 → 1 coin ≈ ₹0.125 (×83). Changing this updates displayed coin value app-wide.', step: '0.0001' },
+      { key: 'coin_value_inr', label: 'Coin Value (₹ per coin)', type: 'number', hint: 'The money-worth of 1 coin in INR (₹). Simple for Indian users: 1 coin = ₹0.05 means 20 coins = ₹1. Admin sets in INR, backend auto-converts to USD. Users worldwide see value in their local currency.', step: '0.0001' },
       { key: 'host_revenue_share', label: 'Host Revenue Share', type: 'number', hint: '0.70 means hosts receive 70% of earned coins', step: '0.01' },
       { key: 'min_withdrawal_coins', label: 'Minimum Withdrawal (Coins)', type: 'number', hint: 'Minimum coins a host must have to request a payout' },
     ],
@@ -111,7 +111,8 @@ const settingGroups = [
 ];
 
 const DEFAULTS: Record<string, string> = {
-  coin_to_usd_rate: '0.0015',
+  coin_value_inr: '0.05', // INR value per coin (admin sets this directly)
+  coin_to_usd_rate: '0.0015', // Computed from coin_value_inr
   host_revenue_share: '0.70',
   min_withdrawal_coins: '100',
   app_name: 'VoxLink',
