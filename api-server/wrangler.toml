@@ -5,6 +5,16 @@ compatibility_flags = ["nodejs_compat"]
 
 account_id = "b592b3b2a5455323a76de721a92699cd"
 
+# Bundle every D1 migration file as text so the worker can self-apply pending
+# migrations on cold start (lib/autoMigrate.ts). This is the safety net for
+# the case where `wrangler d1 migrations apply --remote` in CI failed, was
+# skipped (push didn't touch api-server/), or hit a transient Cloudflare
+# error — production schema then converges to match code on the very next
+# request without needing a re-deploy.
+rules = [
+  { type = "Text", globs = ["**/*.sql"], fallthrough = true }
+]
+
 # Workers Logs — capture console.* output, exceptions, and request metadata so
 # production failures (billing errors, webhook rejections, cron faults) are
 # searchable in the dashboard and via `wrangler tail`. head_sampling_rate = 1

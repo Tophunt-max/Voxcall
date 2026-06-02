@@ -4,10 +4,49 @@ import { sendFCMPush, getFCMTokens } from '../lib/fcm';
 import { getLevelConfig, normalizeLevelConfig, getDefaultCallRates, MIN_LEVELS, MAX_LEVELS } from '../lib/levels';
 import { recalcAllHostLevels } from '../lib/levelService';
 import { approveDeposit, validatePromoInput } from './payment';
+import { ensureAllMigrations, listMigrationStatus } from '../lib/autoMigrate';
 import type { Env, JWTPayload } from '../types';
 
 const admin = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
 admin.use('*', authMiddleware, adminMiddleware);
+
+// ─── Database migration diagnostics ───────────────────────────────────────
+// The worker auto-applies any pending D1 migrations on cold start (see
+// lib/autoMigrate.ts). These two endpoints let an operator confirm what's
+// applied without shelling into Wrangler.
+
+// GET /api/admin/db/migrations — read-only view of applied vs pending.
+// Does NOT trigger application — that happens automatically on every /api/*
+// request via middleware.
+admin.get('/db/migrations', async (c) => {
+  try {
+    const status = await listMigrationStatus(c.env.DB);
+    return c.json({
+      total: status.total,
+      applied_count: status.applied.length,
+      pending_count: status.pending.length,
+      applied: status.applied,
+      pending: status.pending,
+    });
+  } catch (err) {
+    console.error('[admin/db/migrations] read failed:', err);
+    return c.json({ error: 'Failed to read migration state', detail: String((err as Error)?.message ?? err) }, 500);
+  }
+});
+
+// POST /api/admin/db/migrations/apply — force a re-run of the auto-migrator
+// against the LIVE D1 instance. Useful right after a deploy when the operator
+// wants to confirm convergence without waiting for cold-start traffic. The
+// runner is idempotent — already-applied migrations are skipped.
+admin.post('/db/migrations/apply', async (c) => {
+  try {
+    const report = await ensureAllMigrations(c.env.DB);
+    return c.json(report);
+  } catch (err) {
+    console.error('[admin/db/migrations/apply] failed:', err);
+    return c.json({ error: 'Auto-migrate run failed', detail: String((err as Error)?.message ?? err) }, 500);
+  }
+});
 
 // GET /api/admin/dashboard
 admin.get('/dashboard', async (c) => {
@@ -2049,18 +2088,32 @@ admin.post('/seed/india-defaults', async (c) => {
 });
 
 // ─── Seed Optimized Coin Economy ─────────────────────────────────────────────
-// One-click setup for production-ready coin economy with psychological pricing
+// Re-applies the production INR coin-economy migrations (0030–0032) via the
+// runtime auto-migrator. Idempotent: each migration is only re-run if its
+// `d1_migrations` row is missing, otherwise this is a no-op.
+//
+// Replaces an earlier dynamic-import-based version that referenced a
+// `scripts/seed-coin-economy` module which never existed in the repo and
+// blocked `wrangler deploy` (the build step couldn't resolve the import).
 admin.post('/seed-coin-economy', async (c) => {
-  const { seedCoinEconomy } = await import('../scripts/seed-coin-economy');
-  const result = await seedCoinEconomy(db(c));
-  
-  if (result.success) {
+  try {
+    const report = await ensureAllMigrations(c.env.DB);
     const u = c.get('user');
-    await auditLog(db(c), u.sub, u.email || 'Admin', u.email || '', 'update', 'settings', 'coin_economy', 
-      `Seeded optimized coin economy: ${result.details?.plans?.length || 0} plans, coin value = ${result.details?.coin_value?.display}`);
+    await auditLog(
+      db(c),
+      u.sub,
+      u.email || 'Admin',
+      u.email || '',
+      'update',
+      'settings',
+      'coin_economy',
+      `Re-ran auto-migrator: ${report.applied.length} applied, ${report.alreadyApplied} already applied, ${report.failed.length} failed`,
+    );
+    return c.json({ success: report.failed.length === 0, ...report });
+  } catch (err) {
+    console.error('[admin/seed-coin-economy] failed:', err);
+    return c.json({ success: false, error: String((err as Error)?.message ?? err) }, 500);
   }
-  
-  return c.json(result);
 });
 
 // ─── Stuck Calls Cleanup ───────────────────────────────────────────────────────

@@ -22,6 +22,7 @@ import { ChatRoom } from './durable-objects/ChatRoom';
 import { CallSignaling } from './durable-objects/CallSignaling';
 import { NotificationHub } from './durable-objects/NotificationHub';
 import { ensureUsersSchema, ensureRandomCallSchema, ensureStreakSchema, ensureFirstCallFreeSchema, ensureCallObservabilitySchema, ensureEngagementSchema } from './lib/schemaGuard';
+import { ensureAllMigrations } from './lib/autoMigrate';
 import { getLevelConfig, getEarningShare, DEFAULT_AUDIO_RATE } from './lib/levels';
 import { recalcAllHostLevels } from './lib/levelService';
 import { billedMinutes, coinsForCall, chargeCallerWithFreePool } from './lib/billing';
@@ -80,16 +81,35 @@ app.use('*', cors({
 app.use('*', logger());
 app.use('*', prettyJSON());
 
-// Schema auto-heal: ensure migration 0023's columns (country, currency on
-// users) exist before any /api/* DB query runs. Cached per worker isolate
-// after first success — subsequent requests pay only a microtask cost.
-// Belt-and-suspenders for the case where `wrangler d1 migrations apply`
-// in CI didn't reach the production DB (e.g. missing `--remote` flag).
+// Schema auto-migration: bring the live D1 instance in sync with the code
+// before any /api/* DB query runs. Two layers, both cached per worker isolate
+// so subsequent requests pay only a microtask cost:
+//
+//   1. ensureAllMigrations — primary path. Tracks state in `d1_migrations`
+//      (the same table Wrangler uses) and self-applies any migration that
+//      isn't recorded there. This is the safety net for the case where
+//      `wrangler d1 migrations apply --remote` in CI was skipped (push
+//      didn't touch api-server/), failed, or never ran. New migrations only
+//      need to be added to the manifest in lib/autoMigrate.ts — no code
+//      changes elsewhere.
+//
+//   2. ensure*Schema (legacy schemaGuards) — fallback path for prod DBs that
+//      were migrated by hand long before `d1_migrations` existed (or before
+//      this auto-migrator was deployed). They check PRAGMA table_info /
+//      sqlite_master and ALTER/CREATE only what's missing, so once the
+//      primary path has caught the DB up they become fast no-ops.
+//
+// Errors here never throw to callers — if D1 is genuinely unavailable, the
+// downstream query surfaces the real schema/connection error and the cached
+// Promise clears so the next request retries.
 app.use('/api/*', async (c, next) => {
-  // Both healers cache their first successful run for the isolate, so
-  // subsequent requests pay only a microtask cost. They never throw —
-  // if D1 is genuinely unavailable, downstream queries surface the real
-  // error and the cached Promise clears so the next request retries.
+  // Primary: apply any pending SQL migrations against the live D1 instance.
+  // Catches its own errors internally and returns a structured report;
+  // never throws.
+  await ensureAllMigrations(c.env.DB);
+
+  // Fallback: legacy per-feature schema healers. Idempotent and fast once
+  // the primary path has applied the underlying migrations.
   await Promise.all([
     ensureUsersSchema(c.env.DB),
     ensureRandomCallSchema(c.env.DB),
