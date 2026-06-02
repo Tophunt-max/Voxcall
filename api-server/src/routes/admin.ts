@@ -364,6 +364,8 @@ admin.patch('/settings', async (c) => {
     'app_latest_version_user', 'app_latest_version_host',
     'app_download_url_user', 'app_download_url_host',
     'app_update_block_message', 'app_update_recommend_message',
+    // FIX: app_version was missing - frontend sends it but backend rejected it
+    'app_version',
     // Random-call rate fallbacks (per-level rates live in level_config) +
     // anti-abuse knobs read by /api/match/find (daily cap, decline cooldown,
     // no-repeat window).
@@ -405,7 +407,38 @@ admin.patch('/settings', async (c) => {
     );
   if (!stmts.length) return c.json({ error: 'No valid settings to update' }, 400);
   await db(c).batch(stmts);
-  return c.json({ success: true });
+  
+  // REAL-TIME UPDATE: Broadcast settings change to all admin users via WebSocket
+  // This enables live updates in the admin panel without page refresh
+  const changedKeys = Object.keys(body).filter(k => ALLOWED_SETTINGS.includes(k));
+  const adminUsers = await db(c).prepare(
+    "SELECT id FROM users WHERE role = 'admin'"
+  ).all<{ id: string }>();
+  
+  if (adminUsers.results && adminUsers.results.length > 0) {
+    const settingsUpdateMsg = JSON.stringify({
+      type: 'settings_update',
+      keys: changedKeys,
+      timestamp: Date.now(),
+      updated_by: c.get('user')?.email || 'Admin'
+    });
+    
+    await Promise.allSettled(
+      adminUsers.results.map(async (admin) => {
+        try {
+          const notifStub = c.env.NOTIFICATION_HUB.get(
+            c.env.NOTIFICATION_HUB.idFromName(admin.id)
+          );
+          await notifStub.fetch('https://dummy/notify', {
+            method: 'POST',
+            body: settingsUpdateMsg
+          });
+        } catch {}
+      })
+    );
+  }
+  
+  return c.json({ success: true, updated_keys: changedKeys });
 });
 
 // Talk Topics CRUD

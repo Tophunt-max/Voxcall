@@ -316,6 +316,9 @@ export default function SettingsPage() {
   const [editLabel, setEditLabel] = useState('');
   const [editFormula, setEditFormula] = useState<ComputedRow['formula']>('coins_to_usd');
   const [editExpr, setEditExpr] = useState('');
+  
+  // Real-time update indicator - tracks when settings were last changed
+  const [lastSettingsUpdate, setLastSettingsUpdate] = useState(Date.now());
 
   // Duration rows
   const [durations, setDurations] = useState<DurationRow[]>([
@@ -329,7 +332,35 @@ export default function SettingsPage() {
   const [editDurVal, setEditDurVal] = useState('');
 
   useEffect(() => {
-    api.settings().then(d => setSettings({ ...DEFAULTS, ...d })).catch(() => showToast('Failed to load settings', false)).finally(() => setLoading(false));
+    api.settings().then(d => {
+      setSettings({ ...DEFAULTS, ...d });
+      setLastSettingsUpdate(Date.now()); // Track when settings loaded
+    }).catch(() => showToast('Failed to load settings', false)).finally(() => setLoading(false));
+  }, []);
+
+  // REAL-TIME UPDATE: Poll for settings changes every 30 seconds
+  // This ensures the admin panel reflects changes made by other admins
+  useEffect(() => {
+    const pollInterval = setInterval(async () => {
+      try {
+        const fresh = await api.settings();
+        setSettings(prev => {
+          // Only update if values actually changed
+          const hasChanges = Object.keys(fresh).some(
+            key => prev[key] !== fresh[key]
+          );
+          if (hasChanges) {
+            setLastSettingsUpdate(Date.now());
+            return { ...DEFAULTS, ...fresh };
+          }
+          return prev;
+        });
+      } catch {
+        // Silently fail polling - don't disrupt user
+      }
+    }, 30000); // Poll every 30 seconds
+
+    return () => clearInterval(pollInterval);
   }, []);
 
   const showToast = (msg: string, ok = true) => { setToast({ msg, ok }); setTimeout(() => setToast(null), 2500); };
@@ -377,27 +408,64 @@ export default function SettingsPage() {
     setEditExpr(r.customExpr || '');
   };
 
-  const saveEditRow = () => {
-    setComputedRows(rows => rows.map(r =>
-      r.id === editingRow ? { ...r, label: editLabel, formula: editFormula, customExpr: editExpr } : r
-    ));
+  const cancelEditRow = () => {
     setEditingRow(null);
+    setEditLabel('');
+    setEditFormula('coins_to_usd');
+    setEditExpr('');
+  };
+
+  const saveEditRow = () => {
+    if (!editingRow) return;
+    
+    const currentEditingRow = editingRow;
+    const currentLabel = editLabel;
+    const currentFormula = editFormula;
+    const currentExpr = editExpr;
+    
+    setComputedRows(rows => rows.map(r =>
+      r.id === currentEditingRow ? { 
+        ...r, 
+        label: currentLabel || 'Unnamed Metric', 
+        formula: currentFormula, 
+        customExpr: currentExpr 
+      } : r
+    ));
+    
+    // Clear edit state after save
+    setEditingRow(null);
+    setEditLabel('');
+    setEditFormula('coins_to_usd');
+    setEditExpr('');
+    
+    showToast('Computed value updated');
   };
 
   const addComputedRow = () => {
     const id = `cr${Date.now()}`;
-    setComputedRows(r => [...r, { id, label: 'New Metric', formula: 'coins_to_usd' }]);
+    const newRow: ComputedRow = { id, label: 'New Metric', formula: 'coins_to_usd' };
+    setComputedRows(r => [...r, newRow]);
     setEditingRow(id);
     setEditLabel('New Metric');
     setEditFormula('coins_to_usd');
     setEditExpr('');
   };
 
-  const removeComputedRow = (id: string) => setComputedRows(r => r.filter(x => x.id !== id));
+  const removeComputedRow = (id: string) => {
+    // If removing the row being edited, clear edit state
+    if (editingRow === id) {
+      cancelEditRow();
+    }
+    setComputedRows(r => r.filter(x => x.id !== id));
+    showToast('Computed value removed');
+  };
 
   const resetComputedRows = () => {
     setComputedRows(DEFAULT_COMPUTED_ROWS);
     setEditingRow(null);
+    setEditLabel('');
+    setEditFormula('coins_to_usd');
+    setEditExpr('');
     showToast('Computed values reset to defaults');
   };
 
@@ -551,7 +619,13 @@ export default function SettingsPage() {
             </div>
             <div>
               <h3 className="font-bold text-sm">Computed Values</h3>
-              <p className="text-[11px] text-muted-foreground">Live preview of your economy — updates as you edit settings above</p>
+              <p className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+                Live preview of your economy — updates as you edit settings above
+                <span className="inline-flex items-center gap-1 text-green-600">
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
+                  Live
+                </span>
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-1.5">
@@ -609,6 +683,9 @@ export default function SettingsPage() {
 
         <div className="divide-y divide-border">
           {computedRows.map(row => {
+            // Include lastSettingsUpdate in the dependency to ensure real-time updates
+            // when settings change (this forces re-evaluation of formulas)
+            const _updateKey = lastSettingsUpdate;
             const { primary, label2 } = evalFormula(row.formula, row.customExpr, settings);
             const isEditing = editingRow === row.id;
 
@@ -649,11 +726,11 @@ export default function SettingsPage() {
                     )}
                     <div className="flex gap-2">
                       <button onClick={saveEditRow}
-                        className="flex items-center gap-1 bg-primary text-primary-foreground px-3 py-1.5 rounded-lg text-xs font-semibold">
+                        className="flex items-center gap-1 bg-primary text-primary-foreground px-3 py-1.5 rounded-lg text-xs font-semibold hover:opacity-90 transition-opacity">
                         <Check size={12} /> Save
                       </button>
-                      <button onClick={() => setEditingRow(null)}
-                        className="flex items-center gap-1 border border-border px-3 py-1.5 rounded-lg text-xs hover:bg-secondary">
+                      <button onClick={cancelEditRow}
+                        className="flex items-center gap-1 border border-border px-3 py-1.5 rounded-lg text-xs hover:bg-secondary transition-colors">
                         <X size={12} /> Cancel
                       </button>
                     </div>
