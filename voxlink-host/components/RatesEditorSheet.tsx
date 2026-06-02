@@ -50,17 +50,22 @@ function RateStepper({
   label,
   sublabel,
   value,
+  max,
   onChange,
   onStep,
+  onCommit,
 }: {
   emoji: string;
   label: string;
   sublabel: string;
   value: string;
+  max: number;
   onChange: (v: string) => void;
   onStep: (delta: number) => void;
+  onCommit: () => void;
 }) {
   const colors = useColors();
+  const over = (parseInt(value, 10) || 0) > max;
   return (
     <View style={[styles.rateCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
       <View style={styles.rateHead}>
@@ -78,11 +83,13 @@ function RateStepper({
         >
           <Text style={[styles.stepBtnText, { color: colors.text }]}>−</Text>
         </TouchableOpacity>
-        <View style={[styles.valueBox, { borderColor: colors.border, backgroundColor: colors.card }]}>
+        <View style={[styles.valueBox, { borderColor: over ? "#E84855" : colors.border, backgroundColor: colors.card }]}>
           <TextInput
             style={[styles.valueInput, { color: colors.text }]}
             value={value}
             onChangeText={onChange}
+            onEndEditing={onCommit}
+            onBlur={onCommit}
             keyboardType="number-pad"
             maxLength={3}
             textAlign="center"
@@ -98,6 +105,9 @@ function RateStepper({
           <Text style={[styles.stepBtnText, { color: colors.text }]}>+</Text>
         </TouchableOpacity>
       </View>
+      <Text style={[styles.capHint, { color: over ? "#E84855" : colors.mutedForeground }]}>
+        {over ? `Max ${max} coins/min at your level` : `Up to ${max} coins/min at your level`}
+      </Text>
     </View>
   );
 }
@@ -185,16 +195,20 @@ export default function RatesEditorSheet({
           label="Audio Call"
           sublabel="Per minute for voice calls"
           value={audio}
+          max={audioCap}
           onChange={(t) => onChangeRate("audio", t)}
           onStep={(d) => step("audio", d)}
+          onCommit={() => setAudio((prev) => String(clamp(parseInt(prev, 10) || 0, audioCap)))}
         />
         <RateStepper
           emoji="📹"
           label="Video Call"
           sublabel="Per minute for video calls"
           value={video}
+          max={videoCap}
           onChange={(t) => onChangeRate("video", t)}
           onStep={(d) => step("video", d)}
+          onCommit={() => setVideo((prev) => String(clamp(parseInt(prev, 10) || 0, videoCap)))}
         />
 
         <View style={[styles.estBox, { backgroundColor: colors.surfaceAlt }]}>
@@ -233,6 +247,7 @@ const styles = StyleSheet.create({
   valueBox: { flex: 1, height: 46, borderRadius: 12, borderWidth: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6 },
   valueInput: { fontSize: 18, fontFamily: "Poppins_700Bold", minWidth: 36, padding: 0 },
   valueUnit: { fontSize: 12, fontFamily: "Poppins_400Regular" },
+  capHint: { fontSize: 11, fontFamily: "Poppins_500Medium", marginTop: 4 },
   estBox: { borderRadius: 14, padding: 14, gap: 4 },
   estTitle: { fontSize: 14, fontFamily: "Poppins_700Bold", marginBottom: 2 },
   estRow: { fontSize: 13, fontFamily: "Poppins_500Medium" },

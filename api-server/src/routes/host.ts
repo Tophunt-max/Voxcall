@@ -397,6 +397,10 @@ hostProtected.patch('/me', zValidator('json', updateProfileSchema), async (c) =>
   const allowed = ['display_name', 'specialties', 'languages', 'coins_per_minute', 'audio_coins_per_minute', 'video_coins_per_minute', 'accepts_random_calls', 'allows_video', 'payout_method', 'payout_details'];
   const sets: string[] = [];
   const vals: any[] = [];
+  // Track the actually-stored (clamped) rate values so the response can echo
+  // the truth back — the client then reflects the enforced cap instead of the
+  // (possibly higher) number the host typed.
+  const storedRates: Record<string, number> = {};
   for (const key of allowed) {
     if (body[key] !== undefined) {
       // FIX: payout_details is a JSON object on the wire; the column is TEXT.
@@ -415,12 +419,15 @@ hostProtected.patch('/me', zValidator('json', updateProfileSchema), async (c) =>
         val = body[key];
       }
       // Cap rate fields to the host's per-channel level ceiling. Audio and the
-      // legacy combined column share the audio cap; video uses its own.
+      // legacy combined column share the audio cap; video uses its own. This is
+      // the AUTHORITATIVE limit — the host can never persist a rate above their
+      // admin-configured level cap (+HOST_RATE_BONUS), regardless of client.
       if (rateKeys.includes(key)) {
         const num = Number(val);
         if (isNaN(num) || num < 1) return c.json({ error: `${key} must be at least 1` }, 400);
         const cap = key === 'video_coins_per_minute' ? MAX_VIDEO : MAX_AUDIO;
         val = Math.min(num, cap);
+        storedRates[key] = val;
       }
       sets.push(`${key} = ?`);
       vals.push(val);
@@ -437,6 +444,9 @@ hostProtected.patch('/me', zValidator('json', updateProfileSchema), async (c) =>
     max_rate: Math.max(MAX_AUDIO, MAX_VIDEO),
     max_audio_rate: MAX_AUDIO,
     max_video_rate: MAX_VIDEO,
+    // Echo the actually-stored (clamped) rates so the client reflects the
+    // enforced cap rather than whatever the host typed.
+    ...storedRates,
   });
 });
 

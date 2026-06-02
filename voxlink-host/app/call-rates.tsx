@@ -34,12 +34,15 @@ interface RateRowProps {
   sublabel: string;
   emoji: string;
   value: string;
+  max: number;
   onChange: (v: string) => void;
   onStep: (delta: number) => void;
+  onCommit: () => void;
   colors: ReturnType<typeof useColors>;
 }
 
-function RateRow({ label, sublabel, emoji, value, onChange, onStep, colors }: RateRowProps) {
+function RateRow({ label, sublabel, emoji, value, max, onChange, onStep, onCommit, colors }: RateRowProps) {
+  const over = (parseInt(value, 10) || 0) > max;
   return (
     <View style={[styles.rateCard, { backgroundColor: colors.card }]}>
       <View style={styles.rateHead}>
@@ -58,11 +61,13 @@ function RateRow({ label, sublabel, emoji, value, onChange, onStep, colors }: Ra
           <Text style={[styles.stepBtnText, { color: colors.text }]}>−</Text>
         </TouchableOpacity>
 
-        <View style={[styles.valueBox, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+        <View style={[styles.valueBox, { borderColor: over ? "#E84855" : colors.border, backgroundColor: colors.surface }]}>
           <TextInput
             style={[styles.valueInput, { color: colors.text }]}
             value={value}
             onChangeText={onChange}
+            onEndEditing={onCommit}
+            onBlur={onCommit}
             keyboardType="number-pad"
             maxLength={3}
             textAlign="center"
@@ -78,6 +83,9 @@ function RateRow({ label, sublabel, emoji, value, onChange, onStep, colors }: Ra
           <Text style={[styles.stepBtnText, { color: colors.text }]}>+</Text>
         </TouchableOpacity>
       </View>
+      <Text style={[styles.capHint, { color: over ? "#E84855" : colors.mutedForeground }]}>
+        {over ? `Max ${max} coins/min at your level` : `Up to ${max} coins/min at your level`}
+      </Text>
     </View>
   );
 }
@@ -224,8 +232,10 @@ export default function CallRatesScreen() {
           sublabel="Per minute for voice calls"
           emoji="🎙️"
           value={audio}
+          max={maxAudio}
           onChange={(t) => onChangeRate("audio", t)}
           onStep={(d) => step("audio", d)}
+          onCommit={() => setAudio((prev) => String(clamp(parseInt(prev, 10) || 0, maxAudio)))}
           colors={colors}
         />
 
@@ -234,8 +244,10 @@ export default function CallRatesScreen() {
           sublabel="Per minute for video calls"
           emoji="📹"
           value={video}
+          max={maxVideo}
           onChange={(t) => onChangeRate("video", t)}
           onStep={(d) => step("video", d)}
+          onCommit={() => setVideo((prev) => String(clamp(parseInt(prev, 10) || 0, maxVideo)))}
           colors={colors}
         />
 
@@ -305,6 +317,7 @@ const styles = StyleSheet.create({
   },
   valueInput: { fontSize: 18, fontFamily: "Poppins_700Bold", minWidth: 36, padding: 0 },
   valueUnit: { fontSize: 12, fontFamily: "Poppins_400Regular" },
+  capHint: { fontSize: 11, fontFamily: "Poppins_500Medium", marginTop: 8 },
   estBox: { marginHorizontal: 16, marginTop: 8, borderRadius: 14, padding: 16, gap: 4 },
   estTitle: { fontSize: 14, fontFamily: "Poppins_700Bold", marginBottom: 4 },
   estRow: { fontSize: 13, fontFamily: "Poppins_500Medium" },
