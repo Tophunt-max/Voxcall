@@ -389,12 +389,44 @@ export default function SettingsPage() {
       // numbers show up in the inputs above.
       const fresh = await api.settings();
       setSettings({ ...DEFAULTS, ...fresh });
+      setLastSettingsUpdate(Date.now());
       showToast(
         `India defaults applied — ${res.plans_seeded} plans, ${res.level_count} levels.`,
       );
       setSeedConfirming(false);
     } catch (e: any) {
       showToast(e?.message || 'Failed to apply India defaults', false);
+    } finally {
+      setSeeding(false);
+    }
+  };
+
+  // Apply optimized coin economy (psychological pricing, sustainable margins)
+  const applyOptimizedEconomy = async () => {
+    setSeeding(true);
+    try {
+      const res = await fetch('/api/admin/seed-coin-economy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const data = await res.json();
+      
+      if (!data.success) {
+        throw new Error(data.message || 'Failed to seed economy');
+      }
+      
+      // Refresh settings so the new values show up
+      const fresh = await api.settings();
+      setSettings({ ...DEFAULTS, ...fresh });
+      setLastSettingsUpdate(Date.now());
+      
+      const details = data.details;
+      showToast(
+        `✅ Economy optimized! ${details?.plans?.length || 0} plans, ${details?.coin_value?.display}/coin`,
+      );
+      setSeedConfirming(false);
+    } catch (e: any) {
+      showToast(e?.message || 'Failed to apply optimized economy', false);
     } finally {
       setSeeding(false);
     }
@@ -530,38 +562,45 @@ export default function SettingsPage() {
           Lives at the top so admins setting up a fresh deployment see it
           before scrolling through the granular settings. Once applied,
           admins can still tune individual values via the groups below. */}
-      <div className="bg-gradient-to-br from-orange-50 to-amber-50 dark:from-orange-950/30 dark:to-amber-950/30 border border-amber-200 dark:border-amber-800/40 rounded-2xl p-5">
+      <div className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-950/30 dark:to-emerald-950/30 border border-green-200 dark:border-green-800/40 rounded-2xl p-5">
         <div className="flex items-start gap-3">
-          <div className="text-2xl">🇮🇳</div>
+          <div className="text-2xl">💰</div>
           <div className="flex-1 min-w-0">
-            <h3 className="font-bold text-sm">Apply India coin economy preset</h3>
+            <h3 className="font-bold text-sm text-green-800 dark:text-green-200">Apply Optimized Coin Economy</h3>
             <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-              Wipes existing <strong>coin_plans</strong> and replaces them with 8 INR plans
-              (₹19 → ₹6,999), upserts <code className="bg-amber-100/60 dark:bg-amber-950/60 px-1 rounded">coin_to_usd_rate=0.10</code>,{' '}
-              <code className="bg-amber-100/60 dark:bg-amber-950/60 px-1 rounded">min_withdrawal_coins=500</code>,{' '}
-              <code className="bg-amber-100/60 dark:bg-amber-950/60 px-1 rounded">host_revenue_share=0.60</code>,
-              and replaces the level config with the India-tuned 5-tier ladder
-              (60/65/70/75/80% earning share, audio caps 30→300, random rates 10→60).
-              Existing custom plans will be lost.
+              <strong>One-click production setup!</strong> Sets optimal coin value (₹0.05/coin), 
+              70% host share, psychological pricing (₹49-₹4999 plans with bonuses), 
+              call rates (₹0.50/min audio, ₹1/min video), referral rewards, and daily streak.
+              <span className="block mt-2 text-green-700 dark:text-green-300 font-medium">
+                ✅ User-friendly pricing ✅ Sustainable margins ✅ Host earning potential
+              </span>
             </p>
+            <div className="mt-3 p-3 bg-white/50 dark:bg-black/20 rounded-xl text-xs space-y-1">
+              <div className="flex justify-between"><span>Coin Value:</span><strong>₹0.05/coin</strong></div>
+              <div className="flex justify-between"><span>Audio Call:</span><strong>₹0.50/min (host gets ₹0.35)</strong></div>
+              <div className="flex justify-between"><span>Video Call:</span><strong>₹1.00/min (host gets ₹0.70)</strong></div>
+              <div className="flex justify-between"><span>Host Revenue:</span><strong>70% of coins earned</strong></div>
+              <div className="flex justify-between"><span>Min Withdrawal:</span><strong>₹50 (1000 coins)</strong></div>
+              <div className="flex justify-between"><span>Plans:</span><strong>₹49 → ₹4999 (8 tiers)</strong></div>
+            </div>
             <div className="mt-3 flex items-center gap-2 flex-wrap">
               {!seedConfirming ? (
                 <button
                   onClick={() => setSeedConfirming(true)}
                   disabled={seeding}
-                  className="px-4 py-2 bg-amber-600 text-white rounded-xl text-xs font-semibold hover:bg-amber-700 disabled:opacity-50 transition-colors shadow-sm"
+                  className="px-4 py-2 bg-green-600 text-white rounded-xl text-xs font-semibold hover:bg-green-700 disabled:opacity-50 transition-colors shadow-sm"
                 >
-                  Apply India defaults…
+                  ⚡ Apply Optimized Economy…
                 </button>
               ) : (
                 <>
                   <button
-                    onClick={applyIndiaSeed}
+                    onClick={applyOptimizedEconomy}
                     disabled={seeding}
-                    className="flex items-center gap-1.5 px-4 py-2 bg-red-600 text-white rounded-xl text-xs font-bold hover:bg-red-700 disabled:opacity-50 transition-colors shadow-sm"
+                    className="flex items-center gap-1.5 px-4 py-2 bg-green-600 text-white rounded-xl text-xs font-bold hover:bg-green-700 disabled:opacity-50 transition-colors shadow-sm"
                   >
                     {seeding ? <RefreshCw size={13} className="animate-spin" /> : null}
-                    {seeding ? 'Applying…' : 'Yes, wipe & apply'}
+                    {seeding ? 'Applying…' : '✅ Yes, apply optimized economy'}
                   </button>
                   <button
                     onClick={() => setSeedConfirming(false)}
@@ -570,9 +609,6 @@ export default function SettingsPage() {
                   >
                     Cancel
                   </button>
-                  <span className="text-xs text-red-600 dark:text-red-400 font-medium">
-                    This is destructive — coin_plans will be wiped.
-                  </span>
                 </>
               )}
             </div>

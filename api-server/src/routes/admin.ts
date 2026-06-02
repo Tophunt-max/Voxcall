@@ -1966,6 +1966,21 @@ admin.post('/seed/india-defaults', async (c) => {
   });
 });
 
+// ─── Seed Optimized Coin Economy ─────────────────────────────────────────────
+// One-click setup for production-ready coin economy with psychological pricing
+admin.post('/seed-coin-economy', async (c) => {
+  const { seedCoinEconomy } = await import('../scripts/seed-coin-economy');
+  const result = await seedCoinEconomy(db(c));
+  
+  if (result.success) {
+    const u = c.get('user');
+    await auditLog(db(c), u.sub, u.email || 'Admin', u.email || '', 'update', 'settings', 'coin_economy', 
+      `Seeded optimized coin economy: ${result.details?.plans?.length || 0} plans, coin value = ${result.details?.coin_value?.display}`);
+  }
+  
+  return c.json(result);
+});
+
 // ─── Stuck Calls Cleanup ───────────────────────────────────────────────────────
 // Marks stale pending (>10 min) and active (>6 hr) calls as ended with 0 coins
 admin.post('/calls/cleanup-stuck', async (c) => {
