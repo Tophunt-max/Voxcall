@@ -13,6 +13,7 @@ import { useSocketEvent } from "@/context/SocketContext";
 import { SocketEvents } from "@/constants/events";
 import { showSuccessToast, showErrorToast, showWarningToast } from "@/components/Toast";
 import { formatPrice, getCurrencyCode } from "@/utils/currency";
+import { fetchAppConfig } from "@/hooks/useAppConfig";
 
 const WITHDRAW_OPTIONS = [100, 200, 500, 1000];
 
@@ -92,7 +93,10 @@ export default function HostWalletScreen() {
   const formatPayout = (coins: number) => formatPrice(coins * payoutRate, payoutCurrency);
 
   useEffect(() => {
-    API.getAppConfig()
+    // Routed through the shared app-config fetcher so the admin-set coin value
+    // (coin_to_usd_rate) is ALSO applied to the global currency module here,
+    // keeping every coins→money display in sync with the admin panel.
+    fetchAppConfig()
       .then((cfg) => {
         const m = parseInt(cfg?.min_withdrawal_coins ?? "", 10);
         if (Number.isFinite(m) && m > 0) setMinWithdraw(m);

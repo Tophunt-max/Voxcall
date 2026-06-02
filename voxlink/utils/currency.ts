@@ -77,6 +77,26 @@ export function setServerCurrency(currency: string | null | undefined): void {
   _serverCurrency = currency && USD_TO_FOREIGN[currency] ? currency : null;
 }
 
+// ─── Admin-controlled coin value (single source of truth) ──────────────────
+// The money-worth of 1 coin in USD. The admin sets this once in the panel
+// (app_settings.coin_to_usd_rate) and the apps fetch it via /api/app-config on
+// launch, then call setCoinToUsdRate(). EVERY coins→money conversion in the app
+// (coinsToLocalCurrency) reads this, so changing it in the admin panel updates
+// the displayed value everywhere — no hardcoded coin price anywhere.
+const DEFAULT_COIN_TO_USD = 0.01;
+let _coinToUsdRate = DEFAULT_COIN_TO_USD;
+
+/** Set the platform coin→USD value (from admin app_settings.coin_to_usd_rate). */
+export function setCoinToUsdRate(rate: number | string | null | undefined): void {
+  const n = typeof rate === "string" ? parseFloat(rate) : rate;
+  if (typeof n === "number" && Number.isFinite(n) && n > 0) _coinToUsdRate = n;
+}
+
+/** The current platform coin→USD value (admin-set, defaults to 0.01). */
+export function getCoinToUsdRate(): number {
+  return _coinToUsdRate;
+}
+
 let _localeCurrency: string | null = null;
 function detectFromLocale(): string {
   if (_localeCurrency) return _localeCurrency;
@@ -147,12 +167,12 @@ export function formatLocalAmount(amount: number, currency?: string): string {
 
 /**
  * Convert in-app coins to a localized fiat string. Useful for showing host
- * earnings or "you'll receive ~$X" hints. Uses the platform-wide coin → USD
- * rate (1 coin = $0.01 by default) — the server's app_settings can override
- * but the client doesn't currently fetch that, so keep this as an estimate.
+ * earnings or "you'll receive ~₹X" hints. Uses the admin-controlled
+ * platform coin → USD value (app_settings.coin_to_usd_rate), set once on
+ * launch via setCoinToUsdRate(). Defaults to $0.01/coin until config loads.
  */
 export function coinsToLocalCurrency(coins: number, currency?: string): string {
-  const usd = coins * 0.01;
+  const usd = coins * _coinToUsdRate;
   return formatPrice(usd, currency);
 }
 

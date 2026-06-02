@@ -31,7 +31,7 @@ const settingGroups = [
   {
     group: 'Economy',
     settings: [
-      { key: 'coin_to_usd_rate', label: 'Coin → Payout Rate', type: 'number', hint: 'Value of 1 coin in the payout currency. 0.01 → 100 coins = 1.00 (used to compute host withdrawal amounts)', step: '0.001' },
+      { key: 'coin_to_usd_rate', label: 'Coin Value (USD per coin)', type: 'number', hint: 'The money-worth of 1 coin in USD — the SINGLE source of truth used everywhere: host payout/withdrawal amounts AND every "coin value" shown in the user & host apps. 0.0015 → 1 coin ≈ ₹0.125 (×83). Changing this updates displayed coin value app-wide.', step: '0.0001' },
       { key: 'host_revenue_share', label: 'Host Revenue Share', type: 'number', hint: '0.70 means hosts receive 70% of earned coins', step: '0.01' },
       { key: 'min_withdrawal_coins', label: 'Minimum Withdrawal (Coins)', type: 'number', hint: 'Minimum coins a host must have to request a payout' },
     ],
@@ -104,7 +104,7 @@ const settingGroups = [
 ];
 
 const DEFAULTS: Record<string, string> = {
-  coin_to_usd_rate: '0.01',
+  coin_to_usd_rate: '0.0015',
   host_revenue_share: '0.70',
   min_withdrawal_coins: '100',
   app_name: 'VoxLink',
@@ -189,19 +189,25 @@ function safeEval(expression: string): number {
   return pos === s.length ? result : NaN;
 }
 
+// USD→INR FX used for the ₹ preview rows (mirrors USD_TO_FOREIGN.INR in the
+// apps). coin_to_usd_rate is stored in USD/coin; multiply by this to show ₹.
+const INR_PER_USD = 83;
+
 // ─── built-in formula evaluators ─────────────────────────────────────────────
 function evalFormula(formula: ComputedRow['formula'], expr: string | undefined, s: Record<string, string>) {
-  const rate = parseFloat(s.coin_to_usd_rate || '0.01');
+  const rate = parseFloat(s.coin_to_usd_rate || '0.0015');
   const share = parseFloat(s.host_revenue_share || '0.70');
-  const minW = parseInt(s.min_withdrawal_coins || '100');
+  const minW = parseInt(s.min_withdrawal_coins || '5000');
+  // Convert a USD coin-amount to ₹ for display.
+  const inr = (coins: number, withShare = false) => coins * rate * INR_PER_USD * (withShare ? share : 1);
 
   switch (formula) {
     case 'coins_to_usd':
-      return { primary: `₹${(100 * rate).toFixed(2)}`, label2: '100 coins in INR' };
+      return { primary: `₹${inr(100).toFixed(2)}`, label2: '100 coins in INR' };
     case 'host_payout':
-      return { primary: `₹${(100 * rate * share).toFixed(3)}`, label2: 'Host earns per 100 coins' };
+      return { primary: `₹${inr(100, true).toFixed(2)}`, label2: 'Host earns per 100 coins' };
     case 'min_withdrawal_usd':
-      return { primary: `₹${(minW * rate * share).toFixed(2)}`, label2: `${minW} coins → INR (host share)` };
+      return { primary: `₹${inr(minW, true).toFixed(2)}`, label2: `${minW} coins → INR (host share)` };
     case 'custom': {
       try {
         const sanitized = (expr || '').trim();
@@ -359,7 +365,7 @@ export default function SettingsPage() {
   // ── derived values ───────────────────────────────────────────────────────
   const audioRate = parseInt(settings.random_call_audio_rate || '5');
   const videoRate = parseInt(settings.random_call_video_rate || '8');
-  const coinRate = parseFloat(settings.coin_to_usd_rate || '0.01');
+  const coinRate = parseFloat(settings.coin_to_usd_rate || '0.0015');
 
   if (loading) {
     return (

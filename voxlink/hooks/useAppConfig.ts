@@ -11,11 +11,19 @@
 // empty object), so the app never blocks on this.
 import { useEffect, useState } from "react";
 import { API } from "@/services/api";
+import { setCoinToUsdRate } from "@/utils/currency";
 
 export type AppConfig = Record<string, string>;
 
 let _cache: AppConfig | null = null;
 let _inflight: Promise<AppConfig> | null = null;
+
+// Push the admin-controlled coin value into the currency module so EVERY
+// coins→money conversion in the app (coinsToLocalCurrency) reflects the
+// admin's app_settings.coin_to_usd_rate. Called every time config resolves.
+function applyConfigSideEffects(cfg: AppConfig): void {
+  if (cfg && cfg.coin_to_usd_rate != null) setCoinToUsdRate(cfg.coin_to_usd_rate);
+}
 
 /**
  * Fetch the app config, de-duplicating concurrent calls. Pass `force` to
@@ -27,6 +35,7 @@ export async function fetchAppConfig(force = false): Promise<AppConfig> {
   _inflight = API.getAppConfig()
     .then((cfg) => {
       _cache = cfg && typeof cfg === "object" ? cfg : {};
+      applyConfigSideEffects(_cache);
       return _cache;
     })
     .catch(() => _cache ?? {})
