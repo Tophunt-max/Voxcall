@@ -9,7 +9,7 @@ import {
 interface ComputedRow {
   id: string;
   label: string;
-  formula: 'coins_to_usd' | 'host_payout' | 'min_withdrawal_usd' | 'default_call_cost' | 'custom';
+  formula: 'coins_to_usd' | 'host_payout' | 'min_withdrawal_usd' | 'default_call_cost' | 'coins_per_rupee' | 'custom';
   customExpr?: string; // for 'custom': a JS expression string evaluated client-side
   editingLabel?: boolean;
 }
@@ -207,11 +207,14 @@ const INR_PER_USD = 83;
 
 // ─── built-in formula evaluators ─────────────────────────────────────────────
 function evalFormula(formula: ComputedRow['formula'], expr: string | undefined, s: Record<string, string>) {
-  const rate = parseFloat(s.coin_to_usd_rate || '0.0015');
+  const rate = parseFloat(s.coin_to_usd_rate || '0.0015');     // USD per coin
+  const rateInr = rate * INR_PER_USD;                          // ₹ per coin
   const share = parseFloat(s.host_revenue_share || '0.70');
   const minW = parseInt(s.min_withdrawal_coins || '5000');
-  // Convert a USD coin-amount to ₹ for display.
-  const inr = (coins: number, withShare = false) => coins * rate * INR_PER_USD * (withShare ? share : 1);
+  const audioRate = parseInt(s.default_audio_rate || '25');
+  const videoRate = parseInt(s.default_video_rate || '40');
+  // Convert a coin-amount to ₹ for display.
+  const inr = (coins: number, withShare = false) => coins * rateInr * (withShare ? share : 1);
 
   switch (formula) {
     case 'coins_to_usd':
@@ -220,24 +223,35 @@ function evalFormula(formula: ComputedRow['formula'], expr: string | undefined, 
       return { primary: `₹${inr(100, true).toFixed(2)}`, label2: 'Host earns per 100 coins' };
     case 'min_withdrawal_usd':
       return { primary: `₹${inr(minW, true).toFixed(2)}`, label2: `${minW} coins → INR (host share)` };
-    case 'default_call_cost': {
-      const audio = parseInt(s.default_audio_rate || '25');
-      const video = parseInt(s.default_video_rate || '40');
-      return { primary: `₹${inr(audio).toFixed(2)} / ₹${inr(video).toFixed(2)}`, label2: `Default call cost per min (audio / video)` };
-    }
+    case 'coins_per_rupee':
+      return {
+        primary: rateInr > 0 ? `${Math.round(1 / rateInr)} coins` : '—',
+        label2: 'Coins a user gets per ₹1',
+      };
+    case 'default_call_cost':
+      return { primary: `₹${inr(audioRate).toFixed(2)} / ₹${inr(videoRate).toFixed(2)}`, label2: `Default call cost per min (audio / video)` };
     case 'custom': {
       try {
         const sanitized = (expr || '').trim();
         if (!sanitized) return { primary: '—', label2: 'Empty formula' };
         const substituted = sanitized
-          .replace(/\brate\b/g, String(rate))
+          // Order matters: replace longer names before shorter ones so
+          // `rate_inr` isn't partially eaten by `rate`.
+          .replace(/\brate_inr\b/g, String(rateInr))
+          .replace(/\brate_usd\b/g, String(rate))
+          .replace(/\brate\b/g, String(rateInr))   // bare `rate` = ₹/coin (intuitive default)
           .replace(/\bshare\b/g, String(share))
-          .replace(/\bminW\b/g, String(minW));
+          .replace(/\bminW\b/g, String(minW))
+          .replace(/\baudioRate\b/g, String(audioRate))
+          .replace(/\bvideoRate\b/g, String(videoRate));
         if (!/^[0-9\s.\+\-\*\/\(\)%]+$/.test(substituted)) {
           return { primary: '—', label2: 'Invalid expression' };
         }
         const val = safeEval(substituted);
-        return { primary: String(isNaN(val) ? '—' : val.toFixed(4)), label2: 'Custom formula' };
+        if (isNaN(val)) return { primary: '—', label2: 'Formula error' };
+        // Trim trailing zeros for readability (e.g. 12.5000 → 12.5).
+        const pretty = parseFloat(val.toFixed(4));
+        return { primary: String(pretty), label2: 'Custom formula' };
       } catch {
         return { primary: '—', label2: 'Formula error' };
       }
@@ -252,6 +266,7 @@ const FORMULA_OPTIONS: { value: ComputedRow['formula']; label: string }[] = [
   { value: 'host_payout', label: 'Host Payout per 100 Coins' },
   { value: 'min_withdrawal_usd', label: 'Min Withdrawal in INR' },
   { value: 'default_call_cost', label: 'Default Call Cost (₹/min)' },
+  { value: 'coins_per_rupee', label: 'Coins per ₹1' },
   { value: 'custom', label: 'Custom Expression' },
 ];
 
@@ -268,13 +283,35 @@ export default function SettingsPage() {
   const [seedConfirming, setSeedConfirming] = useState(false);
   const [seeding, setSeeding] = useState(false);
 
-  // Computed values rows
-  const [computedRows, setComputedRows] = useState<ComputedRow[]>([
+  // Computed values rows — persisted to localStorage so an admin's custom
+  // metrics survive a page reload / re-login (they're a UI convenience, not
+  // server state).
+  const COMPUTED_ROWS_KEY = 'voxlink_admin_computed_rows';
+  const DEFAULT_COMPUTED_ROWS: ComputedRow[] = [
     { id: 'cr1', label: '100 Coins in INR', formula: 'coins_to_usd' },
     { id: 'cr2', label: 'Host Payout (per 100 coins)', formula: 'host_payout' },
     { id: 'cr3', label: 'Min Withdrawal Value', formula: 'min_withdrawal_usd' },
     { id: 'cr4', label: 'Default Call Cost (₹/min)', formula: 'default_call_cost' },
-  ]);
+    { id: 'cr5', label: 'Coins per ₹1', formula: 'coins_per_rupee' },
+  ];
+  const [computedRows, setComputedRows] = useState<ComputedRow[]>(() => {
+    try {
+      const saved = localStorage.getItem(COMPUTED_ROWS_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch { /* ignore corrupt storage */ }
+    return DEFAULT_COMPUTED_ROWS;
+  });
+  // Persist on every change.
+  useEffect(() => {
+    try { localStorage.setItem(COMPUTED_ROWS_KEY, JSON.stringify(computedRows)); } catch { /* quota / private mode */ }
+  }, [computedRows]);
+
+  // Interactive coin calculator — type any coin amount and see the live
+  // breakdown (user buy value, host payout, USD) using the CURRENT settings.
+  const [calcCoins, setCalcCoins] = useState('1000');
   const [editingRow, setEditingRow] = useState<string | null>(null);
   const [editLabel, setEditLabel] = useState('');
   const [editFormula, setEditFormula] = useState<ComputedRow['formula']>('coins_to_usd');
@@ -357,6 +394,12 @@ export default function SettingsPage() {
   };
 
   const removeComputedRow = (id: string) => setComputedRows(r => r.filter(x => x.id !== id));
+
+  const resetComputedRows = () => {
+    setComputedRows(DEFAULT_COMPUTED_ROWS);
+    setEditingRow(null);
+    showToast('Computed values reset to defaults');
+  };
 
   // ── duration row helpers ─────────────────────────────────────────────────
   const addDuration = () => {
@@ -506,12 +549,62 @@ export default function SettingsPage() {
             <div className="w-7 h-7 rounded-lg bg-violet-100 flex items-center justify-center">
               <Calculator size={13} className="text-violet-600" />
             </div>
-            <h3 className="font-bold text-sm">Computed Values</h3>
+            <div>
+              <h3 className="font-bold text-sm">Computed Values</h3>
+              <p className="text-[11px] text-muted-foreground">Live preview of your economy — updates as you edit settings above</p>
+            </div>
           </div>
-          <button onClick={addComputedRow}
-            className="flex items-center gap-1.5 text-xs font-semibold text-primary bg-primary/10 px-2.5 py-1.5 rounded-lg hover:bg-primary/20 transition-colors">
-            <Plus size={13} /> Add Row
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button onClick={resetComputedRows}
+              title="Reset to default metrics"
+              className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground bg-secondary px-2.5 py-1.5 rounded-lg hover:bg-secondary/70 transition-colors">
+              <RefreshCw size={13} /> Reset
+            </button>
+            <button onClick={addComputedRow}
+              className="flex items-center gap-1.5 text-xs font-semibold text-primary bg-primary/10 px-2.5 py-1.5 rounded-lg hover:bg-primary/20 transition-colors">
+              <Plus size={13} /> Add Row
+            </button>
+          </div>
+        </div>
+
+        {/* Interactive coin calculator — type any coin amount → live ₹ / host /
+            USD breakdown using the CURRENT (unsaved) settings on this page. */}
+        <div className="px-5 py-4 border-b border-border bg-violet-50/40 dark:bg-violet-950/10">
+          <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5 mb-2">
+            <Calculator size={12} /> Quick calculator
+          </label>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+            <div className="flex items-center gap-2">
+              <input
+                type="number" min="0"
+                value={calcCoins}
+                onChange={e => setCalcCoins(e.target.value)}
+                className="w-32 px-3 py-2 border border-border rounded-xl text-sm font-bold bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+              <span className="text-sm text-muted-foreground">coins =</span>
+            </div>
+            {(() => {
+              const coins = parseFloat(calcCoins) || 0;
+              const rateInr = coinRate * INR_PER_USD;
+              const share = parseFloat(settings.host_revenue_share || '0.70');
+              const buy = coins * rateInr;
+              const host = coins * rateInr * share;
+              const usd = coins * coinRate;
+              const Chip = ({ label, value, color }: { label: string; value: string; color: string }) => (
+                <div className="flex-1 min-w-[110px] rounded-xl border border-border bg-background px-3 py-2">
+                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
+                  <p className={`font-bold text-base ${color}`}>{value}</p>
+                </div>
+              );
+              return (
+                <div className="flex flex-1 flex-wrap gap-2">
+                  <Chip label="User buy value" value={`₹${buy.toFixed(2)}`} color="text-green-600" />
+                  <Chip label={`Host gets (${Math.round(share * 100)}%)`} value={`₹${host.toFixed(2)}`} color="text-amber-600" />
+                  <Chip label="In USD" value={`$${usd.toFixed(4)}`} color="text-blue-600" />
+                </div>
+              );
+            })()}
+          </div>
         </div>
 
         <div className="divide-y divide-border">
@@ -544,10 +637,14 @@ export default function SettingsPage() {
                         <input
                           value={editExpr}
                           onChange={e => setEditExpr(e.target.value)}
-                          placeholder="JS expression: e.g. rate * 1000"
+                          placeholder="e.g. rate * 1000  →  ₹ value of 1000 coins"
                           className="w-full px-3 py-2 border border-border rounded-xl text-sm font-mono bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
                         />
-                        <p className="text-[10px] text-muted-foreground mt-1">Variables: <code>rate</code> (coin→INR), <code>share</code> (host%), <code>minW</code> (min withdrawal coins)</p>
+                        <p className="text-[10px] text-muted-foreground mt-1 leading-relaxed">
+                          Variables: <code>rate</code> (₹/coin), <code>rate_usd</code> ($/coin), <code>rate_inr</code> (₹/coin),{' '}
+                          <code>share</code> (host fraction 0–1), <code>minW</code> (min withdrawal coins),{' '}
+                          <code>audioRate</code>, <code>videoRate</code> (coins/min). Operators: + − * / % ( ).
+                        </p>
                       </div>
                     )}
                     <div className="flex gap-2">
