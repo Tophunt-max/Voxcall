@@ -66,6 +66,10 @@ export const SocketEvents = {
   MAINTENANCE: "system:maintenance",
   VERSION_CHECK: "system:version_check",
   FORCE_LOGOUT: "system:force_logout",
+  
+  // Real-time Settings Updates
+  // Broadcast when admin changes coin_to_usd_rate, call rates, etc.
+  APP_SETTINGS_UPDATE: "app:settings_update",
 } as const;
 
 export type SocketEvent = (typeof SocketEvents)[keyof typeof SocketEvents];

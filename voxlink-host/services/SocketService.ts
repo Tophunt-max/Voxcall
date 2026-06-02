@@ -265,6 +265,20 @@ class SocketService {
           timestamp: Date.now(),
         });
         break;
+      case "app_settings_update":
+        // REAL-TIME COIN VALUE UPDATE
+        // Admin changed coin_to_usd_rate or call rates - update immediately
+        // without requiring app refresh. The useAppConfig hook listens for this.
+        this.emit(SocketEvents.APP_SETTINGS_UPDATE, {
+          settings: msg.settings ?? {},
+          critical: msg.critical ?? false, // True when coin value changed
+          timestamp: Date.now(),
+        });
+        // Also update the useAppConfig cache directly for immediate effect
+        import("@/hooks/useAppConfig").then(({ updateConfigCache }) => {
+          updateConfigCache(msg.settings ?? {});
+        }).catch(() => {});
+        break;
       default:
         break;
     }

@@ -408,37 +408,93 @@ admin.patch('/settings', async (c) => {
   if (!stmts.length) return c.json({ error: 'No valid settings to update' }, 400);
   await db(c).batch(stmts);
   
-  // REAL-TIME UPDATE: Broadcast settings change to all admin users via WebSocket
-  // This enables live updates in the admin panel without page refresh
+  // REAL-TIME UPDATE: Broadcast settings change to ALL connected users via WebSocket
+  // This enables live updates in ALL apps (user app, host app, admin panel) without page refresh
+  // When coin_to_usd_rate changes, every user sees the new coin value immediately
   const changedKeys = Object.keys(body).filter(k => ALLOWED_SETTINGS.includes(k));
-  const adminUsers = await db(c).prepare(
-    "SELECT id FROM users WHERE role = 'admin'"
-  ).all<{ id: string }>();
   
-  if (adminUsers.results && adminUsers.results.length > 0) {
-    const settingsUpdateMsg = JSON.stringify({
-      type: 'settings_update',
-      keys: changedKeys,
-      timestamp: Date.now(),
-      updated_by: c.get('user')?.email || 'Admin'
-    });
-    
-    await Promise.allSettled(
-      adminUsers.results.map(async (admin) => {
-        try {
-          const notifStub = c.env.NOTIFICATION_HUB.get(
-            c.env.NOTIFICATION_HUB.idFromName(admin.id)
-          );
-          await notifStub.fetch('https://dummy/notify', {
-            method: 'POST',
-            body: settingsUpdateMsg
-          });
-        } catch {}
-      })
-    );
+  // Check if coin value changed - this is critical for real-time updates
+  const coinValueChanged = changedKeys.includes('coin_to_usd_rate');
+  const callRatesChanged = changedKeys.includes('default_audio_rate') || 
+                           changedKeys.includes('default_video_rate') ||
+                           changedKeys.includes('random_call_audio_rate') ||
+                           changedKeys.includes('random_call_video_rate');
+  
+  // Get the updated settings values for broadcast
+  const updatedSettings: Record<string, string> = {};
+  for (const key of changedKeys) {
+    if (body[key] !== undefined) {
+      updatedSettings[key] = String(body[key]);
+    }
   }
   
-  return c.json({ success: true, updated_keys: changedKeys });
+  // Broadcast to ALL users (not just admins) for coin value and rate changes
+  // This ensures real-time updates in user/host apps
+  if (coinValueChanged || callRatesChanged) {
+    const allUsers = await db(c).prepare(
+      "SELECT id FROM users WHERE status != 'deleted' LIMIT 10000"
+    ).all<{ id: string }>();
+    
+    if (allUsers.results && allUsers.results.length > 0) {
+      const settingsUpdateMsg = JSON.stringify({
+        type: 'app_settings_update',
+        settings: updatedSettings,
+        critical: coinValueChanged, // Flag for apps to show notification
+        timestamp: Date.now(),
+        updated_by: c.get('user')?.email || 'Admin'
+      });
+      
+      // Batch broadcast in chunks of 50 to avoid overwhelming the system
+      const CHUNK_SIZE = 50;
+      for (let i = 0; i < allUsers.results.length; i += CHUNK_SIZE) {
+        const chunk = allUsers.results.slice(i, i + CHUNK_SIZE);
+        await Promise.allSettled(
+          chunk.map(async (user) => {
+            try {
+              const notifStub = c.env.NOTIFICATION_HUB.get(
+                c.env.NOTIFICATION_HUB.idFromName(user.id)
+              );
+              await notifStub.fetch('https://dummy/notify', {
+                method: 'POST',
+                body: settingsUpdateMsg
+              });
+            } catch {}
+          })
+        );
+      }
+    }
+  } else {
+    // For non-critical settings, only notify admins
+    const adminUsers = await db(c).prepare(
+      "SELECT id FROM users WHERE role = 'admin'"
+    ).all<{ id: string }>();
+    
+    if (adminUsers.results && adminUsers.results.length > 0) {
+      const settingsUpdateMsg = JSON.stringify({
+        type: 'settings_update',
+        settings: updatedSettings,
+        keys: changedKeys,
+        timestamp: Date.now(),
+        updated_by: c.get('user')?.email || 'Admin'
+      });
+      
+      await Promise.allSettled(
+        adminUsers.results.map(async (admin) => {
+          try {
+            const notifStub = c.env.NOTIFICATION_HUB.get(
+              c.env.NOTIFICATION_HUB.idFromName(admin.id)
+            );
+            await notifStub.fetch('https://dummy/notify', {
+              method: 'POST',
+              body: settingsUpdateMsg
+            });
+          } catch {}
+        })
+      );
+    }
+  }
+  
+  return c.json({ success: true, updated_keys: changedKeys, realtime_broadcast: coinValueChanged || callRatesChanged });
 });
 
 // Talk Topics CRUD
