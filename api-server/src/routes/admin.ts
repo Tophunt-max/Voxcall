@@ -347,11 +347,11 @@ admin.get('/settings', async (c) => {
   result.results.forEach((r: any) => { obj[r.key] = r.value; });
   
   // MULTI-CURRENCY: Add coin_value_inr for admin panel
-  // Convert stored coin_to_usd_rate to INR for display
+  // Convert stored coin_to_usd_rate to INR for display using LIVE rates
   if (obj.coin_to_usd_rate) {
     const usdRate = parseFloat(obj.coin_to_usd_rate);
-    // Get live INR rate
-    let inrRate = 83;
+    // Get live INR rate from cron-refreshed fx_rates_usd
+    let inrRate = 83; // fallback
     if (obj.fx_rates_usd) {
       try {
         const rates = JSON.parse(obj.fx_rates_usd);
@@ -360,6 +360,7 @@ admin.get('/settings', async (c) => {
     }
     obj.coin_value_inr = (usdRate * inrRate).toFixed(6);
     obj.inr_to_usd_rate = inrRate;
+    obj.fx_rates_last_updated = obj.fx_rates_updated || null;
   }
   
   return c.json(obj);

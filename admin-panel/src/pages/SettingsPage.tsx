@@ -529,6 +529,13 @@ export default function SettingsPage() {
   const audioRate = parseInt(settings.random_call_audio_rate || '5');
   const videoRate = parseInt(settings.random_call_video_rate || '8');
   const coinRate = parseFloat(settings.coin_to_usd_rate || '0.0015');
+  
+  // Live FX rate info
+  const inrRate = parseFloat(settings.inr_to_usd_rate || '83');
+  const fxLastUpdated = settings.fx_rates_last_updated 
+    ? new Date(parseInt(settings.fx_rates_last_updated) * 1000).toLocaleString()
+    : 'Not yet fetched';
+  const coinValueInr = parseFloat(settings.coin_value_inr || '0.05');
 
   if (loading) {
     return (
@@ -644,6 +651,33 @@ export default function SettingsPage() {
               </div>
             ))}
           </div>
+          {/* Live FX Rate Indicator for Economy section */}
+          {group.group === 'Economy' && (
+            <div className="px-5 py-3 bg-blue-50/50 dark:bg-blue-950/20 border-t border-border">
+              <div className="flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                  <span className="text-muted-foreground">Live FX Rate:</span>
+                  <strong className="text-blue-600 dark:text-blue-400">1 USD = ₹{inrRate.toFixed(2)}</strong>
+                </div>
+                <span className="text-muted-foreground">
+                  Updated: {fxLastUpdated}
+                </span>
+              </div>
+              <div className="mt-2 p-2 bg-white/50 dark:bg-black/10 rounded-lg text-xs">
+                <div className="flex items-center gap-4 flex-wrap">
+                  <div>
+                    <span className="text-muted-foreground">Coin Value:</span>
+                    <strong className="ml-1">₹{coinValueInr.toFixed(4)}/coin</strong>
+                    <span className="text-muted-foreground ml-1">= ${coinRate.toFixed(6)}/coin</span>
+                  </div>
+                  <div className="text-muted-foreground">
+                    20 coins = ₹{(coinValueInr * 20).toFixed(2)}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       ))}
 
