@@ -185,7 +185,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
     // BUG FIX #7: Use server duration if available, fall back to client duration
     let finalDuration = clientDuration;
-    let coinsSpent = Math.ceil((clientDuration / 60) * (call?.coinsPerMinute ?? 5));
+    let coinsSpent = Math.ceil((clientDuration / 60) * (call?.coinsPerMinute ?? 25));
 
     if (call?.sessionId) {
       try {

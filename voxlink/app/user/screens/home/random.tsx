@@ -529,7 +529,7 @@ export default function RandomScreen() {
 
         if (res.matched && res.host) {
           setMatchedHost(res.host);
-          setAdminCoinRate(res.coins_per_minute ?? res.host?.coins_per_minute ?? 5);
+          setAdminCoinRate(res.coins_per_minute ?? res.host?.coins_per_minute ?? 25);
           setPhase("found");
           if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
           return;

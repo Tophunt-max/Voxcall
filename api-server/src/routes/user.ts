@@ -309,7 +309,7 @@ user.post('/become-host', async (c) => {
   // and return a clean 409 instead of bubbling a 500 to the client.
   try {
     await db.batch([
-      db.prepare('INSERT INTO hosts (id, user_id, display_name, specialties, languages) VALUES (?, ?, ?, ?, ?)')
+      db.prepare('INSERT INTO hosts (id, user_id, display_name, specialties, languages, audio_coins_per_minute, video_coins_per_minute, coins_per_minute) VALUES (?, ?, ?, ?, ?, 25, 40, 25)')
         .bind(hostId, sub, name, JSON.stringify(specialties ?? []), JSON.stringify(languages ?? ['English'])),
       db.prepare('UPDATE users SET role = ?, bio = ?, updated_at = unixepoch() WHERE id = ?')
         .bind('host', bio ?? '', sub),

@@ -22,7 +22,7 @@ import { ChatRoom } from './durable-objects/ChatRoom';
 import { CallSignaling } from './durable-objects/CallSignaling';
 import { NotificationHub } from './durable-objects/NotificationHub';
 import { ensureUsersSchema, ensureRandomCallSchema, ensureStreakSchema, ensureFirstCallFreeSchema, ensureCallObservabilitySchema, ensureEngagementSchema } from './lib/schemaGuard';
-import { getLevelConfig, getEarningShare } from './lib/levels';
+import { getLevelConfig, getEarningShare, DEFAULT_AUDIO_RATE } from './lib/levels';
 import { recalcAllHostLevels } from './lib/levelService';
 import { billedMinutes, coinsForCall, chargeCallerWithFreePool } from './lib/billing';
 import { runReengagement } from './lib/reengagement';
@@ -278,7 +278,7 @@ async function reapStaleCalls(env: Env): Promise<void> {
 
       const durationSec = call.started_at ? now - call.started_at : 0;
       const durationMin = billedMinutes(durationSec);
-      const effectiveRate = call.rate_per_minute ?? 5;
+      const effectiveRate = call.rate_per_minute ?? DEFAULT_AUDIO_RATE;
       const coinsCharged = coinsForCall({ status: call.status, durationSec, ratePerMinute: effectiveRate });
 
       // Track actual coins transferred (0 until confirmed)

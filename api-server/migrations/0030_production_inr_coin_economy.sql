@@ -54,6 +54,18 @@ ON CONFLICT(id) DO UPDATE SET
   is_popular  = excluded.is_popular,
   is_active   = 1;
 
+-- ── 2b. Standard default call rate = ₹5/min ───────────────────────────────
+-- At the ~₹0.20/coin buy value, ₹5/min = 25 coins/min (audio), ₹8/min = 40
+-- coins/min (video). Bump hosts still sitting on the legacy ₹1/min default
+-- (5 audio / 8 video, or NULL) up to the new standard. Hosts who have set a
+-- custom rate ABOVE the old default are left untouched.
+UPDATE hosts SET audio_coins_per_minute = 25
+  WHERE audio_coins_per_minute IS NULL OR audio_coins_per_minute <= 5;
+UPDATE hosts SET video_coins_per_minute = 40
+  WHERE video_coins_per_minute IS NULL OR video_coins_per_minute <= 8;
+UPDATE hosts SET coins_per_minute = 25
+  WHERE coins_per_minute IS NULL OR coins_per_minute <= 5;
+
 -- ── 3. Economy settings (the algorithm's knobs) ───────────────────────────
 INSERT INTO app_settings (key, value, updated_at) VALUES
   ('coin_to_usd_rate',        '0.0015', unixepoch()),  -- host payout ≈ ₹0.125 gross/coin

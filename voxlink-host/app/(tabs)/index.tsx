@@ -159,8 +159,8 @@ export default function HostHomeScreen() {
     retry: 1,
   });
 
-  const audioRate = Number(hostMe?.audio_coins_per_minute ?? hostMe?.coins_per_minute ?? 5);
-  const videoRate = Number(hostMe?.video_coins_per_minute ?? (Number(hostMe?.coins_per_minute ?? 5) + 5));
+  const audioRate = Number(hostMe?.audio_coins_per_minute ?? hostMe?.coins_per_minute ?? 25);
+  const videoRate = Number(hostMe?.video_coins_per_minute ?? (hostMe?.coins_per_minute ? Number(hostMe.coins_per_minute) + 5 : 40));
 
   // Admin-managed home banners (host-facing campaigns). Best-effort: errors /
   // empty just hide the rail. Cached 5 min like the user app.

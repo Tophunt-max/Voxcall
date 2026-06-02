@@ -620,7 +620,7 @@ admin.patch('/host-applications/:id/review', async (c) => {
         d.prepare(
           `INSERT INTO hosts (id, user_id, display_name, specialties, languages, audio_coins_per_minute, video_coins_per_minute, is_active)
            VALUES (?, ?, ?, ?, ?, ?, ?, 1)`
-        ).bind(hostId, app.user_id, app.display_name, app.specialties, app.languages, app.audio_rate ?? 5, app.video_rate ?? 8),
+        ).bind(hostId, app.user_id, app.display_name, app.specialties, app.languages, app.audio_rate ?? 25, app.video_rate ?? 40),
         d.prepare(`UPDATE users SET role='host', phone=COALESCE(phone,?), updated_at=unixepoch() WHERE id=?`)
           .bind(app.phone ?? null, app.user_id),
       ]);

@@ -68,6 +68,17 @@ export const ABSOLUTE_MAX_RATE = 500;
 /** Baseline host earning share (level 1) — preserves historical behaviour. */
 export const BASE_EARNING_SHARE = 0.7;
 /**
+ * Standard default per-minute call rates for a brand-new host, in COINS.
+ * Tied to the production coin economy (migration 0030): coins are bought at
+ * ≈ ₹0.20/coin, so:
+ *   DEFAULT_AUDIO_RATE 25 coins/min ≈ ₹5/min   (the standard voice-call price)
+ *   DEFAULT_VIDEO_RATE 40 coins/min ≈ ₹8/min   (video priced higher)
+ * A host can still change these within their level cap; these are only the
+ * starting values seeded when no explicit rate was chosen.
+ */
+export const DEFAULT_AUDIO_RATE = 25;
+export const DEFAULT_VIDEO_RATE = 40;
+/**
  * Headroom (coins/min) a host may charge ABOVE the admin-configured level cap.
  * Lets a host nudge their rate up to N coins past `max_audio_rate` /
  * `max_video_rate` so the level cap acts as a soft target rather than a hard

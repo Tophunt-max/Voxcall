@@ -30,8 +30,8 @@ export default function HostBecomeScreen() {
   const [languages, setLanguages]       = useState<string[]>(["Hindi"]);
   const [bio, setBio]                   = useState("");
   const [applicationType, setAppType]   = useState<"audio" | "video" | "both">("both");
-  const [audioRate, setAudioRate]       = useState("5");
-  const [videoRate, setVideoRate]       = useState("8");
+  const [audioRate, setAudioRate]       = useState("25");
+  const [videoRate, setVideoRate]       = useState("40");
   const [experience, setExperience]     = useState("");
   const [loading, setLoading]           = useState(false);
 

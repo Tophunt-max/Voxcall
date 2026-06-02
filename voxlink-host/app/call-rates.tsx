@@ -96,8 +96,8 @@ export default function CallRatesScreen() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [audio, setAudio] = useState("5");
-  const [video, setVideo] = useState("10");
+  const [audio, setAudio] = useState("25");
+  const [video, setVideo] = useState("40");
   const [levelLabel, setLevelLabel] = useState<string | null>(null);
   // Per-channel effective ceilings = admin level cap + HOST_RATE_BONUS,
   // clamped to ABS_MAX_RATE. Default to the global cap until the level
@@ -116,8 +116,8 @@ export default function CallRatesScreen() {
           API.getHostLevel().catch(() => null) as Promise<any>,
         ]);
         if (cancelled) return;
-        const a = Number(me?.audio_coins_per_minute ?? me?.coins_per_minute ?? 5);
-        const v = Number(me?.video_coins_per_minute ?? (Number(me?.coins_per_minute ?? 5) + 5));
+        const a = Number(me?.audio_coins_per_minute ?? me?.coins_per_minute ?? 25);
+        const v = Number(me?.video_coins_per_minute ?? (me?.coins_per_minute ? Number(me.coins_per_minute) + 5 : 40));
 
         // Resolve per-channel caps: prefer the new audio/video fields and fall
         // back to legacy `max_rate` for older configs.

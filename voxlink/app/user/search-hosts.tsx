@@ -62,7 +62,7 @@ export default function SearchHostsScreen() {
     const name = item.display_name ?? item.name ?? "Host";
     const avatar = resolveMediaUrl(item.avatar_url) || `https://api.dicebear.com/7.x/avataaars/png?seed=${item.id}`;
     const rating = (item.rating ?? 4.5).toFixed(1);
-    const rate = item.audio_coins_per_minute ?? item.coinsPerMinute ?? 5;
+    const rate = item.audio_coins_per_minute ?? item.coinsPerMinute ?? 25;
     const topicsArr = Array.isArray(item.topics) ? item.topics : (item.topics ? String(item.topics).split(",") : []);
 
     return (

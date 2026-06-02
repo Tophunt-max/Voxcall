@@ -37,6 +37,8 @@ import {
   getRandomAudioRate,
   getRandomVideoRate,
   getRankBoost,
+  DEFAULT_AUDIO_RATE,
+  DEFAULT_VIDEO_RATE,
   type LevelDef,
 } from '../lib/levels';
 import { checkRateLimit } from '../lib/rateLimit';
@@ -60,8 +62,8 @@ function enrichHost(h: any, config: LevelDef[]) {
     languages: safeJson(h.languages, []),
     level: h.level ?? 1,
     level_info: buildLevelInfo(config, h.level ?? 1),
-    audio_coins_per_minute: h.audio_coins_per_minute ?? h.coins_per_minute ?? 5,
-    video_coins_per_minute: h.video_coins_per_minute ?? (h.coins_per_minute ?? 5) + 5,
+    audio_coins_per_minute: h.audio_coins_per_minute ?? h.coins_per_minute ?? DEFAULT_AUDIO_RATE,
+    video_coins_per_minute: h.video_coins_per_minute ?? (h.coins_per_minute ? h.coins_per_minute + 5 : DEFAULT_VIDEO_RATE),
   };
 }
 
@@ -835,7 +837,7 @@ match.get('/online-hosts', async (c) => {
     name: h.display_name || h.name,
     avatar_url: h.avatar_url,
     rating: h.rating ?? 0,
-    coins_per_minute: h.audio_coins_per_minute ?? 5,
+    coins_per_minute: h.audio_coins_per_minute ?? DEFAULT_AUDIO_RATE,
     specialties: safeJson(h.specialties, []),
     level: h.level ?? 1,
     level_info: buildLevelInfo(config, h.level ?? 1),

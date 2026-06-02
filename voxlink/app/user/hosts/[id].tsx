@@ -71,7 +71,7 @@ function TalkNowSheet({
   onAudio: () => void;
   onVideo: () => void;
 }) {
-  const audioRate = host?.audio_coins_per_minute ?? host?.coinsPerMinute ?? 5;
+  const audioRate = host?.audio_coins_per_minute ?? host?.coinsPerMinute ?? 25;
   const videoRate = host?.video_coins_per_minute ?? (audioRate + 5);
   const colors = useColors();
   const isDark = useColorScheme() === "dark";
@@ -187,7 +187,7 @@ export default function HostDetailScreen() {
   const uniqueId = `VX${String(host.id).slice(-6).padStart(6, "0")}`;
   const callCount = host.total_minutes ? Math.floor(host.total_minutes / 30) : host.review_count * 2;
   const experience = `${Math.max(1, Math.floor((host.total_minutes ?? 0) / 5000))}+`;
-  const audioRate: number = host.audio_coins_per_minute ?? host.coins_per_minute ?? 5;
+  const audioRate: number = host.audio_coins_per_minute ?? host.coins_per_minute ?? 25;
   const videoRate: number = host.video_coins_per_minute ?? audioRate + 5;
   // Prefer the server's admin-configured level_info (single source of truth);
   // fall back to the local map only if the API is on an older build.

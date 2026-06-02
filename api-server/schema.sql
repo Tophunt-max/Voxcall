@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS hosts (
   display_name TEXT NOT NULL,
   specialties TEXT DEFAULT '[]',
   languages TEXT DEFAULT '["English"]',
-  coins_per_minute INTEGER DEFAULT 5,
+  coins_per_minute INTEGER DEFAULT 25,
   total_minutes INTEGER DEFAULT 0,
   total_earnings INTEGER DEFAULT 0,
   rating REAL DEFAULT 0,

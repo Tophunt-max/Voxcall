@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth';
 import { createCFCalls, CFCallsTrack } from '../lib/cf-calls';
 import { sendFCMPush } from '../lib/fcm';
-import { getLevelConfig, getEarningShare } from '../lib/levels';
+import { getLevelConfig, getEarningShare, DEFAULT_AUDIO_RATE, DEFAULT_VIDEO_RATE } from '../lib/levels';
 import { applyLevelUp } from '../lib/levelService';
 import { billedMinutes, coinsForCall, chargeCallerWithFreePool } from '../lib/billing';
 import { registerHit } from '../lib/rateLimit';
@@ -179,8 +179,8 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
   }
 
   const ratePerMin = callType === 'video'
-    ? (host.video_coins_per_minute ?? host.coins_per_minute ?? 5)
-    : (host.audio_coins_per_minute ?? host.coins_per_minute ?? 5);
+    ? (host.video_coins_per_minute ?? host.coins_per_minute ?? DEFAULT_VIDEO_RATE)
+    : (host.audio_coins_per_minute ?? host.coins_per_minute ?? DEFAULT_AUDIO_RATE);
 
   const caller = await db.prepare('SELECT coins, name FROM users WHERE id = ?').bind(sub).first<CallerData>();
   // Require at least 2 minutes worth of coins — WebRTC negotiation takes ~15s
@@ -379,8 +379,8 @@ call.post('/end', async (c) => {
 
     const effectiveRate = session.rate_per_minute
       ?? (session.type === 'video'
-        ? (hostRow.video_coins_per_minute ?? hostRow.coins_per_minute ?? 5)
-        : (hostRow.audio_coins_per_minute ?? hostRow.coins_per_minute ?? 5));
+        ? (hostRow.video_coins_per_minute ?? hostRow.coins_per_minute ?? DEFAULT_VIDEO_RATE)
+        : (hostRow.audio_coins_per_minute ?? hostRow.coins_per_minute ?? DEFAULT_AUDIO_RATE));
     const coinsCharged = coinsForCall({ status: session.status, durationSec, ratePerMinute: effectiveRate });
     // Level-based earning share — higher-level hosts keep a larger cut.
     // Defaults to the historical 70% (level 1) so low-level hosts are unaffected.
@@ -982,8 +982,8 @@ call.post('/:id/end', async (c) => {
     }
 
     const effectiveRate = session.rate_per_minute ?? (session.type === 'video'
-      ? (hostRow.video_coins_per_minute ?? hostRow.coins_per_minute ?? 5)
-      : (hostRow.audio_coins_per_minute ?? hostRow.coins_per_minute ?? 5));
+      ? (hostRow.video_coins_per_minute ?? hostRow.coins_per_minute ?? DEFAULT_VIDEO_RATE)
+      : (hostRow.audio_coins_per_minute ?? hostRow.coins_per_minute ?? DEFAULT_AUDIO_RATE));
     // Only charge if call was active AND had non-zero duration
     const coinsCharged = coinsForCall({ status: session.status, durationSec, ratePerMinute: effectiveRate });
     // Level-based earning share — higher-level hosts keep a larger cut.

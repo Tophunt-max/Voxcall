@@ -154,7 +154,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    let coinsEarned = Math.ceil((duration / 60) * (call?.coinsPerMinute ?? 5));
+    let coinsEarned = Math.ceil((duration / 60) * (call?.coinsPerMinute ?? 25));
 
     if (call?.sessionId) {
       try {

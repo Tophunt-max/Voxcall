@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth';
-import { getLevelConfig, computeLevelProgress, getHostAudioRateCeiling, getHostVideoRateCeiling, getRankBoost, buildLevelInfo, rankBoostCaseSql, ABSOLUTE_MAX_RATE, type LevelDef } from '../lib/levels';
+import { getLevelConfig, computeLevelProgress, getHostAudioRateCeiling, getHostVideoRateCeiling, getRankBoost, buildLevelInfo, rankBoostCaseSql, ABSOLUTE_MAX_RATE, DEFAULT_AUDIO_RATE, DEFAULT_VIDEO_RATE, type LevelDef } from '../lib/levels';
 import { scoreHosts, normalizeWeights, type CandidateHost, type UserAffinity } from '../lib/recommend';
 import type { Env, JWTPayload } from '../types';
 
@@ -54,8 +54,8 @@ function enrichHost(h: any, config: LevelDef[]) {
     languages: safeParse(h.languages, []),
     level: h.level ?? 1,
     level_info: buildLevelInfo(config, h.level ?? 1),
-    audio_coins_per_minute: h.audio_coins_per_minute ?? h.coins_per_minute ?? 5,
-    video_coins_per_minute: h.video_coins_per_minute ?? (h.coins_per_minute ?? 5) + 5,
+    audio_coins_per_minute: h.audio_coins_per_minute ?? h.coins_per_minute ?? DEFAULT_AUDIO_RATE,
+    video_coins_per_minute: h.video_coins_per_minute ?? (h.coins_per_minute ? h.coins_per_minute + 5 : DEFAULT_VIDEO_RATE),
   };
 }
 
