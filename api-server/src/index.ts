@@ -168,7 +168,13 @@ async function verifyWsToken(token: string | null, secret: string): Promise<stri
     const key = new TextEncoder().encode(secret);
     const { payload } = await jwtVerify(token, key);
     return (payload as any).sub as string;
-  } catch {
+  } catch (e: any) {
+    // Expected: expired/invalid tokens are routine (client reconnects with stale token).
+    // Unexpected: key import errors, malformed secret — log so operators notice.
+    const msg = String(e?.code || e?.message || '');
+    if (!msg.includes('ERR_JWT') && !msg.includes('expired') && !msg.includes('invalid')) {
+      console.warn('[verifyWsToken] Unexpected verification error:', e);
+    }
     return null;
   }
 }
@@ -462,7 +468,9 @@ async function maybeRefreshFxRates(env: Env): Promise<void> {
     const scheduleRetry = async () => {
       await env.DB.prepare(
         "INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('fx_rates_updated', ?, unixepoch())"
-      ).bind(String(now - REFRESH_INTERVAL + RETRY_INTERVAL)).run().catch(() => {});
+      ).bind(String(now - REFRESH_INTERVAL + RETRY_INTERVAL)).run().catch((e) => {
+        console.warn('[Cron] FX scheduleRetry DB write failed:', e);
+      });
     };
 
     const res = await fetch('https://open.er-api.com/v6/latest/USD');

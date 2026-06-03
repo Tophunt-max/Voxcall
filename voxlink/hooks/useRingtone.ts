@@ -16,7 +16,9 @@ function stopWebAudio(el: HTMLAudioElement | null) {
     el.currentTime = 0;
     el.src = "";
     el.load();
-  } catch {}
+  } catch (e) {
+    console.warn('useRingtone: stopWebAudio failed:', e);
+  }
 }
 
 // Resolve the playable URI for web from an Expo module reference.
@@ -46,7 +48,9 @@ export function useRingtone(type: RingtoneType, active: boolean = true) {
           audio.loop = true;
           audio.volume = 1.0;
           webAudioRef.current = audio;
-          audio.play().catch(() => {});
+          audio.play().catch((e) => {
+            console.warn("useRingtone web: autoplay blocked or failed:", e);
+          });
         } catch (e) {
           console.warn("useRingtone web: failed to play:", e);
         }
@@ -91,8 +95,12 @@ export function useRingtone(type: RingtoneType, active: boolean = true) {
     return () => {
       isMounted = false;
       if (soundRef.current) {
-        soundRef.current.stopAsync().catch(() => {});
-        soundRef.current.unloadAsync().catch(() => {});
+        soundRef.current.stopAsync().catch((e) => {
+          console.warn('useRingtone: stopAsync failed during cleanup:', e);
+        });
+        soundRef.current.unloadAsync().catch((e) => {
+          console.warn('useRingtone: unloadAsync failed during cleanup:', e);
+        });
         soundRef.current = null;
       }
     };
@@ -108,7 +116,9 @@ export function useRingtone(type: RingtoneType, active: boolean = true) {
       try {
         await soundRef.current.stopAsync();
         await soundRef.current.unloadAsync();
-      } catch {}
+      } catch (e) {
+        console.warn('useRingtone: stop/unload failed:', e);
+      }
       soundRef.current = null;
     }
   };

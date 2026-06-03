@@ -103,7 +103,9 @@ class SocketService {
         try {
           const msg = JSON.parse(typeof event.data === "string" ? event.data : "{}");
           this._handleServerMessage(msg);
-        } catch {}
+        } catch (e) {
+          console.warn("[Socket] Failed to parse/handle server message:", e);
+        }
       };
 
       ws.onerror = (err) => {
@@ -268,7 +270,9 @@ class SocketService {
         // Also update the useAppConfig cache directly for immediate effect
         import("@/hooks/useAppConfig").then(({ updateConfigCache }) => {
           updateConfigCache(msg.settings ?? {});
-        }).catch(() => {});
+        }).catch((e) => {
+          console.warn("[Socket] Failed to update config cache:", e);
+        });
         break;
       default:
         break;
@@ -320,7 +324,9 @@ class SocketService {
         if (this.ws.readyState === WebSocket.OPEN) {
           this.ws.send(JSON.stringify({ type: "ping" }));
         }
-      } catch {}
+      } catch (e) {
+        console.warn("[Socket] Heartbeat send failed:", e);
+      }
     }, 30000);
   }
 
