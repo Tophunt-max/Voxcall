@@ -432,14 +432,14 @@ payment.post('/initiate', authMiddleware, async (c) => {
   await c.env.DB.prepare(
     `INSERT INTO coin_purchases (id, user_id, plan_id, plan_name, coins, bonus_coins, amount, currency, payment_method, gateway_id, gateway_name, promo_code, status)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`
-  ).bind(purchaseId, userId, plan_id, plan.name, plan.coins, (plan.bonus_coins || 0) + promoBonus, finalPrice, plan.currency || 'USD', gateway?.type || 'web', gateway?.id || null, gateway?.name || 'Web', promo_code || null).run();
+  ).bind(purchaseId, userId, plan_id, plan.name, plan.coins, (plan.bonus_coins || 0) + promoBonus, finalPrice, plan.currency || 'INR', gateway?.type || 'web', gateway?.id || null, gateway?.name || 'Web', promo_code || null).run();
 
   let redirectUrl: string | null = null;
   if (gateway?.redirect_url) {
-    const params = new URLSearchParams({ plan_id, purchase_id: purchaseId, amount: String(finalPrice), coins: String(plan.coins + (plan.bonus_coins || 0) + promoBonus), currency: plan.currency || 'USD' });
+    const params = new URLSearchParams({ plan_id, purchase_id: purchaseId, amount: String(finalPrice), coins: String(plan.coins + (plan.bonus_coins || 0) + promoBonus), currency: plan.currency || 'INR' });
     redirectUrl = `${gateway.redirect_url}?${params.toString()}`;
   }
-  return c.json({ purchase_id: purchaseId, redirect_url: redirectUrl, amount: finalPrice, coins: plan.coins + (plan.bonus_coins || 0) + promoBonus, currency: plan.currency || 'USD' });
+  return c.json({ purchase_id: purchaseId, redirect_url: redirectUrl, amount: finalPrice, coins: plan.coins + (plan.bonus_coins || 0) + promoBonus, currency: plan.currency || 'INR' });
 });
 
 // ─── POST /api/payment/verify-google-play ─────────────────────────────────────
@@ -472,7 +472,7 @@ payment.post('/verify-google-play', authMiddleware, async (c) => {
       try {
         await c.env.DB.prepare(
           "INSERT INTO coin_purchases (id, user_id, plan_id, plan_name, coins, bonus_coins, amount, currency, payment_method, payment_ref, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'google_play', ?, 'pending')"
-        ).bind(purchaseId, userId, plan_id, plan.name, plan.coins, plan.bonus_coins || 0, plan.price, plan.currency || 'USD', purchase_token).run();
+        ).bind(purchaseId, userId, plan_id, plan.name, plan.coins, plan.bonus_coins || 0, plan.price, plan.currency || 'INR', purchase_token).run();
       } catch (e: any) {
         const msg = String(e?.message || '').toLowerCase();
         if (msg.includes('unique') || msg.includes('constraint')) {
@@ -558,7 +558,7 @@ payment.post('/verify-google-play', authMiddleware, async (c) => {
       try {
         await c.env.DB.prepare(
           "INSERT INTO coin_purchases (id, user_id, plan_id, plan_name, coins, bonus_coins, amount, currency, payment_method, payment_ref, promo_code, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'google_play', ?, ?, 'pending')"
-        ).bind(purchaseId, userId, plan_id, plan.name, plan.coins, (plan.bonus_coins || 0) + promoBonus, plan.price, plan.currency || 'USD', purchase_token, promo_code || null).run();
+        ).bind(purchaseId, userId, plan_id, plan.name, plan.coins, (plan.bonus_coins || 0) + promoBonus, plan.price, plan.currency || 'INR', purchase_token, promo_code || null).run();
       } catch (e: any) {
         const msg = String(e?.message || '').toLowerCase();
         if (msg.includes('unique') || msg.includes('constraint')) {

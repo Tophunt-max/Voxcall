@@ -1,6 +1,6 @@
 // Client-side currency formatting.
 //
-// The server now stores prices in USD and returns:
+// The server now authors default plan prices in INR and returns:
 //   - users.country  (ISO 3166-1 alpha-2, set from CF-IPCountry at login)
 //   - users.currency (ISO 4217, derived from country)
 //   - coin_plans.price_local + coin_plans.currency on /api/coins/plans
@@ -10,9 +10,8 @@
 // (from auth context, hydrated from the server) before falling back to the
 // device locale via expo-localization.
 //
-// Previous version used INR as the conversion base, which was wrong because
-// coin_plans stores USD. This rewrite fixes that and adds the server-detected
-// country override.
+// INR remains the app default/base currency. Server-detected country currency
+// still wins when available so international users see localized amounts.
 
 import * as Localization from "expo-localization";
 
@@ -115,8 +114,8 @@ function detectFromLocale(): string {
       return _localeCurrency;
     }
   } catch { /* expo-localization may not be available on web */ }
-  _localeCurrency = "USD";
-  return "USD";
+  _localeCurrency = "INR";
+  return "INR";
 }
 
 /**

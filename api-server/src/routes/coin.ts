@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { authMiddleware } from '../middleware/auth';
-import { COUNTRY_TO_CURRENCY, USD_TO_FOREIGN, currencyForCountry, convertFromUSD, convertCurrency, detectCountryFromRequest } from '../lib/currency';
+import { USD_TO_FOREIGN, currencyForCountry, convertCurrency, detectCountryFromRequest } from '../lib/currency';
 import type { Env, JWTPayload } from '../types';
 
 const coin = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
@@ -10,16 +10,16 @@ const coin = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
 //   1. ?currency= query (explicit override — admin tools, testing)
 //   2. Authenticated user's currency (set at login from CF-IPCountry)
 //   3. Cloudflare's CF-IPCountry header on this request
-//   4. USD fallback so the response shape is always consistent
+//   4. INR fallback because the app's default/base economy is India-first
 //
 // Each plan now carries `price_local` and `currency` alongside the original
-// USD `price` so the client can display the local amount without doing FX
-// itself, AND the original USD is preserved for analytics/admin tooling.
+// base `price` so the client can display the local amount without doing FX
+// itself, AND the authored/base price is preserved for analytics/admin tooling.
 coin.get('/plans', async (c) => {
   const plans = await c.env.DB.prepare('SELECT * FROM coin_plans WHERE is_active = 1 ORDER BY coins ASC').all();
 
   // Resolve currency for this response.
-  let currency = 'USD';
+  let currency = 'INR';
   const queryCurrency = c.req.query('currency')?.toUpperCase();
   if (queryCurrency && USD_TO_FOREIGN[queryCurrency]) {
     currency = queryCurrency;
@@ -36,7 +36,7 @@ coin.get('/plans', async (c) => {
         }
       } catch { /* token invalid → fall through to header detection */ }
     }
-    if (currency === 'USD') {
+    if (currency === 'INR') {
       const country = detectCountryFromRequest(c.req.raw);
       if (country) currency = currencyForCountry(country);
     }
@@ -46,7 +46,7 @@ coin.get('/plans', async (c) => {
   // the static fallback table. A missing/old cache simply falls through to the
   // static rates inside convertFromUSD.
   let fxOverrides: Record<string, number> | null = null;
-  if (currency !== 'USD') {
+  if (currency !== 'INR') {
     try {
       const fxRow = await c.env.DB.prepare("SELECT value FROM app_settings WHERE key = 'fx_rates_usd'").first<{ value: string }>();
       if (fxRow?.value) fxOverrides = JSON.parse(fxRow.value);
@@ -58,7 +58,7 @@ coin.get('/plans', async (c) => {
     // INR for this India-first product; older rows may be 'USD'). Convert from
     // that base to the viewer's currency — NOT assuming USD, which double-
     // converted INR-priced plans (₹99 → ₹8217) for Indian users.
-    const planCurrency = (p.currency || 'USD').toUpperCase();
+    const planCurrency = (p.currency || 'INR').toUpperCase();
     const planPrice = Number(p.price ?? 0);
     const priceLocal = convertCurrency(planPrice, planCurrency, currency, fxOverrides);
     return {
@@ -193,7 +193,7 @@ coin.post('/purchase', async (c) => {
       .bind(crypto.randomUUID(), sub, 'purchase', total, `Purchased ${plan.name} — ${total} coins`, plan_id),
     db.prepare(`INSERT INTO coin_purchases (id, user_id, plan_id, plan_name, coins, bonus_coins, amount, currency, payment_method, gateway_id, gateway_name, payment_ref, utr_id, promo_code, status)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'success')`)
-      .bind(purchaseId, sub, plan_id, plan.name, plan.coins, (plan.bonus_coins || 0) + promoBonus, plan.price, plan.currency || 'USD', payment_method || 'unknown', gateway_id || null, gatewayName, payment_ref || null, utr_id || null, promo_code || null),
+      .bind(purchaseId, sub, plan_id, plan.name, plan.coins, (plan.bonus_coins || 0) + promoBonus, plan.price, plan.currency || 'INR', payment_method || 'unknown', gateway_id || null, gatewayName, payment_ref || null, utr_id || null, promo_code || null),
   ];
   // Bug fix: increment promo used_count so max_uses limit works correctly
   if (promoRow) {
@@ -252,7 +252,7 @@ coin.post('/manual-deposit', async (c) => {
     await db.prepare(
       `INSERT INTO coin_purchases (id, user_id, plan_id, plan_name, coins, bonus_coins, amount, currency, payment_method, gateway_id, gateway_name, utr_id, promo_code, status, screenshot_url)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'manual', ?, ?, ?, ?, 'pending', ?)`
-    ).bind(purchaseId, sub, plan_id, plan.name, plan.coins, (plan.bonus_coins || 0) + promoBonus, plan.price, plan.currency || 'USD', qr_code_id || null, qrName, String(utr_id).trim(), promo_code || null, screenshot_url || null).run();
+    ).bind(purchaseId, sub, plan_id, plan.name, plan.coins, (plan.bonus_coins || 0) + promoBonus, plan.price, plan.currency || 'INR', qr_code_id || null, qrName, String(utr_id).trim(), promo_code || null, screenshot_url || null).run();
   } catch (e: any) {
     const msg = String(e?.message || '').toLowerCase();
     if (msg.includes('unique') || msg.includes('constraint')) {

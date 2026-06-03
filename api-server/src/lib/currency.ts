@@ -1,9 +1,9 @@
 // Server-side currency mapping & conversion.
 //
-// Coin plan prices are stored in USD (coin_plans.price, coin_plans.currency
-// defaults to 'USD'). When responding to /api/coins/plans we look up the
-// user's currency (set at register/login from the Cloudflare CF-IPCountry
-// header) and return both the original USD and the localized amount so the
+// Coin plan prices are authored in INR by default (coin_plans.currency
+// defaults to 'INR' for this India-first product). When responding to
+// /api/coins/plans we look up the user's currency (set at register/login from
+// the Cloudflare CF-IPCountry header) and return the localized amount so the
 // client can format with the right symbol without doing FX itself.
 //
 // The exchange rates are intentionally hardcoded — the variance over weeks
@@ -61,12 +61,13 @@ export const USD_TO_FOREIGN: Record<string, number> = {
 };
 
 /**
- * Resolve a currency code from a country code. Falls back to USD when the
- * country is unknown or null — keeps the response shape consistent.
+ * Resolve a currency code from a country code. Falls back to INR when the
+ * country is unknown or null because Voxcall is an India-first app and all
+ * internal/default pricing is authored in rupees.
  */
 export function currencyForCountry(country: string | null | undefined): string {
-  if (!country) return 'USD';
-  return COUNTRY_TO_CURRENCY[country.toUpperCase()] ?? 'USD';
+  if (!country) return 'INR';
+  return COUNTRY_TO_CURRENCY[country.toUpperCase()] ?? 'INR';
 }
 
 /**
