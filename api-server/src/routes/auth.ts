@@ -128,7 +128,7 @@ auth.post('/register', rateLimit, zValidator('json', registerSchema), async (c) 
   // The auth middleware later backfills any users who registered before this
   // change.
   const country = detectCountryFromRequest(c.req.raw);
-  const currency = country ? currencyForCountry(country) : null;
+  const currency = currencyForCountry(country);
   // First-call-free trial — read the admin-configured pool size and stamp
   // it on the row so the very first call uses the freebie. Falls back to 0
   // if the setting is missing / not yet seeded (feature degrades gracefully).
@@ -181,13 +181,16 @@ auth.post('/login', rateLimit, zValidator('json', loginSchema), async (c) => {
   // detected currency immediately.
   if (!user.country || !user.currency) {
     const detected = detectCountryFromRequest(c.req.raw);
+    const cur = currencyForCountry(detected);
     if (detected) {
-      const cur = currencyForCountry(detected);
-      await db.prepare(
-        'UPDATE users SET country = COALESCE(country, ?), currency = COALESCE(currency, ?) WHERE id = ?'
-      ).bind(detected, cur, user.id).run().catch(() => {});
-      user.country = user.country ?? detected;
-      user.currency = user.currency ?? cur;
+      await db.prepare('UPDATE users SET country = ?, currency = ? WHERE id = ?')
+        .bind(detected, cur, user.id).run().catch(() => {});
+      user.country = detected;
+      user.currency = cur;
+    } else if (!user.currency) {
+      await db.prepare('UPDATE users SET currency = COALESCE(currency, ?) WHERE id = ?')
+        .bind(cur, user.id).run().catch(() => {});
+      user.currency = cur;
     }
   }
 
@@ -479,7 +482,7 @@ auth.post('/google-login', rateLimit, async (c) => {
 
   // FIX (currency auto-detect): country + currency on first Google login
   const detectedCountry = detectCountryFromRequest(c.req.raw);
-  const detectedCurrency = detectedCountry ? currencyForCountry(detectedCountry) : null;
+  const detectedCurrency = currencyForCountry(detectedCountry);
 
   if (!user) {
     // 4. New user — create account
@@ -561,7 +564,7 @@ async function quickLoginHandler(c: any, deviceId: string | null) {
   // FIX (currency auto-detect): detect country once at the top of the handler
   // so both the returning-user backfill and the new-user INSERT can reuse it.
   const detectedCountry = detectCountryFromRequest(c.req.raw);
-  const detectedCurrency = detectedCountry ? currencyForCountry(detectedCountry) : null;
+  const detectedCurrency = currencyForCountry(detectedCountry);
 
   if (deviceId) {
     const existing = await db.prepare(
@@ -569,13 +572,19 @@ async function quickLoginHandler(c: any, deviceId: string | null) {
     ).bind(deviceId).first() as any;
 
     if (existing) {
-      // Backfill country/currency if missing
-      if ((!existing.country || !existing.currency) && detectedCountry) {
-        await db.prepare(
-          'UPDATE users SET country = COALESCE(country, ?), currency = COALESCE(currency, ?) WHERE id = ?'
-        ).bind(detectedCountry, detectedCurrency, existing.id).run().catch(() => {});
-        existing.country = existing.country ?? detectedCountry;
-        existing.currency = existing.currency ?? detectedCurrency;
+      // Backfill country/currency if missing. A real country signal wins;
+      // otherwise only fill currency with the INR fallback and leave country null.
+      if (!existing.country || !existing.currency) {
+        if (detectedCountry) {
+          await db.prepare('UPDATE users SET country = ?, currency = ? WHERE id = ?')
+            .bind(detectedCountry, detectedCurrency, existing.id).run().catch(() => {});
+          existing.country = detectedCountry;
+          existing.currency = detectedCurrency;
+        } else if (!existing.currency) {
+          await db.prepare('UPDATE users SET currency = COALESCE(currency, ?) WHERE id = ?')
+            .bind(detectedCurrency, existing.id).run().catch(() => {});
+          existing.currency = detectedCurrency;
+        }
       }
       const token = await signToken({ sub: existing.id, role: existing.role, name: existing.name, email: existing.email }, c.env.JWT_SECRET);
       return c.json({

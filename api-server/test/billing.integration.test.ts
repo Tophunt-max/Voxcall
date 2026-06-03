@@ -233,7 +233,7 @@ describe('chargeCallerWithFreePool', () => {
 
   it('respects best-effort billing on partial-free path when caller cannot afford the paid portion', async () => {
     // Pool = 2 min, call = 5 min, rate = 10/min → 3 paid minutes = 30 coins.
-    // Caller has 15 → only 15 charged; host still paid for ALL 5 min.
+    // Caller has 15 → only 15 charged; host paid for free minutes + collected share.
     db.applySchema("UPDATE users SET free_call_minutes = 2, coins = 15 WHERE id = 'caller';");
     const res = await chargeCallerWithFreePool(db as any, {
       callerId: 'caller',
@@ -244,12 +244,12 @@ describe('chargeCallerWithFreePool', () => {
     });
     expect(res.free_minutes_used).toBe(2);
     expect(res.charged).toBe(15); // capped at caller's 15-coin balance
-    // Host paid for ALL 5 minutes from full call coins (5 × 10 = 50, share 0.7 = 35).
-    // Note: this is the "platform absorbs more than the freebie" case — host is
-    // paid more than caller paid in. Acceptable as customer-acquisition cost.
-    expect(res.hostEarned).toBe(35);
+    // Host is paid for the free portion by the platform (2 × 10 × 0.7 = 14)
+    // plus the share of what the caller could actually pay (15 × 0.7 = 10).
+    // The non-free overrun is not credited without a matching caller debit.
+    expect(res.hostEarned).toBe(24);
     expect(await coins('caller')).toBe(0);
-    expect(await coins('host')).toBe(35);
+    expect(await coins('host')).toBe(24);
     expect(await pool('caller')).toBe(0);
   });
 

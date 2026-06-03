@@ -139,16 +139,8 @@ async function approveDeposit(db: D1Database, purchaseId: string, source: string
   const purchase = await db.prepare('SELECT id, user_id, coins, bonus_coins, promo_code, status FROM coin_purchases WHERE id = ?').bind(purchaseId).first<any>();
   if (!purchase) return { ok: false, notFound: true };
   if (purchase.status === 'success') return { ok: true, already: true };
+
   let totalCoins = (purchase.coins || 0) + (purchase.bonus_coins || 0);
-  // Atomic CAS: only update if status is still not 'success' — prevents double-credit on concurrent webhook retries.
-  // The winner of this CAS is the ONLY caller that proceeds to credit + promo consumption below.
-  const casUpdate = await db.prepare(
-    "UPDATE coin_purchases SET status = 'success', payment_method = COALESCE(payment_method, ?), updated_at = unixepoch() WHERE id = ? AND status != 'success'"
-  ).bind(source, purchaseId).run();
-  if (!casUpdate.meta?.changes || casUpdate.meta.changes === 0) {
-    // Another webhook already processed this purchase
-    return { ok: true, already: true };
-  }
 
   // FIX #2: consume one promo use atomically (only succeeds while quota remains).
   if (purchase.promo_code) {
@@ -161,8 +153,6 @@ async function approveDeposit(db: D1Database, purchaseId: string, source: string
           'UPDATE promo_codes SET used_count = used_count + 1, updated_at = unixepoch() WHERE id = ? AND (max_uses IS NULL OR used_count < max_uses)'
         ).bind(promo.id).run();
         if (!inc.meta?.changes && promo.type === 'bonus' && (promo.bonus_coins || 0) > 0) {
-          // Quota exhausted before this deposit was credited — do not grant the
-          // promo bonus. Floor at the base coins so we never go below what was paid for.
           totalCoins = Math.max(purchase.coins || 0, totalCoins - (promo.bonus_coins || 0));
         }
       }
@@ -171,18 +161,74 @@ async function approveDeposit(db: D1Database, purchaseId: string, source: string
     }
   }
 
-  await db.batch([
-    db.prepare('UPDATE users SET coins = coins + ?, updated_at = unixepoch() WHERE id = ?').bind(totalCoins, purchase.user_id),
-    db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)').bind(
-      crypto.randomUUID(), purchase.user_id, 'purchase', totalCoins, note || `Auto-matched via ${source}`, purchaseId
-    ),
-  ]);
+  // Atomic finalization: credit, ledger, and success status are one D1 batch.
+  // If any statement throws, D1 rolls the batch back, so we never leave a
+  // purchase marked success without the user's coins. Duplicate webhooks are
+  // guarded by the status!='success' predicates on every money-moving statement.
+  const results = await db.batch([
+    db.prepare(
+      "UPDATE users SET coins = coins + ?, updated_at = unixepoch() WHERE id = ? AND EXISTS (SELECT 1 FROM coin_purchases WHERE id = ? AND status != 'success')"
+    ).bind(totalCoins, purchase.user_id, purchaseId),
+    db.prepare(
+      "INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) SELECT ?, ?, 'purchase', ?, ?, ? WHERE EXISTS (SELECT 1 FROM coin_purchases WHERE id = ? AND status != 'success')"
+    ).bind(crypto.randomUUID(), purchase.user_id, totalCoins, note || `Auto-matched via ${source}`, purchaseId, purchaseId),
+    db.prepare(
+      "UPDATE coin_purchases SET status = 'success', payment_method = COALESCE(payment_method, ?), updated_at = unixepoch() WHERE id = ? AND status != 'success'"
+    ).bind(source, purchaseId),
+  ]) as Array<{ meta?: { changes?: number } }>;
+
+  if (!results[0]?.meta?.changes) return { ok: true, already: true };
   return { ok: true, coins: totalCoins };
 }
 
 // ─── Find purchase by gateway order ID ────────────────────────────────────────
 async function findPurchaseByOrderId(db: D1Database, gatewayOrderId: string): Promise<any | null> {
   return db.prepare("SELECT id, status FROM coin_purchases WHERE gateway_order_id = ? ORDER BY created_at DESC LIMIT 1").bind(gatewayOrderId).first<any>();
+}
+
+const ZERO_DECIMAL_CURRENCIES = new Set(['JPY', 'KRW', 'VND', 'IDR', 'CLP']);
+
+function toMinorUnits(amount: number, currency: string): number {
+  const factor = ZERO_DECIMAL_CURRENCIES.has(currency.toUpperCase()) ? 1 : 100;
+  return Math.round(Number(amount || 0) * factor);
+}
+
+async function verifyPurchaseAmount(
+  db: D1Database,
+  purchaseId: string,
+  paidAmountMinor: number | null | undefined,
+  paidCurrency?: string | null,
+): Promise<boolean> {
+  const purchase = await db.prepare('SELECT amount, currency FROM coin_purchases WHERE id = ?')
+    .bind(purchaseId).first<{ amount: number; currency: string | null }>();
+  if (!purchase) return false;
+  if (paidAmountMinor == null || !Number.isFinite(Number(paidAmountMinor))) return false;
+  const expectedCurrency = String(purchase.currency || 'INR').toUpperCase();
+  const actualCurrency = String(paidCurrency || expectedCurrency).toUpperCase();
+  if (actualCurrency !== expectedCurrency) return false;
+  return Number(paidAmountMinor) === toMinorUnits(Number(purchase.amount || 0), expectedCurrency);
+}
+
+function rupeesToMinor(amount: unknown): number | null {
+  const n = Number(amount);
+  return Number.isFinite(n) ? Math.round(n * 100) : null;
+}
+
+async function googleProductMatchesPlan(db: D1Database, productId: string, planId: string): Promise<boolean> {
+  // Preferred production mapping: app_settings.google_play_product_map =
+  // { "android_product_id": "coin_plan_id" }. If not configured, fall back to
+  // requiring product_id === plan_id so a cheap product cannot claim an
+  // expensive plan by sending an arbitrary plan_id.
+  const row = await db.prepare("SELECT value FROM app_settings WHERE key = 'google_play_product_map'").first<{ value: string }>();
+  if (row?.value) {
+    try {
+      const map = JSON.parse(row.value) as Record<string, string>;
+      return map[productId] === planId;
+    } catch {
+      return false;
+    }
+  }
+  return productId === planId;
 }
 
 // ─── POST /api/payment/webhook/razorpay ──────────────────────────────────────
@@ -224,6 +270,8 @@ payment.post('/webhook/razorpay', async (c) => {
       purchase = await c.env.DB.prepare("SELECT id, status FROM coin_purchases WHERE id = ? LIMIT 1").bind(notePurchaseId).first<any>();
     }
     if (!purchase) return c.json({ ok: true, message: 'No matching purchase found' });
+    const amountOk = await verifyPurchaseAmount(c.env.DB, purchase.id, Number(paymentEntity.amount), paymentEntity.currency);
+    if (!amountOk) return c.json({ error: 'Payment amount/currency mismatch' }, 400);
     const result = await approveDeposit(c.env.DB, purchase.id, 'razorpay', `Razorpay payment ${razorpayPaymentId} captured`);
     return c.json({ ok: result.ok, already: result.already, coins: result.coins });
   } catch (e: any) {
@@ -262,6 +310,9 @@ payment.post('/webhook/stripe', async (c) => {
     if (purchaseId) purchase = await c.env.DB.prepare("SELECT id, status FROM coin_purchases WHERE id = ? LIMIT 1").bind(purchaseId).first<any>();
     if (!purchase) purchase = await c.env.DB.prepare("SELECT id, status FROM coin_purchases WHERE payment_ref = ? LIMIT 1").bind(stripeId).first<any>();
     if (!purchase) return c.json({ ok: true, message: 'No matching purchase found' });
+    const paidAmount = obj.amount_total ?? obj.amount_received ?? obj.amount;
+    const amountOk = await verifyPurchaseAmount(c.env.DB, purchase.id, Number(paidAmount), obj.currency);
+    if (!amountOk) return c.json({ error: 'Payment amount/currency mismatch' }, 400);
     const result = await approveDeposit(c.env.DB, purchase.id, 'stripe', `Stripe ${event} — ${stripeId}`);
     return c.json({ ok: result.ok, already: result.already, coins: result.coins });
   } catch (e: any) {
@@ -325,6 +376,8 @@ payment.post('/webhook/phonepe', async (c) => {
     if (!purchase && merchantTxnId) purchase = await c.env.DB.prepare("SELECT id, status FROM coin_purchases WHERE payment_ref = ? OR utr_id = ? LIMIT 1").bind(merchantTxnId, merchantTxnId).first<any>();
     if (!purchase && utr) purchase = await c.env.DB.prepare("SELECT id, status FROM coin_purchases WHERE utr_id = ? LIMIT 1").bind(utr).first<any>();
     if (!purchase) return c.json({ ok: true, message: 'No matching purchase found' });
+    const amountOk = await verifyPurchaseAmount(c.env.DB, purchase.id, Number(data.amount), data.currency || data.currencyCode);
+    if (!amountOk) return c.json({ error: 'Payment amount/currency mismatch' }, 400);
     const result = await approveDeposit(c.env.DB, purchase.id, 'phonepe', `PhonePe payment ${utr || merchantTxnId} success`);
     return c.json({ ok: result.ok, already: result.already, coins: result.coins });
   } catch (e: any) {
@@ -372,6 +425,8 @@ payment.post('/webhook/paytm', async (c) => {
     if (orderId) purchase = await findPurchaseByOrderId(c.env.DB, orderId);
     if (!purchase && txnId) purchase = await c.env.DB.prepare("SELECT id, status FROM coin_purchases WHERE payment_ref = ? LIMIT 1").bind(txnId).first<any>();
     if (!purchase) return c.json({ ok: true, message: 'No matching purchase found' });
+    const amountOk = await verifyPurchaseAmount(c.env.DB, purchase.id, rupeesToMinor(payload.TXNAMOUNT), payload.CURRENCY);
+    if (!amountOk) return c.json({ error: 'Payment amount/currency mismatch' }, 400);
     const result = await approveDeposit(c.env.DB, purchase.id, 'paytm', `Paytm TXN_SUCCESS — ${txnId}`);
     return c.json({ ok: result.ok, already: result.already, coins: result.coins });
   } catch (e: any) {
@@ -432,14 +487,14 @@ payment.post('/initiate', authMiddleware, async (c) => {
   await c.env.DB.prepare(
     `INSERT INTO coin_purchases (id, user_id, plan_id, plan_name, coins, bonus_coins, amount, currency, payment_method, gateway_id, gateway_name, promo_code, status)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`
-  ).bind(purchaseId, userId, plan_id, plan.name, plan.coins, (plan.bonus_coins || 0) + promoBonus, finalPrice, plan.currency || 'USD', gateway?.type || 'web', gateway?.id || null, gateway?.name || 'Web', promo_code || null).run();
+  ).bind(purchaseId, userId, plan_id, plan.name, plan.coins, (plan.bonus_coins || 0) + promoBonus, finalPrice, plan.currency || 'INR', gateway?.type || 'web', gateway?.id || null, gateway?.name || 'Web', promo_code || null).run();
 
   let redirectUrl: string | null = null;
   if (gateway?.redirect_url) {
-    const params = new URLSearchParams({ plan_id, purchase_id: purchaseId, amount: String(finalPrice), coins: String(plan.coins + (plan.bonus_coins || 0) + promoBonus), currency: plan.currency || 'USD' });
+    const params = new URLSearchParams({ plan_id, purchase_id: purchaseId, amount: String(finalPrice), coins: String(plan.coins + (plan.bonus_coins || 0) + promoBonus), currency: plan.currency || 'INR' });
     redirectUrl = `${gateway.redirect_url}?${params.toString()}`;
   }
-  return c.json({ purchase_id: purchaseId, redirect_url: redirectUrl, amount: finalPrice, coins: plan.coins + (plan.bonus_coins || 0) + promoBonus, currency: plan.currency || 'USD' });
+  return c.json({ purchase_id: purchaseId, redirect_url: redirectUrl, amount: finalPrice, coins: plan.coins + (plan.bonus_coins || 0) + promoBonus, currency: plan.currency || 'INR' });
 });
 
 // ─── POST /api/payment/verify-google-play ─────────────────────────────────────
@@ -451,6 +506,10 @@ payment.post('/verify-google-play', authMiddleware, async (c) => {
 
   const { purchase_token, product_id, package_name, plan_id, promo_code } = await c.req.json() as any;
   if (!purchase_token || !product_id) return c.json({ error: 'purchase_token and product_id are required' }, 400);
+  if (!plan_id) return c.json({ error: 'plan_id is required' }, 400);
+  if (!(await googleProductMatchesPlan(c.env.DB, product_id, plan_id))) {
+    return c.json({ error: 'Google Play product does not match the requested coin plan' }, 400);
+  }
 
   // Duplicate check: ensure this purchase_token hasn't been used already
   const existing = await c.env.DB.prepare("SELECT id, status FROM coin_purchases WHERE payment_ref = ? AND payment_method = 'google_play' LIMIT 1").bind(purchase_token).first<any>();
@@ -472,7 +531,7 @@ payment.post('/verify-google-play', authMiddleware, async (c) => {
       try {
         await c.env.DB.prepare(
           "INSERT INTO coin_purchases (id, user_id, plan_id, plan_name, coins, bonus_coins, amount, currency, payment_method, payment_ref, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'google_play', ?, 'pending')"
-        ).bind(purchaseId, userId, plan_id, plan.name, plan.coins, plan.bonus_coins || 0, plan.price, plan.currency || 'USD', purchase_token).run();
+        ).bind(purchaseId, userId, plan_id, plan.name, plan.coins, plan.bonus_coins || 0, plan.price, plan.currency || 'INR', purchase_token).run();
       } catch (e: any) {
         const msg = String(e?.message || '').toLowerCase();
         if (msg.includes('unique') || msg.includes('constraint')) {
@@ -558,7 +617,7 @@ payment.post('/verify-google-play', authMiddleware, async (c) => {
       try {
         await c.env.DB.prepare(
           "INSERT INTO coin_purchases (id, user_id, plan_id, plan_name, coins, bonus_coins, amount, currency, payment_method, payment_ref, promo_code, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'google_play', ?, ?, 'pending')"
-        ).bind(purchaseId, userId, plan_id, plan.name, plan.coins, (plan.bonus_coins || 0) + promoBonus, plan.price, plan.currency || 'USD', purchase_token, promo_code || null).run();
+        ).bind(purchaseId, userId, plan_id, plan.name, plan.coins, (plan.bonus_coins || 0) + promoBonus, plan.price, plan.currency || 'INR', purchase_token, promo_code || null).run();
       } catch (e: any) {
         const msg = String(e?.message || '').toLowerCase();
         if (msg.includes('unique') || msg.includes('constraint')) {

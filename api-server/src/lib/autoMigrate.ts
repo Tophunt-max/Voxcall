@@ -78,6 +78,7 @@ import m_0029 from '../../migrations/0029_call_observability.sql';
 import m_0030 from '../../migrations/0030_production_inr_coin_economy.sql';
 import m_0031 from '../../migrations/0031_admin_default_call_rates.sql';
 import m_0032 from '../../migrations/0032_coin_plans_inr_native.sql';
+import m_0033 from '../../migrations/0033_inr_withdrawals_and_tx_types.sql';
 
 interface Migration {
   /**
@@ -122,6 +123,7 @@ const MIGRATIONS: ReadonlyArray<Migration> = [
   { name: '0030_production_inr_coin_economy.sql',   sql: m_0030 },
   { name: '0031_admin_default_call_rates.sql',      sql: m_0031 },
   { name: '0032_coin_plans_inr_native.sql',         sql: m_0032 },
+  { name: '0033_inr_withdrawals_and_tx_types.sql',  sql: m_0033 },
 ];
 
 /**

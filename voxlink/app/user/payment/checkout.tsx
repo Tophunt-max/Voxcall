@@ -19,7 +19,6 @@ import { router } from "expo-router";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { API } from "@/services/api";
-import { notifyPurchaseSuccess } from "@/services/NotificationService";
 import LoadingOverlay from "@/components/LoadingOverlay";
 import { showSuccessToast, showErrorToast } from "@/components/Toast";
 import { formatPrice, formatLocalAmount, getCurrencyCode } from "@/utils/currency";
@@ -51,6 +50,24 @@ interface Gateway {
   icon_emoji: string;
   instruction?: string;
   redirect_url?: string;
+}
+
+function getPlanDisplayAmount(plan: CoinPlan | null): number {
+  if (!plan) return 0;
+  return plan.price_local ?? plan.price;
+}
+
+function convertBaseDiscountToDisplay(plan: CoinPlan | null, discount: number): number {
+  if (!plan || discount <= 0) return 0;
+  const basePrice = Number(plan.price || 0);
+  const displayPrice = getPlanDisplayAmount(plan);
+  if (!Number.isFinite(basePrice) || basePrice <= 0 || !Number.isFinite(displayPrice)) return discount;
+  return discount * (displayPrice / basePrice);
+}
+
+function formatPlanDisplayAmount(plan: CoinPlan | null, amount: number): string {
+  const currency = plan?.price_local != null ? plan.currency : getCurrencyCode();
+  return formatLocalAmount(amount, currency);
 }
 
 interface ManualQR {
@@ -152,31 +169,16 @@ const wStyles = StyleSheet.create({
 async function tryProcessPayment(
   gateways: Gateway[],
   plan: CoinPlan,
-  totalCoins: number,
-  finalPrice: number,
-  updateCoins: (n: number) => void,
   setLoading: (v: boolean) => void,
   promoCode?: string
 ): Promise<void> {
-  const platform = Platform.OS;
   const promo = promoCode?.trim() || undefined;
 
-  if (platform === "android" || platform === "ios") {
-    // On mobile: use native Google Play / Apple Pay via existing purchaseCoins route
-    const result = await API.purchaseCoins(plan.id, platform === "android" ? "googlepay" : "applepay", undefined, undefined, undefined, promo) as any;
-    if (result?.new_balance != null) {
-      updateCoins(result.new_balance);
-      await notifyPurchaseSuccess(totalCoins);
-      showSuccessToast(`${totalCoins.toLocaleString()} coins added!`, "Purchase Successful");
-      router.replace("/user/payment/success");
-    } else {
-      throw new Error("Payment failed");
-    }
-    return;
-  }
-
-  // Web: use initiatePayment to create a server-side pending purchase, then redirect.
-  // The gateway should send a webhook to auto-approve. The purchase_id is embedded in the redirect URL.
+  // Use /api/payment/initiate for online payments on every platform. The old
+  // mobile branch called /api/coins/purchase, but that route intentionally
+  // rejects self-service credits because it cannot verify a gateway payment.
+  // Native IAP can still use API.verifyGooglePlay after obtaining a real Play
+  // Billing purchase token; this checkout screen uses configured gateways.
   for (let i = 0; i < gateways.length; i++) {
     const gw = gateways[i];
     try {
@@ -187,16 +189,7 @@ async function tryProcessPayment(
         await Linking.openURL(initiated.redirect_url);
         return;
       }
-      // If gateway has no redirect URL, try direct API processing
-      const result = await API.purchaseCoins(plan.id, gw.type, undefined, undefined, gw.id, promo) as any;
-      if (result?.new_balance != null) {
-        updateCoins(result.new_balance);
-        await notifyPurchaseSuccess(totalCoins);
-        showSuccessToast(`${totalCoins.toLocaleString()} coins added!`, "Purchase Successful");
-        router.replace("/user/payment/success");
-        return;
-      }
-      throw new Error("Gateway did not process payment");
+      throw new Error("Payment gateway did not return a checkout URL");
     } catch (err) {
       if (i === gateways.length - 1) throw err;
     }
@@ -501,7 +494,7 @@ const mStyles = StyleSheet.create({
 // ─── Main CheckoutScreen ──────────────────────────────────────────────────────
 export default function CheckoutScreen() {
   const colors = useColors();
-  const { user, updateCoins } = useAuth();
+  const { user } = useAuth();
   const userCurrency = getCurrencyCode();
   const [plans, setPlans] = useState<CoinPlan[]>([]);
   const [plansLoading, setPlansLoading] = useState(true);
@@ -556,9 +549,11 @@ export default function CheckoutScreen() {
   const totalCoins = selectedPlan
     ? selectedPlan.coins + (selectedPlan.bonus_coins ?? 0) + (promoApplied?.bonus_coins ?? 0)
     : 0;
-  const finalPrice = selectedPlan
-    ? Math.max(0, selectedPlan.price - (promoApplied?.discount ?? 0))
+  const displayDiscount = convertBaseDiscountToDisplay(selectedPlan, promoApplied?.discount ?? 0);
+  const finalDisplayPrice = selectedPlan
+    ? Math.max(0, getPlanDisplayAmount(selectedPlan) - displayDiscount)
     : 0;
+  const finalDisplayPriceText = formatPlanDisplayAmount(selectedPlan, finalDisplayPrice);
 
   const handlePurchase = useCallback(async () => {
     if (!user || !selectedPlan) return;
@@ -568,13 +563,13 @@ export default function CheckoutScreen() {
     }
     setLoading(true);
     try {
-      await tryProcessPayment(gateways, selectedPlan, totalCoins, finalPrice, updateCoins, setLoading, promoCode);
+      await tryProcessPayment(gateways, selectedPlan, setLoading, promoCode);
     } catch (err: any) {
       showErrorToast(err?.message || "Payment failed. Please try again.", "Payment Failed");
     } finally {
       setLoading(false);
     }
-  }, [selectedPlan, gateways, user, totalCoins, finalPrice, updateCoins, paymentMethod]);
+  }, [selectedPlan, gateways, user, paymentMethod, promoCode]);
 
   const isWeb = Platform.OS === "web";
 
@@ -709,7 +704,7 @@ export default function CheckoutScreen() {
           <View style={[styles.promoBadge, { backgroundColor: colors.online + "18" }]}>
             <Text style={[styles.promoBadgeText, { color: colors.online }]}>
               {promoApplied.type === "percent"
-                ? `🎉 ${promoApplied.discount_pct}% off — Save ${formatPrice(promoApplied.discount, userCurrency)}`
+                ? `🎉 ${promoApplied.discount_pct}% off — Save ${formatPlanDisplayAmount(selectedPlan, displayDiscount)}`
                 : `🎁 +${promoApplied.bonus_coins} Bonus Coins added!`}
             </Text>
           </View>
@@ -744,12 +739,12 @@ export default function CheckoutScreen() {
               {(promoApplied?.discount ?? 0) > 0 && (
                 <View style={styles.summaryRow}>
                   <Text style={[styles.summaryLabel, { color: colors.mutedForeground }]}>Promo Discount</Text>
-                  <Text style={[styles.summaryValue, { color: colors.online }]}>-{formatPrice(promoApplied!.discount, userCurrency)}</Text>
+                  <Text style={[styles.summaryValue, { color: colors.online }]}>-{formatPlanDisplayAmount(selectedPlan, displayDiscount)}</Text>
                 </View>
               )}
               <View style={styles.summaryRow}>
                 <Text style={[styles.totalLabel, { color: colors.text }]}>Total</Text>
-                <Text style={[styles.totalValue, { color: colors.accent }]}>{formatPrice(finalPrice, userCurrency)}</Text>
+                <Text style={[styles.totalValue, { color: colors.accent }]}>{finalDisplayPriceText}</Text>
               </View>
             </View>
           </>
@@ -773,8 +768,8 @@ export default function CheckoutScreen() {
             {!selectedPlan
               ? "Select a Package"
               : paymentMethod === "manual"
-              ? `Pay via UPI — ${formatPrice(finalPrice, userCurrency)} for ${totalCoins.toLocaleString()} Coins`
-              : `Continue — ${formatPrice(finalPrice, userCurrency)} for ${totalCoins.toLocaleString()} Coins`}
+              ? `Pay via UPI — ${finalDisplayPriceText} for ${totalCoins.toLocaleString()} Coins`
+              : `Continue — ${finalDisplayPriceText} for ${totalCoins.toLocaleString()} Coins`}
           </Text>
         </TouchableOpacity>
       </View>

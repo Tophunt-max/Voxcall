@@ -270,22 +270,22 @@ export async function chargeCallerWithFreePool(
   // — fractional rates × integer units can produce decimals on per-second
   // billing). Math.floor preserves the platform-never-overcharges guarantee.
   const callerOwes = Math.floor(paidUnits * ratePerUnit);
-  // Host paid for ALL units (free + paid) — platform absorbs the
-  // free-portion cost. Multiply once at the end so per-second billing
-  // doesn't accumulate sub-coin rounding drift.
-  const fullCallCoins = totalUnits * ratePerUnit;
-  const hostEarn = hostShareOf(fullCallCoins, params.earningShare);
   // Convert free units back to whole minutes for the column decrement.
   // ceil so a fractional minute (e.g. 1.5 minutes worth of seconds) burns
   // 2 free minutes — fair to the platform's free-trial budget.
   const freeMinutesToDecrement = Math.ceil(freeUnitsUsed / freePoolUnitsPerFreeMinute);
 
-  // 3. Best-effort cap on the caller's debit (same partial-billing model
-  //    as chargeCallerAffordable).
+  // 3. Split host earnings into the platform-funded free portion and the
+  // caller-funded paid portion. Only the paid portion uses the caller's balance;
+  // if that atomic transfer fails because the balance changed after our read,
+  // the host still receives the free-portion earnings but no unfunded paid
+  // earnings leak through.
+  const freeCallCoins = freeUnitsUsed * ratePerUnit;
+  const freeHostEarn = hostShareOf(freeCallCoins, params.earningShare);
   const callerActuallyPays = affordableCoins(callerOwes, callerCoins);
+  const paidHostEarn = hostShareOf(callerActuallyPays, params.earningShare);
 
-  // 4. Atomic batch: decrement free pool + debit caller + credit host.
-  //    SQLite/D1 batches are transactional — either all three land or none.
+  // 4. Consume free pool and credit the platform-funded free earnings.
   const ops: D1PreparedStatement[] = [];
   if (freeMinutesToDecrement > 0) {
     ops.push(
@@ -294,18 +294,11 @@ export async function chargeCallerWithFreePool(
         .bind(freeMinutesToDecrement, params.callerId),
     );
   }
-  if (callerActuallyPays > 0) {
-    ops.push(
-      db
-        .prepare('UPDATE users SET coins = coins - ? WHERE id = ? AND coins >= ?')
-        .bind(callerActuallyPays, params.callerId, callerActuallyPays),
-    );
-  }
-  if (hostEarn > 0) {
+  if (freeHostEarn > 0) {
     ops.push(
       db
         .prepare('UPDATE users SET coins = coins + ? WHERE id = ?')
-        .bind(hostEarn, params.hostUserId),
+        .bind(freeHostEarn, params.hostUserId),
     );
   }
   if (ops.length > 0) {
@@ -317,9 +310,26 @@ export async function chargeCallerWithFreePool(
     }
   }
 
+  // 5. Move the paid portion atomically so the host cannot be credited for
+  // caller-funded time unless the caller debit also succeeds.
+  let paidCharged = 0;
+  let paidEarned = 0;
+  if (callerActuallyPays > 0 && paidHostEarn > 0) {
+    const ok = await atomicCallTransfer(db, {
+      callerId: params.callerId,
+      hostUserId: params.hostUserId,
+      coinsCharged: callerActuallyPays,
+      hostShare: paidHostEarn,
+    });
+    if (ok) {
+      paidCharged = callerActuallyPays;
+      paidEarned = paidHostEarn;
+    }
+  }
+
   return {
-    charged: callerActuallyPays,
-    hostEarned: hostEarn,
+    charged: paidCharged,
+    hostEarned: freeHostEarn + paidEarned,
     free_minutes_used: freeMinutesToDecrement,
     billed_minutes: totalUnits,
   };

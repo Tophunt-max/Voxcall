@@ -4,6 +4,7 @@ import { sendFCMPush, getFCMTokens } from '../lib/fcm';
 import { getLevelConfig, normalizeLevelConfig, getDefaultCallRates, MIN_LEVELS, MAX_LEVELS } from '../lib/levels';
 import { recalcAllHostLevels } from '../lib/levelService';
 import { approveDeposit, validatePromoInput } from './payment';
+import { invalidatePublicCache } from './public';
 import { ensureAllMigrations, listMigrationStatus } from '../lib/autoMigrate';
 import type { Env, JWTPayload } from '../types';
 
@@ -443,7 +444,7 @@ admin.patch('/settings', async (c) => {
     'min_withdrawal_coins', 'auto_approve_manual', 'auto_approve_manual_max_amount',
     'maintenance_mode', 'maintenance_message', 'app_name', 'support_email',
     'terms_url', 'privacy_url', 'razorpay_webhook_secret', 'stripe_webhook_secret',
-    'generic_webhook_secret', 'referrer_reward', 'new_user_reward',
+    'generic_webhook_secret', 'google_play_product_map', 'referrer_reward', 'new_user_reward',
     'min_calls_to_unlock', 'referral_active', 'free_chat_messages',
     'app_min_version_user', 'app_min_version_host',
     'app_latest_version_user', 'app_latest_version_host',
@@ -472,6 +473,7 @@ admin.patch('/settings', async (c) => {
     );
   if (!stmts.length) return c.json({ error: 'No valid settings to update' }, 400);
   await db(c).batch(stmts);
+  await invalidatePublicCache(['app_config']);
   
   // REAL-TIME UPDATE: Broadcast settings change to ALL connected users via WebSocket
   // This enables live updates in ALL apps (user app, host app, admin panel) without page refresh
@@ -1507,7 +1509,7 @@ admin.put('/app-config', async (c) => {
     'auto_approve_manual_max_amount', 'maintenance_mode', 'maintenance_message',
     'app_name', 'support_email', 'terms_url', 'privacy_url',
     'razorpay_webhook_secret', 'stripe_webhook_secret', 'phonepe_webhook_secret',
-    'paytm_merchant_key', 'generic_webhook_secret',
+    'paytm_merchant_key', 'generic_webhook_secret', 'google_play_product_map',
     'referrer_reward', 'new_user_reward', 'min_calls_to_unlock',
     'referral_active', 'free_chat_messages', 'level_config',
     // Random-call settings (mirror the /admin/settings allowlist).
@@ -1538,6 +1540,7 @@ admin.put('/app-config', async (c) => {
     );
   if (!stmts.length) return c.json({ error: 'No valid config keys to update' }, 400);
   await db(c).batch(stmts);
+  await invalidatePublicCache(['app_config']);
   const u = c.get('user');
   await auditLog(db(c), u.sub, u.email || 'Admin', u.email || '', 'update', 'settings', 'App Config', `${stmts.length} settings updated`);
   return c.json({ success: true });
@@ -1595,7 +1598,7 @@ admin.post('/run-migrations', async (c) => {
 // One-shot admin action to apply the India-tuned defaults discussed in the
 // economy review:
 //   - 8 INR coin plans (₹19 → ₹6999 with progressive volume discount)
-//   - coin_to_usd_rate = 0.10  (1 coin = ₹0.10 host payout)
+//   - coin_value_inr = 0.10 (stored as coin_to_usd_rate = 0.001204819; 1 coin = ₹0.10 host payout)
 //   - min_withdrawal_coins = 500   (= ₹50)
 //   - host_revenue_share fallback = 0.60 (level 1 hosts; per-level overrides)
 //   - level_config retuned for INR economy: 60/65/70/75/80% earning share,
@@ -1657,7 +1660,7 @@ admin.post('/seed/india-defaults', async (c) => {
   // does NOT touch other admin-configured keys (random call rates etc.) so a
   // half-customised deployment isn't reverted to factory defaults.
   const settingUpserts: Array<[string, string]> = [
-    ['coin_to_usd_rate', '0.10'],
+    ['coin_to_usd_rate', '0.001204819'],
     ['host_revenue_share', '0.60'],
     ['min_withdrawal_coins', '500'],
   ];
@@ -1726,7 +1729,7 @@ admin.post('/seed/india-defaults', async (c) => {
     'update',
     'settings',
     'india-coin-economy',
-    `Seeded India coin economy: ${indiaPlans.length} INR plans, level_config retuned, coin_to_usd_rate=0.10, min_withdrawal_coins=500`,
+    `Seeded India coin economy: ${indiaPlans.length} INR plans, level_config retuned, coin_value_inr=0.10 (coin_to_usd_rate=0.001204819), min_withdrawal_coins=500`,
     ip,
   );
 

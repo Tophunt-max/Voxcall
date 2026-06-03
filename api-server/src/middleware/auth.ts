@@ -44,21 +44,25 @@ export const authMiddleware = createMiddleware<{ Bindings: Env; Variables: Varia
       // country (CF-IPCountry header / request.cf.country). The write only
       // happens once per user lifetime, then the columns are read from the
       // existing query above without an extra round-trip.
-      // We do NOT block the request if detection fails — currency is decorative,
-      // not a security primitive.
+      // If Cloudflare cannot provide a real country (local dev, tests,
+      // privacy placeholders), keep country NULL but use INR as the display
+      // fallback. When a real country appears later, overwrite the fallback so
+      // users are not permanently pinned to India after a header-less login.
       if (!dbUser.country || !dbUser.currency) {
         const country = detectCountryFromRequest(c.req.raw);
+        const currency = currencyForCountry(country);
         if (country) {
-          const currency = currencyForCountry(country);
-          // Fire-and-forget: don't await, don't fail the request if D1 errors.
-          c.env.DB.prepare(
-            'UPDATE users SET country = COALESCE(country, ?), currency = COALESCE(currency, ?) WHERE id = ?'
-          ).bind(country, currency, payload.sub).run().catch((e) => {
-            console.warn('[auth] country backfill failed for', payload.sub, e);
-          });
-          // Reflect in this request's payload so route handlers see the new value
-          // without waiting for the next request.
+          c.env.DB.prepare('UPDATE users SET country = ?, currency = ? WHERE id = ?')
+            .bind(country, currency, payload.sub).run().catch((e) => {
+              console.warn('[auth] country backfill failed for', payload.sub, e);
+            });
           (dbUser as any).country = country;
+          (dbUser as any).currency = currency;
+        } else if (!dbUser.currency) {
+          c.env.DB.prepare('UPDATE users SET currency = COALESCE(currency, ?) WHERE id = ?')
+            .bind(currency, payload.sub).run().catch((e) => {
+              console.warn('[auth] currency fallback failed for', payload.sub, e);
+            });
           (dbUser as any).currency = currency;
         }
       }

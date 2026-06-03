@@ -57,6 +57,19 @@ async function edgePut(cacheKey: string, data: unknown): Promise<void> {
   }
 }
 
+
+export async function invalidatePublicCache(keys: string[]): Promise<void> {
+  for (const key of keys) {
+    memCache.delete(key);
+    try {
+      const cache = (caches as any).default;
+      await cache.delete(new Request(`https://voxlink-cache.internal/${key}`));
+    } catch {
+      // Cache API is unavailable in local/dev; L1 deletion above is enough there.
+    }
+  }
+}
+
 const pub = new Hono<{ Bindings: Env }>();
 
 // GET /api/files/:key* — public R2 file serving (avatars, media ONLY)

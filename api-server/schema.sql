@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS coin_plans (
   name TEXT NOT NULL,
   coins INTEGER NOT NULL,
   price REAL NOT NULL,
-  currency TEXT DEFAULT 'USD',
+  currency TEXT DEFAULT 'INR',
   bonus_coins INTEGER DEFAULT 0,
   is_popular INTEGER DEFAULT 0,
   is_active INTEGER DEFAULT 1,
@@ -53,7 +53,7 @@ CREATE TABLE IF NOT EXISTS coin_plans (
 CREATE TABLE IF NOT EXISTS coin_transactions (
   id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
   user_id TEXT NOT NULL REFERENCES users(id),
-  type TEXT NOT NULL CHECK(type IN ('purchase','spend','bonus','refund','withdrawal')),
+  type TEXT NOT NULL CHECK(type IN ('purchase','spend','bonus','refund','withdrawal','withdrawal_pending')),
   amount INTEGER NOT NULL,
   description TEXT,
   ref_id TEXT,
@@ -113,7 +113,7 @@ CREATE TABLE IF NOT EXISTS withdrawal_requests (
   host_id TEXT NOT NULL REFERENCES hosts(id),
   coins INTEGER NOT NULL,
   amount REAL NOT NULL,
-  currency TEXT DEFAULT 'USD',
+  currency TEXT DEFAULT 'INR',
   payment_method TEXT,
   account_details TEXT,
   status TEXT DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected','paid')),
@@ -170,13 +170,13 @@ CREATE INDEX IF NOT EXISTS idx_coin_tx_user ON coin_transactions(user_id, create
 CREATE UNIQUE INDEX IF NOT EXISTS idx_coin_purchases_payment_ref ON coin_purchases(payment_ref) WHERE payment_ref IS NOT NULL;
 
 -- Default seed data
-INSERT OR IGNORE INTO coin_plans (id, name, coins, price, bonus_coins, is_popular) VALUES
-  ('plan1', 'Starter', 50, 0.99, 0, 0),
-  ('plan2', 'Basic', 100, 1.99, 10, 0),
-  ('plan3', 'Popular', 300, 4.99, 50, 1),
-  ('plan4', 'Value', 500, 7.99, 100, 0),
-  ('plan5', 'Pro', 1000, 14.99, 250, 0),
-  ('plan6', 'Elite', 2000, 24.99, 600, 0);
+INSERT OR IGNORE INTO coin_plans (id, name, coins, price, currency, bonus_coins, is_popular) VALUES
+  ('plan-in-049',  'Starter',  250,    49, 'INR',    0, 0),
+  ('plan-in-099',  'Popular',  500,    99, 'INR',   50, 1),
+  ('plan-in-199',  'Value',   1000,   199, 'INR',  150, 0),
+  ('plan-in-499',  'Super',   2500,   499, 'INR',  500, 0),
+  ('plan-in-999',  'Mega',    5000,   999, 'INR', 1250, 0),
+  ('plan-in-1999', 'Pro',    10000,  1999, 'INR', 3000, 0);
 
 INSERT OR IGNORE INTO faqs (id, question, answer, order_index) VALUES
   ('faq1', 'How do coins work?', 'Coins are the in-app currency. You spend coins per minute during audio or video calls with hosts.', 1),
@@ -187,8 +187,8 @@ INSERT OR IGNORE INTO faqs (id, question, answer, order_index) VALUES
 
 INSERT OR IGNORE INTO app_settings (key, value) VALUES
   ('app_name', 'VoxLink'),
-  ('min_withdrawal_coins', '100'),
-  ('coin_to_usd_rate', '0.01'),
+  ('min_withdrawal_coins', '500'),
+  ('coin_to_usd_rate', '0.001204819'),
   ('host_revenue_share', '0.70'),
   ('random_call_enabled', '1'),
   ('maintenance_mode', '0');
