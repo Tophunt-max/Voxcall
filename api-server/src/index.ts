@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
-import { prettyJSON } from 'hono/pretty-json';
+
 import { jwtVerify } from 'jose';
 import type { Env } from './types';
 import authRouter from './routes/auth';
@@ -33,18 +33,18 @@ import { USD_TO_FOREIGN } from './lib/currency';
 // Re-export Durable Objects (required by wrangler)
 export { ChatRoom, CallSignaling, NotificationHub };
 
+// DEV-ONLY fallback origins. In production, set CORS_ALLOWED_ORIGINS to an
+// explicit allowlist (see buildExactAllowlist below). These broad patterns
+// exist only so local/staging development works without extra config.
 const ALLOWED_ORIGINS = [
   /^https?:\/\/localhost(:\d+)?$/,
-  /\.replit\.app$/,
-  /\.replit\.dev$/,
-  // FIX #10: Anchor the brand patterns so `https://voxlinkattacker.com` cannot
-  // match. Allow any subdomain plus a real TLD (one or more dot-separated
-  // labels) — covers voxlink.com, app.voxlink.io, etc., but not arbitrary
-  // domains that merely start with the brand name.
   /^https:\/\/(.*\.)?voxlink\.[a-z.]+$/i,
   /^https:\/\/(.*\.)?voxcall\.[a-z.]+$/i,
   /^https:\/\/(.*\.)?connectme\.[a-z.]+$/i,
-  /\.pages\.dev$/,
+  // Shared hosting patterns - only matched when CORS_ALLOWED_ORIGINS is unset
+  // (i.e. dev/staging). Production MUST set the explicit allowlist.
+  /^https:\/\/[a-z0-9-]+\.voxcall\.pages\.dev$/,
+  /^https:\/\/[a-z0-9-]+\.voxcallhost\.pages\.dev$/,
 ];
 
 // FIX #6: In production set CORS_ALLOWED_ORIGINS to a comma-separated list of
@@ -79,7 +79,7 @@ app.use('*', cors({
   maxAge: 86400,
 }));
 app.use('*', logger());
-app.use('*', prettyJSON());
+
 
 // Schema auto-migration: bring the live D1 instance in sync with the code
 // before any /api/* DB query runs. Two layers, both cached per worker isolate
@@ -121,13 +121,10 @@ app.use('/api/*', async (c, next) => {
   return next();
 });
 
-// Health check — also reports whether critical secrets are configured
+// Health check — intentionally minimal to avoid leaking internal configuration
 app.get('/api/healthz', (c) => c.json({
   status: 'ok',
   ts: Date.now(),
-  service: 'voxlink-api',
-  cf_calls_configured: !!(c.env.CF_CALLS_APP_ID && c.env.CF_CALLS_APP_SECRET),
-  fcm_configured: !!c.env.FIREBASE_SERVICE_ACCOUNT,
 }));
 
 // Readiness probe — unlike /healthz (liveness only), this verifies the Worker
