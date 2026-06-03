@@ -18,11 +18,11 @@ describe('currencyForCountry', () => {
     expect(currencyForCountry('gb')).toBe('GBP');
   });
 
-  it('falls back to USD for unknown / missing countries', () => {
-    expect(currencyForCountry('ZZ')).toBe('USD');
-    expect(currencyForCountry(null)).toBe('USD');
-    expect(currencyForCountry(undefined)).toBe('USD');
-    expect(currencyForCountry('')).toBe('USD');
+  it('falls back to INR for unknown / missing countries', () => {
+    expect(currencyForCountry('ZZ')).toBe('INR');
+    expect(currencyForCountry(null)).toBe('INR');
+    expect(currencyForCountry(undefined)).toBe('INR');
+    expect(currencyForCountry('')).toBe('INR');
   });
 });
 

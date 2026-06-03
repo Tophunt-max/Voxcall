@@ -1595,7 +1595,7 @@ admin.post('/run-migrations', async (c) => {
 // One-shot admin action to apply the India-tuned defaults discussed in the
 // economy review:
 //   - 8 INR coin plans (₹19 → ₹6999 with progressive volume discount)
-//   - coin_to_usd_rate = 0.10  (1 coin = ₹0.10 host payout)
+//   - coin_value_inr = 0.10 (stored as coin_to_usd_rate = 0.001204819; 1 coin = ₹0.10 host payout)
 //   - min_withdrawal_coins = 500   (= ₹50)
 //   - host_revenue_share fallback = 0.60 (level 1 hosts; per-level overrides)
 //   - level_config retuned for INR economy: 60/65/70/75/80% earning share,
@@ -1657,7 +1657,7 @@ admin.post('/seed/india-defaults', async (c) => {
   // does NOT touch other admin-configured keys (random call rates etc.) so a
   // half-customised deployment isn't reverted to factory defaults.
   const settingUpserts: Array<[string, string]> = [
-    ['coin_to_usd_rate', '0.10'],
+    ['coin_to_usd_rate', '0.001204819'],
     ['host_revenue_share', '0.60'],
     ['min_withdrawal_coins', '500'],
   ];
@@ -1726,7 +1726,7 @@ admin.post('/seed/india-defaults', async (c) => {
     'update',
     'settings',
     'india-coin-economy',
-    `Seeded India coin economy: ${indiaPlans.length} INR plans, level_config retuned, coin_to_usd_rate=0.10, min_withdrawal_coins=500`,
+    `Seeded India coin economy: ${indiaPlans.length} INR plans, level_config retuned, coin_value_inr=0.10 (coin_to_usd_rate=0.001204819), min_withdrawal_coins=500`,
     ip,
   );
 

@@ -127,8 +127,8 @@ auth.post('/register', rateLimit, zValidator('json', registerSchema), async (c) 
   // we can serve localized prices on the very first /api/coins/plans call.
   // The auth middleware later backfills any users who registered before this
   // change.
-  const country = detectCountryFromRequest(c.req.raw);
-  const currency = country ? currencyForCountry(country) : null;
+  const country = detectCountryFromRequest(c.req.raw) ?? 'IN';
+  const currency = currencyForCountry(country);
   // First-call-free trial — read the admin-configured pool size and stamp
   // it on the row so the very first call uses the freebie. Falls back to 0
   // if the setting is missing / not yet seeded (feature degrades gracefully).
@@ -180,15 +180,13 @@ auth.post('/login', rateLimit, zValidator('json', loginSchema), async (c) => {
   // middleware backfill but runs at login so the response carries the
   // detected currency immediately.
   if (!user.country || !user.currency) {
-    const detected = detectCountryFromRequest(c.req.raw);
-    if (detected) {
-      const cur = currencyForCountry(detected);
-      await db.prepare(
-        'UPDATE users SET country = COALESCE(country, ?), currency = COALESCE(currency, ?) WHERE id = ?'
-      ).bind(detected, cur, user.id).run().catch(() => {});
-      user.country = user.country ?? detected;
-      user.currency = user.currency ?? cur;
-    }
+    const detected = detectCountryFromRequest(c.req.raw) ?? 'IN';
+    const cur = currencyForCountry(detected);
+    await db.prepare(
+      'UPDATE users SET country = COALESCE(country, ?), currency = COALESCE(currency, ?) WHERE id = ?'
+    ).bind(detected, cur, user.id).run().catch(() => {});
+    user.country = user.country ?? detected;
+    user.currency = user.currency ?? cur;
   }
 
   const token = await signToken({ sub: user.id, role: user.role, name: user.name, email: user.email }, c.env.JWT_SECRET);
@@ -478,8 +476,8 @@ auth.post('/google-login', rateLimit, async (c) => {
   }
 
   // FIX (currency auto-detect): country + currency on first Google login
-  const detectedCountry = detectCountryFromRequest(c.req.raw);
-  const detectedCurrency = detectedCountry ? currencyForCountry(detectedCountry) : null;
+  const detectedCountry = detectCountryFromRequest(c.req.raw) ?? 'IN';
+  const detectedCurrency = currencyForCountry(detectedCountry);
 
   if (!user) {
     // 4. New user — create account
@@ -560,8 +558,8 @@ async function quickLoginHandler(c: any, deviceId: string | null) {
 
   // FIX (currency auto-detect): detect country once at the top of the handler
   // so both the returning-user backfill and the new-user INSERT can reuse it.
-  const detectedCountry = detectCountryFromRequest(c.req.raw);
-  const detectedCurrency = detectedCountry ? currencyForCountry(detectedCountry) : null;
+  const detectedCountry = detectCountryFromRequest(c.req.raw) ?? 'IN';
+  const detectedCurrency = currencyForCountry(detectedCountry);
 
   if (deviceId) {
     const existing = await db.prepare(

@@ -53,6 +53,24 @@ interface Gateway {
   redirect_url?: string;
 }
 
+function getPlanDisplayAmount(plan: CoinPlan | null): number {
+  if (!plan) return 0;
+  return plan.price_local ?? plan.price;
+}
+
+function convertBaseDiscountToDisplay(plan: CoinPlan | null, discount: number): number {
+  if (!plan || discount <= 0) return 0;
+  const basePrice = Number(plan.price || 0);
+  const displayPrice = getPlanDisplayAmount(plan);
+  if (!Number.isFinite(basePrice) || basePrice <= 0 || !Number.isFinite(displayPrice)) return discount;
+  return discount * (displayPrice / basePrice);
+}
+
+function formatPlanDisplayAmount(plan: CoinPlan | null, amount: number): string {
+  const currency = plan?.price_local != null ? plan.currency : getCurrencyCode();
+  return formatLocalAmount(amount, currency);
+}
+
 interface ManualQR {
   id: string;
   name: string;
@@ -556,9 +574,14 @@ export default function CheckoutScreen() {
   const totalCoins = selectedPlan
     ? selectedPlan.coins + (selectedPlan.bonus_coins ?? 0) + (promoApplied?.bonus_coins ?? 0)
     : 0;
+  const displayDiscount = convertBaseDiscountToDisplay(selectedPlan, promoApplied?.discount ?? 0);
   const finalPrice = selectedPlan
     ? Math.max(0, selectedPlan.price - (promoApplied?.discount ?? 0))
     : 0;
+  const finalDisplayPrice = selectedPlan
+    ? Math.max(0, getPlanDisplayAmount(selectedPlan) - displayDiscount)
+    : 0;
+  const finalDisplayPriceText = formatPlanDisplayAmount(selectedPlan, finalDisplayPrice);
 
   const handlePurchase = useCallback(async () => {
     if (!user || !selectedPlan) return;
@@ -709,7 +732,7 @@ export default function CheckoutScreen() {
           <View style={[styles.promoBadge, { backgroundColor: colors.online + "18" }]}>
             <Text style={[styles.promoBadgeText, { color: colors.online }]}>
               {promoApplied.type === "percent"
-                ? `🎉 ${promoApplied.discount_pct}% off — Save ${formatPrice(promoApplied.discount, userCurrency)}`
+                ? `🎉 ${promoApplied.discount_pct}% off — Save ${formatPlanDisplayAmount(selectedPlan, displayDiscount)}`
                 : `🎁 +${promoApplied.bonus_coins} Bonus Coins added!`}
             </Text>
           </View>
@@ -744,12 +767,12 @@ export default function CheckoutScreen() {
               {(promoApplied?.discount ?? 0) > 0 && (
                 <View style={styles.summaryRow}>
                   <Text style={[styles.summaryLabel, { color: colors.mutedForeground }]}>Promo Discount</Text>
-                  <Text style={[styles.summaryValue, { color: colors.online }]}>-{formatPrice(promoApplied!.discount, userCurrency)}</Text>
+                  <Text style={[styles.summaryValue, { color: colors.online }]}>-{formatPlanDisplayAmount(selectedPlan, displayDiscount)}</Text>
                 </View>
               )}
               <View style={styles.summaryRow}>
                 <Text style={[styles.totalLabel, { color: colors.text }]}>Total</Text>
-                <Text style={[styles.totalValue, { color: colors.accent }]}>{formatPrice(finalPrice, userCurrency)}</Text>
+                <Text style={[styles.totalValue, { color: colors.accent }]}>{finalDisplayPriceText}</Text>
               </View>
             </View>
           </>
@@ -773,8 +796,8 @@ export default function CheckoutScreen() {
             {!selectedPlan
               ? "Select a Package"
               : paymentMethod === "manual"
-              ? `Pay via UPI — ${formatPrice(finalPrice, userCurrency)} for ${totalCoins.toLocaleString()} Coins`
-              : `Continue — ${formatPrice(finalPrice, userCurrency)} for ${totalCoins.toLocaleString()} Coins`}
+              ? `Pay via UPI — ${finalDisplayPriceText} for ${totalCoins.toLocaleString()} Coins`
+              : `Continue — ${finalDisplayPriceText} for ${totalCoins.toLocaleString()} Coins`}
           </Text>
         </TouchableOpacity>
       </View>

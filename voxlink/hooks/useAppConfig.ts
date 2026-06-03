@@ -36,9 +36,13 @@ function applyConfigSideEffects(cfg: AppConfig): void {
  */
 export function updateConfigCache(newSettings: Partial<AppConfig>): void {
   if (_cache) {
-    _cache = { ..._cache, ...newSettings };
-    applyConfigSideEffects(_cache);
-    _listeners.forEach(listener => listener(_cache!));
+    const next: AppConfig = { ..._cache };
+    Object.entries(newSettings).forEach(([key, value]) => {
+      if (value != null) next[key] = value;
+    });
+    _cache = next;
+    applyConfigSideEffects(next);
+    _listeners.forEach(listener => listener(next));
   }
 }
 
@@ -61,7 +65,13 @@ export async function fetchAppConfig(force = false): Promise<AppConfig> {
   if (_inflight) return _inflight;
   _inflight = API.getAppConfig()
     .then((cfg) => {
-      _cache = cfg && typeof cfg === "object" ? cfg : {};
+      const normalized: AppConfig = {};
+      if (cfg && typeof cfg === "object") {
+        Object.entries(cfg).forEach(([key, value]) => {
+          if (value != null) normalized[key] = String(value);
+        });
+      }
+      _cache = normalized;
       applyConfigSideEffects(_cache);
       return _cache;
     })
