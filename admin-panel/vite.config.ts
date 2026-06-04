@@ -13,6 +13,9 @@ if (Number.isNaN(port) || port <= 0) {
 // Use / for Cloudflare Pages root deployment, /admin-panel/ for other environments
 const basePath = process.env.BASE_PATH ?? (process.env.NODE_ENV === 'production' ? '/' : '/admin-panel/');
 
+// Production API URL — not a secret, same URL already used in dev proxy below
+const prodApiUrl = process.env.CLOUDFLARE_WORKER_URL ?? 'https://voxlink-api.ssunilkumarmohanta3.workers.dev';
+
 export default defineConfig({
   base: basePath,
   plugins: [
@@ -55,6 +58,9 @@ export default defineConfig({
     dedupe: ["react", "react-dom"],
   },
   root: path.resolve(import.meta.dirname),
+  define: {
+    'import.meta.env.VITE_API_URL': JSON.stringify(prodApiUrl),
+  },
   build: {
     outDir: path.resolve(import.meta.dirname, "dist"),
     emptyOutDir: true,
