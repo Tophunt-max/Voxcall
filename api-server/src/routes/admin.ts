@@ -66,21 +66,22 @@ admin.get('/analytics', async (c) => {
   const daysParam = parseInt(c.req.query('days') || '7');
   const days = [7, 30].includes(daysParam) ? daysParam : 7;
   // Daily revenue + calls for requested range
+  const cutoff = Math.floor(Date.now() / 1000) - days * 86400;
   const callRows = await dbA.prepare(`
     SELECT DATE(created_at,'unixepoch') as day,
            COUNT(*) as calls,
            COALESCE(SUM(coins_charged),0) as revenue
     FROM call_sessions
-    WHERE created_at > unixepoch('now','-${days} days')
+    WHERE created_at > ?
     GROUP BY day ORDER BY day ASC
-  `).all<any>();
+  `).bind(cutoff).all<any>();
   // New users per day for requested range
   const userRows = await dbA.prepare(`
     SELECT DATE(created_at,'unixepoch') as day, COUNT(*) as users
     FROM users
-    WHERE created_at > unixepoch('now','-${days} days')
+    WHERE created_at > ?
     GROUP BY day ORDER BY day ASC
-  `).all<any>();
+  `).bind(cutoff).all<any>();
   // Role distribution
   const roles = await dbA.prepare(`
     SELECT role, COUNT(*) as cnt FROM users GROUP BY role

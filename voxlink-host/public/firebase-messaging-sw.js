@@ -1,16 +1,22 @@
 // Firebase Cloud Messaging Service Worker
 // Handles background push notifications on web
+//
+// IMPORTANT: Firebase config values must be injected at build time via your
+// CI/CD pipeline or a build script. Do NOT hardcode production credentials here.
+// See .env.example for the required EXPO_PUBLIC_FIREBASE_* variables.
 
 importScripts('https://www.gstatic.com/firebasejs/11.0.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/11.0.0/firebase-messaging-compat.js');
 
+// These placeholders are replaced at build time by the CI/CD pipeline.
+// If you see "__FIREBASE_*__" in production, the build step is misconfigured.
 firebase.initializeApp({
-  apiKey: "AIzaSyD46BXKhAh8Gh8Zu7XvM1J-wSLs8g4lLRc",
-  authDomain: "connectme-80909.firebaseapp.com",
-  projectId: "connectme-80909",
-  storageBucket: "connectme-80909.firebasestorage.app",
-  messagingSenderId: "128169786412",
-  appId: "1:128169786412:web:11cf3612a7f4520f98e589",
+  apiKey: "__FIREBASE_API_KEY__",
+  authDomain: "__FIREBASE_AUTH_DOMAIN__",
+  projectId: "__FIREBASE_PROJECT_ID__",
+  storageBucket: "__FIREBASE_STORAGE_BUCKET__",
+  messagingSenderId: "__FIREBASE_MESSAGING_SENDER_ID__",
+  appId: "__FIREBASE_APP_ID__",
 });
 
 const messaging = firebase.messaging();

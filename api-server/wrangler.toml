@@ -3,7 +3,8 @@ main = "src/index.ts"
 compatibility_date = "2024-12-18"
 compatibility_flags = ["nodejs_compat"]
 
-account_id = "b592b3b2a5455323a76de721a92699cd"
+# account_id is set via CLOUDFLARE_ACCOUNT_ID env var or `wrangler login`
+# Do not hardcode account credentials in source control.
 
 # Bundle every D1 migration file as text so the worker can self-apply pending
 # migrations on cold start (lib/autoMigrate.ts). This is the safety net for
@@ -62,8 +63,8 @@ crons = ["* * * * *"]
 # credentials are missing). Local `wrangler dev` overrides this to
 # "development" via .dev.vars so the public relay stays available locally.
 ENVIRONMENT = "production"
-CF_ACCOUNT_ID = "b592b3b2a5455323a76de721a92699cd"
-CF_CALLS_APP_ID = "536d1e7e8d540b7ccfb238d32f734d1a"
+# CF_ACCOUNT_ID and CF_CALLS_APP_ID must be set via Cloudflare Dashboard secrets
+# or via `wrangler secret put`. Do not commit these values to source control.
 
 # Secrets (set via Cloudflare Dashboard → Workers → voxlink-api → Settings → Variables & Secrets,
 # or via `wrangler secret put <NAME>`, or automatically by .github/workflows/deploy-backend.yml
