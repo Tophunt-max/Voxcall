@@ -69,6 +69,19 @@ export default function CoinPlans() {
   const load = () => { setLoading(true); api.coinPlans().then(setPlans).finally(() => setLoading(false)); };
   useEffect(load, []);
 
+  // Refetch when the tab/window regains focus so plan values edited elsewhere
+  // (another admin, or after changing the coin value) are reflected without a
+  // manual page reload.
+  useEffect(() => {
+    const refresh = () => { if (document.visibilityState === 'visible') api.coinPlans().then(setPlans).catch(() => {}); };
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, []);
+
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 2000); };
 
   const openEdit = (p: any) => {

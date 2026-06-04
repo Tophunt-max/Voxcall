@@ -13,7 +13,7 @@ import { useSocketEvent } from "@/context/SocketContext";
 import { SocketEvents } from "@/constants/events";
 import { showSuccessToast, showErrorToast, showWarningToast } from "@/components/Toast";
 import { formatPrice, getCurrencyCode } from "@/utils/currency";
-import { fetchAppConfig } from "@/hooks/useAppConfig";
+import { useAppConfig } from "@/hooks/useAppConfig";
 
 const WITHDRAW_OPTIONS = [100, 200, 500, 1000];
 
@@ -78,12 +78,17 @@ export default function HostWalletScreen() {
   const [stats, setStats] = useState<EarningsStats>({ thisWeek: 0, sessions: 0, withdrawn: 0, totalEarnings: 0 });
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  // #10: minimum withdrawal comes from server app_settings (single source of
-  // truth) instead of a hardcoded constant that can drift from the backend.
-  const [minWithdraw, setMinWithdraw] = useState(100);
+  // #10: minimum withdrawal + coin value come from server app_settings (single
+  // source of truth). useAppConfig subscribes to live changes, so when the
+  // admin updates the coin value or min withdrawal the screen reflects it
+  // immediately — no remount required.
+  const { config } = useAppConfig();
+  const parsedMinWithdraw = parseInt(config.min_withdrawal_coins ?? "", 10);
+  const minWithdraw = Number.isFinite(parsedMinWithdraw) && parsedMinWithdraw > 0 ? parsedMinWithdraw : 100;
   // coin_to_usd_rate = value of 1 coin in USD (admin-set). Used to show hosts
   // the real-money value of their coins. 0 = not configured/hide.
-  const [payoutRate, setPayoutRate] = useState(0);
+  const parsedPayoutRate = parseFloat(config.coin_to_usd_rate ?? "");
+  const payoutRate = Number.isFinite(parsedPayoutRate) && parsedPayoutRate > 0 ? parsedPayoutRate : 0;
   const topPad = insets.top;
 
   // The payout rate is USD/coin; convert to the host's local currency for
@@ -91,20 +96,6 @@ export default function HostWalletScreen() {
   // the rate directly as local currency was an ~83x under-display bug for ₹.
   const payoutCurrency = String((user as any)?.currency || getCurrencyCode() || "INR").toUpperCase();
   const formatPayout = (coins: number) => formatPrice(coins * payoutRate, payoutCurrency);
-
-  useEffect(() => {
-    // Routed through the shared app-config fetcher so the admin-set coin value
-    // (coin_to_usd_rate) is ALSO applied to the global currency module here,
-    // keeping every coins→money display in sync with the admin panel.
-    fetchAppConfig()
-      .then((cfg) => {
-        const m = parseInt(cfg?.min_withdrawal_coins ?? "", 10);
-        if (Number.isFinite(m) && m > 0) setMinWithdraw(m);
-        const r = parseFloat(cfg?.coin_to_usd_rate ?? "");
-        if (Number.isFinite(r) && r > 0) setPayoutRate(r);
-      })
-      .catch(() => { /* keep default */ });
-  }, []);
 
   const load = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);

@@ -15,7 +15,7 @@ import {
   Alert,
   Modal,
 } from "react-native";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { API } from "@/services/api";
@@ -535,15 +535,24 @@ export default function CheckoutScreen() {
   const [showManualModal, setShowManualModal] = useState(false);
   const [hasManualQR, setHasManualQR] = useState(false);
 
-  useEffect(() => {
+  // Re-run on every focus (not just mount) so coin plans edited/added in the
+  // admin panel — and any coin-value change — show up the next time the user
+  // opens this screen, without needing an app restart. The user's current
+  // plan selection is preserved across refetches when it still exists.
+  const loadCheckoutData = useCallback(() => {
     const errors: string[] = [];
     Promise.allSettled([
       API.getCoinPlans()
         .then((data: any[]) => {
           const active = data.filter((p) => p.is_active !== 0);
           setPlans(active);
-          const popular = active.find((p) => p.is_popular) ?? active[1] ?? active[0];
-          if (popular) setSelectedPlan(popular);
+          setSelectedPlan((prev) => {
+            if (prev) {
+              const stillThere = active.find((p) => p.id === prev.id);
+              if (stillThere) return stillThere;
+            }
+            return active.find((p) => p.is_popular) ?? active[1] ?? active[0] ?? null;
+          });
         })
         .catch(() => { setPlans([]); errors.push("coin plans"); }),
       API.getBanners("wallet").then(setWalletBanners).catch(() => { errors.push("banners"); }),
@@ -556,6 +565,8 @@ export default function CheckoutScreen() {
       setPlansLoading(false);
     });
   }, []);
+
+  useFocusEffect(loadCheckoutData);
 
   const handleApplyPromo = useCallback(async () => {
     if (!promoCode.trim()) return;
