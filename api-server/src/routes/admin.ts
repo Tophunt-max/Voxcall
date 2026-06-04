@@ -476,8 +476,14 @@ admin.patch('/settings', async (c) => {
   
   // REAL-TIME UPDATE: Broadcast settings change to ALL connected users via WebSocket
   // This enables live updates in ALL apps (user app, host app, admin panel) without page refresh
-  // When coin_to_usd_rate changes, every user sees the new coin value immediately
-  const changedKeys = Object.keys(body).filter(k => ALLOWED_SETTINGS.includes(k));
+  // When coin_to_usd_rate changes, every user sees the new coin value immediately.
+  //
+  // We derive the broadcast from processedBody (the values actually persisted),
+  // NOT the raw body. The admin panel edits coin value in INR (coin_value_inr),
+  // which is converted to coin_to_usd_rate above and stripped from the request.
+  // Reading the raw body here would broadcast the admin's STALE coin_to_usd_rate
+  // (or nothing at all), so apps would never receive the new coin value.
+  const changedKeys = Object.keys(processedBody).filter(k => ALLOWED_SETTINGS.includes(k));
   
   // Check if coin value changed - this is critical for real-time updates
   const coinValueChanged = changedKeys.includes('coin_to_usd_rate');
@@ -489,8 +495,8 @@ admin.patch('/settings', async (c) => {
   // Get the updated settings values for broadcast
   const updatedSettings: Record<string, string> = {};
   for (const key of changedKeys) {
-    if (body[key] !== undefined) {
-      updatedSettings[key] = String(body[key]);
+    if (processedBody[key] !== undefined) {
+      updatedSettings[key] = String(processedBody[key]);
     }
   }
   
