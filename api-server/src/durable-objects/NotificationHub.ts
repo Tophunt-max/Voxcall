@@ -41,7 +41,9 @@ export class NotificationHub {
       const sockets = this.state.getWebSockets();
       let sent = 0;
       for (const ws of sockets) {
-        try { ws.send(msg); sent++; } catch {}
+        try { ws.send(msg); sent++; } catch (e) {
+          console.warn('[NotificationHub] /notify ws.send failed:', e);
+        }
       }
       return new Response(JSON.stringify({ pushed: sent, total: sockets.length }), {
         headers: { 'Content-Type': 'application/json' },
@@ -79,7 +81,9 @@ export class NotificationHub {
       if (msg?.type === 'ping') {
         ws.send(JSON.stringify({ type: 'pong' }));
       }
-    } catch {}
+    } catch (e) {
+      console.warn('[NotificationHub] webSocketMessage parse/send error:', e);
+    }
   }
 
   async webSocketClose(ws: WebSocket, _code: number, _reason: string, _wasClean: boolean): Promise<void> {
@@ -100,7 +104,9 @@ export class NotificationHub {
     try {
       const att = ws.deserializeAttachment() as { userId?: string } | null;
       userId = att?.userId;
-    } catch {}
+    } catch (e) {
+      console.warn('[NotificationHub] Failed to read socket attachment on disconnect:', e);
+    }
     if (!userId) return;
 
     // Multi-tab safety: if another WS for this user is still open, don't mark offline.
@@ -135,9 +141,13 @@ export class NotificationHub {
           try {
             const stub = this.env.NOTIFICATION_HUB.get(this.env.NOTIFICATION_HUB.idFromName(u.id));
             await stub.fetch('https://dummy/notify', { method: 'POST', body: presenceMsg });
-          } catch {}
+          } catch (e) {
+            console.warn('[NotificationHub] presence broadcast to', u.id, 'failed:', e);
+          }
         })
       );
-    } catch {}
+    } catch (e) {
+      console.error('[NotificationHub] handleDisconnect DB/presence error for user', userId, ':', e);
+    }
   }
 }

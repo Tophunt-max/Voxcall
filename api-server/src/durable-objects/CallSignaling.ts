@@ -60,7 +60,8 @@ export class CallSignaling {
   private getMeta(ws: WebSocket): { userId?: string; role?: 'caller' | 'host' } {
     try {
       return (ws.deserializeAttachment() as any) ?? {};
-    } catch {
+    } catch (e) {
+      console.warn('[CallSignaling] Failed to deserialize socket attachment:', e);
       return {};
     }
   }

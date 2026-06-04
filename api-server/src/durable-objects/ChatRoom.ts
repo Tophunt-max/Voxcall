@@ -64,7 +64,8 @@ export class ChatRoom {
   private getMeta(ws: WebSocket): { userId?: string; name?: string } {
     try {
       return (ws.deserializeAttachment() as any) ?? {};
-    } catch {
+    } catch (e) {
+      console.warn('[ChatRoom] Failed to deserialize socket attachment:', e);
       return {};
     }
   }
@@ -94,7 +95,8 @@ export class ChatRoom {
     let msg: any;
     try {
       msg = JSON.parse(data);
-    } catch {
+    } catch (e) {
+      console.warn('[ChatRoom] Failed to parse incoming message:', e);
       return;
     }
     const meta = this.getMeta(ws);

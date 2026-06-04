@@ -34,7 +34,14 @@ coin.get('/plans', async (c) => {
         if (u?.currency && USD_TO_FOREIGN[u.currency]) {
           currency = u.currency;
         }
-      } catch { /* token invalid → fall through to header detection */ }
+      } catch (e: any) {
+        // Expected: token expired/invalid → fall through to geo detection.
+        // Log unexpected errors (e.g. DB connectivity) so they don't silently vanish.
+        const msg = String(e?.message || '');
+        if (!msg.includes('expired') && !msg.includes('invalid') && !msg.includes('JWS')) {
+          console.warn('[coins/plans] Unexpected error resolving user currency:', e);
+        }
+      }
     }
     if (currency === 'INR') {
       const country = detectCountryFromRequest(c.req.raw);
@@ -50,7 +57,9 @@ coin.get('/plans', async (c) => {
     try {
       const fxRow = await c.env.DB.prepare("SELECT value FROM app_settings WHERE key = 'fx_rates_usd'").first<{ value: string }>();
       if (fxRow?.value) fxOverrides = JSON.parse(fxRow.value);
-    } catch { /* fall back to static rates */ }
+    } catch (e) {
+      console.warn('[coins/plans] Failed to load FX overrides, using static rates:', e);
+    }
   }
 
   const localized = (plans.results as any[]).map((p) => {

@@ -27,7 +27,8 @@ async function readFreeCallMinutesSetting(db: D1Database): Promise<number> {
       .first<{ value: string }>();
     const n = parseInt(row?.value ?? '');
     return Number.isFinite(n) && n >= 0 ? n : 0;
-  } catch {
+  } catch (e) {
+    console.warn('[auth] readFreeCallMinutesSetting failed:', e);
     return 0;
   }
 }
