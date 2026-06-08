@@ -321,18 +321,22 @@ export default function RootLayout() {
     Poppins_700Bold,
   });
 
+  // On web skip the font-loading gate entirely — system fallback fonts render
+  // immediately. Waiting can cause a permanent blank screen in a static export.
+  const fontsReady = Platform.OS === "web" ? true : (fontsLoaded || !!fontError);
+
   useEffect(() => {
-    if (fontsLoaded || fontError) {
+    if (fontsReady) {
       SplashScreen.hideAsync();
     }
-  }, [fontsLoaded, fontError]);
+  }, [fontsReady]);
 
   useEffect(() => {
     configurePushNotifications();
     setupGlobalErrorHandler();
   }, []);
 
-  if (!fontsLoaded && !fontError) return null;
+  if (!fontsReady) return null;
 
   return (
     <SafeAreaProvider>

@@ -51,6 +51,9 @@
     "web": {
       "favicon": "./assets/images/icon.png"
     },
+    "experiments": {
+      "baseUrl": "/host"
+    },
     "plugins": [
       [
         "expo-router",

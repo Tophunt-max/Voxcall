@@ -45,6 +45,11 @@ const ALLOWED_ORIGINS = [
   // (i.e. dev/staging). Production MUST set the explicit allowlist.
   /^https:\/\/[a-z0-9-]+\.voxcall\.pages\.dev$/,
   /^https:\/\/[a-z0-9-]+\.voxcallhost\.pages\.dev$/,
+  // Replit hosting — dev previews and published .replit.app domains
+  /^https:\/\/[a-z0-9-]+\.replit\.dev$/,
+  /^https:\/\/[a-z0-9-]+\.replit\.app$/,
+  /^https:\/\/[a-z0-9-]+\.[a-z0-9-]+\.replit\.dev$/,
+  /^https:\/\/[a-z0-9-]+\.[a-z0-9-]+\.replit\.app$/,
 ];
 
 // FIX #6: In production set CORS_ALLOWED_ORIGINS to a comma-separated list of
