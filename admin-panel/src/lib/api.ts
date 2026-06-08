@@ -37,7 +37,7 @@ export async function req<T>(method: string, path: string, body?: unknown): Prom
 }
 
 export const api = {
-  login: (email: string, password: string) => req<{ token: string; user: any }>('POST', '/auth/login', { email, password }),
+  login: (email: string, password: string) => req<{ token: string; user: any }>('POST', '/auth/login', { email, password, role: 'admin' }),
   dashboard: () => req<any>('GET', '/admin/dashboard'),
   users: (p?: string, s?: string) => req<any[]>('GET', `/admin/users?page=${p||1}&limit=21${s ? '&search='+encodeURIComponent(s) : ''}`),
   updateUser: (id: string, data: any) => req('PATCH', `/admin/users/${id}`, data),
