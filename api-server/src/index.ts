@@ -41,8 +41,12 @@ const ALLOWED_ORIGINS = [
   /^https:\/\/(.*\.)?voxlink\.[a-z.]+$/i,
   /^https:\/\/(.*\.)?voxcall\.[a-z.]+$/i,
   /^https:\/\/(.*\.)?connectme\.[a-z.]+$/i,
-  // Shared hosting patterns - only matched when CORS_ALLOWED_ORIGINS is unset
-  // (i.e. dev/staging). Production MUST set the explicit allowlist.
+  // Cloudflare Pages — exact production domains
+  /^https:\/\/voxcalladmin\.pages\.dev$/,
+  /^https:\/\/voxcall\.pages\.dev$/,
+  /^https:\/\/voxcallhost\.pages\.dev$/,
+  // Cloudflare Pages — preview deployment subdomains
+  /^https:\/\/[a-z0-9-]+\.voxcalladmin\.pages\.dev$/,
   /^https:\/\/[a-z0-9-]+\.voxcall\.pages\.dev$/,
   /^https:\/\/[a-z0-9-]+\.voxcallhost\.pages\.dev$/,
   // Replit hosting — dev previews and published .replit.app domains
