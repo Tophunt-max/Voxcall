@@ -12,21 +12,30 @@ const firebaseConfig = {
   measurementId: process.env.EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID || "",
 };
 
-const hasConfig = !!(firebaseConfig.apiKey && firebaseConfig.projectId && firebaseConfig.appId);
+const hasConfig = !!(
+  firebaseConfig.apiKey &&
+  firebaseConfig.projectId &&
+  firebaseConfig.appId
+);
 
-let app: FirebaseApp;
-let db: Firestore;
+const app: FirebaseApp =
+  getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
+
+const db: Firestore = getFirestore(app);
+
+// getAuth() throws auth/invalid-api-key synchronously when apiKey is empty.
+// Only call it when we actually have valid credentials. The app uses
+// JWT-based API auth; Firebase auth is only needed for Google Sign-In on web.
 let auth: Auth;
-
-try {
-  app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
-  db = getFirestore(app);
+if (hasConfig) {
   auth = getAuth(app);
-} catch (e) {
-  console.warn("[Firebase] Initialization skipped — missing config. App will run in offline/guest mode.", e);
-  app = getApps()[0] ?? initializeApp({ apiKey: "placeholder", projectId: "placeholder", appId: "placeholder" });
-  db = getFirestore(app);
-  auth = getAuth(app);
+} else {
+  console.warn(
+    "[Firebase] EXPO_PUBLIC_FIREBASE_* env vars not set — " +
+      "Firebase Auth/FCM unavailable. Google Sign-In will not work. " +
+      "Set these env vars and rebuild to enable full functionality."
+  );
+  auth = null as unknown as Auth;
 }
 
 export { db, auth };
