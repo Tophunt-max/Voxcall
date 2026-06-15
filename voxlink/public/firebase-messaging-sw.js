@@ -1,22 +1,23 @@
 // Firebase Cloud Messaging Service Worker
 // Handles background push notifications on web
 //
-// IMPORTANT: Firebase config values must be injected at build time via your
-// CI/CD pipeline or a build script. Do NOT hardcode production credentials here.
-// See .env.example for the required EXPO_PUBLIC_FIREBASE_* variables.
+// Firebase Web config values are public identifiers used by the client SDK.
 
-importScripts('https://www.gstatic.com/firebasejs/11.0.0/firebase-app-compat.js');
-importScripts('https://www.gstatic.com/firebasejs/11.0.0/firebase-messaging-compat.js');
+importScripts(
+  "https://www.gstatic.com/firebasejs/11.0.0/firebase-app-compat.js",
+);
+importScripts(
+  "https://www.gstatic.com/firebasejs/11.0.0/firebase-messaging-compat.js",
+);
 
-// These placeholders are replaced at build time by the CI/CD pipeline.
-// If you see "REPLACE_AT_BUILD_TIME" in production, the build step is misconfigured.
 firebase.initializeApp({
-  apiKey: "__FIREBASE_API_KEY__",
-  authDomain: "__FIREBASE_AUTH_DOMAIN__",
-  projectId: "__FIREBASE_PROJECT_ID__",
-  storageBucket: "__FIREBASE_STORAGE_BUCKET__",
-  messagingSenderId: "__FIREBASE_MESSAGING_SENDER_ID__",
-  appId: "__FIREBASE_APP_ID__",
+  apiKey: "AIzaSyD46BXKhAh8Gh8Zu7XvM1J-wSLs8g4lLRc",
+  authDomain: "connectme-80909.firebaseapp.com",
+  projectId: "connectme-80909",
+  storageBucket: "connectme-80909.firebasestorage.app",
+  messagingSenderId: "128169786412",
+  appId: "1:128169786412:web:11cf3612a7f4520f98e589",
+  measurementId: "G-PEEM2KM9QZ",
 });
 
 const messaging = firebase.messaging();
@@ -26,20 +27,20 @@ messaging.onBackgroundMessage((payload) => {
   const { title, body, image } = payload.notification ?? {};
   const data = payload.data ?? {};
 
-  const notifTitle = title || 'VoxLink';
+  const notifTitle = title || "VoxLink";
   const notifOptions = {
-    body: body || '',
-    icon: image || '/assets/images/icon.png',
-    badge: '/assets/images/icon.png',
+    body: body || "",
+    icon: image || "/assets/images/icon.png",
+    badge: "/assets/images/icon.png",
     data,
-    tag: data.type || 'voxlink',
-    requireInteraction: data.type === 'incoming_call',
-    vibrate: data.type === 'incoming_call' ? [200, 100, 200, 100, 200] : [200],
+    tag: data.type || "voxlink",
+    requireInteraction: data.type === "incoming_call",
+    vibrate: data.type === "incoming_call" ? [200, 100, 200, 100, 200] : [200],
     actions:
-      data.type === 'incoming_call'
+      data.type === "incoming_call"
         ? [
-            { action: 'accept', title: 'Accept' },
-            { action: 'decline', title: 'Decline' },
+            { action: "accept", title: "Accept" },
+            { action: "decline", title: "Decline" },
           ]
         : [],
   };
@@ -48,29 +49,31 @@ messaging.onBackgroundMessage((payload) => {
 });
 
 // Handle notification click
-self.addEventListener('notificationclick', (event) => {
+self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const data = event.notification.data || {};
 
-  let url = '/';
-  if (data.type === 'incoming_call' && data.session_id) {
+  let url = "/";
+  if (data.type === "incoming_call" && data.session_id) {
     url = `/shared/call/incoming?session_id=${data.session_id}`;
-  } else if (data.type === 'chat_message' && data.room_id) {
+  } else if (data.type === "chat_message" && data.room_id) {
     url = `/shared/chat/${data.room_id}`;
   }
 
   event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      for (const client of clientList) {
-        if ('focus' in client) {
-          client.focus();
-          client.postMessage({ type: 'NOTIFICATION_CLICK', data });
-          return;
+    clients
+      .matchAll({ type: "window", includeUncontrolled: true })
+      .then((clientList) => {
+        for (const client of clientList) {
+          if ("focus" in client) {
+            client.focus();
+            client.postMessage({ type: "NOTIFICATION_CLICK", data });
+            return;
+          }
         }
-      }
-      if (clients.openWindow) {
-        return clients.openWindow(url);
-      }
-    })
+        if (clients.openWindow) {
+          return clients.openWindow(url);
+        }
+      }),
   );
 });
