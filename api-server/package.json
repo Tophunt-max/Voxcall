@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "@hono/zod-validator": "^0.7.6",
-    "hono": "^4.6.0",
+    "hono": "^4.12.25",
     "jose": "^5.9.6",
     "jsonwebtoken": "^9.0.3",
     "zod": "^3.23.8"
@@ -28,7 +28,7 @@
     "globals": "^15.0.0",
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.0.0",
-    "vitest": "2.1.9",
-    "wrangler": "^3.99.0"
+    "vitest": "3.2.6",
+    "wrangler": "^4.101.0"
   }
 }
