@@ -25,6 +25,7 @@ import { Host } from "@/data/mockData";
 import { API, resolveMediaUrl } from "@/services/api";
 import { fetchAppConfig } from "@/hooks/useAppConfig";
 import { showErrorToast } from "@/components/Toast";
+import { GROWTH_FEATURES, FEATURE_STATUS_LABEL, FEATURE_STATUS_SUMMARY, GrowthFeature } from "@/constants/growthFeatures";
 import { RefreshControl } from "react-native";
 
 const SCREEN_W = Dimensions.get("window").width;
@@ -161,6 +162,66 @@ function BannerSlider({ slides }: { slides: SlideItem[] }) {
       )}
     </View>
   );
+}
+
+
+function GrowthFeatureLaunchpad({ colors }: { colors: any }) {
+  const featured = GROWTH_FEATURES;
+
+  const openFeature = useCallback((feature: GrowthFeature) => {
+    if (feature.route) {
+      router.push(feature.route as any);
+      return;
+    }
+    showErrorToast(`${feature.title} is in the product backlog.`);
+  }, []);
+
+  return (
+    <View style={styles.section}>
+      <View style={styles.sectionHeader}>
+        <View>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Growth Features</Text>
+          <Text style={[styles.featureSubtitle, { color: colors.mutedForeground }]}>20 suggested calling-system upgrades</Text>
+        </View>
+        <TouchableOpacity onPress={() => router.push("/user/features")}>
+          <Text style={[styles.countText, { color: colors.primary }]}>
+            {FEATURE_STATUS_SUMMARY.completed} done · View all
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      <FlatList
+        data={featured}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={{ paddingRight: 16 }}
+        renderItem={({ item }) => (
+          <TouchableOpacity
+            activeOpacity={0.86}
+            onPress={() => openFeature(item)}
+            style={[styles.featureCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+          >
+            <View style={styles.featureTopRow}>
+              <View style={[styles.featureStatus, statusStyle(item.status)]}>
+                <Text style={styles.featureStatusText}>{FEATURE_STATUS_LABEL[item.status]}</Text>
+              </View>
+              <Text style={[styles.featureAudience, { color: colors.mutedForeground }]}>{item.audience}</Text>
+            </View>
+            <Text numberOfLines={2} style={[styles.featureTitle, { color: colors.text }]}>{item.title}</Text>
+            <Text numberOfLines={3} style={[styles.featureDescription, { color: colors.mutedForeground }]}>{item.description}</Text>
+            <Text style={[styles.featureCta, { color: colors.primary }]}>{item.cta}</Text>
+          </TouchableOpacity>
+        )}
+      />
+    </View>
+  );
+}
+
+function statusStyle(status: GrowthFeature["status"]) {
+  if (status === "completed") return { backgroundColor: "#E8F8EE" };
+  if (status === "ready") return { backgroundColor: "#FFF4D8" };
+  return { backgroundColor: "#F0E4F8" };
 }
 
 export default function HomeScreen() {
@@ -489,6 +550,8 @@ export default function HomeScreen() {
           </View>
         )}
 
+        <GrowthFeatureLaunchpad colors={colors} />
+
         {/* Top Listeners section — OPTIMIZATION #8: skeleton cards while loading */}
         {hostsLoading ? (
           <View style={styles.section}>
@@ -746,6 +809,15 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 16, fontFamily: "Poppins_600SemiBold" },
   recoItem: { marginRight: 0 },
   recoReason: { fontSize: 10, fontFamily: "Poppins_500Medium", marginTop: 4, marginLeft: 4, maxWidth: 150 },
+  featureSubtitle: { fontSize: 11, fontFamily: "Poppins_400Regular", marginTop: 2 },
+  featureCard: { width: 210, borderRadius: 18, padding: 14, borderWidth: 1, marginRight: 12, gap: 8 },
+  featureTopRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  featureStatus: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20 },
+  featureStatusText: { fontSize: 10, fontFamily: "Poppins_700Bold", color: "#6A00B8" },
+  featureAudience: { fontSize: 10, fontFamily: "Poppins_500Medium", textTransform: "capitalize" },
+  featureTitle: { fontSize: 14, fontFamily: "Poppins_700Bold", minHeight: 38 },
+  featureDescription: { fontSize: 11, fontFamily: "Poppins_400Regular", lineHeight: 16, minHeight: 48 },
+  featureCta: { fontSize: 12, fontFamily: "Poppins_700Bold" },
   seeAll: { fontSize: 12, fontFamily: "Poppins_500Medium" },
   countText: { fontSize: 12, fontFamily: "Poppins_400Regular" },
   chip: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20 },
