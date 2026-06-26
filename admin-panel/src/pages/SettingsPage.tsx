@@ -112,7 +112,7 @@ const settingGroups = [
 
 const DEFAULTS: Record<string, string> = {
   coin_value_inr: '0.05', // INR value per coin (admin sets this directly)
-  coin_to_usd_rate: '0.0015', // Computed from coin_value_inr
+  coin_to_usd_rate: '0.0006', // ≈ coin_value_inr ÷ 83 — overwritten by live values on load
   host_revenue_share: '0.70',
   min_withdrawal_coins: '100',
   app_name: 'VoxLink',
@@ -418,29 +418,22 @@ export default function SettingsPage() {
   const applyOptimizedEconomy = async () => {
     setSeeding(true);
     try {
-      // Use api.fetch which includes auth headers
-      const token = localStorage.getItem('token');
-      const res = await fetch('/api/admin/seed-coin-economy', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-      });
-      const data = await res.json();
-      
-      if (!res.ok || !data.success) {
+      // Goes through the api helper so it uses the correct API base URL
+      // (VITE_API_URL) and the right auth token (voxlink_admin_token).
+      const data = await api.seedCoinEconomy();
+
+      if (!data.success) {
         throw new Error(data.message || data.error || 'Failed to seed economy');
       }
-      
-      // Refresh settings so the new values show up
+
+      // Refresh settings so the new values show up in the inputs above.
       const fresh = await api.settings();
       setSettings({ ...DEFAULTS, ...fresh });
       setLastSettingsUpdate(Date.now());
-      
+
       const details = data.details;
       showToast(
-        `✅ Economy optimized! ${details?.plans?.length || 0} plans, ${details?.coin_value?.display}/coin`,
+        `✅ Economy optimized! ${details?.plans?.length || 0} plans, ${details?.coin_value?.display || '₹0.05'}/coin`,
       );
       setSeedConfirming(false);
     } catch (e: any) {

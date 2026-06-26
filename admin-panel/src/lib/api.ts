@@ -146,4 +146,22 @@ export const api = {
   updateManualQRCode: (id: string, data: any) => req('PATCH', `/admin/manual-qr-codes/${id}`, data),
   deleteManualQRCode: (id: string) => req('DELETE', `/admin/manual-qr-codes/${id}`),
   runMigrations: () => req<any>('POST', '/admin/run-migrations', {}),
+
+  // ─── Optimized (INR) coin economy seed ───────────────────────────────────
+  // One-click production setup: applies ₹0.05/coin, 70% host share,
+  // 8 INR plans (₹49→₹4999), INR call rates, and broadcasts a real-time
+  // settings update to every connected app. Goes through req() so it uses the
+  // correct API base URL (VITE_API_URL) and auth token (voxlink_admin_token).
+  seedCoinEconomy: () => req<{
+    success: boolean;
+    details?: {
+      coin_value?: { inr: number; usd: number; display: string };
+      host_revenue_share?: number;
+      min_withdrawal_coins?: number;
+      plans?: Array<{ name: string; price: number; coins: number; bonus: number }>;
+    };
+    settings_updated?: string[];
+    error?: string;
+    message?: string;
+  }>('POST', '/admin/seed-coin-economy', {}),
 };

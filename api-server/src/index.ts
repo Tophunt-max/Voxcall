@@ -505,6 +505,29 @@ async function maybeRefreshFxRates(env: Env): Promise<void> {
       "INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('fx_rates_usd', ?, unixepoch())"
     ).bind(JSON.stringify(filtered)).run();
     console.log(`[Cron] FX rates refreshed (${Object.keys(filtered).length} currencies)`);
+
+    // Keep coin_to_usd_rate pinned to the admin's canonical INR coin value as
+    // FX moves. coin_value_inr is the source of truth (set from the admin
+    // Settings page); recomputing the USD rate from it + the fresh INR rate
+    // stops the stored USD value — and every non-INR price derived from it —
+    // from drifting out of sync after a refresh. No-op for legacy DBs that
+    // never stored coin_value_inr.
+    try {
+      const inrRate = Number(filtered.INR);
+      if (Number.isFinite(inrRate) && inrRate > 0) {
+        const cvRow = await env.DB
+          .prepare("SELECT value FROM app_settings WHERE key = 'coin_value_inr'")
+          .first<{ value: string }>();
+        const cv = parseFloat(cvRow?.value ?? '');
+        if (Number.isFinite(cv) && cv > 0) {
+          await env.DB.prepare(
+            "INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('coin_to_usd_rate', ?, unixepoch())"
+          ).bind(String(cv / inrRate)).run();
+        }
+      }
+    } catch (e) {
+      console.warn('[Cron] coin_to_usd_rate re-pin failed:', e);
+    }
   } catch (e) {
     console.error('[Cron] FX refresh error:', e);
   }

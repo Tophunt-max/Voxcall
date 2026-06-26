@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS coin_purchases (
   coins INTEGER NOT NULL DEFAULT 0,
   bonus_coins INTEGER DEFAULT 0,
   amount REAL NOT NULL DEFAULT 0,
-  currency TEXT DEFAULT 'USD',
+  currency TEXT DEFAULT 'INR',
   payment_method TEXT DEFAULT 'unknown',
   gateway_id TEXT,
   gateway_name TEXT,

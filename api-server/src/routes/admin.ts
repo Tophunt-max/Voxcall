@@ -385,24 +385,33 @@ admin.get('/settings', async (c) => {
   const result = await db(c).prepare('SELECT * FROM app_settings').all();
   const obj: any = {};
   result.results.forEach((r: any) => { obj[r.key] = r.value; });
-  
-  // MULTI-CURRENCY: Add coin_value_inr for admin panel
-  // Convert stored coin_to_usd_rate to INR for display using LIVE rates
-  if (obj.coin_to_usd_rate) {
-    const usdRate = parseFloat(obj.coin_to_usd_rate);
-    // Get live INR rate from cron-refreshed fx_rates_usd
-    let inrRate = 83; // fallback
-    if (obj.fx_rates_usd) {
-      try {
-        const rates = JSON.parse(obj.fx_rates_usd);
-        inrRate = rates.INR || 83;
-      } catch {}
-    }
-    obj.coin_value_inr = (usdRate * inrRate).toFixed(6);
-    obj.inr_to_usd_rate = inrRate;
-    obj.fx_rates_last_updated = obj.fx_rates_updated || null;
+
+  // Live INR-per-USD rate from the cron-refreshed fx_rates_usd blob (fallback 83).
+  let inrRate = 83;
+  if (obj.fx_rates_usd) {
+    try {
+      const rates = JSON.parse(obj.fx_rates_usd);
+      if (rates.INR && rates.INR > 0) inrRate = rates.INR;
+    } catch {}
   }
-  
+  obj.inr_to_usd_rate = inrRate;
+  obj.fx_rates_last_updated = obj.fx_rates_updated || null;
+
+  // MULTI-CURRENCY: surface the coin value in INR for the admin panel.
+  // `coin_value_inr` is the admin-set SOURCE OF TRUTH (persisted on save and
+  // re-pinned by the FX cron), so we return it verbatim — the displayed ₹
+  // never drifts as the exchange rate moves. Only legacy rows that predate
+  // this (no stored coin_value_inr) fall back to RECONSTRUCTING it from
+  // coin_to_usd_rate × live FX, which is what produced bogus values like
+  // ₹99/coin when an old/garbage coin_to_usd_rate was lying around.
+  const storedInr = parseFloat(obj.coin_value_inr);
+  if (Number.isFinite(storedInr) && storedInr > 0) {
+    obj.coin_value_inr = String(obj.coin_value_inr);
+  } else if (obj.coin_to_usd_rate) {
+    const usdRate = parseFloat(obj.coin_to_usd_rate);
+    obj.coin_value_inr = (usdRate * inrRate).toFixed(6);
+  }
+
   return c.json(obj);
 });
 admin.patch('/settings', async (c) => {
@@ -416,31 +425,40 @@ admin.patch('/settings', async (c) => {
   // If admin sends coin_value_inr, convert to coin_to_usd_rate
   if (body.coin_value_inr !== undefined) {
     const inrValue = parseFloat(body.coin_value_inr);
-    if (!isNaN(inrValue) && inrValue > 0) {
-      // Get live INR to USD rate from fx_rates_usd or use default
-      const fxRow = await db(c).prepare(
-        "SELECT value FROM app_settings WHERE key = 'fx_rates_usd'"
-      ).first<{ value: string }>();
-      
-      let inrRate = 83; // Default INR per USD
-      if (fxRow?.value) {
-        try {
-          const rates = JSON.parse(fxRow.value);
-          inrRate = rates.INR || 83;
-        } catch {}
-      }
-      
-      // Convert: INR value → USD value
-      // If 1 coin = ₹0.05 and $1 = ₹83, then 1 coin = $0.0006
-      const usdValue = inrValue / inrRate;
-      processedBody.coin_to_usd_rate = usdValue;
-      delete processedBody.coin_value_inr;
+    // Validate: a coin value must be a positive, finite number. We also cap it
+    // at a generous sanity ceiling (₹1000/coin) so a fat-fingered entry can't
+    // poison billing — the product is designed around ₹0.05/coin.
+    if (!Number.isFinite(inrValue) || inrValue <= 0) {
+      return c.json({ error: 'coin_value_inr must be a positive number (₹ per coin), e.g. 0.05' }, 400);
     }
+    if (inrValue > 1000) {
+      return c.json({ error: 'coin_value_inr looks too large (max ₹1000/coin). Did you mean a value like 0.05?' }, 400);
+    }
+    // Get live INR to USD rate from fx_rates_usd or use default
+    const fxRow = await db(c).prepare(
+      "SELECT value FROM app_settings WHERE key = 'fx_rates_usd'"
+    ).first<{ value: string }>();
+
+    let inrRate = 83; // Default INR per USD
+    if (fxRow?.value) {
+      try {
+        const rates = JSON.parse(fxRow.value);
+        if (rates.INR && rates.INR > 0) inrRate = rates.INR;
+      } catch {}
+    }
+
+    // Convert: INR value → USD value (for billing / non-INR users)
+    // If 1 coin = ₹0.05 and $1 = ₹83, then 1 coin = $0.0006
+    const usdValue = inrValue / inrRate;
+    processedBody.coin_to_usd_rate = usdValue;
+    // Persist the admin's INR value as the canonical source of truth so the
+    // displayed ₹ never drifts and the FX cron can re-pin coin_to_usd_rate.
+    processedBody.coin_value_inr = String(inrValue);
   }
   
   // SECURITY FIX: Only allow known setting keys to prevent arbitrary key injection
   const ALLOWED_SETTINGS = [
-    'min_coins_for_call', 'coin_to_usd_rate', 'host_revenue_share',
+    'min_coins_for_call', 'coin_to_usd_rate', 'coin_value_inr', 'host_revenue_share',
     'min_withdrawal_coins', 'auto_approve_manual', 'auto_approve_manual_max_amount',
     'maintenance_mode', 'maintenance_message', 'app_name', 'support_email',
     'terms_url', 'privacy_url', 'razorpay_webhook_secret', 'stripe_webhook_secret',
@@ -1746,28 +1764,185 @@ admin.post('/seed/india-defaults', async (c) => {
 });
 
 // ─── Seed Optimized Coin Economy ─────────────────────────────────────────────
-// Re-applies the production INR coin-economy migrations (0030–0032) via the
-// runtime auto-migrator. Idempotent: each migration is only re-run if its
-// `d1_migrations` row is missing, otherwise this is a no-op.
+// One-click production setup behind the admin "Apply Optimized Coin Economy"
+// card. Applies the EXACT economy the card advertises, in INR:
+//   • Coin value         ₹0.05/coin (stored as coin_to_usd_rate via live FX)
+//   • Host revenue share  70%
+//   • Min withdrawal      1000 coins (₹50)
+//   • Call rates          ₹0.50/min audio (10 coins), ₹1.00/min video (20 coins)
+//   • Plans               8 INR tiers, ₹49 → ₹4999, with climbing bonuses
+//   • Referral rewards + daily streak enabled
 //
-// Replaces an earlier dynamic-import-based version that referenced a
-// `scripts/seed-coin-economy` module which never existed in the repo and
-// blocked `wrangler deploy` (the build step couldn't resolve the import).
+// First runs the auto-migrator to guarantee the schema exists, then writes the
+// economy in a single atomic D1 batch and broadcasts a real-time
+// `app_settings_update` over WebSocket so every connected app re-prices live.
+// Idempotent: re-running converges to the same end state.
 admin.post('/seed-coin-economy', async (c) => {
   try {
-    const report = await ensureAllMigrations(c.env.DB);
+    const database = db(c);
     const u = c.get('user');
+    const ip = c.req.header('CF-Connecting-IP') ?? '';
+
+    // 0. Make sure all schema columns/tables exist before we write to them.
+    //    Idempotent — already-applied migrations are skipped.
+    await ensureAllMigrations(c.env.DB);
+
+    // ─── The optimized INR coin economy (matches the admin card 1:1) ───────
+    // Coin value is the single source of truth: 1 coin = ₹0.05. Everything
+    // else (call rates in coins, plan coin counts, min-withdrawal) is derived
+    // from it so the numbers the admin sees on the card are exactly what
+    // production runs with.
+    const COIN_VALUE_INR = 0.05;          // ₹ per coin
+    const HOST_REVENUE_SHARE = 0.70;      // host keeps 70% of coins earned
+    const MIN_WITHDRAWAL_COINS = 1000;    // ₹50 at ₹0.05/coin
+    // Call rates expressed in coins/min. ₹0.50/min audio = 10 coins,
+    // ₹1.00/min video = 20 coins (host gets 70% → ₹0.35 / ₹0.70 per min).
+    const AUDIO_RATE_COINS = 10;
+    const VIDEO_RATE_COINS = 20;
+
+    // Live INR→USD FX so the stored coin_to_usd_rate always represents ₹0.05,
+    // regardless of the current exchange rate. Falls back to 83 if the
+    // cron-refreshed fx_rates_usd blob is missing/corrupt.
+    let inrRate = 83;
+    const fxRow = await database
+      .prepare("SELECT value FROM app_settings WHERE key = 'fx_rates_usd'")
+      .first<{ value: string }>();
+    if (fxRow?.value) {
+      try {
+        const rates = JSON.parse(fxRow.value);
+        if (rates.INR && rates.INR > 0) inrRate = rates.INR;
+      } catch {}
+    }
+    const coinToUsdRate = COIN_VALUE_INR / inrRate; // e.g. 0.05 / 83 = 0.000602…
+
+    // ─── 8-tier INR plan ladder (₹49 → ₹4999) with climbing bonus ──────────
+    // coins = base (price × 20 at ₹0.05/coin), bonus_coins = loyalty bonus.
+    const plans: Array<{
+      id: string; name: string; coins: number; price: number; bonus: number; popular: 0 | 1;
+    }> = [
+      { id: 'opt-in-049',  name: 'Starter', coins: 1000,   price: 49,   bonus: 0,     popular: 0 },
+      { id: 'opt-in-099',  name: 'Mini',    coins: 2000,   price: 99,   bonus: 100,   popular: 0 },
+      { id: 'opt-in-199',  name: 'Popular', coins: 4000,   price: 199,  bonus: 400,   popular: 1 },
+      { id: 'opt-in-499',  name: 'Value',   coins: 10000,  price: 499,  bonus: 1500,  popular: 0 },
+      { id: 'opt-in-999',  name: 'Super',   coins: 20000,  price: 999,  bonus: 4000,  popular: 0 },
+      { id: 'opt-in-1999', name: 'Pro',     coins: 40000,  price: 1999, bonus: 10000, popular: 0 },
+      { id: 'opt-in-2999', name: 'Elite',   coins: 60000,  price: 2999, bonus: 18000, popular: 0 },
+      { id: 'opt-in-4999', name: 'Mega',    coins: 100000, price: 4999, bonus: 35000, popular: 0 },
+    ];
+
+    // ─── App settings (the economy knobs) ──────────────────────────────────
+    const settingUpserts: Array<[string, string]> = [
+      ['coin_value_inr',           String(COIN_VALUE_INR)], // canonical INR source of truth
+      ['coin_to_usd_rate',         String(coinToUsdRate)],
+      ['host_revenue_share',       String(HOST_REVENUE_SHARE)],
+      ['min_withdrawal_coins',     String(MIN_WITHDRAWAL_COINS)],
+      ['default_audio_rate',       String(AUDIO_RATE_COINS)],
+      ['default_video_rate',       String(VIDEO_RATE_COINS)],
+      ['random_call_audio_rate',   String(AUDIO_RATE_COINS)],
+      ['random_call_video_rate',   String(VIDEO_RATE_COINS)],
+      ['min_coins_for_call',       '20'],   // ≈ ₹1 floor to start a call
+      ['registration_bonus_coins', '100'],  // ₹5 welcome coins
+      // Referral rewards + daily streak (card mentions both).
+      ['referrer_reward',          '100'],
+      ['new_user_reward',          '50'],
+      ['referral_active',          '1'],
+      ['daily_streak_enabled',     '1'],
+    ];
+
+    // ─── Execute atomically (D1 batch) ─────────────────────────────────────
+    const ops: D1PreparedStatement[] = [];
+
+    // 1. wipe + reseed coin_plans (all INR-native, whole-rupee prices)
+    ops.push(database.prepare('DELETE FROM coin_plans'));
+    for (const p of plans) {
+      ops.push(
+        database
+          .prepare(
+            `INSERT INTO coin_plans (id, name, coins, price, currency, bonus_coins, is_popular, is_active)
+             VALUES (?, ?, ?, ?, 'INR', ?, ?, 1)`,
+          )
+          .bind(p.id, p.name, p.coins, p.price, p.bonus, p.popular),
+      );
+    }
+
+    // 2. upsert app_settings
+    for (const [key, value] of settingUpserts) {
+      ops.push(
+        database
+          .prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES (?, ?, unixepoch())")
+          .bind(key, value),
+      );
+    }
+
+    await database.batch(ops);
+
+    // ─── REAL-TIME: broadcast the new economy to every connected app ───────
+    // Mirrors the PATCH /settings broadcast so user/host apps update the coin
+    // value + call rates live, without a refresh.
+    const broadcast = {
+      coin_to_usd_rate: String(coinToUsdRate),
+      host_revenue_share: String(HOST_REVENUE_SHARE),
+      default_audio_rate: String(AUDIO_RATE_COINS),
+      default_video_rate: String(VIDEO_RATE_COINS),
+      random_call_audio_rate: String(AUDIO_RATE_COINS),
+      random_call_video_rate: String(VIDEO_RATE_COINS),
+      min_withdrawal_coins: String(MIN_WITHDRAWAL_COINS),
+    };
+    const settingsUpdateMsg = JSON.stringify({
+      type: 'app_settings_update',
+      settings: broadcast,
+      critical: true, // coin value changed — apps should refresh pricing
+      timestamp: Date.now(),
+      updated_by: u.email || 'Admin',
+    });
+    const allUsers = await database
+      .prepare("SELECT id FROM users WHERE status != 'deleted' LIMIT 10000")
+      .all<{ id: string }>();
+    if (allUsers.results && allUsers.results.length > 0) {
+      const CHUNK_SIZE = 50;
+      for (let i = 0; i < allUsers.results.length; i += CHUNK_SIZE) {
+        const chunk = allUsers.results.slice(i, i + CHUNK_SIZE);
+        await Promise.allSettled(
+          chunk.map(async (user) => {
+            try {
+              const notifStub = c.env.NOTIFICATION_HUB.get(
+                c.env.NOTIFICATION_HUB.idFromName(user.id),
+              );
+              await notifStub.fetch('https://dummy/notify', { method: 'POST', body: settingsUpdateMsg });
+            } catch {}
+          }),
+        );
+      }
+    }
+
     await auditLog(
-      db(c),
+      database,
       u.sub,
       u.email || 'Admin',
       u.email || '',
       'update',
       'settings',
       'coin_economy',
-      `Re-ran auto-migrator: ${report.applied.length} applied, ${report.alreadyApplied} already applied, ${report.failed.length} failed`,
+      `Applied optimized INR economy: ${plans.length} plans (₹49→₹4999), coin_value=₹${COIN_VALUE_INR} (coin_to_usd_rate=${coinToUsdRate}), host_share=${HOST_REVENUE_SHARE}, min_withdrawal=${MIN_WITHDRAWAL_COINS} coins`,
+      ip,
     );
-    return c.json({ success: report.failed.length === 0, ...report });
+
+    return c.json({
+      success: true,
+      details: {
+        coin_value: {
+          inr: COIN_VALUE_INR,
+          usd: coinToUsdRate,
+          display: `₹${COIN_VALUE_INR}`,
+        },
+        host_revenue_share: HOST_REVENUE_SHARE,
+        min_withdrawal_coins: MIN_WITHDRAWAL_COINS,
+        call_rates: { audio_coins: AUDIO_RATE_COINS, video_coins: VIDEO_RATE_COINS },
+        plans: plans.map((p) => ({ name: p.name, price: p.price, coins: p.coins, bonus: p.bonus })),
+        realtime_broadcast: true,
+      },
+      settings_updated: settingUpserts.map(([k]) => k),
+    });
   } catch (err) {
     console.error('[admin/seed-coin-economy] failed:', err);
     return c.json({ success: false, error: String((err as Error)?.message ?? err) }, 500);
