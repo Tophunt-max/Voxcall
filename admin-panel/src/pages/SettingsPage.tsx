@@ -112,7 +112,7 @@ const settingGroups = [
 
 const DEFAULTS: Record<string, string> = {
   coin_value_inr: '0.05', // INR value per coin (admin sets this directly)
-  coin_to_usd_rate: '0.0015', // Computed from coin_value_inr
+  coin_to_usd_rate: '0.0006', // ≈ coin_value_inr ÷ 83 — overwritten by live values on load
   host_revenue_share: '0.70',
   min_withdrawal_coins: '100',
   app_name: 'VoxLink',

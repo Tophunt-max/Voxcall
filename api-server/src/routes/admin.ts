@@ -385,24 +385,33 @@ admin.get('/settings', async (c) => {
   const result = await db(c).prepare('SELECT * FROM app_settings').all();
   const obj: any = {};
   result.results.forEach((r: any) => { obj[r.key] = r.value; });
-  
-  // MULTI-CURRENCY: Add coin_value_inr for admin panel
-  // Convert stored coin_to_usd_rate to INR for display using LIVE rates
-  if (obj.coin_to_usd_rate) {
-    const usdRate = parseFloat(obj.coin_to_usd_rate);
-    // Get live INR rate from cron-refreshed fx_rates_usd
-    let inrRate = 83; // fallback
-    if (obj.fx_rates_usd) {
-      try {
-        const rates = JSON.parse(obj.fx_rates_usd);
-        inrRate = rates.INR || 83;
-      } catch {}
-    }
-    obj.coin_value_inr = (usdRate * inrRate).toFixed(6);
-    obj.inr_to_usd_rate = inrRate;
-    obj.fx_rates_last_updated = obj.fx_rates_updated || null;
+
+  // Live INR-per-USD rate from the cron-refreshed fx_rates_usd blob (fallback 83).
+  let inrRate = 83;
+  if (obj.fx_rates_usd) {
+    try {
+      const rates = JSON.parse(obj.fx_rates_usd);
+      if (rates.INR && rates.INR > 0) inrRate = rates.INR;
+    } catch {}
   }
-  
+  obj.inr_to_usd_rate = inrRate;
+  obj.fx_rates_last_updated = obj.fx_rates_updated || null;
+
+  // MULTI-CURRENCY: surface the coin value in INR for the admin panel.
+  // `coin_value_inr` is the admin-set SOURCE OF TRUTH (persisted on save and
+  // re-pinned by the FX cron), so we return it verbatim — the displayed ₹
+  // never drifts as the exchange rate moves. Only legacy rows that predate
+  // this (no stored coin_value_inr) fall back to RECONSTRUCTING it from
+  // coin_to_usd_rate × live FX, which is what produced bogus values like
+  // ₹99/coin when an old/garbage coin_to_usd_rate was lying around.
+  const storedInr = parseFloat(obj.coin_value_inr);
+  if (Number.isFinite(storedInr) && storedInr > 0) {
+    obj.coin_value_inr = String(obj.coin_value_inr);
+  } else if (obj.coin_to_usd_rate) {
+    const usdRate = parseFloat(obj.coin_to_usd_rate);
+    obj.coin_value_inr = (usdRate * inrRate).toFixed(6);
+  }
+
   return c.json(obj);
 });
 admin.patch('/settings', async (c) => {
@@ -416,31 +425,40 @@ admin.patch('/settings', async (c) => {
   // If admin sends coin_value_inr, convert to coin_to_usd_rate
   if (body.coin_value_inr !== undefined) {
     const inrValue = parseFloat(body.coin_value_inr);
-    if (!isNaN(inrValue) && inrValue > 0) {
-      // Get live INR to USD rate from fx_rates_usd or use default
-      const fxRow = await db(c).prepare(
-        "SELECT value FROM app_settings WHERE key = 'fx_rates_usd'"
-      ).first<{ value: string }>();
-      
-      let inrRate = 83; // Default INR per USD
-      if (fxRow?.value) {
-        try {
-          const rates = JSON.parse(fxRow.value);
-          inrRate = rates.INR || 83;
-        } catch {}
-      }
-      
-      // Convert: INR value → USD value
-      // If 1 coin = ₹0.05 and $1 = ₹83, then 1 coin = $0.0006
-      const usdValue = inrValue / inrRate;
-      processedBody.coin_to_usd_rate = usdValue;
-      delete processedBody.coin_value_inr;
+    // Validate: a coin value must be a positive, finite number. We also cap it
+    // at a generous sanity ceiling (₹1000/coin) so a fat-fingered entry can't
+    // poison billing — the product is designed around ₹0.05/coin.
+    if (!Number.isFinite(inrValue) || inrValue <= 0) {
+      return c.json({ error: 'coin_value_inr must be a positive number (₹ per coin), e.g. 0.05' }, 400);
     }
+    if (inrValue > 1000) {
+      return c.json({ error: 'coin_value_inr looks too large (max ₹1000/coin). Did you mean a value like 0.05?' }, 400);
+    }
+    // Get live INR to USD rate from fx_rates_usd or use default
+    const fxRow = await db(c).prepare(
+      "SELECT value FROM app_settings WHERE key = 'fx_rates_usd'"
+    ).first<{ value: string }>();
+
+    let inrRate = 83; // Default INR per USD
+    if (fxRow?.value) {
+      try {
+        const rates = JSON.parse(fxRow.value);
+        if (rates.INR && rates.INR > 0) inrRate = rates.INR;
+      } catch {}
+    }
+
+    // Convert: INR value → USD value (for billing / non-INR users)
+    // If 1 coin = ₹0.05 and $1 = ₹83, then 1 coin = $0.0006
+    const usdValue = inrValue / inrRate;
+    processedBody.coin_to_usd_rate = usdValue;
+    // Persist the admin's INR value as the canonical source of truth so the
+    // displayed ₹ never drifts and the FX cron can re-pin coin_to_usd_rate.
+    processedBody.coin_value_inr = String(inrValue);
   }
   
   // SECURITY FIX: Only allow known setting keys to prevent arbitrary key injection
   const ALLOWED_SETTINGS = [
-    'min_coins_for_call', 'coin_to_usd_rate', 'host_revenue_share',
+    'min_coins_for_call', 'coin_to_usd_rate', 'coin_value_inr', 'host_revenue_share',
     'min_withdrawal_coins', 'auto_approve_manual', 'auto_approve_manual_max_amount',
     'maintenance_mode', 'maintenance_message', 'app_name', 'support_email',
     'terms_url', 'privacy_url', 'razorpay_webhook_secret', 'stripe_webhook_secret',
@@ -1814,6 +1832,7 @@ admin.post('/seed-coin-economy', async (c) => {
 
     // ─── App settings (the economy knobs) ──────────────────────────────────
     const settingUpserts: Array<[string, string]> = [
+      ['coin_value_inr',           String(COIN_VALUE_INR)], // canonical INR source of truth
       ['coin_to_usd_rate',         String(coinToUsdRate)],
       ['host_revenue_share',       String(HOST_REVENUE_SHARE)],
       ['min_withdrawal_coins',     String(MIN_WITHDRAWAL_COINS)],
