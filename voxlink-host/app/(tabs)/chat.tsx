@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, Image,
-  FlatList, TextInput, RefreshControl,
+  FlatList, TextInput, RefreshControl, ActivityIndicator,
 } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -29,10 +29,18 @@ export default function HostChatScreen() {
   const { conversations, loadConversations } = useChat();
   const [search, setSearch] = useState("");
   const [refreshing, setRefreshing] = useState(false);
+  // Initial-load flag — ChatContext doesn't expose one, so we track the first
+  // loadConversations() locally to show a spinner instead of the empty state
+  // (which previously flashed "No conversations yet" before data arrived).
+  const [loading, setLoading] = useState(true);
   const topPad = insets.top;
 
   useEffect(() => {
-    if (user?.id) loadConversations(user.id);
+    if (user?.id) {
+      loadConversations(user.id).finally(() => setLoading(false));
+    } else {
+      setLoading(false);
+    }
   }, [user?.id]);
 
   const onRefresh = async () => {
@@ -73,10 +81,16 @@ export default function HostChatScreen() {
         contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 8, gap: 2, paddingBottom: 100 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
         ListEmptyComponent={
-          <View style={styles.empty}>
-            <Image source={require("@/assets/images/empty_chat.png")} style={styles.emptyImg} resizeMode="contain" />
-            <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>No conversations yet</Text>
-          </View>
+          loading ? (
+            <View style={styles.empty}>
+              <ActivityIndicator size="large" color={colors.accent} />
+            </View>
+          ) : (
+            <View style={styles.empty}>
+              <Image source={require("@/assets/images/empty_chat.png")} style={styles.emptyImg} resizeMode="contain" />
+              <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>No conversations yet</Text>
+            </View>
+          )
         }
         renderItem={({ item }) => (
           <TouchableOpacity

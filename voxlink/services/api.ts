@@ -102,6 +102,21 @@ export const API = {
   // Auth
   login: (email: string, password: string) =>
     apiRequest<{ token: string; user: any }>('POST', '/api/auth/login', { email, password }, false),
+
+  // FIX #1: Mid-call heartbeat — server-side balance cap enforcement.
+  // Client calls this every 20–30s during an active call. Server force-ends
+  // the call when balance is exhausted, preventing overrun abuse.
+  heartbeat: (session_id: string) =>
+    apiRequest<{
+      ok: boolean;
+      ended: boolean;
+      remaining_seconds?: number;
+      max_seconds?: number;
+      low_balance?: boolean;
+      reason?: string;
+      coins_charged?: number;
+      duration_seconds?: number;
+    }>('POST', `/api/calls/${session_id}/heartbeat`, {}),
   register: (name: string, email: string, password: string, gender?: string, phone?: string, referral_code?: string) =>
     apiRequest<{ token: string; user: any }>('POST', '/api/auth/register', { name, email, password, gender, phone, referral_code }, false),
   guestLogin: (device_id?: string | null) =>

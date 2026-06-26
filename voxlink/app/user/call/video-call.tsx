@@ -406,6 +406,34 @@ export default function VideoCallScreen() {
     return () => sub.remove();
   }, [handleEndCall]);
 
+  // FIX #1: Mid-call heartbeat — call server every 25s to enforce balance cap.
+  // Server force-ends the call when balance is exhausted, preventing callers
+  // from talking past their coin balance (overrun abuse). The heartbeat also
+  // pushes a low-balance warning when remaining_seconds <= low_balance_warn_seconds.
+  useEffect(() => {
+    if (status !== "active" || !activeCall?.sessionId) return;
+    const sid = activeCall.sessionId;
+    let cancelled = false;
+    const heartbeatInterval = setInterval(async () => {
+      if (cancelled) return;
+      try {
+        const res = await API.heartbeat(sid);
+        if (cancelled) return;
+        if (res.ended) {
+          console.log("[video-call] Heartbeat reports call ended:", res.reason);
+          webrtc.cleanup();
+          endCall(true);
+        }
+      } catch (e) {
+        console.warn("[video-call] Heartbeat failed:", e);
+      }
+    }, 25000); // 25 seconds
+    return () => {
+      cancelled = true;
+      clearInterval(heartbeatInterval);
+    };
+  }, [status, activeCall?.sessionId, webrtc.cleanup, endCall]);
+
   // FIX (back-navigation, web beforeunload) — see audio-call for rationale.
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof window === 'undefined') return;
