@@ -79,6 +79,12 @@ export default function HostLoginScreen() {
         const googleUser = signInResult.data?.user;
         const idToken = signInResult.data?.idToken ?? null;
         if (!googleUser?.email) throw new Error("Could not retrieve Google account info.");
+        // Backend requires a verifiable Google ID token; a null token means the
+        // native OAuth config is incomplete (SHA-1 / google-services.json /
+        // Web client ID). Fail clearly instead of sending a doomed request.
+        if (!idToken) {
+          throw new Error("Google sign-in did not return a token. Please update the app or try again.");
+        }
         await handleGoogleProfileData(
           googleUser.id,
           googleUser.name || "User",

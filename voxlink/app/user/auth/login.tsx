@@ -77,6 +77,13 @@ export default function LoginScreen() {
         const googleUser = signInResult.data?.user;
         const idToken = signInResult.data?.idToken ?? null;
         if (!googleUser?.email) throw new Error("Could not retrieve Google account info.");
+        // The backend requires a verifiable Google ID token. If the native SDK
+        // returns no idToken, the OAuth config is incomplete (e.g. the build's
+        // SHA-1 isn't registered for the Web client ID, or google-services.json
+        // is missing) — fail with a clear message instead of a cryptic 400.
+        if (!idToken) {
+          throw new Error("Google sign-in did not return a token. Please update the app or try again.");
+        }
         await handleGoogleProfileData(
           googleUser.id,
           googleUser.name || "User",
