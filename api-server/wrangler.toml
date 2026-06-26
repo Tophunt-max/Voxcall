@@ -18,11 +18,18 @@ rules = [
 
 # Workers Logs — capture console.* output, exceptions, and request metadata so
 # production failures (billing errors, webhook rejections, cron faults) are
-# searchable in the dashboard and via `wrangler tail`. head_sampling_rate = 1
-# keeps 100% of logs; lower it if volume/cost becomes a concern at scale.
+# searchable in the dashboard and via `wrangler tail`.
+#
+# head_sampling_rate = 0.1 keeps 10% of request-level logs in production: this
+# cuts log volume/cost at scale AND reduces the blast radius of any sensitive
+# data that might ride in a request URL (e.g. legacy WS clients still on
+# `?token=` before they migrate to the Sec-WebSocket-Protocol header). Explicit
+# console.error/console.warn calls are still emitted for every request that
+# hits them — sampling only thins the automatic per-request HTTP traces. Raise
+# back toward 1 temporarily when actively debugging a low-traffic issue.
 [observability]
 enabled = true
-head_sampling_rate = 1
+head_sampling_rate = 0.1
 
 [[d1_databases]]
 binding = "DB"

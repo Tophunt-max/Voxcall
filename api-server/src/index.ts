@@ -1,6 +1,5 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { logger } from 'hono/logger';
 
 import { jwtVerify } from 'jose';
 import type { Env } from './types';
@@ -75,6 +74,20 @@ function isOriginAllowed(origin: string, env: Env): boolean {
 
 const app = new Hono<{ Bindings: Env }>();
 
+// Redacting request logger — logs method + PATHNAME only (never the query
+// string), so sensitive query params (e.g. a legacy WebSocket `?token=<JWT>`
+// from clients not yet migrated to the Sec-WebSocket-Protocol header) can't
+// leak into Workers Logs / `wrangler tail` / downstream log sinks. Replaces
+// hono's built-in `logger()`, which logs the full request target.
+app.use('*', async (c, next) => {
+  const start = Date.now();
+  let path = c.req.path;
+  try { path = new URL(c.req.url).pathname; } catch { /* keep c.req.path */ }
+  await next();
+  const ms = Date.now() - start;
+  console.log(`${c.req.method} ${path} ${c.res.status} ${ms}ms`);
+});
+
 // Global middleware
 app.use('*', cors({
   origin: (origin, c) => {
@@ -87,9 +100,6 @@ app.use('*', cors({
   credentials: true,
   maxAge: 86400,
 }));
-app.use('*', logger());
-
-
 // Schema auto-migration: bring the live D1 instance in sync with the code
 // before any /api/* DB query runs. Two layers, both cached per worker isolate
 // so subsequent requests pay only a microtask cost:

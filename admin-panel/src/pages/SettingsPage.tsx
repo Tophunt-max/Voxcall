@@ -202,14 +202,22 @@ function safeEval(expression: string): number {
   return pos === s.length ? result : NaN;
 }
 
-// USD→INR FX used for the ₹ preview rows (mirrors USD_TO_FOREIGN.INR in the
-// apps). coin_to_usd_rate is stored in USD/coin; multiply by this to show ₹.
-const INR_PER_USD = 83;
+// USD→INR FX used for the ₹ preview rows. We DEFAULT to 83 but prefer the
+// live, cron-refreshed rate the backend surfaces as `inr_to_usd_rate` (see
+// admin GET /settings). Passing the settings object lets every preview use the
+// same rate the backend used to convert coin_value_inr → coin_to_usd_rate, so
+// the admin panel never shows a ₹ figure that disagrees with production.
+const INR_PER_USD_FALLBACK = 83;
+
+function inrPerUsd(s: Record<string, string>): number {
+  const live = parseFloat(s.inr_to_usd_rate || '');
+  return Number.isFinite(live) && live > 0 ? live : INR_PER_USD_FALLBACK;
+}
 
 // ─── built-in formula evaluators ─────────────────────────────────────────────
 function evalFormula(formula: ComputedRow['formula'], expr: string | undefined, s: Record<string, string>) {
   const rate = parseFloat(s.coin_to_usd_rate || '0.0015');     // USD per coin
-  const rateInr = rate * INR_PER_USD;                          // ₹ per coin
+  const rateInr = rate * inrPerUsd(s);                         // ₹ per coin (live FX)
   const share = parseFloat(s.host_revenue_share || '0.70');
   const minW = parseInt(s.min_withdrawal_coins || '5000');
   const audioRate = parseInt(s.default_audio_rate || '25');
@@ -739,7 +747,7 @@ export default function SettingsPage() {
             </div>
             {(() => {
               const coins = parseFloat(calcCoins) || 0;
-              const rateInr = coinRate * INR_PER_USD;
+              const rateInr = coinRate * inrRate;
               const share = parseFloat(settings.host_revenue_share || '0.70');
               const buy = coins * rateInr;
               const host = coins * rateInr * share;

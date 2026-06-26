@@ -8,6 +8,7 @@ import { getLevelConfig, getEarningShare, getDefaultCallRates, DEFAULT_AUDIO_RAT
 import { applyLevelUp } from '../lib/levelService';
 import { billedMinutes, coinsForCall, chargeCallerWithFreePool } from '../lib/billing';
 import { registerHit } from '../lib/rateLimit';
+import { apiError, ErrorCode } from '../lib/errors';
 import type { Env, JWTPayload, HostRow, CallSessionRow, CallerData, HostData } from '../types';
 
 const call = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
@@ -142,7 +143,7 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
     // FIX #7: atomic check-and-increment (no read-then-write TOCTOU).
     const { limited } = await registerHit(db, rlKey, 5, 60);
     if (limited) {
-      return c.json({ error: 'Too many call requests. Please wait before trying again.' }, 429);
+      return apiError(c, ErrorCode.RATE_LIMITED, 429, 'Too many call requests. Please wait before trying again.');
     }
   } catch (e) {
     // Rate limit table may not exist — don't block but log the error
@@ -155,11 +156,11 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
 
   // BUG #1 FIX: Use body.host_id instead of body.host_i[...]
   const host = await db.prepare('SELECT id, coins_per_minute, audio_coins_per_minute, video_coins_per_minute, user_id FROM hosts WHERE id = ? AND is_online = 1 AND is_active = 1').bind(body.host_id).first<HostData>();
-  if (!host) return c.json({ error: 'Host not available' }, 404);
+  if (!host) return apiError(c, ErrorCode.HOST_UNAVAILABLE, 404, 'Host not available');
 
   // Self-call check
   if (host.user_id === sub) {
-    return c.json({ error: 'You cannot call yourself' }, 400);
+    return apiError(c, ErrorCode.SELF_CALL, 400, 'You cannot call yourself');
   }
 
   // Concurrent call check — user pehle se kisi call mein hai?
@@ -167,7 +168,7 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
     "SELECT id FROM call_sessions WHERE caller_id = ? AND status IN ('pending','active') LIMIT 1"
   ).bind(sub).first<{ id: string }>();
   if (existingCall) {
-    return c.json({ error: 'You are already in a call. Please end it before starting a new one.' }, 409);
+    return apiError(c, ErrorCode.ALREADY_IN_CALL, 409, 'You are already in a call. Please end it before starting a new one.');
   }
 
   // Host already busy check
@@ -175,7 +176,7 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
     "SELECT id FROM call_sessions WHERE host_id = ? AND status IN ('pending','active') LIMIT 1"
   ).bind(host.id).first<{ id: string }>();
   if (hostBusy) {
-    return c.json({ error: 'Host is currently busy. Please try again later.' }, 409);
+    return apiError(c, ErrorCode.HOST_BUSY, 409, 'Host is currently busy. Please try again later.');
   }
 
   // Admin-controlled default call rates (App Config → Calling System) — used
@@ -189,7 +190,7 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
   // Require at least 2 minutes worth of coins — WebRTC negotiation takes ~15s
   // so 1-min minimum would auto-end the call before it truly starts
   if (!caller || caller.coins < ratePerMin * 2) {
-    return c.json({ error: 'Insufficient coins. You need at least 2 minutes worth of coins to start a call.' }, 402);
+    return apiError(c, ErrorCode.INSUFFICIENT_COINS, 402, 'Insufficient coins. You need at least 2 minutes worth of coins to start a call.');
   }
 
   // FIX BUG-1: Do NOT pre-create CF sessions at initiation time.
@@ -559,7 +560,7 @@ call.post('/end', async (c) => {
     return c.json({ success: true, duration_seconds: durationSec, coins_charged: actualCoinsCharged, host_earnings: actualHostShare });
   } catch (e: any) {
     console.error('[/end] error:', e);
-    return c.json({ error: e.message || 'Failed to end call' }, 500);
+    return apiError(c, ErrorCode.INTERNAL, 500, 'Failed to end call');
   }
 });
 
@@ -1106,7 +1107,7 @@ call.post('/:id/end', async (c) => {
     return c.json({ success: true, duration_seconds: durationSec, coins_charged: actualCoinsCharged, host_earnings: actualHostShare });
   } catch (e: any) {
     console.error('[/:id/end] error:', e);
-    return c.json({ error: e.message || 'Failed to end call' }, 500);
+    return apiError(c, ErrorCode.INTERNAL, 500, 'Failed to end call');
   }
 });
 

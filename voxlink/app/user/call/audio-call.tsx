@@ -328,6 +328,34 @@ export default function AudioCallScreen() {
     }
   }, [activeCall, webrtc.cleanup]);
 
+  // FIX #1: Mid-call heartbeat — call server every 25s to enforce balance cap.
+  // Server force-ends the call when balance is exhausted, preventing callers
+  // from talking past their coin balance (overrun abuse). The heartbeat also
+  // pushes a low-balance warning when remaining_seconds <= low_balance_warn_seconds.
+  useEffect(() => {
+    if (status !== "active" || !activeCall?.sessionId) return;
+    const sid = activeCall.sessionId;
+    let cancelled = false;
+    const heartbeatInterval = setInterval(async () => {
+      if (cancelled) return;
+      try {
+        const res = await API.heartbeat(sid);
+        if (cancelled) return;
+        if (res.ended) {
+          console.log("[audio-call] Heartbeat reports call ended:", res.reason);
+          webrtc.cleanup();
+          endCall(true);
+        }
+      } catch (e) {
+        console.warn("[audio-call] Heartbeat failed:", e);
+      }
+    }, 25000); // 25 seconds
+    return () => {
+      cancelled = true;
+      clearInterval(heartbeatInterval);
+    };
+  }, [status, activeCall?.sessionId, webrtc.cleanup, endCall]);
+
   const handleAutoEnd = useCallback(() => {
     webrtc.cleanup();
     endCall(true);
@@ -469,6 +497,8 @@ export default function AudioCallScreen() {
             <TouchableOpacity
               onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); toggleMute(); }}
               style={[styles.ctrlBtn, activeCall?.isMuted && styles.ctrlBtnActive]}
+              accessibilityRole="button"
+              accessibilityLabel={activeCall?.isMuted ? "Unmute microphone" : "Mute microphone"}
             >
               <Image source={require("@/assets/icons/ic_mic.png")} style={{ width: 26, height: 26, tintColor: "#fff", opacity: activeCall?.isMuted ? 0.4 : 1 }} resizeMode="contain" />
             </TouchableOpacity>
@@ -478,6 +508,8 @@ export default function AudioCallScreen() {
           <TouchableOpacity
             onPress={() => { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning); handleEndCall(); }}
             style={styles.endBtn}
+            accessibilityRole="button"
+            accessibilityLabel="End call"
           >
             <Image source={require("@/assets/icons/ic_call_end.png")} style={{ width: 30, height: 30, tintColor: "#fff" }} resizeMode="contain" />
           </TouchableOpacity>
@@ -486,6 +518,8 @@ export default function AudioCallScreen() {
             <TouchableOpacity
               onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); toggleSpeaker(); }}
               style={[styles.ctrlBtn, activeCall?.isSpeakerOn && styles.ctrlBtnActive]}
+              accessibilityRole="button"
+              accessibilityLabel={activeCall?.isSpeakerOn ? "Turn off speaker" : "Turn on speaker"}
             >
               <Image source={activeCall?.isSpeakerOn ? require("@/assets/icons/ic_speaker_on.png") : require("@/assets/icons/ic_speaker_off.png")} style={{ width: 26, height: 26, tintColor: "#fff" }} resizeMode="contain" />
             </TouchableOpacity>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, Platform, RefreshControl } from "react-native";
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, Platform, RefreshControl, ActivityIndicator } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
@@ -90,11 +90,21 @@ export default function NotificationsScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { paddingTop: insets.top + 16, borderBottomColor: colors.border }]}>
-        <TouchableOpacity onPress={() => router.back()}>
+        <TouchableOpacity
+          onPress={() => router.back()}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
           <Image source={require("@/assets/icons/ic_back.png")} style={{ width: 22, height: 22, tintColor: colors.foreground }} resizeMode="contain" />
         </TouchableOpacity>
         <Text style={[styles.title, { color: colors.foreground }]}>Notifications</Text>
-        <TouchableOpacity onPress={markAllRead}>
+        <TouchableOpacity
+          onPress={markAllRead}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          accessibilityRole="button"
+          accessibilityLabel="Mark all notifications as read"
+        >
           <Text style={[styles.markRead, { color: colors.primary }]}>Mark all read</Text>
         </TouchableOpacity>
       </View>
@@ -103,14 +113,20 @@ export default function NotificationsScreen() {
         keyExtractor={(n) => n.id}
         renderItem={renderItem}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 20, flexGrow: 1 }}
         ListEmptyComponent={
-          !loading ? (
+          loading ? (
+            // Initial-load spinner — previously the screen showed a blank list
+            // until the request resolved, which read as "no notifications".
+            <View style={styles.empty}>
+              <ActivityIndicator size="large" color={colors.primary} />
+            </View>
+          ) : (
             <View style={styles.empty}>
               <Image source={require("@/assets/icons/ic_notify.png")} style={{ width: 40, height: 40, tintColor: colors.mutedForeground }} resizeMode="contain" />
               <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>No notifications yet</Text>
             </View>
-          ) : null
+          )
         }
       />
     </View>

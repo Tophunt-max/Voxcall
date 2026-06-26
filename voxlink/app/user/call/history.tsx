@@ -4,7 +4,7 @@
 import React, { useState, useEffect } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  Image, Platform
+  Image, Platform, ActivityIndicator
 } from "react-native";
 import { FlashList } from "@shopify/flash-list";
 import { router } from "expo-router";
@@ -49,6 +49,7 @@ export default function CallHistoryScreen() {
   const insets = useSafeAreaInsets();
   const [filter, setFilter] = useState<"all" | "audio" | "video">("all");
   const [callHistory, setCallHistory] = useState<CallHistoryItem[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const topPad = insets.top;
 
@@ -67,7 +68,8 @@ export default function CallHistoryScreen() {
           createdAt: c.created_at || 0,
         })));
       })
-      .catch(() => { setCallHistory([]); showErrorToast("Failed to load call history."); });
+      .catch(() => { setCallHistory([]); showErrorToast("Failed to load call history."); })
+      .finally(() => setLoading(false));
   }, []);
 
   const filtered = filter === "all" ? callHistory : callHistory.filter(c => c.type === filter);
@@ -85,7 +87,7 @@ export default function CallHistoryScreen() {
           <Text style={[styles.date, { color: colors.mutedForeground }]}>{item.createdAt ? formatTimestamp(item.createdAt) : "—"}</Text>
         </View>
         <View style={styles.detailRow}>
-          <View style={[styles.typeBadge, { backgroundColor: item.type === "video" ? "#E8D5FF" : "#D5F0FF" }]}>
+          <View style={[styles.typeBadge, { backgroundColor: colors.surface }]}>
             <Image source={item.type === "video" ? require("@/assets/icons/ic_video.png") : require("@/assets/icons/ic_call.png")} style={{ width: 10, height: 10, tintColor: item.type === "video" ? "#7B2FF7" : "#0078CC" }} resizeMode="contain" />
             <Text style={[styles.typeText, { color: item.type === "video" ? "#7B2FF7" : "#0078CC" }]}>
               {item.type === "video" ? "Video" : "Audio"}
@@ -113,7 +115,13 @@ export default function CallHistoryScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <View style={[styles.header, { paddingTop: topPad + 8, backgroundColor: colors.background, borderBottomColor: colors.border }]}>
-        <TouchableOpacity onPress={() => router.back()} style={[styles.backBtn, { backgroundColor: colors.surface }]}>
+        <TouchableOpacity
+          onPress={() => router.back()}
+          style={[styles.backBtn, { backgroundColor: colors.surface }]}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
           <Image source={require("@/assets/icons/ic_back.png")} style={styles.backIcon} tintColor={colors.text} resizeMode="contain" />
         </TouchableOpacity>
         <Text style={[styles.title, { color: colors.text }]}>Call History</Text>
@@ -134,7 +142,11 @@ export default function CallHistoryScreen() {
         ))}
       </View>
 
-      {filtered.length === 0 ? (
+      {loading ? (
+        <View style={styles.empty}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      ) : filtered.length === 0 ? (
         <View style={styles.empty}>
           <Image source={require("@/assets/images/empty_history.png")} style={styles.emptyImg} resizeMode="contain" />
           <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>No call history found</Text>

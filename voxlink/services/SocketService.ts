@@ -7,12 +7,15 @@ import { refreshAuthToken } from "@/services/api";
 
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL || "https://voxlink-api.ssunilkumarmohanta3.workers.dev";
 
-function getWsUrl(userId: string, token?: string): string {
+// FIX (#5): the JWT is NOT placed in the URL anymore — it now rides in the
+// Sec-WebSocket-Protocol header (see _openWebSocket) so it can't leak into
+// request logs / proxies / history. userId stays in the query (not secret;
+// the server cross-checks it against the verified token's subject).
+function getWsUrl(userId: string): string {
   const wsBase = BASE_URL.replace(/^https?:\/\//, (match: string) =>
     match === "https://" ? "wss://" : "ws://"
   );
   const params = new URLSearchParams({ userId });
-  if (token) params.set("token", token);
   return `${wsBase}/api/ws/notifications?${params.toString()}`;
 }
 
@@ -83,8 +86,13 @@ class SocketService {
     this._didOpenThisAttempt = false;
 
     try {
-      const url = getWsUrl(userId, this._token ?? undefined);
-      const ws = new WebSocket(url);
+      const url = getWsUrl(userId);
+      // FIX (#5): pass the JWT as a subprotocol instead of in the URL. The
+      // server reads ["jwt", "<token>"] from Sec-WebSocket-Protocol and echoes
+      // "jwt" back on the 101 handshake. Falls back to a plain connection if no
+      // token (which the server will then reject — as before).
+      const authToken = this._token ?? undefined;
+      const ws = authToken ? new WebSocket(url, ["jwt", authToken]) : new WebSocket(url);
       this.ws = ws;
 
       ws.onopen = () => {
