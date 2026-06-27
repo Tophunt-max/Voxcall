@@ -26,6 +26,7 @@ import { Host } from "@/data/mockData";
 import { API, resolveMediaUrl } from "@/services/api";
 import { fetchAppConfig } from "@/hooks/useAppConfig";
 import { showErrorToast } from "@/components/Toast";
+import { logEngagement, logImpressionOnce } from "@/services/engagement";
 import { RefreshControl } from "react-native";
 
 const SCREEN_W = Dimensions.get("window").width;
@@ -321,6 +322,19 @@ export default function HomeScreen() {
     });
   }, [queryClient]);
 
+  // Engagement feedback loop — log a "viewable" impression for each recommended
+  // host that is actually ≥60% on screen (not merely mounted by FlatList
+  // windowing), de-duped per session in the logger. onViewableItemsChanged +
+  // viewabilityConfig MUST be stable refs (React Native throws if they change
+  // between renders), hence useRef.
+  const onRecoViewable = useRef(({ viewableItems }: { viewableItems: Array<{ item?: { host?: Host; reason?: string } }> }) => {
+    for (const vi of viewableItems) {
+      const hostId = vi?.item?.host?.id;
+      if (hostId) logImpressionOnce(hostId, 'home_reco');
+    }
+  }).current;
+  const recoViewabilityConfig = useRef({ itemVisiblePercentThreshold: 60 }).current;
+
   // Pull-to-refresh invalidates all home screen queries
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -479,12 +493,15 @@ export default function HomeScreen() {
               horizontal
               showsHorizontalScrollIndicator={false}
               keyExtractor={(it) => it.host.id}
+              onViewableItemsChanged={onRecoViewable}
+              viewabilityConfig={recoViewabilityConfig}
               renderItem={({ item }) => (
                 <View style={styles.recoItem}>
                   <HostCard
                     host={item.host}
                     compact
                     onPress={() => {
+                      logEngagement({ type: 'reco_click', host_id: item.host.id, surface: 'home_reco' });
                       prefetchHost(item.host.id);
                       router.push(`/user/hosts/${item.host.id}`);
                     }}
@@ -527,6 +544,7 @@ export default function HomeScreen() {
                   host={item}
                   compact
                   onPress={() => {
+                    logEngagement({ type: 'host_click', host_id: item.id, surface: 'home_top' });
                     prefetchHost(item.id);
                     router.push(`/user/hosts/${item.id}`);
                   }}
