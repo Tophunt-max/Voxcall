@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import {
   View,
   Text,
@@ -32,6 +32,10 @@ import { RefreshControl } from "react-native";
 const SCREEN_W = Dimensions.get("window").width;
 const BANNER_W = SCREEN_W - 32;
 const AUTO_SLIDE_INTERVAL = 3500;
+// P3: below this coin balance we surface a top-up nudge (≈ can't comfortably
+// afford a couple of minutes at a typical rate). Kept in sync conceptually with
+// AuthContext's low-coin alert threshold.
+const LOW_BALANCE_THRESHOLD = 20;
 
 function mapApiHost(h: any): Host {
   return {
@@ -258,8 +262,26 @@ export default function HomeScreen() {
     staleTime: 60_000,
     refetchInterval: 120_000,
     retry: 1,
+    // P6: keep the previous rail visible during background refetch so it never
+    // flickers to empty + re-populates.
+    placeholderData: keepPreviousData,
   });
   const recommended = recommendedData ?? [];
+
+  // P1: "Your favorites" rail — the user's saved hosts. Highest-intent rail, so
+  // it renders ABOVE Recommended for returning users. Best-effort; empty/older
+  // backend simply hides it. Favorites endpoint returns host_id (= hosts.id).
+  const { data: favoriteHosts = [] } = useQuery({
+    queryKey: ['favorite-hosts'],
+    queryFn: async () => {
+      try {
+        const rows = await API.getFavorites();
+        return (rows ?? []).map((r: any) => mapApiHost({ ...r, id: r.host_id ?? r.id }));
+      } catch { return [] as Host[]; }
+    },
+    staleTime: 60_000,
+    placeholderData: keepPreviousData,
+  });
 
   // OPTIMIZATION #7: Banners — cached 5 min
   const { data: bannersData = [] } = useQuery({
@@ -334,6 +356,15 @@ export default function HomeScreen() {
     }
   }).current;
   const recoViewabilityConfig = useRef({ itemVisiblePercentThreshold: 60 }).current;
+
+  // Same viewability-based impression logging for the favorites rail.
+  const onFavViewable = useRef(({ viewableItems }: { viewableItems: Array<{ item?: Host }> }) => {
+    for (const vi of viewableItems) {
+      const hostId = vi?.item?.id;
+      if (hostId) logImpressionOnce(hostId, 'home_favorites', { type: 'host_impression' });
+    }
+  }).current;
+  const favViewabilityConfig = useRef({ itemVisiblePercentThreshold: 60 }).current;
 
   // Pull-to-refresh invalidates all home screen queries
   const onRefresh = useCallback(async () => {
@@ -482,6 +513,66 @@ export default function HomeScreen() {
           </TouchableOpacity>
         )}
 
+        {/* P3: Low-balance nudge — when the wallet is too low to comfortably
+            start a call (≈ can't afford 2 min of a typical rate), surface a
+            1-tap top-up. Hidden while the free-trial pool covers the user. */}
+        {freeMinutes <= 0 && (user?.coins ?? 0) <= LOW_BALANCE_THRESHOLD && (
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={() => router.push("/user/payment/checkout")}
+            accessibilityRole="button"
+            accessibilityLabel={`Low balance: ${(user?.coins ?? 0)} coins. Tap to top up.`}
+            style={{ flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: "#FFF2D9", borderRadius: 16, padding: 14, marginBottom: 8 }}
+          >
+            <Text style={{ fontSize: 26 }}>🪙</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 14, fontFamily: "Poppins_700Bold", color: "#8A5B00" }}>
+                Low on coins ({(user?.coins ?? 0)} left)
+              </Text>
+              <Text style={{ fontSize: 12, fontFamily: "Poppins_400Regular", color: "#A9803A", marginTop: 2 }}>
+                Top up now so you don't get cut off mid-call.
+              </Text>
+            </View>
+            <View style={{ backgroundColor: "#E49F14", paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 }}>
+              <Text style={{ fontSize: 12, fontFamily: "Poppins_600SemiBold", color: "#fff" }}>Top up</Text>
+            </View>
+          </TouchableOpacity>
+        )}
+
+        {/* P1: Your favorites — highest-intent rail, shown above Recommended
+            for returning users who have saved hosts. */}
+        {favoriteHosts.length > 0 && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Your favorites</Text>
+              <TouchableOpacity onPress={() => router.push("/user/screens/home/messages")}>
+                <Text style={[styles.seeAll, { color: colors.primary }]}>View All</Text>
+              </TouchableOpacity>
+            </View>
+            <FlatList
+              data={favoriteHosts}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              keyExtractor={(h) => h.id}
+              onViewableItemsChanged={onFavViewable}
+              viewabilityConfig={favViewabilityConfig}
+              renderItem={({ item }) => (
+                <HostCard
+                  host={item}
+                  compact
+                  userCoins={user?.coins}
+                  onPress={() => {
+                    logEngagement({ type: 'host_click', host_id: item.id, surface: 'home_favorites' });
+                    prefetchHost(item.id);
+                    router.push(`/user/hosts/${item.id}`);
+                  }}
+                />
+              )}
+              contentContainerStyle={{ paddingRight: 16, paddingLeft: 2 }}
+            />
+          </View>
+        )}
+
         {/* Recommended for you — personalized rail (see services/api.getRecommendedHosts) */}
         {recommended.length > 0 && (
           <View style={styles.section}>
@@ -500,6 +591,7 @@ export default function HomeScreen() {
                   <HostCard
                     host={item.host}
                     compact
+                    userCoins={user?.coins}
                     onPress={() => {
                       logEngagement({ type: 'reco_click', host_id: item.host.id, surface: 'home_reco' });
                       prefetchHost(item.host.id);
@@ -543,6 +635,7 @@ export default function HomeScreen() {
                 <HostCard
                   host={item}
                   compact
+                  userCoins={user?.coins}
                   onPress={() => {
                     logEngagement({ type: 'host_click', host_id: item.id, surface: 'home_top' });
                     prefetchHost(item.id);
