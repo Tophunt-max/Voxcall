@@ -19,7 +19,7 @@ const FALLBACK_FAQS = [
   { q: "How can I make a call?", a: "Browse available hosts on the home screen, tap a host card to view their profile, then tap 'Talk Now' to start an audio or video call. Calls are charged in coins per minute." },
   { q: "What are Coins?", a: "Coins are VoxLink's in-app currency. You purchase coin packages from the Wallet section and spend them during calls with hosts at their listed rate per minute." },
   { q: "Is my conversation private?", a: "Yes, all conversations are private and confidential. We follow strict data protection policies and do not share personal conversation details with third parties." },
-  { q: "How do I become a Host?", a: "Tap 'Become a Host' on your Profile page to submit an application. You'll need to verify your identity and complete a short onboarding process." },
+  { q: "How do I become a Host?", a: "Hosting is done through our separate VoxLink Host app. Download the Host app to apply, verify your identity, and start taking calls and earning." },
   { q: "What if I run out of coins?", a: "If you run out of coins during a call, the call will end automatically. You can purchase more coins anytime from the Wallet section." },
 ];
 
