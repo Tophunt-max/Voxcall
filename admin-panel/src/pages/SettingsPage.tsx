@@ -593,6 +593,33 @@ export default function SettingsPage() {
   // the unsaved coin value too (they read coin_to_usd_rate internally).
   const liveSettings = { ...settings, coin_to_usd_rate: String(coinRate) };
 
+  // ── Multi-currency live FX (base = INR) ──────────────────────────────────
+  // The cron-refreshed `fx_rates_usd` blob is { CUR: units-per-USD }. We show
+  // a curated set of major currencies as "1 CUR = ₹X" so the admin sees what
+  // international users effectively pay/receive — with INR as the base.
+  const fxRates: Record<string, number> = (() => {
+    try { return settings.fx_rates_usd ? JSON.parse(settings.fx_rates_usd) : {}; } catch { return {}; }
+  })();
+  const CUR_SYMBOLS: Record<string, string> = {
+    USD: '$', EUR: '€', GBP: '£', AED: 'د.إ', SAR: '﷼', CAD: 'C$', AUD: 'A$', SGD: 'S$',
+  };
+  const majorFx = Object.keys(CUR_SYMBOLS)
+    .map((code) => {
+      if (code === 'USD') return { code, symbol: '$', inr: inrRate };
+      const r = fxRates[code];
+      if (!r || !fxRates.INR) return null;
+      return { code, symbol: CUR_SYMBOLS[code], inr: fxRates.INR / r };
+    })
+    .filter((x): x is { code: string; symbol: string; inr: number } => !!x && Number.isFinite(x.inr) && x.inr > 0);
+  const minWithdraw = parseInt(settings.min_withdrawal_coins || '1000');
+  // Value of a coin amount in a given currency: coins × USD/coin × units-per-USD.
+  const valueIn = (coins: number, code: string) => {
+    if (code === 'INR') return coins * coinValueInr;
+    if (code === 'USD') return coins * coinRate;
+    const r = fxRates[code];
+    return r ? coins * coinRate * r : 0;
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -735,6 +762,44 @@ export default function SettingsPage() {
                   20 coins = ₹{(coinValueInr * 20).toFixed(2)}
                   &nbsp;·&nbsp; 100 coins = ₹{(coinValueInr * 100).toFixed(2)}
                   &nbsp;·&nbsp; ₹1 = {coinValueInr > 0 ? Math.round(1 / coinValueInr).toLocaleString() : '—'} coins
+                </div>
+              </div>
+
+              {/* Base currency + multi-currency live FX (base ₹INR) */}
+              <div className="mt-2 p-2 bg-white/50 dark:bg-black/10 rounded-lg text-xs space-y-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-semibold">Base currency:</span>
+                  <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary font-bold">INR ₹</span>
+                  <span className="text-muted-foreground">— admin sets everything in ₹; users worldwide see their own currency, converted live.</span>
+                </div>
+
+                <div>
+                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">Live FX — 1 unit → ₹</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {majorFx.map(({ code, symbol, inr }) => (
+                      <span key={code} className="px-2 py-0.5 rounded-lg bg-secondary">
+                        {symbol}1 {code} = <strong>₹{inr.toFixed(2)}</strong>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="pt-1.5 border-t border-border/50">
+                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">Withdrawal &amp; Deposit value (live)</p>
+                  <div className="space-y-1">
+                    <div>
+                      <span className="text-muted-foreground">Min withdrawal:</span>{' '}
+                      <strong>{minWithdraw.toLocaleString()} coins = ₹{valueIn(minWithdraw, 'INR').toFixed(2)}</strong>
+                      <span className="text-muted-foreground"> (${valueIn(minWithdraw, 'USD').toFixed(2)}
+                        {majorFx.filter(f => f.code !== 'USD').slice(0, 3).map(f => ` · ${f.symbol}${valueIn(minWithdraw, f.code).toFixed(2)}`).join('')})</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Deposit e.g. 1,000 coins:</span>{' '}
+                      <strong>₹{valueIn(1000, 'INR').toFixed(2)}</strong>
+                      <span className="text-muted-foreground"> (${valueIn(1000, 'USD').toFixed(2)}
+                        {majorFx.filter(f => f.code !== 'USD').slice(0, 3).map(f => ` · ${f.symbol}${valueIn(1000, f.code).toFixed(2)}`).join('')})</span>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
