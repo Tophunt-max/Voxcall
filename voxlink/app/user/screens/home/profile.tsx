@@ -519,6 +519,12 @@ export default function ProfileScreen() {
       <View style={[styles.section, { backgroundColor: colors.card }]}>
         <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>{t.common.more}</Text>
         <MenuItem
+          iconName="mic"
+          label="Become a Host"
+          subLabel="Take calls and earn coins"
+          onPress={() => router.push("/user/host-application")}
+        />
+        <MenuItem
           iconName="gift"
           label="Refer Friends & Earn"
           subLabel="Share your code, earn free coins"

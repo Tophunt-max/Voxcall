@@ -306,6 +306,7 @@ function RootLayoutNav() {
         <Stack.Screen name="user/privacy" />
         <Stack.Screen name="user/about" />
         <Stack.Screen name="user/referral" />
+        <Stack.Screen name="user/host-application" />
       </Stack>
       <ToastContainer />
       <OfflineBanner />
