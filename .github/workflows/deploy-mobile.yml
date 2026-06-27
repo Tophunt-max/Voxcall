@@ -66,4 +66,10 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ vars.CF_ACCOUNT_ID }}
-          command: pages deploy voxlink/dist --project-name=voxlink-mobile --branch=main
+          # Deploy to the `voxcall` Pages project — this is the live user-app
+          # domain (voxcall.pages.dev), which matches `expo.web`/`expo-router`
+          # `origin` in voxlink/app.json and the URL in README. The previous
+          # `voxlink-mobile` target pointed at a different project, so the site
+          # users actually open (voxcall.pages.dev) never received updates and
+          # new routes showed "This screen doesn't exist".
+          command: pages deploy voxlink/dist --project-name=voxcall --branch=main

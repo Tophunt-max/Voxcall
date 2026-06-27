@@ -54,9 +54,9 @@ self.addEventListener('notificationclick', (event) => {
 
   let url = '/';
   if (data.type === 'incoming_call' && data.session_id) {
-    url = `/shared/call/incoming?session_id=${data.session_id}`;
+    url = `/user/call/incoming?session_id=${data.session_id}`;
   } else if (data.type === 'chat_message' && data.room_id) {
-    url = `/shared/chat/${data.room_id}`;
+    url = `/user/chat/${data.room_id}`;
   }
 
   event.waitUntil(
