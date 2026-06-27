@@ -63,6 +63,8 @@ export const api = {
   coinTransactions: () => req<any[]>('GET', '/admin/coin-transactions'),
   ratings: () => req<any[]>('GET', '/admin/ratings'),
   analytics: (days?: number) => req<any>('GET', `/admin/analytics${days ? `?days=${days}` : ''}`),
+  streakAnalytics: () => req<any>('GET', '/admin/streak-analytics'),
+  coinReconciliation: () => req<any>('GET', '/admin/coin-reconciliation'),
   notifications: () => req<any[]>('GET', '/admin/notifications'),
   sendNotification: (data: any) => req<any>('POST', '/admin/notifications/send', data),
   post: (path: string, data: any) => req<any>('POST', path.replace('/api/admin/', '/admin/').replace('/api/', '/'), data),

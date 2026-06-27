@@ -30,6 +30,8 @@ const PLATFORM_SIMULATED = [
 export default function Analytics() {
   const [analytics, setAnalytics] = useState<any>(null);
   const [hosts, setHosts] = useState<any[]>([]);
+  const [streak, setStreak] = useState<any>(null);
+  const [recon, setRecon] = useState<any>(null);
   const [range, setRange] = useState<'7d' | '30d'>('7d');
   const [loading, setLoading] = useState(true);
 
@@ -39,9 +41,13 @@ export default function Analytics() {
     Promise.all([
       api.analytics(days).catch(() => null),
       api.hosts().catch(() => []),
-    ]).then(([a, h]) => {
+      api.streakAnalytics().catch(() => null),
+      api.coinReconciliation().catch(() => null),
+    ]).then(([a, h, s, r]) => {
       setAnalytics(a);
       setHosts(Array.isArray(h) ? h.slice(0, 5) : []);
+      setStreak(s);
+      setRecon(r);
     }).finally(() => setLoading(false));
   }, [range]);
 
@@ -206,6 +212,100 @@ export default function Analytics() {
           )}
         </div>
       </div>
+
+      {/* ── Economy Health (coin reconciliation) ──────────────────────── */}
+      {recon && (
+        <div className="bg-card border border-border rounded-2xl p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <div className="w-7 h-7 rounded-lg bg-amber-100 flex items-center justify-center">
+              <Coins size={14} className="text-amber-600" />
+            </div>
+            <div>
+              <h3 className="font-bold text-base">Economy Health</h3>
+              <p className="text-xs text-muted-foreground">Coins in circulation vs the transaction ledger</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+            <div className="rounded-xl border border-border bg-background px-3 py-2.5">
+              <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Coins in circulation</p>
+              <p className="font-bold text-lg">{(recon.circulation?.total_coins ?? 0).toLocaleString()}</p>
+              <p className="text-[10px] text-muted-foreground">{(recon.circulation?.users ?? 0).toLocaleString()} users</p>
+            </div>
+            <div className="rounded-xl border border-border bg-background px-3 py-2.5">
+              <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Ledger net</p>
+              <p className="font-bold text-lg">{(recon.ledger_net ?? 0).toLocaleString()}</p>
+            </div>
+            <div className="rounded-xl border border-border bg-background px-3 py-2.5">
+              <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Aggregate drift</p>
+              <p className={`font-bold text-lg ${Math.abs(recon.aggregate_drift ?? 0) > 0 ? 'text-amber-600' : 'text-green-600'}`}>
+                {(recon.aggregate_drift ?? 0).toLocaleString()}
+              </p>
+            </div>
+            <div className="rounded-xl border border-border bg-background px-3 py-2.5">
+              <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Ledger entry types</p>
+              <p className="font-bold text-lg">{(recon.ledger_by_type?.length ?? 0)}</p>
+            </div>
+          </div>
+          {Array.isArray(recon.ledger_by_type) && recon.ledger_by_type.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {recon.ledger_by_type.map((t: any) => (
+                <span key={t.type} className="text-xs bg-secondary px-2.5 py-1 rounded-lg">
+                  <strong className="capitalize">{t.type}</strong>: {(t.total ?? 0).toLocaleString()} ({t.count})
+                </span>
+              ))}
+            </div>
+          )}
+          <p className="text-[11px] text-muted-foreground italic mt-3">{recon.note}</p>
+        </div>
+      )}
+
+      {/* ── Daily Streak engagement ────────────────────────────────────── */}
+      {streak && (
+        <div className="bg-card border border-border rounded-2xl p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <div className="w-7 h-7 rounded-lg bg-orange-100 flex items-center justify-center">
+              <Activity size={14} className="text-orange-600" />
+            </div>
+            <div>
+              <h3 className="font-bold text-base">Daily Streak Engagement</h3>
+              <p className="text-xs text-muted-foreground">Active streaks, claims, and length distribution</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+            <div className="rounded-xl border border-border bg-background px-3 py-2.5">
+              <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Active streaks</p>
+              <p className="font-bold text-lg">{(streak.users_with_active_streak ?? 0).toLocaleString()}</p>
+            </div>
+            <div className="rounded-xl border border-border bg-background px-3 py-2.5">
+              <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Claimed today</p>
+              <p className="font-bold text-lg text-green-600">{(streak.claimed_today ?? 0).toLocaleString()}</p>
+            </div>
+            <div className="rounded-xl border border-border bg-background px-3 py-2.5">
+              <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Longest streak</p>
+              <p className="font-bold text-lg">{streak.longest_streak ?? 0} <span className="text-xs font-normal text-muted-foreground">days</span></p>
+            </div>
+            <div className="rounded-xl border border-border bg-background px-3 py-2.5">
+              <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Avg streak</p>
+              <p className="font-bold text-lg">{streak.average_streak ?? 0} <span className="text-xs font-normal text-muted-foreground">days</span></p>
+            </div>
+          </div>
+          {streak.distribution && (
+            <div className="flex flex-wrap gap-2">
+              {([
+                ['Day 1', streak.distribution.day_1],
+                ['Day 2–6', streak.distribution.day_2_6],
+                ['Day 7–29', streak.distribution.day_7_29],
+                ['Day 30–99', streak.distribution.day_30_99],
+                ['Day 100+', streak.distribution.day_100_plus],
+              ] as const).map(([label, v]) => (
+                <span key={label} className="text-xs bg-secondary px-2.5 py-1 rounded-lg">
+                  <strong>{label}</strong>: {(v ?? 0).toLocaleString()}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {avgDuration > 0 && (
         <div className="bg-card border border-border rounded-xl p-4 flex items-center gap-3">
