@@ -33,6 +33,51 @@ async function readFreeCallMinutesSetting(db: D1Database): Promise<number> {
   }
 }
 
+/**
+ * Generic non-negative integer app_setting reader with a default. Used for the
+ * welcome (registration) bonus and the referral rewards so admins control all
+ * coin grants from the Settings page instead of them being hardcoded.
+ */
+async function readIntSetting(db: D1Database, key: string, dflt: number): Promise<number> {
+  try {
+    const row = await db.prepare('SELECT value FROM app_settings WHERE key = ?').bind(key).first<{ value: string }>();
+    const n = parseInt(row?.value ?? '', 10);
+    return Number.isFinite(n) && n >= 0 ? n : dflt;
+  } catch (e) {
+    console.warn(`[auth] readIntSetting(${key}) failed:`, e);
+    return dflt;
+  }
+}
+
+/** Admin-configured welcome bonus granted on FIRST account creation, across
+ *  every signup method (email+OTP, Google, Quick-Login). Default 50. Set
+ *  `registration_bonus_coins = 0` in admin Settings to disable (e.g. to curb
+ *  guest-account farming). */
+function readRegistrationBonus(db: D1Database): Promise<number> {
+  return readIntSetting(db, 'registration_bonus_coins', 50);
+}
+
+/** Best-effort coin_transactions ledger write. Never throws — a missing column
+ *  or schema race must not break signup/verification. Keeps the audit trail
+ *  consistent with the call/streak/purchase paths. */
+async function writeCoinLedger(
+  db: D1Database,
+  userId: string,
+  type: string,
+  amount: number,
+  description: string,
+): Promise<void> {
+  if (!amount) return;
+  try {
+    await db
+      .prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description) VALUES (?, ?, ?, ?, ?)')
+      .bind(generateId(), userId, type, amount, description)
+      .run();
+  } catch (e) {
+    console.warn('[auth] writeCoinLedger failed (non-fatal):', e);
+  }
+}
+
 // ─── Rate Limiting ────────────────────────────────────────────────────────
 // Standard: 10 attempts / 60s per IP per route
 // Strict:   3 attempts / 600s (10 min) — for OTP/password-reset endpoints
@@ -224,38 +269,55 @@ auth.post('/verify-otp', strictRateLimit, async (c) => {
   // two concurrent verify-otp requests could both pass the read and both add
   // 100 coins. The `is_verified = 0` guard ensures only the first UPDATE wins;
   // the second sees changes=0 and returns the same generic error.
+  // Welcome bonus is admin-configured (registration_bonus_coins) and granted
+  // ATOMICALLY in the same guarded UPDATE that flips is_verified — so it can
+  // only ever be credited once (the WHERE is_verified = 0 guard prevents a
+  // concurrent double-verify from double-crediting).
+  const welcomeBonus = await readRegistrationBonus(db);
   const verifyResult = await db.prepare(
     `UPDATE users
        SET is_verified = 1, otp = NULL, otp_expires_at = NULL,
-           coins = coins + 100, updated_at = unixepoch()
-       WHERE id = ? AND otp = ? AND otp_expires_at > ? AND is_verified = 0`
-  ).bind(user.id, user.otp, now).run();
+           coins = coins + ?1, updated_at = unixepoch()
+       WHERE id = ?2 AND otp = ?3 AND otp_expires_at > ?4 AND is_verified = 0`
+  ).bind(welcomeBonus, user.id, user.otp, now).run();
 
   if (!verifyResult.meta?.changes) {
     return c.json({ error: 'Invalid or expired OTP' }, 400);
   }
+  // Ledger row for the welcome bonus (best-effort audit trail).
+  await writeCoinLedger(db, user.id, 'bonus', welcomeBonus, 'Welcome bonus (email signup)');
 
-  // BUG FIX #3: Atomic referral processing (extra +10 to verified user, +25 to referrer)
+  // Atomic referral processing. Reward amounts come from admin settings
+  // (referrer_reward / new_user_reward) — previously hardcoded 25/10, which
+  // silently ignored the admin's configured referral rewards.
   const pendingReferral = await db.prepare(
     'SELECT id, referrer_id FROM referral_uses WHERE referred_id = ? AND coins_given = 0 LIMIT 1'
   ).bind(user.id).first<any>();
 
   if (pendingReferral) {
-    const bonus = 25;
+    const referrerReward = await readIntSetting(db, 'referrer_reward', 100);
+    const newUserReward = await readIntSetting(db, 'new_user_reward', 50);
     const refResult = await db.prepare(
       'UPDATE referral_uses SET coins_given = ? WHERE id = ? AND coins_given = 0'
-    ).bind(bonus, pendingReferral.id).run();
+    ).bind(referrerReward, pendingReferral.id).run();
 
     if (refResult.meta?.changes && refResult.meta.changes > 0) {
-      await db.batch([
-        db.prepare('UPDATE users SET coins = coins + 10 WHERE id = ?').bind(user.id),
-        db.prepare('UPDATE users SET coins = coins + ? WHERE id = ?').bind(bonus, pendingReferral.referrer_id),
-      ]);
-      return c.json({ success: true, bonus_coins: 110 });
+      const ops: D1PreparedStatement[] = [];
+      if (newUserReward > 0) {
+        ops.push(db.prepare('UPDATE users SET coins = coins + ? WHERE id = ?').bind(newUserReward, user.id));
+      }
+      if (referrerReward > 0) {
+        ops.push(db.prepare('UPDATE users SET coins = coins + ? WHERE id = ?').bind(referrerReward, pendingReferral.referrer_id));
+      }
+      if (ops.length) await db.batch(ops);
+      // Ledger rows for both sides of the referral.
+      await writeCoinLedger(db, user.id, 'bonus', newUserReward, 'Referral signup bonus');
+      await writeCoinLedger(db, pendingReferral.referrer_id, 'bonus', referrerReward, 'Referral reward (invited a friend)');
+      return c.json({ success: true, bonus_coins: welcomeBonus + newUserReward });
     }
   }
 
-  return c.json({ success: true, bonus_coins: 100 });
+  return c.json({ success: true, bonus_coins: welcomeBonus });
 });
 
 // POST /api/auth/forgot-password
@@ -481,15 +543,18 @@ auth.post('/google-login', rateLimit, async (c) => {
   const detectedCurrency = currencyForCountry(detectedCountry);
 
   if (!user) {
-    // 4. New user — create account
+    // 4. New user — create account. Welcome bonus (admin-configured) is
+    // granted on first creation, same as the email + Quick-Login paths.
     const id = 'g_' + generateId().slice(0, 12);
     const av = avatar_url || null;
     const freeCallMinutes = await readFreeCallMinutesSetting(db);
+    const welcomeBonus = await readRegistrationBonus(db);
     await db.prepare(
       `INSERT INTO users (id, name, email, password_hash, role, coins, is_verified, avatar_url, google_id, device_id, country, currency, free_call_minutes)
-       VALUES (?, ?, ?, '', 'user', 0, 1, ?, ?, ?, ?, ?, ?)`
-    ).bind(id, name, email, av, google_id, device_id ?? null, detectedCountry, detectedCurrency, freeCallMinutes).run();
-    user = { id, name, email, role: 'user', coins: 0, avatar_url: av, country: detectedCountry, currency: detectedCurrency };
+       VALUES (?, ?, ?, '', 'user', ?, 1, ?, ?, ?, ?, ?, ?)`
+    ).bind(id, name, email, welcomeBonus, av, google_id, device_id ?? null, detectedCountry, detectedCurrency, freeCallMinutes).run();
+    await writeCoinLedger(db, id, 'bonus', welcomeBonus, 'Welcome bonus (Google signup)');
+    user = { id, name, email, role: 'user', coins: welcomeBonus, avatar_url: av, country: detectedCountry, currency: detectedCurrency };
   } else {
     // 5. Existing user — update google_id, avatar, device_id, and backfill country/currency if missing
     const updates: string[] = ['google_id = ?'];
@@ -636,12 +701,18 @@ async function quickLoginHandler(c: any, deviceId: string | null) {
     quickName = `${base}-${quickId.slice(-4)}`;
   }
 
-  // Bug fix: 0 coins for guest accounts (was 50) — prevents Sybil attack of creating
-  // unlimited guest accounts to farm free coins.
+  // Welcome bonus (admin-configured `registration_bonus_coins`) now applies to
+  // Quick-Login too, per product decision. NOTE: this re-opens a guest-account
+  // farming vector the previous "0 coins for guests" rule closed — keep it in
+  // check by setting registration_bonus_coins conservatively (or 0 to disable),
+  // and rely on the per-device merge so reinstalls on the same device don't
+  // mint a fresh bonus.
   const guestFreeMinutes = await readFreeCallMinutesSetting(db);
+  const welcomeBonus = await readRegistrationBonus(db);
   await db.prepare(
-    `INSERT INTO users (id, name, email, password_hash, coins, is_verified, role, device_id, country, currency, free_call_minutes) VALUES (?, ?, ?, '', 0, 0, 'user', ?, ?, ?, ?)`
-  ).bind(quickId, quickName, quickEmail, deviceId ?? null, detectedCountry, detectedCurrency, guestFreeMinutes).run();
+    `INSERT INTO users (id, name, email, password_hash, coins, is_verified, role, device_id, country, currency, free_call_minutes) VALUES (?, ?, ?, '', ?, 0, 'user', ?, ?, ?, ?)`
+  ).bind(quickId, quickName, quickEmail, welcomeBonus, deviceId ?? null, detectedCountry, detectedCurrency, guestFreeMinutes).run();
+  await writeCoinLedger(db, quickId, 'bonus', welcomeBonus, 'Welcome bonus (Quick-Login signup)');
 
   const token = await signToken({ sub: quickId, role: 'user', name: quickName, email: quickEmail }, c.env.JWT_SECRET);
   return c.json({
@@ -650,7 +721,7 @@ async function quickLoginHandler(c: any, deviceId: string | null) {
       id: quickId,
       name: quickName,
       email: quickEmail,
-      coins: 0,
+      coins: welcomeBonus,
       role: 'user',
       country: detectedCountry,
       currency: detectedCurrency,
