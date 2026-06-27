@@ -568,14 +568,30 @@ export default function SettingsPage() {
   // ── derived values ───────────────────────────────────────────────────────
   const audioRate = parseInt(settings.random_call_audio_rate || '5');
   const videoRate = parseInt(settings.random_call_video_rate || '8');
-  const coinRate = parseFloat(settings.coin_to_usd_rate || '0.0015');
-  
+
   // Live FX rate info
   const inrRate = parseFloat(settings.inr_to_usd_rate || '83');
   const fxLastUpdated = settings.fx_rates_last_updated 
     ? new Date(parseInt(settings.fx_rates_last_updated) * 1000).toLocaleString()
     : 'Not yet fetched';
   const coinValueInr = parseFloat(settings.coin_value_inr || '0.05');
+
+  // REAL-TIME PREVIEW: derive the USD/coin rate from the INR coin value the
+  // admin is CURRENTLY typing — not the last-saved coin_to_usd_rate. So the
+  // moment they change ₹0.05 → ₹0.06 every preview below (the $/coin readout,
+  // the Computed Values rows, the quick calculator, the per-minute call costs)
+  // recalculates instantly, before they even hit Save. On Save the backend
+  // performs the exact same INR→USD conversion, so what they preview is what
+  // they get.
+  const coinRate = (() => {
+    const fx = Number.isFinite(inrRate) && inrRate > 0 ? inrRate : 83;
+    if (Number.isFinite(coinValueInr) && coinValueInr > 0) return coinValueInr / fx;
+    return parseFloat(settings.coin_to_usd_rate || '0.0015');
+  })();
+
+  // Snapshot fed to the formula evaluator so the Computed Values rows react to
+  // the unsaved coin value too (they read coin_to_usd_rate internally).
+  const liveSettings = { ...settings, coin_to_usd_rate: String(coinRate) };
 
   if (loading) {
     return (
@@ -704,16 +720,21 @@ export default function SettingsPage() {
                   Updated: {fxLastUpdated}
                 </span>
               </div>
-              <div className="mt-2 p-2 bg-white/50 dark:bg-black/10 rounded-lg text-xs">
-                <div className="flex items-center gap-4 flex-wrap">
-                  <div>
-                    <span className="text-muted-foreground">Coin Value:</span>
-                    <strong className="ml-1">₹{coinValueInr.toFixed(4)}/coin</strong>
+              <div className="mt-2 p-2 bg-white/50 dark:bg-black/10 rounded-lg text-xs space-y-1">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <span>
+                    <strong>1 coin = ₹{coinValueInr > 0 ? coinValueInr.toFixed(coinValueInr < 0.01 ? 4 : 2) : '—'}</strong>
                     <span className="text-muted-foreground ml-1">= ${coinRate.toFixed(6)}/coin</span>
-                  </div>
-                  <div className="text-muted-foreground">
-                    20 coins = ₹{(coinValueInr * 20).toFixed(2)}
-                  </div>
+                  </span>
+                  <span className="inline-flex items-center gap-1 text-green-600">
+                    <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                    Live preview (updates as you type)
+                  </span>
+                </div>
+                <div className="text-muted-foreground">
+                  20 coins = ₹{(coinValueInr * 20).toFixed(2)}
+                  &nbsp;·&nbsp; 100 coins = ₹{(coinValueInr * 100).toFixed(2)}
+                  &nbsp;·&nbsp; ₹1 = {coinValueInr > 0 ? Math.round(1 / coinValueInr).toLocaleString() : '—'} coins
                 </div>
               </div>
             </div>
@@ -797,7 +818,7 @@ export default function SettingsPage() {
             // Include lastSettingsUpdate in the dependency to ensure real-time updates
             // when settings change (this forces re-evaluation of formulas)
             const _updateKey = lastSettingsUpdate;
-            const { primary, label2 } = evalFormula(row.formula, row.customExpr, settings);
+            const { primary, label2 } = evalFormula(row.formula, row.customExpr, liveSettings);
             const isEditing = editingRow === row.id;
 
             return (
