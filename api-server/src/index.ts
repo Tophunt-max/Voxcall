@@ -26,6 +26,8 @@ import { getLevelConfig, getEarningShare, DEFAULT_AUDIO_RATE } from './lib/level
 import { recalcAllHostLevels } from './lib/levelService';
 import { billedMinutes, coinsForCall, chargeCallerWithFreePool } from './lib/billing';
 import { runReengagement } from './lib/reengagement';
+import { istContext } from './lib/streak';
+import { getFCMTokens, sendFCMPush } from './lib/fcm';
 import { createCFCalls } from './lib/cf-calls';
 import { USD_TO_FOREIGN } from './lib/currency';
 
@@ -568,6 +570,91 @@ async function maybeRunReengagement(env: Env): Promise<void> {
   }
 }
 
+// Daily streak reminder — nudges users with an ACTIVE streak who haven't
+// claimed yet today to come back and claim before the IST midnight reset.
+// Gated three ways so it fires at most once per IST day:
+//   1. admin kill-switches (daily_streak_enabled / daily_streak_reminder_enabled)
+//   2. only during the configured IST hour (daily_streak_reminder_hour_ist)
+//   3. a `last_streak_reminder_day` slot claimed before sending
+// Entirely best-effort — a failure here must never affect billing-critical jobs.
+async function maybeSendStreakReminders(env: Env): Promise<void> {
+  try {
+    const now = Math.floor(Date.now() / 1000);
+    const rows = await env.DB.prepare(
+      "SELECT key, value FROM app_settings WHERE key IN ('daily_streak_enabled','daily_streak_reminder_enabled','daily_streak_reminder_hour_ist','last_streak_reminder_day')",
+    ).all<{ key: string; value: string }>();
+    const cfg: Record<string, string> = {};
+    for (const r of rows.results ?? []) cfg[r.key] = r.value;
+
+    if (cfg['daily_streak_enabled'] === '0') return;
+    if (cfg['daily_streak_reminder_enabled'] === '0') return;
+
+    const parsedHour = parseInt(cfg['daily_streak_reminder_hour_ist'] ?? '', 10);
+    const reminderHour = Number.isFinite(parsedHour) && parsedHour >= 0 && parsedHour <= 23 ? parsedHour : 20;
+
+    const { hour: istHour, dayIndex, dayStart } = istContext(now);
+    if (istHour !== reminderHour) return;
+
+    const lastDay = parseInt(cfg['last_streak_reminder_day'] ?? '', 10) || 0;
+    if (lastDay === dayIndex) return; // already sent today
+
+    // Claim the daily slot BEFORE sending so overlapping cron ticks don't double-send.
+    await env.DB.prepare(
+      "INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('last_streak_reminder_day', ?, unixepoch())",
+    ).bind(String(dayIndex)).run();
+
+    // Candidates: an active streak that hasn't been claimed yet today (IST).
+    const cand = await env.DB.prepare(
+      `SELECT id FROM users
+         WHERE COALESCE(streak_days, 0) > 0
+           AND COALESCE(last_streak_claim_at, 0) < ?
+           AND COALESCE(status, 'active') = 'active'
+         LIMIT 5000`,
+    ).bind(dayStart).all<{ id: string }>();
+    const ids = (cand.results ?? []).map((r) => r.id);
+    if (ids.length === 0) return;
+
+    const title = '🔥 Keep your streak alive!';
+    const body = "Claim today's reward before midnight — don't break your streak!";
+
+    // 1. In-app notifications, D1 batches of 90 (batch limit is 100).
+    for (let i = 0; i < ids.length; i += 90) {
+      const chunk = ids.slice(i, i + 90);
+      try {
+        await env.DB.batch(
+          chunk.map((id) =>
+            env.DB
+              .prepare('INSERT INTO notifications (id, user_id, type, title, body, data) VALUES (?,?,?,?,?,?)')
+              .bind(crypto.randomUUID(), id, 'streak_reminder', title, body, JSON.stringify({ kind: 'streak_reminder' })),
+          ),
+        );
+      } catch (err) {
+        console.warn('[streak-reminder] notification batch insert failed (non-fatal):', err);
+      }
+    }
+
+    // 2. FCM push, batches of 100 (same copy for everyone → cheap to batch).
+    let pushed = 0;
+    if (env.FIREBASE_SERVICE_ACCOUNT) {
+      for (let i = 0; i < ids.length; i += 100) {
+        const batch = ids.slice(i, i + 100);
+        try {
+          const tokens = await getFCMTokens(env.DB, batch);
+          if (tokens.length) {
+            const r = await sendFCMPush(env.FIREBASE_SERVICE_ACCOUNT, tokens, title, body, { type: 'streak_reminder' });
+            pushed += r.sent;
+          }
+        } catch (err) {
+          console.warn('[streak-reminder] push batch failed (non-fatal):', err);
+        }
+      }
+    }
+    console.log(`[Cron] Streak reminders: ${ids.length} candidates, ${pushed} pushed`);
+  } catch (e) {
+    console.error('[Cron] streak reminder error:', e);
+  }
+}
+
 export default {
   fetch: app.fetch,
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
@@ -576,5 +663,6 @@ export default {
     ctx.waitUntil(maybeRecalcLevelsDaily(env));
     ctx.waitUntil(maybeRefreshFxRates(env));
     ctx.waitUntil(maybeRunReengagement(env));
+    ctx.waitUntil(maybeSendStreakReminders(env));
   },
 };

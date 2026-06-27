@@ -85,12 +85,31 @@ let streakSchemaReadyPromise: Promise<boolean> | null = null;
 const REQUIRED_USER_STREAK_COLUMNS: ReadonlyArray<{ name: string; ddl: string }> = [
   { name: 'streak_days',          ddl: 'ALTER TABLE users ADD COLUMN streak_days INTEGER DEFAULT 0' },
   { name: 'last_streak_claim_at', ddl: 'ALTER TABLE users ADD COLUMN last_streak_claim_at INTEGER DEFAULT 0' },
+  // Engagement v2 — freeze/repair, monthly chest, longest-streak, reminders.
+  { name: 'streak_freezes',       ddl: 'ALTER TABLE users ADD COLUMN streak_freezes INTEGER DEFAULT 0' },
+  { name: 'streak_month_key',     ddl: 'ALTER TABLE users ADD COLUMN streak_month_key TEXT' },
+  { name: 'streak_claims_month',  ddl: 'ALTER TABLE users ADD COLUMN streak_claims_month INTEGER DEFAULT 0' },
+  { name: 'streak_chest_month',   ddl: 'ALTER TABLE users ADD COLUMN streak_chest_month TEXT' },
+  { name: 'streak_max',           ddl: 'ALTER TABLE users ADD COLUMN streak_max INTEGER DEFAULT 0' },
 ];
 
 const STREAK_DEFAULT_SETTINGS: ReadonlyArray<{ key: string; value: string }> = [
   { key: 'daily_streak_schedule',    value: '[5,10,15,20,30,50,100]' },
-  { key: 'daily_streak_milestones',  value: '{"7":50,"14":100,"30":500,"60":1500,"100":5000}' },
+  { key: 'daily_streak_milestones',  value: '{"7":50,"14":100,"30":500,"60":1500,"100":5000,"180":12000,"365":30000}' },
   { key: 'daily_streak_enabled',     value: '1' },
+  // Engagement v2 defaults — all "no behavior change" so existing economies
+  // are untouched until an admin opts in.
+  { key: 'daily_streak_comeback_bonus',    value: '0' },
+  { key: 'daily_streak_guest_multiplier',  value: '1' },
+  { key: 'daily_streak_minute_rewards',    value: '{}' },
+  { key: 'daily_streak_freeze_enabled',    value: '0' },
+  { key: 'daily_streak_freeze_monthly',    value: '2' },
+  { key: 'daily_streak_repair_cost_coins', value: '50' },
+  { key: 'daily_streak_chest_enabled',     value: '0' },
+  { key: 'daily_streak_chest_threshold',   value: '20' },
+  { key: 'daily_streak_chest_reward',      value: '500' },
+  { key: 'daily_streak_reminder_enabled',  value: '1' },
+  { key: 'daily_streak_reminder_hour_ist', value: '20' },
 ];
 
 export function ensureStreakSchema(db: D1Database): Promise<boolean> {

@@ -157,6 +157,19 @@ export const API = {
       // Variable "lucky wheel" mode (Priority 4) — optional; older backends omit.
       variable_enabled?: boolean;
       variable_table?: Array<{ m: number; p: number }>;
+      // Engagement v2 — all optional so older backends degrade gracefully.
+      seconds_until_reset?: number;
+      at_risk?: boolean;
+      streak_max?: number;
+      freeze_enabled?: boolean;
+      freezes_available?: number;
+      can_repair?: boolean;
+      repair_cost_coins?: number;
+      chest_enabled?: boolean;
+      chest_threshold?: number;
+      chest_reward?: number;
+      claims_this_month?: number;
+      chest_claimed_this_month?: boolean;
     }>('GET', '/api/user/streak'),
   claimDailyStreak: () =>
     apiRequest<{
@@ -173,7 +186,27 @@ export const API = {
       // Set when the lucky-wheel determined the reward (Priority 4).
       variable?: boolean;
       multiplier?: number;
+      // Engagement v2 reward breakdown — optional.
+      minutes_reward?: number;
+      comeback_bonus?: number;
+      chest_bonus?: number;
+      claims_this_month?: number;
     }>('POST', '/api/user/streak/claim', {}),
+  // Restore a streak after missing exactly one IST day. Spends a free freeze
+  // token if available, otherwise charges coins. INSUFFICIENT_FUNDS → 402.
+  repairStreak: () =>
+    apiRequest<{
+      success: boolean;
+      repaired: boolean;
+      // OK | FEATURE_DISABLED | USER_NOT_FOUND | NOTHING_TO_REPAIR | INSUFFICIENT_FUNDS
+      code: string;
+      method?: 'freeze' | 'coins';
+      freezes_remaining?: number;
+      coins_spent?: number;
+      new_balance?: number;
+      streak_days?: number;
+      message?: string;
+    }>('POST', '/api/user/streak/repair', {}),
 
   // Call quality sample ingestion — caller's app posts every ~30s during
   // an active call. NULL fields are allowed (early in the call before

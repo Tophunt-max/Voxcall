@@ -483,6 +483,14 @@ admin.patch('/settings', async (c) => {
     'reengagement_max_idle_days', 'reengagement_interval_hours',
     'match_weighting_enabled', 'match_weights',
     'daily_streak_variable_enabled', 'daily_streak_variable_table',
+    // Daily streak engagement v2 — freeze/repair, anti-farming, chest, reminders.
+    'daily_streak_comeback_bonus', 'daily_streak_guest_multiplier',
+    'daily_streak_minute_rewards',
+    'daily_streak_freeze_enabled', 'daily_streak_freeze_monthly',
+    'daily_streak_repair_cost_coins',
+    'daily_streak_chest_enabled', 'daily_streak_chest_threshold',
+    'daily_streak_chest_reward',
+    'daily_streak_reminder_enabled', 'daily_streak_reminder_hour_ist',
   ];
   const stmts = Object.entries(processedBody)
     .filter(([k]) => ALLOWED_SETTINGS.includes(k))
@@ -1975,6 +1983,75 @@ admin.post('/calls/cleanup-stuck', async (c) => {
     success: true,
     pending_ended: stuckPending.meta?.changes ?? 0,
     active_ended: stuckActive.meta?.changes ?? 0,
+  });
+});
+
+// ─── Daily Streak Analytics ─────────────────────────────────────────────────
+// Read-only engagement dashboard data: how many users have active streaks,
+// the streak-length distribution, claims today, and the all-time longest
+// streak. Tolerates legacy schemas (missing columns) by defaulting to zeroes
+// so the admin panel never errors on an un-migrated DB.
+admin.get('/streak-analytics', async (c) => {
+  const database = db(c);
+  const now = Math.floor(Date.now() / 1000);
+  const IST_OFFSET = 5 * 3600 + 30 * 60;
+  const SECS_DAY = 86400;
+  const todayStart = Math.floor((now + IST_OFFSET) / SECS_DAY) * SECS_DAY - IST_OFFSET;
+
+  const safe = async <T>(fn: () => Promise<T | null>, dflt: T): Promise<T> => {
+    try { return (await fn()) ?? dflt; } catch { return dflt; }
+  };
+
+  const totals = await safe(
+    () =>
+      database
+        .prepare(
+          `SELECT COUNT(*) AS users_with_streak,
+                  COALESCE(MAX(streak_days), 0) AS max_streak,
+                  COALESCE(AVG(streak_days), 0) AS avg_streak
+           FROM users WHERE COALESCE(streak_days, 0) > 0`,
+        )
+        .first<{ users_with_streak: number; max_streak: number; avg_streak: number }>(),
+    { users_with_streak: 0, max_streak: 0, avg_streak: 0 },
+  );
+
+  const claimedToday = await safe(
+    () =>
+      database
+        .prepare('SELECT COUNT(*) AS n FROM users WHERE COALESCE(last_streak_claim_at, 0) >= ?')
+        .bind(todayStart)
+        .first<{ n: number }>(),
+    { n: 0 },
+  );
+
+  const dist = await safe(
+    () =>
+      database
+        .prepare(
+          `SELECT
+             SUM(CASE WHEN streak_days = 1 THEN 1 ELSE 0 END) AS d1,
+             SUM(CASE WHEN streak_days BETWEEN 2 AND 6 THEN 1 ELSE 0 END) AS d2_6,
+             SUM(CASE WHEN streak_days BETWEEN 7 AND 29 THEN 1 ELSE 0 END) AS d7_29,
+             SUM(CASE WHEN streak_days BETWEEN 30 AND 99 THEN 1 ELSE 0 END) AS d30_99,
+             SUM(CASE WHEN streak_days >= 100 THEN 1 ELSE 0 END) AS d100p
+           FROM users WHERE COALESCE(streak_days, 0) > 0`,
+        )
+        .first<{ d1: number; d2_6: number; d7_29: number; d30_99: number; d100p: number }>(),
+    { d1: 0, d2_6: 0, d7_29: 0, d30_99: 0, d100p: 0 },
+  );
+
+  return c.json({
+    users_with_active_streak: totals.users_with_streak ?? 0,
+    longest_streak: totals.max_streak ?? 0,
+    average_streak: Math.round((totals.avg_streak ?? 0) * 10) / 10,
+    claimed_today: claimedToday.n ?? 0,
+    distribution: {
+      day_1: dist.d1 ?? 0,
+      day_2_6: dist.d2_6 ?? 0,
+      day_7_29: dist.d7_29 ?? 0,
+      day_30_99: dist.d30_99 ?? 0,
+      day_100_plus: dist.d100p ?? 0,
+    },
   });
 });
 

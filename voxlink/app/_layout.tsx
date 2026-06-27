@@ -159,18 +159,19 @@ function WebNotificationBridge() {
 // fresh `can_claim_now` flip.
 function DailyRewardGate() {
   const { isLoggedIn } = useAuth();
-  const { status, claiming, lastClaim, claim, dismissCelebration } = useDailyStreak();
+  const { status, claiming, lastClaim, claim, dismissCelebration, repairing, repair } = useDailyStreak();
   const [visible, setVisible] = React.useState(false);
   const sessionDismissed = React.useRef(false);
 
-  // Auto-open once per session when the server says "you can claim".
+  // Auto-open once per session when the server says "you can claim" OR the
+  // user's streak lapsed and can still be repaired (streak-saver prompt).
   React.useEffect(() => {
     if (!isLoggedIn) return;
     if (!status?.enabled) return;
     if (sessionDismissed.current) return;
     if (visible) return;
-    if (status.can_claim_now) setVisible(true);
-  }, [isLoggedIn, status?.enabled, status?.can_claim_now, visible]);
+    if (status.can_claim_now || status.can_repair) setVisible(true);
+  }, [isLoggedIn, status?.enabled, status?.can_claim_now, status?.can_repair, visible]);
 
   // Reset session-dismissed when the user logs out so the next account that
   // logs in on the same device gets its own auto-prompt.
@@ -196,6 +197,12 @@ function DailyRewardGate() {
     // taps "Awesome!" to close — handled by handleClose above.
   }, [claim]);
 
+  const handleRepair = React.useCallback(async () => {
+    await repair();
+    // After a successful repair the hook refreshes status (can_repair → false,
+    // streak restored), so the modal flips to the normal claimable view.
+  }, [repair]);
+
   if (!status) return null;
   return (
     <DailyRewardModal
@@ -205,6 +212,8 @@ function DailyRewardGate() {
       claiming={claiming}
       onClaim={handleClaim}
       onClose={handleClose}
+      repairing={repairing}
+      onRepair={handleRepair}
     />
   );
 }

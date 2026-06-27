@@ -31,6 +31,10 @@ interface DailyRewardModalProps {
   claiming: boolean;
   onClaim: () => void;
   onClose: () => void;
+  /** Repair (streak-saver) in flight — disables the repair button. */
+  repairing?: boolean;
+  /** Restore a lapsed streak (shown only when status.can_repair). */
+  onRepair?: () => void;
 }
 
 export default function DailyRewardModal({
@@ -40,6 +44,8 @@ export default function DailyRewardModal({
   claiming,
   onClaim,
   onClose,
+  repairing = false,
+  onRepair,
 }: DailyRewardModalProps) {
   // Shared scale animation — bouncy "pop" on open, used for both views.
   const scale = useRef(new Animated.Value(0.85)).current;
@@ -106,6 +112,40 @@ export default function DailyRewardModal({
             milestones={status.milestones}
             currentDay={streakAfter}
           />
+
+          {/* Streak-saver / at-risk banner — only in the claimable state. */}
+          {!isCelebrating && status.can_repair ? (
+            <View style={styles.repairBanner}>
+              <Text style={styles.repairTitle}>💔 You missed a day!</Text>
+              <Text style={styles.repairSub}>
+                Restore your {status.streak_days}-day streak
+                {(status.freezes_available ?? 0) > 0
+                  ? ` with a free streak saver (${status.freezes_available} left)`
+                  : ` for ${status.repair_cost_coins ?? 0} coins`}
+                .
+              </Text>
+              <TouchableOpacity
+                onPress={onRepair}
+                activeOpacity={0.85}
+                disabled={repairing || !onRepair}
+                style={styles.repairBtn}
+              >
+                <Text style={styles.repairBtnTxt}>
+                  {repairing
+                    ? "Restoring…"
+                    : (status.freezes_available ?? 0) > 0
+                      ? "🛡️ Use Streak Saver"
+                      : `🔧 Restore for ${status.repair_cost_coins ?? 0} coins`}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : !isCelebrating && status.at_risk ? (
+            <View style={styles.atRiskBanner}>
+              <Text style={styles.atRiskTxt}>
+                ⚠️ Claim soon — your streak resets at midnight!
+              </Text>
+            </View>
+          ) : null}
 
           {/* CTA */}
           <View style={styles.ctaRow}>
@@ -183,6 +223,22 @@ function CelebrationBody({ result }: { result: DailyStreakClaimResult }) {
         <Text style={styles.balanceLine}>
           New balance: <Text style={styles.balanceVal}>{result.new_balance} coins</Text>
         </Text>
+      ) : null}
+      {/* Engagement v2 extras — only render when present (> 0). */}
+      {(result.minutes_reward ?? 0) > 0 ? (
+        <View style={styles.extraBadge}>
+          <Text style={styles.extraTxt}>📞 +{result.minutes_reward} free call minutes!</Text>
+        </View>
+      ) : null}
+      {(result.chest_bonus ?? 0) > 0 ? (
+        <View style={[styles.extraBadge, styles.chestBadge]}>
+          <Text style={styles.extraTxt}>🎁 Monthly chest: +{result.chest_bonus} coins!</Text>
+        </View>
+      ) : null}
+      {(result.comeback_bonus ?? 0) > 0 ? (
+        <View style={styles.extraBadge}>
+          <Text style={styles.extraTxt}>👋 Welcome back bonus: +{result.comeback_bonus} coins</Text>
+        </View>
       ) : null}
     </View>
   );
@@ -294,6 +350,35 @@ const styles = StyleSheet.create({
   stripCoin: { fontSize: 14, fontFamily: "Poppins_700Bold", color: "#111329", marginTop: 2 },
   stripCoinToday: { color: "#8400FF" },
   stripStar: { position: "absolute", top: 4, right: 4, fontSize: 9, color: COIN_GOLD },
+
+  // Repair / at-risk banners
+  repairBanner: {
+    marginHorizontal: 20, marginBottom: 6, padding: 14, borderRadius: 14,
+    backgroundColor: "rgba(255,71,87,0.08)", borderWidth: 1, borderColor: "rgba(255,71,87,0.35)",
+    alignItems: "center",
+  },
+  repairTitle: { fontSize: 14, fontFamily: "Poppins_700Bold", color: "#E23744" },
+  repairSub: { fontSize: 12, fontFamily: "Poppins_400Regular", color: "#75768A", textAlign: "center", marginTop: 4 },
+  repairBtn: {
+    marginTop: 10, paddingVertical: 10, paddingHorizontal: 16, borderRadius: 12,
+    backgroundColor: "#E23744",
+  },
+  repairBtnTxt: { fontSize: 13, fontFamily: "Poppins_700Bold", color: "#fff" },
+  atRiskBanner: {
+    marginHorizontal: 20, marginBottom: 6, padding: 10, borderRadius: 12,
+    backgroundColor: "rgba(255,159,10,0.12)", borderWidth: 1, borderColor: "rgba(255,159,10,0.4)",
+    alignItems: "center",
+  },
+  atRiskTxt: { fontSize: 12, fontFamily: "Poppins_600SemiBold", color: "#B26B00", textAlign: "center" },
+
+  // Celebration extra reward badges
+  extraBadge: {
+    marginTop: 10, paddingHorizontal: 14, paddingVertical: 7,
+    backgroundColor: "rgba(132,0,255,0.10)", borderRadius: 999,
+    borderWidth: 1, borderColor: "rgba(132,0,255,0.30)",
+  },
+  chestBadge: { backgroundColor: "rgba(255,201,60,0.18)", borderColor: "rgba(255,201,60,0.5)" },
+  extraTxt: { fontSize: 12, fontFamily: "Poppins_600SemiBold", color: "#6A1B9A", textAlign: "center" },
 
   // CTA
   ctaRow: { flexDirection: "row", gap: 10, padding: 20, paddingTop: 14 },

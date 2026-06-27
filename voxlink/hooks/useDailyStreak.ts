@@ -32,6 +32,19 @@ export interface DailyStreakStatus {
   schedule: number[];
   milestones: Record<string, number>;
   enabled: boolean;
+  // Engagement v2 — optional so older backends degrade gracefully.
+  seconds_until_reset?: number;
+  at_risk?: boolean;
+  streak_max?: number;
+  freeze_enabled?: boolean;
+  freezes_available?: number;
+  can_repair?: boolean;
+  repair_cost_coins?: number;
+  chest_enabled?: boolean;
+  chest_threshold?: number;
+  chest_reward?: number;
+  claims_this_month?: number;
+  chest_claimed_this_month?: boolean;
 }
 
 export interface DailyStreakClaimResult {
@@ -44,6 +57,21 @@ export interface DailyStreakClaimResult {
   milestone_bonus: number;
   next_claim_at: number;
   new_balance?: number;
+  minutes_reward?: number;
+  comeback_bonus?: number;
+  chest_bonus?: number;
+}
+
+export interface DailyStreakRepairResult {
+  success: boolean;
+  repaired: boolean;
+  code: string;
+  method?: 'freeze' | 'coins';
+  freezes_remaining?: number;
+  coins_spent?: number;
+  new_balance?: number;
+  streak_days?: number;
+  message?: string;
 }
 
 interface UseDailyStreakReturn {
@@ -65,6 +93,13 @@ interface UseDailyStreakReturn {
   claim: () => Promise<DailyStreakClaimResult | null>;
   /** Reset `lastClaim` so the celebration view stops showing. */
   dismissCelebration: () => void;
+  /** Repair API in flight. UI should disable the repair button while true. */
+  repairing: boolean;
+  /**
+   * Restore a lapsed streak (missed exactly one day). Spends a free freeze
+   * token or coins on the server. Refreshes status + syncs coins on success.
+   */
+  repair: () => Promise<DailyStreakRepairResult | null>;
 }
 
 /**
@@ -141,6 +176,26 @@ export function useDailyStreak(): UseDailyStreakReturn {
 
   const dismissCelebration = useCallback(() => setLastClaim(null), []);
 
+  const [repairing, setRepairing] = useState(false);
+  const repair = useCallback(async (): Promise<DailyStreakRepairResult | null> => {
+    if (!isLoggedIn || !user?.id) return null;
+    setRepairing(true);
+    try {
+      const res = await API.repairStreak();
+      // Refresh snapshot so the card reflects the restored streak immediately.
+      void fetchStatus();
+      if (res.repaired && typeof res.new_balance === "number") {
+        updateCoins(res.new_balance);
+      }
+      return res;
+    } catch (err) {
+      console.warn("[useDailyStreak] repair failed:", err);
+      return null;
+    } finally {
+      setRepairing(false);
+    }
+  }, [isLoggedIn, user?.id, fetchStatus, updateCoins]);
+
   return {
     status,
     loading,
@@ -149,5 +204,7 @@ export function useDailyStreak(): UseDailyStreakReturn {
     refresh: fetchStatus,
     claim,
     dismissCelebration,
+    repairing,
+    repair,
   };
 }

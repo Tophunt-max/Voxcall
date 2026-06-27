@@ -63,6 +63,22 @@ const settingGroups = [
     ],
   },
   {
+    group: 'Engagement — Daily Streak: Freeze / Chest / Anti-abuse',
+    settings: [
+      { key: 'daily_streak_comeback_bonus', label: 'Comeback bonus (coins)', type: 'number', hint: 'Coins granted when a lapsed streak resets to Day 1 (softens the sting of missing a day). Only applies when the user HAD an active streak. 0 = off.', step: '1' },
+      { key: 'daily_streak_guest_multiplier', label: 'Guest reward multiplier', type: 'number', hint: 'Scales coin rewards for guest (Quick-Login) accounts — those with no password and no Google login. Curbs multi-account farming. 1 = no change, 0.5 = half, 0 = guests earn nothing.', step: '0.05' },
+      { key: 'daily_streak_minute_rewards', label: 'Free-minute rewards (JSON map)', type: 'text', hint: 'Streak day → free CALL minutes credited on top of coins. e.g. {"7":10,"30":30} gives 10 free min on Day 7. Reward variety without diluting coins. {} = none.' },
+      { key: 'daily_streak_freeze_enabled', label: 'Streak freeze / repair enabled', type: 'text', hint: 'Set to 1 to let users restore a streak after missing exactly one day (spends a free freeze token or coins). 0 = disabled.' },
+      { key: 'daily_streak_freeze_monthly', label: 'Free freezes per month', type: 'number', hint: 'Free "streak saver" tokens granted each IST month. A repair uses one token before charging coins.', step: '1' },
+      { key: 'daily_streak_repair_cost_coins', label: 'Repair cost (coins)', type: 'number', hint: 'Coins charged to repair a streak when no free freeze token is left.', step: '1' },
+      { key: 'daily_streak_chest_enabled', label: 'Monthly chest enabled', type: 'text', hint: 'Set to 1 to award a one-time bonus chest when a user claims enough days within one IST month. 0 = off.' },
+      { key: 'daily_streak_chest_threshold', label: 'Chest threshold (claims/month)', type: 'number', hint: 'Number of daily claims within an IST month that unlocks the chest (e.g. 20).', step: '1' },
+      { key: 'daily_streak_chest_reward', label: 'Chest reward (coins)', type: 'number', hint: 'Coins awarded once when the monthly claim threshold is reached.', step: '1' },
+      { key: 'daily_streak_reminder_enabled', label: 'Daily reminder push enabled', type: 'text', hint: 'Set to 1 to push a reminder to users with an active streak who haven\'t claimed yet today. 0 = off.' },
+      { key: 'daily_streak_reminder_hour_ist', label: 'Reminder hour (IST 0–23)', type: 'number', hint: 'IST hour to send the daily streak reminder (e.g. 20 = 8 PM). Fires once per day.', step: '1' },
+    ],
+  },
+  {
     group: 'Engagement — First-call-free Trial',
     settings: [
       { key: 'first_call_free_minutes', label: 'Free minutes for new signups', type: 'number', hint: 'Each newly registered user gets this many free call minutes. The host is paid in full for those minutes; the platform absorbs the cost as customer acquisition. Set to 0 to disable.', step: '1' },
@@ -159,6 +175,20 @@ const DEFAULTS: Record<string, string> = {
   // Priority 4 — variable daily reward (mirror lib/streak.ts). OFF by default.
   daily_streak_variable_enabled: '0',
   daily_streak_variable_table: '[{"m":0.5,"p":0.35},{"m":0.8,"p":0.25},{"m":1,"p":0.2},{"m":2,"p":0.15},{"m":5,"p":0.05}]',
+  // Daily Streak v2 — engagement levers (mirror lib/streak.ts defaults).
+  // All default to "no behavior change" so the economy is untouched until
+  // an admin opts in.
+  daily_streak_comeback_bonus: '0',
+  daily_streak_guest_multiplier: '1',
+  daily_streak_minute_rewards: '{}',
+  daily_streak_freeze_enabled: '0',
+  daily_streak_freeze_monthly: '2',
+  daily_streak_repair_cost_coins: '50',
+  daily_streak_chest_enabled: '0',
+  daily_streak_chest_threshold: '20',
+  daily_streak_chest_reward: '500',
+  daily_streak_reminder_enabled: '1',
+  daily_streak_reminder_hour_ist: '20',
 };
 
 // ─── safe arithmetic evaluator (no eval / new Function) ──────────────────────

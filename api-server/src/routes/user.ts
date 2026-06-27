@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { authMiddleware } from '../middleware/auth';
 import { verifyPassword } from '../lib/hash';
-import { getStreakStatus, claimDailyStreak } from '../lib/streak';
+import { getStreakStatus, claimDailyStreak, repairStreak } from '../lib/streak';
 import { getDefaultCallRates } from '../lib/levels';
 import type { Env, JWTPayload } from '../types';
 
@@ -84,6 +84,19 @@ user.post('/streak/claim', async (c) => {
   const { sub } = c.get('user');
   const result = await claimDailyStreak(c.env.DB, sub);
   return c.json(result);
+});
+
+// POST /api/user/streak/repair — restore a streak after missing exactly one
+// IST day. Spends a free freeze token if available, otherwise charges
+// `daily_streak_repair_cost_coins`. Like /claim, real failures are returned as
+// HTTP 200 with a `code` the client switches on (FEATURE_DISABLED,
+// NOTHING_TO_REPAIR, INSUFFICIENT_FUNDS). Only INSUFFICIENT_FUNDS maps to 402
+// so the client can surface a top-up prompt.
+user.post('/streak/repair', async (c) => {
+  const { sub } = c.get('user');
+  const result = await repairStreak(c.env.DB, sub);
+  const httpStatus = result.code === 'INSUFFICIENT_FUNDS' ? 402 : 200;
+  return c.json(result, httpStatus);
 });
 
 // GET /api/user/notifications
