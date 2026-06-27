@@ -285,6 +285,10 @@ export const API = {
   getHost: (id: string) => apiRequest<any>('GET', `/api/hosts/${id}`),
   getHostReviews: (id: string) => apiRequest<any[]>('GET', `/api/hosts/${id}/reviews`),
 
+  // Favorited hosts for the "Your favorites" home rail. Rows expose host_id
+  // (the hosts.id) + display fields; the caller maps host_id -> id.
+  getFavorites: () => apiRequest<any[]>('GET', '/api/user/favorites'),
+
   // Engagement event ingest — batched impression/click/conversion logging that
   // powers rail CTR / conversion metrics + data-driven ranking. Best-effort;
   // see services/engagement.ts for the client-side batching queue.
