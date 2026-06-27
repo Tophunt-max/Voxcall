@@ -123,9 +123,6 @@ export const API = {
   googleLogin: (email: string, name: string, google_id: string, avatar_url?: string | null, device_id?: string | null, id_token?: string | null) =>
     apiRequest<{ token: string; user: any }>('POST', '/api/auth/google-login', { email, name, google_id, avatar_url, device_id: device_id ?? null, id_token: id_token ?? undefined }, false),
 
-  // Host KYC Application
-  getHostAppStatus: () => apiRequest<any>('GET', '/api/host-app/status'),
-  submitHostApp: (data: any) => apiRequest<any>('POST', '/api/host-app/submit', data),
   me: () => apiRequest<any>('GET', '/api/user/me'),
   updateProfile: (data: any) => apiRequest('PATCH', '/api/user/me', data),
 
@@ -286,19 +283,12 @@ export const API = {
   logEngagementEvents: (events: unknown[]) =>
     apiRequest<{ ok: boolean; stored: number }>('POST', '/api/engagement/events', { events }),
 
-  becomeHost: (data: any) => apiRequest('POST', '/api/user/become-host', data),
-  updateHostProfile: (data: any) => apiRequest('PATCH', '/api/host/me', data),
-  setHostOnline: (online: boolean) => apiRequest('PATCH', '/api/host/status', { is_online: online }),
-  getEarnings: () => apiRequest<any>('GET', '/api/host/earnings'),
-
   // Coins
   getCoinPlans: () => apiRequest<any[]>('GET', '/api/coins/plans'),
   getBalance: () => apiRequest<{ coins: number }>('GET', '/api/coins/balance'),
   purchaseCoins: (plan_id: string, payment_method: string, payment_ref?: string, utr_id?: string, gateway_id?: string, promo_code?: string) =>
     apiRequest('POST', '/api/coins/purchase', { plan_id, payment_method, payment_ref, utr_id, gateway_id, promo_code }),
   getCoinHistory: () => apiRequest<any[]>('GET', '/api/coins/history'),
-  requestWithdrawal: (coins_requested: number, method: string, account_info: string) =>
-    apiRequest('POST', '/api/coins/withdraw', { coins_requested, method, account_info }),
 
   // Calls
   initiateCall: (host_id: string, call_type: 'audio' | 'video') =>
