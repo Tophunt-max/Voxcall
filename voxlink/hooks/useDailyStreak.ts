@@ -32,6 +32,9 @@ export interface DailyStreakStatus {
   schedule: number[];
   milestones: Record<string, number>;
   enabled: boolean;
+  // Variable "lucky wheel" mode (Priority 4) — optional so older backends omit.
+  variable_enabled?: boolean;
+  variable_table?: Array<{ m: number; p: number }>;
   // Engagement v2 — optional so older backends degrade gracefully.
   seconds_until_reset?: number;
   at_risk?: boolean;
@@ -57,6 +60,10 @@ export interface DailyStreakClaimResult {
   milestone_bonus: number;
   next_claim_at: number;
   new_balance?: number;
+  // Variable "lucky wheel" (Priority 4) — set when the wheel drew the reward.
+  variable?: boolean;
+  /** The drawn multiplier (e.g. 2 = "2x!"). 1 when variable mode is off. */
+  multiplier?: number;
   minutes_reward?: number;
   comeback_bonus?: number;
   chest_bonus?: number;

@@ -10,7 +10,7 @@
 // Driven entirely by the `useDailyStreak` hook in _layout.tsx — this
 // component is purely presentational.
 
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, Modal,
   Animated, Image, ScrollView,
@@ -100,7 +100,7 @@ export default function DailyRewardModal({
 
           {/* Body */}
           {isCelebrating ? (
-            <CelebrationBody result={lastClaim} />
+            <CelebrationBody result={lastClaim} status={status} />
           ) : (
             <ClaimableBody status={status} streakAfter={streakAfter} />
           )}
@@ -205,9 +205,16 @@ function ClaimableBody({ status, streakAfter }: { status: DailyStreakStatus; str
   );
 }
 
-function CelebrationBody({ result }: { result: DailyStreakClaimResult }) {
+function CelebrationBody({ result, status }: { result: DailyStreakClaimResult; status: DailyStreakStatus }) {
+  // P2: lucky-wheel reveal. Only when the server says this reward was drawn by
+  // the variable engine. The expected payout is unchanged (budget-neutral) —
+  // the spin is pure dopamine on top of the guaranteed base.
+  const segments = (status.variable_table ?? []).map((t) => t.m).filter((m) => Number.isFinite(m) && m > 0);
   return (
     <View style={styles.body}>
+      {result.variable ? (
+        <LuckyMultiplier multiplier={result.multiplier ?? 1} segments={segments} />
+      ) : null}
       <View style={styles.coinRow}>
         <Image source={require("@/assets/icons/ic_coin.png")} style={styles.coinIcon} resizeMode="contain" />
         <Text style={styles.bigNumber}>+{result.reward}</Text>
@@ -241,6 +248,41 @@ function CelebrationBody({ result }: { result: DailyStreakClaimResult }) {
         </View>
       ) : null}
     </View>
+  );
+}
+
+function LuckyMultiplier({ multiplier, segments }: { multiplier: number; segments: number[] }) {
+  const pool = segments.length ? segments : [0.5, 0.8, 1, 2, 5];
+  const [display, setDisplay] = useState<number>(pool[0]);
+  const [settled, setSettled] = useState(false);
+  const pop = useRef(new Animated.Value(0.7)).current;
+
+  useEffect(() => {
+    let i = 0;
+    const ticks = 12;
+    const timer = setInterval(() => {
+      i++;
+      if (i >= ticks) {
+        clearInterval(timer);
+        setDisplay(multiplier);
+        setSettled(true);
+        try { void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); } catch {}
+        Animated.spring(pop, { toValue: 1, tension: 80, friction: 5, useNativeDriver: true }).start();
+      } else {
+        setDisplay(pool[Math.floor(Math.random() * pool.length)]);
+      }
+    }, 80);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [multiplier]);
+
+  const big = settled && multiplier >= 2;
+  const fmt = (m: number) => (Number.isInteger(m) ? String(m) : m.toFixed(1));
+  return (
+    <Animated.View style={[styles.luckyWrap, big && styles.luckyWrapBig, { transform: [{ scale: pop }] }]}>
+      <Text style={styles.luckyLabel}>{settled ? (big ? "🎉 LUCKY!" : "Lucky wheel") : "Spinning…"}</Text>
+      <Text style={[styles.luckyMult, big && styles.luckyMultBig]}>{fmt(display)}×</Text>
+    </Animated.View>
   );
 }
 
@@ -328,6 +370,20 @@ const styles = StyleSheet.create({
 
   celebrationSub: { fontSize: 13, fontFamily: "Poppins_500Medium", color: "#75768A", marginTop: 6 },
   celebrationBonus: { color: COIN_GOLD, fontFamily: "Poppins_700Bold" },
+
+  // P2: lucky-wheel multiplier reveal
+  luckyWrap: {
+    alignItems: "center", marginBottom: 10, paddingHorizontal: 18, paddingVertical: 8,
+    borderRadius: 16, backgroundColor: "rgba(132,0,255,0.08)",
+    borderWidth: 1, borderColor: "rgba(132,0,255,0.25)",
+  },
+  luckyWrapBig: { backgroundColor: "rgba(255,201,60,0.18)", borderColor: "rgba(255,201,60,0.6)" },
+  luckyLabel: {
+    fontSize: 10, fontFamily: "Poppins_600SemiBold", color: "#8400FF",
+    textTransform: "uppercase", letterSpacing: 0.8,
+  },
+  luckyMult: { fontSize: 30, fontFamily: "Poppins_700Bold", color: "#8400FF", letterSpacing: -0.5 },
+  luckyMultBig: { fontSize: 38, color: "#B8860B" },
   balanceLine: { fontSize: 13, fontFamily: "Poppins_500Medium", color: "#111329", marginTop: 12 },
   balanceVal: { fontFamily: "Poppins_700Bold", color: "#8400FF" },
 

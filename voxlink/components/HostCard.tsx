@@ -19,6 +19,13 @@ interface Props {
   onTalkNow?: () => void;
   onAudioCall?: () => void;
   onVideoCall?: () => void;
+  /**
+   * P3 (affordability): the viewer's current coin balance. When provided and
+   * the host's per-minute rate exceeds it (can't afford even ~1 minute), the
+   * card surfaces a subtle "Top up" hint so the user isn't led into a
+   * dead-end "insufficient coins" call attempt. Omit to disable (default).
+   */
+  userCoins?: number;
 }
 
 function StatusBadge({ isOnline, isBusy }: { isOnline: boolean; isBusy?: boolean }) {
@@ -36,8 +43,14 @@ function StatusBadge({ isOnline, isBusy }: { isOnline: boolean; isBusy?: boolean
   );
 }
 
-export function HostCard({ host, onPress, compact = false, onTalkNow, onAudioCall, onVideoCall }: Props) {
+export function HostCard({ host, onPress, compact = false, onTalkNow, onAudioCall, onVideoCall, userCoins }: Props) {
   const colors = useColors();
+
+  // P3: can the viewer afford ~1 minute with this host? Only meaningful when a
+  // balance was passed AND the host has a positive rate. undefined = unknown
+  // (don't render any affordability hint).
+  const unaffordable =
+    typeof userCoins === "number" && host.coinsPerMinute > 0 && userCoins < host.coinsPerMinute;
 
   if (compact) {
     return (
@@ -67,6 +80,11 @@ export function HostCard({ host, onPress, compact = false, onTalkNow, onAudioCal
           <Image source={require("@/assets/icons/ic_coin.png")} style={styles.compactCoinIcon} contentFit="contain" cachePolicy="memory" />
           <Text style={[styles.compactCoinText, { color: colors.coinGold }]}>{host.coinsPerMinute}/min</Text>
         </View>
+        {unaffordable && (
+          <View style={styles.compactTopUpBadge}>
+            <Text style={styles.compactTopUpText}>Top up</Text>
+          </View>
+        )}
       </TouchableOpacity>
     );
   }
@@ -267,4 +285,12 @@ const styles = StyleSheet.create({
   compactCoinRow: { flexDirection: "row", alignItems: "center", gap: 3 },
   compactCoinIcon: { width: 12, height: 12 },
   compactCoinText: { fontSize: 10, fontFamily: "Poppins_500Medium" },
+  compactTopUpBadge: {
+    marginTop: 2,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+    backgroundColor: "rgba(228,159,20,0.15)",
+  },
+  compactTopUpText: { fontSize: 9, fontFamily: "Poppins_600SemiBold", color: "#B26B00" },
 });
