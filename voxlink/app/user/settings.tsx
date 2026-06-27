@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, Image,
-  ScrollView, Switch, Alert, Platform
+  ScrollView, Switch, Platform
 } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { apiRequest } from "@/services/api";
+import { confirmDialog } from "@/utils/dialog";
 import { usePermissions } from "@/hooks/usePermissions";
 import { PermissionDialog, PERMISSION_CONFIGS } from "@/components/PermissionDialog";
 import { useLanguage } from "@/context/LanguageContext";
@@ -40,54 +41,47 @@ export default function SettingsScreen() {
       // If already granted, nothing to do — toggle is already on
     } else {
       // Turning OFF — can't programmatically revoke, guide user to Settings
-      Alert.alert(
-        "Turn Off Notifications",
-        "To disable notifications, go to your phone's Settings and turn off notifications for VoxLink.",
-        [
-          { text: "Cancel", style: "cancel" },
-          { text: "Open Settings", onPress: openSettings },
-        ]
-      );
+      confirmDialog({
+        title: "Turn Off Notifications",
+        message: "To disable notifications, go to your phone's Settings and turn off notifications for VoxLink.",
+        confirmText: "Open Settings",
+        onConfirm: openSettings,
+      });
     }
   };
 
   const handleLogout = () => {
-    Alert.alert("Sign Out", "Are you sure you want to sign out?", [
-      { text: "Cancel", style: "cancel" },
-      { text: "Sign Out", style: "destructive", onPress: async () => { await logout(); router.replace("/user/auth/login"); } }
-    ]);
+    confirmDialog({
+      title: "Sign Out",
+      message: "Are you sure you want to sign out?",
+      confirmText: "Sign Out",
+      destructive: true,
+      onConfirm: async () => { await logout(); router.replace("/user/auth/login"); },
+    });
   };
 
   const handleDeleteAccount = () => {
-    Alert.alert(
-      "Delete Account",
-      "This action is permanent. All your data will be erased and cannot be recovered.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete", style: "destructive",
-          onPress: () => {
-            Alert.alert(
-              "Are you sure?",
-              "Type 'DELETE' to confirm. This cannot be undone.",
-              [
-                { text: "Cancel", style: "cancel" },
-                {
-                  text: "Yes, Delete My Account", style: "destructive",
-                  onPress: async () => {
-                    try {
-                      await apiRequest("DELETE", "/api/user/me", undefined);
-                    } catch {}
-                    await logout();
-                    router.replace("/user/auth/login");
-                  },
-                },
-              ]
-            );
+    confirmDialog({
+      title: "Delete Account",
+      message: "This action is permanent. All your data will be erased and cannot be recovered.",
+      confirmText: "Delete",
+      destructive: true,
+      onConfirm: () => {
+        confirmDialog({
+          title: "Are you sure?",
+          message: "This cannot be undone.",
+          confirmText: "Yes, Delete My Account",
+          destructive: true,
+          onConfirm: async () => {
+            try {
+              await apiRequest("DELETE", "/api/user/me", undefined);
+            } catch {}
+            await logout();
+            router.replace("/user/auth/login");
           },
-        },
-      ]
-    );
+        });
+      },
+    });
   };
 
   return (

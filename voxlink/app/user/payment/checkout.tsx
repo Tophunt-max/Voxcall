@@ -12,10 +12,10 @@ import {
   Dimensions,
   Platform,
   Linking,
-  Alert,
   Modal,
 } from "react-native";
 import { router, useFocusEffect } from "expo-router";
+import { alertDialog } from "@/utils/dialog";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { API } from "@/services/api";
@@ -266,7 +266,7 @@ function ManualPayModal({ visible, plan, totalCoins, promoCode, onClose, onSucce
   const { refreshBalance } = useAuth();
 
   const handleSubmit = useCallback(async () => {
-    if (!utr.trim()) { Alert.alert("Required", "Please enter the UTR / transaction reference number."); return; }
+    if (!utr.trim()) { alertDialog("Required", "Please enter the UTR / transaction reference number."); return; }
     if (!plan) return;
     setSubmitting(true);
     try {
@@ -282,7 +282,7 @@ function ManualPayModal({ visible, plan, totalCoins, promoCode, onClose, onSucce
       }
       setSubmitted(true);
     } catch (err: any) {
-      Alert.alert("Submission Failed", err?.message || "Could not submit payment. Please try again.");
+      alertDialog("Submission Failed", err?.message || "Could not submit payment. Please try again.");
     } finally {
       setSubmitting(false);
     }

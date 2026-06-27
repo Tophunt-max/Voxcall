@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   Image,
   Platform,
-  Alert,
   Switch,
   ActivityIndicator,
   RefreshControl,
@@ -15,6 +14,7 @@ import {
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { crossShare, appendFileToFormData } from "@/utils/fileUpload";
+import { confirmDialog, alertDialog } from "@/utils/dialog";
 import * as ClipboardModule from "expo-clipboard";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
@@ -176,17 +176,16 @@ export default function ProfileScreen() {
   }, [refreshBalance, loadCallCount]);
 
   const handleLogout = () => {
-    Alert.alert("Sign Out", "Are you sure you want to sign out?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Sign Out",
-        style: "destructive",
-        onPress: async () => {
-          await logout();
-          router.replace("/user/auth/login");
-        },
+    confirmDialog({
+      title: "Sign Out",
+      message: "Are you sure you want to sign out?",
+      confirmText: "Sign Out",
+      destructive: true,
+      onConfirm: async () => {
+        await logout();
+        router.replace("/user/auth/login");
       },
-    ]);
+    });
   };
 
   const copyId = async () => {
@@ -264,7 +263,7 @@ export default function ProfileScreen() {
         await updateProfile({ avatar: resolveMediaUrl(uploadData.url) || uploadData.url });
       }
     } catch {
-      Alert.alert("Upload Failed", "Could not upload avatar. Please try again.");
+      alertDialog("Upload Failed", "Could not upload avatar. Please try again.");
       setAvatarUri(null);
     } finally {
       setUploadingAvatar(false);
@@ -279,14 +278,12 @@ export default function ProfileScreen() {
         setShowNotifDialog(true);
       }
     } else {
-      Alert.alert(
-        "Turn Off Notifications",
-        "To disable notifications, go to your phone's Settings and turn off notifications for VoxLink.",
-        [
-          { text: "Cancel", style: "cancel" },
-          { text: "Open Settings", onPress: openSettings },
-        ]
-      );
+      confirmDialog({
+        title: "Turn Off Notifications",
+        message: "To disable notifications, go to your phone's Settings and turn off notifications for VoxLink.",
+        confirmText: "Open Settings",
+        onConfirm: openSettings,
+      });
     }
   };
 

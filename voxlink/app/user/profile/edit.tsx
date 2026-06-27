@@ -1,7 +1,8 @@
 import React, { useState } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform, Image, Alert } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform, Image } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { appendFileToFormData } from "@/utils/fileUpload";
+import { alertDialog } from "@/utils/dialog";
 import AppInput from "@/components/AppInput";
 import { showSuccessToast, showErrorToast } from "@/components/Toast";
 import { router } from "expo-router";
@@ -42,7 +43,7 @@ export default function EditProfileScreen() {
   const handleAvatarPress = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== "granted") {
-      Alert.alert("Permission Required", "Please allow access to your photo library to change your avatar.");
+      alertDialog("Permission Required", "Please allow access to your photo library to change your avatar.");
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -71,7 +72,7 @@ export default function EditProfileScreen() {
         await updateProfile({ avatar: resolveMediaUrl(uploadData.url) || uploadData.url });
       }
     } catch {
-      Alert.alert("Upload Failed", "Could not upload avatar. Please try again.");
+      alertDialog("Upload Failed", "Could not upload avatar. Please try again.");
       setAvatarUri(null);
     } finally {
       setUploadingAvatar(false);
