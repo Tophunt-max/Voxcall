@@ -549,6 +549,15 @@ const ENGAGEMENT_DEFAULT_SETTINGS: ReadonlyArray<{ key: string; value: string }>
       { m: 5.0, p: 0.05 },
     ]),
   },
+  // Engagement event logging (migration 0035, routes/engagement.ts). The
+  // feedback loop behind rail CTR / conversion + data-driven ranking.
+  // '0' makes POST /api/engagement/events a no-op and skips the rollup cron.
+  { key: 'engagement_events_enabled', value: '1' },
+  // Raw engagement_events older than this are pruned by the daily rollup so
+  // the table stays bounded on D1. Clamped 7..180 on read.
+  { key: 'engagement_events_retention_days', value: '30' },
+  // Slot-claim for the once-a-day rollup cron (UTC day number). 0 = never run.
+  { key: 'last_engagement_rollup_day', value: '0' },
 ];
 
 export function ensureEngagementSchema(db: D1Database): Promise<boolean> {
@@ -575,6 +584,42 @@ export function ensureEngagementSchema(db: D1Database): Promise<boolean> {
           .run();
       } catch (err) {
         console.warn('[schemaGuard] idx_notifications_user_type_time creation failed:', err);
+      }
+
+      // Engagement event logging tables (migration 0035). Created here too so a
+      // prod DB whose migration tracking missed 0035 still gets the tables and
+      // POST /api/engagement/events doesn't 500 on "no such table".
+      const engagementDDL = [
+        `CREATE TABLE IF NOT EXISTS engagement_events (
+          id TEXT PRIMARY KEY,
+          user_id TEXT,
+          event_type TEXT NOT NULL,
+          host_id TEXT,
+          surface TEXT,
+          score REAL,
+          meta TEXT,
+          created_at INTEGER NOT NULL DEFAULT (unixepoch())
+        )`,
+        'CREATE INDEX IF NOT EXISTS idx_engagement_events_host_type_time ON engagement_events(host_id, event_type, created_at)',
+        'CREATE INDEX IF NOT EXISTS idx_engagement_events_user_time ON engagement_events(user_id, created_at)',
+        'CREATE INDEX IF NOT EXISTS idx_engagement_events_type_time ON engagement_events(event_type, created_at)',
+        `CREATE TABLE IF NOT EXISTS host_engagement_stats (
+          host_id TEXT NOT NULL,
+          day TEXT NOT NULL,
+          impressions INTEGER NOT NULL DEFAULT 0,
+          clicks INTEGER NOT NULL DEFAULT 0,
+          conversions INTEGER NOT NULL DEFAULT 0,
+          updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+          PRIMARY KEY (host_id, day)
+        )`,
+        'CREATE INDEX IF NOT EXISTS idx_host_engagement_stats_day ON host_engagement_stats(day)',
+      ];
+      for (const ddl of engagementDDL) {
+        try {
+          await db.prepare(ddl).run();
+        } catch (err) {
+          console.warn('[schemaGuard] engagement DDL failed:', err);
+        }
       }
 
       return true;

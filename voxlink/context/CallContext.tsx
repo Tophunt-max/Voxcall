@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, useRef } from "react";
 import { router } from "expo-router";
 import { API } from "@/services/api";
+import { logEngagement } from "@/services/engagement";
 import { useAuth } from "@/context/AuthContext";
 
 export type CallType = "audio" | "video";
@@ -83,6 +84,14 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         maxSeconds: res.max_seconds,
       };
       updateCall(updated);
+      // Engagement conversion signal — a successfully initiated call is the
+      // strongest reward signal for the recommender/feed. Best-effort, fire and
+      // forget; only hosts (role === "host") count as feed conversions.
+      if (participant.role === "host") {
+        try {
+          logEngagement({ type: "call_start", host_id: participant.id, surface: type === "video" ? "call_video" : "call_audio" });
+        } catch { /* analytics best-effort */ }
+      }
       // Fix C1: Caller should NOT call answerCall — only the HOST answers
     } catch (e) {
       console.warn("initiateCall API error:", e);

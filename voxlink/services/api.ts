@@ -284,6 +284,13 @@ export const API = {
     apiRequest<{ personalized: boolean; hosts: any[] }>('GET', `/api/hosts/recommended?limit=${limit}`),
   getHost: (id: string) => apiRequest<any>('GET', `/api/hosts/${id}`),
   getHostReviews: (id: string) => apiRequest<any[]>('GET', `/api/hosts/${id}/reviews`),
+
+  // Engagement event ingest — batched impression/click/conversion logging that
+  // powers rail CTR / conversion metrics + data-driven ranking. Best-effort;
+  // see services/engagement.ts for the client-side batching queue.
+  logEngagementEvents: (events: unknown[]) =>
+    apiRequest<{ ok: boolean; stored: number }>('POST', '/api/engagement/events', { events }),
+
   becomeHost: (data: any) => apiRequest('POST', '/api/user/become-host', data),
   updateHostProfile: (data: any) => apiRequest('PATCH', '/api/host/me', data),
   setHostOnline: (online: boolean) => apiRequest('PATCH', '/api/host/status', { is_online: online }),

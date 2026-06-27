@@ -17,6 +17,7 @@ import matchRouter from './routes/match';
 import hostappRouter from './routes/hostapp';
 import errorsRouter from './routes/errors';
 import paymentRouter from './routes/payment';
+import engagementRouter from './routes/engagement';
 import { ChatRoom } from './durable-objects/ChatRoom';
 import { CallSignaling } from './durable-objects/CallSignaling';
 import { NotificationHub } from './durable-objects/NotificationHub';
@@ -177,6 +178,7 @@ app.route('/api/host-app', hostappRouter);
 app.route('/api/upload', uploadRouter);
 app.route('/api/errors', errorsRouter);
 app.route('/api/payment', paymentRouter);
+app.route('/api/engagement', engagementRouter);
 app.route('/api', publicRouter);
 
 // ─── WebSocket Auth Helper ─────────────────────────────────────────────────
@@ -570,6 +572,93 @@ async function maybeRunReengagement(env: Env): Promise<void> {
   }
 }
 
+// Engagement rollup — once per UTC day, aggregate the previous day's raw
+// engagement_events into the per-host host_engagement_stats table (cheap reads
+// for ranking + admin CTR/conversion dashboards), then prune raw events beyond
+// the retention window so the table stays bounded on D1. Gated via a
+// `last_engagement_rollup_day` (UTC day number) slot claimed BEFORE running so
+// overlapping cron ticks don't double-run. Entirely best-effort — a failure
+// here must never affect the billing-critical reaper jobs above.
+async function maybeRollupEngagement(env: Env): Promise<void> {
+  try {
+    const enabledRow = await env.DB
+      .prepare("SELECT value FROM app_settings WHERE key = 'engagement_events_enabled'")
+      .first<{ value: string }>()
+      .catch(() => null);
+    if (enabledRow?.value === '0') return;
+
+    const now = Math.floor(Date.now() / 1000);
+    const dayIndex = Math.floor(now / 86400); // UTC day number
+
+    const lastRow = await env.DB
+      .prepare("SELECT value FROM app_settings WHERE key = 'last_engagement_rollup_day'")
+      .first<{ value: string }>();
+    const last = lastRow?.value ? parseInt(lastRow.value, 10) || 0 : 0;
+    if (last === dayIndex) return; // already rolled up today
+
+    // Claim the slot first so a second cron tick in the same window is a no-op.
+    await env.DB.prepare(
+      "INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('last_engagement_rollup_day', ?, unixepoch())"
+    ).bind(String(dayIndex)).run();
+
+    // Roll up the PREVIOUS (fully-closed) UTC day.
+    const prevDayStart = (dayIndex - 1) * 86400;
+    const prevDayEnd = dayIndex * 86400;
+    const day = new Date(prevDayStart * 1000).toISOString().slice(0, 10); // YYYY-MM-DD
+
+    const agg = await env.DB.prepare(
+      `SELECT host_id,
+              SUM(CASE WHEN event_type IN ('reco_impression','host_impression') THEN 1 ELSE 0 END) AS impressions,
+              SUM(CASE WHEN event_type IN ('reco_click','host_click')           THEN 1 ELSE 0 END) AS clicks,
+              SUM(CASE WHEN event_type IN ('call_start','call_complete')         THEN 1 ELSE 0 END) AS conversions
+         FROM engagement_events
+        WHERE host_id IS NOT NULL AND created_at >= ? AND created_at < ?
+        GROUP BY host_id
+        LIMIT 5000`
+    ).bind(prevDayStart, prevDayEnd).all<{ host_id: string; impressions: number; clicks: number; conversions: number }>();
+
+    const rows = agg.results ?? [];
+    // Upsert in D1 batches (limit is 100; use 90 for headroom).
+    for (let i = 0; i < rows.length; i += 90) {
+      const chunk = rows.slice(i, i + 90);
+      try {
+        await env.DB.batch(
+          chunk.map((r) =>
+            env.DB.prepare(
+              `INSERT INTO host_engagement_stats (host_id, day, impressions, clicks, conversions, updated_at)
+               VALUES (?, ?, ?, ?, ?, unixepoch())
+               ON CONFLICT(host_id, day) DO UPDATE SET
+                 impressions = excluded.impressions,
+                 clicks       = excluded.clicks,
+                 conversions  = excluded.conversions,
+                 updated_at   = unixepoch()`
+            ).bind(r.host_id, day, Number(r.impressions) || 0, Number(r.clicks) || 0, Number(r.conversions) || 0)
+          ),
+        );
+      } catch (err) {
+        console.warn('[Cron] Engagement rollup upsert batch failed (non-fatal):', err);
+      }
+    }
+
+    // Prune raw events beyond the retention window (clamped 7..180 days).
+    const retRow = await env.DB
+      .prepare("SELECT value FROM app_settings WHERE key = 'engagement_events_retention_days'")
+      .first<{ value: string }>()
+      .catch(() => null);
+    const retDays = Math.min(180, Math.max(7, parseInt(retRow?.value ?? '30', 10) || 30));
+    const cutoff = now - retDays * 86400;
+    try {
+      await env.DB.prepare('DELETE FROM engagement_events WHERE created_at < ?').bind(cutoff).run();
+    } catch (err) {
+      console.warn('[Cron] Engagement prune failed (non-fatal):', err);
+    }
+
+    console.log(`[Cron] Engagement rollup: day ${day}, ${rows.length} host(s), retention ${retDays}d`);
+  } catch (e) {
+    console.error('[Cron] Engagement rollup error:', e);
+  }
+}
+
 // Daily streak reminder — nudges users with an ACTIVE streak who haven't
 // claimed yet today to come back and claim before the IST midnight reset.
 // Gated three ways so it fires at most once per IST day:
@@ -664,5 +753,6 @@ export default {
     ctx.waitUntil(maybeRefreshFxRates(env));
     ctx.waitUntil(maybeRunReengagement(env));
     ctx.waitUntil(maybeSendStreakReminders(env));
+    ctx.waitUntil(maybeRollupEngagement(env));
   },
 };
