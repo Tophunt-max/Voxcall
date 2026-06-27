@@ -5,6 +5,18 @@ import type { Env, JWTPayload } from '../types';
 
 const coin = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
 
+// Currencies conventionally shown WITHOUT decimals (whole units). Plan prices
+// for these read naturally as integers (₹99, ¥499) — showing "99.00" or a
+// stray FP tail like 98.9999 looks broken. Everything else → 2 decimals.
+const ZERO_DECIMAL_CURRENCIES = new Set(['INR', 'JPY', 'KRW', 'VND', 'IDR', 'HUF', 'CLP', 'PKR', 'LKR', 'NPR', 'BDT']);
+
+function roundForCurrency(amount: number, currency: string): number {
+  if (!Number.isFinite(amount)) return 0;
+  return ZERO_DECIMAL_CURRENCIES.has((currency || '').toUpperCase())
+    ? Math.round(amount)
+    : Math.round(amount * 100) / 100;
+}
+
 // GET /api/coins/plans — public, but the response is localized to the
 // caller's currency when we can detect it. Resolution priority:
 //   1. ?currency= query (explicit override — admin tools, testing)
@@ -69,11 +81,11 @@ coin.get('/plans', async (c) => {
     // converted INR-priced plans (₹99 → ₹8217) for Indian users.
     const planCurrency = (p.currency || 'INR').toUpperCase();
     const planPrice = Number(p.price ?? 0);
-    const priceLocal = convertCurrency(planPrice, planCurrency, currency, fxOverrides);
+    const priceLocal = roundForCurrency(convertCurrency(planPrice, planCurrency, currency, fxOverrides), currency);
     return {
       ...p,
       // Original authored amount + its currency, preserved for admin/analytics.
-      price_usd: convertCurrency(planPrice, planCurrency, 'USD', fxOverrides),
+      price_usd: Math.round(convertCurrency(planPrice, planCurrency, 'USD', fxOverrides) * 100) / 100,
       price_base: planPrice,
       base_currency: planCurrency,
       // What the client should actually show.
@@ -304,11 +316,17 @@ coin.post('/withdraw', async (c) => {
   const coinsReq = Math.floor(Number(coins_requested));
 
   const settings = await db.prepare("SELECT value FROM app_settings WHERE key = 'min_withdrawal_coins'").first<any>();
-  const minCoins = parseInt(settings?.value ?? '100');
+  const minCoins = parseInt(settings?.value ?? '1000');
   if (coinsReq < minCoins) return c.json({ error: `Minimum withdrawal is ${minCoins} coins` }, 400);
 
   const rateRow = await db.prepare("SELECT value FROM app_settings WHERE key = 'coin_to_usd_rate'").first<any>();
-  const rate = parseFloat(rateRow?.value ?? '0.01');
+  let rate = parseFloat(rateRow?.value ?? '');
+  if (!Number.isFinite(rate) || rate <= 0) {
+    // SAFETY: never fall back to the legacy '0.01' (≈ ₹0.83/coin at ₹83/USD)
+    // — that is ~16× the production payout rate and would massively overpay.
+    // Default to ₹0.05/coin ÷ 83 ≈ 0.0006 USD/coin, the production economy.
+    rate = 0.0006;
+  }
   const usdAmount = coinsReq * rate;
   const withdrawId = crypto.randomUUID();
 

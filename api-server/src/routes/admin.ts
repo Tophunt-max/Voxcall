@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { authMiddleware, adminMiddleware } from '../middleware/auth';
 import { sendFCMPush, getFCMTokens } from '../lib/fcm';
-import { getLevelConfig, normalizeLevelConfig, getDefaultCallRates, MIN_LEVELS, MAX_LEVELS } from '../lib/levels';
+import { getLevelConfig, normalizeLevelConfig, getDefaultCallRates, getEarningShare, MIN_LEVELS, MAX_LEVELS } from '../lib/levels';
 import { recalcAllHostLevels } from '../lib/levelService';
 import { approveDeposit, validatePromoInput } from './payment';
 import { ensureAllMigrations, listMigrationStatus } from '../lib/autoMigrate';
@@ -1345,7 +1345,7 @@ admin.post('/calls/:id/force-end', async (c) => {
   // Pull host_user_id alongside the session so we can credit the host atomically
   // and notify both parties without a second query round-trip.
   const session = await dbA.prepare(
-    `SELECT cs.*, h.user_id as host_user_id
+    `SELECT cs.*, h.user_id as host_user_id, h.level as host_level
      FROM call_sessions cs
      LEFT JOIN hosts h ON h.id = cs.host_id
      WHERE cs.id = ?`
@@ -1397,7 +1397,12 @@ admin.post('/calls/:id/force-end', async (c) => {
   const coinsCharged = (session.status === 'active' && durationSec > 0)
     ? durationMin * effectiveRate
     : 0;
-  const hostShare = Math.floor(coinsCharged * 0.7);
+  // Use the host's LEVEL-BASED earning share (same as POST /api/calls/end),
+  // not a hardcoded 0.7 — otherwise force-ending a high-level host's call
+  // under-pays them (their configured share can be up to ~0.80).
+  const levelCfg = await getLevelConfig(dbA);
+  const earningShare = getEarningShare(session.host_level ?? 1, levelCfg);
+  const hostShare = Math.floor(coinsCharged * earningShare);
 
   let actualCoinsCharged = 0;
   let actualHostShare = 0;
