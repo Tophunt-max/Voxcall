@@ -99,9 +99,10 @@ export async function apiRequest<T>(
 }
 
 export const API = {
-  // Auth
-  login: (email: string, password: string) =>
-    apiRequest<{ token: string; user: any }>('POST', '/api/auth/login', { email, password }, false),
+  // Auth — user app supports ONLY Quick login (device-based guest) and Google
+  // sign-in. Email/password + OTP/reset flows were never given UI and are
+  // handled by the host/admin apps, so their client methods are intentionally
+  // not exposed here.
 
   // FIX #1: Mid-call heartbeat — server-side balance cap enforcement.
   // Client calls this every 20–30s during an active call. Server force-ends
@@ -117,20 +118,10 @@ export const API = {
       coins_charged?: number;
       duration_seconds?: number;
     }>('POST', `/api/calls/${session_id}/heartbeat`, {}),
-  register: (name: string, email: string, password: string, gender?: string, phone?: string, referral_code?: string) =>
-    apiRequest<{ token: string; user: any }>('POST', '/api/auth/register', { name, email, password, gender, phone, referral_code }, false),
-  guestLogin: (device_id?: string | null) =>
-    apiRequest<{ token: string; user: any; is_returning?: boolean }>('POST', '/api/auth/guest-login', { device_id: device_id ?? null }, false),
   quickLogin: (device_id?: string | null) =>
     apiRequest<{ token: string; user: any; is_returning?: boolean }>('POST', '/api/auth/quick-login', { device_id: device_id ?? null }, false),
   googleLogin: (email: string, name: string, google_id: string, avatar_url?: string | null, device_id?: string | null, id_token?: string | null) =>
     apiRequest<{ token: string; user: any }>('POST', '/api/auth/google-login', { email, name, google_id, avatar_url, device_id: device_id ?? null, id_token: id_token ?? undefined }, false),
-  forgotPassword: (email: string) =>
-    apiRequest<{ success: boolean }>('POST', '/api/auth/forgot-password', { email }, false),
-  verifyOtp: (email: string, otp: string) =>
-    apiRequest<{ success: boolean; bonus_coins?: number }>('POST', '/api/auth/verify-otp', { email, otp }, false),
-  resetPassword: (email: string, otp: string, new_password: string) =>
-    apiRequest<{ success: boolean }>('POST', '/api/auth/reset-password', { email, otp, new_password }, false),
 
   // Host KYC Application
   getHostAppStatus: () => apiRequest<any>('GET', '/api/host-app/status'),
