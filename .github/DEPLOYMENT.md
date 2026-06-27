@@ -6,7 +6,7 @@
 |---|---|---|
 | Backend API | Cloudflare Workers | `voxlink-api.ssunilkumarmohanta3.workers.dev` |
 | Admin Panel | Cloudflare Pages | `voxlink-admin.pages.dev` |
-| Mobile Web | Cloudflare Pages | `voxlink-mobile.pages.dev` |
+| Mobile Web | Cloudflare Pages | `voxcall.pages.dev` |
 
 ---
 
@@ -48,10 +48,10 @@ These are non-sensitive config values — safe to view.
 - Builds with `VITE_API_URL` from GitHub Variables
 - Deploys static output to Cloudflare Pages
 
-### `deploy-mobile.yml` — Cloudflare Pages (`voxlink-mobile`)
-- Trigger: push to `main` touching `artifacts/voxlink/**` or `lib/**`
+### `deploy-mobile.yml` — Cloudflare Pages (`voxcall`)
+- Trigger: push to `main` touching `voxlink/**` or `lib/**`
 - Exports Expo web build with `EXPO_PUBLIC_API_URL` from GitHub Variables
-- Deploys static output to Cloudflare Pages
+- Deploys static output to Cloudflare Pages project `voxcall` (`voxcall.pages.dev`)
 
 ---
 
