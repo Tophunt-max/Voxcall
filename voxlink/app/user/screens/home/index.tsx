@@ -10,6 +10,7 @@ import {
   Image,
   Dimensions,
   Animated,
+  Platform,
 } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -140,7 +141,12 @@ function BannerSlider({ slides }: { slides: SlideItem[] }) {
         ref={flatRef}
         data={slides}
         horizontal
-        pagingEnabled
+        // On web (pages.dev) `pagingEnabled` makes each full-width slide a
+        // mandatory scroll-snap surface, so the browser swallows taps as the
+        // start of a swipe and the slide's onPress never fires. Disable it on
+        // web — auto-advance + the dots still drive the carousel. Native keeps
+        // smooth paging swipe.
+        pagingEnabled={Platform.OS !== "web"}
         showsHorizontalScrollIndicator={false}
         keyExtractor={(item, i) => item.type === "find_more" ? "find_more" : (item as any).id || String(i)}
         renderItem={renderSlide}
@@ -443,7 +449,13 @@ export default function HomeScreen() {
 
         {/* First-call-free trial — admin-configured free minutes for new users */}
         {freeMinutes > 0 && (
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: "#F4E8FD", borderRadius: 16, padding: 14, marginBottom: 8 }}>
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={() => router.push("/user/screens/home/search")}
+            accessibilityRole="button"
+            accessibilityLabel={`${freeMinutes} free call minutes available. Tap to pick a host and start a call.`}
+            style={{ flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: "#F4E8FD", borderRadius: 16, padding: 14, marginBottom: 8 }}
+          >
             <Text style={{ fontSize: 28 }}>🎁</Text>
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 14, fontFamily: "Poppins_700Bold", color: "#6A00B8" }}>
@@ -453,7 +465,7 @@ export default function HomeScreen() {
                 Your first {freeMinutes} minute{freeMinutes === 1 ? "" : "s"} are on us — start a call with any host.
               </Text>
             </View>
-          </View>
+          </TouchableOpacity>
         )}
 
         {/* Recommended for you — personalized rail (see services/api.getRecommendedHosts) */}
