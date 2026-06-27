@@ -2060,4 +2060,71 @@ admin.get('/streak-analytics', async (c) => {
   });
 });
 
+// ─── Coin Reconciliation (money integrity dashboard) ────────────────────────
+// Read-only. Surfaces the coin economy's health so an operator can spot money
+// bugs early:
+//   • circulation  — total coins held across all live users
+//   • ledger_net   — net of all coin_transactions (should track circulation
+//                    closely now that every grant/charge writes a ledger row)
+//   • ledger_by_type — breakdown (purchase / spend / bonus / refund / …)
+//   • top_drifters — users whose balance diverges most from their own ledger
+//                    sum. Pre-fix accounts (welcome bonuses that predate the
+//                    ledger fix) show expected drift, so this is an anomaly
+//                    radar, not a hard invariant.
+// Legacy-tolerant: any sub-query that hits a missing column defaults to zero
+// so the endpoint never errors on an un-migrated DB.
+admin.get('/coin-reconciliation', async (c) => {
+  const database = db(c);
+  const safe = async <T>(fn: () => Promise<T | null>, dflt: T): Promise<T> => {
+    try { return (await fn()) ?? dflt; } catch { return dflt; }
+  };
+
+  const circ = await safe(
+    () =>
+      database
+        .prepare("SELECT COUNT(*) AS users, COALESCE(SUM(coins), 0) AS total_coins FROM users WHERE COALESCE(status, 'active') != 'deleted'")
+        .first<{ users: number; total_coins: number }>(),
+    { users: 0, total_coins: 0 },
+  );
+
+  const net = await safe(
+    () => database.prepare('SELECT COALESCE(SUM(amount), 0) AS net FROM coin_transactions').first<{ net: number }>(),
+    { net: 0 },
+  );
+
+  const byType = await safe(
+    async () =>
+      (await database
+        .prepare('SELECT type, COUNT(*) AS count, COALESCE(SUM(amount), 0) AS total FROM coin_transactions GROUP BY type ORDER BY ABS(SUM(amount)) DESC')
+        .all<{ type: string; count: number; total: number }>()).results,
+    [] as Array<{ type: string; count: number; total: number }>,
+  );
+
+  const drifters = await safe(
+    async () =>
+      (await database
+        .prepare(
+          `SELECT u.id, u.name, u.coins AS balance, COALESCE(t.sum, 0) AS ledger_sum,
+                  (u.coins - COALESCE(t.sum, 0)) AS drift
+           FROM users u
+           LEFT JOIN (SELECT user_id, SUM(amount) AS sum FROM coin_transactions GROUP BY user_id) t
+             ON t.user_id = u.id
+           WHERE COALESCE(u.status, 'active') != 'deleted'
+           ORDER BY ABS(u.coins - COALESCE(t.sum, 0)) DESC
+           LIMIT 20`,
+        )
+        .all<{ id: string; name: string; balance: number; ledger_sum: number; drift: number }>()).results,
+    [] as Array<{ id: string; name: string; balance: number; ledger_sum: number; drift: number }>,
+  );
+
+  return c.json({
+    circulation: { users: circ.users ?? 0, total_coins: circ.total_coins ?? 0 },
+    ledger_net: net.net ?? 0,
+    aggregate_drift: (circ.total_coins ?? 0) - (net.net ?? 0),
+    ledger_by_type: byType ?? [],
+    top_drifters: drifters ?? [],
+    note: 'Drift is expected for accounts whose welcome/legacy bonuses predate the ledger fix. Large unexplained drift on recent activity is the signal to investigate.',
+  });
+});
+
 export default admin;
