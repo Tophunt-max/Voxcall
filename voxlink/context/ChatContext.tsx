@@ -190,15 +190,19 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const loadMessages = useCallback(async (conversationId: string, roomId: string) => {
     try {
       const msgs = await API.getMessages(roomId);
-      const mapped: Message[] = (msgs ?? []).map((m: any) => ({
-        id: m.id,
-        senderId: m.sender_id,
-        receiverId: "",
-        content: m.content ?? "",
-        type: (m.media_type as MessageType) ?? "text",
-        timestamp: (m.created_at ?? 0) * 1000,
-        isRead: true,
-      }));
+      const mapped: Message[] = (msgs ?? []).map((m: any) => {
+        const mtype = (m.media_type as MessageType) ?? "text";
+        return {
+          id: m.id,
+          senderId: m.sender_id,
+          receiverId: "",
+          // For media messages the bubble renders `content` as the URL.
+          content: mtype === "text" ? (m.content ?? "") : (m.media_url ?? m.content ?? ""),
+          type: mtype,
+          timestamp: (m.created_at ?? 0) * 1000,
+          isRead: true,
+        };
+      });
       setConversations((prev) => {
         const exists = prev.some((c) => c.id === conversationId || c.roomId === conversationId);
         if (exists) {
@@ -230,6 +234,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const sendMessage = useCallback(async (conversationId: string, content: string, type: MessageType = "text") => {
     const convo = conversations.find((c) => c.id === conversationId);
     const roomId = convo?.roomId ?? conversationId;
+    const isMedia = type === "image" || type === "audio";
+    const preview = isMedia ? (type === "image" ? "📷 Photo" : "🎤 Voice") : content;
 
     const tempId = "tmp_" + Date.now();
     const tempMsg: Message = {
@@ -246,13 +252,19 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     setConversations((prev) =>
       prev.map((c) =>
         c.id === conversationId
-          ? { ...c, messages: [...c.messages, tempMsg], lastMessage: content, lastMessageTime: Date.now() }
+          ? { ...c, messages: [...c.messages, tempMsg], lastMessage: preview, lastMessageTime: Date.now() }
           : c
       )
     );
 
     try {
-      const sent = await API.sendMessage(roomId, content);
+      // For media, `content` holds the URL → send it as media_url with the type.
+      const sent = await API.sendMessage(
+        roomId,
+        isMedia ? "" : content,
+        isMedia ? content : undefined,
+        isMedia ? type : undefined,
+      );
       setConversations((prev) =>
         prev.map((c) => {
           if (c.id !== conversationId) return c;
@@ -305,7 +317,13 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
     setStatus("sending");
     try {
-      const sent = await API.sendMessage(roomId, msg.content);
+      const isMedia = msg.type === "image" || msg.type === "audio";
+      const sent = await API.sendMessage(
+        roomId,
+        isMedia ? "" : msg.content,
+        isMedia ? msg.content : undefined,
+        isMedia ? msg.type : undefined,
+      );
       setStatus("sent", { id: sent.id ?? msg.id, senderId: sent.sender_id ?? "me" });
     } catch (e) {
       console.warn("retryMessage API error:", e);

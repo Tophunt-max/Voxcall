@@ -6,6 +6,9 @@ import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { useChat, Message } from "@/context/ChatContext";
 import { API, resolveMediaUrl } from "@/services/api";
+import { appendFileToFormData } from "@/utils/fileUpload";
+import { alertDialog } from "@/utils/dialog";
+import * as ImagePicker from "expo-image-picker";
 import { showErrorToast } from "@/components/Toast";
 import * as Haptics from "expo-haptics";
 
@@ -22,6 +25,7 @@ export default function ChatScreen() {
   const { user } = useAuth();
   const { conversations, sendMessage, retryMessage, markRead, loadMessages, sendTyping } = useChat();
   const [text, setText] = useState("");
+  const [sendingPhoto, setSendingPhoto] = useState(false);
   const [loading, setLoading] = useState(false);
   const [participantName, setParticipantName] = useState("Chat");
   const [participantAvatar, setParticipantAvatar] = useState(`https://api.dicebear.com/7.x/avataaars/png?seed=${id}`);
@@ -115,6 +119,37 @@ export default function ChatScreen() {
     setTimeout(() => listRef.current?.scrollToOffset({ offset: 0, animated: true }), 100);
   };
 
+  const handleAttachPhoto = async () => {
+    if (!id || sendingPhoto) return;
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (perm.status !== "granted") {
+        alertDialog("Permission Required", "Please allow photo library access to send a photo.");
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        quality: 0.7,
+      });
+      if (result.canceled || !result.assets?.[0]) return;
+      const asset = result.assets[0];
+      setSendingPhoto(true);
+      const fd = new FormData();
+      const rawExt = (asset.uri.split(".").pop() || "jpg").toLowerCase();
+      const mime = rawExt === "jpg" ? "jpeg" : rawExt;
+      await appendFileToFormData(fd, "file", asset.uri, `chat.${rawExt}`, `image/${mime}`);
+      const res = await API.uploadFile(fd);
+      const url = res?.url ? (resolveMediaUrl(res.url) || res.url) : null;
+      if (!url) { showErrorToast("Upload failed. Please try again."); return; }
+      await sendMessage(convo?.id ?? id, url, "image");
+      setTimeout(() => listRef.current?.scrollToOffset({ offset: 0, animated: true }), 100);
+    } catch {
+      showErrorToast("Couldn't send photo. Please try again.");
+    } finally {
+      setSendingPhoto(false);
+    }
+  };
+
   const renderMessage = ({ item }: { item: Message }) => {
     const isMe = item.senderId === "me" || item.senderId === user?.id;
     return (
@@ -124,7 +159,16 @@ export default function ChatScreen() {
           styles.bubble,
           isMe ? { backgroundColor: colors.primary } : { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }
         ]}>
-          <Text style={[styles.bubbleText, { color: isMe ? "#fff" : colors.foreground }]}>{item.content}</Text>
+          {item.type === "image" ? (
+            <Image
+              source={{ uri: item.content }}
+              style={styles.bubbleImage}
+              resizeMode="cover"
+              accessibilityLabel="Photo message"
+            />
+          ) : (
+            <Text style={[styles.bubbleText, { color: isMe ? "#fff" : colors.foreground }]}>{item.content}</Text>
+          )}
           <View style={styles.bubbleMetaRow}>
             <Text style={[styles.bubbleTime, { color: isMe ? "rgba(255,255,255,0.6)" : colors.mutedForeground }]}>
               {formatTime(item.timestamp)}
@@ -194,8 +238,12 @@ export default function ChatScreen() {
         )}
 
         <View style={[styles.inputBar, { borderTopColor: colors.border, backgroundColor: colors.background, paddingBottom: insets.bottom + 8 }]}>
-          <TouchableOpacity style={[styles.iconBtn, { backgroundColor: colors.muted }]} accessibilityRole="button" accessibilityLabel="Attach photo">
-            <Image source={require("@/assets/icons/ic_photo.png")} style={{ width: 18, height: 18, tintColor: colors.mutedForeground }} resizeMode="contain" />
+          <TouchableOpacity onPress={handleAttachPhoto} disabled={sendingPhoto} style={[styles.iconBtn, { backgroundColor: colors.muted }]} accessibilityRole="button" accessibilityLabel="Attach photo">
+            {sendingPhoto ? (
+              <ActivityIndicator size="small" color={colors.mutedForeground} />
+            ) : (
+              <Image source={require("@/assets/icons/ic_photo.png")} style={{ width: 18, height: 18, tintColor: colors.mutedForeground }} resizeMode="contain" />
+            )}
           </TouchableOpacity>
           <View style={[styles.inputWrap, { backgroundColor: colors.muted }]}>
             <TextInput
@@ -242,6 +290,7 @@ const styles = StyleSheet.create({
   msgAvatar: { width: 28, height: 28, borderRadius: 14 },
   bubble: { maxWidth: "72%", padding: 12, borderRadius: 18, gap: 4 },
   bubbleText: { fontSize: 14, fontFamily: "Poppins_400Regular", lineHeight: 20 },
+  bubbleImage: { width: 200, height: 200, borderRadius: 12, marginBottom: 2 },
   bubbleMetaRow: { flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 6 },
   bubbleTime: { fontSize: 10, fontFamily: "Poppins_400Regular", alignSelf: "flex-end" },
   bubbleStatus: { fontSize: 10, fontFamily: "Poppins_500Medium" },
