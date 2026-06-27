@@ -59,6 +59,34 @@ export function ensureUsersSchema(db: D1Database): Promise<boolean> {
         console.warn('[schemaGuard] idx_users_country creation failed:', err);
       }
 
+      // DB-LEVEL SAFETY NET: never let a coin balance go negative.
+      //
+      // SQLite can't add a `CHECK (coins >= 0)` to an existing table without a
+      // full table rebuild — far too risky on the heavily-FK'd production
+      // `users` table. A trigger gives the same guarantee with zero rebuild:
+      // if any (buggy / unguarded) write would drive coins below 0, clamp it
+      // back to 0 immediately. Legit debit paths already guard with
+      // `WHERE coins >= ?`, so this only ever fires on an unforeseen bug — and
+      // the admin coin-reconciliation report will surface the resulting drift.
+      //
+      // Executed as ONE prepared statement (NOT via the migration runner,
+      // which splits on ';' and would mangle the trigger body). The inner
+      // UPDATE sets coins = 0, for which `WHEN NEW.coins < 0` is false, so the
+      // trigger never recurses.
+      try {
+        await db.prepare(
+          `CREATE TRIGGER IF NOT EXISTS users_coins_non_negative
+             AFTER UPDATE OF coins ON users
+             FOR EACH ROW WHEN NEW.coins < 0
+             BEGIN
+               UPDATE users SET coins = 0 WHERE id = NEW.id;
+             END`,
+        ).run();
+      } catch (err) {
+        // Non-fatal: code-level debit guards still protect balances.
+        console.warn('[schemaGuard] users_coins_non_negative trigger creation failed:', err);
+      }
+
       return true;
     } catch (err) {
       console.error('[schemaGuard] ensureUsersSchema failed:', err);
