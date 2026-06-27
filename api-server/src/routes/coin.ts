@@ -64,14 +64,18 @@ coin.get('/plans', async (c) => {
   // FIX #12: prefer cron-refreshed live FX rates (cached in app_settings) over
   // the static fallback table. A missing/old cache simply falls through to the
   // static rates inside convertFromUSD.
+  //
+  // Load the overrides ALWAYS (even for INR viewers): price_local for an INR
+  // viewer needs no conversion, but `price_usd` is still computed for every
+  // response — loading live rates here keeps it consistent instead of using
+  // the stale static table (₹49 → $0.59 static vs $0.52 live) only on the
+  // INR path.
   let fxOverrides: Record<string, number> | null = null;
-  if (currency !== 'INR') {
-    try {
-      const fxRow = await c.env.DB.prepare("SELECT value FROM app_settings WHERE key = 'fx_rates_usd'").first<{ value: string }>();
-      if (fxRow?.value) fxOverrides = JSON.parse(fxRow.value);
-    } catch (e) {
-      console.warn('[coins/plans] Failed to load FX overrides, using static rates:', e);
-    }
+  try {
+    const fxRow = await c.env.DB.prepare("SELECT value FROM app_settings WHERE key = 'fx_rates_usd'").first<{ value: string }>();
+    if (fxRow?.value) fxOverrides = JSON.parse(fxRow.value);
+  } catch (e) {
+    console.warn('[coins/plans] Failed to load FX overrides, using static rates:', e);
   }
 
   const localized = (plans.results as any[]).map((p) => {
