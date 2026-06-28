@@ -10,6 +10,8 @@ interface Props {
   cancelText?: string;
   /** Style the confirm button red (e.g. logout, delete). */
   destructive?: boolean;
+  /** Hide the cancel button (info/alert mode — single OK button). */
+  singleButton?: boolean;
   /** Optional emoji shown above the title. */
   emoji?: string;
   loading?: boolean;
@@ -28,6 +30,7 @@ export function ConfirmModal({
   confirmText = "Confirm",
   cancelText = "Cancel",
   destructive = false,
+  singleButton = false,
   emoji,
   loading = false,
   onConfirm,
@@ -42,15 +45,17 @@ export function ConfirmModal({
           <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
           {message ? <Text style={[styles.message, { color: colors.mutedForeground }]}>{message}</Text> : null}
           <View style={styles.btnRow}>
-            <TouchableOpacity
-              style={[styles.btn, { backgroundColor: colors.muted }]}
-              onPress={onCancel}
-              activeOpacity={0.8}
-              disabled={loading}
-              accessibilityRole="button"
-            >
-              <Text style={[styles.btnText, { color: colors.text }]}>{cancelText}</Text>
-            </TouchableOpacity>
+            {!singleButton && (
+              <TouchableOpacity
+                style={[styles.btn, { backgroundColor: colors.muted }]}
+                onPress={onCancel}
+                activeOpacity={0.8}
+                disabled={loading}
+                accessibilityRole="button"
+              >
+                <Text style={[styles.btnText, { color: colors.text }]}>{cancelText}</Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity
               style={[styles.btn, { backgroundColor: destructive ? "#E24C4B" : colors.primary, opacity: loading ? 0.6 : 1 }]}
               onPress={onConfirm}

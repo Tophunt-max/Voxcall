@@ -18,6 +18,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ToastContainer } from "@/components/Toast";
+import { DialogHost } from "@/components/DialogHost";
 import { OfflineBanner } from "@/components/OfflineBanner";
 import MaintenanceGate from "@/components/MaintenanceGate";
 import DailyRewardModal from "@/components/DailyRewardModal";
@@ -309,6 +310,7 @@ function RootLayoutNav() {
       </Stack>
       <ToastContainer />
       <OfflineBanner />
+      <DialogHost />
       {/* Admin maintenance gate — renders LAST so it overlays everything when
           maintenance_mode is ON in the admin panel. */}
       <MaintenanceGate />
