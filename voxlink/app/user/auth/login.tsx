@@ -62,6 +62,14 @@ export default function LoginScreen() {
       if (Platform.OS === "web") {
         const { GoogleAuthProvider, signInWithPopup } = await import("firebase/auth");
         const { auth } = await import("@/services/firebase");
+        // auth is null when EXPO_PUBLIC_FIREBASE_* env vars weren't set at build
+        // time (Firebase not configured) — fail with a clear message instead of
+        // a cryptic "Cannot read properties of null".
+        if (!auth) {
+          showErrorToast("Google sign-in isn't set up on this site yet. Please use Quick Login for now.", "Sign-In Unavailable");
+          setGoogleLoading(false);
+          return;
+        }
         const provider = new GoogleAuthProvider();
         const result = await signInWithPopup(auth, provider);
         const u = result.user;
@@ -104,9 +112,24 @@ export default function LoginScreen() {
       }
       if (isNetworkError(err)) {
         showErrorToast("No internet connection. Please check your network.", "Connection Error");
-      } else {
-        showErrorToast(err?.message || "Google sign-in failed", "Sign In Failed");
+        return;
       }
+      // Firebase web auth error codes — give actionable messages.
+      const code = String(err?.code || "");
+      if (code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request") return; // user dismissed
+      if (code === "auth/popup-blocked") {
+        showErrorToast("Your browser blocked the sign-in popup. Allow popups for this site and try again.", "Popup Blocked");
+        return;
+      }
+      if (code === "auth/unauthorized-domain") {
+        showErrorToast("This domain isn't authorized for Google sign-in yet. Use Quick Login, or ask support to add it in Firebase.", "Sign-In Unavailable");
+        return;
+      }
+      if (code === "auth/invalid-api-key" || code === "auth/api-key-not-valid" || code.includes("api-key")) {
+        showErrorToast("Google sign-in isn't configured on this site yet. Please use Quick Login.", "Sign-In Unavailable");
+        return;
+      }
+      showErrorToast(err?.message || "Google sign-in failed", "Sign In Failed");
     }
   };
 
