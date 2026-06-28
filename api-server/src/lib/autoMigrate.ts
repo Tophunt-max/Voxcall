@@ -81,6 +81,10 @@ import m_0032 from '../../migrations/0032_coin_plans_inr_native.sql';
 import m_0033 from '../../migrations/0033_perf_indexes_followup.sql';
 import m_0034 from '../../migrations/0034_daily_streak_v2.sql';
 import m_0035 from '../../migrations/0035_engagement_events.sql';
+import m_0036 from '../../migrations/0036_user_blocks.sql';
+import m_0037 from '../../migrations/0037_notification_preferences.sql';
+import m_0038 from '../../migrations/0038_tips_and_gifts.sql';
+import m_0039 from '../../migrations/0039_host_gallery.sql';
 
 interface Migration {
   /**
@@ -128,6 +132,10 @@ const MIGRATIONS: ReadonlyArray<Migration> = [
   { name: '0033_perf_indexes_followup.sql',         sql: m_0033 },
   { name: '0034_daily_streak_v2.sql',               sql: m_0034 },
   { name: '0035_engagement_events.sql',             sql: m_0035 },
+  { name: '0036_user_blocks.sql',                   sql: m_0036 },
+  { name: '0037_notification_preferences.sql',      sql: m_0037 },
+  { name: '0038_tips_and_gifts.sql',                sql: m_0038 },
+  { name: '0039_host_gallery.sql',                  sql: m_0039 },
 ];
 
 /**
