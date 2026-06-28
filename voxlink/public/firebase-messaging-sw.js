@@ -11,12 +11,12 @@ importScripts('https://www.gstatic.com/firebasejs/11.0.0/firebase-messaging-comp
 // These placeholders are replaced at build time by the CI/CD pipeline.
 // If you see "REPLACE_AT_BUILD_TIME" in production, the build step is misconfigured.
 firebase.initializeApp({
-  apiKey: "__FIREBASE_API_KEY__",
-  authDomain: "__FIREBASE_AUTH_DOMAIN__",
-  projectId: "__FIREBASE_PROJECT_ID__",
-  storageBucket: "__FIREBASE_STORAGE_BUCKET__",
-  messagingSenderId: "__FIREBASE_MESSAGING_SENDER_ID__",
-  appId: "__FIREBASE_APP_ID__",
+  apiKey: "AIzaSyD46BXKhAh8Gh8Zu7XvM1J-wSLs8g4lLRc",
+  authDomain: "connectme-80909.firebaseapp.com",
+  projectId: "connectme-80909",
+  storageBucket: "connectme-80909.firebasestorage.app",
+  messagingSenderId: "128169786412",
+  appId: "1:128169786412:web:11cf3612a7f4520f98e589",
 });
 
 const messaging = firebase.messaging();
