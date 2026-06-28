@@ -70,6 +70,7 @@ async function validateFileType(file: File, allowed: Set<string>): Promise<strin
 // Note: public file serving (R2) is handled by /api/files/:key in public.ts
 upload.use('/avatar', authMiddleware);
 upload.use('/media', authMiddleware);
+upload.use('/admin-qr', authMiddleware);
 
 // POST /api/upload/avatar — upload profile image to R2
 upload.post('/avatar', async (c) => {
@@ -141,6 +142,41 @@ upload.post('/media', async (c) => {
   const url = `/api/files/${key}`;
   const kind = file.type.startsWith('image/') ? 'image' : file.type.startsWith('audio/') ? 'audio' : 'video';
   return c.json({ url, key, type: kind });
+});
+
+// POST /api/upload/admin-qr — upload QR code image (admin only, stored in R2)
+// Returns a relative URL that the admin panel stores in manual_qr_codes.qr_image_url
+upload.post('/admin-qr', async (c) => {
+  const { sub } = c.get('user');
+  // Verify admin role
+  const user = c.get('user');
+  if (user.role !== 'admin') {
+    return c.json({ error: 'Admin access required' }, 403);
+  }
+
+  const formData = await c.req.formData();
+  const file = formData.get('file') as File | null;
+  if (!file) return c.json({ error: 'No file provided' }, 400);
+
+  // QR images should be max 5MB
+  if (file.size > 5 * 1024 * 1024) {
+    return c.json({ error: 'File too large. Max 5 MB for QR images.' }, 413);
+  }
+
+  const typeError = await validateFileType(file, ALLOWED_IMAGE_TYPES);
+  if (typeError) return c.json({ error: typeError }, 415);
+
+  const ext = file.name.split('.').pop()?.toLowerCase() || 'png';
+  const safeExt = ['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(ext) ? ext : 'png';
+  const key = `qr-codes/${Date.now()}-${crypto.randomUUID().slice(0, 8)}.${safeExt}`;
+
+  await c.env.STORAGE.put(key, file.stream(), {
+    httpMetadata: { contentType: file.type },
+    customMetadata: { uploadedBy: sub, purpose: 'manual-qr' },
+  });
+
+  const url = `/api/files/${key}`;
+  return c.json({ url, key, filename: file.name, size: file.size });
 });
 
 export default upload;

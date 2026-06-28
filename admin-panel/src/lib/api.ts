@@ -199,6 +199,47 @@ export const api = {
   createManualQRCode: (data: any) => req<any>('POST', '/admin/manual-qr-codes', data),
   updateManualQRCode: (id: string, data: any) => req('PATCH', `/admin/manual-qr-codes/${id}`, data),
   deleteManualQRCode: (id: string) => req('DELETE', `/admin/manual-qr-codes/${id}`),
+
+  // Upload QR image directly to R2 (returns URL to use in createManualQRCode)
+  uploadQRImage: async (file: File): Promise<{ url: string; key: string; filename: string; size: number }> => {
+    const token = getToken();
+    if (!token) {
+      handleSessionExpired();
+      throw new Error('Session expired. Please log in again.');
+    }
+    const formData = new FormData();
+    formData.append('file', file);
+    const baseUrl = import.meta.env.VITE_API_URL
+      ? `${import.meta.env.VITE_API_URL}/api`
+      : `${import.meta.env.BASE_URL.replace(/\/$/, '')}/api`;
+    const r = await fetch(`${baseUrl}/upload/admin-qr`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    });
+    if (r.status === 401) {
+      const newToken = await refreshAdminToken();
+      if (newToken) {
+        const retry = await fetch(`${baseUrl}/upload/admin-qr`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${newToken}` },
+          body: formData,
+        });
+        if (!retry.ok) {
+          const err = await retry.json().catch(() => ({ error: retry.statusText }));
+          throw new Error((err as any).error || retry.statusText);
+        }
+        return retry.json();
+      }
+      handleSessionExpired();
+      throw new Error('Session expired');
+    }
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({ error: r.statusText }));
+      throw new Error((err as any).error || r.statusText);
+    }
+    return r.json();
+  },
   runMigrations: () => req<any>('POST', '/admin/run-migrations', {}),
 
   // ─── Optimized (INR) coin economy seed ───────────────────────────────────

@@ -13,7 +13,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { Plus, Pencil, Trash2, CreditCard, ArrowUp, ArrowDown, Star, AlertTriangle, QrCode, Clock, RefreshCw, Webhook, Copy, CheckCircle2, Settings, ShieldCheck, Zap } from 'lucide-react';
+import { Plus, Pencil, Trash2, CreditCard, ArrowUp, ArrowDown, Star, AlertTriangle, QrCode, Clock, RefreshCw, Webhook, Copy, CheckCircle2, Settings, ShieldCheck, Zap, Upload } from 'lucide-react';
 
 const GATEWAY_TYPES = [
   { value: 'googlepay',  label: 'Google Pay',   emoji: '🟢' },
@@ -259,6 +259,150 @@ function AutoGatewaysTab() {
   );
 }
 
+// ─── QR Image Uploader Component ──────────────────────────────────────────────
+// Supports both direct file upload (drag & drop / click to select) AND URL paste.
+// Uploads go to /api/upload/admin-qr which stores in R2 and returns a URL.
+function QRImageUploader({ value, onChange }: { value: string; onChange: (url: string) => void }) {
+  const [uploading, setUploading] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const [mode, setMode] = useState<'upload' | 'url'>(value && value.startsWith('http') ? 'url' : 'upload');
+  const [urlInput, setUrlInput] = useState(value || '');
+  const fileRef = { current: null as HTMLInputElement | null };
+
+  const handleFile = async (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      toast.error('Only image files are allowed (JPG, PNG, WebP)');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('File too large. Maximum 5 MB.');
+      return;
+    }
+    setUploading(true);
+    try {
+      const result = await api.uploadQRImage(file);
+      // Convert relative URL to full URL for display
+      const baseUrl = import.meta.env.VITE_API_URL || '';
+      const fullUrl = result.url.startsWith('/') ? `${baseUrl}${result.url}` : result.url;
+      onChange(fullUrl);
+      toast.success('QR image uploaded successfully!');
+    } catch (e: any) {
+      toast.error(e.message || 'Upload failed');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer.files[0];
+    if (file) handleFile(file);
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) handleFile(file);
+  };
+
+  const resolveUrl = (url: string) => {
+    if (!url) return '';
+    if (url.startsWith('http')) return url;
+    const base = import.meta.env.VITE_API_URL || '';
+    return `${base}${url}`;
+  };
+
+  return (
+    <div className="space-y-3">
+      {/* Mode toggle */}
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setMode('upload')}
+          className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-colors ${mode === 'upload' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}
+        >
+          Upload Image
+        </button>
+        <button
+          type="button"
+          onClick={() => setMode('url')}
+          className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-colors ${mode === 'url' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}
+        >
+          Paste URL
+        </button>
+      </div>
+
+      {mode === 'upload' ? (
+        <div
+          className={`relative border-2 border-dashed rounded-xl p-6 text-center transition-colors cursor-pointer ${
+            dragOver ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50 hover:bg-muted/30'
+          } ${uploading ? 'opacity-60 pointer-events-none' : ''}`}
+          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={handleDrop}
+          onClick={() => fileRef.current?.click()}
+        >
+          <input
+            ref={(el) => { fileRef.current = el; }}
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/gif"
+            className="hidden"
+            onChange={handleFileSelect}
+          />
+          {uploading ? (
+            <div className="flex flex-col items-center gap-2">
+              <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+              <p className="text-sm text-muted-foreground">Uploading...</p>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-2">
+              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                <QrCode size={20} className="text-primary" />
+              </div>
+              <p className="text-sm font-medium">Drag & drop QR image here</p>
+              <p className="text-xs text-muted-foreground">or click to select file (JPG, PNG, WebP — max 5 MB)</p>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <Input
+            placeholder="https://example.com/qr-code.png"
+            value={urlInput}
+            onChange={(e) => { setUrlInput(e.target.value); onChange(e.target.value); }}
+          />
+          <p className="text-xs text-muted-foreground">Paste a direct image URL from any CDN (imgbb, postimg, Cloudflare Images, etc.)</p>
+        </div>
+      )}
+
+      {/* Preview */}
+      {value && (
+        <div className="flex items-center gap-3 p-3 border rounded-xl bg-muted/30">
+          <img
+            src={resolveUrl(value)}
+            alt="QR Preview"
+            className="w-24 h-24 rounded-lg object-contain bg-white border shadow-sm"
+            onError={(e) => { (e.target as HTMLImageElement).src = ''; (e.target as HTMLImageElement).alt = 'Failed to load'; }}
+          />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-green-600 flex items-center gap-1">
+              <CheckCircle2 size={14} /> QR Image Set
+            </p>
+            <p className="text-xs text-muted-foreground mt-1 truncate">{value}</p>
+            <button
+              type="button"
+              onClick={() => { onChange(''); setUrlInput(''); }}
+              className="text-xs text-destructive hover:underline mt-1"
+            >
+              Remove image
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Manual QR Codes Tab ──────────────────────────────────────────────────────
 function ManualQRTab() {
   const qc = useQueryClient();
@@ -466,15 +610,11 @@ function ManualQRTab() {
             </div>
 
             <div className="space-y-1.5">
-              <Label>QR Code Image URL *</Label>
-              <Input placeholder="https://..." value={form.qr_image_url} onChange={e => setForm(f => ({ ...f, qr_image_url: e.target.value }))} />
-              <p className="text-xs text-muted-foreground">Upload your QR code image to any CDN (e.g. Cloudflare Images, imgbb, postimg) and paste the URL here.</p>
-              {form.qr_image_url && (
-                <div className="mt-2 flex items-center gap-3 p-2 border rounded-lg bg-muted/30">
-                  <img src={form.qr_image_url} alt="QR Preview" className="w-20 h-20 rounded-md object-contain bg-white border" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                  <p className="text-xs text-muted-foreground">Preview — make sure QR is scannable</p>
-                </div>
-              )}
+              <Label>QR Code Image *</Label>
+              <QRImageUploader
+                value={form.qr_image_url}
+                onChange={(url) => setForm(f => ({ ...f, qr_image_url: url }))}
+              />
             </div>
 
             <div className="space-y-1.5">
