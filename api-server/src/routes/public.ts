@@ -217,15 +217,24 @@ pub.get('/app-config', async (c) => {
 
 // GET /api/payment/active-qr — returns active manual QR codes with time-based rotation (no auth)
 pub.get('/payment/active-qr', async (c) => {
-  const result = await c.env.DB.prepare(
-    'SELECT id, name, upi_id, qr_image_url, instructions, rotate_interval_min, position FROM manual_qr_codes WHERE is_active = 1 ORDER BY position ASC'
-  ).all();
-  const codes = result.results as any[];
-  if (codes.length === 0) return c.json({ qr_codes: [], current: null, rotate_interval_min: 30 });
-  const intervalMin = Math.max(1, Math.min(...codes.map((q: any) => q.rotate_interval_min || 30)));
-  const slot = Math.floor(Math.floor(Date.now() / 1000) / 60 / intervalMin);
-  const currentIdx = slot % codes.length;
-  return c.json({ qr_codes: codes, current: codes[currentIdx], rotate_interval_min: intervalMin });
+  try {
+    const result = await c.env.DB.prepare(
+      'SELECT id, name, upi_id, qr_image_url, instructions, rotate_interval_min, position FROM manual_qr_codes WHERE is_active = 1 ORDER BY position ASC'
+    ).all();
+    const codes = result.results as any[];
+    if (codes.length === 0) return c.json({ qr_codes: [], current: null, rotate_interval_min: 30 });
+    const intervalMin = Math.max(1, Math.min(...codes.map((q: any) => q.rotate_interval_min || 30)));
+    const slot = Math.floor(Math.floor(Date.now() / 1000) / 60 / intervalMin);
+    const currentIdx = slot % codes.length;
+    return c.json({ qr_codes: codes, current: codes[currentIdx], rotate_interval_min: intervalMin });
+  } catch (e: any) {
+    // Table doesn't exist yet — return empty so user app shows "unavailable" gracefully
+    if (/no such table/i.test(String(e?.message || ''))) {
+      return c.json({ qr_codes: [], current: null, rotate_interval_min: 30 });
+    }
+    console.error('[payment/active-qr] error:', e);
+    return c.json({ qr_codes: [], current: null, rotate_interval_min: 30 });
+  }
 });
 
 // GET /api/app/version?app=user|host — force-update gate

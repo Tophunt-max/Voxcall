@@ -1117,8 +1117,32 @@ admin.get('/audit-logs', async (c) => {
 
 // ─── Payment Gateways CRUD ───────────────────────────────────────────────────
 admin.get('/payment-gateways', async (c) => {
-  const result = await db(c).prepare('SELECT * FROM payment_gateways ORDER BY position ASC, created_at DESC').all();
-  return c.json(result.results);
+  try {
+    const result = await db(c).prepare('SELECT * FROM payment_gateways ORDER BY position ASC, created_at DESC').all();
+    return c.json(result.results);
+  } catch (e: any) {
+    const msg = String(e?.message || '');
+    if (/no such table/i.test(msg)) {
+      try {
+        await db(c).prepare(`CREATE TABLE IF NOT EXISTS payment_gateways (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL DEFAULT '',
+          type TEXT NOT NULL DEFAULT 'manual',
+          icon_emoji TEXT DEFAULT '💳',
+          platforms TEXT DEFAULT '["all"]',
+          instruction TEXT DEFAULT '',
+          redirect_url TEXT DEFAULT '',
+          is_active INTEGER NOT NULL DEFAULT 1,
+          position INTEGER NOT NULL DEFAULT 0,
+          created_at INTEGER DEFAULT (unixepoch()),
+          updated_at INTEGER DEFAULT (unixepoch())
+        )`).run();
+      } catch { /* best effort */ }
+      return c.json([]);
+    }
+    console.error('[admin/payment-gateways] GET error:', e);
+    return c.json({ error: 'Failed to load gateways' }, 500);
+  }
 });
 admin.post('/payment-gateways', async (c) => {
   const body = await c.req.json() as any;
@@ -1153,15 +1177,63 @@ admin.delete('/payment-gateways/:id', async (c) => {
 
 // ─── Manual QR Codes CRUD ─────────────────────────────────────────────────────
 admin.get('/manual-qr-codes', async (c) => {
-  const result = await db(c).prepare('SELECT * FROM manual_qr_codes ORDER BY position ASC, created_at DESC').all();
-  return c.json(result.results);
+  try {
+    const result = await db(c).prepare('SELECT * FROM manual_qr_codes ORDER BY position ASC, created_at DESC').all();
+    return c.json(result.results);
+  } catch (e: any) {
+    const msg = String(e?.message || '');
+    if (/no such table/i.test(msg)) {
+      // Table doesn't exist yet — create it on the fly and return empty
+      try {
+        await db(c).prepare(`CREATE TABLE IF NOT EXISTS manual_qr_codes (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL DEFAULT '',
+          upi_id TEXT NOT NULL DEFAULT '',
+          qr_image_url TEXT NOT NULL DEFAULT '',
+          instructions TEXT DEFAULT '',
+          is_active INTEGER NOT NULL DEFAULT 1,
+          position INTEGER NOT NULL DEFAULT 0,
+          rotate_interval_min INTEGER NOT NULL DEFAULT 30,
+          created_at INTEGER DEFAULT (unixepoch()),
+          updated_at INTEGER DEFAULT (unixepoch())
+        )`).run();
+      } catch { /* best effort */ }
+      return c.json([]);
+    }
+    console.error('[admin/manual-qr-codes] GET error:', e);
+    return c.json({ error: 'Failed to load QR codes' }, 500);
+  }
 });
 admin.post('/manual-qr-codes', async (c) => {
   const body = await c.req.json() as any;
   const id = crypto.randomUUID();
-  await db(c).prepare(
-    'INSERT INTO manual_qr_codes (id, name, upi_id, qr_image_url, instructions, is_active, position, rotate_interval_min, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, unixepoch(), unixepoch())'
-  ).bind(id, body.name || '', body.upi_id || '', body.qr_image_url || '', body.instructions || '', body.is_active !== false ? 1 : 0, body.position ?? 0, body.rotate_interval_min ?? 30).run();
+  try {
+    await db(c).prepare(
+      'INSERT INTO manual_qr_codes (id, name, upi_id, qr_image_url, instructions, is_active, position, rotate_interval_min, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, unixepoch(), unixepoch())'
+    ).bind(id, body.name || '', body.upi_id || '', body.qr_image_url || '', body.instructions || '', body.is_active !== false ? 1 : 0, body.position ?? 0, body.rotate_interval_min ?? 30).run();
+  } catch (e: any) {
+    const msg = String(e?.message || '');
+    if (/no such table/i.test(msg)) {
+      // Auto-create table and retry
+      await db(c).prepare(`CREATE TABLE IF NOT EXISTS manual_qr_codes (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL DEFAULT '',
+        upi_id TEXT NOT NULL DEFAULT '',
+        qr_image_url TEXT NOT NULL DEFAULT '',
+        instructions TEXT DEFAULT '',
+        is_active INTEGER NOT NULL DEFAULT 1,
+        position INTEGER NOT NULL DEFAULT 0,
+        rotate_interval_min INTEGER NOT NULL DEFAULT 30,
+        created_at INTEGER DEFAULT (unixepoch()),
+        updated_at INTEGER DEFAULT (unixepoch())
+      )`).run();
+      await db(c).prepare(
+        'INSERT INTO manual_qr_codes (id, name, upi_id, qr_image_url, instructions, is_active, position, rotate_interval_min, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, unixepoch(), unixepoch())'
+      ).bind(id, body.name || '', body.upi_id || '', body.qr_image_url || '', body.instructions || '', body.is_active !== false ? 1 : 0, body.position ?? 0, body.rotate_interval_min ?? 30).run();
+    } else {
+      throw e;
+    }
+  }
   const u = c.get('user');
   await auditLog(db(c), u.sub, u.email || 'Admin', u.email || '', 'create', 'manual_qr_code', id, `Manual QR created: ${body.name}`);
   return c.json({ id, success: true }, 201);
