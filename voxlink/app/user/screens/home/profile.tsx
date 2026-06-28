@@ -24,6 +24,7 @@ import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
 import { PermissionDialog, PERMISSION_CONFIGS } from "@/components/PermissionDialog";
+import { ConfirmModal } from "@/components/ConfirmModal";
 import { useLanguage } from "@/context/LanguageContext";
 import { LANGUAGES } from "@/localization";
 import { API, resolveMediaUrl } from "@/services/api";
@@ -134,6 +135,8 @@ export default function ProfileScreen() {
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [callCount, setCallCount] = useState<number>(0);
   const [refreshing, setRefreshing] = useState(false);
+  const [showLogout, setShowLogout] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
 
   const topPad = insets.top;
   const bottomPad = insets.bottom;
@@ -175,17 +178,17 @@ export default function ProfileScreen() {
     }
   }, [refreshBalance, loadCallCount]);
 
-  const handleLogout = () => {
-    confirmDialog({
-      title: "Sign Out",
-      message: "Are you sure you want to sign out?",
-      confirmText: "Sign Out",
-      destructive: true,
-      onConfirm: async () => {
-        await logout();
-        router.replace("/user/auth/login");
-      },
-    });
+  const handleLogout = () => setShowLogout(true);
+
+  const doLogout = async () => {
+    setLoggingOut(true);
+    try {
+      await logout();
+      router.replace("/user/auth/login");
+    } finally {
+      setLoggingOut(false);
+      setShowLogout(false);
+    }
   };
 
   const copyId = async () => {
@@ -309,6 +312,19 @@ export default function ProfileScreen() {
         />
       }
     >
+      <ConfirmModal
+        visible={showLogout}
+        emoji="👋"
+        title="Sign Out"
+        message="Are you sure you want to sign out?"
+        confirmText="Sign Out"
+        cancelText="Cancel"
+        destructive
+        loading={loggingOut}
+        onConfirm={doLogout}
+        onCancel={() => setShowLogout(false)}
+      />
+
       <PermissionDialog
         visible={showNotifDialog}
         config={{ ...PERMISSION_CONFIGS.notifications, isBlocked: notifBlocked }}
