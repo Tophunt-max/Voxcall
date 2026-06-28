@@ -286,6 +286,7 @@ function RootLayoutNav() {
         <Stack.Screen name="user/hosts/all" />
         <Stack.Screen name="user/hosts/reviews" />
         <Stack.Screen name="user/payment/checkout" />
+        <Stack.Screen name="user/payment/manual-qr" />
         <Stack.Screen name="user/payment/success" options={{ gestureEnabled: false }} />
         <Stack.Screen name="user/profile/edit" />
 
