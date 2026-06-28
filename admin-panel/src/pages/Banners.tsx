@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { Modal } from '@/components/ui/Modal';
 import { Badge } from '@/components/ui/Badge';
@@ -28,7 +29,6 @@ export default function Banners() {
   const [saving, setSaving] = useState(false);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [toast, setToast] = useState('');
 
   const loadBanners = () => {
     api.banners().then(d => { setRows(d); setFetchError(''); }).catch(() => setFetchError('Failed to load banners')).finally(() => setLoading(false));
@@ -36,24 +36,22 @@ export default function Banners() {
 
   useEffect(() => { loadBanners(); }, []);
 
-  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 2500); };
-
   const save = async () => {
     if (!form.title) return;
     setSaving(true);
     try {
       if (editing) {
         await api.updateBanner(editing.id, form);
-        showToast('Banner updated');
+        toast.success('Banner updated');
         setEditing(null);
       } else {
         await api.createBanner(form);
-        showToast('Banner created');
+        toast.success('Banner created');
         setCreating(false);
       }
       setForm(blank());
       loadBanners();
-    } catch { showToast('Failed to save banner'); }
+    } catch { toast.error('Failed to save banner'); }
     finally { setSaving(false); }
   };
 
@@ -64,7 +62,7 @@ export default function Banners() {
     try {
       await api.updateBanner(id, { active: !banner.active });
       loadBanners();
-    } catch { showToast('Failed to update banner'); }
+    } catch { toast.error('Failed to update banner'); }
     finally { setTogglingId(null); }
   };
 
@@ -73,9 +71,9 @@ export default function Banners() {
     setDeletingId(id);
     try {
       await api.deleteBanner(id);
-      showToast('Banner deleted');
+      toast.success('Banner deleted');
       loadBanners();
-    } catch { showToast('Failed to delete banner'); }
+    } catch { toast.error('Failed to delete banner'); }
     finally { setDeletingId(null); }
   };
 
@@ -143,7 +141,6 @@ export default function Banners() {
 
   return (
     <div className="space-y-5">
-      {toast && <div className="fixed bottom-5 right-5 z-50 bg-foreground text-background text-sm px-4 py-2.5 rounded-xl shadow-xl">{toast}</div>}
       {fetchError && <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm">⚠ {fetchError}</div>}
 
       <div className="flex items-center justify-between">

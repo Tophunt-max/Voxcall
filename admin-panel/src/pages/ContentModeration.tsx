@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { Table } from '@/components/ui/Table';
 import { Badge } from '@/components/ui/Badge';
@@ -48,14 +49,11 @@ export default function ContentModeration() {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
   const [selected, setSelected] = useState<any>(null);
-  const [toast, setToast] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
 
   useEffect(() => {
-    api.contentReports().then(setRows).catch(() => showToast('Failed to load reports')).finally(() => setLoading(false));
+    api.contentReports().then(setRows).catch(() => toast.error('Failed to load reports')).finally(() => setLoading(false));
   }, []);
-
-  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
 
   const filtered = rows.filter(r => {
     const q = search.toLowerCase();
@@ -75,9 +73,9 @@ export default function ContentModeration() {
       const actionTaken = action === 'dismiss' || action === 'review' ? null : action;
       await api.updateContentReport(selected.id, { status: newStatus, action_taken: actionTaken });
       setRows(rows.map(r => r.id === selected.id ? { ...r, status: newStatus, action_taken: actionTaken } : r));
-      showToast(action === 'dismiss' ? 'Report dismissed' : action === 'review' ? 'Marked as reviewed' : `Action taken: ${action}`);
+      toast.success(action === 'dismiss' ? 'Report dismissed' : action === 'review' ? 'Marked as reviewed' : `Action taken: ${action}`);
       setSelected(null);
-    } catch { showToast('Failed to take action'); }
+    } catch { toast.error('Failed to take action'); }
     setActionLoading(false);
   };
 
@@ -146,7 +144,6 @@ export default function ContentModeration() {
 
   return (
     <div className="space-y-5">
-      {toast && <div className="fixed bottom-5 right-5 z-50 bg-foreground text-background text-sm px-4 py-2.5 rounded-xl shadow-xl animate-in fade-in slide-in-from-bottom-2">{toast}</div>}
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         {[

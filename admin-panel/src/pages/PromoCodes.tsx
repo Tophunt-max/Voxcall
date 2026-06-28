@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { Table } from '@/components/ui/Table';
 import { Badge } from '@/components/ui/Badge';
@@ -20,14 +21,11 @@ export default function PromoCodes() {
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
-  const [toast, setToast] = useState('');
   const [copied, setCopied] = useState('');
 
   useEffect(() => {
-    api.promoCodes().then(setRows).catch(() => showToast('Failed to load promo codes')).finally(() => setLoading(false));
+    api.promoCodes().then(setRows).catch(() => toast.error('Failed to load promo codes')).finally(() => setLoading(false));
   }, []);
-
-  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 2500); };
 
   const filtered = rows.filter(r =>
     r.code.toLowerCase().includes(search.toLowerCase())
@@ -40,36 +38,36 @@ export default function PromoCodes() {
   };
 
   const save = async () => {
-    if (!form.code.trim()) { showToast('Promo code cannot be empty'); return; }
+    if (!form.code.trim()) { toast.success('Promo code cannot be empty'); return; }
     if (form.type === 'percent') {
       const pct = Number(form.discount_pct);
       if (!Number.isFinite(pct) || pct < 1 || pct > 100) {
-        showToast('Discount must be between 1% and 100%'); return;
+        toast.success('Discount must be between 1% and 100%'); return;
       }
     } else {
       const coins = Number(form.bonus_coins);
       if (!Number.isFinite(coins) || coins < 1) {
-        showToast('Bonus coins must be at least 1'); return;
+        toast.success('Bonus coins must be at least 1'); return;
       }
     }
     const maxUses = Number(form.max_uses);
     if (!Number.isFinite(maxUses) || maxUses < 1) {
-      showToast('Max uses must be at least 1'); return;
+      toast.success('Max uses must be at least 1'); return;
     }
     setSaving(true);
     try {
       if (editing) {
         await api.updatePromoCode(editing.id, form);
         setRows(rows.map(r => r.id === editing.id ? { ...r, ...form } : r));
-        showToast('Promo code updated');
+        toast.success('Promo code updated');
         setEditing(null);
       } else {
         const res = await api.createPromoCode(form);
         setRows([{ ...form, id: res.id, used_count: 0 }, ...rows]);
-        showToast('Promo code created');
+        toast.success('Promo code created');
         setCreating(false);
       }
-    } catch { showToast('Failed to save promo code'); }
+    } catch { toast.error('Failed to save promo code'); }
     finally { setSaving(false); setForm(blank()); }
   };
 
@@ -79,8 +77,8 @@ export default function PromoCodes() {
     try {
       await api.deletePromoCode(id);
       setRows(rows.filter(r => r.id !== id));
-      showToast('Promo code deleted');
-    } catch { showToast('Failed to delete'); }
+      toast.success('Promo code deleted');
+    } catch { toast.error('Failed to delete'); }
     finally { setDeletingId(null); }
   };
 
@@ -92,7 +90,7 @@ export default function PromoCodes() {
     try {
       await api.updatePromoCode(id, { active: !row.active });
       setRows(rows.map(r => r.id === id ? { ...r, active: !r.active } : r));
-    } catch { showToast('Failed to update'); }
+    } catch { toast.error('Failed to update'); }
     finally { setTogglingId(null); }
   };
 
@@ -222,7 +220,6 @@ export default function PromoCodes() {
 
   return (
     <div className="space-y-5">
-      {toast && <div className="fixed bottom-5 right-5 z-50 bg-foreground text-background text-sm px-4 py-2.5 rounded-xl shadow-xl">{toast}</div>}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h2 className="font-bold text-lg">Promo Codes</h2>

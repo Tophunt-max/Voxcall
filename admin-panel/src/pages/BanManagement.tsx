@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { Table } from '@/components/ui/Table';
 import { Badge } from '@/components/ui/Badge';
@@ -18,7 +19,6 @@ export default function BanManagement() {
   const [search, setSearch] = useState('');
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [toast, setToast] = useState('');
   const [form, setForm] = useState(blankForm());
 
   const load = () => {
@@ -27,8 +27,6 @@ export default function BanManagement() {
     api.bannedUsers().then(setRows).catch((e: any) => setLoadError(e.message || 'Failed to load bans')).finally(() => setLoading(false));
   };
   useEffect(load, []);
-
-  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 2500); };
 
   const filtered = rows.filter(r =>
     (r.user_name || r.user || '').toLowerCase().includes(search.toLowerCase()) ||
@@ -40,8 +38,8 @@ export default function BanManagement() {
     try {
       await api.unbanUser(id);
       setRows(rows.filter(r => r.id !== id));
-      showToast('User unbanned successfully');
-    } catch { showToast('Failed to unban user'); }
+      toast.success('User unbanned successfully');
+    } catch { toast.error('Failed to unban user'); }
   };
 
   const addBan = async () => {
@@ -70,8 +68,8 @@ export default function BanManagement() {
       setRows([newBan, ...rows]);
       setCreating(false);
       setForm(blankForm());
-      showToast('User banned');
-    } catch (e: any) { showToast('Error: ' + (e?.message || 'Failed to ban user')); }
+      toast.success('User banned');
+    } catch (e: any) { toast.error((e?.message || 'Failed to ban user')); }
     finally { setSaving(false); }
   };
 
@@ -124,7 +122,6 @@ export default function BanManagement() {
 
   return (
     <div className="space-y-5">
-      {toast && <div className="fixed bottom-5 right-5 z-50 bg-foreground text-background text-sm px-4 py-2.5 rounded-xl shadow-xl">{toast}</div>}
 
       {loadError && (
         <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3">

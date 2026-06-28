@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { Trophy, Save, RefreshCw, Info, ChevronRight, Coins, Plus, Trash2 } from 'lucide-react';
 
@@ -111,12 +112,6 @@ export default function LevelConfig() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [recalculating, setRecalculating] = useState(false);
-  const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
-
-  const showToast = (msg: string, ok = true) => {
-    setToast({ msg, ok });
-    setTimeout(() => setToast(null), 3500);
-  };
 
   useEffect(() => {
     api.getLevelConfig()
@@ -160,7 +155,7 @@ export default function LevelConfig() {
           }));
         }
       })
-      .catch(() => showToast('Failed to load level config', false))
+      .catch(() => toast.error('Failed to load level config'))
       .finally(() => setLoading(false));
   }, []);
 
@@ -212,9 +207,9 @@ export default function LevelConfig() {
     setSaving(true);
     try {
       await api.updateLevelConfig(config);
-      showToast('Level config saved successfully!');
+      toast.error('Level config saved successfully!');
     } catch (e: any) {
-      showToast(e.message || 'Failed to save', false);
+      toast.success(e.message || 'Failed to save');
     } finally {
       setSaving(false);
     }
@@ -225,7 +220,7 @@ export default function LevelConfig() {
   const handleAddLevel = () => {
     setConfig(prev => {
       if (prev.length >= MAX_LEVELS) {
-        showToast(`Maximum ${MAX_LEVELS} levels allowed.`, false);
+        toast.error(`Maximum ${MAX_LEVELS} levels allowed.`);
         return prev;
       }
       const next = generateNewLevelDefaults(prev.length + 1);
@@ -240,11 +235,11 @@ export default function LevelConfig() {
   const handleRemoveLevel = (idx: number) => {
     setConfig(prev => {
       if (prev.length <= MIN_LEVELS) {
-        showToast(`At least ${MIN_LEVELS} level is required.`, false);
+        toast.error(`At least ${MIN_LEVELS} level is required.`);
         return prev;
       }
       if (idx === 0) {
-        showToast('Level 1 is the starting level and cannot be removed.', false);
+        toast.error('Level 1 is the starting level and cannot be removed.');
         return prev;
       }
       return prev
@@ -257,9 +252,9 @@ export default function LevelConfig() {
     setRecalculating(true);
     try {
       const res = await api.recalculateHostLevels();
-      showToast(`All host levels recalculated using current thresholds!`);
+      toast.error(`All host levels recalculated using current thresholds!`);
     } catch (e: any) {
-      showToast(e.message || 'Recalculation failed', false);
+      toast.success(e.message || 'Recalculation failed');
     } finally {
       setRecalculating(false);
     }
@@ -276,11 +271,6 @@ export default function LevelConfig() {
   return (
     <div className="max-w-5xl mx-auto space-y-6">
       {/* Toast */}
-      {toast && (
-        <div className={`fixed top-5 right-5 z-50 px-5 py-3 rounded-xl shadow-xl text-sm font-medium text-white transition-all ${toast.ok ? 'bg-green-600' : 'bg-red-500'}`}>
-          {toast.msg}
-        </div>
-      )}
 
       {/* Header */}
       <div className="flex items-start justify-between gap-4 flex-wrap">

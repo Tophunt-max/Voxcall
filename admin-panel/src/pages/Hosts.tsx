@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react';
+import { toast } from 'sonner';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { Badge } from '@/components/ui/Badge';
@@ -274,14 +275,11 @@ function HostDetailSheet({
 
 export default function Hosts() {
   const queryClient = useQueryClient();
-  const [toast, setToast] = useState('');
   const [selectedHost, setSelectedHost] = useState<any>(null);
   const [toggling, setToggling] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 2500); };
 
   const { data: allHosts = [], isLoading, error } = useQuery<any[]>({
     queryKey: ['admin-hosts'],
@@ -307,9 +305,9 @@ export default function Hosts() {
       api.updateHost(id, { [field]: !cur ? 1 : 0 }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-hosts'] });
-      showToast('Host updated');
+      toast.success('Host updated');
     },
-    onError: (e: any) => showToast('Error: ' + e.message),
+    onError: (e: any) => toast.error(e.message),
     onSettled: () => setToggling(null),
   });
 
@@ -317,9 +315,9 @@ export default function Hosts() {
     mutationFn: () => api.recalculateHostLevels(),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-hosts'] });
-      showToast('All host levels recalculated!');
+      toast.success('All host levels recalculated!');
     },
-    onError: (e: any) => showToast('Error: ' + e.message),
+    onError: (e: any) => toast.error(e.message),
   });
 
   const handleToggle = (id: string, field: string, cur: boolean) => {
@@ -334,12 +332,6 @@ export default function Hosts() {
 
   return (
     <div className="space-y-4">
-      {toast && (
-        <div className="fixed bottom-5 right-5 z-50 bg-foreground text-background text-sm px-4 py-2.5 rounded-xl shadow-xl">
-          {toast}
-        </div>
-      )}
-
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3">
           Failed to load hosts: {(error as Error).message}
@@ -350,7 +342,7 @@ export default function Hosts() {
         <HostDetailSheet
           host={selectedHost}
           onClose={() => setSelectedHost(null)}
-          onSaved={showToast}
+          onSaved={(msg: string) => toast.success(msg)}
           toggling={toggling}
           onToggle={handleToggle}
         />

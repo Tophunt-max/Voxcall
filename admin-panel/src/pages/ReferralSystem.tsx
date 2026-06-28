@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { Table } from '@/components/ui/Table';
 import { StatCard } from '@/components/ui/StatCard';
@@ -19,27 +20,24 @@ export default function ReferralSystem() {
   const [configOpen, setConfigOpen] = useState(false);
   const [config, setConfig] = useState({ referrer_reward: 100, new_user_reward: 50, min_calls_to_unlock: 1, active: true });
   const [configLoading, setConfigLoading] = useState(false);
-  const [toast, setToast] = useState('');
 
   useEffect(() => {
     api.referrals().then((data: any) => {
       setTopReferrers(data.top || []);
       setRecentActivity(data.recent || []);
       setStats(data.stats || { total: 0, this_month: 0, coins_distributed: 0 });
-    }).catch(() => showToast('Failed to load referral data')).finally(() => setLoading(false));
+    }).catch(() => toast.error('Failed to load referral data')).finally(() => setLoading(false));
 
-    api.referralConfig().then(setConfig).catch(() => showToast('Failed to load referral config'));
+    api.referralConfig().then(setConfig).catch(() => toast.error('Failed to load referral config'));
   }, []);
-
-  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 2500); };
 
   const saveConfig = async () => {
     setConfigLoading(true);
     try {
       await api.updateReferralConfig(config);
-      showToast('Configuration saved');
+      toast.success('Configuration saved');
       setConfigOpen(false);
-    } catch { showToast('Failed to save config'); }
+    } catch { toast.error('Failed to save config'); }
     finally { setConfigLoading(false); }
   };
 
@@ -107,7 +105,6 @@ export default function ReferralSystem() {
 
   return (
     <div className="space-y-6">
-      {toast && <div className="fixed bottom-5 right-5 z-50 bg-foreground text-background text-sm px-4 py-2.5 rounded-xl shadow-xl">{toast}</div>}
 
       <div className="flex items-center justify-between">
         <div>

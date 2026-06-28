@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { Table } from '@/components/ui/Table';
 import { StatCard } from '@/components/ui/StatCard';
@@ -17,28 +18,25 @@ export default function Notifications() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [sending, setSending] = useState(false);
-  const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
 
   // Compose form
   const [form, setForm] = useState({ title: '', body: '', type: 'system', target: 'all', userId: '' });
 
   useEffect(() => {
-    api.notifications().then(setNotifs).catch(() => showToast('Failed to load notifications', false)).finally(() => setLoading(false));
-    api.users().then(setUsers).catch(() => showToast('Failed to load users', false));
+    api.notifications().then(setNotifs).catch(() => toast.error('Failed to load notifications')).finally(() => setLoading(false));
+    api.users().then(setUsers).catch(() => toast.error('Failed to load users'));
   }, []);
-
-  const showToast = (msg: string, ok = true) => { setToast({ msg, ok }); setTimeout(() => setToast(null), 2500); };
 
   const send = async () => {
     if (!form.title.trim() || !form.body.trim()) return;
-    if (form.target === 'user' && !form.userId) { showToast('Please select a user', false); return; }
+    if (form.target === 'user' && !form.userId) { toast.error('Please select a user'); return; }
     setSending(true);
     try {
       await api.sendNotification(form);
-      showToast('Notification sent successfully!');
+      toast.success('Notification sent successfully!');
       setForm({ title: '', body: '', type: 'system', target: 'all', userId: '' });
       api.notifications().then(setNotifs).catch(console.error);
-    } catch (e: any) { showToast('Error: ' + e.message, false); }
+    } catch (e: any) { toast.error(e.message); }
     finally { setSending(false); }
   };
 
@@ -74,11 +72,6 @@ export default function Notifications() {
 
   return (
     <div className="space-y-5">
-      {toast && (
-        <div className={`fixed bottom-5 right-5 z-50 text-white text-sm px-4 py-2.5 rounded-xl shadow-xl ${toast.ok ? 'bg-green-600' : 'bg-red-600'}`}>
-          {toast.msg}
-        </div>
-      )}
 
       <div>
         <h2 className="font-bold text-lg">Notifications</h2>

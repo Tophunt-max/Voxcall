@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
+import { toast } from 'sonner';
 import { req } from "@/lib/api";
 import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
@@ -68,9 +69,6 @@ export default function HostApplicationsPage() {
   const [rejectReason, setRejectReason] = useState("");
   const [showRejectInput, setShowRejectInput] = useState(false);
   const [imageModal, setImageModal] = useState<string | null>(null);
-  const [toast, setToast] = useState("");
-
-  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(""), 2500); };
 
   const fetchApps = useCallback(async () => {
     setLoading(true);
@@ -91,7 +89,7 @@ export default function HostApplicationsPage() {
   const handleReview = async (action: "approve" | "reject") => {
     if (!selected) return;
     if (action === "reject" && !rejectReason.trim()) {
-      showToast("Please enter a rejection reason.");
+      toast.success("Please enter a rejection reason.");
       return;
     }
     setReviewing(true);
@@ -100,13 +98,13 @@ export default function HostApplicationsPage() {
         action,
         rejection_reason: action === "reject" ? rejectReason.trim() : undefined,
       });
-      showToast(action === "approve" ? "Application approved!" : "Application rejected.");
+      toast.success(action === "approve" ? "Application approved!" : "Application rejected.");
       setSelected(null);
       setRejectReason("");
       setShowRejectInput(false);
       await fetchApps();
     } catch (e: any) {
-      showToast("Error: " + (e.message || "Something went wrong"));
+      toast.success("Error: " + (e.message || "Something went wrong"));
     } finally {
       setReviewing(false);
     }
@@ -116,7 +114,6 @@ export default function HostApplicationsPage() {
 
   return (
     <div className="space-y-5">
-      {toast && <div className="fixed bottom-5 right-5 z-50 bg-foreground text-background text-sm px-4 py-2.5 rounded-xl shadow-xl">{toast}</div>}
 
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>

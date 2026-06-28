@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { Table } from '@/components/ui/Table';
 import { Badge } from '@/components/ui/Badge';
@@ -32,7 +33,6 @@ export default function Deposits() {
   const [selected, setSelected] = useState<any>(null);
   const [saving, setSaving] = useState(false);
   const [adminNote, setAdminNote] = useState('');
-  const [toast, setToast] = useState('');
 
   const load = () => {
     setLoading(true);
@@ -40,8 +40,6 @@ export default function Deposits() {
   };
 
   useEffect(load, []);
-
-  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
 
   const methods = Array.from(new Set(rows.map(r => r.payment_method || 'unknown').filter(Boolean)));
 
@@ -68,12 +66,12 @@ export default function Deposits() {
     setSaving(true);
     try {
       await api.updateDeposit(id, { status, admin_note: adminNote || null });
-      showToast(`Deposit ${status} successfully`);
+      toast.success(`Deposit ${status} successfully`);
       setSelected(null);
       setAdminNote('');
       load();
     } catch (e: any) {
-      showToast('Error: ' + (e?.message || 'Update failed'));
+      toast.error((e?.message || 'Update failed'));
     } finally {
       setSaving(false);
     }
@@ -159,7 +157,6 @@ export default function Deposits() {
 
   return (
     <div className="space-y-5">
-      {toast && <div className="fixed bottom-5 right-5 z-50 bg-foreground text-background text-sm px-4 py-2.5 rounded-xl shadow-xl">{toast}</div>}
 
       <div>
         <h2 className="font-bold text-lg">Deposits</h2>

@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react';
+import { toast } from 'sonner';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { Badge } from '@/components/ui/Badge';
@@ -211,10 +212,7 @@ export default function Users() {
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<any>(null);
-  const [toast, setToast] = useState('');
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 2500); };
 
   const { data: users = [], isLoading } = useQuery<any[]>({
     queryKey: ['users', page, debouncedSearch],
@@ -234,14 +232,8 @@ export default function Users() {
 
   return (
     <div className="space-y-4">
-      {toast && (
-        <div className="fixed bottom-5 right-5 z-50 bg-foreground text-background text-sm px-4 py-2.5 rounded-xl shadow-xl">
-          {toast}
-        </div>
-      )}
-
       {selected && (
-        <UserDetailSheet user={selected} onClose={() => setSelected(null)} onSaved={showToast} />
+        <UserDetailSheet user={selected} onClose={() => setSelected(null)} onSaved={(msg: string) => toast.success(msg)} />
       )}
 
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { Modal } from '@/components/ui/Modal';
 import { Plus, Edit2, Trash2, Hash } from 'lucide-react';
@@ -14,15 +15,12 @@ export default function TalkTopics() {
   const [form, setForm] = useState(empty);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [toast, setToast] = useState('');
 
   const load = () => {
     setLoading(true);
     api.talkTopics().then(setTopics).catch(console.error).finally(() => setLoading(false));
   };
   useEffect(load, []);
-
-  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 2000); };
 
   const openCreate = () => { setEditing({}); setForm(empty); };
   const openEdit = (t: Topic) => { setEditing(t); setForm({ name: t.name, icon: t.icon || '💬' }); };
@@ -33,13 +31,13 @@ export default function TalkTopics() {
     try {
       if (editing?.id) {
         await api.updateTalkTopic(editing.id, form);
-        showToast('Topic updated');
+        toast.success('Topic updated');
       } else {
         await api.createTalkTopic(form);
-        showToast('Topic created');
+        toast.success('Topic created');
       }
       setEditing(null); setForm(empty); load();
-    } catch (e: any) { showToast('Error: ' + e.message); }
+    } catch (e: any) { toast.error(e.message); }
     finally { setSaving(false); }
   };
 
@@ -47,18 +45,17 @@ export default function TalkTopics() {
     try {
       await api.updateTalkTopic(t.id, { is_active: t.is_active ? 0 : 1 });
       load();
-    } catch (e: any) { showToast('Error: ' + e.message); }
+    } catch (e: any) { toast.error(e.message); }
   };
 
   const del = async (id: string) => {
     if (!confirm('Delete this topic?')) return;
-    try { await api.deleteTalkTopic(id); showToast('Deleted'); load(); }
-    catch (e: any) { showToast('Error: ' + e.message); }
+    try { await api.deleteTalkTopic(id); toast.success('Deleted'); load(); }
+    catch (e: any) { toast.error(e.message); }
   };
 
   return (
     <div className="space-y-5">
-      {toast && <div className="fixed bottom-5 right-5 z-50 bg-foreground text-background text-sm px-4 py-2.5 rounded-xl shadow-xl">{toast}</div>}
 
       <div className="flex items-center justify-between">
         <div>

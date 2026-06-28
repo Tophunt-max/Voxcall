@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { Table } from '@/components/ui/Table';
 import { Badge } from '@/components/ui/Badge';
@@ -13,7 +14,6 @@ export default function Withdrawals() {
   const [selected, setSelected] = useState<any>(null);
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
-  const [toast, setToast] = useState('');
 
   const [loadError, setLoadError] = useState('');
   const load = () => {
@@ -24,17 +24,15 @@ export default function Withdrawals() {
   };
   useEffect(load, []);
 
-  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 2500); };
-
   const update = async (status: string) => {
     if (!selected) return;
     setSaving(true);
     try {
       await api.updateWithdrawal(selected.id, { status, admin_note: note || null });
-      showToast(`Request ${status} successfully`);
+      toast.success(`Request ${status} successfully`);
       setSelected(null);
       load();
-    } catch (e: any) { showToast('Error: ' + e.message); }
+    } catch (e: any) { toast.error(e.message); }
     finally { setSaving(false); }
   };
 
@@ -83,7 +81,6 @@ export default function Withdrawals() {
 
   return (
     <div className="space-y-5">
-      {toast && <div className="fixed bottom-5 right-5 z-50 bg-foreground text-background text-sm px-4 py-2.5 rounded-xl shadow-xl">{toast}</div>}
 
       <div>
         <h2 className="font-bold text-lg">Withdrawal Requests</h2>

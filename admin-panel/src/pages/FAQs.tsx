@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { Modal } from '@/components/ui/Modal';
 import { Plus, Edit2, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
@@ -41,12 +42,9 @@ export default function FAQs() {
   const [form, setForm] = useState(empty);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [toast, setToast] = useState('');
 
   const load = () => { setLoading(true); api.faqs().then(setFaqs).catch(console.error).finally(() => setLoading(false)); };
   useEffect(load, []);
-
-  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 2000); };
 
   const openEdit = (f: FAQ) => {
     setEditing(f);
@@ -58,22 +56,21 @@ export default function FAQs() {
     setSaving(true);
     const data = { question: form.question, answer: form.answer, order_index: parseInt(form.order_index) || 0 };
     try {
-      if (editing?.id) { await api.updateFaq(editing.id, data); showToast('FAQ updated'); }
-      else { await api.createFaq(data); showToast('FAQ created'); }
+      if (editing?.id) { await api.updateFaq(editing.id, data); toast.success('FAQ updated'); }
+      else { await api.createFaq(data); toast.success('FAQ created'); }
       setEditing(null); setForm(empty); load();
-    } catch (e: any) { showToast('Error: ' + e.message); }
+    } catch (e: any) { toast.error(e.message); }
     finally { setSaving(false); }
   };
 
   const deleteFaq = async (id: string) => {
     if (!confirm('Delete this FAQ?')) return;
-    try { await api.deleteFaq(id); showToast('FAQ deleted'); load(); }
-    catch (e: any) { showToast('Error: ' + e.message); }
+    try { await api.deleteFaq(id); toast.success('FAQ deleted'); load(); }
+    catch (e: any) { toast.error(e.message); }
   };
 
   return (
     <div className="space-y-5">
-      {toast && <div className="fixed bottom-5 right-5 z-50 bg-foreground text-background text-sm px-4 py-2.5 rounded-xl shadow-xl">{toast}</div>}
 
       <div className="flex items-center justify-between">
         <div>

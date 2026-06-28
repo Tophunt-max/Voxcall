@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import {
   Save, Info, Plus, Trash2, Edit2, Check, X,
@@ -314,7 +315,6 @@ export default function SettingsPage() {
   const [settings, setSettings] = useState<Record<string, string>>(DEFAULTS);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
   // Two-stage confirm for the India seed (it WIPES coin_plans + replaces
   // level_config). First click sets `seedConfirming = true`, the button
   // morphs into a destructive-styled "Yes, apply" + cancel pair. Second
@@ -374,7 +374,7 @@ export default function SettingsPage() {
     api.settings().then(d => {
       setSettings({ ...DEFAULTS, ...d });
       setLastSettingsUpdate(Date.now()); // Track when settings loaded
-    }).catch(() => showToast('Failed to load settings', false)).finally(() => setLoading(false));
+    }).catch(() => toast.error('Failed to load settings')).finally(() => setLoading(false));
   }, []);
 
   // REAL-TIME UPDATE: Poll for settings changes every 30 seconds
@@ -402,8 +402,6 @@ export default function SettingsPage() {
     return () => clearInterval(pollInterval);
   }, []);
 
-  const showToast = (msg: string, ok = true) => { setToast({ msg, ok }); setTimeout(() => setToast(null), 2500); };
-
   const save = async () => {
     setSaving(true);
     try {
@@ -412,9 +410,9 @@ export default function SettingsPage() {
       const fresh = await api.settings();
       setSettings({ ...DEFAULTS, ...fresh });
       setLastSettingsUpdate(Date.now());
-      showToast('Settings saved successfully');
+      toast.error('Settings saved successfully');
     } catch (e: any) {
-      showToast(e?.message || 'Failed to save settings', false);
+      toast.success(e?.message || 'Failed to save settings');
     } finally { setSaving(false); }
   };
 
@@ -433,12 +431,12 @@ export default function SettingsPage() {
       const fresh = await api.settings();
       setSettings({ ...DEFAULTS, ...fresh });
       setLastSettingsUpdate(Date.now());
-      showToast(
+      toast.success(
         `India defaults applied — ${res.plans_seeded} plans, ${res.level_count} levels.`,
       );
       setSeedConfirming(false);
     } catch (e: any) {
-      showToast(e?.message || 'Failed to apply India defaults', false);
+      toast.error(e?.message || 'Failed to apply India defaults');
     } finally {
       setSeeding(false);
     }
@@ -462,12 +460,12 @@ export default function SettingsPage() {
       setLastSettingsUpdate(Date.now());
 
       const details = data.details;
-      showToast(
+      toast.success(
         `✅ Economy optimized! ${details?.plans?.length || 0} plans, ${details?.coin_value?.display || '₹0.05'}/coin`,
       );
       setSeedConfirming(false);
     } catch (e: any) {
-      showToast(e?.message || 'Failed to apply optimized economy', false);
+      toast.error(e?.message || 'Failed to apply optimized economy');
     } finally {
       setSeeding(false);
     }
@@ -511,7 +509,7 @@ export default function SettingsPage() {
     setEditFormula('coins_to_usd');
     setEditExpr('');
     
-    showToast('Computed value updated');
+    toast.success('Computed value updated');
   };
 
   const addComputedRow = () => {
@@ -530,7 +528,7 @@ export default function SettingsPage() {
       cancelEditRow();
     }
     setComputedRows(r => r.filter(x => x.id !== id));
-    showToast('Computed value removed');
+    toast.error('Computed value removed');
   };
 
   const resetComputedRows = () => {
@@ -539,20 +537,20 @@ export default function SettingsPage() {
     setEditLabel('');
     setEditFormula('coins_to_usd');
     setEditExpr('');
-    showToast('Computed values reset to defaults');
+    toast.success('Computed values reset to defaults');
   };
 
   // ── duration row helpers ─────────────────────────────────────────────────
   const addDuration = () => {
     const m = parseInt(newDuration);
     if (!m || m <= 0) return;
-    if (durations.find(d => d.minutes === m)) { showToast(`${m} min already exists`, false); return; }
+    if (durations.find(d => d.minutes === m)) { toast.success(`${m} min already exists`); return; }
     setDurations(prev => [...prev, { id: `d${Date.now()}`, minutes: m }].sort((a, b) => a.minutes - b.minutes));
     setNewDuration('');
   };
 
   const removeDuration = (id: string) => {
-    if (durations.length <= 1) { showToast('At least one duration required', false); return; }
+    if (durations.length <= 1) { toast.error('At least one duration required'); return; }
     setDurations(prev => prev.filter(d => d.id !== id));
   };
 
@@ -630,11 +628,6 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-6 max-w-3xl">
-      {toast && (
-        <div className={`fixed bottom-5 right-5 z-50 text-white text-sm px-4 py-2.5 rounded-xl shadow-xl transition-all ${toast.ok ? 'bg-green-600' : 'bg-red-600'}`}>
-          {toast.msg}
-        </div>
-      )}
 
       {/* Header */}
       <div className="flex items-center justify-between">

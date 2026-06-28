@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { Modal } from '@/components/ui/Modal';
 import { Plus, Edit2, Trash2, Zap, Star } from 'lucide-react';
@@ -64,7 +65,6 @@ export default function CoinPlans() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [toast, setToast] = useState('');
 
   const load = () => { setLoading(true); api.coinPlans().then(setPlans).finally(() => setLoading(false)); };
   useEffect(load, []);
@@ -82,8 +82,6 @@ export default function CoinPlans() {
     };
   }, []);
 
-  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 2000); };
-
   const openEdit = (p: any) => {
     setEditing(p);
     setForm({ name: p.name, coins: String(p.coins), price: String(p.price), bonus_coins: String(p.bonus_coins || 0), currency: (p.currency || 'INR').toUpperCase(), is_popular: !!p.is_popular, is_active: p.is_active !== 0 });
@@ -95,17 +93,17 @@ export default function CoinPlans() {
     const coinsVal = parseInt(form.coins);
     const priceVal = parseFloat(form.price);
     const bonusVal = parseInt(form.bonus_coins) || 0;
-    if (!form.name.trim()) { showToast('Plan name is required'); return; }
-    if (isNaN(coinsVal) || coinsVal <= 0) { showToast('Coins must be a positive number'); return; }
-    if (isNaN(priceVal) || priceVal <= 0) { showToast('Price must be a positive number'); return; }
+    if (!form.name.trim()) { toast.success('Plan name is required'); return; }
+    if (isNaN(coinsVal) || coinsVal <= 0) { toast.success('Coins must be a positive number'); return; }
+    if (isNaN(priceVal) || priceVal <= 0) { toast.success('Price must be a positive number'); return; }
     setSaving(true);
     const data = { name: form.name.trim(), coins: coinsVal, price: priceVal, bonus_coins: bonusVal, currency: (form.currency || 'INR').toUpperCase(), is_popular: form.is_popular ? 1 : 0, is_active: form.is_active ? 1 : 0 };
     try {
       if (editing?.id) { await api.updateCoinPlan(editing.id, data); }
       else { await api.createCoinPlan(data); }
-      showToast(editing?.id ? 'Plan updated' : 'Plan created');
+      toast.success(editing?.id ? 'Plan updated' : 'Plan created');
       setEditing(null); setForm(empty); load();
-    } catch (e: any) { showToast('Error: ' + e.message); }
+    } catch (e: any) { toast.error(e.message); }
     finally { setSaving(false); }
   };
 
@@ -115,9 +113,9 @@ export default function CoinPlans() {
     setDeletingId(id);
     try {
       await api.deleteCoinPlan(id);
-      showToast('Plan deleted');
+      toast.success('Plan deleted');
       load();
-    } catch (e: any) { showToast('Error: ' + e.message); }
+    } catch (e: any) { toast.error(e.message); }
     finally { setDeletingId(null); }
   };
 
@@ -130,7 +128,6 @@ export default function CoinPlans() {
 
   return (
     <div className="space-y-5">
-      {toast && <div className="fixed bottom-5 right-5 z-50 bg-foreground text-background text-sm px-4 py-2.5 rounded-xl shadow-xl">{toast}</div>}
 
       <div className="flex items-center justify-between">
         <div>

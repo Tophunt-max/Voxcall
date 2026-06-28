@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { Table } from '@/components/ui/Table';
 import { Badge } from '@/components/ui/Badge';
@@ -24,7 +25,6 @@ export default function SupportTickets() {
   const [selected, setSelected] = useState<any>(null);
   const [reply, setReply] = useState('');
   const [sending, setSending] = useState(false);
-  const [toast, setToast] = useState('');
 
   const load = () => {
     setLoading(true);
@@ -32,8 +32,6 @@ export default function SupportTickets() {
     api.supportTickets().then(setRows).catch((e: any) => setLoadError(e.message || 'Failed to load tickets')).finally(() => setLoading(false));
   };
   useEffect(load, []);
-
-  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 2500); };
 
   const filtered = rows.filter(r => {
     const name = r.user_name || r.user || '';
@@ -52,9 +50,9 @@ export default function SupportTickets() {
       setRows(rows.map(r => r.id === selected.id ? updatedTicket : r));
       setSelected(updatedTicket);
       setReply('');
-      showToast('Reply sent');
+      toast.success('Reply sent');
     } catch {
-      showToast('Failed to send reply');
+      toast.error('Failed to send reply');
     } finally { setSending(false); }
   };
 
@@ -63,8 +61,8 @@ export default function SupportTickets() {
       await api.updateSupportTicket(id, { status });
       setRows(rows.map(r => r.id === id ? { ...r, status } : r));
       if (selected?.id === id) setSelected((p: any) => ({ ...p, status }));
-      showToast('Status updated');
-    } catch { showToast('Failed to update status'); }
+      toast.success('Status updated');
+    } catch { toast.error('Failed to update status'); }
   };
 
   const cols = [
@@ -119,7 +117,6 @@ export default function SupportTickets() {
 
   return (
     <div className="space-y-5">
-      {toast && <div className="fixed bottom-5 right-5 z-50 bg-foreground text-background text-sm px-4 py-2.5 rounded-xl shadow-xl">{toast}</div>}
 
       {loadError && (
         <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3">

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { Send, Users, Mic2, Clock, CheckCircle, Bell } from 'lucide-react';
 
@@ -16,7 +17,6 @@ export default function BulkNotifications() {
   const [scheduleTime, setScheduleTime] = useState('');
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
-  const [toast, setToast] = useState('');
   const [history, setHistory] = useState<any[]>([]);
   const [histLoading, setHistLoading] = useState(true);
 
@@ -24,10 +24,8 @@ export default function BulkNotifications() {
     api.notifications().then((data: any[]) => {
       const bulk = data.filter((n: any) => n.type === 'bulk' || n.type === 'system').slice(0, 20);
       setHistory(bulk);
-    }).catch(() => showToast('Failed to load notification history')).finally(() => setHistLoading(false));
+    }).catch(() => toast.error('Failed to load notification history')).finally(() => setHistLoading(false));
   }, []);
-
-  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 2500); };
 
   const send = async () => {
     if (!title.trim() || !body.trim()) return;
@@ -46,16 +44,15 @@ export default function BulkNotifications() {
       setHistory(prev => [newEntry, ...prev]);
       setSent(true);
       setTitle(''); setBody(''); setSegment('all'); setScheduled(false); setScheduleTime('');
-      showToast(scheduled ? 'Notification scheduled!' : `Notification sent to ${res.sent || 0} users!`);
+      toast.success(scheduled ? 'Notification scheduled!' : `Notification sent to ${res.sent || 0} users!`);
       setTimeout(() => setSent(false), 3000);
     } catch {
-      showToast('Failed to send notification');
+      toast.error('Failed to send notification');
     } finally { setSending(false); }
   };
 
   return (
     <div className="space-y-6">
-      {toast && <div className="fixed bottom-5 right-5 z-50 bg-foreground text-background text-sm px-4 py-2.5 rounded-xl shadow-xl">{toast}</div>}
 
       <div>
         <h2 className="font-bold text-lg">Bulk Notifications</h2>

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import { Link } from 'wouter';
 import { api } from '@/lib/api';
 import { Save, Smartphone, AlertTriangle, Mail, RefreshCw, ArrowRight } from 'lucide-react';
@@ -76,7 +77,6 @@ function Input({ value, onChange, type = 'text' }: { value: string; onChange: (v
 export default function AppConfig() {
   const [config, setConfig] = useState<Config>(DEFAULTS);
   const [saving, setSaving] = useState(false);
-  const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
   const [hasChanges, setHasChanges] = useState(false);
 
   useEffect(() => {
@@ -97,19 +97,14 @@ export default function AppConfig() {
     setHasChanges(true);
   };
 
-  const showToast = (msg: string, ok = true) => {
-    setToast({ msg, ok });
-    setTimeout(() => setToast(null), 2500);
-  };
-
   const save = async () => {
     setSaving(true);
     try {
       await api.updateSettings(config);
-      showToast('Configuration saved successfully');
+      toast.error('Configuration saved successfully');
       setHasChanges(false);
     } catch (e: any) {
-      showToast(e?.message || 'Failed to save configuration', false);
+      toast.success(e?.message || 'Failed to save configuration');
     } finally {
       setSaving(false);
     }
@@ -119,11 +114,6 @@ export default function AppConfig() {
 
   return (
     <div className="space-y-5">
-      {toast && (
-        <div className={`fixed bottom-5 right-5 z-50 text-white text-sm px-4 py-2.5 rounded-xl shadow-xl transition-all ${toast.ok ? 'bg-green-600' : 'bg-red-600'}`}>
-          {toast.msg}
-        </div>
-      )}
 
       <div className="flex items-center justify-between">
         <div>

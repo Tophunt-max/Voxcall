@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { Table } from '@/components/ui/Table';
 import { Badge } from '@/components/ui/Badge';
@@ -21,7 +22,6 @@ export default function PayoutManagement() {
   const [selected, setSelected] = useState<any>(null);
   const [saving, setSaving] = useState(false);
   const [note, setNote] = useState('');
-  const [toast, setToast] = useState('');
 
   const load = () => {
     setLoading(true);
@@ -29,8 +29,6 @@ export default function PayoutManagement() {
   };
 
   useEffect(load, []);
-
-  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 2500); };
 
   const filtered = rows.filter(r => {
     const matchSearch = (r.host_name || r.name || '').toLowerCase().includes(search.toLowerCase()) ||
@@ -43,12 +41,12 @@ export default function PayoutManagement() {
     setSaving(true);
     try {
       await api.updateWithdrawal(id, { status, admin_note: note || null });
-      showToast(`Payout ${status} successfully`);
+      toast.success(`Payout ${status} successfully`);
       setSelected(null);
       setNote('');
       load();
     } catch (e: any) {
-      showToast('Error: ' + (e?.message || 'Update failed'));
+      toast.error((e?.message || 'Update failed'));
     } finally {
       setSaving(false);
     }
@@ -123,7 +121,6 @@ export default function PayoutManagement() {
 
   return (
     <div className="space-y-5">
-      {toast && <div className="fixed bottom-5 right-5 z-50 bg-foreground text-background text-sm px-4 py-2.5 rounded-xl shadow-xl">{toast}</div>}
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <StatCard icon={Clock} label="Pending Payouts" value={formatInr(totalPending)} gradient="gradient-orange" />
