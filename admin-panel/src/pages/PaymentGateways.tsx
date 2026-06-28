@@ -420,17 +420,17 @@ function ManualQRTab() {
   const create = useMutation({
     mutationFn: api.createManualQRCode,
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['manual-qr-codes'] }); setOpen(false); toast.success('QR Code added!'); },
-    onError: (e: any) => toast.error(e.message),
+    onError: (e: any) => toast.error(e?.message || 'Failed to add QR code. Server may be updating — please try again in a minute.'),
   });
   const update = useMutation({
     mutationFn: ({ id, data }: any) => api.updateManualQRCode(id, data),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['manual-qr-codes'] }); setOpen(false); toast.success('QR Code updated!'); },
-    onError: (e: any) => toast.error(e.message),
+    onError: (e: any) => toast.error(e?.message || 'Failed to update QR code'),
   });
   const remove = useMutation({
     mutationFn: api.deleteManualQRCode,
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['manual-qr-codes'] }); setDeleting(null); toast.success('QR Code deleted'); },
-    onError: (e: any) => toast.error(e.message),
+    onError: (e: any) => toast.error(e?.message || 'Failed to delete QR code'),
   });
   const toggleActive = useMutation({
     mutationFn: ({ id, is_active }: any) => api.updateManualQRCode(id, { is_active }),

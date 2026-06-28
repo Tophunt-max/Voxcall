@@ -1231,11 +1231,14 @@ admin.post('/manual-qr-codes', async (c) => {
         'INSERT INTO manual_qr_codes (id, name, upi_id, qr_image_url, instructions, is_active, position, rotate_interval_min, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, unixepoch(), unixepoch())'
       ).bind(id, body.name || '', body.upi_id || '', body.qr_image_url || '', body.instructions || '', body.is_active !== false ? 1 : 0, body.position ?? 0, body.rotate_interval_min ?? 30).run();
     } else {
-      throw e;
+      console.error('[admin/manual-qr-codes] POST insert error:', e);
+      return c.json({ error: 'Failed to create QR code: ' + (msg || 'Unknown error') }, 500);
     }
   }
   const u = c.get('user');
-  await auditLog(db(c), u.sub, u.email || 'Admin', u.email || '', 'create', 'manual_qr_code', id, `Manual QR created: ${body.name}`);
+  try {
+    await auditLog(db(c), u.sub, u.email || 'Admin', u.email || '', 'create', 'manual_qr_code', id, `Manual QR created: ${body.name}`);
+  } catch { /* audit log failure must never block the operation */ }
   return c.json({ id, success: true }, 201);
 });
 admin.patch('/manual-qr-codes/:id', async (c) => {
@@ -1253,14 +1256,14 @@ admin.patch('/manual-qr-codes/:id', async (c) => {
   sets.push('updated_at = unixepoch()');
   await db(c).prepare(`UPDATE manual_qr_codes SET ${sets.join(', ')} WHERE id = ?`).bind(...vals, id).run();
   const u = c.get('user');
-  await auditLog(db(c), u.sub, u.email || 'Admin', u.email || '', 'update', 'manual_qr_code', id, `Manual QR updated`);
+  try { await auditLog(db(c), u.sub, u.email || 'Admin', u.email || '', 'update', 'manual_qr_code', id, `Manual QR updated`); } catch {}
   return c.json({ success: true });
 });
 admin.delete('/manual-qr-codes/:id', async (c) => {
   const { id } = c.req.param();
   await db(c).prepare('DELETE FROM manual_qr_codes WHERE id = ?').bind(id).run();
   const u = c.get('user');
-  await auditLog(db(c), u.sub, u.email || 'Admin', u.email || '', 'delete', 'manual_qr_code', id, `Manual QR deleted`);
+  try { await auditLog(db(c), u.sub, u.email || 'Admin', u.email || '', 'delete', 'manual_qr_code', id, `Manual QR deleted`); } catch {}
   return c.json({ success: true });
 });
 

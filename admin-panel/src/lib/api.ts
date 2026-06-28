@@ -82,8 +82,9 @@ export async function req<T>(method: string, path: string, body?: unknown): Prom
     throw new Error('Session expired. Please log in again.');
   }
   if (!r.ok) {
-    const err = await r.json().catch(() => ({ error: r.statusText }));
-    throw new Error((err as any).error || r.statusText);
+    const err = await r.json().catch(() => null);
+    const message = (err as any)?.error || r.statusText || `Request failed (${r.status})`;
+    throw new Error(message);
   }
   return r.json();
 }
