@@ -1200,6 +1200,21 @@ admin.get('/manual-qr-codes', async (c) => {
       } catch { /* best effort */ }
       return c.json([]);
     }
+    if (/no.*column/i.test(msg)) {
+      // Table exists but missing columns — add them and retry
+      const cols = [
+        "ALTER TABLE manual_qr_codes ADD COLUMN instructions TEXT DEFAULT ''",
+        "ALTER TABLE manual_qr_codes ADD COLUMN rotate_interval_min INTEGER NOT NULL DEFAULT 30",
+        "ALTER TABLE manual_qr_codes ADD COLUMN position INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE manual_qr_codes ADD COLUMN qr_image_url TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE manual_qr_codes ADD COLUMN updated_at INTEGER DEFAULT (unixepoch())",
+      ];
+      for (const sql of cols) { try { await db(c).prepare(sql).run(); } catch {} }
+      try {
+        const result = await db(c).prepare('SELECT * FROM manual_qr_codes ORDER BY position ASC, created_at DESC').all();
+        return c.json(result.results);
+      } catch { return c.json([]); }
+    }
     console.error('[admin/manual-qr-codes] GET error:', e);
     return c.json({ error: 'Failed to load QR codes' }, 500);
   }
@@ -1227,6 +1242,23 @@ admin.post('/manual-qr-codes', async (c) => {
         created_at INTEGER DEFAULT (unixepoch()),
         updated_at INTEGER DEFAULT (unixepoch())
       )`).run();
+      await db(c).prepare(
+        'INSERT INTO manual_qr_codes (id, name, upi_id, qr_image_url, instructions, is_active, position, rotate_interval_min, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, unixepoch(), unixepoch())'
+      ).bind(id, body.name || '', body.upi_id || '', body.qr_image_url || '', body.instructions || '', body.is_active !== false ? 1 : 0, body.position ?? 0, body.rotate_interval_min ?? 30).run();
+    } else if (/no column named/i.test(msg)) {
+      // Table exists but is missing columns (old migration created it without all columns).
+      // Add missing columns and retry.
+      const missingCols = [
+        { name: 'instructions', def: "ALTER TABLE manual_qr_codes ADD COLUMN instructions TEXT DEFAULT ''" },
+        { name: 'rotate_interval_min', def: "ALTER TABLE manual_qr_codes ADD COLUMN rotate_interval_min INTEGER NOT NULL DEFAULT 30" },
+        { name: 'position', def: "ALTER TABLE manual_qr_codes ADD COLUMN position INTEGER NOT NULL DEFAULT 0" },
+        { name: 'qr_image_url', def: "ALTER TABLE manual_qr_codes ADD COLUMN qr_image_url TEXT NOT NULL DEFAULT ''" },
+        { name: 'updated_at', def: "ALTER TABLE manual_qr_codes ADD COLUMN updated_at INTEGER DEFAULT (unixepoch())" },
+      ];
+      for (const col of missingCols) {
+        try { await db(c).prepare(col.def).run(); } catch { /* column may already exist */ }
+      }
+      // Retry insert
       await db(c).prepare(
         'INSERT INTO manual_qr_codes (id, name, upi_id, qr_image_url, instructions, is_active, position, rotate_interval_min, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, unixepoch(), unixepoch())'
       ).bind(id, body.name || '', body.upi_id || '', body.qr_image_url || '', body.instructions || '', body.is_active !== false ? 1 : 0, body.position ?? 0, body.rotate_interval_min ?? 30).run();
