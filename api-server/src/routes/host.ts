@@ -371,6 +371,20 @@ host.get('/:id/reviews', async (c) => {
   return c.json(result.results);
 });
 
+// GET /api/hosts/:id/gallery — public gallery for a host (viewer-facing)
+host.get('/:id/gallery', async (c) => {
+  const hostId = c.req.param('id');
+  try {
+    const result = await c.env.DB.prepare(
+      'SELECT id, media_url, media_type, caption, sort_order FROM host_gallery WHERE host_id = ? ORDER BY sort_order ASC, created_at ASC'
+    ).bind(hostId).all();
+    return c.json(result.results ?? []);
+  } catch (e: any) {
+    if (/no such table/i.test(String(e?.message || ''))) return c.json([]);
+    throw e;
+  }
+});
+
 // Protected host routes
 const hostProtected = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
 hostProtected.use('*', authMiddleware);

@@ -562,6 +562,31 @@ match.post('/find', async (c) => {
   // 5. Build pool filter (incl. no-repeat exclusion)
   const repeatBlockMin = await readIntSetting(db, 'random_match_repeat_block_min', 30);
   const excludeHostIds = await recentlyMatchedHostIds(db, sub, repeatBlockMin);
+
+  // Also exclude hosts who have blocked this caller (migration 0036).
+  try {
+    const blockedRows = await db
+      .prepare('SELECT blocker_id FROM user_blocks WHERE blocked_id = ? LIMIT 50')
+      .bind(sub)
+      .all<{ blocker_id: string }>();
+    if (blockedRows.results?.length) {
+      // Map blocker user_ids to host_ids
+      const blockerIds = blockedRows.results.map(r => r.blocker_id);
+      const ph = blockerIds.map(() => '?').join(',');
+      const hostRows = await db
+        .prepare(`SELECT id FROM hosts WHERE user_id IN (${ph})`)
+        .bind(...blockerIds)
+        .all<{ id: string }>();
+      for (const h of (hostRows.results ?? [])) {
+        if (!excludeHostIds.includes(h.id)) excludeHostIds.push(h.id);
+      }
+    }
+  } catch (e: any) {
+    if (!/no such table/i.test(String(e?.message || ''))) {
+      console.warn('[match/find] block exclusion failed:', e);
+    }
+  }
+
   const filters: MatchFilters = {
     callType,
     gender,

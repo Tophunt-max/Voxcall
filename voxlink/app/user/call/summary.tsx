@@ -10,6 +10,7 @@ import { formatDuration } from "@/utils/format";
 import { StarRating } from "@/components/StarRating";
 import { API } from "@/services/api";
 import { showErrorToast } from "@/components/Toast";
+import { useAppRatingPrompt } from "@/hooks/useAppRatingPrompt";
 
 export default function CallSummaryScreen() {
   const colors = useColors();
@@ -43,6 +44,7 @@ export default function CallSummaryScreen() {
   const [rating, setRating]     = useState(0);
   const [rated, setRated]       = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const { maybeShowRatingPrompt } = useAppRatingPrompt();
 
   const handleSubmitRating = async () => {
     if (rating === 0) return;
@@ -52,6 +54,11 @@ export default function CallSummaryScreen() {
         await API.rateCall(sid, rating);
       }
       setRated(true);
+      // Trigger app store rating prompt for positive experiences (4+ stars)
+      try {
+        const me = await API.me();
+        maybeShowRatingPrompt(rating, me?.total_calls ?? 0);
+      } catch { /* best-effort — never break the rating flow */ }
     } catch (e: any) {
       showErrorToast(e?.message ?? "Failed to submit rating, please try again.", "Error");
     } finally {

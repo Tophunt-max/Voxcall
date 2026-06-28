@@ -100,6 +100,25 @@ chat.post('/rooms/:id/messages', async (c) => {
   ).bind(id, sub, sub).first<any>();
   if (!roomAccess) return c.json({ error: 'Room not found or access denied' }, 403);
 
+  // Block check — if either party has blocked the other, deny the message.
+  // Best-effort: table missing (migration 0036 not applied) → skip.
+  try {
+    const room = await db.prepare(
+      'SELECT cr.user_id, h.user_id as host_user_id FROM chat_rooms cr JOIN hosts h ON h.id = cr.host_id WHERE cr.id = ?'
+    ).bind(id).first<{ user_id: string; host_user_id: string }>();
+    if (room) {
+      const otherId = room.user_id === sub ? room.host_user_id : room.user_id;
+      const blocked = await db.prepare(
+        'SELECT 1 as ok FROM user_blocks WHERE (blocker_id = ? AND blocked_id = ?) OR (blocker_id = ? AND blocked_id = ?) LIMIT 1'
+      ).bind(otherId, sub, sub, otherId).first<{ ok: number }>();
+      if (blocked) return c.json({ error: 'Unable to send message' }, 403);
+    }
+  } catch (e: any) {
+    if (!/no such table/i.test(String(e?.message || ''))) {
+      console.warn('[chat/messages] block check failed:', e);
+    }
+  }
+
   // Validate message content
   if (!content && !media_url) return c.json({ error: 'Message content or media is required' }, 400);
   if (content && content.length > 5000) return c.json({ error: 'Message too long (max 5000 chars)' }, 400);
