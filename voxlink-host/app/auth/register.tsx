@@ -78,14 +78,10 @@ export default function HostRegisterScreen() {
     setGLoading(true);
     try {
       if (Platform.OS === "web") {
-        const { GoogleAuthProvider, signInWithPopup } = await import("firebase/auth");
-        const { auth } = await import("@/services/firebase");
-        const result = await signInWithPopup(auth, new GoogleAuthProvider());
-        const u = result.user;
-        // Send the Firebase ID token; the server's google-login route
-        // accepts both Google OIDC and Firebase JWTs (routed by iss claim).
-        const idToken = await u.getIdToken();
-        await handleGoogleProfileData(u.uid, u.displayName || "User", u.email || "", u.photoURL, idToken);
+        const { signInWithGoogleWeb } = await import("@/services/firebase");
+        const gu = await signInWithGoogleWeb();
+        if (!gu) return; // redirecting…
+        await handleGoogleProfileData(gu.uid, gu.name, gu.email, gu.photo, gu.idToken);
       } else {
         await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
         const signInResult = await GoogleSignin.signIn();
@@ -130,6 +126,22 @@ export default function HostRegisterScreen() {
       else showErrorToast(err?.message || "Sign-in failed. Please try again.", "Sign In Failed");
     } finally { setGLoading(false); }
   };
+
+  // Complete a web Google sign-in that fell back to a full-page redirect.
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    (async () => {
+      try {
+        const { getGoogleRedirectResult } = await import("@/services/firebase");
+        const gu = await getGoogleRedirectResult();
+        if (gu) {
+          setGLoading(true);
+          await handleGoogleProfileData(gu.uid, gu.name, gu.email, gu.photo, gu.idToken);
+        }
+      } catch { /* none / not configured */ }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <View style={{ flex: 1, backgroundColor: "#fff" }}>

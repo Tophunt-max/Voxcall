@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity,
   Image, ActivityIndicator, Platform,
@@ -60,25 +60,13 @@ export default function LoginScreen() {
     setGoogleLoading(true);
     try {
       if (Platform.OS === "web") {
-        const { GoogleAuthProvider, signInWithPopup } = await import("firebase/auth");
-        const { auth } = await import("@/services/firebase");
-        // auth is null when EXPO_PUBLIC_FIREBASE_* env vars weren't set at build
-        // time (Firebase not configured) — fail with a clear message instead of
-        // a cryptic "Cannot read properties of null".
-        if (!auth) {
-          showErrorToast("Google sign-in isn't set up on this site yet. Please use Quick Login for now.", "Sign-In Unavailable");
-          setGoogleLoading(false);
-          return;
-        }
-        const provider = new GoogleAuthProvider();
-        const result = await signInWithPopup(auth, provider);
-        const u = result.user;
-        // On web we send the Firebase ID token (signed by Firebase, easy
-        // to verify on the server via Firebase JWKS). The server's
-        // /api/auth/google-login route accepts both Google OIDC tokens
-        // and Firebase ID tokens, routing by the `iss` claim.
-        const idToken = await u.getIdToken();
-        await handleGoogleProfileData(u.uid, u.displayName || "User", u.email || "", u.photoURL, idToken);
+        const { signInWithGoogleWeb } = await import("@/services/firebase");
+        // Popup on desktop; auto-falls back to redirect on mobile web where
+        // popups are blocked. Returns null when a redirect was started (the
+        // result is handled by the getGoogleRedirectResult effect on return).
+        const gu = await signInWithGoogleWeb();
+        if (!gu) return; // redirecting…
+        await handleGoogleProfileData(gu.uid, gu.name, gu.email, gu.photo, gu.idToken);
       } else {
         await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
         const signInResult = await GoogleSignin.signIn();
@@ -116,6 +104,10 @@ export default function LoginScreen() {
       }
       // Firebase web auth error codes — give actionable messages.
       const code = String(err?.code || "");
+      if (code === "auth/not-configured") {
+        showErrorToast("Google sign-in isn't set up on this site yet. Please use Quick Login.", "Sign-In Unavailable");
+        return;
+      }
       if (code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request") return; // user dismissed
       if (code === "auth/popup-blocked") {
         showErrorToast("Your browser blocked the sign-in popup. Allow popups for this site and try again.", "Popup Blocked");
@@ -162,6 +154,25 @@ export default function LoginScreen() {
       setGoogleLoading(false);
     }
   };
+
+  // On web, complete a Google sign-in that fell back to a full-page redirect
+  // (mobile browsers where the popup was blocked). Runs once on mount.
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    (async () => {
+      try {
+        const { getGoogleRedirectResult } = await import("@/services/firebase");
+        const gu = await getGoogleRedirectResult();
+        if (gu) {
+          setGoogleLoading(true);
+          await handleGoogleProfileData(gu.uid, gu.name, gu.email, gu.photo, gu.idToken);
+        }
+      } catch {
+        /* no pending redirect / not configured — ignore */
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleQuickLogin = async () => {
     setQuickLoading(true);
