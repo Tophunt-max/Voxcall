@@ -38,6 +38,27 @@ async function getDeviceId(): Promise<string> {
       if (vendorId) return `ios_${vendorId}`;
     }
   } catch {}
+
+  // Web: persist the device id in localStorage DIRECTLY. AsyncStorage-on-web
+  // proved unreliable here (the stored id wasn't read back after sign-out →
+  // a fresh id was generated → Quick Login kept creating NEW guest accounts
+  // instead of returning the same device's account). localStorage is
+  // synchronous and survives sign-out (logout only clears the auth token/user).
+  if (Platform.OS === "web") {
+    try {
+      if (typeof window !== "undefined" && window.localStorage) {
+        let id = window.localStorage.getItem(DEVICE_ID_KEY);
+        if (!id) {
+          id = `dev_${Math.random().toString(36).slice(2)}_${Date.now()}`;
+          window.localStorage.setItem(DEVICE_ID_KEY, id);
+        }
+        // Mirror into AsyncStorage too (best-effort) for any other reader.
+        AsyncStorage.setItem(DEVICE_ID_KEY, id).catch(() => {});
+        return id;
+      }
+    } catch { /* fall through to AsyncStorage */ }
+  }
+
   const stored = await AsyncStorage.getItem(DEVICE_ID_KEY);
   if (stored) return stored;
   const generated = `dev_${Math.random().toString(36).slice(2)}_${Date.now()}`;
