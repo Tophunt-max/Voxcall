@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider, useAuth } from '@/lib/auth';
 import { Layout } from '@/components/Layout';
 import { Toaster } from '@/components/ui/sonner';
+import { ConfirmProvider } from '@/components/ConfirmDialog';
 import Login from '@/pages/Login';
 
 const Dashboard = lazy(() => import('@/pages/Dashboard'));
@@ -107,9 +108,11 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <WouterRouter base={base}>
-          <ProtectedApp />
-        </WouterRouter>
+        <ConfirmProvider>
+          <WouterRouter base={base}>
+            <ProtectedApp />
+          </WouterRouter>
+        </ConfirmProvider>
       </AuthProvider>
       <Toaster richColors position="top-right" />
     </QueryClientProvider>

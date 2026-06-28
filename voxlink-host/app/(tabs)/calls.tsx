@@ -129,9 +129,9 @@ export default function HostCallsScreen() {
             <TouchableOpacity
               key={f}
               onPress={() => setFilter(f)}
-              style={[styles.filterBtn, filter === f && styles.filterBtnActive]}
+              style={[styles.filterBtn, { backgroundColor: filter === f ? colors.accent : colors.accentLight }]}
             >
-              <Text style={[styles.filterText, filter === f && styles.filterTextActive]}>{f}</Text>
+              <Text style={[styles.filterText, { color: filter === f ? "#fff" : colors.accent }]}>{f}</Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -169,11 +169,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 7,
     borderRadius: 20,
-    backgroundColor: "#F0E8FF",
   },
-  filterBtnActive: { backgroundColor: "#A00EE7" },
-  filterText: { fontSize: 13, fontFamily: "Poppins_500Medium", color: "#A00EE7" },
-  filterTextActive: { color: "#fff" },
+  filterText: { fontSize: 13, fontFamily: "Poppins_500Medium" },
   callCard: {
     borderRadius: 14,
     padding: 14,

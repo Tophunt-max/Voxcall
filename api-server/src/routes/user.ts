@@ -343,4 +343,178 @@ user.post('/become-host', async (c) => {
   return c.json({ success: true, host_id: hostId }, 201);
 });
 
+// ─── User Blocking System ────────────────────────────────────────────────────
+// Allows users to block other users. Blocked users cannot:
+// - Call the blocker
+// - Send chat messages to the blocker
+// - Appear in the blocker's random match pool
+// The block is one-directional: A blocks B means B cannot reach A, but A can
+// still reach B (unless B also blocks A).
+
+// GET /api/user/blocks — list all users blocked by the caller
+user.get('/blocks', async (c) => {
+  const { sub } = c.get('user');
+  const db = c.env.DB;
+  try {
+    const result = await db.prepare(
+      `SELECT ub.id, ub.blocked_id, ub.reason, ub.created_at,
+              u.name, u.avatar_url
+       FROM user_blocks ub
+       JOIN users u ON u.id = ub.blocked_id
+       WHERE ub.blocker_id = ?
+       ORDER BY ub.created_at DESC`
+    ).bind(sub).all();
+    return c.json(result.results ?? []);
+  } catch (e: any) {
+    // Table may not exist yet (migration 0036 not applied)
+    if (/no such table/i.test(String(e?.message || ''))) {
+      return c.json([]);
+    }
+    throw e;
+  }
+});
+
+// POST /api/user/blocks/:userId — block a user
+user.post('/blocks/:userId', async (c) => {
+  const { sub } = c.get('user');
+  const { userId } = c.req.param();
+  const db = c.env.DB;
+
+  if (userId === sub) return c.json({ error: 'Cannot block yourself' }, 400);
+
+  // Verify target user exists
+  const target = await db.prepare('SELECT id, name FROM users WHERE id = ?').bind(userId).first<any>();
+  if (!target) return c.json({ error: 'User not found' }, 404);
+
+  const body = await c.req.json<{ reason?: string }>().catch(() => ({} as { reason?: string }));
+  const reason = typeof body.reason === 'string' ? body.reason.slice(0, 500) : null;
+
+  try {
+    await db.prepare(
+      'INSERT OR IGNORE INTO user_blocks (id, blocker_id, blocked_id, reason) VALUES (?, ?, ?, ?)'
+    ).bind(crypto.randomUUID(), sub, userId, reason).run();
+  } catch (e: any) {
+    // Table may not exist yet
+    if (/no such table/i.test(String(e?.message || ''))) {
+      return c.json({ error: 'Blocking feature not yet available. Please update the app.' }, 503);
+    }
+    // Already blocked (UNIQUE constraint) — idempotent success
+    if (/unique|constraint/i.test(String(e?.message || ''))) {
+      return c.json({ success: true, already_blocked: true });
+    }
+    throw e;
+  }
+
+  return c.json({ success: true, blocked_user: { id: target.id, name: target.name } });
+});
+
+// DELETE /api/user/blocks/:userId — unblock a user
+user.delete('/blocks/:userId', async (c) => {
+  const { sub } = c.get('user');
+  const { userId } = c.req.param();
+  const db = c.env.DB;
+
+  try {
+    await db.prepare(
+      'DELETE FROM user_blocks WHERE blocker_id = ? AND blocked_id = ?'
+    ).bind(sub, userId).run();
+  } catch (e: any) {
+    // Table may not exist yet
+    if (/no such table/i.test(String(e?.message || ''))) {
+      return c.json({ success: true });
+    }
+    throw e;
+  }
+
+  return c.json({ success: true });
+});
+
+// GET /api/user/blocks/check/:userId — check if a user is blocked (for UI)
+user.get('/blocks/check/:userId', async (c) => {
+  const { sub } = c.get('user');
+  const { userId } = c.req.param();
+  const db = c.env.DB;
+
+  try {
+    const row = await db.prepare(
+      'SELECT 1 as ok FROM user_blocks WHERE blocker_id = ? AND blocked_id = ? LIMIT 1'
+    ).bind(sub, userId).first<{ ok: number }>();
+    return c.json({ blocked: !!row });
+  } catch (e: any) {
+    if (/no such table/i.test(String(e?.message || ''))) {
+      return c.json({ blocked: false });
+    }
+    throw e;
+  }
+});
+
+// ─── Notification Preferences ────────────────────────────────────────────────
+// Categories: 'calls', 'chat', 'marketing', 'streak', 'reengagement', 'system'
+// Default is all enabled. Users can opt out of specific categories.
+const NOTIFICATION_CATEGORIES = ['calls', 'chat', 'marketing', 'streak', 'reengagement', 'system'];
+
+// GET /api/user/notification-preferences
+user.get('/notification-preferences', async (c) => {
+  const { sub } = c.get('user');
+  const db = c.env.DB;
+
+  // Build default preferences (all enabled)
+  const prefs: Record<string, boolean> = {};
+  for (const cat of NOTIFICATION_CATEGORIES) prefs[cat] = true;
+
+  try {
+    const result = await db.prepare(
+      'SELECT category, enabled FROM notification_preferences WHERE user_id = ?'
+    ).bind(sub).all<{ category: string; enabled: number }>();
+    for (const row of (result.results ?? [])) {
+      if (NOTIFICATION_CATEGORIES.includes(row.category)) {
+        prefs[row.category] = row.enabled === 1;
+      }
+    }
+  } catch (e: any) {
+    // Table may not exist yet (migration 0037)
+    if (!/no such table/i.test(String(e?.message || ''))) {
+      console.warn('[notification-preferences] query failed:', e);
+    }
+  }
+
+  return c.json({ preferences: prefs, categories: NOTIFICATION_CATEGORIES });
+});
+
+// PATCH /api/user/notification-preferences — update preferences
+user.patch('/notification-preferences', async (c) => {
+  const { sub } = c.get('user');
+  const db = c.env.DB;
+  const body = await c.req.json<Record<string, boolean>>().catch(() => ({}));
+
+  const updates: { category: string; enabled: boolean }[] = [];
+  for (const [cat, val] of Object.entries(body)) {
+    if (NOTIFICATION_CATEGORIES.includes(cat) && typeof val === 'boolean') {
+      updates.push({ category: cat, enabled: val });
+    }
+  }
+
+  if (updates.length === 0) return c.json({ error: 'No valid preferences to update' }, 400);
+
+  try {
+    await db.batch(
+      updates.map((u) =>
+        db.prepare(
+          `INSERT INTO notification_preferences (id, user_id, category, enabled, updated_at)
+           VALUES (?, ?, ?, ?, unixepoch())
+           ON CONFLICT(user_id, category)
+           DO UPDATE SET enabled = excluded.enabled, updated_at = excluded.updated_at`
+        ).bind(crypto.randomUUID(), sub, u.category, u.enabled ? 1 : 0)
+      )
+    );
+  } catch (e: any) {
+    if (/no such table/i.test(String(e?.message || ''))) {
+      return c.json({ error: 'Notification preferences not yet available. Please update.' }, 503);
+    }
+    throw e;
+  }
+
+  return c.json({ success: true });
+});
+
 export default user;

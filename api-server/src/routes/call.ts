@@ -163,6 +163,22 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
     return apiError(c, ErrorCode.SELF_CALL, 400, 'You cannot call yourself');
   }
 
+  // Block check — if the host has blocked this caller, prevent the call.
+  // Best-effort: if the table doesn't exist yet (migration 0036 not applied),
+  // skip the check so calls keep working.
+  try {
+    const blocked = await db.prepare(
+      'SELECT 1 as ok FROM user_blocks WHERE blocker_id = ? AND blocked_id = ? LIMIT 1'
+    ).bind(host.user_id, sub).first<{ ok: number }>();
+    if (blocked) {
+      return apiError(c, ErrorCode.HOST_UNAVAILABLE, 403, 'This host is not available for calls');
+    }
+  } catch (e: any) {
+    if (!/no such table/i.test(String(e?.message || ''))) {
+      console.warn('[initiate] block check failed:', e);
+    }
+  }
+
   // Concurrent call check — user pehle se kisi call mein hai?
   const existingCall = await db.prepare(
     "SELECT id FROM call_sessions WHERE caller_id = ? AND status IN ('pending','active') LIMIT 1"

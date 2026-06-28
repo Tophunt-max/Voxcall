@@ -617,4 +617,186 @@ hostProtected.get('/me', async (c) => {
   });
 });
 
+// ─── Host Gallery ────────────────────────────────────────────────────────────
+// GET /api/host/gallery — get current host's gallery items
+hostProtected.get('/gallery', async (c) => {
+  const { sub } = c.get('user');
+  const db = c.env.DB;
+  const host = await db.prepare('SELECT id FROM hosts WHERE user_id = ?').bind(sub).first<{ id: string }>();
+  if (!host) return c.json({ error: 'Not a host' }, 403);
+
+  try {
+    const result = await db.prepare(
+      'SELECT * FROM host_gallery WHERE host_id = ? ORDER BY sort_order ASC, created_at ASC'
+    ).bind(host.id).all();
+    return c.json(result.results ?? []);
+  } catch (e: any) {
+    if (/no such table/i.test(String(e?.message || ''))) return c.json([]);
+    throw e;
+  }
+});
+
+// POST /api/host/gallery — add a gallery item (max 6)
+hostProtected.post('/gallery', async (c) => {
+  const { sub } = c.get('user');
+  const db = c.env.DB;
+  const host = await db.prepare('SELECT id FROM hosts WHERE user_id = ?').bind(sub).first<{ id: string }>();
+  if (!host) return c.json({ error: 'Not a host' }, 403);
+
+  const body = await c.req.json<{ media_url: string; media_type?: string; caption?: string }>();
+  if (!body.media_url) return c.json({ error: 'media_url is required' }, 400);
+
+  try {
+    // Check limit
+    const count = await db.prepare(
+      'SELECT COUNT(*) as cnt FROM host_gallery WHERE host_id = ?'
+    ).bind(host.id).first<{ cnt: number }>();
+    if ((count?.cnt ?? 0) >= 6) {
+      return c.json({ error: 'Maximum 6 gallery items allowed. Delete one first.' }, 400);
+    }
+
+    const id = crypto.randomUUID();
+    await db.prepare(
+      'INSERT INTO host_gallery (id, host_id, media_url, media_type, caption, sort_order) VALUES (?, ?, ?, ?, ?, ?)'
+    ).bind(id, host.id, body.media_url, body.media_type ?? 'image', body.caption ?? null, (count?.cnt ?? 0)).run();
+
+    return c.json({ success: true, id });
+  } catch (e: any) {
+    if (/no such table/i.test(String(e?.message || ''))) {
+      return c.json({ error: 'Gallery feature not yet available' }, 503);
+    }
+    throw e;
+  }
+});
+
+// DELETE /api/host/gallery/:id — remove a gallery item
+hostProtected.delete('/gallery/:id', async (c) => {
+  const { sub } = c.get('user');
+  const itemId = c.req.param('id');
+  const db = c.env.DB;
+  const host = await db.prepare('SELECT id FROM hosts WHERE user_id = ?').bind(sub).first<{ id: string }>();
+  if (!host) return c.json({ error: 'Not a host' }, 403);
+
+  try {
+    await db.prepare(
+      'DELETE FROM host_gallery WHERE id = ? AND host_id = ?'
+    ).bind(itemId, host.id).run();
+  } catch (e: any) {
+    if (/no such table/i.test(String(e?.message || ''))) return c.json({ success: true });
+    throw e;
+  }
+
+  return c.json({ success: true });
+});
+
+// PATCH /api/host/intro-video — set/update intro video URL
+hostProtected.patch('/intro-video', async (c) => {
+  const { sub } = c.get('user');
+  const db = c.env.DB;
+  const body = await c.req.json<{ intro_video_url: string | null }>();
+
+  try {
+    await db.prepare('UPDATE hosts SET intro_video_url = ? WHERE user_id = ?')
+      .bind(body.intro_video_url ?? null, sub).run();
+    return c.json({ success: true });
+  } catch (e: any) {
+    if (/no such column/i.test(String(e?.message || ''))) {
+      return c.json({ error: 'Intro video feature not yet available' }, 503);
+    }
+    throw e;
+  }
+});
+
+// PATCH /api/host/schedule — set availability schedule
+hostProtected.patch('/schedule', async (c) => {
+  const { sub } = c.get('user');
+  const db = c.env.DB;
+  const body = await c.req.json<{ available_from?: string; available_to?: string; timezone?: string }>();
+
+  try {
+    const sets: string[] = [];
+    const vals: any[] = [];
+    if (body.available_from !== undefined) { sets.push('available_from = ?'); vals.push(body.available_from); }
+    if (body.available_to !== undefined) { sets.push('available_to = ?'); vals.push(body.available_to); }
+    if (body.timezone !== undefined) { sets.push('timezone = ?'); vals.push(body.timezone); }
+    if (!sets.length) return c.json({ error: 'Nothing to update' }, 400);
+    vals.push(sub);
+    await db.prepare(`UPDATE hosts SET ${sets.join(', ')} WHERE user_id = ?`).bind(...vals).run();
+    return c.json({ success: true });
+  } catch (e: any) {
+    if (/no such column/i.test(String(e?.message || ''))) {
+      return c.json({ error: 'Schedule feature not yet available' }, 503);
+    }
+    throw e;
+  }
+});
+
+// ─── Host Earnings Analytics ─────────────────────────────────────────────────
+// GET /api/host/earnings/analytics — daily earnings for graphs (last 30 days)
+hostProtected.get('/earnings/analytics', async (c) => {
+  const { sub } = c.get('user');
+  const db = c.env.DB;
+  const host = await db.prepare('SELECT id FROM hosts WHERE user_id = ?').bind(sub).first<{ id: string }>();
+  if (!host) return c.json({ error: 'Not a host' }, 403);
+
+  const days = Math.min(parseInt(c.req.query('days') || '30') || 30, 90);
+  const since = Math.floor(Date.now() / 1000) - days * 86400;
+
+  // Daily aggregation of earnings and call counts
+  const dailyStats = await db.prepare(
+    `SELECT
+       DATE(cs.ended_at, 'unixepoch') as day,
+       COUNT(*) as call_count,
+       SUM(cs.duration_seconds) as total_seconds,
+       SUM(CASE WHEN ct.amount > 0 THEN ct.amount ELSE 0 END) as earnings
+     FROM call_sessions cs
+     LEFT JOIN coin_transactions ct ON ct.ref_id = cs.id AND ct.user_id = ? AND ct.type = 'bonus'
+     WHERE cs.host_id = ? AND cs.status = 'ended' AND cs.ended_at >= ?
+     GROUP BY DATE(cs.ended_at, 'unixepoch')
+     ORDER BY day ASC`
+  ).bind(sub, host.id, since).all<any>();
+
+  // Weekly summary
+  const weeklyStats = await db.prepare(
+    `SELECT
+       strftime('%Y-W%W', cs.ended_at, 'unixepoch') as week,
+       COUNT(*) as call_count,
+       SUM(cs.duration_seconds) as total_seconds,
+       SUM(CASE WHEN ct.amount > 0 THEN ct.amount ELSE 0 END) as earnings
+     FROM call_sessions cs
+     LEFT JOIN coin_transactions ct ON ct.ref_id = cs.id AND ct.user_id = ? AND ct.type = 'bonus'
+     WHERE cs.host_id = ? AND cs.status = 'ended' AND cs.ended_at >= ?
+     GROUP BY week
+     ORDER BY week ASC`
+  ).bind(sub, host.id, since).all<any>();
+
+  // Peak hours (which hour of day gets most calls)
+  const peakHours = await db.prepare(
+    `SELECT
+       CAST(strftime('%H', cs.created_at, 'unixepoch') AS INTEGER) as hour,
+       COUNT(*) as call_count
+     FROM call_sessions cs
+     WHERE cs.host_id = ? AND cs.status = 'ended' AND cs.ended_at >= ?
+     GROUP BY hour
+     ORDER BY call_count DESC LIMIT 5`
+  ).bind(host.id, since).all<any>();
+
+  // Tips received
+  let tipsTotal = 0;
+  try {
+    const tipRow = await db.prepare(
+      'SELECT COALESCE(SUM(amount), 0) as total FROM tips WHERE host_id = ? AND created_at >= ?'
+    ).bind(host.id, since).first<{ total: number }>();
+    tipsTotal = tipRow?.total ?? 0;
+  } catch { /* tips table may not exist */ }
+
+  return c.json({
+    daily: dailyStats.results ?? [],
+    weekly: weeklyStats.results ?? [],
+    peak_hours: peakHours.results ?? [],
+    tips_total: tipsTotal,
+    period_days: days,
+  });
+});
+
 export { host as hostsRouter, hostProtected as hostRouter };

@@ -277,6 +277,32 @@ export const API = {
   // (the hosts.id) + display fields; the caller maps host_id -> id.
   getFavorites: () => apiRequest<any[]>('GET', '/api/user/favorites'),
 
+  // ─── User Blocking ──────────────────────────────────────────────────────────
+  // Block/unblock users. Blocked users cannot call or message the blocker.
+  getBlockedUsers: () => apiRequest<any[]>('GET', '/api/user/blocks'),
+  blockUser: (userId: string, reason?: string) =>
+    apiRequest<{ success: boolean; blocked_user?: any; already_blocked?: boolean }>(
+      'POST', `/api/user/blocks/${userId}`, { reason }
+    ),
+  unblockUser: (userId: string) =>
+    apiRequest<{ success: boolean }>('DELETE', `/api/user/blocks/${userId}`),
+  isUserBlocked: (userId: string) =>
+    apiRequest<{ blocked: boolean }>('GET', `/api/user/blocks/check/${userId}`),
+
+  // ─── Notification Preferences ───────────────────────────────────────────────
+  getNotificationPreferences: () =>
+    apiRequest<{ preferences: Record<string, boolean>; categories: string[] }>('GET', '/api/user/notification-preferences'),
+  updateNotificationPreferences: (prefs: Record<string, boolean>) =>
+    apiRequest<{ success: boolean }>('PATCH', '/api/user/notification-preferences', prefs),
+
+  // ─── Tipping / Gifting ──────────────────────────────────────────────────────
+  sendTip: (host_id: string, amount: number, message?: string, call_session_id?: string) =>
+    apiRequest<{ success: boolean; tip_id: string; amount: number; new_balance: number }>(
+      'POST', '/api/tips/send', { host_id, amount, message, call_session_id }
+    ),
+  getTipsSent: () => apiRequest<any[]>('GET', '/api/tips/sent'),
+  getTipsReceived: () => apiRequest<any[]>('GET', '/api/tips/received'),
+
   // Engagement event ingest — batched impression/click/conversion logging that
   // powers rail CTR / conversion metrics + data-driven ranking. Best-effort;
   // see services/engagement.ts for the client-side batching queue.

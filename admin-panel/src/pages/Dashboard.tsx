@@ -33,15 +33,15 @@ function StatsSkeleton() {
 
 export default function Dashboard() {
   // OPTIMIZATION #14: useQuery replaces manual useEffect+useState
-  //   - Automatic background refetch every 30 s (live dashboard feel — optimization #17)
+  //   - Automatic background refetch every 15 s (live dashboard feel)
   //   - Deduplicates concurrent requests on the same page
   //   - Automatic retry on network failure (3 attempts)
   //   - Cached in React Query's in-memory store so navigating back is instant
   const { data, isLoading: loadingDash, error } = useQuery({
     queryKey: ['dashboard'],
     queryFn: () => api.dashboard(),
-    refetchInterval: 30_000,
-    staleTime: 20_000,
+    refetchInterval: 15_000,
+    staleTime: 10_000,
   });
 
   const { data: analytics, isLoading: loadingAnalytics } = useQuery({

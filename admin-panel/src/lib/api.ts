@@ -14,6 +14,38 @@ function handleSessionExpired() {
   }
 }
 
+// ─── Token Auto-Refresh ──────────────────────────────────────────────────────
+// On 401: silently refresh the token via /api/auth/refresh and retry once.
+// Multiple concurrent 401s are collapsed into a single refresh call.
+let _refreshing: Promise<string | null> | null = null;
+
+async function refreshAdminToken(): Promise<string | null> {
+  if (_refreshing) return _refreshing;
+  _refreshing = (async () => {
+    try {
+      const oldToken = localStorage.getItem('voxlink_admin_token');
+      if (!oldToken) return null;
+      const res = await fetch(`${API}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: oldToken }),
+      });
+      if (!res.ok) return null;
+      const data = await res.json() as { token?: string };
+      if (data.token) {
+        localStorage.setItem('voxlink_admin_token', data.token);
+        return data.token;
+      }
+      return null;
+    } catch {
+      return null;
+    } finally {
+      _refreshing = null;
+    }
+  })();
+  return _refreshing;
+}
+
 export async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
   const token = getToken();
   if (!token && !path.includes('/auth/')) {
@@ -25,7 +57,27 @@ export async function req<T>(method: string, path: string, body?: unknown): Prom
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: body ? JSON.stringify(body) : undefined,
   });
+  // FIX #3: On 401, try refreshing the token and retry once before giving up.
+  // Previously, a 401 immediately killed the session, losing any unsaved admin work.
   if (r.status === 401 && !path.includes('/auth/')) {
+    const newToken = await refreshAdminToken();
+    if (newToken) {
+      // Retry the original request with the new token
+      const retry = await fetch(`${API}${path}`, {
+        method,
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${newToken}` },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      if (retry.status === 401) {
+        handleSessionExpired();
+        throw new Error('Session expired. Please log in again.');
+      }
+      if (!retry.ok) {
+        const err = await retry.json().catch(() => ({ error: retry.statusText }));
+        throw new Error((err as any).error || retry.statusText);
+      }
+      return retry.json();
+    }
     handleSessionExpired();
     throw new Error('Session expired. Please log in again.');
   }
@@ -41,7 +93,7 @@ export const api = {
   dashboard: () => req<any>('GET', '/admin/dashboard'),
   users: (p?: string, s?: string) => req<any[]>('GET', `/admin/users?page=${p||1}&limit=21${s ? '&search='+encodeURIComponent(s) : ''}`),
   updateUser: (id: string, data: any) => req('PATCH', `/admin/users/${id}`, data),
-  hosts: () => req<any[]>('GET', '/admin/hosts'),
+  hosts: (page = 1, limit = 50) => req<any[]>('GET', `/admin/hosts?page=${page}&limit=${limit}`),
   updateHost: (id: string, data: any) => req('PATCH', `/admin/hosts/${id}`, data),
   withdrawals: () => req<any[]>('GET', '/admin/withdrawals'),
   updateWithdrawal: (id: string, data: any) => req('PATCH', `/admin/withdrawals/${id}`, data),
@@ -60,8 +112,8 @@ export const api = {
   createTalkTopic: (data: any) => req<any>('POST', '/admin/talk-topics', data),
   updateTalkTopic: (id: string, data: any) => req('PATCH', `/admin/talk-topics/${id}`, data),
   deleteTalkTopic: (id: string) => req('DELETE', `/admin/talk-topics/${id}`),
-  coinTransactions: () => req<any[]>('GET', '/admin/coin-transactions'),
-  ratings: () => req<any[]>('GET', '/admin/ratings'),
+  coinTransactions: (page = 1, limit = 50) => req<any[]>('GET', `/admin/coin-transactions?page=${page}&limit=${limit}`),
+  ratings: (page = 1, limit = 50) => req<any[]>('GET', `/admin/ratings?page=${page}&limit=${limit}`),
   analytics: (days?: number) => req<any>('GET', `/admin/analytics${days ? `?days=${days}` : ''}`),
   streakAnalytics: () => req<any>('GET', '/admin/streak-analytics'),
   coinReconciliation: () => req<any>('GET', '/admin/coin-reconciliation'),
@@ -80,10 +132,10 @@ export const api = {
   replySupportTicket: (id: string, data: any) => req('POST', `/admin/support-tickets/${id}/reply`, data),
   contentReports: () => req<any[]>('GET', '/admin/content-reports'),
   updateContentReport: (id: string, data: any) => req('PATCH', `/admin/content-reports/${id}`, data),
-  bannedUsers: () => req<any[]>('GET', '/admin/bans'),
+  bannedUsers: (page = 1, limit = 50) => req<any[]>('GET', `/admin/bans?page=${page}&limit=${limit}`),
   banUser: (data: any) => req<any>('POST', '/admin/bans', data),
   unbanUser: (id: string) => req('DELETE', `/admin/bans/${id}`),
-  auditLogs: () => req<any[]>('GET', '/admin/audit-logs'),
+  auditLogs: (page = 1, limit = 50) => req<any[]>('GET', `/admin/audit-logs?page=${page}&limit=${limit}`),
   banners: () => req<any[]>('GET', '/admin/banners'),
   createBanner: (data: any) => req<any>('POST', '/admin/banners', data),
   updateBanner: (id: string, data: any) => req('PATCH', `/admin/banners/${id}`, data),
