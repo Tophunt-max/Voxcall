@@ -11,6 +11,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { useColors } from "@/hooks/useColors";
+import { useLanguage } from "@/context/LanguageContext";
 import { formatDuration, formatRelativeTime } from "@/utils/format";
 import { API } from "@/services/api";
 import { showErrorToast } from "@/components/Toast";
@@ -20,6 +21,7 @@ type CallFilter = "All" | "Audio" | "Video";
 export default function CallingHistoryScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { t } = useLanguage();
   const [filter, setFilter] = useState<CallFilter>("All");
   const [callHistory, setCallHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -53,7 +55,7 @@ export default function CallingHistoryScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>Calling History</Text>
+        <Text style={[styles.headerTitle, { color: colors.text }]}>{t.calls.callingHistory}</Text>
       </View>
 
       <View style={[styles.filterBar, { borderBottomColor: colors.border }]}>
@@ -63,7 +65,9 @@ export default function CallingHistoryScreen() {
             onPress={() => setFilter(f)}
             style={[styles.filterTab, filter === f && { borderBottomColor: "#A00EE7", borderBottomWidth: 2.5 }]}
           >
-            <Text style={[styles.filterTabText, { color: filter === f ? "#A00EE7" : colors.mutedForeground }]}>{f}</Text>
+            <Text style={[styles.filterTabText, { color: filter === f ? "#A00EE7" : colors.mutedForeground }]}>
+              {f === "All" ? t.common.all : f === "Audio" ? t.calls.audioShort : t.calls.videoShort}
+            </Text>
           </TouchableOpacity>
         ))}
       </View>
@@ -75,7 +79,7 @@ export default function CallingHistoryScreen() {
         ListEmptyComponent={
           <View style={styles.emptyWrap}>
             <Image source={require("@/assets/images/empty_history.png")} style={styles.emptyImg} resizeMode="contain" />
-            <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>No call history yet</Text>
+            <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>{t.calls.noCallHistory}</Text>
           </View>
         }
         renderItem={({ item }) => (
@@ -114,7 +118,7 @@ export default function CallingHistoryScreen() {
             <View style={styles.cardInfo}>
               <Text style={[styles.hostName, { color: colors.text }]}>{item.hostName}</Text>
               <Text style={[styles.callMeta, { color: colors.mutedForeground }]}>
-                {item.type === "video" ? "Video Call" : "Audio Call"} • {formatDuration(item.duration)}
+                {item.type === "video" ? t.calls.video : t.calls.audio} • {formatDuration(item.duration)}
               </Text>
               <Text style={[styles.callTime, { color: colors.subText }]}>{formatRelativeTime(item.timestamp)}</Text>
             </View>

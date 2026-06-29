@@ -7,6 +7,7 @@ import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SvgIcon } from "@/components/SvgIcon";
 import { useColors } from "@/hooks/useColors";
+import { useLanguage } from "@/context/LanguageContext";
 import { API, resolveMediaUrl } from "@/services/api";
 import { showErrorToast } from "@/components/Toast";
 import { formatDuration, formatTimestamp } from "@/utils/format";
@@ -44,6 +45,7 @@ function mapStatus(s: string): "completed" | "missed" | "cancelled" {
 export default function CallHistoryScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { t } = useLanguage();
   const [filter, setFilter] = useState<"all" | "audio" | "video">("all");
   const [callHistory, setCallHistory] = useState<CallHistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -65,7 +67,7 @@ export default function CallHistoryScreen() {
           createdAt: c.created_at || 0,
         })));
       })
-      .catch(() => { setCallHistory([]); showErrorToast("Failed to load call history."); })
+      .catch(() => { setCallHistory([]); showErrorToast(t.callHistoryScreen.loadFailed); })
       .finally(() => setLoading(false));
   }, []);
 
@@ -91,11 +93,11 @@ export default function CallHistoryScreen() {
                 resizeMode="contain"
               />
             <Text style={[styles.typeText, { color: item.type === "video" ? colors.accent : colors.accent }]}>
-              {item.type === "video" ? "Video" : "Audio"}
+              {item.type === "video" ? t.callHistoryScreen.video : t.callHistoryScreen.audio}
             </Text>
           </View>
           <View style={[styles.dot, { backgroundColor: colors.border }]} />
-          <Text style={[styles.status, { color: STATUS_COLORS[item.status] }]}>{STATUS_LABELS[item.status]}</Text>
+          <Text style={[styles.status, { color: STATUS_COLORS[item.status] }]}>{({completed: t.callHistoryScreen.completed, missed: t.callHistoryScreen.missed, cancelled: t.callHistoryScreen.cancelled})[item.status]}</Text>
           {item.status === "completed" && (
             <>
               <View style={[styles.dot, { backgroundColor: colors.border }]} />
@@ -106,7 +108,7 @@ export default function CallHistoryScreen() {
         {item.coins > 0 && (
           <View style={styles.coinsRow}>
             <Image source={require("@/assets/icons/ic_coin.png")} style={styles.coinIcon} resizeMode="contain" />
-            <Text style={[styles.coinsText, { color: colors.coinGoldText }]}>-{item.coins} coins</Text>
+            <Text style={[styles.coinsText, { color: colors.coinGoldText }]}>-{item.coins} {t.callHistoryScreen.coins}</Text>
           </View>
         )}
       </View>
@@ -119,7 +121,7 @@ export default function CallHistoryScreen() {
         <TouchableOpacity onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Go back" style={[styles.backBtn, { backgroundColor: colors.surface }]}>
           <Image source={require("@/assets/icons/ic_back.png")} style={styles.backIcon} tintColor={colors.text} resizeMode="contain" />
         </TouchableOpacity>
-        <Text style={[styles.title, { color: colors.text }]}>Call History</Text>
+        <Text style={[styles.title, { color: colors.text }]}>{t.callHistoryScreen.title}</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -131,7 +133,7 @@ export default function CallHistoryScreen() {
             onPress={() => setFilter(f)}
           >
             <Text style={[styles.filterText, { color: filter === f ? "#fff" : colors.mutedForeground }]}>
-              {f.charAt(0).toUpperCase() + f.slice(1)}
+              {({all: t.callHistoryScreen.all, audio: t.callHistoryScreen.audio, video: t.callHistoryScreen.video})[f]}
             </Text>
           </TouchableOpacity>
         ))}
@@ -144,7 +146,7 @@ export default function CallHistoryScreen() {
       ) : filtered.length === 0 ? (
         <View style={styles.empty}>
           <Image source={require("@/assets/images/empty_history.png")} style={styles.emptyImg} resizeMode="contain" />
-          <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>No call history found</Text>
+          <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>{t.callHistoryScreen.noHistory}</Text>
         </View>
       ) : (
         <FlatList

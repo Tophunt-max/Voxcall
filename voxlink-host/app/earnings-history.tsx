@@ -10,6 +10,7 @@ import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { API } from "@/services/api";
 import { showErrorToast } from "@/components/Toast";
+import { useLanguage } from "@/context/LanguageContext";
 
 type TxType = "purchase" | "spend" | "bonus" | "refund" | "withdrawal" | "earn";
 
@@ -66,6 +67,7 @@ export default function EarningsHistoryScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { user, refreshProfile } = useAuth();
+  const { t: tr } = useLanguage();
   const [tab, setTab] = useState<Tab>("All");
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
@@ -82,7 +84,7 @@ export default function EarningsHistoryScreen() {
       await refreshProfile();
     } catch {
       setTransactions([]);
-      showErrorToast("Failed to load earnings history.");
+      showErrorToast(tr.earningsHistoryScreen.loadFailed);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -130,13 +132,13 @@ export default function EarningsHistoryScreen() {
         <TouchableOpacity onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Go back" style={[styles.backBtn, { backgroundColor: colors.surface }]}>
           <Image source={require("@/assets/icons/ic_back.png")} style={styles.backIcon} tintColor={colors.text} resizeMode="contain" />
         </TouchableOpacity>
-        <Text style={[styles.title, { color: colors.text }]}>Earnings History</Text>
+        <Text style={[styles.title, { color: colors.text }]}>{tr.earningsHistoryScreen.title}</Text>
         <View style={{ width: 40 }} />
       </View>
 
       <View style={[styles.summaryCard, { backgroundColor: colors.accent }]}>
         <View style={styles.summaryLeft}>
-          <Text style={styles.summaryLabel}>Total Earnings</Text>
+          <Text style={styles.summaryLabel}>{tr.earningsHistoryScreen.totalEarnings}</Text>
           <View style={styles.summaryBalance}>
             <Image source={require("@/assets/icons/ic_coin.png")} style={styles.summaryIcon} resizeMode="contain" />
             <Text style={styles.summaryAmount}>{(user as any)?.earnings ?? (user as any)?.coins ?? 0}</Text>
@@ -145,11 +147,11 @@ export default function EarningsHistoryScreen() {
         <View style={styles.summaryDivider} />
         <View style={styles.summaryRight}>
           <View style={styles.miniStat}>
-            <Text style={styles.miniLabel}>Earned</Text>
+            <Text style={styles.miniLabel}>{tr.earningsHistoryScreen.earned}</Text>
             <Text style={styles.miniVal}>+{totalEarned}</Text>
           </View>
           <View style={styles.miniStat}>
-            <Text style={styles.miniLabel}>Withdrawn</Text>
+            <Text style={styles.miniLabel}>{tr.earningsHistoryScreen.withdrawn}</Text>
             <Text style={styles.miniVal}>-{totalWithdrawn}</Text>
           </View>
         </View>
@@ -162,7 +164,7 @@ export default function EarningsHistoryScreen() {
             style={[styles.tabItem, tab === t && { borderBottomColor: colors.primary, borderBottomWidth: 2 }]}
             onPress={() => setTab(t)}
           >
-            <Text style={[styles.tabText, { color: tab === t ? colors.primary : colors.mutedForeground }]}>{t}</Text>
+            <Text style={[styles.tabText, { color: tab === t ? colors.primary : colors.mutedForeground }]}>{({All: tr.earningsHistoryScreen.tabAll, Earned: tr.earningsHistoryScreen.tabEarned, Withdrawn: tr.earningsHistoryScreen.tabWithdrawn, Bonus: tr.earningsHistoryScreen.tabBonus})[t]}</Text>
           </TouchableOpacity>
         ))}
       </View>
@@ -174,7 +176,7 @@ export default function EarningsHistoryScreen() {
       ) : filtered.length === 0 ? (
         <View style={styles.empty}>
           <IconView name="inbox" size={64} color={colors.border} />
-          <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>No transactions found</Text>
+          <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>{tr.earningsHistoryScreen.noTransactions}</Text>
         </View>
       ) : (
         <FlatList

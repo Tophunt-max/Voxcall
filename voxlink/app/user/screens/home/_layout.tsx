@@ -4,6 +4,7 @@ import { Image, Platform, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useChat } from "@/context/ChatContext";
+import { useLanguage } from "@/context/LanguageContext";
 import { NotificationBadge } from "@/components/NotificationBadge";
 
 const TAB_ICONS = {
@@ -39,6 +40,7 @@ export default function TabLayout() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { totalUnread } = useChat();
+  const { t } = useLanguage();
   const isWeb = Platform.OS === "web";
 
   const tabBarHeight = isWeb ? 70 : 60 + (insets.bottom > 0 ? insets.bottom - 8 : 10);
@@ -73,7 +75,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: "Home",
+          title: t.tabs.home,
           tabBarIcon: ({ color, focused }) => (
             <TabIcon source={TAB_ICONS.home} color={color} focused={focused} />
           ),
@@ -82,7 +84,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="search"
         options={{
-          title: "Listener",
+          title: t.tabs.listener,
           tabBarIcon: ({ color, focused }) => (
             <TabIcon source={TAB_ICONS.listener} color={color} focused={focused} />
           ),
@@ -91,7 +93,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="random"
         options={{
-          title: "Random",
+          title: t.tabs.random,
           tabBarIcon: ({ color, focused }) => (
             <TabIcon source={TAB_ICONS.random} color={color} focused={focused} />
           ),
@@ -100,7 +102,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="messages"
         options={{
-          title: "Chat",
+          title: t.tabs.chat,
           tabBarIcon: ({ color, focused }) => (
             <TabIcon source={TAB_ICONS.chat} color={color} focused={focused} badge={totalUnread} />
           ),
@@ -109,7 +111,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="wallet"
         options={{
-          title: "Calling",
+          title: t.tabs.calling,
           tabBarIcon: ({ color, focused }) => (
             <TabIcon source={TAB_ICONS.calling} color={color} focused={focused} />
           ),

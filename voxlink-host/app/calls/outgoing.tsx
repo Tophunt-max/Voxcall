@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRingtone } from "@/hooks/useRingtone";
 import { resolveMediaUrl } from "@/services/api";
 import { useCall } from "@/context/CallContext";
+import { useLanguage } from "@/context/LanguageContext";
 import { useSocket } from "@/context/SocketContext";
 import { SocketEvents } from "@/constants/events";
 
@@ -15,6 +16,7 @@ const RING_TIMEOUT_MS = 45000;
 
 export default function OutgoingCallScreen() {
   const insets = useSafeAreaInsets();
+  const { t } = useLanguage();
   const { activeCall, endCall } = useCall();
   const { onEvent } = useSocket();
   const params = useLocalSearchParams<{
@@ -108,16 +110,16 @@ export default function OutgoingCallScreen() {
   });
 
   const statusLabel =
-    status === "declined"  ? "Call Declined" :
-    status === "no_answer" ? "No Answer" :
-    status === "ringing"   ? "Ringing..." :
-                             "Connecting...";
+    status === "declined"  ? t.outgoingCallScreen.callDeclined :
+    status === "no_answer" ? t.outgoingCallScreen.noAnswer :
+    status === "ringing"   ? t.outgoingCallScreen.ringing :
+                             t.outgoingCallScreen.connecting;
 
   return (
     <View style={[s.container, { backgroundColor: "#1A1040" }]}>
       <View style={{ alignItems: "center", flex: 1, justifyContent: "center", gap: 24 }}>
         <Text style={s.callTypeLabel}>
-          {callType === "video" ? "Video Call" : "Voice Call"}
+          {callType === "video" ? t.outgoingCallScreen.videoCall : t.outgoingCallScreen.voiceCall}
         </Text>
 
         <View style={s.avatarWrap}>
@@ -149,7 +151,7 @@ export default function OutgoingCallScreen() {
         >
           <Image source={require("@/assets/icons/ic_call_end.png")} style={s.endIcon} resizeMode="contain" />
         </TouchableOpacity>
-        <Text style={s.endLabel}>Cancel</Text>
+        <Text style={s.endLabel}>{t.outgoingCallScreen.cancel}</Text>
       </View>
     </View>
   );

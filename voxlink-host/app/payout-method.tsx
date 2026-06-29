@@ -13,6 +13,7 @@ import {
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
+import { useLanguage } from "@/context/LanguageContext";
 import { API } from "@/services/api";
 import { showErrorToast, showSuccessToast } from "@/components/Toast";
 
@@ -68,24 +69,25 @@ const METHODS: MethodConfig[] = [
 // Per-channel validation. Returns null when the form is valid, or an error
 // message to surface in a toast. Keep client validation lenient — the server
 // is the authority — but block obviously empty/malformed submissions.
-function validate(method: Method, details: Record<string, string>): string | null {
+function validate(method: Method, details: Record<string, string>, tr2: any): string | null {
   if (method === "bank") {
-    if (!details.account_holder?.trim()) return "Account holder name is required.";
-    if (!details.account_number?.trim() || details.account_number.length < 6) return "Enter a valid account number.";
+    if (!details.account_holder?.trim()) return tr2.payoutMethodScreen.holderRequired;
+    if (!details.account_number?.trim() || details.account_number.length < 6) return tr2.payoutMethodScreen.accountInvalid;
     // IFSC: 4 letters + 0 + 6 alphanumeric (Indian standard)
-    if (!/^[A-Z]{4}0[A-Z0-9]{6}$/i.test(details.ifsc?.trim() ?? "")) return "Enter a valid IFSC code.";
-    if (!details.bank_name?.trim()) return "Bank name is required.";
+    if (!/^[A-Z]{4}0[A-Z0-9]{6}$/i.test(details.ifsc?.trim() ?? "")) return tr2.payoutMethodScreen.ifscInvalid;
+    if (!details.bank_name?.trim()) return tr2.payoutMethodScreen.bankRequired;
   } else if (method === "upi") {
-    if (!/^[\w.\-]+@[\w.\-]+$/.test(details.upi_id?.trim() ?? "")) return "Enter a valid UPI ID (e.g. name@bank).";
+    if (!/^[\w.\-]+@[\w.\-]+$/.test(details.upi_id?.trim() ?? "")) return tr2.payoutMethodScreen.upiInvalid;
   } else if (method === "paytm" || method === "phonepe") {
     const digits = (details.phone_number ?? "").replace(/\D/g, "");
-    if (digits.length < 10) return "Enter a valid phone number.";
+    if (digits.length < 10) return tr2.payoutMethodScreen.phoneInvalid;
   }
   return null;
 }
 
 export default function PayoutMethodScreen() {
   const colors = useColors();
+  const { t } = useLanguage();
   const insets = useSafeAreaInsets();
 
   const [loading, setLoading] = useState(true);
@@ -130,7 +132,7 @@ export default function PayoutMethodScreen() {
   }, [selected]);
 
   const handleSave = useCallback(async () => {
-    const err = validate(selected, currentDetails);
+    const err = validate(selected, currentDetails, t);
     if (err) {
       showErrorToast(err);
       return;
@@ -141,10 +143,10 @@ export default function PayoutMethodScreen() {
         payout_method: selected,
         payout_details: currentDetails,
       });
-      showSuccessToast("Payout method saved.", "Saved");
+      showSuccessToast(t.payoutMethodScreen.saved, t.payoutMethodScreen.savedTitle);
       router.back();
     } catch (e: any) {
-      showErrorToast(e?.message || "Failed to save payout method. Please try again.");
+      showErrorToast(e?.message || t.payoutMethodScreen.saveFailed);
     } finally {
       setSaving(false);
     }
@@ -167,16 +169,16 @@ export default function PayoutMethodScreen() {
         <TouchableOpacity onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Go back" style={[styles.backBtn, { backgroundColor: colors.surface }]}>
           <Image source={require("@/assets/icons/ic_back.png")} style={styles.backIconImg} tintColor={colors.text} resizeMode="contain" />
         </TouchableOpacity>
-        <Text style={[styles.title, { color: colors.text }]}>Payout Method</Text>
+        <Text style={[styles.title, { color: colors.text }]}>{t.payoutMethodScreen.title}</Text>
         <View style={{ width: 40 }} />
       </View>
 
       <ScrollView contentContainerStyle={{ paddingBottom: 120 }} keyboardShouldPersistTaps="handled">
         <Text style={[styles.helpText, { color: colors.mutedForeground }]}>
-          Choose how you want to receive your earnings. Your withdrawal requests will use this account by default.
+          {t.payoutMethodScreen.help}
         </Text>
 
-        <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Channel</Text>
+        <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>{t.payoutMethodScreen.channel}</Text>
         <View style={[styles.card, { backgroundColor: colors.card }]}>
           {METHODS.map((m) => {
             const isSel = selected === m.id;

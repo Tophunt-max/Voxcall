@@ -11,6 +11,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { PrimaryButton } from "@/components/PrimaryButton";
 import { SvgIcon } from "@/components/SvgIcon";
+import { useLanguage } from "@/context/LanguageContext";
 
 const BG     = "#0A0B1E";
 const DARK   = "#111329";
@@ -25,6 +26,7 @@ const LANGUAGE_OPTIONS = ["Hindi", "English", "Tamil", "Telugu", "Kannada", "Ben
 
 export default function HostBecomeScreen() {
   const insets = useSafeAreaInsets();
+  const { t } = useLanguage();
   const params = useLocalSearchParams<{ dob?: string }>();
   const [specialties, setSpecialties]   = useState<string[]>([]);
   const [languages, setLanguages]       = useState<string[]>(["Hindi"]);
@@ -41,10 +43,10 @@ export default function HostBecomeScreen() {
 
   const handleNext = () => {
     if (specialties.length === 0) {
-      showErrorToast("Choose at least one specialty.", "Select Specialty"); return;
+      showErrorToast(t.becomeScreen.chooseSpecialty, t.becomeScreen.selectSpecialty); return;
     }
     if (!bio.trim() || bio.trim().length < 20) {
-      showErrorToast("Please write a bio of at least 20 characters.", "Bio Too Short"); return;
+      showErrorToast(t.becomeScreen.bioTooShortMsg, t.becomeScreen.bioTooShort); return;
     }
     router.push({
       pathname: "/auth/kyc",
@@ -71,8 +73,8 @@ export default function HostBecomeScreen() {
 
         <View style={s.headerCenter}>
           <Image source={require("@/assets/images/app_logo.png")} style={s.headerLogo} resizeMode="contain" />
-          <Text style={s.headerTitle}>Become a Host</Text>
-          <Text style={s.headerSub}>Step 3 of 4 — Host Info</Text>
+          <Text style={s.headerTitle}>{t.registerScreen.title}</Text>
+          <Text style={s.headerSub}>{t.becomeScreen.headerSub}</Text>
         </View>
 
         <View style={s.steps}>
@@ -88,7 +90,7 @@ export default function HostBecomeScreen() {
                   <Text style={[s.stepNum, i <= 2 && s.stepNumActive]}>{i + 1}</Text>
                 )}
               </LinearGradient>
-              <Text style={[s.stepLabel, i <= 2 && s.stepLabelActive]}>{step}</Text>
+              <Text style={[s.stepLabel, i <= 2 && s.stepLabelActive]}>{[t.registerScreen.stepAccount, t.registerScreen.stepProfile, t.registerScreen.stepHostInfo, t.registerScreen.stepKyc][i]}</Text>
             </View>
           ))}
         </View>
@@ -100,10 +102,10 @@ export default function HostBecomeScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <Text style={s.sectionTitle}>Your Host Profile</Text>
-        <Text style={s.sectionSub}>Help users understand what you offer</Text>
+        <Text style={s.sectionTitle}>{t.becomeScreen.sectionTitle}</Text>
+        <Text style={s.sectionSub}>{t.becomeScreen.sectionSub}</Text>
 
-        <Text style={s.fieldLabel}>Specialties (pick 1–5)</Text>
+        <Text style={s.fieldLabel}>{t.becomeScreen.specialtiesLabel}</Text>
         <View style={s.chipWrap}>
           {SPECIALTY_OPTIONS.map((sp) => (
             <TouchableOpacity
@@ -117,7 +119,7 @@ export default function HostBecomeScreen() {
           ))}
         </View>
 
-        <Text style={s.fieldLabel}>Languages</Text>
+        <Text style={s.fieldLabel}>{t.becomeScreen.languagesLabel}</Text>
         <View style={s.chipWrap}>
           {LANGUAGE_OPTIONS.map((lang) => (
             <TouchableOpacity
@@ -131,9 +133,9 @@ export default function HostBecomeScreen() {
           ))}
         </View>
 
-        <Text style={s.fieldLabel}>Bio</Text>
+        <Text style={s.fieldLabel}>{t.becomeScreen.bioLabel}</Text>
         <AppInput
-          placeholder="Tell users about yourself — your expertise, personality, and what makes your calls special..."
+          placeholder={t.becomeScreen.bioPlaceholder}
           value={bio}
           onChangeText={setBio}
           multiline
@@ -142,20 +144,20 @@ export default function HostBecomeScreen() {
           wrapStyle={{ minHeight: 100, paddingVertical: 12 }}
         />
 
-        <Text style={s.fieldLabel}>Experience (optional)</Text>
+        <Text style={s.fieldLabel}>{t.becomeScreen.experienceLabel}</Text>
         <AppInput
           icon={<SvgIcon name="briefcase" size={18} color="#84889F" />}
-          placeholder="e.g. 3 years as life coach"
+          placeholder={t.becomeScreen.experiencePlaceholder}
           value={experience}
           onChangeText={setExperience}
         />
 
-        <Text style={s.fieldLabel}>Call Type Offered</Text>
+        <Text style={s.fieldLabel}>{t.becomeScreen.callTypeLabel}</Text>
         <View style={s.typeRow}>
           {([
-            { key: "audio", label: "🎤 Audio Only" },
-            { key: "video", label: "🎥 Video Only" },
-            { key: "both",  label: "🎤🎥 Both" },
+            { key: "audio", label: t.becomeScreen.audioOnly },
+            { key: "video", label: t.becomeScreen.videoOnly },
+            { key: "both",  label: t.becomeScreen.both },
           ] as const).map(opt => (
             <TouchableOpacity
               key={opt.key}
@@ -169,13 +171,13 @@ export default function HostBecomeScreen() {
           ))}
         </View>
 
-        <Text style={s.fieldLabel}>Your Call Rates (coins/min)</Text>
+        <Text style={s.fieldLabel}>{t.becomeScreen.ratesLabel}</Text>
         <View style={s.ratesRow}>
           {/* Audio rate — hidden for video-only */}
           {applicationType !== "video" && (
           <View style={s.rateCard}>
             <Image source={require("@/assets/icons/ic_mic.png")} style={s.rateIcon} tintColor={DARK} resizeMode="contain" />
-            <Text style={s.rateLabel}>Audio</Text>
+            <Text style={s.rateLabel}>{t.becomeScreen.audio}</Text>
             <View style={s.rateInputWrap}>
               <TextInput
                 value={audioRate}
@@ -185,7 +187,7 @@ export default function HostBecomeScreen() {
                 selectionColor={ACCENT}
                 underlineColorAndroid="transparent"
               />
-              <Text style={s.rateSuffix}>coins/min</Text>
+              <Text style={s.rateSuffix}>{t.becomeScreen.coinsPerMin}</Text>
             </View>
           </View>
           )}
@@ -193,7 +195,7 @@ export default function HostBecomeScreen() {
           {applicationType !== "audio" && (
           <View style={s.rateCard}>
             <Image source={require("@/assets/icons/ic_video.png")} style={s.rateIcon} tintColor={DARK} resizeMode="contain" />
-            <Text style={s.rateLabel}>Video</Text>
+            <Text style={s.rateLabel}>{t.becomeScreen.video}</Text>
             <View style={s.rateInputWrap}>
               <TextInput
                 value={videoRate}
@@ -203,7 +205,7 @@ export default function HostBecomeScreen() {
                 selectionColor={ACCENT}
                 underlineColorAndroid="transparent"
               />
-              <Text style={s.rateSuffix}>coins/min</Text>
+              <Text style={s.rateSuffix}>{t.becomeScreen.coinsPerMin}</Text>
             </View>
           </View>
           )}
@@ -211,10 +213,10 @@ export default function HostBecomeScreen() {
 
         <View style={s.noteBanner}>
           <SvgIcon name="info" size={14} color="#84889F" />
-          <Text style={s.noteTxt}>Rates are suggestions. Admin may adjust them after approval.</Text>
+          <Text style={s.noteTxt}>{t.becomeScreen.note}</Text>
         </View>
 
-        <PrimaryButton title="Continue →  KYC Documents" onPress={handleNext} loading={loading} />
+        <PrimaryButton title={t.becomeScreen.continueBtn} onPress={handleNext} loading={loading} />
       </ScrollView>
     </View>
   );

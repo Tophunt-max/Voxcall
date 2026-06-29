@@ -10,6 +10,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/context/AuthContext";
+import { useLanguage } from "@/context/LanguageContext";
 import { PrimaryButton } from "@/components/PrimaryButton";
 import { SvgIcon } from "@/components/SvgIcon";
 import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
@@ -74,6 +75,7 @@ function ScrollColumn({ items, selectedIndex, onSelect }: { items: string[]; sel
 }
 
 function WebDatePicker({ visible, initial, onDone, onCancel }: { visible: boolean; initial: Date; onDone: (d: Date) => void; onCancel: () => void }) {
+  const { t } = useLanguage();
   const insets = useSafeAreaInsets();
   const years: string[] = [];
   for (let y = today.getFullYear() - 18; y >= today.getFullYear() - 70; y--) years.push(String(y));
@@ -93,14 +95,14 @@ function WebDatePicker({ visible, initial, onDone, onCancel }: { visible: boolea
       <View style={[p.sheet, { paddingBottom: insets.bottom + 12 }]}>
         <View style={p.sheetHandle} />
         <View style={p.sheetHeader}>
-          <TouchableOpacity onPress={onCancel}><Text style={p.sheetCancel}>Cancel</Text></TouchableOpacity>
-          <Text style={p.sheetTitle}>Date of Birth</Text>
-          <TouchableOpacity onPress={handleDone}><Text style={p.sheetDone}>Done</Text></TouchableOpacity>
+          <TouchableOpacity onPress={onCancel}><Text style={p.sheetCancel}>{t.common.cancel}</Text></TouchableOpacity>
+          <Text style={p.sheetTitle}>{t.profileSetupScreen.dobTitle}</Text>
+          <TouchableOpacity onPress={handleDone}><Text style={p.sheetDone}>{t.profileSetupScreen.done}</Text></TouchableOpacity>
         </View>
         <View style={p.pickerRow}>
-          <View style={p.colWrap}><Text style={p.colLabel}>Day</Text><View style={p.colBox}><View style={p.selHighlight} /><ScrollColumn items={days} selectedIndex={dayIdx} onSelect={setDayIdx} /></View></View>
-          <View style={[p.colWrap, { flex: 2 }]}><Text style={p.colLabel}>Month</Text><View style={p.colBox}><View style={p.selHighlight} /><ScrollColumn items={MONTHS} selectedIndex={monIdx} onSelect={setMonIdx} /></View></View>
-          <View style={p.colWrap}><Text style={p.colLabel}>Year</Text><View style={p.colBox}><View style={p.selHighlight} /><ScrollColumn items={years} selectedIndex={yearIdx} onSelect={setYearIdx} /></View></View>
+          <View style={p.colWrap}><Text style={p.colLabel}>{t.profileSetupScreen.day}</Text><View style={p.colBox}><View style={p.selHighlight} /><ScrollColumn items={days} selectedIndex={dayIdx} onSelect={setDayIdx} /></View></View>
+          <View style={[p.colWrap, { flex: 2 }]}><Text style={p.colLabel}>{t.profileSetupScreen.month}</Text><View style={p.colBox}><View style={p.selHighlight} /><ScrollColumn items={t.profileSetupScreen.months} selectedIndex={monIdx} onSelect={setMonIdx} /></View></View>
+          <View style={p.colWrap}><Text style={p.colLabel}>{t.profileSetupScreen.year}</Text><View style={p.colBox}><View style={p.selHighlight} /><ScrollColumn items={years} selectedIndex={yearIdx} onSelect={setYearIdx} /></View></View>
         </View>
       </View>
     </Modal>
@@ -109,6 +111,7 @@ function WebDatePicker({ visible, initial, onDone, onCancel }: { visible: boolea
 
 export default function HostProfileSetupScreen() {
   const insets = useSafeAreaInsets();
+  const { t } = useLanguage();
   const { user, updateProfile } = useAuth();
   const [displayName, setDisplayName] = useState(user?.name ?? "");
   const [dob, setDob]                 = useState("");
@@ -147,24 +150,24 @@ export default function HostProfileSetupScreen() {
       const uploaded = await API.uploadFile(formData);
       setAvatarUrl(uploaded.url);
     } catch {
-      showErrorToast("Could not upload photo. Please try again.", "Upload Failed");
+      showErrorToast(t.profileSetupScreen.uploadFailedMsg, t.profileSetupScreen.uploadFailed);
       setAvatarUri(null);
     } finally { setAvatarUploading(false); }
   };
 
   const handleNext = async () => {
     if (!displayName.trim() || !dob.trim() || !gender || !phone.trim()) {
-      showErrorToast("Please fill in all required fields.", "Missing Fields"); return;
+      showErrorToast(t.profileSetupScreen.missingFieldsMsg, t.profileSetupScreen.missingFields); return;
     }
     if (!/^\d{10,15}$/.test(phone.replace(/[\s\-\+]/g, ""))) {
-      showErrorToast("Please enter a valid mobile number.", "Invalid Phone"); return;
+      showErrorToast(t.profileSetupScreen.invalidPhoneMsg, t.profileSetupScreen.invalidPhone); return;
     }
     setLoading(true);
     try {
       await updateProfile({ name: displayName.trim(), gender: gender as any, phone: phone.trim(), ...(avatarUrl ? { avatar: avatarUrl } : {}) });
       router.push({ pathname: "/auth/become", params: { dob: dob.trim() } });
     } catch (err: any) {
-      showErrorToast(err?.message || "Could not save your profile. Please try again.", "Save Failed");
+      showErrorToast(err?.message || t.profileSetupScreen.saveFailedMsg, t.profileSetupScreen.saveFailed);
     } finally {
       setLoading(false);
     }
@@ -180,8 +183,8 @@ export default function HostProfileSetupScreen() {
 
         <View style={s.headerCenter}>
           <Image source={require("@/assets/images/app_logo.png")} style={s.headerLogo} resizeMode="contain" />
-          <Text style={s.headerTitle}>Become a Host</Text>
-          <Text style={s.headerSub}>Step 2 of 4 — Your Profile</Text>
+          <Text style={s.headerTitle}>{t.registerScreen.title}</Text>
+          <Text style={s.headerSub}>{t.profileSetupScreen.headerSub}</Text>
         </View>
 
         <View style={s.steps}>
@@ -197,7 +200,7 @@ export default function HostProfileSetupScreen() {
                   <Text style={[s.stepNum, i <= 1 && s.stepNumActive]}>{i + 1}</Text>
                 )}
               </LinearGradient>
-              <Text style={[s.stepLabel, i <= 1 && s.stepLabelActive]}>{step}</Text>
+              <Text style={[s.stepLabel, i <= 1 && s.stepLabelActive]}>{[t.registerScreen.stepAccount, t.registerScreen.stepProfile, t.registerScreen.stepHostInfo, t.registerScreen.stepKyc][i]}</Text>
             </View>
           ))}
         </View>
@@ -209,8 +212,8 @@ export default function HostProfileSetupScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <Text style={s.sectionTitle}>Your Profile Info</Text>
-        <Text style={s.sectionSub}>This will be visible to users calling you</Text>
+        <Text style={s.sectionTitle}>{t.profileSetupScreen.sectionTitle}</Text>
+        <Text style={s.sectionSub}>{t.profileSetupScreen.sectionSub}</Text>
 
         {/* ── Profile Photo ── */}
         <View style={s.avatarSection}>
@@ -230,21 +233,21 @@ export default function HostProfileSetupScreen() {
               )}
             </View>
           </TouchableOpacity>
-          <Text style={s.avatarHint}>{avatarUploading ? "Uploading..." : "Tap to add profile photo"}</Text>
+          <Text style={s.avatarHint}>{avatarUploading ? t.profileSetupScreen.uploading : t.profileSetupScreen.tapAddPhoto}</Text>
         </View>
 
         <AppInput
           icon={<Image source={require("@/assets/icons/ic_profile.png")} style={s.inputIcon} tintColor="#84889F" resizeMode="contain" />}
           value={displayName}
           onChangeText={setDisplayName}
-          placeholder="Display name"
+          placeholder={t.profileSetupScreen.namePlaceholder}
           autoCapitalize="words"
         />
 
         {/* ── Date of Birth ── */}
         <TouchableOpacity onPress={openPicker} activeOpacity={0.8} style={s.dobField}>
           <Image source={require("@/assets/icons/ic_calendar.png")} style={s.inputIcon} tintColor={dob ? ACCENT : "#84889F"} resizeMode="contain" />
-          <Text style={[s.dobText, !dob && s.dobPlaceholder]}>{dob || "Date of birth (tap to pick)"}</Text>
+          <Text style={[s.dobText, !dob && s.dobPlaceholder]}>{dob || t.profileSetupScreen.dobPlaceholder}</Text>
           <SvgIcon name="chevron-down" size={16} color="#84889F" />
         </TouchableOpacity>
 
@@ -262,7 +265,7 @@ export default function HostProfileSetupScreen() {
             />
             {Platform.OS === "ios" && (
               <TouchableOpacity style={s.iosDoneBtn} onPress={() => setShowNativePicker(false)}>
-                <Text style={s.iosDoneTxt}>Done</Text>
+                <Text style={s.iosDoneTxt}>{t.profileSetupScreen.done}</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -281,11 +284,11 @@ export default function HostProfileSetupScreen() {
           icon={<SvgIcon name="phone" size={18} color="#84889F" />}
           value={phone}
           onChangeText={setPhone}
-          placeholder="Mobile number"
+          placeholder={t.profileSetupScreen.phonePlaceholder}
           keyboardType="phone-pad"
         />
 
-        <Text style={s.fieldLabel}>Gender</Text>
+        <Text style={s.fieldLabel}>{t.profileSetupScreen.genderLabel}</Text>
         <View style={s.genderRow}>
           {GENDERS.map((g) => (
             <TouchableOpacity
@@ -294,12 +297,12 @@ export default function HostProfileSetupScreen() {
               style={[s.genderBtn, gender === g.value && s.genderBtnActive]}
               activeOpacity={0.75}
             >
-              <Text style={[s.genderTxt, gender === g.value && s.genderTxtActive]}>{g.label}</Text>
+              <Text style={[s.genderTxt, gender === g.value && s.genderTxtActive]}>{g.value === "male" ? t.profile.male : g.value === "female" ? t.profile.female : t.profile.other}</Text>
             </TouchableOpacity>
           ))}
         </View>
 
-        <PrimaryButton title="Continue → Host Info" onPress={handleNext} loading={loading || avatarUploading} />
+        <PrimaryButton title={t.profileSetupScreen.continueBtn} onPress={handleNext} loading={loading || avatarUploading} />
       </ScrollView>
     </View>
   );

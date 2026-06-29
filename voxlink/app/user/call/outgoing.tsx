@@ -8,6 +8,7 @@ import * as Haptics from "expo-haptics";
 import { useRingtone } from "@/hooks/useRingtone";
 import { resolveMediaUrl, API } from "@/services/api";
 import { useCall } from "@/context/CallContext";
+import { useLanguage } from "@/context/LanguageContext";
 import { useSocket } from "@/context/SocketContext";
 import { SocketEvents } from "@/constants/events";
 
@@ -58,6 +59,7 @@ export default function OutgoingCallScreen() {
   const insets = useSafeAreaInsets();
   const { activeCall, endCall, syncServerStartTime } = useCall();
   const { onEvent } = useSocket();
+  const { t } = useLanguage();
   const params = useLocalSearchParams<{
     hostId: string;
     callType: string;
@@ -68,7 +70,7 @@ export default function OutgoingCallScreen() {
 
   const hostId    = params.hostId   ?? "host";
   const callType  = params.callType ?? "audio";
-  const hostName  = params.hostName ?? "Host";
+  const hostName  = params.hostName ?? t.hosts.host;
   const hostAvatar = resolveMediaUrl(params.hostAvatar) ?? `https://api.dicebear.com/7.x/avataaars/png?seed=${hostId}`;
   const specialty = params.specialty ?? "";
 
@@ -258,10 +260,10 @@ export default function OutgoingCallScreen() {
   const isErrorState = status === "declined" || status === "no_answer";
   const statusColor = isErrorState ? "#FF6B6B" : "rgba(255,255,255,0.85)";
   const statusLabel =
-    status === "declined"  ? "Call Declined" :
-    status === "no_answer" ? "No Answer" :
-    status === "ringing"   ? "Ringing" :
-                             "Connecting";
+    status === "declined"  ? t.calls.callDeclined :
+    status === "no_answer" ? t.calls.noAnswer :
+    status === "ringing"   ? t.calls.ringing :
+                             t.calls.connecting;
 
   // FIX (UI hierarchy): coins/min badge surfaces the cost up-front so the
   // user knows what the call will bill. Previously this info was buried.
@@ -287,7 +289,7 @@ export default function OutgoingCallScreen() {
             resizeMode="contain"
           />
           <Text style={s.callTypeLabel}>
-            {callType === "video" ? "Video Call" : "Voice Call"}
+            {callType === "video" ? t.calls.video : t.calls.voiceCall}
           </Text>
         </View>
       </View>
@@ -322,7 +324,7 @@ export default function OutgoingCallScreen() {
               <View style={s.costBadge}>
                 <Text style={s.costEmoji}>🪙</Text>
                 <Text style={s.costText}>
-                  {coinsPerMinute} <Text style={s.costSubText}>coins / min</Text>
+                  {coinsPerMinute} <Text style={s.costSubText}>{t.calls.coinsPerMin}</Text>
                 </Text>
               </View>
             )}
@@ -332,7 +334,7 @@ export default function OutgoingCallScreen() {
                 style={s.costSubIcon}
                 resizeMode="contain"
               />
-              <Text style={s.costSubText}>1 min minimum</Text>
+              <Text style={s.costSubText}>{t.calls.oneMinMinimum}</Text>
             </View>
           </View>
         )}
@@ -351,7 +353,7 @@ export default function OutgoingCallScreen() {
         >
           <Image source={require("@/assets/icons/ic_call_end.png")} style={s.endIcon} resizeMode="contain" />
         </TouchableOpacity>
-        <Text style={s.endLabel}>Cancel</Text>
+        <Text style={s.endLabel}>{t.common.cancel}</Text>
       </View>
     </LinearGradient>
   );

@@ -10,6 +10,7 @@ import { router } from "expo-router";
 import { useCall } from "@/context/CallContext";
 import { useAuth } from "@/context/AuthContext";
 import { useCallTimer } from "@/hooks/useCallTimer";
+import { useLanguage } from "@/context/LanguageContext";
 import { usePermissions } from "@/hooks/usePermissions";
 import { PermissionDialog, PERMISSION_CONFIGS } from "@/components/PermissionDialog";
 import { useWebRTC } from "@/hooks/useWebRTC";
@@ -158,6 +159,7 @@ export default function VideoCallScreen() {
   const insets = useSafeAreaInsets();
   const { activeCall, endCall, toggleMute, toggleCamera, toggleSpeaker, markCallActive } = useCall();
   const { user } = useAuth();
+  const { t } = useLanguage();
   const [status, setStatus] = useState<"connecting" | "ringing" | "active">("connecting");
 
   const [permStep, setPermStep] = useState<PermStep | null>(null);
@@ -483,16 +485,16 @@ export default function VideoCallScreen() {
     `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 
   const remainingLabel = remaining != null
-    ? remaining <= 60 ? `${remaining}s left` : `${Math.ceil(remaining / 60)} min left`
+    ? remaining <= 60 ? t.calls.secondsLeft.replace("{count}", String(remaining)) : t.calls.minLeft.replace("{count}", String(Math.ceil(remaining / 60)))
     : null;
 
   const connectingLabel = (() => {
     switch (webrtc.connectionState) {
-      case "checking":     return "Connecting...";
-      case "connected":    return "Connected";
-      case "disconnected": return "Network drop — reconnecting...";
-      case "failed":       return "Connection failed — retrying...";
-      default:             return "Connecting...";
+      case "checking":     return t.calls.connectingDots;
+      case "connected":    return t.calls.connected;
+      case "disconnected": return t.calls.networkDrop;
+      case "failed":       return t.calls.connectionFailed;
+      default:             return t.calls.connectingDots;
     }
   })();
 
@@ -710,7 +712,7 @@ export default function VideoCallScreen() {
                     style={{ width: 12, height: 12, tintColor: "rgba(255,255,255,0.85)" }}
                     resizeMode="contain"
                   />
-                  <Text style={styles.remoteCameraOffText}>Camera off</Text>
+                  <Text style={styles.remoteCameraOffText}>{t.calls.cameraOff}</Text>
                 </View>
               )}
             </View>
@@ -719,7 +721,7 @@ export default function VideoCallScreen() {
         {status !== "active" && (
           <View style={styles.connectingBadge}>
             <Text style={styles.connectingText}>
-              {status === "connecting" ? connectingLabel : "Ringing..."}
+              {status === "connecting" ? connectingLabel : t.calls.ringingDots}
             </Text>
           </View>
         )}
@@ -761,7 +763,7 @@ export default function VideoCallScreen() {
                 style={{ width: 22, height: 22, tintColor: "rgba(255,255,255,0.6)" }}
                 resizeMode="contain"
               />
-              <Text style={styles.selfCameraOffText}>Camera unavailable</Text>
+              <Text style={styles.selfCameraOffText}>{t.calls.cameraUnavailable}</Text>
             </View>
           ) : !webrtc.isAvailable && CameraView ? (
             // FIX (camera-busy race): only render <CameraView /> when WebRTC
@@ -780,7 +782,7 @@ export default function VideoCallScreen() {
                 style={{ width: 22, height: 22, tintColor: "rgba(255,255,255,0.6)" }}
                 resizeMode="contain"
               />
-              <Text style={styles.selfCameraOffText}>Starting camera…</Text>
+              <Text style={styles.selfCameraOffText}>{t.calls.startingCamera}</Text>
             </View>
           )
         ) : (
@@ -791,12 +793,12 @@ export default function VideoCallScreen() {
               resizeMode="contain"
             />
             <Text style={styles.selfCameraOffText}>
-              {!cameraGranted ? "No Permission" : "Camera Off"}
+              {!cameraGranted ? t.calls.noPermission : t.calls.cameraOffShort}
             </Text>
           </View>
         )}
         <View style={styles.selfLabel}>
-          <Text style={styles.selfLabelText}>You</Text>
+          <Text style={styles.selfLabelText}>{t.calls.you}</Text>
         </View>
         {/* FIX (UI redesign): persistent muted indicator. Without this the
             user could leave their mic muted and forget — only knowing when
@@ -805,7 +807,7 @@ export default function VideoCallScreen() {
         {activeCall?.isMuted && (
           <View style={uiS.mutedBadge}>
             <Image source={require("@/assets/icons/ic_mic.png")} style={{ width: 10, height: 10, tintColor: "#fff" }} resizeMode="contain" />
-            <Text style={uiS.mutedBadgeText}>Muted</Text>
+            <Text style={uiS.mutedBadgeText}>{t.calls.mutedLabel}</Text>
           </View>
         )}
       </Animated.View>
@@ -815,13 +817,13 @@ export default function VideoCallScreen() {
           {!cameraGranted && (
             <TouchableOpacity onPress={() => setPermStep("camera")} style={styles.permChip}>
               <Image source={require("@/assets/icons/ic_cancel_video.png")} style={{ width: 12, height: 12, tintColor: "#FFD166" }} resizeMode="contain" />
-              <Text style={styles.permChipText}>Camera off</Text>
+              <Text style={styles.permChipText}>{t.calls.cameraOff}</Text>
             </TouchableOpacity>
           )}
           {!micGranted && (
             <TouchableOpacity onPress={() => setPermStep("microphone")} style={styles.permChip}>
               <Image source={require("@/assets/icons/ic_mic.png")} style={{ width: 12, height: 12, tintColor: "#FFD166", opacity: 0.5 }} resizeMode="contain" />
-              <Text style={styles.permChipText}>No mic</Text>
+              <Text style={styles.permChipText}>{t.calls.noMic}</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -858,14 +860,14 @@ export default function VideoCallScreen() {
           {showLowCoinWarning && (
             <View style={styles.warningBanner}>
               <Image source={require("@/assets/icons/ic_notify.png")} style={{ width: 13, height: 13, tintColor: "#FFD166" }} resizeMode="contain" />
-              <Text style={styles.warningText}>Low coins — {remainingLabel}</Text>
+              <Text style={styles.warningText}>{t.calls.lowCoins} — {remainingLabel}</Text>
             </View>
           )}
 
           {webrtc.error && !showLowCoinWarning && (
             <View style={styles.warningBanner}>
               <Image source={require("@/assets/icons/ic_close.png")} style={{ width: 13, height: 13, tintColor: "#FF6B6B" }} resizeMode="contain" />
-              <Text style={styles.warningText}>Connection issue</Text>
+              <Text style={styles.warningText}>{t.calls.connectionIssue}</Text>
             </View>
           )}
 
@@ -878,20 +880,20 @@ export default function VideoCallScreen() {
               <Image source={{ uri: remoteAvatarUri }} style={uiS.callerAvatar} />
               <View style={uiS.callerInfo}>
                 <Text style={uiS.callerName} numberOfLines={1}>
-                  {activeCall?.participant.name ?? "Connecting..."}
+                  {activeCall?.participant.name ?? t.calls.connectingDots}
                 </Text>
                 {status === "active" ? (
                   <View style={uiS.callerMetaRow}>
                     <View style={uiS.liveBadge}>
                       <View style={uiS.liveDot} />
-                      <Text style={uiS.liveText}>LIVE</Text>
+                      <Text style={uiS.liveText}>{t.calls.live}</Text>
                     </View>
                     <Text style={uiS.timer}>{formatTime(elapsed)}</Text>
                     {webrtc.remoteMuted && <Text style={{ fontSize: 12, marginLeft: 4 }}>🔇</Text>}
                   </View>
                 ) : (
                   <Text style={uiS.headerSub} numberOfLines={1}>
-                    {status === "connecting" ? "Connecting..." : "Waiting for response..."}
+                    {status === "connecting" ? t.calls.connectingDots : t.calls.waitingResponse}
                   </Text>
                 )}
               </View>
@@ -935,7 +937,7 @@ export default function VideoCallScreen() {
             >
               <Image source={activeCall?.isCameraOn ? require("@/assets/icons/ic_photo.png") : require("@/assets/icons/ic_cancel_video.png")} style={uiS.ctrlIcon} resizeMode="contain" />
             </TouchableOpacity>
-            <Text style={uiS.ctrlLabel}>{activeCall?.isCameraOn ? "Camera" : "Cam Off"}</Text>
+            <Text style={uiS.ctrlLabel}>{activeCall?.isCameraOn ? t.calls.camera : t.calls.camOff}</Text>
           </View>
 
           <View style={uiS.ctrlItem}>
@@ -947,7 +949,7 @@ export default function VideoCallScreen() {
             >
               <Image source={require("@/assets/icons/ic_mic.png")} style={[uiS.ctrlIcon, { opacity: activeCall?.isMuted ? 0.5 : 1 }]} resizeMode="contain" />
             </TouchableOpacity>
-            <Text style={uiS.ctrlLabel}>{activeCall?.isMuted ? "Unmute" : "Mute"}</Text>
+            <Text style={uiS.ctrlLabel}>{activeCall?.isMuted ? t.calls.unmute : t.calls.mute}</Text>
           </View>
 
           <View style={uiS.ctrlItem}>
@@ -959,7 +961,7 @@ export default function VideoCallScreen() {
             >
               <Image source={require("@/assets/icons/ic_call_end.png")} style={uiS.endIcon} resizeMode="contain" />
             </TouchableOpacity>
-            <Text style={uiS.ctrlLabel}>End</Text>
+            <Text style={uiS.ctrlLabel}>{t.calls.end}</Text>
           </View>
 
           <View style={uiS.ctrlItem}>
@@ -976,7 +978,7 @@ export default function VideoCallScreen() {
                 resizeMode="contain"
               />
             </TouchableOpacity>
-            <Text style={uiS.ctrlLabel}>Flip</Text>
+            <Text style={uiS.ctrlLabel}>{t.calls.flip}</Text>
           </View>
 
           <View style={uiS.ctrlItem}>
@@ -988,7 +990,7 @@ export default function VideoCallScreen() {
             >
               <Image source={activeCall?.isSpeakerOn ? require("@/assets/icons/ic_speaker_on.png") : require("@/assets/icons/ic_speaker_off.png")} style={uiS.ctrlIcon} resizeMode="contain" />
             </TouchableOpacity>
-            <Text style={uiS.ctrlLabel}>{activeCall?.isSpeakerOn ? "Speaker" : "Earpiece"}</Text>
+            <Text style={uiS.ctrlLabel}>{activeCall?.isSpeakerOn ? t.calls.speaker : t.calls.earpiece}</Text>
           </View>
         </View>
       </Animated.View>
@@ -997,18 +999,18 @@ export default function VideoCallScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.rechargeCard}>
             <Text style={styles.rechargeEmoji}>💰</Text>
-            <Text style={styles.rechargeTitle}>Running Out of Coins!</Text>
+            <Text style={styles.rechargeTitle}>{t.calls.runningOutCoins}</Text>
             <Text style={styles.rechargeSubtitle}>
-              Call will auto-disconnect in {remaining != null ? `${remaining} second${remaining === 1 ? "" : "s"}` : "a few seconds"}
+              {t.calls.autoDisconnectIn.replace("{time}", remaining != null ? `${remaining} ${remaining === 1 ? t.calls.second : t.calls.seconds}` : t.calls.fewSeconds)}
             </Text>
             <TouchableOpacity
               style={styles.rechargeBtn}
               onPress={() => { dismissRechargePopup(); handleEndCall(); router.push("/user/screens/home/wallet"); }}
             >
-              <Text style={styles.rechargeBtnText}>Recharge Now</Text>
+              <Text style={styles.rechargeBtnText}>{t.calls.rechargeNow}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.continueBtn} onPress={dismissRechargePopup}>
-              <Text style={styles.continueBtnText}>Continue Call</Text>
+              <Text style={styles.continueBtnText}>{t.calls.continueCall}</Text>
             </TouchableOpacity>
           </View>
         </View>

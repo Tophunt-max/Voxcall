@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SvgIcon } from "@/components/SvgIcon";
 import { router } from "expo-router";
 import { useCall } from "@/context/CallContext";
+import { useLanguage } from "@/context/LanguageContext";
 import { useCallTimer } from "@/hooks/useCallTimer";
 import { usePermissions } from "@/hooks/usePermissions";
 import { PermissionDialog, PERMISSION_CONFIGS } from "@/components/PermissionDialog";
@@ -60,6 +61,7 @@ function RemoteAudioMount({ stream }: { stream: any }) {
 
 export default function AudioCallScreen() {
   const insets = useSafeAreaInsets();
+  const { t } = useLanguage();
   const { activeCall, endCall, toggleMute, toggleSpeaker, markCallActive } = useCall();
   const [status, setStatus] = useState<"connecting" | "ringing" | "active">("connecting");
   const [showMicDialog, setShowMicDialog] = useState(false);
@@ -328,14 +330,14 @@ export default function AudioCallScreen() {
 
   const connectionStateLabel = (() => {
     if (status === "active") return fmt(elapsed);
-    if (status === "ringing") return "Ringing...";
+    if (status === "ringing") return t.audioCallScreen.ringing;
     switch (webrtc.connectionState) {
-      case "checking":     return "Connecting...";
-      case "connected":    return "Connected";
-      case "disconnected": return "Network drop — reconnecting...";
-      case "failed":       return "Connection failed — retrying...";
-      case "closed":       return "Call ended";
-      default:             return "Connecting...";
+      case "checking":     return t.audioCallScreen.connecting;
+      case "connected":    return t.audioCallScreen.connected;
+      case "disconnected": return t.audioCallScreen.reconnecting;
+      case "failed":       return t.audioCallScreen.connFailed;
+      case "closed":       return t.audioCallScreen.callEnded;
+      default:             return t.audioCallScreen.connecting;
     }
   })();
 
@@ -343,8 +345,8 @@ export default function AudioCallScreen() {
 
   const remainingLabel = remaining != null
     ? remaining <= 60
-      ? `${remaining}s remaining`
-      : `${Math.ceil(remaining / 60)} min left`
+      ? `${remaining}s ${t.audioCallScreen.remaining}`
+      : `${Math.ceil(remaining / 60)} ${t.audioCallScreen.minLeft}`
     : null;
 
   const isBlocked = permissions.microphone.status === "blocked" ||
@@ -391,7 +393,7 @@ export default function AudioCallScreen() {
       {loaded && permissions.microphone.status !== "granted" && !showMicDialog && (
         <TouchableOpacity onPress={() => setShowMicDialog(true)} style={styles.permBanner}>
           <SvgIcon name="mic-off" size={14} color="#FFD166" />
-          <Text style={styles.permBannerText}>Microphone access needed — Tap to fix</Text>
+          <Text style={styles.permBannerText}>{t.audioCallScreen.micNeeded}</Text>
         </TouchableOpacity>
       )}
 
@@ -399,7 +401,7 @@ export default function AudioCallScreen() {
         <View style={styles.warningBanner}>
           <SvgIcon name="alert-triangle" size={14} color="#FFD166" />
           <Text style={styles.warningText}>
-            Call ending soon — {remainingLabel}
+            {t.audioCallScreen.callEndingSoon}{remainingLabel}
           </Text>
         </View>
       )}
@@ -412,7 +414,7 @@ export default function AudioCallScreen() {
       )}
 
       <View style={styles.callerSection}>
-        <Text style={styles.callTypeLabel}>Voice Call</Text>
+        <Text style={styles.callTypeLabel}>{t.audioCallScreen.voiceCall}</Text>
         <Animated.View style={[styles.avatarRing, { transform: [{ scale: pulse }] }]}>
           <View style={styles.avatarInner}>
             <Image
@@ -421,17 +423,17 @@ export default function AudioCallScreen() {
             />
           </View>
         </Animated.View>
-        <Text style={styles.callerName}>{activeCall?.participant.name ?? "Unknown"}</Text>
+        <Text style={styles.callerName}>{activeCall?.participant.name ?? t.audioCallScreen.unknown}</Text>
         <Text style={styles.statusLabel}>{statusLabel}</Text>
         {webrtc.remoteMuted && status === "active" && (
-          <Text style={styles.mutedHint}>🔇 Muted</Text>
+          <Text style={styles.mutedHint}>{t.audioCallScreen.muted}</Text>
         )}
 
         <View style={styles.badgeRow}>
           {activeCall?.coinsPerMinute ? (
             <View style={styles.costBadge}>
               <Text style={styles.coinEmoji}>💰</Text>
-              <Text style={styles.costText}>+{activeCall.coinsPerMinute} coins / min</Text>
+              <Text style={styles.costText}>+{activeCall.coinsPerMinute} {t.audioCallScreen.coinsPerMin}</Text>
             </View>
           ) : null}
           {remainingLabel && status === "active" && (
@@ -457,7 +459,7 @@ export default function AudioCallScreen() {
             >
               <Image source={require("@/assets/icons/ic_mic.png")} style={styles.ctrlIcon} tintColor={activeCall?.isMuted ? "#FFD166" : "#fff"} resizeMode="contain" />
             </TouchableOpacity>
-            <Text style={styles.ctrlLabel}>{activeCall?.isMuted ? "Unmute" : "Mute"}</Text>
+            <Text style={styles.ctrlLabel}>{activeCall?.isMuted ? t.audioCallScreen.unmute : t.audioCallScreen.mute}</Text>
           </View>
 
           <TouchableOpacity
@@ -484,7 +486,7 @@ export default function AudioCallScreen() {
                 resizeMode="contain"
               />
             </TouchableOpacity>
-            <Text style={styles.ctrlLabel}>{activeCall?.isSpeakerOn ? "Speaker On" : "Speaker"}</Text>
+            <Text style={styles.ctrlLabel}>{activeCall?.isSpeakerOn ? t.audioCallScreen.speakerOn : t.audioCallScreen.speaker}</Text>
           </View>
         </View>
       </View>

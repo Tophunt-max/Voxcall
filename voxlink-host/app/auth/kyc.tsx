@@ -11,6 +11,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
 import { appendFileToFormData } from "@/utils/fileUpload";
 import { useAuth } from "@/context/AuthContext";
+import { useLanguage } from "@/context/LanguageContext";
 import { usePermissions } from "@/hooks/usePermissions";
 import { PermissionDialog, PERMISSION_CONFIGS } from "@/components/PermissionDialog";
 import { PrimaryButton } from "@/components/PrimaryButton";
@@ -45,6 +46,7 @@ function DocIcon({ icon, size }: { icon: "credit-card" | "video"; size: number }
 
 export default function HostKYCScreen() {
   const insets = useSafeAreaInsets();
+  const { t } = useLanguage();
   const { user } = useAuth();
   const { permissions, requestMediaLibrary, openSettings } = usePermissions();
   const params = useLocalSearchParams<{
@@ -89,7 +91,7 @@ export default function HostKYCScreen() {
       const uploadData = await API.uploadFile(formData);
       setFiles((prev) => ({ ...prev, [doc.key]: { uri: asset.uri, uploaded: uploadData.url } }));
     } catch {
-      showErrorToast("Could not upload file. Please try again.", "Upload Failed");
+      showErrorToast(t.kycScreen.uploadFailedMsg, t.kycScreen.uploadFailed);
     } finally {
       setUploading(null);
     }
@@ -99,10 +101,10 @@ export default function HostKYCScreen() {
     const aadharFront = files["aadhar_front"]?.uploaded;
     const aadharBack  = files["aadhar_back"]?.uploaded;
     if (!aadharFront || !aadharBack) {
-      showErrorToast("Please upload both Aadhar front and back photos.", "Missing Documents"); return;
+      showErrorToast(t.kycScreen.missingDocsMsg, t.kycScreen.missingDocs); return;
     }
     if (!dob.trim()) {
-      showErrorToast("Date of birth is missing. Please go back to Step 2 and select your DOB.", "Missing DOB"); return;
+      showErrorToast(t.kycScreen.missingDobMsg, t.kycScreen.missingDob); return;
     }
     setSubmitting(true);
     try {
@@ -124,7 +126,7 @@ export default function HostKYCScreen() {
       });
       router.replace("/auth/status");
     } catch (err: any) {
-      showErrorToast(err?.message || "Could not submit your application. Please try again.", "Submission Failed");
+      showErrorToast(err?.message || t.kycScreen.submitFailedMsg, t.kycScreen.submitFailed);
     } finally {
       setSubmitting(false);
     }
@@ -155,8 +157,8 @@ export default function HostKYCScreen() {
 
         <View style={s.headerCenter}>
           <Image source={require("@/assets/images/app_logo.png")} style={s.headerLogo} resizeMode="contain" />
-          <Text style={s.headerTitle}>Become a Host</Text>
-          <Text style={s.headerSub}>Step 4 of 4 — KYC Documents</Text>
+          <Text style={s.headerTitle}>{t.registerScreen.title}</Text>
+          <Text style={s.headerSub}>{t.kycScreen.headerSub}</Text>
         </View>
 
         <View style={s.steps}>
@@ -169,7 +171,7 @@ export default function HostKYCScreen() {
                   <Text style={s.stepNumActive}>4</Text>
                 )}
               </LinearGradient>
-              <Text style={s.stepLabelActive}>{step}</Text>
+              <Text style={s.stepLabelActive}>{[t.registerScreen.stepAccount, t.registerScreen.stepProfile, t.registerScreen.stepHostInfo, t.registerScreen.stepKyc][i]}</Text>
             </View>
           ))}
         </View>
@@ -181,27 +183,27 @@ export default function HostKYCScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <Text style={s.sectionTitle}>Identity Verification</Text>
-        <Text style={s.sectionSub}>Required to start hosting. Your documents are securely stored.</Text>
+        <Text style={s.sectionTitle}>{t.kycScreen.sectionTitle}</Text>
+        <Text style={s.sectionSub}>{t.kycScreen.sectionSub}</Text>
 
         <View style={s.noticeBanner}>
           <Image source={require("@/assets/icons/ic_secure.png")} style={s.noticeIcon} tintColor={ACCENT} resizeMode="contain" />
           <Text style={s.noticeTxt}>
-            KYC is mandatory per Indian regulations. Documents are reviewed only by admin and never shared with users.
+            {t.kycScreen.notice}
           </Text>
         </View>
 
-        <Text style={s.fieldLabel}>Date of Birth</Text>
+        <Text style={s.fieldLabel}>{t.kycScreen.dobLabel}</Text>
         {dob ? (
           <View style={s.dobReview}>
             <Image source={require("@/assets/icons/ic_calendar.png")} style={s.dobIcon} tintColor={ACCENT} resizeMode="contain" />
             <Text style={s.dobReviewTxt}>{dob}</Text>
-            <View style={s.dobBadge}><Text style={s.dobBadgeTxt}>From Step 2</Text></View>
+            <View style={s.dobBadge}><Text style={s.dobBadgeTxt}>{t.kycScreen.fromStep2}</Text></View>
           </View>
         ) : (
           <TextInput
             style={s.dobInput}
-            placeholder="DD/MM/YYYY (e.g. 22/05/1998)"
+            placeholder={t.kycScreen.dobPlaceholder}
             placeholderTextColor="#aaa"
             value={dob}
             onChangeText={setDob}
@@ -214,6 +216,8 @@ export default function HostKYCScreen() {
         {DOCS.map((doc) => {
           const picked     = files[doc.key];
           const isUploading = uploading === doc.key;
+          const docLabel = doc.key === "aadhar_front" ? t.kycScreen.docAadharFront : doc.key === "aadhar_back" ? t.kycScreen.docAadharBack : t.kycScreen.docVideo;
+          const docSublabel = doc.key === "aadhar_front" ? t.kycScreen.docAadharFrontSub : doc.key === "aadhar_back" ? t.kycScreen.docAadharBackSub : t.kycScreen.docVideoSub;
           return (
             <TouchableOpacity
               key={doc.key}
@@ -232,9 +236,9 @@ export default function HostKYCScreen() {
                 )}
               </View>
               <View style={s.docInfo}>
-                <Text style={s.docLabel}>{doc.label}</Text>
+                <Text style={s.docLabel}>{docLabel}</Text>
                 <Text style={s.docSub}>
-                  {isUploading ? "Uploading..." : picked?.uploaded ? "Uploaded ✓" : doc.sublabel}
+                  {isUploading ? t.kycScreen.uploading : picked?.uploaded ? t.kycScreen.uploaded : docSublabel}
                 </Text>
               </View>
               {picked?.uri && doc.accept === "image" && (
@@ -250,11 +254,11 @@ export default function HostKYCScreen() {
         })}
 
         <View style={s.tipsBanner}>
-          <Text style={s.tipsTitle}>Tips for Approval</Text>
+          <Text style={s.tipsTitle}>{t.kycScreen.tipsTitle}</Text>
           {[
-            "Ensure Aadhar photos are clear and not blurry",
-            "Hold your Aadhar card clearly in the verification video",
-            "Look into the camera while recording",
+            t.kycScreen.tip1,
+            t.kycScreen.tip2,
+            t.kycScreen.tip3,
           ].map((tip, i) => (
             <View key={i} style={s.tipRow}>
               <Text style={s.tipBullet}>•</Text>
@@ -264,7 +268,7 @@ export default function HostKYCScreen() {
         </View>
 
         <PrimaryButton
-          title={submitting ? "Submitting..." : "Submit Application"}
+          title={submitting ? t.kycScreen.submitting : t.kycScreen.submit}
           onPress={handleSubmit}
           loading={submitting}
           disabled={submitting || !!uploading}

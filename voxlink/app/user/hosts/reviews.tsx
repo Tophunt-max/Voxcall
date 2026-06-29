@@ -6,6 +6,8 @@ import {
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
+import { useLanguage } from "@/context/LanguageContext";
+import type { Translations } from "@/localization/en";
 import { API } from "@/services/api";
 import { showErrorToast } from "@/components/Toast";
 
@@ -28,23 +30,30 @@ function Stars({ count }: { count: number }) {
   );
 }
 
-function formatDate(ts?: number): string {
+function formatDate(ts: number | undefined, tr: Translations): string {
   if (!ts) return "";
   const d = new Date(ts * 1000);
   const now = Date.now();
   const diff = now - ts * 1000;
   const day = 86400000;
-  if (diff < day) return "Today";
-  if (diff < 2 * day) return "Yesterday";
-  if (diff < 7 * day) return `${Math.floor(diff / day)} days ago`;
-  if (diff < 30 * day) return `${Math.floor(diff / (7 * day))} week${Math.floor(diff / (7 * day)) > 1 ? "s" : ""} ago`;
-  if (diff < 365 * day) return `${Math.floor(diff / (30 * day))} month${Math.floor(diff / (30 * day)) > 1 ? "s" : ""} ago`;
+  if (diff < day) return tr.reviews.today;
+  if (diff < 2 * day) return tr.reviews.yesterday;
+  if (diff < 7 * day) return tr.reviews.daysAgo.replace("{count}", String(Math.floor(diff / day)));
+  if (diff < 30 * day) {
+    const w = Math.floor(diff / (7 * day));
+    return (w > 1 ? tr.reviews.weeksAgo : tr.reviews.weekAgo).replace("{count}", String(w));
+  }
+  if (diff < 365 * day) {
+    const m = Math.floor(diff / (30 * day));
+    return (m > 1 ? tr.reviews.monthsAgo : tr.reviews.monthAgo).replace("{count}", String(m));
+  }
   return d.toLocaleDateString();
 }
 
 export default function AllReviewsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { t } = useLanguage();
   const params = useLocalSearchParams<{ hostId: string; hostRating: string; hostReviewCount: string }>();
 
   const rating = parseFloat(params.hostRating ?? "0");
@@ -57,7 +66,7 @@ export default function AllReviewsScreen() {
     if (!params.hostId) { setLoading(false); return; }
     API.getHostReviews(params.hostId)
       .then((data) => setReviews(data ?? []))
-      .catch(() => { setReviews([]); showErrorToast("Failed to load reviews."); })
+      .catch(() => { setReviews([]); showErrorToast(t.reviews.failedLoad); })
       .finally(() => setLoading(false));
   }, [params.hostId]);
 
@@ -73,7 +82,7 @@ export default function AllReviewsScreen() {
         <TouchableOpacity onPress={() => router.back()} style={[styles.backBtn, { backgroundColor: colors.surface }]}>
           <Image source={require("@/assets/icons/ic_back.png")} style={styles.backIcon} tintColor={colors.text} resizeMode="contain" />
         </TouchableOpacity>
-        <Text style={[styles.title, { color: colors.text }]}>Reviews</Text>
+        <Text style={[styles.title, { color: colors.text }]}>{t.hosts.reviews}</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -82,7 +91,7 @@ export default function AllReviewsScreen() {
           <View style={styles.ratingBig}>
             <Text style={[styles.ratingNum, { color: colors.text }]}>{displayRating.toFixed(1)}</Text>
             <Stars count={Math.round(displayRating)} />
-            <Text style={[styles.ratingTotal, { color: colors.mutedForeground }]}>{totalCount} reviews</Text>
+            <Text style={[styles.ratingTotal, { color: colors.mutedForeground }]}>{t.reviews.reviewsCount.replace("{count}", String(totalCount))}</Text>
           </View>
           <View style={styles.ratingBars}>
             {[5,4,3,2,1].map(star => {
@@ -115,9 +124,9 @@ export default function AllReviewsScreen() {
           ListEmptyComponent={
             <View style={{ alignItems: "center", paddingTop: 60, gap: 8 }}>
               <Text style={{ fontSize: 40 }}>💬</Text>
-              <Text style={[styles.emptyText, { color: colors.text }]}>No reviews yet</Text>
+              <Text style={[styles.emptyText, { color: colors.text }]}>{t.reviews.noReviews}</Text>
               <Text style={{ color: colors.mutedForeground, fontSize: 13, fontFamily: "Poppins_400Regular" }}>
-                Be the first to leave a review!
+                {t.reviews.beFirst}
               </Text>
             </View>
           }
@@ -129,10 +138,10 @@ export default function AllReviewsScreen() {
                   style={styles.reviewAvatar}
                 />
                 <View style={{ flex: 1, gap: 2 }}>
-                  <Text style={[styles.reviewUser, { color: colors.text }]}>{item.user_name ?? "User"}</Text>
+                  <Text style={[styles.reviewUser, { color: colors.text }]}>{item.user_name ?? t.reviews.user}</Text>
                   <Stars count={Math.round(item.rating)} />
                 </View>
-                <Text style={[styles.reviewDate, { color: colors.mutedForeground }]}>{formatDate(item.created_at)}</Text>
+                <Text style={[styles.reviewDate, { color: colors.mutedForeground }]}>{formatDate(item.created_at, t)}</Text>
               </View>
               {!!item.comment && (
                 <Text style={[styles.reviewText, { color: colors.mutedForeground }]}>{item.comment}</Text>

@@ -9,6 +9,7 @@ import { useChat, Message } from "@/context/ChatContext";
 import { API } from "@/services/api";
 import { showErrorToast } from "@/components/Toast";
 import * as Haptics from "expo-haptics";
+import { useLanguage } from "@/context/LanguageContext";
 
 function formatTime(ts: number) {
   if (!ts) return "";
@@ -17,6 +18,7 @@ function formatTime(ts: number) {
 }
 
 export default function ChatScreen() {
+  const { t } = useLanguage();
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -24,7 +26,7 @@ export default function ChatScreen() {
   const { conversations, sendMessage, markRead, loadMessages } = useChat();
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
-  const [participantName, setParticipantName] = useState("Chat");
+  const [participantName, setParticipantName] = useState(t.chatThreadScreen.defaultName);
   const [participantAvatar, setParticipantAvatar] = useState(`https://api.dicebear.com/7.x/avataaars/png?seed=${id}`);
   const listRef = useRef<FlatList>(null);
 
@@ -43,7 +45,7 @@ export default function ChatScreen() {
       }
     } else {
       setLoading(true);
-      loadMessages(id, id).catch(() => { showErrorToast("Failed to load messages."); }).finally(() => setLoading(false));
+      loadMessages(id, id).catch(() => { showErrorToast(t.chatThreadScreen.loadFailed); }).finally(() => setLoading(false));
     }
   }, [id]);
 
@@ -69,7 +71,7 @@ export default function ChatScreen() {
         ]}>
           <Text style={[styles.bubbleText, { color: isMe ? "#fff" : colors.foreground }]}>{item.content}</Text>
           <Text style={[styles.bubbleTime, { color: isMe ? "rgba(255,255,255,0.6)" : colors.mutedForeground }]}>
-            {item.failed ? "Not sent" : formatTime(item.timestamp)}
+            {item.failed ? t.chatThreadScreen.notSent : formatTime(item.timestamp)}
           </Text>
         </View>
       </View>
@@ -85,7 +87,7 @@ export default function ChatScreen() {
         <Image source={{ uri: participantAvatar }} style={styles.headerAvatar} />
         <View style={styles.headerInfo}>
           <Text style={[styles.headerName, { color: colors.foreground }]} numberOfLines={1}>{participantName}</Text>
-          <Text style={[styles.headerStatus, { color: colors.online }]}>Online</Text>
+          <Text style={[styles.headerStatus, { color: colors.online }]}>{t.chatThreadScreen.online}</Text>
         </View>
         <SvgIcon name="info" size={20} color={colors.mutedForeground} />
       </View>
@@ -99,7 +101,7 @@ export default function ChatScreen() {
           <View style={styles.empty}>
             <Image source={{ uri: participantAvatar }} style={styles.emptyAvatar} />
             <Text style={[styles.emptyName, { color: colors.foreground }]}>{participantName}</Text>
-            <Text style={[styles.emptyHint, { color: colors.mutedForeground }]}>Send a message to start the conversation</Text>
+            <Text style={[styles.emptyHint, { color: colors.mutedForeground }]}>{t.chatThreadScreen.startConvo}</Text>
           </View>
         ) : (
           <FlatList
@@ -121,7 +123,7 @@ export default function ChatScreen() {
             <TextInput
               value={text}
               onChangeText={setText}
-              placeholder="Type a message..."
+              placeholder={t.chatThreadScreen.typePlaceholder}
               placeholderTextColor={colors.mutedForeground}
               style={[styles.input, { color: colors.foreground }]}
               multiline

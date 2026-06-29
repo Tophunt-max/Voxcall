@@ -12,6 +12,7 @@ import {
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
+import { useLanguage } from "@/context/LanguageContext";
 import { API } from "@/services/api";
 import { showErrorToast, showSuccessToast } from "@/components/Toast";
 
@@ -21,6 +22,7 @@ interface Topic { id: string; name: string; icon?: string; }
 
 export default function ManageTopicsScreen() {
   const colors = useColors();
+  const { t: tr } = useLanguage();
   const insets = useSafeAreaInsets();
 
   const [loading, setLoading] = useState(true);
@@ -75,7 +77,7 @@ export default function ManageTopicsScreen() {
       const exists = prev.some((s) => s.toLowerCase() === name.toLowerCase());
       if (exists) return prev.filter((s) => s.toLowerCase() !== name.toLowerCase());
       if (prev.length >= MAX_TOPICS) {
-        showErrorToast(`You can select up to ${MAX_TOPICS} topics.`);
+        showErrorToast(`${tr.manageTopicsScreen.maxPrefix}${MAX_TOPICS}${tr.manageTopicsScreen.maxSuffix}`);
         return prev;
       }
       return [...prev, name];
@@ -87,7 +89,7 @@ export default function ManageTopicsScreen() {
     if (!name) return;
     if (isSelected(name)) { setCustom(""); return; }
     if (selected.length >= MAX_TOPICS) {
-      showErrorToast(`You can select up to ${MAX_TOPICS} topics.`);
+      showErrorToast(`${tr.manageTopicsScreen.maxPrefix}${MAX_TOPICS}${tr.manageTopicsScreen.maxSuffix}`);
       return;
     }
     setSelected((prev) => [...prev, name]);
@@ -98,10 +100,10 @@ export default function ManageTopicsScreen() {
     setSaving(true);
     try {
       await API.updateHostProfile({ specialties: selected.slice(0, MAX_TOPICS) });
-      showSuccessToast("Your topics have been updated.", "Topics Saved");
+      showSuccessToast(tr.manageTopicsScreen.topicsSaved, tr.manageTopicsScreen.topicsSavedTitle);
       router.back();
     } catch (e: any) {
-      showErrorToast(e?.message || "Failed to save topics. Please try again.");
+      showErrorToast(e?.message || tr.manageTopicsScreen.saveFailed);
     } finally {
       setSaving(false);
     }
@@ -124,18 +126,17 @@ export default function ManageTopicsScreen() {
         <TouchableOpacity onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Go back" style={[styles.backBtn, { backgroundColor: colors.surface }]}>
           <Image source={require("@/assets/icons/ic_back.png")} style={styles.backIconImg} tintColor={colors.text} resizeMode="contain" />
         </TouchableOpacity>
-        <Text style={[styles.title, { color: colors.text }]}>My Topics</Text>
+        <Text style={[styles.title, { color: colors.text }]}>{tr.manageTopicsScreen.title}</Text>
         <View style={{ width: 40 }} />
       </View>
 
       <ScrollView contentContainerStyle={{ paddingBottom: 130 }} keyboardShouldPersistTaps="handled">
         <Text style={[styles.helpText, { color: colors.mutedForeground }]}>
-          Pick the topics you talk about. Users browsing these topics will find
-          you faster. Select up to {MAX_TOPICS}.
+          {tr.manageTopicsScreen.helpPrefix}{MAX_TOPICS}{tr.manageTopicsScreen.helpSuffix}
         </Text>
 
         <View style={styles.counterRow}>
-          <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Topics</Text>
+          <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>{tr.manageTopicsScreen.topics}</Text>
           <Text style={[styles.counter, { color: selected.length >= MAX_TOPICS ? "#E84855" : colors.mutedForeground }]}>
             {selected.length}/{MAX_TOPICS}
           </Text>
@@ -164,16 +165,16 @@ export default function ManageTopicsScreen() {
           })}
           {allChips.length === 0 && (
             <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
-              No topics available yet. Add your own below.
+              {tr.manageTopicsScreen.noTopics}
             </Text>
           )}
         </View>
 
-        <Text style={[styles.sectionLabel, { color: colors.mutedForeground, marginTop: 20 }]}>Add Your Own</Text>
+        <Text style={[styles.sectionLabel, { color: colors.mutedForeground, marginTop: 20 }]}>{tr.manageTopicsScreen.addYourOwn}</Text>
         <View style={[styles.customRow, { marginHorizontal: 16 }]}>
           <TextInput
             style={[styles.customInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surface }]}
-            placeholder="e.g. Astrology, Fitness…"
+            placeholder={tr.manageTopicsScreen.customPlaceholder}
             placeholderTextColor={colors.mutedForeground}
             value={custom}
             onChangeText={setCustom}
@@ -187,7 +188,7 @@ export default function ManageTopicsScreen() {
             disabled={!custom.trim()}
             activeOpacity={0.85}
           >
-            <Text style={styles.addBtnText}>Add</Text>
+            <Text style={styles.addBtnText}>{tr.manageTopicsScreen.add}</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -199,7 +200,7 @@ export default function ManageTopicsScreen() {
           disabled={saving}
           activeOpacity={0.85}
         >
-          {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>Save Topics</Text>}
+          {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>{tr.manageTopicsScreen.saveTopics}</Text>}
         </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>

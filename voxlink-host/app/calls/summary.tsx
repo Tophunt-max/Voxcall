@@ -7,6 +7,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SvgIcon } from "@/components/SvgIcon";
 import { useColors } from "@/hooks/useColors";
+import { useLanguage } from "@/context/LanguageContext";
 import { formatDuration } from "@/utils/format";
 import { StarRating } from "@/components/StarRating";
 import { API } from "@/services/api";
@@ -15,6 +16,7 @@ import { showErrorToast } from "@/components/Toast";
 export default function CallSummaryScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { t } = useLanguage();
 
   const {
     duration,
@@ -38,7 +40,7 @@ export default function CallSummaryScreen() {
   const coinsGained   = parseInt(coinsEarned ?? "0", 10);
   const isAutoEnded   = autoEnded === "1";
   const isVideo       = type === "video";
-  const userName      = participantName ?? "User";
+  const userName      = participantName ?? t.callSummaryScreen.user;
   const sid           = sessionId ?? "";
 
   const [rating, setRating]         = useState(0);
@@ -54,7 +56,7 @@ export default function CallSummaryScreen() {
       }
       setRated(true);
     } catch (e: any) {
-      showErrorToast(e?.message ?? "Failed to submit rating, please try again.", "Error");
+      showErrorToast(e?.message ?? t.callSummaryScreen.ratingError, t.callSummaryScreen.errorTitle);
     } finally {
       setSubmitting(false);
     }
@@ -71,7 +73,7 @@ export default function CallSummaryScreen() {
         {isAutoEnded && (
           <View style={s.autoEndedBanner}>
             <SvgIcon name="info" size={14} color="#60B8FF" />
-            <Text style={s.autoEndedText}>User ran out of coins — call was auto-disconnected</Text>
+            <Text style={s.autoEndedText}>{t.callSummaryScreen.autoEndedBanner}</Text>
           </View>
         )}
 
@@ -85,16 +87,16 @@ export default function CallSummaryScreen() {
         </View>
 
         <Text style={[s.title, { color: colors.foreground }]}>
-          {isAutoEnded ? "Call Auto-Ended" : "Call Completed"}
+          {isAutoEnded ? t.callSummaryScreen.callAutoEnded : t.callSummaryScreen.callCompleted}
         </Text>
-        <Text style={[s.hostName, { color: colors.mutedForeground }]}>with {userName}</Text>
+        <Text style={[s.hostName, { color: colors.mutedForeground }]}>{t.callSummaryScreen.withName} {userName}</Text>
 
         <View style={[s.statsRow, { borderColor: colors.border }]}>
           <View style={s.stat}>
             <Text style={[s.statValue, { color: colors.foreground }]}>
               {formatDuration(durationSec)}
             </Text>
-            <Text style={[s.statLabel, { color: colors.mutedForeground }]}>Duration</Text>
+            <Text style={[s.statLabel, { color: colors.mutedForeground }]}>{t.callSummaryScreen.duration}</Text>
           </View>
 
           <View style={[s.statDiv, { backgroundColor: colors.border }]} />
@@ -103,7 +105,7 @@ export default function CallSummaryScreen() {
             <Text style={[s.statValue, { color: "#0BAF23" }]}>
               +{coinsGained} 🪙
             </Text>
-            <Text style={[s.statLabel, { color: colors.mutedForeground }]}>Coins Earned</Text>
+            <Text style={[s.statLabel, { color: colors.mutedForeground }]}>{t.callSummaryScreen.coinsEarned}</Text>
           </View>
 
           <View style={[s.statDiv, { backgroundColor: colors.border }]} />
@@ -116,7 +118,7 @@ export default function CallSummaryScreen() {
               resizeMode="contain"
             />
             <Text style={[s.statLabel, { color: colors.mutedForeground }]}>
-              {isVideo ? "Video" : "Audio"}
+              {isVideo ? t.callSummaryScreen.video : t.callSummaryScreen.audio}
             </Text>
           </View>
         </View>
@@ -124,10 +126,10 @@ export default function CallSummaryScreen() {
         {!rated ? (
           <View style={s.ratingSection}>
             <Text style={[s.ratingPrompt, { color: colors.foreground }]}>
-              Rate {userName}
+              {t.callSummaryScreen.ratePrefix} {userName}
             </Text>
             <Text style={[s.ratingSubtitle, { color: colors.mutedForeground }]}>
-              Share your experience from this call
+              {t.callSummaryScreen.rateSub}
             </Text>
             <StarRating
               rating={rating}
@@ -137,7 +139,7 @@ export default function CallSummaryScreen() {
             />
             {rating > 0 && (
               <Text style={[s.ratingLabel, { color: colors.mutedForeground }]}>
-                {["", "Poor", "Fair", "Good", "Great", "Excellent!"][rating]}
+                {t.callSummaryScreen.ratingLabels[rating]}
               </Text>
             )}
             <TouchableOpacity
@@ -153,12 +155,12 @@ export default function CallSummaryScreen() {
                 <ActivityIndicator color="#fff" size="small" />
               ) : (
                 <Text style={[s.rateBtnText, { color: rating > 0 ? "#fff" : colors.mutedForeground }]}>
-                  ⭐ Submit Rating
+                  {t.callSummaryScreen.submitRating}
                 </Text>
               )}
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setRated(true)}>
-              <Text style={[s.skipText, { color: colors.mutedForeground }]}>Skip</Text>
+              <Text style={[s.skipText, { color: colors.mutedForeground }]}>{t.callSummaryScreen.skip}</Text>
             </TouchableOpacity>
           </View>
         ) : (
@@ -167,10 +169,10 @@ export default function CallSummaryScreen() {
               <SvgIcon name="check-circle" size={36} color="#0BAF23" />
             </View>
             <Text style={[s.thankYouTitle, { color: colors.foreground }]}>
-              Shukriya! 🙏
+              {t.callSummaryScreen.thankYouTitle}
             </Text>
             <Text style={[s.thankYouSub, { color: colors.mutedForeground }]}>
-              Aapki rating submit ho gayi
+              {t.callSummaryScreen.thankYouSub}
             </Text>
           </View>
         )}
@@ -182,7 +184,7 @@ export default function CallSummaryScreen() {
         activeOpacity={0.85}
       >
         <Image source={require("@/assets/icons/ic_arrow_up.png")} style={s.actionBtnIcon} tintColor="#fff" resizeMode="contain" />
-        <Text style={s.actionBtnText}>Earnings Dekho</Text>
+        <Text style={s.actionBtnText}>{t.callSummaryScreen.viewEarnings}</Text>
       </TouchableOpacity>
 
       <TouchableOpacity
@@ -191,7 +193,7 @@ export default function CallSummaryScreen() {
         activeOpacity={0.85}
       >
         <Image source={require("@/assets/icons/ic_home.png")} style={s.actionBtnIcon} tintColor="#fff" resizeMode="contain" />
-        <Text style={s.actionBtnText}>Home Par Wapas Jao</Text>
+        <Text style={s.actionBtnText}>{t.callSummaryScreen.backHome}</Text>
       </TouchableOpacity>
     </View>
   );

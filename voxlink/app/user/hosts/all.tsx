@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, ActivityIndi
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { useColors } from "@/hooks/useColors";
+import { useLanguage } from "@/context/LanguageContext";
 import { HostCard } from "@/components/HostCard";
 import { SearchBar } from "@/components/SearchBar";
 import { API, resolveMediaUrl } from "@/services/api";
@@ -11,6 +12,7 @@ import { showErrorToast } from "@/components/Toast";
 export default function AllHostsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { t } = useLanguage();
   const [query, setQuery] = useState("");
   const [hosts, setHosts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -25,7 +27,7 @@ export default function AllHostsScreen() {
         avatar: resolveMediaUrl(h.avatar_url || h.avatar) || `https://api.dicebear.com/7.x/avataaars/png?seed=${h.id}`,
       }));
       setHosts(mapped);
-    }).catch(() => { setHosts([]); showErrorToast("Failed to load hosts."); }).finally(() => setLoading(false));
+    }).catch(() => { setHosts([]); showErrorToast(t.hostsScreen.failedLoad); }).finally(() => setLoading(false));
   }, []);
 
   const filtered = hosts.filter((h) =>
@@ -38,7 +40,7 @@ export default function AllHostsScreen() {
         <TouchableOpacity onPress={() => router.back()}>
           <Image source={require("@/assets/icons/ic_back.png")} style={{ width: 22, height: 22 }} tintColor={colors.foreground} resizeMode="contain" />
         </TouchableOpacity>
-        <Text style={[styles.title, { color: colors.foreground }]}>All Hosts</Text>
+        <Text style={[styles.title, { color: colors.foreground }]}>{t.hostsScreen.allHosts}</Text>
         <View style={{ width: 24 }} />
       </View>
       <View style={{ paddingHorizontal: 20, paddingBottom: 12 }}>
@@ -57,7 +59,7 @@ export default function AllHostsScreen() {
           showsVerticalScrollIndicator={false}
           ListEmptyComponent={
             <View style={{ alignItems: "center", paddingTop: 60 }}>
-              <Text style={{ color: colors.mutedForeground, fontFamily: "Poppins_400Regular" }}>No hosts found</Text>
+              <Text style={{ color: colors.mutedForeground, fontFamily: "Poppins_400Regular" }}>{t.hosts.noHostsFound}</Text>
             </View>
           }
         />

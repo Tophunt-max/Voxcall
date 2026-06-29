@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, Image, TouchableOpacity } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useCall } from "@/context/CallContext";
+import { useLanguage } from "@/context/LanguageContext";
 import { useSocket } from "@/context/SocketContext";
 import { SocketEvents } from "@/constants/events";
 import { resolveMediaUrl } from "@/services/api";
@@ -15,6 +16,7 @@ export default function IncomingCallScreen() {
   const insets = useSafeAreaInsets();
   const { activeCall, acceptCall, declineCall, endCall } = useCall();
   const { onEvent } = useSocket();
+  const { t } = useLanguage();
   const topPad = insets.top;
   const bottomPad = insets.bottom;
 
@@ -83,16 +85,16 @@ export default function IncomingCallScreen() {
   return (
     <View style={[styles.screen, { backgroundColor: "#1A1A2E", paddingTop: topPad, paddingBottom: bottomPad }]}>
       <View style={styles.top}>
-        <Text style={styles.incomingLabel}>Incoming {activeCall?.type === "video" ? "Video" : "Audio"} Call</Text>
+        <Text style={styles.incomingLabel}>{activeCall?.type === "video" ? t.calls.incomingVideo : t.calls.incomingAudio}</Text>
         <View style={styles.avatarRing}>
           <Image
             source={{ uri: resolveMediaUrl(activeCall?.participant.avatar) ?? `https://api.dicebear.com/7.x/avataaars/png?seed=${activeCall?.participant.id}` }}
             style={styles.avatar}
           />
         </View>
-        <Text style={styles.callerName}>{activeCall?.participant.name ?? "Unknown"}</Text>
+        <Text style={styles.callerName}>{activeCall?.participant.name ?? t.calls.unknown}</Text>
         {/* Fix M2: show correct role — "user" callers are Users, not Hosts */}
-        <Text style={styles.callerRole}>{activeCall?.participant.role === "host" ? "VoxLink Host" : "VoxLink User"}</Text>
+        <Text style={styles.callerRole}>{activeCall?.participant.role === "host" ? t.calls.voxlinkHost : t.calls.voxlinkUser}</Text>
       </View>
 
       <View style={styles.actions}>
@@ -101,13 +103,13 @@ export default function IncomingCallScreen() {
             <TouchableOpacity onPress={handleDecline} style={styles.declineBtn}>
               <Image source={require("@/assets/icons/ic_call_end.png")} style={{ width: 28, height: 28, tintColor: "#fff" }} resizeMode="contain" />
             </TouchableOpacity>
-            <Text style={styles.actionLabel}>Decline</Text>
+            <Text style={styles.actionLabel}>{t.calls.decline}</Text>
           </View>
           <View style={styles.actionItem}>
             <TouchableOpacity onPress={handleAccept} style={styles.acceptBtn}>
               <Image source={require("@/assets/icons/ic_call.png")} style={{ width: 28, height: 28, tintColor: "#fff" }} resizeMode="contain" />
             </TouchableOpacity>
-            <Text style={styles.actionLabel}>Accept</Text>
+            <Text style={styles.actionLabel}>{t.calls.accept}</Text>
           </View>
         </View>
       </View>

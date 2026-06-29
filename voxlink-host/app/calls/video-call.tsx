@@ -10,6 +10,7 @@ import { SvgIcon } from "@/components/SvgIcon";
 import { IconView } from "@/components/IconView";
 import { router } from "expo-router";
 import { useCall } from "@/context/CallContext";
+import { useLanguage } from "@/context/LanguageContext";
 import { useCallTimer } from "@/hooks/useCallTimer";
 import { usePermissions } from "@/hooks/usePermissions";
 import { PermissionDialog, PERMISSION_CONFIGS } from "@/components/PermissionDialog";
@@ -153,6 +154,7 @@ type PermStep = "camera" | "microphone" | "done";
 
 export default function VideoCallScreen() {
   const insets = useSafeAreaInsets();
+  const { t } = useLanguage();
   const { activeCall, endCall, toggleMute, toggleCamera, toggleSpeaker, markCallActive } = useCall();
   const [status, setStatus] = useState<"connecting" | "ringing" | "active">("connecting");
 
@@ -468,16 +470,16 @@ export default function VideoCallScreen() {
     `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 
   const remainingLabel = remaining != null
-    ? remaining <= 60 ? `${remaining}s left` : `${Math.ceil(remaining / 60)} min left`
+    ? remaining <= 60 ? `${remaining} ${t.videoCallScreen.secLeft}` : `${Math.ceil(remaining / 60)} ${t.videoCallScreen.minLeft}`
     : null;
 
   const connectingLabel = (() => {
     switch (webrtc.connectionState) {
-      case "checking":     return "Connecting...";
-      case "connected":    return "Connected";
-      case "disconnected": return "Network drop — reconnecting...";
-      case "failed":       return "Connection failed — retrying...";
-      default:             return "Connecting...";
+      case "checking":     return t.videoCallScreen.connecting;
+      case "connected":    return t.videoCallScreen.connected;
+      case "disconnected": return t.videoCallScreen.reconnecting;
+      case "failed":       return t.videoCallScreen.connFailed;
+      default:             return t.videoCallScreen.connecting;
     }
   })();
 
@@ -680,7 +682,7 @@ export default function VideoCallScreen() {
               {webrtc.remoteStream && status === "active" && (
                 <View style={styles.remoteCameraOffBadge}>
                   <SvgIcon name="camera-off" size={12} color="rgba(255,255,255,0.85)" />
-                  <Text style={styles.remoteCameraOffText}>Camera off</Text>
+                  <Text style={styles.remoteCameraOffText}>{t.videoCallScreen.cameraOff}</Text>
                 </View>
               )}
             </View>
@@ -689,7 +691,7 @@ export default function VideoCallScreen() {
         {status !== "active" && (
           <View style={styles.connectingBadge}>
             <Text style={styles.connectingText}>
-              {status === "connecting" ? connectingLabel : "Ringing..."}
+              {status === "connecting" ? connectingLabel : t.videoCallScreen.ringing}
             </Text>
           </View>
         )}
@@ -724,7 +726,7 @@ export default function VideoCallScreen() {
             // permanently black self-preview.
             <View style={styles.selfCameraOff}>
               <SvgIcon name="camera-off" size={22} color="rgba(255,255,255,0.6)" />
-              <Text style={styles.selfCameraOffText}>Camera unavailable</Text>
+              <Text style={styles.selfCameraOffText}>{t.videoCallScreen.cameraUnavailable}</Text>
             </View>
           ) : !webrtc.isAvailable && CameraView ? (
             // FIX (camera-busy race): only render <CameraView /> when WebRTC
@@ -738,26 +740,26 @@ export default function VideoCallScreen() {
           ) : (
             <View style={styles.selfCameraOff}>
               <SvgIcon name="camera" size={22} color="rgba(255,255,255,0.6)" />
-              <Text style={styles.selfCameraOffText}>Starting camera…</Text>
+              <Text style={styles.selfCameraOffText}>{t.videoCallScreen.startingCamera}</Text>
             </View>
           )
         ) : (
           <View style={styles.selfCameraOff}>
             <SvgIcon name="camera-off" size={22} color="rgba(255,255,255,0.6)" />
             <Text style={styles.selfCameraOffText}>
-              {!cameraGranted ? "No Permission" : "Camera Off"}
+              {!cameraGranted ? t.videoCallScreen.noPermission : t.videoCallScreen.cameraOffLabel}
             </Text>
           </View>
         )}
         <View style={styles.selfLabel}>
-          <Text style={styles.selfLabelText}>You</Text>
+          <Text style={styles.selfLabelText}>{t.videoCallScreen.you}</Text>
         </View>
         {/* FIX (UI redesign): persistent muted indicator — see voxlink/app/
             user/call/video-call.tsx for the full rationale. */}
         {activeCall?.isMuted && (
           <View style={uiS.mutedBadge}>
             <IconView name="mic-off" size={10} color="#fff" />
-            <Text style={uiS.mutedBadgeText}>Muted</Text>
+            <Text style={uiS.mutedBadgeText}>{t.videoCallScreen.mutedBadge}</Text>
           </View>
         )}
       </Animated.View>
@@ -767,13 +769,13 @@ export default function VideoCallScreen() {
           {!cameraGranted && (
             <TouchableOpacity onPress={() => setPermStep("camera")} style={styles.permChip}>
               <SvgIcon name="camera-off" size={12} color="#FFD166" />
-              <Text style={styles.permChipText}>Camera off</Text>
+              <Text style={styles.permChipText}>{t.videoCallScreen.cameraOff}</Text>
             </TouchableOpacity>
           )}
           {!micGranted && (
             <TouchableOpacity onPress={() => setPermStep("microphone")} style={styles.permChip}>
               <SvgIcon name="mic-off" size={12} color="#FFD166" />
-              <Text style={styles.permChipText}>No mic</Text>
+              <Text style={styles.permChipText}>{t.videoCallScreen.noMic}</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -809,14 +811,14 @@ export default function VideoCallScreen() {
           {showLowCoinWarning && (
             <View style={styles.warningBanner}>
               <SvgIcon name="alert-triangle" size={13} color="#FFD166" />
-              <Text style={styles.warningText}>Call ending soon — {remainingLabel}</Text>
+              <Text style={styles.warningText}>{t.videoCallScreen.callEndingSoon}{remainingLabel}</Text>
             </View>
           )}
 
           {webrtc.error && !showLowCoinWarning && (
             <View style={styles.warningBanner}>
               <SvgIcon name="wifi-off" size={13} color="#FF6B6B" />
-              <Text style={styles.warningText}>Connection issue</Text>
+              <Text style={styles.warningText}>{t.videoCallScreen.connectionIssue}</Text>
             </View>
           )}
 
@@ -830,20 +832,20 @@ export default function VideoCallScreen() {
               <Image source={{ uri: remoteAvatarUri }} style={uiS.callerAvatar} />
               <View style={uiS.callerInfo}>
                 <Text style={uiS.callerName} numberOfLines={1}>
-                  {activeCall?.participant.name ?? "Connecting..."}
+                  {activeCall?.participant.name ?? t.videoCallScreen.connectingName}
                 </Text>
                 {status === "active" ? (
                   <View style={uiS.callerMetaRow}>
                     <View style={uiS.liveBadge}>
                       <View style={uiS.liveDot} />
-                      <Text style={uiS.liveText}>LIVE</Text>
+                      <Text style={uiS.liveText}>{t.videoCallScreen.live}</Text>
                     </View>
                     <Text style={uiS.timer}>{formatTime(elapsed)}</Text>
                     {webrtc.remoteMuted && <Text style={{ fontSize: 12, marginLeft: 4 }}>🔇</Text>}
                   </View>
                 ) : (
                   <Text style={uiS.headerSub} numberOfLines={1}>
-                    {status === "connecting" ? "Setting up secure connection..." : "Waiting for response..."}
+                    {status === "connecting" ? t.videoCallScreen.settingUp : t.videoCallScreen.waitingResponse}
                   </Text>
                 )}
               </View>
@@ -873,7 +875,7 @@ export default function VideoCallScreen() {
             >
               <SvgIcon name={activeCall?.isCameraOn ? "camera" : "camera-off"} size={22} color="#fff" />
             </TouchableOpacity>
-            <Text style={uiS.ctrlLabel}>{activeCall?.isCameraOn ? "Camera" : "Cam Off"}</Text>
+            <Text style={uiS.ctrlLabel}>{activeCall?.isCameraOn ? t.videoCallScreen.ctrlCamera : t.videoCallScreen.ctrlCamOff}</Text>
           </View>
 
           <View style={uiS.ctrlItem}>
@@ -885,7 +887,7 @@ export default function VideoCallScreen() {
             >
               <IconView name={activeCall?.isMuted ? "mic-off" : "mic"} size={22} color="#fff" />
             </TouchableOpacity>
-            <Text style={uiS.ctrlLabel}>{activeCall?.isMuted ? "Unmute" : "Mute"}</Text>
+            <Text style={uiS.ctrlLabel}>{activeCall?.isMuted ? t.videoCallScreen.ctrlUnmute : t.videoCallScreen.ctrlMute}</Text>
           </View>
 
           <View style={uiS.ctrlItem}>
@@ -897,7 +899,7 @@ export default function VideoCallScreen() {
             >
               <SvgIcon name="phone-off" size={28} color="#fff" />
             </TouchableOpacity>
-            <Text style={uiS.ctrlLabel}>End</Text>
+            <Text style={uiS.ctrlLabel}>{t.videoCallScreen.ctrlEnd}</Text>
           </View>
 
           <View style={uiS.ctrlItem}>
@@ -914,7 +916,7 @@ export default function VideoCallScreen() {
                 color={(!activeCall?.isCameraOn || !cameraGranted) ? "rgba(255,255,255,0.4)" : "#fff"}
               />
             </TouchableOpacity>
-            <Text style={uiS.ctrlLabel}>Flip</Text>
+            <Text style={uiS.ctrlLabel}>{t.videoCallScreen.ctrlFlip}</Text>
           </View>
 
           <View style={uiS.ctrlItem}>
@@ -926,7 +928,7 @@ export default function VideoCallScreen() {
             >
               <IconView name={activeCall?.isSpeakerOn ? "volume-2" : "volume-x"} size={22} color="#fff" />
             </TouchableOpacity>
-            <Text style={uiS.ctrlLabel}>{activeCall?.isSpeakerOn ? "Speaker" : "Earpiece"}</Text>
+            <Text style={uiS.ctrlLabel}>{activeCall?.isSpeakerOn ? t.videoCallScreen.ctrlSpeaker : t.videoCallScreen.ctrlEarpiece}</Text>
           </View>
         </View>
       </Animated.View>

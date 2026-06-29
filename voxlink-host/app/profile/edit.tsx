@@ -14,8 +14,10 @@ import { SvgIcon } from "@/components/SvgIcon";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { PrimaryButton } from "@/components/PrimaryButton";
+import { useLanguage } from "@/context/LanguageContext";
 
 export default function EditHostProfileScreen() {
+  const { t } = useLanguage();
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { user, updateProfile } = useAuth();
@@ -29,16 +31,16 @@ export default function EditHostProfileScreen() {
 
   const handleSave = async () => {
     if (!name.trim()) {
-      showErrorToast("Please enter your display name.");
+      showErrorToast(t.editProfileScreen.nameRequired);
       return;
     }
     setLoading(true);
     try {
       await updateProfile({ name: name.trim(), bio: bio.trim() });
-      showSuccessToast("Your host profile has been updated.", "Profile Saved");
+      showSuccessToast(t.editProfileScreen.saved, t.editProfileScreen.savedTitle);
       router.back();
     } catch {
-      showErrorToast("Failed to save profile. Please try again.");
+      showErrorToast(t.editProfileScreen.saveFailed);
     } finally {
       setLoading(false);
     }
@@ -47,7 +49,7 @@ export default function EditHostProfileScreen() {
   const handleAvatarPress = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== "granted") {
-      Alert.alert("Permission Required", "Please allow access to your photo library to change your profile photo.");
+      Alert.alert(t.editProfileScreen.permRequired, t.editProfileScreen.permMsg);
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -72,10 +74,10 @@ export default function EditHostProfileScreen() {
       const uploadData = await API.updateAvatar(formData);
       if (uploadData?.url) {
         await updateProfile({ avatar: resolveMediaUrl(uploadData.url) || uploadData.url });
-        showSuccessToast("Profile photo updated!", "Photo Saved");
+        showSuccessToast(t.editProfileScreen.photoUpdated, t.editProfileScreen.photoSaved);
       }
     } catch {
-      Alert.alert("Upload Failed", "Could not upload your photo. Please try again.");
+      Alert.alert(t.editProfileScreen.uploadFailed, t.editProfileScreen.uploadFailedMsg);
       setAvatarUri(null);
     } finally {
       setUploadingAvatar(false);
@@ -96,7 +98,7 @@ export default function EditHostProfileScreen() {
         <TouchableOpacity onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Go back" style={[styles.backBtn, { backgroundColor: colors.surface }]}>
           <Image source={require("@/assets/icons/ic_back.png")} style={styles.backIcon} tintColor={colors.text} resizeMode="contain" />
         </TouchableOpacity>
-        <Text style={[styles.title, { color: colors.text }]}>Edit Host Profile</Text>
+        <Text style={[styles.title, { color: colors.text }]}>{t.editProfileScreen.title}</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -111,13 +113,13 @@ export default function EditHostProfileScreen() {
             )}
           </View>
           <Text style={[styles.changeAvatarLabel, { color: colors.mutedForeground }]}>
-            {uploadingAvatar ? "Uploading..." : "Tap to change photo"}
+            {uploadingAvatar ? t.editProfileScreen.uploading : t.editProfileScreen.tapToChange}
           </Text>
         </TouchableOpacity>
 
         <View style={styles.form}>
           <View>
-            <Text style={[styles.label, { color: colors.mutedForeground }]}>Display Name</Text>
+            <Text style={[styles.label, { color: colors.mutedForeground }]}>{t.editProfileScreen.displayName}</Text>
             <AppInput
               variant="custom"
               inactiveBorder={colors.border}
@@ -125,13 +127,13 @@ export default function EditHostProfileScreen() {
               textColor={colors.text}
               value={name}
               onChangeText={setName}
-              placeholder="Your display name"
+              placeholder={t.editProfileScreen.namePlaceholder}
               placeholderTextColor={colors.mutedForeground}
             />
           </View>
 
           <View>
-            <Text style={[styles.label, { color: colors.mutedForeground }]}>Bio</Text>
+            <Text style={[styles.label, { color: colors.mutedForeground }]}>{t.editProfileScreen.bio}</Text>
             <AppInput
               variant="custom"
               inactiveBorder={colors.border}
@@ -139,7 +141,7 @@ export default function EditHostProfileScreen() {
               textColor={colors.text}
               value={bio}
               onChangeText={setBio}
-              placeholder="Tell users about yourself, your expertise, and what you offer..."
+              placeholder={t.editProfileScreen.bioPlaceholder}
               placeholderTextColor={colors.mutedForeground}
               multiline
               numberOfLines={5}
@@ -149,7 +151,7 @@ export default function EditHostProfileScreen() {
           </View>
 
           <View>
-            <Text style={[styles.label, { color: colors.mutedForeground }]}>Email</Text>
+            <Text style={[styles.label, { color: colors.mutedForeground }]}>{t.editProfileScreen.email}</Text>
             <AppInput
               variant="custom"
               inactiveBorder={colors.border}
@@ -161,14 +163,14 @@ export default function EditHostProfileScreen() {
             />
           </View>
 
-          <Text style={[styles.label, { color: colors.mutedForeground }]}>Host Settings</Text>
+          <Text style={[styles.label, { color: colors.mutedForeground }]}>{t.editProfileScreen.hostSettings}</Text>
           <TouchableOpacity
             style={[styles.linkRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
             onPress={() => router.push("/call-rates")}
             activeOpacity={0.8}
           >
             <SvgIcon name="info" size={16} color={colors.primary} />
-            <Text style={[styles.linkText, { color: colors.text }]}>Set your call rates (coins / min)</Text>
+            <Text style={[styles.linkText, { color: colors.text }]}>{t.editProfileScreen.setRates}</Text>
             <Image source={require("@/assets/icons/ic_back.png")} style={styles.linkChevron} tintColor={colors.mutedForeground} resizeMode="contain" />
           </TouchableOpacity>
           <TouchableOpacity
@@ -177,12 +179,12 @@ export default function EditHostProfileScreen() {
             activeOpacity={0.8}
           >
             <SvgIcon name="info" size={16} color={colors.primary} />
-            <Text style={[styles.linkText, { color: colors.text }]}>Manage your topics & specialties</Text>
+            <Text style={[styles.linkText, { color: colors.text }]}>{t.editProfileScreen.manageTopics}</Text>
             <Image source={require("@/assets/icons/ic_back.png")} style={styles.linkChevron} tintColor={colors.mutedForeground} resizeMode="contain" />
           </TouchableOpacity>
         </View>
 
-        <PrimaryButton title="Save Changes" onPress={handleSave} loading={loading} />
+        <PrimaryButton title={t.editProfileScreen.saveChanges} onPress={handleSave} loading={loading} />
       </View>
     </ScrollView>
   );

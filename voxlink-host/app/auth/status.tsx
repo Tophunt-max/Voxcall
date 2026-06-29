@@ -5,6 +5,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/context/AuthContext";
+import { useLanguage } from "@/context/LanguageContext";
 import { API } from "@/services/api";
 import { showErrorToast } from "@/components/Toast";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -63,6 +64,7 @@ const TIMELINE_STEPS = [
 
 export default function HostStatusScreen() {
   const insets = useSafeAreaInsets();
+  const { t } = useLanguage();
   const { user, refreshProfile } = useAuth();
   const [data, setData]             = useState<any>(null);
   const [loading, setLoading]       = useState(true);
@@ -107,7 +109,7 @@ export default function HostStatusScreen() {
         await AsyncStorage.removeItem("hostAppPending");
       }
     } catch {
-      if (isMountedRef.current) showErrorToast("Failed to load application status.");
+      if (isMountedRef.current) showErrorToast(t.statusScreen.loadError);
     } finally {
       if (isMountedRef.current) {
         setLoading(false);
@@ -136,13 +138,23 @@ export default function HostStatusScreen() {
     return (
       <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: BG }}>
         <ActivityIndicator color={ACCENT} size="large" />
-        <Text style={s.loadingTxt}>Checking application status...</Text>
+        <Text style={s.loadingTxt}>{t.statusScreen.checking}</Text>
       </View>
     );
   }
 
   const status: Status = !data?.applied ? "not_applied" : (data?.status ?? "pending");
   const cfg = STATUS_CONFIG[status];
+
+  const statusText = {
+    pending:      { title: t.statusScreen.pendingTitle,      message: t.statusScreen.pendingMsg },
+    under_review: { title: t.statusScreen.underReviewTitle,  message: t.statusScreen.underReviewMsg },
+    approved:     { title: t.statusScreen.approvedTitle,     message: t.statusScreen.approvedMsg },
+    rejected:     { title: t.statusScreen.rejectedTitle,     message: t.statusScreen.rejectedMsg },
+    not_applied:  { title: t.statusScreen.notAppliedTitle,   message: t.statusScreen.notAppliedMsg },
+  }[status];
+
+  const timelineLabels = [t.statusScreen.tlAccount, t.statusScreen.tlSubmitted, t.statusScreen.tlReview, t.statusScreen.tlDecision];
 
   const stepDone = (key: string) => {
     if (key === "always") return true;
@@ -157,8 +169,8 @@ export default function HostStatusScreen() {
       <View style={{ flex: 1, backgroundColor: BG }}>
         <View style={[s.header, { paddingTop: insets.top + 10 }]}>
           <View style={s.backBtn} />
-          <Text style={s.headerTitle}>Host Application</Text>
-          <Text style={s.headerSub}>Track your KYC verification status</Text>
+          <Text style={s.headerTitle}>{t.statusScreen.headerTitle}</Text>
+          <Text style={s.headerSub}>{t.statusScreen.headerSub}</Text>
         </View>
 
         <ScrollView
@@ -177,32 +189,32 @@ export default function HostStatusScreen() {
                 </LinearGradient>
               </View>
               <Text style={s.approvedEmoji}>🎉</Text>
-              <Text style={s.approvedTitle}>Congratulations!</Text>
-              <Text style={s.approvedSub}>You are now a verified host on VoxLink. Start accepting calls and earning coins!</Text>
+              <Text style={s.approvedTitle}>{t.statusScreen.approvedTitle}</Text>
+              <Text style={s.approvedSub}>{t.statusScreen.approvedSub}</Text>
 
               <View style={s.approvedDivider} />
 
               <View style={s.approvedStats}>
                 <View style={s.approvedStat}>
                   <Image source={require("@/assets/icons/ic_coin.png")} style={s.approvedStatIcon} tintColor="#F59E0B" resizeMode="contain" />
-                  <Text style={s.approvedStatLabel}>Earn Coins</Text>
+                  <Text style={s.approvedStatLabel}>{t.statusScreen.earnCoins}</Text>
                 </View>
                 <View style={s.approvedStatSep} />
                 <View style={s.approvedStat}>
                   <Image source={require("@/assets/icons/ic_star.png")} style={s.approvedStatIcon} tintColor="#A78BFA" resizeMode="contain" />
-                  <Text style={s.approvedStatLabel}>Build Rating</Text>
+                  <Text style={s.approvedStatLabel}>{t.statusScreen.buildRating}</Text>
                 </View>
                 <View style={s.approvedStatSep} />
                 <View style={s.approvedStat}>
                   <Image source={require("@/assets/icons/ic_call.png")} style={s.approvedStatIcon} tintColor="#60A5FA" resizeMode="contain" />
-                  <Text style={s.approvedStatLabel}>Take Calls</Text>
+                  <Text style={s.approvedStatLabel}>{t.statusScreen.takeCalls}</Text>
                 </View>
               </View>
             </LinearGradient>
           </Animated.View>
 
           <View style={s.timeline}>
-            <Text style={[s.timelineTitle, { color: DARK }]}>Application Timeline</Text>
+            <Text style={[s.timelineTitle, { color: DARK }]}>{t.statusScreen.timelineTitle}</Text>
             {TIMELINE_STEPS.map((step, i) => {
               const done = stepDone(step.doneKey);
               return (
@@ -213,7 +225,7 @@ export default function HostStatusScreen() {
                     </View>
                     {i < TIMELINE_STEPS.length - 1 && <View style={[s.tlLine, s.tlLineDone]} />}
                   </View>
-                  <Text style={[s.tlLabel, s.tlLabelDone]}>{step.label}</Text>
+                  <Text style={[s.tlLabel, s.tlLabelDone]}>{timelineLabels[i]}</Text>
                 </View>
               );
             })}
@@ -229,7 +241,7 @@ export default function HostStatusScreen() {
           >
             <LinearGradient colors={[ACCENT, "#6A00B8"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={s.ctaBtn}>
               <Image source={require("@/assets/icons/ic_star.png")} style={s.ctaIcon} tintColor="#fff" resizeMode="contain" />
-              <Text style={s.ctaBtnTxt}>Continue to Dashboard</Text>
+              <Text style={s.ctaBtnTxt}>{t.statusScreen.continueDashboard}</Text>
             </LinearGradient>
           </TouchableOpacity>
         </ScrollView>
@@ -249,8 +261,8 @@ export default function HostStatusScreen() {
         >
           <Image source={require("@/assets/icons/ic_back.png")} style={s.backIcon} tintColor="#fff" resizeMode="contain" />
         </TouchableOpacity>
-        <Text style={s.headerTitle}>Host Application</Text>
-        <Text style={s.headerSub}>Track your KYC verification status</Text>
+        <Text style={s.headerTitle}>{t.statusScreen.headerTitle}</Text>
+        <Text style={s.headerSub}>{t.statusScreen.headerSub}</Text>
       </View>
 
       <ScrollView
@@ -263,22 +275,22 @@ export default function HostStatusScreen() {
           <View style={[s.statusIconBg, { backgroundColor: cfg.glowColor }]}>
             <Image source={cfg.icon} style={s.statusIcon} tintColor={cfg.color} resizeMode="contain" />
           </View>
-          <Text style={[s.statusTitle, { color: cfg.color }]}>{cfg.title}</Text>
-          <Text style={s.statusMsg}>{cfg.message}</Text>
+          <Text style={[s.statusTitle, { color: cfg.color }]}>{statusText.title}</Text>
+          <Text style={s.statusMsg}>{statusText.message}</Text>
         </View>
 
         {status === "rejected" && data?.rejection_reason && (
           <View style={s.rejectionCard}>
             <View style={s.rejectionHeader}>
               <Image source={require("@/assets/icons/ic_close_fill.png")} style={s.rejIcon} tintColor="#EF4444" resizeMode="contain" />
-              <Text style={s.rejectionLabel}>Reason for Rejection</Text>
+              <Text style={s.rejectionLabel}>{t.statusScreen.reasonRejection}</Text>
             </View>
             <Text style={s.rejectionReason}>{data.rejection_reason}</Text>
           </View>
         )}
 
         <View style={s.timeline}>
-          <Text style={s.timelineTitle}>Application Timeline</Text>
+          <Text style={s.timelineTitle}>{t.statusScreen.timelineTitle}</Text>
           {TIMELINE_STEPS.map((step, i) => {
             const done = stepDone(step.doneKey);
             const isActive = step.doneKey === "review" && status === "under_review";
@@ -290,7 +302,7 @@ export default function HostStatusScreen() {
                   </View>
                   {i < TIMELINE_STEPS.length - 1 && <View style={[s.tlLine, done && s.tlLineDone]} />}
                 </View>
-                <Text style={[s.tlLabel, done ? s.tlLabelDone : s.tlLabelPending]}>{step.label}</Text>
+                <Text style={[s.tlLabel, done ? s.tlLabelDone : s.tlLabelPending]}>{timelineLabels[i]}</Text>
               </View>
             );
           })}
@@ -300,7 +312,7 @@ export default function HostStatusScreen() {
           <TouchableOpacity style={s.ctaBtnWrap} onPress={() => router.push("/auth/profile-setup")} activeOpacity={0.85}>
             <LinearGradient colors={[DARK, "#2D3057"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={s.ctaBtn}>
               <Image source={require("@/assets/icons/ic_edit.png")} style={s.ctaIcon} tintColor="#fff" resizeMode="contain" />
-              <Text style={s.ctaBtnTxt}>{status === "rejected" ? "Re-apply" : "Start Application"}</Text>
+              <Text style={s.ctaBtnTxt}>{status === "rejected" ? t.statusScreen.reapply : t.statusScreen.startApplication}</Text>
             </LinearGradient>
           </TouchableOpacity>
         )}
@@ -308,7 +320,7 @@ export default function HostStatusScreen() {
         {(status === "pending" || status === "under_review") && (
           <View style={s.waitBanner}>
             <View style={s.pulseDot} />
-            <Text style={s.waitTxt}>Auto-checking every 10 seconds...</Text>
+            <Text style={s.waitTxt}>{t.statusScreen.autoChecking}</Text>
           </View>
         )}
       </ScrollView>

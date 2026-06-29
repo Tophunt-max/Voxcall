@@ -10,6 +10,7 @@ import { FlashList } from "@shopify/flash-list";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
+import { useLanguage } from "@/context/LanguageContext";
 import { API, resolveMediaUrl } from "@/services/api";
 import { showErrorToast } from "@/components/Toast";
 import { formatDuration, formatTimestamp } from "@/utils/format";
@@ -31,11 +32,6 @@ const STATUS_COLORS: Record<string, string> = {
   missed: "#F44336",
   cancelled: "#9E9E9E",
 };
-const STATUS_LABELS: Record<string, string> = {
-  completed: "Completed",
-  missed: "Missed",
-  cancelled: "Cancelled",
-};
 
 function mapStatus(s: string): "completed" | "missed" | "cancelled" {
   if (s === "ended") return "completed";
@@ -47,11 +43,23 @@ function mapStatus(s: string): "completed" | "missed" | "cancelled" {
 export default function CallHistoryScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { t } = useLanguage();
   const [filter, setFilter] = useState<"all" | "audio" | "video">("all");
   const [callHistory, setCallHistory] = useState<CallHistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   const topPad = insets.top;
+
+  const STATUS_LABEL_MAP: Record<string, string> = {
+    completed: t.calls.completed,
+    missed: t.calls.missed,
+    cancelled: t.calls.cancelled,
+  };
+  const FILTER_LABEL_MAP: Record<string, string> = {
+    all: t.common.all,
+    audio: t.calls.audioShort,
+    video: t.calls.videoShort,
+  };
 
   useEffect(() => {
     API.getCallHistory()
@@ -68,7 +76,7 @@ export default function CallHistoryScreen() {
           createdAt: c.created_at || 0,
         })));
       })
-      .catch(() => { setCallHistory([]); showErrorToast("Failed to load call history."); })
+      .catch(() => { setCallHistory([]); showErrorToast(t.calls.failedLoadHistory); })
       .finally(() => setLoading(false));
   }, []);
 
@@ -90,11 +98,11 @@ export default function CallHistoryScreen() {
           <View style={[styles.typeBadge, { backgroundColor: colors.surface }]}>
             <Image source={item.type === "video" ? require("@/assets/icons/ic_video.png") : require("@/assets/icons/ic_call.png")} style={{ width: 10, height: 10, tintColor: item.type === "video" ? "#7B2FF7" : "#0078CC" }} resizeMode="contain" />
             <Text style={[styles.typeText, { color: item.type === "video" ? "#7B2FF7" : "#0078CC" }]}>
-              {item.type === "video" ? "Video" : "Audio"}
+              {item.type === "video" ? t.calls.videoShort : t.calls.audioShort}
             </Text>
           </View>
           <View style={[styles.dot, { backgroundColor: colors.border }]} />
-          <Text style={[styles.status, { color: STATUS_COLORS[item.status] }]}>{STATUS_LABELS[item.status]}</Text>
+          <Text style={[styles.status, { color: STATUS_COLORS[item.status] }]}>{STATUS_LABEL_MAP[item.status]}</Text>
           {item.status === "completed" && (
             <>
               <View style={[styles.dot, { backgroundColor: colors.border }]} />
@@ -105,7 +113,7 @@ export default function CallHistoryScreen() {
         {item.coins > 0 && (
           <View style={styles.coinsRow}>
             <Image source={require("@/assets/icons/ic_coin.png")} style={styles.coinIcon} resizeMode="contain" />
-            <Text style={[styles.coinsText, { color: colors.coinGoldText }]}>-{item.coins} coins</Text>
+            <Text style={[styles.coinsText, { color: colors.coinGoldText }]}>-{item.coins} {t.wallet.coins.toLowerCase()}</Text>
           </View>
         )}
       </View>
@@ -124,7 +132,7 @@ export default function CallHistoryScreen() {
         >
           <Image source={require("@/assets/icons/ic_back.png")} style={styles.backIcon} tintColor={colors.text} resizeMode="contain" />
         </TouchableOpacity>
-        <Text style={[styles.title, { color: colors.text }]}>Call History</Text>
+        <Text style={[styles.title, { color: colors.text }]}>{t.calls.callHistory}</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -136,7 +144,7 @@ export default function CallHistoryScreen() {
             onPress={() => setFilter(f)}
           >
             <Text style={[styles.filterText, { color: filter === f ? "#fff" : colors.mutedForeground }]}>
-              {f.charAt(0).toUpperCase() + f.slice(1)}
+              {FILTER_LABEL_MAP[f]}
             </Text>
           </TouchableOpacity>
         ))}
@@ -149,7 +157,7 @@ export default function CallHistoryScreen() {
       ) : filtered.length === 0 ? (
         <View style={styles.empty}>
           <Image source={require("@/assets/images/empty_history.png")} style={styles.emptyImg} resizeMode="contain" />
-          <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>No call history found</Text>
+          <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>{t.calls.noCallHistoryFound}</Text>
         </View>
       ) : (
         <FlashList

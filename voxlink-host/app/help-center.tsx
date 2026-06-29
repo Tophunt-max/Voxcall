@@ -9,6 +9,7 @@ import { useColors } from "@/hooks/useColors";
 import { SvgIcon } from "@/components/SvgIcon";
 import { API } from "@/services/api";
 import { fetchAppConfig } from "@/hooks/useAppConfig";
+import { useLanguage } from "@/context/LanguageContext";
 
 const DEFAULT_SUPPORT_EMAIL = "host-support@voxlink.app";
 
@@ -48,6 +49,7 @@ export default function HelpCenterScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const topPad = insets.top;
+  const { t } = useLanguage();
 
   // Admin-managed FAQs + support email. Both fall back to bundled defaults so
   // the screen is never empty if the network/admin config is unavailable.
@@ -76,7 +78,7 @@ export default function HelpCenterScreen() {
         <TouchableOpacity onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Go back" style={[styles.backBtn, { backgroundColor: colors.surface }]}>
           <Image source={require("@/assets/icons/ic_back.png")} style={styles.backIcon} tintColor={colors.text} resizeMode="contain" />
         </TouchableOpacity>
-        <Text style={[styles.title, { color: colors.text }]}>Help Center</Text>
+        <Text style={[styles.title, { color: colors.text }]}>{t.helpCenterScreen.title}</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -84,21 +86,21 @@ export default function HelpCenterScreen() {
         <View style={[styles.banner, { backgroundColor: colors.accentLight }]}>
           <Image source={require("@/assets/images/help_blur.png")} style={styles.bannerImg} resizeMode="contain" />
           <View style={{ flex: 1 }}>
-            <Text style={[styles.bannerTitle, { color: colors.text }]}>Host Help & FAQ</Text>
-            <Text style={[styles.bannerSub, { color: colors.mutedForeground }]}>Find answers to common host questions</Text>
+            <Text style={[styles.bannerTitle, { color: colors.text }]}>{t.helpCenterScreen.bannerTitle}</Text>
+            <Text style={[styles.bannerSub, { color: colors.mutedForeground }]}>{t.helpCenterScreen.bannerSub}</Text>
           </View>
         </View>
 
         <TouchableOpacity style={[styles.contactCard, { backgroundColor: colors.card }]} activeOpacity={0.8} onPress={() => Linking.openURL(`mailto:${supportEmail}`)}>
           <Image source={require("@/assets/images/help_person.png")} style={styles.contactImg} resizeMode="contain" />
           <View style={{ flex: 1, gap: 4 }}>
-            <Text style={[styles.contactTitle, { color: colors.text }]}>Contact Host Support</Text>
+            <Text style={[styles.contactTitle, { color: colors.text }]}>{t.helpCenterScreen.contactTitle}</Text>
             <Text style={[styles.contactSub, { color: colors.mutedForeground }]}>{supportEmail}</Text>
           </View>
           <Image source={require("@/assets/icons/ic_back.png")} style={[styles.chevron, { transform: [{ rotate: "180deg" }] }]} tintColor={colors.mutedForeground} resizeMode="contain" />
         </TouchableOpacity>
 
-        <Text style={[styles.faqTitle, { color: colors.text }]}>Frequently Asked Questions</Text>
+        <Text style={[styles.faqTitle, { color: colors.text }]}>{t.helpCenterScreen.faqTitle}</Text>
 
         {faqs.map((faq, i) => <FAQItem key={i} q={faq.q} a={faq.a} />)}
       </ScrollView>

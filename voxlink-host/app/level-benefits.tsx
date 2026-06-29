@@ -13,6 +13,7 @@ import { useColors } from "@/hooks/useColors";
 import { GradientHeader } from "@/components/GradientHeader";
 import { API } from "@/services/api";
 import type { HostLevelResponse, HostLevelDef } from "@/services/api";
+import { useLanguage } from "@/context/LanguageContext";
 
 function hexToRgba(hex: string, alpha: number): string {
   const clean = (hex || "").replace("#", "");
@@ -37,6 +38,7 @@ function LevelRow({
   const isUnlocked = def.level <= currentLevel;
   const accent = def.color || colors.accent;
   const sharePct = Math.round((def.perks?.earning_share ?? 0.7) * 100);
+  const { t } = useLanguage();
 
   return (
     <View

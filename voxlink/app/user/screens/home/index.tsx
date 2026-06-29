@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { useCall } from "@/context/CallContext";
+import { useLanguage } from "@/context/LanguageContext";
 import { useSocketEvent } from "@/context/SocketContext";
 import { SocketEvents } from "@/constants/events";
 import { HostCard } from "@/components/HostCard";
@@ -61,6 +62,7 @@ type SlideItem =
   | { type: "admin"; id: string; title: string; subtitle?: string; cta_text?: string; cta_link?: string; bg_color?: string };
 
 function BannerSlider({ slides }: { slides: SlideItem[] }) {
+  const { t: tr } = useLanguage();
   const [activeIdx, setActiveIdx] = useState(0);
   const flatRef = useRef<FlatList<SlideItem>>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -103,10 +105,10 @@ function BannerSlider({ slides }: { slides: SlideItem[] }) {
           style={[styles.slide, { backgroundColor: "#A00EE7" }]}
         >
           <View style={styles.findMoreLeft}>
-            <Text style={styles.findMoreTitle}>Find More</Text>
-            <Text style={styles.findMoreSub}>Connect with a random listener now</Text>
+            <Text style={styles.findMoreTitle}>{tr.home.findMore}</Text>
+            <Text style={styles.findMoreSub}>{tr.home.findMoreSub}</Text>
             <View style={styles.findMoreBtn}>
-              <Text style={styles.findMoreBtnText}>Start Random Call</Text>
+              <Text style={styles.findMoreBtnText}>{tr.home.startRandomCall}</Text>
             </View>
           </View>
           <Image
@@ -179,6 +181,7 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const { initiateCall } = useCall();
+  const { t: tr } = useLanguage();
   const queryClient = useQueryClient();
   const [selectedSpecialty, setSelectedSpecialty] = useState("All");
   const [refreshing, setRefreshing] = useState(false);
@@ -429,7 +432,7 @@ export default function HomeScreen() {
 
           <View style={styles.headerNameCol}>
             <Text style={[styles.headerName, { color: colors.text }]} numberOfLines={1}>
-              {user?.name?.split(" ")[0] ?? "Welcome"}
+              {user?.name?.split(" ")[0] ?? tr.home.welcome}
             </Text>
             <View style={[styles.uniqueIdBadge, { backgroundColor: "#F0E4F8" }]}>
               <Image
@@ -504,10 +507,10 @@ export default function HomeScreen() {
             <Text style={{ fontSize: 28 }}>🎁</Text>
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 14, fontFamily: "Poppins_700Bold", color: "#6A00B8" }}>
-                {freeMinutes} free call minute{freeMinutes === 1 ? "" : "s"} available!
+                {tr.home.freeMinutesTitle.replace("{count}", String(freeMinutes))}
               </Text>
               <Text style={{ fontSize: 12, fontFamily: "Poppins_400Regular", color: "#9A74BD", marginTop: 2 }}>
-                Your first {freeMinutes} minute{freeMinutes === 1 ? "" : "s"} are on us — start a call with any host.
+                {tr.home.freeMinutesSub.replace("{count}", String(freeMinutes))}
               </Text>
             </View>
           </TouchableOpacity>
@@ -527,14 +530,14 @@ export default function HomeScreen() {
             <Text style={{ fontSize: 26 }}>🪙</Text>
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 14, fontFamily: "Poppins_700Bold", color: "#8A5B00" }}>
-                Low on coins ({(user?.coins ?? 0)} left)
+                {tr.home.lowOnCoins.replace("{count}", String(user?.coins ?? 0))}
               </Text>
               <Text style={{ fontSize: 12, fontFamily: "Poppins_400Regular", color: "#A9803A", marginTop: 2 }}>
-                Top up now so you don't get cut off mid-call.
+                {tr.home.lowOnCoinsSub}
               </Text>
             </View>
             <View style={{ backgroundColor: "#E49F14", paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 }}>
-              <Text style={{ fontSize: 12, fontFamily: "Poppins_600SemiBold", color: "#fff" }}>Top up</Text>
+              <Text style={{ fontSize: 12, fontFamily: "Poppins_600SemiBold", color: "#fff" }}>{tr.home.topUp}</Text>
             </View>
           </TouchableOpacity>
         )}
@@ -544,9 +547,9 @@ export default function HomeScreen() {
         {favoriteHosts.length > 0 && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>Your favorites</Text>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>{tr.home.yourFavorites}</Text>
               <TouchableOpacity onPress={() => router.push("/user/screens/home/messages")}>
-                <Text style={[styles.seeAll, { color: colors.primary }]}>View All</Text>
+                <Text style={[styles.seeAll, { color: colors.primary }]}>{tr.home.viewAll}</Text>
               </TouchableOpacity>
             </View>
             <FlatList
@@ -577,7 +580,7 @@ export default function HomeScreen() {
         {recommended.length > 0 && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>Recommended for you</Text>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>{tr.home.recommendedForYou}</Text>
             </View>
             <FlatList
               data={recommended}
@@ -613,7 +616,7 @@ export default function HomeScreen() {
         {/* Top Listeners section — OPTIMIZATION #8: skeleton cards while loading */}
         {hostsLoading ? (
           <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Top Listeners</Text>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>{tr.home.topListeners}</Text>
             <View style={{ flexDirection: "row" }}>
               {[1, 2, 3].map((i) => <SkeletonHostCardCompact key={i} />)}
             </View>
@@ -621,9 +624,9 @@ export default function HomeScreen() {
         ) : topHosts.length > 0 ? (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>Top Listeners</Text>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>{tr.home.topListeners}</Text>
               <TouchableOpacity onPress={() => router.push("/user/hosts/all")}>
-                <Text style={[styles.seeAll, { color: colors.primary }]}>View All</Text>
+                <Text style={[styles.seeAll, { color: colors.primary }]}>{tr.home.viewAll}</Text>
               </TouchableOpacity>
             </View>
             <FlatList
@@ -650,7 +653,7 @@ export default function HomeScreen() {
 
         {/* Filter chips */}
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Browse by Topic</Text>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>{tr.home.browseByTopic}</Text>
           <FlatList
             data={specialties}
             horizontal
@@ -689,11 +692,11 @@ export default function HomeScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>
-              {selectedSpecialty === "All" ? "Available Now" : selectedSpecialty}
+              {selectedSpecialty === "All" ? tr.home.availableNow : selectedSpecialty}
             </Text>
             {!hostsLoading && (
               <Text style={[styles.countText, { color: colors.mutedForeground }]}>
-                {onlineHosts.length} online
+                {onlineHosts.length} {tr.home.online}
               </Text>
             )}
           </View>
@@ -721,7 +724,7 @@ export default function HomeScreen() {
                 resizeMode="contain"
               />
               <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
-                No listeners available right now
+                {tr.home.noListenersAvailable}
               </Text>
             </View>
           )}
@@ -729,7 +732,7 @@ export default function HomeScreen() {
           {!hostsLoading && filteredHosts.filter((h) => !h.isOnline).length > 0 && (
             <>
               <Text style={[styles.offlineLabel, { color: colors.mutedForeground }]}>
-                Offline Listeners
+                {tr.home.offlineListeners}
               </Text>
               {filteredHosts
                 .filter((h) => !h.isOnline)

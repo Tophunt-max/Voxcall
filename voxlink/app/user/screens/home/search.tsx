@@ -16,6 +16,7 @@ import { router } from "expo-router";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { useCall } from "@/context/CallContext";
+import { useLanguage } from "@/context/LanguageContext";
 import { API, resolveMediaUrl } from "@/services/api";
 import { showErrorToast } from "@/components/Toast";
 import { InsufficientCoinsPopup } from "@/components/InsufficientCoinsPopup";
@@ -48,11 +49,12 @@ const LANGUAGES = ["All", "English", "Mandarin", "Hindi", "Spanish", "French", "
 const TOPICS = ["All", "Life Coaching", "Career", "Wellness", "Relationships", "Meditation", "Finance", "Education"];
 
 function StatusBadge({ isOnline }: { isOnline: boolean }) {
+  const { t: tr } = useLanguage();
   return (
     <View style={[styles.statusBadge, { backgroundColor: isOnline ? "#E6F9EA" : "#F2F2F2" }]}>
       <View style={[styles.statusDot, { backgroundColor: isOnline ? "#0BAF23" : "#A9A9A9" }]} />
       <Text style={[styles.statusText, { color: isOnline ? "#0BAF23" : "#A9A9A9" }]}>
-        {isOnline ? "Available" : "Offline"}
+        {isOnline ? tr.listener.available : tr.listener.offline}
       </Text>
     </View>
   );
@@ -60,6 +62,7 @@ function StatusBadge({ isOnline }: { isOnline: boolean }) {
 
 function ListenerCard({ host, onPress, onAudioCall, onVideoCall }: { host: ReturnType<typeof mapApiHost>; onPress: () => void; onAudioCall?: () => void; onVideoCall?: () => void }) {
   const colors = useColors();
+  const { t: tr } = useLanguage();
   return (
     <TouchableOpacity style={[styles.card, { backgroundColor: colors.card }]} onPress={onPress} activeOpacity={0.88}>
       <View style={styles.cardContent}>
@@ -88,27 +91,27 @@ function ListenerCard({ host, onPress, onAudioCall, onVideoCall }: { host: Retur
           </View>
           <View style={styles.statsRow}>
             <Image source={require("@/assets/icons/ic_coin.png")} style={styles.coinIcon} resizeMode="contain" />
-            <Text style={styles.coinText}>{host.coinsPerMinute}/min</Text>
+            <Text style={styles.coinText}>{host.coinsPerMinute}{tr.listener.perMin}</Text>
             <View style={styles.callCountWrap}>
               <Image source={require("@/assets/icons/ic_call.png")} style={styles.smallIcon} tintColor={colors.mutedForeground} resizeMode="contain" />
-              <Text style={[styles.callCountText, { color: colors.mutedForeground }]}>{(host.totalMinutes / 60).toFixed(0)} hrs</Text>
+              <Text style={[styles.callCountText, { color: colors.mutedForeground }]}>{(host.totalMinutes / 60).toFixed(0)} {tr.listener.hrs}</Text>
             </View>
           </View>
         </View>
       </View>
       <View style={[styles.cardActions, { borderTopColor: colors.border }]}>
         <TouchableOpacity onPress={onPress} style={styles.viewProfileBtn}>
-          <Text style={[styles.viewProfileText, { color: colors.mutedForeground }]}>View Profile</Text>
+          <Text style={[styles.viewProfileText, { color: colors.mutedForeground }]}>{tr.hosts.viewProfile}</Text>
         </TouchableOpacity>
         {host.isOnline && (
           <View style={[styles.callBtnsRow, { borderLeftColor: colors.border }]}>
             <TouchableOpacity onPress={onAudioCall} style={styles.audioCallBtn}>
               <Image source={require("@/assets/icons/ic_call.png")} style={styles.talkNowIcon} tintColor="#fff" resizeMode="contain" />
-              <Text style={styles.callBtnTxt}>Audio</Text>
+              <Text style={styles.callBtnTxt}>{tr.listener.audio}</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={onVideoCall} style={styles.videoCallBtn}>
               <Image source={require("@/assets/icons/ic_video.png")} style={styles.talkNowIcon} tintColor="#fff" resizeMode="contain" />
-              <Text style={styles.callBtnTxt}>Video</Text>
+              <Text style={styles.callBtnTxt}>{tr.listener.video}</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -141,6 +144,7 @@ export default function ListenerScreen() {
   const colors = useColors();
   const { user } = useAuth();
   const { initiateCall } = useCall();
+  const { t: tr } = useLanguage();
   const [selectedLang, setSelectedLang] = useState("All");
   const [selectedTopic, setSelectedTopic] = useState("All");
   const [showLangModal, setShowLangModal] = useState(false);
@@ -171,7 +175,7 @@ export default function ListenerScreen() {
       setHosts((res?.hosts ?? []).map(mapApiHost));
     } catch {
       setHosts([]);
-      showErrorToast("Failed to load listeners.");
+      showErrorToast(tr.listener.failedLoad);
     }
   }, [selectedTopic]);
 
@@ -190,18 +194,18 @@ export default function ListenerScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { paddingTop: insets.top + 16, backgroundColor: colors.background }]}>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>All Listeners</Text>
+        <Text style={[styles.headerTitle, { color: colors.text }]}>{tr.listener.allListeners}</Text>
       </View>
 
       <View style={[styles.filterRow, { backgroundColor: colors.background }]}>
         <TouchableOpacity style={[styles.filterBtn, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={() => setShowLangModal(true)} activeOpacity={0.8}>
           <Image source={require("@/assets/icons/ic_language.png")} style={styles.filterIcon} tintColor="#FF8C00" resizeMode="contain" />
-          <Text style={[styles.filterBtnText, { color: colors.text }]}>{selectedLang === "All" ? "Language" : selectedLang}</Text>
+          <Text style={[styles.filterBtnText, { color: colors.text }]}>{selectedLang === "All" ? tr.listener.language : selectedLang}</Text>
           <Image source={require("@/assets/icons/ic_back.png")} style={styles.filterArrow} tintColor={colors.mutedForeground} resizeMode="contain" />
         </TouchableOpacity>
         <TouchableOpacity style={[styles.filterBtn, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={() => setShowTopicModal(true)} activeOpacity={0.8}>
           <Image source={require("@/assets/icons/ic_chat.png")} style={styles.filterIcon} tintColor="#1499F1" resizeMode="contain" />
-          <Text style={[styles.filterBtnText, { color: colors.text }]}>{selectedTopic === "All" ? "Talk About" : selectedTopic}</Text>
+          <Text style={[styles.filterBtnText, { color: colors.text }]}>{selectedTopic === "All" ? tr.listener.talkAbout : selectedTopic}</Text>
           <Image source={require("@/assets/icons/ic_back.png")} style={styles.filterArrow} tintColor={colors.mutedForeground} resizeMode="contain" />
         </TouchableOpacity>
       </View>
@@ -209,7 +213,7 @@ export default function ListenerScreen() {
       {filtered.length === 0 ? (
         <View style={styles.emptyWrap}>
           <Image source={require("@/assets/images/empty_hosts.png")} style={styles.emptyImg} resizeMode="contain" />
-          <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>No listeners found</Text>
+          <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>{tr.listener.noListenersFound}</Text>
         </View>
       ) : (
         <ScrollView
@@ -224,8 +228,8 @@ export default function ListenerScreen() {
         </ScrollView>
       )}
 
-      <FilterModal title="Select Language" options={LANGUAGES} selected={selectedLang} onSelect={setSelectedLang} onClose={() => setShowLangModal(false)} visible={showLangModal} />
-      <FilterModal title="Talk About" options={TOPICS} selected={selectedTopic} onSelect={setSelectedTopic} onClose={() => setShowTopicModal(false)} visible={showTopicModal} />
+      <FilterModal title={tr.listener.selectLanguage} options={LANGUAGES} selected={selectedLang} onSelect={setSelectedLang} onClose={() => setShowLangModal(false)} visible={showLangModal} />
+      <FilterModal title={tr.listener.talkAbout} options={TOPICS} selected={selectedTopic} onSelect={setSelectedTopic} onClose={() => setShowTopicModal(false)} visible={showTopicModal} />
 
       <InsufficientCoinsPopup
         visible={coinPopup}

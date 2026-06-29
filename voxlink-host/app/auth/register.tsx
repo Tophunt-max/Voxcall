@@ -9,6 +9,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/context/AuthContext";
+import { useLanguage } from "@/context/LanguageContext";
 import { PrimaryButton } from "@/components/PrimaryButton";
 import { API } from "@/services/api";
 import { GoogleSignin, isErrorWithCode, statusCodes } from "@react-native-google-signin/google-signin";
@@ -34,6 +35,7 @@ function isNetworkError(err: any) {
 export default function HostRegisterScreen() {
   const insets = useSafeAreaInsets();
   const { user, isLoggedIn, loginWithToken } = useAuth();
+  const { t } = useLanguage();
   const [name, setName]         = useState("");
   const [email, setEmail]       = useState("");
   const [password, setPassword] = useState("");
@@ -48,10 +50,10 @@ export default function HostRegisterScreen() {
 
   const handleNext = async () => {
     if (!name.trim() || !email.trim() || !password.trim()) {
-      showErrorToast("Please fill in all fields.", "Missing Fields"); return;
+      showErrorToast(t.authToasts.registerMissing, t.authToasts.missingFields); return;
     }
     if (password.length < 8) {
-      showWarningToast("Password must be at least 8 characters.", "Weak Password"); return;
+      showWarningToast(t.authToasts.weakPasswordMsg, t.authToasts.weakPassword); return;
     }
     setLoading(true);
     try {
@@ -61,15 +63,15 @@ export default function HostRegisterScreen() {
         coins: data.user.coins ?? 0, role: data.user.role ?? "user",
       });
       if (data.signup_incomplete) {
-        showInfoToast("Resuming your incomplete registration.", "Welcome Back");
+        showInfoToast(t.authToasts.resuming, t.authToasts.welcomeBack);
       }
       router.push("/auth/profile-setup");
     } catch (err: any) {
       const msg: string = err?.message || "";
       if (msg.toLowerCase().includes("already registered")) {
-        showErrorToast("This email is already registered. Please sign in instead.", "Already Registered");
+        showErrorToast(t.authToasts.alreadyRegisteredMsg, t.authToasts.alreadyRegisteredTitle);
       } else {
-        showErrorToast(msg || "Could not create account. Please try again.");
+        showErrorToast(msg || t.authToasts.createFailed);
       }
     } finally { setLoading(false); }
   };
@@ -87,7 +89,7 @@ export default function HostRegisterScreen() {
         const signInResult = await GoogleSignin.signIn();
         const googleUser = signInResult.data?.user;
         const idToken = signInResult.data?.idToken ?? null;
-        if (!googleUser?.email) throw new Error("Could not retrieve Google account info.");
+        if (!googleUser?.email) throw new Error(t.authToasts.googleNoAccount);
         await handleGoogleProfileData(
           googleUser.id,
           googleUser.name || "User",
@@ -102,11 +104,11 @@ export default function HostRegisterScreen() {
         if (err.code === statusCodes.SIGN_IN_CANCELLED) return;
         if (err.code === statusCodes.IN_PROGRESS) return;
         if (err.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
-          showErrorToast("Google Play Services not available.", "Not Supported"); return;
+          showErrorToast(t.authToasts.playServices, t.authToasts.notSupported); return;
         }
       }
-      if (isNetworkError(err)) showErrorToast("No internet connection.", "Connection Error");
-      else showErrorToast(err?.message || "Google sign-in failed", "Sign In Failed");
+      if (isNetworkError(err)) showErrorToast(t.authToasts.noInternet, t.authToasts.connectionError);
+      else showErrorToast(err?.message || t.authToasts.googleFailed, t.authToasts.signInFailed);
     }
   };
 
@@ -120,10 +122,10 @@ export default function HostRegisterScreen() {
         coins: u.coins ?? 0, role: u.role ?? "user",
       });
       if (u.role === "host") router.replace("/(tabs)");
-      else { showInfoToast("Welcome! Please complete your profile to apply as a host.", "Almost There"); router.replace("/auth/profile-setup"); }
+      else { showInfoToast(t.authToasts.googleWelcomeProfile, t.authToasts.almostThere); router.replace("/auth/profile-setup"); }
     } catch (err: any) {
-      if (isNetworkError(err)) showErrorToast("No internet connection.", "Connection Error");
-      else showErrorToast(err?.message || "Sign-in failed. Please try again.", "Sign In Failed");
+      if (isNetworkError(err)) showErrorToast(t.authToasts.noInternet, t.authToasts.connectionError);
+      else showErrorToast(err?.message || t.authToasts.signInFailedRetry, t.authToasts.signInFailed);
     } finally { setGLoading(false); }
   };
 
@@ -153,13 +155,13 @@ export default function HostRegisterScreen() {
 
         <View style={s.headerCenter}>
           <Image source={require("@/assets/images/app_logo.png")} style={s.headerLogo} resizeMode="contain" />
-          <Text style={s.headerTitle}>Become a Host</Text>
-          <Text style={s.headerSub}>Complete 4 steps to start earning</Text>
+          <Text style={s.headerTitle}>{t.registerScreen.title}</Text>
+          <Text style={s.headerSub}>{t.registerScreen.headerSub}</Text>
         </View>
 
         <View style={s.steps}>
-          {STEPS.map((step, i) => (
-            <View key={step} style={s.stepItem}>
+          {[t.registerScreen.stepAccount, t.registerScreen.stepProfile, t.registerScreen.stepHostInfo, t.registerScreen.stepKyc].map((step, i) => (
+            <View key={STEPS[i]} style={s.stepItem}>
               <LinearGradient
                 colors={i === 0 ? [ACCENT, "#6A00B8"] : ["rgba(255,255,255,0.12)", "rgba(255,255,255,0.12)"]}
                 style={s.stepCircle}
@@ -180,21 +182,21 @@ export default function HostRegisterScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <Text style={s.formTitle}>Create Your Account</Text>
-        <Text style={s.formSub}>This will be your VoxLink Host login</Text>
+        <Text style={s.formTitle}>{t.registerScreen.createTitle}</Text>
+        <Text style={s.formSub}>{t.registerScreen.createSub}</Text>
 
         <AppInput
           icon={<Image source={require("@/assets/icons/ic_profile.png")} style={s.inputIcon} tintColor="#84889F" resizeMode="contain" />}
           value={name}
           onChangeText={setName}
-          placeholder="Full name"
+          placeholder={t.registerScreen.namePlaceholder}
           autoCapitalize="words"
         />
         <AppInput
           icon={<Image source={require("@/assets/icons/ic_mail.png")} style={s.inputIcon} tintColor="#84889F" resizeMode="contain" />}
           value={email}
           onChangeText={setEmail}
-          placeholder="Email address"
+          placeholder={t.registerScreen.emailPlaceholder}
           keyboardType="email-address"
           autoCapitalize="none"
         />
@@ -212,15 +214,15 @@ export default function HostRegisterScreen() {
           }
           value={password}
           onChangeText={setPassword}
-          placeholder="Password (8+ characters)"
+          placeholder={t.registerScreen.passwordPlaceholder}
           secureTextEntry={!showPw}
         />
 
-        <PrimaryButton title="Continue" onPress={handleNext} loading={loading} />
+        <PrimaryButton title={t.registerScreen.continueBtn} onPress={handleNext} loading={loading} />
 
         <View style={s.divRow}>
           <View style={s.divLine} />
-          <Text style={s.divTxt}>or sign up with</Text>
+          <Text style={s.divTxt}>{t.registerScreen.orSignUp}</Text>
           <View style={s.divLine} />
         </View>
 
@@ -233,13 +235,13 @@ export default function HostRegisterScreen() {
           {gLoading
             ? <ActivityIndicator size="small" color={DARK} />
             : <Image source={require("@/assets/icons/ic_google.png")} style={s.googleIcon} resizeMode="contain" />}
-          <Text style={s.googleTxt}>{gLoading ? "Signing in..." : "Continue with Google"}</Text>
+          <Text style={s.googleTxt}>{gLoading ? t.registerScreen.signingIn : t.registerScreen.continueGoogle}</Text>
         </TouchableOpacity>
 
         <View style={s.loginRow}>
-          <Text style={s.loginTxt}>Already registered? </Text>
+          <Text style={s.loginTxt}>{t.registerScreen.alreadyRegistered}</Text>
           <TouchableOpacity onPress={() => router.replace("/auth/login")} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
-            <Text style={s.loginLink}>Sign In</Text>
+            <Text style={s.loginLink}>{t.registerScreen.signIn}</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>

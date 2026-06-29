@@ -10,6 +10,7 @@ import * as Application from "expo-application";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { GoogleSignin, isErrorWithCode, statusCodes } from "@react-native-google-signin/google-signin";
 import { useAuth } from "@/context/AuthContext";
+import { useLanguage } from "@/context/LanguageContext";
 import { API, resolveMediaUrl } from "@/services/api";
 import { getRandomAvatarUri } from "@/utils/randomAvatar";
 import { showErrorToast, showSuccessToast } from "@/components/Toast";
@@ -74,6 +75,7 @@ function isNetworkError(err: any): boolean {
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
   const { loginWithToken } = useAuth();
+  const { t } = useLanguage();
   const [googleLoading, setGoogleLoading] = useState(false);
   const [quickLoading, setQuickLoading] = useState(false);
 
@@ -163,7 +165,7 @@ export default function LoginScreen() {
         role: "user" as const,
       };
       await loginWithToken(data.token, profile);
-      showSuccessToast(`Welcome, ${profile.name}!`);
+      showSuccessToast(t.auth.welcomeName.replace("{name}", profile.name));
       router.replace("/user/screens/home");
     } catch (err: any) {
       if (isNetworkError(err)) {
@@ -212,16 +214,16 @@ export default function LoginScreen() {
       };
       await loginWithToken(data.token, profile);
       if (data.is_returning) {
-        showSuccessToast("Welcome back!", "Quick Login");
+        showSuccessToast(t.auth.welcomeBackToast, t.auth.quickLoginTitle);
       } else {
-        showSuccessToast("Account created! Welcome to VoxLink.", "Welcome");
+        showSuccessToast(t.auth.accountCreated, t.auth.welcomeTitle);
       }
       router.replace("/user/screens/home");
     } catch (err: any) {
       if (isNetworkError(err)) {
-        showErrorToast("No internet connection. Please check your network.", "Connection Error");
+        showErrorToast(t.auth.connectionError, t.auth.connectionErrorTitle);
       } else {
-        showErrorToast("Quick Login failed. Please try again.");
+        showErrorToast(t.auth.quickLoginFailed);
       }
     } finally {
       setQuickLoading(false);
@@ -244,12 +246,12 @@ export default function LoginScreen() {
           />
         </View>
         <Text style={s.appName}>VoxLink</Text>
-        <Text style={s.tagline}>Connect. Talk. Grow.</Text>
+        <Text style={s.tagline}>{t.auth.tagline}</Text>
       </LinearGradient>
 
       <View style={[s.card, { paddingBottom: insets.bottom + 32 }]}>
-        <Text style={s.welcomeTitle}>Welcome to VoxLink</Text>
-        <Text style={s.welcomeSub}>New user? We'll create your account automatically on first login</Text>
+        <Text style={s.welcomeTitle}>{t.auth.welcomeToVoxLink}</Text>
+        <Text style={s.welcomeSub}>{t.auth.autoCreateAccount}</Text>
 
         <TouchableOpacity
           style={[s.googleBtn, isLoading && s.btnDisabled]}
@@ -267,13 +269,13 @@ export default function LoginScreen() {
             />
           )}
           <Text style={s.googleTxt}>
-            {googleLoading ? "Signing in..." : "Continue with Google"}
+            {googleLoading ? t.auth.signingIn : t.auth.continueWithGoogle}
           </Text>
         </TouchableOpacity>
 
         <View style={s.divRow}>
           <View style={s.divLine} />
-          <Text style={s.divTxt}>or</Text>
+          <Text style={s.divTxt}>{t.auth.or}</Text>
           <View style={s.divLine} />
         </View>
 
@@ -293,12 +295,12 @@ export default function LoginScreen() {
             />
           )}
           <Text style={s.quickTxt}>
-            {quickLoading ? "Please wait..." : "Quick Login"}
+            {quickLoading ? t.auth.pleaseWait : t.auth.quickLogin}
           </Text>
         </TouchableOpacity>
 
         <Text style={s.noteText}>
-          Quick Login saves your account to this device — reinstall and it's still yours
+          {t.auth.quickLoginNote}
         </Text>
       </View>
     </View>

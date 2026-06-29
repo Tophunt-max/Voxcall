@@ -13,6 +13,7 @@ import {
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useLanguage } from "@/context/LanguageContext";
 
 const { width: SW, height: SH } = Dimensions.get("window");
 
@@ -100,6 +101,7 @@ const item = StyleSheet.create({
 /* ─── Main Onboarding Screen ─── */
 export default function OnboardingScreen() {
   const insets = useSafeAreaInsets();
+  const { t } = useLanguage();
   const [current, setCurrent] = useState(0);
   const listRef = useRef<FlatList>(null);
   const dotWidths = useRef(SLIDES.map((_, i) => new Animated.Value(i === 0 ? 22 : 14))).current;
@@ -146,13 +148,21 @@ export default function OnboardingScreen() {
           const page = Math.round(e.nativeEvent.contentOffset.x / SW);
           onPageChange(page);
         }}
-        renderItem={({ item: slide }) => (
-          <OnboardingItem
-            title={slide.title}
-            subTitle={slide.subTitle}
-            image={slide.image}
-          />
-        )}
+        renderItem={({ item: slide }) => {
+          const slideText =
+            slide.id === "1"
+              ? { title: t.onboardingScreen.slide1Title, subTitle: t.onboardingScreen.slide1Sub }
+              : slide.id === "2"
+              ? { title: t.onboardingScreen.slide2Title, subTitle: t.onboardingScreen.slide2Sub }
+              : { title: t.onboardingScreen.slide3Title, subTitle: t.onboardingScreen.slide3Sub };
+          return (
+            <OnboardingItem
+              title={slideText.title}
+              subTitle={slideText.subTitle}
+              image={slide.image}
+            />
+          );
+        }}
         style={{ flex: 1 }}
       />
 

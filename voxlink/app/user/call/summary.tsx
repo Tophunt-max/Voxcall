@@ -6,6 +6,7 @@ import {
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
+import { useLanguage } from "@/context/LanguageContext";
 import { formatDuration } from "@/utils/format";
 import { StarRating } from "@/components/StarRating";
 import { API } from "@/services/api";
@@ -15,6 +16,7 @@ import { useAppRatingPrompt } from "@/hooks/useAppRatingPrompt";
 export default function CallSummaryScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { t } = useLanguage();
 
   const {
     duration,
@@ -38,7 +40,7 @@ export default function CallSummaryScreen() {
   const coinsUsed    = parseInt(coinsSpent ?? "0", 10);
   const isAutoEnded  = autoEnded === "1";
   const isVideo      = type === "video";
-  const hostName     = participantName ?? "Host";
+  const hostName     = participantName ?? t.hosts.host;
   const sid          = sessionId ?? "";
 
   const [rating, setRating]     = useState(0);
@@ -60,7 +62,7 @@ export default function CallSummaryScreen() {
         maybeShowRatingPrompt(rating, me?.total_calls ?? 0);
       } catch { /* best-effort — never break the rating flow */ }
     } catch (e: any) {
-      showErrorToast(e?.message ?? "Failed to submit rating, please try again.", "Error");
+      showErrorToast(e?.message ?? t.calls.rateFailed, t.calls.errorTitle);
     } finally {
       setSubmitting(false);
     }
@@ -79,7 +81,7 @@ export default function CallSummaryScreen() {
         {isAutoEnded && (
           <View style={s.autoEndedBanner}>
             <Image source={require("@/assets/icons/ic_close_fill.png")} style={{ width: 14, height: 14, tintColor: "#FF6B6B" }} resizeMode="contain" />
-            <Text style={s.autoEndedText}>You ran out of coins — call was auto-disconnected</Text>
+            <Text style={s.autoEndedText}>{t.calls.autoDisconnected}</Text>
           </View>
         )}
 
@@ -89,14 +91,14 @@ export default function CallSummaryScreen() {
         </View>
 
         <Text style={[s.title, { color: colors.foreground }]}>
-          {isAutoEnded ? "Call Auto-Ended" : "Call Ended"}
+          {isAutoEnded ? t.calls.callAutoEnded : t.calls.callEnded}
         </Text>
-        <Text style={[s.hostName, { color: colors.mutedForeground }]}>with {hostName}</Text>
+        <Text style={[s.hostName, { color: colors.mutedForeground }]}>{t.calls.with} {hostName}</Text>
 
         {/* FIX BUG-5: Minimum billing notice — shown when actual call was < 1 min */}
         {durationSec > 0 && durationSec < 60 && (
           <View style={s.minBillingBanner}>
-            <Text style={s.minBillingText}>⏱ Min. 1 min billing applied</Text>
+            <Text style={s.minBillingText}>⏱ {t.calls.minBilling}</Text>
           </View>
         )}
 
@@ -106,7 +108,7 @@ export default function CallSummaryScreen() {
             <Text style={[s.statValue, { color: colors.foreground }]}>
               {formatDuration(durationSec)}
             </Text>
-            <Text style={[s.statLabel, { color: colors.mutedForeground }]}>Duration</Text>
+            <Text style={[s.statLabel, { color: colors.mutedForeground }]}>{t.calls.duration}</Text>
           </View>
 
           <View style={[s.statDiv, { backgroundColor: colors.border }]} />
@@ -115,7 +117,7 @@ export default function CallSummaryScreen() {
             <Text style={[s.statValue, { color: colors.coinGold }]}>
               {coinsUsed} 🪙
             </Text>
-            <Text style={[s.statLabel, { color: colors.mutedForeground }]}>Coins Spent</Text>
+            <Text style={[s.statLabel, { color: colors.mutedForeground }]}>{t.calls.coinsSpent}</Text>
           </View>
 
           <View style={[s.statDiv, { backgroundColor: colors.border }]} />
@@ -123,7 +125,7 @@ export default function CallSummaryScreen() {
           <View style={s.stat}>
             <Image source={isVideo ? require("@/assets/icons/ic_video.png") : require("@/assets/icons/ic_mic.png")} style={{ width: 18, height: 18, tintColor: colors.primary, marginBottom: 2 }} resizeMode="contain" />
             <Text style={[s.statLabel, { color: colors.mutedForeground }]}>
-              {isVideo ? "Video" : "Audio"}
+              {isVideo ? t.calls.videoShort : t.calls.audioShort}
             </Text>
           </View>
         </View>
@@ -132,10 +134,10 @@ export default function CallSummaryScreen() {
         {!rated ? (
           <View style={s.ratingSection}>
             <Text style={[s.ratingPrompt, { color: colors.foreground }]}>
-              Rate {hostName}
+              {t.calls.rateName.replace("{name}", hostName)}
             </Text>
             <Text style={[s.ratingSubtitle, { color: colors.mutedForeground }]}>
-              Your feedback helps the host improve
+              {t.calls.feedbackHelps}
             </Text>
             <StarRating
               rating={rating}
@@ -145,7 +147,7 @@ export default function CallSummaryScreen() {
             />
             {rating > 0 && (
               <Text style={[s.ratingLabel, { color: colors.mutedForeground }]}>
-                {["", "Poor", "Fair", "Good", "Great", "Excellent!"][rating]}
+                {["", t.calls.ratingPoor, t.calls.ratingFair, t.calls.ratingGood, t.calls.ratingGreat, t.calls.ratingExcellent][rating]}
               </Text>
             )}
             <TouchableOpacity
@@ -161,12 +163,12 @@ export default function CallSummaryScreen() {
                 <ActivityIndicator color="#fff" size="small" />
               ) : (
                 <Text style={[s.rateBtnText, { color: rating > 0 ? "#fff" : colors.mutedForeground }]}>
-                  ⭐ Submit Rating
+                  ⭐ {t.calls.submitRating}
                 </Text>
               )}
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setRated(true)}>
-              <Text style={[s.skipText, { color: colors.mutedForeground }]}>Skip</Text>
+              <Text style={[s.skipText, { color: colors.mutedForeground }]}>{t.common.skip}</Text>
             </TouchableOpacity>
           </View>
         ) : (
@@ -175,10 +177,10 @@ export default function CallSummaryScreen() {
               <Image source={require("@/assets/icons/ic_check.png")} style={{ width: 36, height: 36, tintColor: colors.online }} resizeMode="contain" />
             </View>
             <Text style={[s.thankYouTitle, { color: colors.foreground }]}>
-              Shukriya! 🙏
+              {t.calls.thankYou}
             </Text>
             <Text style={[s.thankYouSub, { color: colors.mutedForeground }]}>
-              Aapki rating submit ho gayi
+              {t.calls.ratingSubmitted}
             </Text>
           </View>
         )}
@@ -192,7 +194,7 @@ export default function CallSummaryScreen() {
           activeOpacity={0.85}
         >
           <Image source={require("@/assets/icons/ic_coin.png")} style={{ width: 16, height: 16, tintColor: "#fff" }} resizeMode="contain" />
-          <Text style={s.actionBtnText}>Coins Recharge Karo</Text>
+          <Text style={s.actionBtnText}>{t.calls.rechargeCoins}</Text>
         </TouchableOpacity>
       )}
 
@@ -204,7 +206,7 @@ export default function CallSummaryScreen() {
       >
         <Image source={require("@/assets/icons/ic_home.png")} style={{ width: 16, height: 16, tintColor: isAutoEnded ? colors.foreground : "#fff" }} resizeMode="contain" />
         <Text style={[s.actionBtnText, isAutoEnded && { color: colors.foreground }]}>
-          Home Wapas Jao
+          {t.calls.backHome}
         </Text>
       </TouchableOpacity>
     </View>

@@ -8,6 +8,8 @@ import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/context/AuthContext";
 import { useCall } from "@/context/CallContext";
+import { useLanguage } from "@/context/LanguageContext";
+import type { Translations } from "@/localization/en";
 import { API, resolveMediaUrl } from "@/services/api";
 import { showErrorToast } from "@/components/Toast";
 
@@ -73,24 +75,24 @@ function shuffle<T>(input: T[]): T[] {
  * sends localized strings any more — the client owns the wording so it can
  * translate (and the server stays language-agnostic).
  */
-function searchingMessageForCode(code: string | undefined, onlineCount: number): string {
+function searchingMessageForCode(code: string | undefined, onlineCount: number, tr: Translations): string {
   switch (code) {
     case "INSUFFICIENT_COINS":
-      return "Not enough coins to start a random call.";
+      return tr.random.statusInsufficientCoins;
     case "RATE_LIMITED":
-      return "Slow down a moment, then try again…";
+      return tr.random.statusRateLimited;
     case "DAILY_LIMIT_REACHED":
-      return "You've reached today's random-match limit.";
+      return tr.random.statusDailyLimit;
     case "DECLINE_COOLDOWN":
-      return "Too many declines — please take a short break.";
+      return tr.random.statusDeclineCooldown;
     case "NO_MATCH_WITH_FILTERS":
-      return "No host matches your filters — relaxing them may help.";
+      return tr.random.statusNoMatchFilters;
     case "NO_HOST_AVAILABLE":
       return onlineCount > 0
-        ? "Searching among online listeners…"
-        : "No listeners online right now — still searching…";
+        ? tr.random.statusSearching
+        : tr.random.statusNoneOnline;
     default:
-      return "Finding your match…";
+      return tr.random.findingMatch;
   }
 }
 
@@ -135,6 +137,7 @@ interface ListenerCardProps {
   onPress: () => void;
 }
 function ListenerCard({ host, isLeft, isSpecial, delay, onCycled, onPress }: ListenerCardProps) {
+  const { t: tr } = useLanguage();
   const opacity = useRef(new Animated.Value(0)).current;
   const scale   = useRef(new Animated.Value(0.98)).current;
 
@@ -176,7 +179,7 @@ function ListenerCard({ host, isLeft, isSpecial, delay, onCycled, onPress }: Lis
         <View style={[styles.cardPill, pillRadius, pillPad]}>
           <Text style={styles.cardName} numberOfLines={1}>{host.name}</Text>
           <LinearGradient colors={GRAD} style={styles.topicTag} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-            <Text style={styles.topicText} numberOfLines={1}>{host.specialties[0] ?? "Listener"}</Text>
+            <Text style={styles.topicText} numberOfLines={1}>{host.specialties[0] ?? tr.hosts.listener}</Text>
           </LinearGradient>
         </View>
         <View style={[styles.cardAvatar, avatarSide]}>
@@ -192,11 +195,12 @@ function CallTypeDialog({ visible, selected, onSelect, onClose }: {
   visible: boolean; selected: CallType;
   onSelect: (t: CallType) => void; onClose: () => void;
 }) {
+  const { t: tr } = useLanguage();
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <TouchableOpacity style={styles.dialogOverlay} activeOpacity={1} onPress={onClose}>
         <View style={styles.dialogBox}>
-          <Text style={styles.dialogTitle}>Call Type Chunein</Text>
+          <Text style={styles.dialogTitle}>{tr.random.chooseCallType}</Text>
           {(["audio", "video"] as CallType[]).map((type) => (
             <TouchableOpacity key={type} onPress={() => { onSelect(type); onClose(); }} style={styles.dialogRow}>
               <Image
@@ -204,7 +208,7 @@ function CallTypeDialog({ visible, selected, onSelect, onClose }: {
                 style={styles.dialogIcon}
                 resizeMode="contain"
               />
-              <Text style={styles.dialogLabel}>{type === "audio" ? "Voice Call" : "Video Call"}</Text>
+              <Text style={styles.dialogLabel}>{type === "audio" ? tr.random.voiceCall : tr.random.videoCall}</Text>
               <View style={[styles.dialogRadio, selected === type && styles.dialogRadioActive]}>
                 {selected === type && <View style={styles.dialogRadioDot} />}
               </View>
@@ -223,25 +227,26 @@ function FiltersDialog({ visible, value, onChange, onClose }: {
   onChange: (v: MatchFilters) => void;
   onClose: () => void;
 }) {
+  const { t: tr } = useLanguage();
   const genderOptions: { key: GenderFilter; label: string; emoji: string }[] = [
-    { key: "any", label: "Any", emoji: "✨" },
-    { key: "male", label: "Male", emoji: "👨" },
-    { key: "female", label: "Female", emoji: "👩" },
+    { key: "any", label: tr.random.genderAny, emoji: "✨" },
+    { key: "male", label: tr.random.genderMale, emoji: "👨" },
+    { key: "female", label: tr.random.genderFemale, emoji: "👩" },
   ];
   const ratingOptions: { key: RatingFilter; label: string }[] = [
-    { key: 0, label: "Any rating" },
-    { key: 3, label: "3★ +" },
-    { key: 4, label: "4★ +" },
-    { key: 4.5, label: "4.5★ +" },
+    { key: 0, label: tr.random.ratingAny },
+    { key: 3, label: tr.random.rating3 },
+    { key: 4, label: tr.random.rating4 },
+    { key: 4.5, label: tr.random.rating4_5 },
   ];
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <TouchableOpacity style={styles.dialogOverlay} activeOpacity={1} onPress={onClose}>
         <TouchableOpacity activeOpacity={1} onPress={() => { /* swallow */ }} style={styles.filtersSheet}>
-          <Text style={styles.dialogTitle}>Match Filters</Text>
+          <Text style={styles.dialogTitle}>{tr.random.matchFilters}</Text>
 
-          <Text style={styles.filterLabel}>Gender</Text>
+          <Text style={styles.filterLabel}>{tr.random.gender}</Text>
           <View style={styles.filterChipsRow}>
             {genderOptions.map((opt) => {
               const active = value.gender === opt.key;
@@ -260,7 +265,7 @@ function FiltersDialog({ visible, value, onChange, onClose }: {
             })}
           </View>
 
-          <Text style={[styles.filterLabel, { marginTop: 16 }]}>Minimum rating</Text>
+          <Text style={[styles.filterLabel, { marginTop: 16 }]}>{tr.random.minimumRating}</Text>
           <View style={styles.filterChipsRow}>
             {ratingOptions.map((opt) => {
               const active = value.minRating === opt.key;
@@ -285,11 +290,11 @@ function FiltersDialog({ visible, value, onChange, onClose }: {
               activeOpacity={0.7}
               style={styles.filtersResetBtn}
             >
-              <Text style={styles.filtersResetTxt}>Reset</Text>
+              <Text style={styles.filtersResetTxt}>{tr.random.reset}</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={onClose} activeOpacity={0.85} style={styles.filtersDoneBtn}>
               <LinearGradient colors={GRAD} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.filtersDoneBtnInner}>
-                <Text style={styles.filtersDoneTxt}>Done</Text>
+                <Text style={styles.filtersDoneTxt}>{tr.random.done}</Text>
               </LinearGradient>
             </TouchableOpacity>
           </View>
@@ -332,6 +337,7 @@ function MatchFoundScreen({ host, callType, adminCoinRate, busy, onAccept, onDec
   busy: boolean;
   onAccept: () => void; onDecline: () => void; onSkip: () => void;
 }) {
+  const { t: tr } = useLanguage();
   const scale = useRef(new Animated.Value(0.7)).current;
   useEffect(() => {
     Animated.spring(scale, { toValue: 1, tension: 55, friction: 8, useNativeDriver: false }).start();
@@ -350,7 +356,7 @@ function MatchFoundScreen({ host, callType, adminCoinRate, busy, onAccept, onDec
         </TouchableOpacity>
 
         <Animated.View style={[styles.matchContent, { transform: [{ scale }] }]}>
-          <Text style={styles.matchTitle}>It's a Match! 🎉</Text>
+          <Text style={styles.matchTitle}>{tr.random.matchFound}</Text>
 
           <View style={styles.matchAvatarWrap}>
             <MatchRipple />
@@ -376,7 +382,7 @@ function MatchFoundScreen({ host, callType, adminCoinRate, busy, onAccept, onDec
           </ScrollView>
 
           <Text style={styles.matchCallType}>
-            {callType === "video" ? "🎥 Video Call" : "🎤 Voice Call"}
+            {callType === "video" ? `🎥 ${tr.random.videoCall}` : `🎤 ${tr.random.voiceCall}`}
           </Text>
 
           <View style={styles.matchBtns}>
@@ -384,7 +390,7 @@ function MatchFoundScreen({ host, callType, adminCoinRate, busy, onAccept, onDec
               <TouchableOpacity onPress={onDecline} style={styles.matchDecline} activeOpacity={0.8} disabled={busy}>
                 <Image source={require("@/assets/icons/ic_call_end.png")} style={styles.matchBtnIco} tintColor="#fff" resizeMode="contain" />
               </TouchableOpacity>
-              <Text style={styles.matchBtnLabel}>Decline</Text>
+              <Text style={styles.matchBtnLabel}>{tr.random.decline}</Text>
             </View>
             <View style={styles.matchBtnItem}>
               <TouchableOpacity
@@ -397,7 +403,7 @@ function MatchFoundScreen({ host, callType, adminCoinRate, busy, onAccept, onDec
                   <Image source={require("@/assets/icons/ic_shuffle.png")} style={styles.matchBtnIco} tintColor="#fff" resizeMode="contain" />
                 </View>
               </TouchableOpacity>
-              <Text style={styles.matchBtnLabel}>Skip / Next</Text>
+              <Text style={styles.matchBtnLabel}>{tr.random.skipNext}</Text>
             </View>
             <View style={styles.matchBtnItem}>
               <TouchableOpacity onPress={onAccept} activeOpacity={0.8} disabled={busy}>
@@ -409,7 +415,7 @@ function MatchFoundScreen({ host, callType, adminCoinRate, busy, onAccept, onDec
                   )}
                 </LinearGradient>
               </TouchableOpacity>
-              <Text style={styles.matchBtnLabel}>{busy ? "Checking…" : "Accept"}</Text>
+              <Text style={styles.matchBtnLabel}>{busy ? tr.random.checking : tr.random.accept}</Text>
             </View>
           </View>
         </Animated.View>
@@ -423,6 +429,7 @@ export default function RandomScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const { initiateCall } = useCall();
+  const { t: tr } = useLanguage();
 
   const [phase, setPhase]         = useState<Phase>("idle");
   const [callType, setCallType]   = useState<CallType>("audio");
@@ -470,7 +477,7 @@ export default function RandomScreen() {
         // First load failure surfaces a toast; subsequent refreshes stay
         // quiet so a brief network blip doesn't spam the user.
         if (cardHosts.length === 0) {
-          showErrorToast("Failed to load available hosts.");
+          showErrorToast(tr.random.failedLoadHosts);
         }
       }
     };
@@ -514,7 +521,7 @@ export default function RandomScreen() {
   const startSearching = useCallback(() => {
     setPhase("searching");
     setMatchedHost(null);
-    setStatusMsg(searchingMessageForCode(undefined, onlineCount));
+    setStatusMsg(searchingMessageForCode(undefined, onlineCount, tr));
     setStatusCode(undefined);
     pollAttemptsRef.current = 0;
 
@@ -541,11 +548,11 @@ export default function RandomScreen() {
           res.code === "DAILY_LIMIT_REACHED" ||
           res.code === "DECLINE_COOLDOWN"
         ) {
-          setStatusMsg(searchingMessageForCode(res.code, onlineCount));
+          setStatusMsg(searchingMessageForCode(res.code, onlineCount, tr));
           setStatusCode(res.code);
           if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
           setPhase("idle");
-          showErrorToast(searchingMessageForCode(res.code, onlineCount));
+          showErrorToast(searchingMessageForCode(res.code, onlineCount, tr));
           // Insufficient coins → nudge to the wallet (consistent with the
           // legacy direct-call flow).
           if (res.code === "INSUFFICIENT_COINS") router.push("/user/payment/checkout");
@@ -553,22 +560,22 @@ export default function RandomScreen() {
         }
 
         // Soft "still searching" states — keep polling until the cap.
-        setStatusMsg(searchingMessageForCode(res.code, res.online_count ?? onlineCount));
+        setStatusMsg(searchingMessageForCode(res.code, res.online_count ?? onlineCount, tr));
         setStatusCode(res.code);
 
         if (pollAttemptsRef.current >= MAX_POLL_ATTEMPTS) {
           if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
           setPhase("idle");
-          setStatusMsg("No host found right now. Try again in a bit.");
-          showErrorToast("No host found right now. Try again in a bit.");
+          setStatusMsg(tr.random.statusGiveUp);
+          showErrorToast(tr.random.statusGiveUp);
         }
       } catch {
         if (!isMounted.current) return;
-        setStatusMsg("Network error, retrying…");
+        setStatusMsg(tr.random.statusNetworkError);
         if (pollAttemptsRef.current >= MAX_POLL_ATTEMPTS) {
           if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
           setPhase("idle");
-          showErrorToast("Couldn't reach the server. Please try again.");
+          showErrorToast(tr.random.statusServerUnreachable);
         }
       }
     };
@@ -589,7 +596,7 @@ export default function RandomScreen() {
     if ((user?.coins ?? 0) < adminCoinRate * 2) {
       setPhase("idle");
       setMatchedHost(null);
-      showErrorToast(`You need at least ${adminCoinRate * 2} coins to start this call.`, "Not enough coins");
+      showErrorToast(tr.random.needCoins.replace("{count}", String(adminCoinRate * 2)), tr.random.statusNotEnoughCoinsTitle);
       router.push("/user/payment/checkout");
       return;
     }
@@ -600,10 +607,10 @@ export default function RandomScreen() {
       if (!status.available) {
         showErrorToast(
           status.code === "HOST_BUSY"
-            ? "Host just got busy — finding another match."
+            ? tr.random.hostBusy
             : status.code === "HOST_OFFLINE"
-              ? "Host went offline — finding another match."
-              : "Host unavailable — finding another match.",
+              ? tr.random.hostOffline
+              : tr.random.hostUnavailable,
         );
         // Roll the user back into a fresh search instead of leaving them
         // staring at a dead Match Found overlay.
@@ -692,7 +699,7 @@ export default function RandomScreen() {
         <TouchableOpacity onPress={() => router.push("/user/payment/checkout")} style={styles.coinWidget} activeOpacity={0.85}>
           <View style={styles.coinInfo}>
             <Text style={styles.coinAmount}>{user?.coins ?? 0}</Text>
-            <Text style={styles.coinLabel}>My Balance</Text>
+            <Text style={styles.coinLabel}>{tr.random.myBalance}</Text>
           </View>
           <Image source={require("@/assets/icons/ic_coin.png")} style={styles.coinIcon} resizeMode="contain" />
         </TouchableOpacity>
@@ -719,7 +726,7 @@ export default function RandomScreen() {
       {phase === "searching" && (
         <View style={styles.searchingBadge}>
           <ActivityIndicator size="small" color={GRAD[1]} />
-          <Text style={styles.searchingText}>{statusMsg || "Finding your match…"}</Text>
+          <Text style={styles.searchingText}>{statusMsg || tr.random.findingMatch}</Text>
         </View>
       )}
 
@@ -730,7 +737,7 @@ export default function RandomScreen() {
         <View style={styles.onlineCountPill}>
           <View style={styles.onlineDot} />
           <Text style={styles.onlineCountTxt}>
-            {onlineCount} {onlineCount === 1 ? "listener" : "listeners"} online
+            {(onlineCount === 1 ? tr.random.listenerOnline : tr.random.listenersOnline).replace("{count}", String(onlineCount))}
           </Text>
         </View>
       )}
@@ -749,7 +756,7 @@ export default function RandomScreen() {
               style={styles.callTypeBtnIcon}
               resizeMode="contain"
             />
-            <Text style={styles.callTypeBtnTxt}>{callType === "audio" ? "Voice Call" : "Video Call"}</Text>
+            <Text style={styles.callTypeBtnTxt}>{callType === "audio" ? tr.random.voiceCall : tr.random.videoCall}</Text>
             <Image source={require("@/assets/icons/ic_back.png")} style={styles.dropArrow} tintColor="#111329" resizeMode="contain" />
           </TouchableOpacity>
 
@@ -762,8 +769,8 @@ export default function RandomScreen() {
           >
             <Text style={styles.filterChipTxt}>
               ⚙️ {filters.gender === "any" && filters.minRating === 0
-                ? "Filters"
-                : `Filters (${[filters.gender !== "any" ? filters.gender : null, filters.minRating > 0 ? `${filters.minRating}★+` : null].filter(Boolean).join(" · ")})`}
+                ? tr.random.filters
+                : `${tr.random.filters} (${[filters.gender !== "any" ? filters.gender : null, filters.minRating > 0 ? `${filters.minRating}★+` : null].filter(Boolean).join(" · ")})`}
             </Text>
           </TouchableOpacity>
         </View>
@@ -772,13 +779,13 @@ export default function RandomScreen() {
           <TouchableOpacity onPress={stopSearching} activeOpacity={0.85} style={styles.randomBtnWrap}>
             <View style={[styles.randomBtn, { backgroundColor: "#FF3B30", justifyContent: "center", alignItems: "center", flexDirection: "row", gap: 8 }]}>
               <ActivityIndicator size="small" color="#fff" />
-              <Text style={styles.randomBtnTxt}>Cancel</Text>
+              <Text style={styles.randomBtnTxt}>{tr.random.cancel}</Text>
             </View>
           </TouchableOpacity>
         ) : (
           <TouchableOpacity onPress={startSearching} activeOpacity={0.85} style={styles.randomBtnWrap}>
             <LinearGradient colors={GRAD} style={styles.randomBtn} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-              <Text style={styles.randomBtnTxt}>🎲 Random Match</Text>
+              <Text style={styles.randomBtnTxt}>{tr.random.randomMatch}</Text>
             </LinearGradient>
           </TouchableOpacity>
         )}

@@ -4,6 +4,7 @@ import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { IconView } from "@/components/IconView";
 import { useColors } from "@/hooks/useColors";
+import { useLanguage } from "@/context/LanguageContext";
 import { formatRelativeTime } from "@/utils/format";
 import { API, resolveMediaUrl } from "@/services/api";
 import { showErrorToast } from "@/components/Toast";
@@ -22,6 +23,7 @@ const ICONS: Record<string, string> = { call: "phone", message: "message-circle"
 
 export default function NotificationsScreen() {
   const colors = useColors();
+  const { t } = useLanguage();
   const insets = useSafeAreaInsets();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
@@ -33,7 +35,7 @@ export default function NotificationsScreen() {
       setNotifications(data);
     } catch {
       setNotifications([]);
-      showErrorToast("Failed to load notifications.");
+      showErrorToast(t.notificationsScreen.loadFailed);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -47,7 +49,7 @@ export default function NotificationsScreen() {
       await API.markNotificationsRead();
       setNotifications(n => n.map(x => ({ ...x, is_read: true })));
     } catch {
-      showErrorToast("Failed to mark notifications as read.");
+      showErrorToast(t.notificationsScreen.markFailed);
     }
   };
 
@@ -56,7 +58,7 @@ export default function NotificationsScreen() {
       await API.markOneNotificationRead(id);
       setNotifications(n => n.map(x => x.id === id ? { ...x, is_read: true } : x));
     } catch {
-      showErrorToast("Failed to update notification.");
+      showErrorToast(t.notificationsScreen.updateFailed);
     }
   };
 
@@ -89,9 +91,9 @@ export default function NotificationsScreen() {
         <TouchableOpacity onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Go back">
           <Image source={require("@/assets/icons/ic_back.png")} style={{ width: 22, height: 22, tintColor: colors.foreground }} resizeMode="contain" />
         </TouchableOpacity>
-        <Text style={[styles.title, { color: colors.foreground }]}>Notifications</Text>
+        <Text style={[styles.title, { color: colors.foreground }]}>{t.notificationsScreen.title}</Text>
         <TouchableOpacity onPress={markAllRead}>
-          <Text style={[styles.markRead, { color: colors.primary }]}>Mark all read</Text>
+          <Text style={[styles.markRead, { color: colors.primary }]}>{t.notificationsScreen.markAllRead}</Text>
         </TouchableOpacity>
       </View>
       <FlatList
@@ -104,7 +106,7 @@ export default function NotificationsScreen() {
           !loading ? (
             <View style={styles.empty}>
               <IconView name="bell-off" size={40} color={colors.mutedForeground} />
-              <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>No notifications yet</Text>
+              <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>{t.notificationsScreen.empty}</Text>
             </View>
           ) : (
             <View style={styles.empty}>

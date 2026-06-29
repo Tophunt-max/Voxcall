@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { IconView } from "@/components/IconView";
 import { useColors } from "@/hooks/useColors";
 import { fetchAppConfig } from "@/hooks/useAppConfig";
+import { useLanguage } from "@/context/LanguageContext";
 
 const APP_VERSION = "1.0.0";
 const DEFAULT_SUPPORT_EMAIL = "host-support@voxlink.app";
@@ -30,6 +31,7 @@ export default function AboutScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const topPad = insets.top;
+  const { t } = useLanguage();
 
   // Admin-managed support email drives the "Contact Us" link.
   const [supportEmail, setSupportEmail] = useState(DEFAULT_SUPPORT_EMAIL);
@@ -45,7 +47,7 @@ export default function AboutScreen() {
         <TouchableOpacity onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Go back" style={[styles.backBtn, { backgroundColor: colors.surface }]}>
           <Image source={require("@/assets/icons/ic_back.png")} style={styles.backIcon} tintColor={colors.text} resizeMode="contain" />
         </TouchableOpacity>
-        <Text style={[styles.title, { color: colors.text }]}>About VoxLink</Text>
+        <Text style={[styles.title, { color: colors.text }]}>{t.aboutScreen.title}</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -55,9 +57,9 @@ export default function AboutScreen() {
             <Image source={require("@/assets/images/app_logo.png")} style={styles.logo} resizeMode="contain" />
           </View>
           <Text style={[styles.appName, { color: colors.text }]}>VoxLink Host</Text>
-          <Text style={[styles.tagline, { color: colors.mutedForeground }]}>Voice & Video Connection — Host Edition</Text>
+          <Text style={[styles.tagline, { color: colors.mutedForeground }]}>{t.aboutScreen.tagline}</Text>
           <View style={[styles.versionBadge, { backgroundColor: colors.surface }]}>
-            <Text style={[styles.version, { color: colors.mutedForeground }]}>Version {APP_VERSION}</Text>
+            <Text style={[styles.version, { color: colors.mutedForeground }]}>{t.aboutScreen.version} {APP_VERSION}</Text>
           </View>
         </View>
 
@@ -66,7 +68,7 @@ export default function AboutScreen() {
             <React.Fragment key={s.label}>
               <View style={styles.stat}>
                 <Text style={[styles.statValue, { color: colors.primary }]}>{s.value}</Text>
-                <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>{s.label}</Text>
+                <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>{[t.aboutScreen.statActiveUsers, t.aboutScreen.statHosts, t.aboutScreen.statCallsMade, t.aboutScreen.statAppRating][i]}</Text>
               </View>
               {i < STATS.length - 1 && <View style={[styles.statDiv, { backgroundColor: colors.border }]} />}
             </React.Fragment>
@@ -74,25 +76,25 @@ export default function AboutScreen() {
         </View>
 
         <View style={[styles.descCard, { backgroundColor: colors.card }]}>
-          <Text style={[styles.descTitle, { color: colors.text }]}>What is VoxLink Host?</Text>
+          <Text style={[styles.descTitle, { color: colors.text }]}>{t.aboutScreen.whatIsTitle}</Text>
           <Text style={[styles.desc, { color: colors.mutedForeground }]}>
-            VoxLink Host is the dedicated app for verified hosts on the VoxLink platform. As a host, you connect with users for meaningful audio and video conversations — whether it's life advice, language practice, emotional support, or companionship.
+            {t.aboutScreen.whatIsBody1}
           </Text>
           <Text style={[styles.desc, { color: colors.mutedForeground, marginTop: 10 }]}>
-            Hosts earn coins for every minute of calls they complete. Coins are converted to real money and withdrawn directly to your bank account. Set your own schedule, grow your audience, and earn on your terms.
+            {t.aboutScreen.whatIsBody2}
           </Text>
         </View>
 
         <View style={[styles.featuresCard, { backgroundColor: colors.card }]}>
-          <Text style={[styles.featuresTitle, { color: colors.text }]}>Host Features</Text>
+          <Text style={[styles.featuresTitle, { color: colors.text }]}>{t.aboutScreen.featuresTitle}</Text>
           {[
-            { icon: "phone", text: "HD Audio & Video Calls" },
-            { icon: "shield", text: "End-to-End Encrypted" },
-            { icon: "dollar-sign", text: "Earn Coins Per Minute" },
-            { icon: "trending-up", text: "Real-Time Earnings Dashboard" },
-            { icon: "message-circle", text: "In-App Chat with Users" },
-            { icon: "star", text: "Ratings & Reviews" },
-            { icon: "calendar", text: "Flexible Availability Schedule" },
+            { icon: "phone", text: t.aboutScreen.featHd },
+            { icon: "shield", text: t.aboutScreen.featEncrypted },
+            { icon: "dollar-sign", text: t.aboutScreen.featEarn },
+            { icon: "trending-up", text: t.aboutScreen.featDashboard },
+            { icon: "message-circle", text: t.aboutScreen.featChat },
+            { icon: "star", text: t.aboutScreen.featRatings },
+            { icon: "calendar", text: t.aboutScreen.featSchedule },
           ].map((f) => (
             <View key={f.text} style={styles.featureRow}>
               <View style={[styles.featureIcon, { backgroundColor: colors.primary + "15" }]}>
@@ -104,17 +106,17 @@ export default function AboutScreen() {
         </View>
 
         <View style={[styles.linksCard, { backgroundColor: colors.card }]}>
-          <Text style={[styles.featuresTitle, { color: colors.text }]}>Connect With Us</Text>
-          {LINKS.map((l) => (
+          <Text style={[styles.featuresTitle, { color: colors.text }]}>{t.aboutScreen.connectTitle}</Text>
+          {LINKS.map((l, i) => (
             <TouchableOpacity
-              key={l.label}
+              key={l.url}
               style={[styles.linkRow, { borderBottomColor: colors.border }]}
-              onPress={() => Linking.openURL(l.label === "Contact Us" ? `mailto:${supportEmail}` : l.url)}
+              onPress={() => Linking.openURL(l.url.startsWith("mailto") ? `mailto:${supportEmail}` : l.url)}
             >
               <View style={[styles.linkIcon, { backgroundColor: colors.surface }]}>
                 <IconView name={l.icon} size={17} color={colors.primary} />
               </View>
-              <Text style={[styles.linkLabel, { color: colors.text }]}>{l.label}</Text>
+              <Text style={[styles.linkLabel, { color: colors.text }]}>{[t.aboutScreen.linkWebsite, t.aboutScreen.linkTwitter, t.aboutScreen.linkInstagram, t.aboutScreen.linkContact][i]}</Text>
               <IconView name="external-link" size={14} color={colors.mutedForeground} />
             </TouchableOpacity>
           ))}
@@ -122,16 +124,16 @@ export default function AboutScreen() {
 
         <View style={styles.legalRow}>
           <TouchableOpacity onPress={() => router.push("/privacy")}>
-            <Text style={[styles.legalLink, { color: colors.primary }]}>Privacy Policy</Text>
+            <Text style={[styles.legalLink, { color: colors.primary }]}>{t.aboutScreen.privacyPolicy}</Text>
           </TouchableOpacity>
           <Text style={[styles.legalSep, { color: colors.border }]}>|</Text>
           <TouchableOpacity onPress={() => router.push("/help-center")}>
-            <Text style={[styles.legalLink, { color: colors.primary }]}>Help Center</Text>
+            <Text style={[styles.legalLink, { color: colors.primary }]}>{t.aboutScreen.helpCenter}</Text>
           </TouchableOpacity>
         </View>
 
         <Text style={[styles.copyright, { color: colors.mutedForeground }]}>
-          © 2026 VoxLink Inc. All rights reserved.
+          {t.aboutScreen.copyright}
         </Text>
       </ScrollView>
     </View>

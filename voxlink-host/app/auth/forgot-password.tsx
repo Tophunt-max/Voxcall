@@ -9,6 +9,7 @@ import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { API } from "@/services/api";
+import { useLanguage } from "@/context/LanguageContext";
 
 const BG     = "#0A0B1E";
 const ACCENT = "#A00EE7";
@@ -16,8 +17,8 @@ const DARK   = "#111329";
 
 export default function ForgotPasswordScreen() {
   const insets = useSafeAreaInsets();
-  const [email, setEmail]       = useState("");
-  const [otp, setOtp]           = useState("");
+  const { t } = useLanguage();
+  const [email, setEmail]       = useState("");  const [otp, setOtp]           = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm]   = useState("");
   const [showPass, setShowPass] = useState(false);
@@ -43,35 +44,35 @@ export default function ForgotPasswordScreen() {
   };
 
   const handleSend = async () => {
-    if (!email.trim()) { showErrorToast("Please enter your email address."); return; }
+    if (!email.trim()) { showErrorToast(t.forgotPasswordScreen.enterEmailError); return; }
     setLoading(true);
     try {
       await API.forgotPassword(email.trim().toLowerCase());
       setSent(true);
       startCooldown();
-      showSuccessToast("OTP sent to your email.", "Email Sent");
+      showSuccessToast(t.forgotPasswordScreen.otpSent, t.forgotPasswordScreen.emailSent);
     } catch (err: any) {
-      showErrorToast(err?.message || "Email not found. Please check and try again.");
+      showErrorToast(err?.message || t.forgotPasswordScreen.emailNotFound);
     } finally { setLoading(false); }
   };
 
   const handleReset = async () => {
     if (!otp.trim() || otp.trim().length < 6) {
-      showErrorToast("Please enter the OTP sent to your email."); return;
+      showErrorToast(t.forgotPasswordScreen.enterOtpError); return;
     }
     if (!password || password.length < 8) {
-      showErrorToast("Password must be at least 8 characters.", "Weak Password"); return;
+      showErrorToast(t.forgotPasswordScreen.weakPasswordMsg, t.forgotPasswordScreen.weakPassword); return;
     }
     if (password !== confirm) {
-      showErrorToast("Passwords don't match.", "Mismatch"); return;
+      showErrorToast(t.forgotPasswordScreen.passwordsDontMatch, t.forgotPasswordScreen.mismatch); return;
     }
     setLoading(true);
     try {
       await API.resetPassword(email.trim().toLowerCase(), otp.trim(), password);
-      showSuccessToast("Password updated successfully! Please sign in.", "Success");
+      showSuccessToast(t.forgotPasswordScreen.resetSuccess, t.forgotPasswordScreen.successTitle);
       router.replace("/auth/login");
     } catch (err: any) {
-      Alert.alert("Error", err?.message || "Failed to reset password. The OTP may have expired.");
+      Alert.alert(t.forgotPasswordScreen.errorTitle, err?.message || t.forgotPasswordScreen.resetFailed);
     } finally { setLoading(false); }
   };
 
@@ -101,11 +102,11 @@ export default function ForgotPasswordScreen() {
                   <Image source={require("@/assets/images/app_logo.png")} style={s.logoImg} resizeMode="contain" />
                 </View>
               )}
-              <Text style={s.topTitle}>{sent ? "Check Your Email" : "Forgot Password?"}</Text>
+              <Text style={s.topTitle}>{sent ? t.forgotPasswordScreen.checkEmail : t.forgotPasswordScreen.forgotPassword}</Text>
               <Text style={s.topSub}>
                 {sent
-                  ? `We sent a 6-digit OTP to\n${email}\n\nEnter the code and set a new password.`
-                  : "Enter your registered email. We'll send an OTP to reset your password."}
+                  ? `${t.forgotPasswordScreen.sentLine1}\n${email}\n\n${t.forgotPasswordScreen.sentLine2}`
+                  : t.forgotPasswordScreen.enterEmailPrompt}
               </Text>
             </View>
           </View>
@@ -116,16 +117,16 @@ export default function ForgotPasswordScreen() {
 
             {sent ? (
               <>
-                <Text style={s.cardTitle}>Reset Password</Text>
+                <Text style={s.cardTitle}>{t.forgotPasswordScreen.resetPassword}</Text>
                 <AppInput
-                  placeholder="Enter OTP Code"
+                  placeholder={t.forgotPasswordScreen.otpPlaceholder}
                   value={otp}
                   onChangeText={setOtp}
                   keyboardType="number-pad"
                   icon={<Image source={require("@/assets/icons/ic_check.png")} style={s.inputIcon} tintColor="#9B9FB8" resizeMode="contain" />}
                 />
                 <AppInput
-                  placeholder="New Password"
+                  placeholder={t.forgotPasswordScreen.newPasswordPlaceholder}
                   value={password}
                   onChangeText={setPassword}
                   secureTextEntry={!showPass}
@@ -137,7 +138,7 @@ export default function ForgotPasswordScreen() {
                   }
                 />
                 <AppInput
-                  placeholder="Confirm New Password"
+                  placeholder={t.forgotPasswordScreen.confirmPasswordPlaceholder}
                   value={confirm}
                   onChangeText={setConfirm}
                   secureTextEntry={!showConf}
@@ -150,7 +151,7 @@ export default function ForgotPasswordScreen() {
                 />
                 <TouchableOpacity style={[s.primaryBtnWrap, loading && { opacity: 0.7 }]} onPress={handleReset} disabled={loading} activeOpacity={0.85}>
                   <LinearGradient colors={[ACCENT, "#6A00B8"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={s.primaryBtn}>
-                    <Text style={s.primaryBtnTxt}>{loading ? "Resetting..." : "Reset Password"}</Text>
+                    <Text style={s.primaryBtnTxt}>{loading ? t.forgotPasswordScreen.resetting : t.forgotPasswordScreen.resetBtn}</Text>
                   </LinearGradient>
                 </TouchableOpacity>
                 <TouchableOpacity
@@ -159,19 +160,19 @@ export default function ForgotPasswordScreen() {
                   disabled={loading || cooldown > 0}
                 >
                   <Text style={s.resendTxt}>
-                    Didn't receive it?{" "}
+                    {t.forgotPasswordScreen.didntReceive}
                     {cooldown > 0
-                      ? <Text style={s.resendCooldown}>Resend in {cooldown}s</Text>
-                      : <Text style={s.resendLink}>Resend OTP</Text>}
+                      ? <Text style={s.resendCooldown}>{t.forgotPasswordScreen.resendIn} {cooldown}s</Text>
+                      : <Text style={s.resendLink}>{t.forgotPasswordScreen.resendOtp}</Text>}
                   </Text>
                 </TouchableOpacity>
               </>
             ) : (
               <>
-                <Text style={s.cardTitle}>Find your account</Text>
+                <Text style={s.cardTitle}>{t.forgotPasswordScreen.findAccount}</Text>
                 <AppInput
                   icon={<Image source={require("@/assets/icons/ic_mail.png")} style={s.inputIcon} tintColor="#9B9FB8" resizeMode="contain" />}
-                  placeholder="Email Address"
+                  placeholder={t.forgotPasswordScreen.emailPlaceholder}
                   value={email}
                   onChangeText={setEmail}
                   keyboardType="email-address"
@@ -179,12 +180,12 @@ export default function ForgotPasswordScreen() {
                 />
                 <TouchableOpacity style={[s.primaryBtnWrap, loading && { opacity: 0.7 }]} onPress={handleSend} disabled={loading} activeOpacity={0.85}>
                   <LinearGradient colors={[ACCENT, "#6A00B8"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={s.primaryBtn}>
-                    <Text style={s.primaryBtnTxt}>{loading ? "Sending..." : "Send OTP"}</Text>
+                    <Text style={s.primaryBtnTxt}>{loading ? t.forgotPasswordScreen.sending : t.forgotPasswordScreen.sendOtp}</Text>
                   </LinearGradient>
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Go back" style={s.backToLogin}>
                   <Text style={s.backToLoginTxt}>
-                    Back to <Text style={s.backToLoginLink}>Sign In</Text>
+                    {t.forgotPasswordScreen.backTo}<Text style={s.backToLoginLink}>{t.forgotPasswordScreen.signIn}</Text>
                   </Text>
                 </TouchableOpacity>
               </>

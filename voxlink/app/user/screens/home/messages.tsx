@@ -14,6 +14,7 @@ import { router } from "expo-router";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { useChat } from "@/context/ChatContext";
+import { useLanguage } from "@/context/LanguageContext";
 import { formatRelativeTime } from "@/utils/format";
 
 const ACCENT = "#A00EE7";
@@ -23,6 +24,7 @@ export default function MessagesScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const { conversations, loadConversations } = useChat();
+  const { t } = useLanguage();
   const [search, setSearch] = useState("");
   const [showSearch, setShowSearch] = useState(false);
 
@@ -44,7 +46,7 @@ export default function MessagesScreen() {
               style={[styles.searchInput, { color: colors.text }]}
               value={search}
               onChangeText={setSearch}
-              placeholder="Search conversations..."
+              placeholder={t.chat.searchConversations}
               placeholderTextColor={colors.mutedForeground}
               autoFocus
               selectionColor={ACCENT}
@@ -56,7 +58,7 @@ export default function MessagesScreen() {
           </View>
         ) : (
           <View style={styles.headerRow}>
-            <Text style={[styles.headerTitle, { color: colors.text }]}>Chats</Text>
+            <Text style={[styles.headerTitle, { color: colors.text }]}>{t.chat.chats}</Text>
             <TouchableOpacity onPress={() => setShowSearch(true)} style={[styles.searchBtn, { backgroundColor: colors.muted }]}>
               <Image source={require("@/assets/icons/ic_search.png")} style={{ width: 20, height: 20, tintColor: colors.text }} resizeMode="contain" />
             </TouchableOpacity>
@@ -68,10 +70,10 @@ export default function MessagesScreen() {
         <View style={[styles.emptyWrap, { backgroundColor: colors.background }]}>
           <Image source={require("@/assets/images/empty_chat.png")} style={styles.emptyImg} resizeMode="contain" />
           <Text style={[styles.emptyTitle, { color: colors.text }]}>
-            {search ? "No conversations found" : "No conversations yet"}
+            {search ? t.chat.noConversationsFound : t.chat.noConversationsYet}
           </Text>
           <Text style={[styles.emptyDesc, { color: colors.mutedForeground }]}>
-            {search ? "Try a different name" : "Start chatting after a call with a host"}
+            {search ? t.chat.tryDifferentName : t.chat.startChattingAfterCall}
           </Text>
         </View>
       ) : (
@@ -102,7 +104,7 @@ export default function MessagesScreen() {
                 </View>
                 <View style={styles.bottomRow}>
                   <Text style={[styles.lastMsg, { color: colors.mutedForeground }]} numberOfLines={1}>
-                    {item.lastMessage ?? "Start a conversation"}
+                    {item.lastMessage ?? t.chat.startConversation}
                   </Text>
                   {item.unreadCount > 0 && (
                     <View style={[styles.badge, { backgroundColor: "#A00EE7" }]}>

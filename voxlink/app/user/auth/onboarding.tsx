@@ -13,33 +13,24 @@ import {
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useLanguage } from "@/context/LanguageContext";
+import type { Translations } from "@/localization/en";
 
 const { width: SW, height: SH } = Dimensions.get("window");
 
-/* ─── Exact Flutter strings ─── */
+/* ─── Slide metadata (text resolved via translations at render) ─── */
 const SLIDES = [
-  {
-    id: "1",
-    image: require("@/assets/images/onBoarding1.png"),
-    title: "FIND",
-    subTitle:
-      "You can connect with the people around\nthe world for doing chat, messages and\nmake connections with them.",
-  },
-  {
-    id: "2",
-    image: require("@/assets/images/onBoarding2.png"),
-    title: "CHAT",
-    subTitle:
-      "Chat with the strangers to know each\nother better and have a nice\ncompatibility.",
-  },
-  {
-    id: "3",
-    image: require("@/assets/images/onBoarding3.png"),
-    title: "VIDEO CALL",
-    subTitle:
-      "You can share your videos and photos\nwith your friend and connections.",
-  },
+  { id: "1", image: require("@/assets/images/onBoarding1.png"), key: "find" as const },
+  { id: "2", image: require("@/assets/images/onBoarding2.png"), key: "chat" as const },
+  { id: "3", image: require("@/assets/images/onBoarding3.png"), key: "videoCall" as const },
 ];
+
+function slideTitle(tr: Translations, key: "find" | "chat" | "videoCall"): string {
+  return key === "find" ? tr.onboarding.find : key === "chat" ? tr.onboarding.chat : tr.onboarding.videoCall;
+}
+function slideDesc(tr: Translations, key: "find" | "chat" | "videoCall"): string {
+  return key === "find" ? tr.onboarding.findDesc : key === "chat" ? tr.onboarding.chatDesc : tr.onboarding.videoCallDesc;
+}
 
 const APP_COLOR = "#111329";   // selected dot color
 const UNSELECTED = "#D3D3D3";  // unselected dot color
@@ -100,6 +91,7 @@ const item = StyleSheet.create({
 /* ─── Main Onboarding Screen ─── */
 export default function OnboardingScreen() {
   const insets = useSafeAreaInsets();
+  const { t: tr } = useLanguage();
   const [current, setCurrent] = useState(0);
   const listRef = useRef<FlatList>(null);
   const dotWidths = useRef(SLIDES.map((_, i) => new Animated.Value(i === 0 ? 22 : 14))).current;
@@ -148,8 +140,8 @@ export default function OnboardingScreen() {
         }}
         renderItem={({ item: slide }) => (
           <OnboardingItem
-            title={slide.title}
-            subTitle={slide.subTitle}
+            title={slideTitle(tr, slide.key)}
+            subTitle={slideDesc(tr, slide.key)}
             image={slide.image}
           />
         )}
