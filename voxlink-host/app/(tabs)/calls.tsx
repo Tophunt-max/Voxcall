@@ -7,6 +7,7 @@ import {
 import { FlashList } from "@shopify/flash-list";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
+import { useLanguage } from "@/context/LanguageContext";
 import { API, resolveMediaUrl } from "@/services/api";
 import { formatDuration } from "@/utils/format";
 
@@ -49,6 +50,7 @@ function formatDate(ts: number): string {
 export default function HostCallsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { t } = useLanguage();
   const [filter, setFilter] = useState<CallFilter>("All");
   const [calls, setCalls] = useState<CallItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -101,14 +103,14 @@ export default function HostCallsScreen() {
             resizeMode="contain"
           />
           <Text style={[styles.meta, { color: colors.mutedForeground }]}>
-            {item.type === "video" ? "Video" : "Audio"} · {item.durationSecs > 0 ? formatDuration(item.durationSecs) : "—"}
+            {item.type === "video" ? t.callsScreen.video : t.callsScreen.audio} · {item.durationSecs > 0 ? formatDuration(item.durationSecs) : "—"}
           </Text>
         </View>
         <Text style={[styles.date, { color: colors.mutedForeground }]}>{item.date}</Text>
       </View>
       <View style={styles.rightCol}>
         <Text style={[styles.status, { color: STATUS_COLORS[item.status] }]}>
-          {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
+          {t.callsScreen[item.status]}
         </Text>
         {item.coins > 0 && (
           <View style={styles.coinsRow}>
@@ -123,7 +125,7 @@ export default function HostCallsScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
-        <Text style={[styles.title, { color: colors.text }]}>Call History</Text>
+        <Text style={[styles.title, { color: colors.text }]}>{t.callsScreen.title}</Text>
         <View style={styles.filterRow}>
           {(["All", "Audio", "Video"] as CallFilter[]).map(f => (
             <TouchableOpacity
@@ -131,7 +133,9 @@ export default function HostCallsScreen() {
               onPress={() => setFilter(f)}
               style={[styles.filterBtn, { backgroundColor: filter === f ? colors.accent : colors.accentLight }]}
             >
-              <Text style={[styles.filterText, { color: filter === f ? "#fff" : colors.accent }]}>{f}</Text>
+              <Text style={[styles.filterText, { color: filter === f ? "#fff" : colors.accent }]}>
+                {f === "All" ? t.callsScreen.all : f === "Audio" ? t.callsScreen.audio : t.callsScreen.video}
+              </Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -150,7 +154,7 @@ export default function HostCallsScreen() {
           ListEmptyComponent={
             <View style={styles.empty}>
               <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
-                {error ? "Couldn't load calls. Pull to refresh." : "No calls yet"}
+                {error ? t.callsScreen.loadError : t.callsScreen.noCalls}
               </Text>
             </View>
           }

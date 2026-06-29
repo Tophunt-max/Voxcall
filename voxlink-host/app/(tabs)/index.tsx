@@ -10,6 +10,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
+import { useLanguage } from "@/context/LanguageContext";
 import { API, resolveMediaUrl } from "@/services/api";
 import type { HostLevelResponse } from "@/services/api";
 import { showErrorToast } from "@/components/Toast";
@@ -112,6 +113,7 @@ export default function HostHomeScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { user, setOnlineStatus } = useAuth();
+  const { t } = useLanguage();
   const queryClient = useQueryClient();
   const {
     permissions, isBlocked,
@@ -320,8 +322,8 @@ export default function HostHomeScreen() {
           <View style={styles.statusPulse} />
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.statusTitle}>{isOnline ? "You're Online" : "You're Offline"}</Text>
-          <Text style={styles.statusSub}>{isOnline ? "Available to receive calls" : "Toggle to start accepting calls"}</Text>
+          <Text style={styles.statusTitle}>{isOnline ? t.homeScreen.online : t.homeScreen.offline}</Text>
+          <Text style={styles.statusSub}>{isOnline ? t.homeScreen.onlineSub : t.homeScreen.offlineSub}</Text>
         </View>
         <Switch
           value={isOnline}
@@ -348,9 +350,9 @@ export default function HostHomeScreen() {
       ) : (
         <View style={[styles.statsCard, { backgroundColor: colors.card, marginHorizontal: 16 }]}>
           {[
-            { label: "Total Calls", value: stats.calls, icon: require("@/assets/icons/ic_call.png"), tint: colors.blue },
-            { label: "Total Hours", value: stats.hours, icon: require("@/assets/icons/ic_experience.png"), tint: colors.accent },
-            { label: "Earnings", value: stats.earnings, icon: require("@/assets/icons/ic_coin.png"), tint: colors.coinGold, noTint: true },
+            { label: t.homeScreen.totalCalls, value: stats.calls, icon: require("@/assets/icons/ic_call.png"), tint: colors.blue },
+            { label: t.homeScreen.totalHours, value: stats.hours, icon: require("@/assets/icons/ic_experience.png"), tint: colors.accent },
+            { label: t.homeScreen.earnings, value: stats.earnings, icon: require("@/assets/icons/ic_coin.png"), tint: colors.coinGold, noTint: true },
           ].map((s, i) => (
             <React.Fragment key={s.label}>
               {i > 0 && <View style={[styles.statDiv, { backgroundColor: colors.border }]} />}
@@ -370,15 +372,15 @@ export default function HostHomeScreen() {
       <View style={[styles.ratesCard, { backgroundColor: colors.card, marginHorizontal: 16 }]}>
         <View style={styles.ratesHeader}>
           <View style={{ flex: 1 }}>
-            <Text style={[styles.ratesTitle, { color: colors.text }]}>Your Call Rates</Text>
-            <Text style={[styles.ratesSub, { color: colors.mutedForeground }]}>Coins users pay you per minute</Text>
+            <Text style={[styles.ratesTitle, { color: colors.text }]}>{t.homeScreen.yourCallRates}</Text>
+            <Text style={[styles.ratesSub, { color: colors.mutedForeground }]}>{t.homeScreen.ratesSub}</Text>
           </View>
           <TouchableOpacity
             onPress={() => setRatesSheetOpen(true)}
             activeOpacity={0.85}
             style={[styles.editBtn, { backgroundColor: colors.accentLight, borderColor: colors.accentBorder }]}
           >
-            <Text style={[styles.editBtnText, { color: colors.accent }]}>Edit</Text>
+            <Text style={[styles.editBtnText, { color: colors.accent }]}>{t.homeScreen.edit}</Text>
           </TouchableOpacity>
         </View>
         <View style={styles.ratesRow}>
@@ -388,7 +390,7 @@ export default function HostHomeScreen() {
             </View>
             <View>
               <Text style={[styles.rateValue, { color: colors.text }]}>{audioRate}</Text>
-              <Text style={[styles.rateUnit, { color: colors.mutedForeground }]}>Audio / min</Text>
+              <Text style={[styles.rateUnit, { color: colors.mutedForeground }]}>{t.homeScreen.audioPerMin}</Text>
             </View>
           </View>
           <View style={[styles.rateItem, { backgroundColor: colors.surface }]}>
@@ -397,7 +399,7 @@ export default function HostHomeScreen() {
             </View>
             <View>
               <Text style={[styles.rateValue, { color: colors.text }]}>{videoRate}</Text>
-              <Text style={[styles.rateUnit, { color: colors.mutedForeground }]}>Video / min</Text>
+              <Text style={[styles.rateUnit, { color: colors.mutedForeground }]}>{t.homeScreen.videoPerMin}</Text>
             </View>
           </View>
         </View>
@@ -405,18 +407,18 @@ export default function HostHomeScreen() {
 
       {/* Quick Actions — host self-service tools */}
       <View style={styles.quickSection}>
-        <Text style={[styles.quickTitle, { color: colors.text }]}>Manage</Text>
+        <Text style={[styles.quickTitle, { color: colors.text }]}>{t.homeScreen.manage}</Text>
         <View style={styles.quickGrid}>
           {([
-            { icon: require("@/assets/icons/ic_coin.png"), tint: colors.coinGold, noTint: true, label: "Call Rates", desc: "Set your price", onPress: () => router.push("/call-rates") },
-            { icon: require("@/assets/icons/ic_topic.png"), tint: colors.accent, label: "My Topics", desc: "Reach more users", onPress: () => router.push("/manage-topics") },
-            { icon: require("@/assets/icons/ic_transaction.png"), tint: colors.green, label: "Earnings", desc: "View history", onPress: () => router.push("/earnings-history") },
-            { icon: require("@/assets/icons/ic_withdraw.png"), tint: colors.blue, label: "Payouts", desc: "Withdraw coins", onPress: () => router.push("/payout-method") },
-            { icon: require("@/assets/icons/ic_wallet.png"), tint: colors.accent, label: "Wallet", desc: "Balance & withdraw", onPress: () => router.push("/(tabs)/wallet") },
-            { icon: require("@/assets/icons/ic_call.png"), tint: colors.blue, label: "Call History", desc: "Past calls", onPress: () => router.push("/calls/history") },
-            { icon: require("@/assets/icons/ic_bonus.png"), tint: colors.orange, noTint: true, label: "Refer & Earn", desc: "Invite friends", onPress: () => router.push("/referral") },
-            { icon: require("@/assets/icons/ic_profile.png"), tint: colors.primary, label: "Profile", desc: "Edit details", onPress: () => router.push("/(tabs)/profile") },
-            { icon: require("@/assets/icons/ic_settings.png"), tint: colors.mutedForeground, label: "Settings", desc: "App preferences", onPress: () => router.push("/settings") },
+            { icon: require("@/assets/icons/ic_coin.png"), tint: colors.coinGold, noTint: true, label: t.homeScreen.qaCallRates, desc: t.homeScreen.qaCallRatesDesc, onPress: () => router.push("/call-rates") },
+            { icon: require("@/assets/icons/ic_topic.png"), tint: colors.accent, label: t.homeScreen.qaTopics, desc: t.homeScreen.qaTopicsDesc, onPress: () => router.push("/manage-topics") },
+            { icon: require("@/assets/icons/ic_transaction.png"), tint: colors.green, label: t.homeScreen.qaEarnings, desc: t.homeScreen.qaEarningsDesc, onPress: () => router.push("/earnings-history") },
+            { icon: require("@/assets/icons/ic_withdraw.png"), tint: colors.blue, label: t.homeScreen.qaPayouts, desc: t.homeScreen.qaPayoutsDesc, onPress: () => router.push("/payout-method") },
+            { icon: require("@/assets/icons/ic_wallet.png"), tint: colors.accent, label: t.homeScreen.qaWallet, desc: t.homeScreen.qaWalletDesc, onPress: () => router.push("/(tabs)/wallet") },
+            { icon: require("@/assets/icons/ic_call.png"), tint: colors.blue, label: t.homeScreen.qaCallHistory, desc: t.homeScreen.qaCallHistoryDesc, onPress: () => router.push("/calls/history") },
+            { icon: require("@/assets/icons/ic_bonus.png"), tint: colors.orange, noTint: true, label: t.homeScreen.qaRefer, desc: t.homeScreen.qaReferDesc, onPress: () => router.push("/referral") },
+            { icon: require("@/assets/icons/ic_profile.png"), tint: colors.primary, label: t.homeScreen.qaProfile, desc: t.homeScreen.qaProfileDesc, onPress: () => router.push("/(tabs)/profile") },
+            { icon: require("@/assets/icons/ic_settings.png"), tint: colors.mutedForeground, label: t.homeScreen.qaSettings, desc: t.homeScreen.qaSettingsDesc, onPress: () => router.push("/settings") },
           ] as { icon: any; tint: string; noTint?: boolean; label: string; desc: string; onPress: () => void }[]).map((q) => (
             <TouchableOpacity
               key={q.label}
@@ -472,26 +474,26 @@ export default function HostHomeScreen() {
       {/* Permission reminders — only while something still needs granting */}
       {!allPermsGranted && (
       <View style={styles.permSection}>
-        <Text style={[styles.permTitle, { color: colors.text }]}>Permissions Required</Text>
+        <Text style={[styles.permTitle, { color: colors.text }]}>{t.homeScreen.permsRequired}</Text>
         {([
           {
             icon: require("@/assets/icons/ic_mic.png"),
-            label: "Microphone",
-            desc: "Required for audio calls",
+            label: t.homeScreen.micLabel,
+            desc: t.homeScreen.micDesc,
             granted: permissions.microphone.status === "granted",
             key: "microphone" as const,
           },
           {
             icon: require("@/assets/icons/ic_video.png"),
-            label: "Camera",
-            desc: "Required for video calls",
+            label: t.homeScreen.cameraLabel,
+            desc: t.homeScreen.cameraDesc,
             granted: permissions.camera.status === "granted",
             key: "camera" as const,
           },
           {
             icon: require("@/assets/icons/ic_notify.png"),
-            label: "Notifications",
-            desc: "For incoming call alerts",
+            label: t.homeScreen.notifLabel,
+            desc: t.homeScreen.notifDesc,
             granted: permissions.notifications.status === "granted",
             key: "notifications" as const,
           },
@@ -510,7 +512,7 @@ export default function HostHomeScreen() {
               <Text style={[styles.permDesc, { color: colors.mutedForeground }]}>{p.desc}</Text>
             </View>
             <Text style={[styles.permStatus, { color: p.granted ? "#0BAF23" : "#E84855" }]}>
-              {p.granted ? "Granted" : "Tap to allow"}
+              {p.granted ? t.homeScreen.granted : t.homeScreen.tapToAllow}
             </Text>
           </TouchableOpacity>
         ))}
@@ -519,12 +521,12 @@ export default function HostHomeScreen() {
 
       {/* Tips for hosts */}
       <View style={[styles.tipsCard, { backgroundColor: colors.accentLight, marginHorizontal: 16 }]}>
-        <Text style={[styles.tipsTitle, { color: colors.text }]}>Host Tips</Text>
+        <Text style={[styles.tipsTitle, { color: colors.text }]}>{t.homeScreen.hostTips}</Text>
         {[
-          "Be online during peak hours (6PM - 10PM)",
-          "Complete your profile for more bookings",
-          "Respond quickly to improve your rating",
-          "Add more topics to reach more users",
+          t.homeScreen.tip1,
+          t.homeScreen.tip2,
+          t.homeScreen.tip3,
+          t.homeScreen.tip4,
         ].map((tip, i) => (
           <View key={i} style={styles.tipRow}>
             <View style={[styles.tipDot, { backgroundColor: colors.accent }]} />

@@ -21,7 +21,7 @@ export default function HostProfileScreen() {
   const insets = useSafeAreaInsets();
   const { user, logout, updateProfile, setOnlineStatus } = useAuth();
   const { permissions, requestNotifications, openSettings } = usePermissions();
-  const { language } = useLanguage();
+  const { language, t } = useLanguage();
   const currentLangLabel = LANGUAGES.find((l) => l.code === language)?.name ?? "English";
 
   const [isOnline, setIsOnline] = useState(user?.isOnline ?? false);
@@ -58,10 +58,10 @@ export default function HostProfileScreen() {
   }, []);
 
   const handleLogout = () => {
-    Alert.alert("Sign Out", "Are you sure you want to sign out?", [
-      { text: "Cancel", style: "cancel" },
+    Alert.alert(t.profileScreen.signOut, t.profileScreen.signOutConfirm, [
+      { text: t.common.cancel, style: "cancel" },
       {
-        text: "Sign Out", style: "destructive",
+        text: t.profileScreen.signOut, style: "destructive",
         onPress: async () => { await logout(); router.replace("/auth/login"); }
       }
     ]);
@@ -70,7 +70,7 @@ export default function HostProfileScreen() {
   const handleAvatarPress = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== "granted") {
-      Alert.alert("Permission Required", "Please allow access to your photo library to change your profile photo.");
+      Alert.alert(t.profileScreen.permRequiredTitle, t.profileScreen.permRequiredMsg);
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -95,10 +95,10 @@ export default function HostProfileScreen() {
       const uploadData = await API.updateAvatar(formData);
       if (uploadData?.url) {
         await updateProfile({ avatar: resolveMediaUrl(uploadData.url) || uploadData.url });
-        showSuccessToast("Profile photo updated!", "Photo Saved");
+        showSuccessToast(t.profileScreen.photoUpdated, t.profileScreen.photoSaved);
       }
     } catch {
-      Alert.alert("Upload Failed", "Could not upload your photo. Please try again.");
+      Alert.alert(t.profileScreen.uploadFailedTitle, t.profileScreen.uploadFailedMsg);
       setAvatarUri(null);
     } finally {
       setUploadingAvatar(false);
@@ -112,11 +112,11 @@ export default function HostProfileScreen() {
       }
     } else {
       Alert.alert(
-        "Turn Off Notifications",
-        "To disable notifications, go to your phone's Settings and turn off notifications for VoxLink Host.",
+        t.profileScreen.turnOffNotifTitle,
+        t.profileScreen.turnOffNotifMsg,
         [
-          { text: "Cancel", style: "cancel" },
-          { text: "Open Settings", onPress: openSettings },
+          { text: t.common.cancel, style: "cancel" },
+          { text: t.profileScreen.openSettings, onPress: openSettings },
         ]
       );
     }
@@ -149,7 +149,7 @@ export default function HostProfileScreen() {
       />
 
       <View style={[styles.header, { paddingTop: topPad + 12 }]}>
-        <Text style={[styles.title, { color: colors.text }]}>My Profile</Text>
+        <Text style={[styles.title, { color: colors.text }]}>{t.profileScreen.title}</Text>
         <TouchableOpacity onPress={() => router.push("/settings")} style={[styles.settingsBtn, { backgroundColor: colors.surface }]} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <Image source={require("@/assets/icons/ic_settings.png")} style={styles.settingsIcon} tintColor={colors.primary} resizeMode="contain" />
         </TouchableOpacity>
@@ -170,7 +170,7 @@ export default function HostProfileScreen() {
         </TouchableOpacity>
 
         <Text style={[styles.name, { color: colors.text }]}>{user?.name ?? "Host"}</Text>
-        <Text style={[styles.role, { color: colors.accent }]}>Professional Host</Text>
+        <Text style={[styles.role, { color: colors.accent }]}>{t.profileScreen.proHost}</Text>
         <View style={[styles.idBadge, { backgroundColor: colors.accentLight }]}>
           <Image source={require("@/assets/icons/ic_id_badge.png")} style={styles.idIcon} tintColor="#9D82B6" resizeMode="contain" />
           <Text style={[styles.idText, { color: "#9D82B6" }]}>ID: {uniqueId}</Text>
@@ -178,9 +178,9 @@ export default function HostProfileScreen() {
 
         <View style={[styles.statsRow, { borderTopColor: colors.border }]}>
           {[
-            { label: "Calls", val: hostStats.calls },
-            { label: "Rating", val: hostStats.rating },
-            { label: "Coins", val: String(user?.coins ?? 0) }
+            { label: t.profileScreen.calls, val: hostStats.calls },
+            { label: t.profileScreen.rating, val: hostStats.rating },
+            { label: t.profileScreen.coins, val: String(user?.coins ?? 0) }
           ].map((s, i) => (
             <React.Fragment key={s.label}>
               {i > 0 && <View style={[styles.statDiv, { backgroundColor: colors.border }]} />}
@@ -198,7 +198,7 @@ export default function HostProfileScreen() {
           <View style={[styles.menuIcon, { backgroundColor: isOnline ? colors.surface : colors.surface }]}>
             <Image source={require("@/assets/icons/ic_available.png")} style={styles.menuIconImg} tintColor={isOnline ? "#0BAF23" : colors.text} resizeMode="contain" />
           </View>
-          <Text style={[styles.menuLabel, { color: colors.text }]}>Online Status</Text>
+          <Text style={[styles.menuLabel, { color: colors.text }]}>{t.profileScreen.onlineStatus}</Text>
           <Switch
             value={isOnline}
             onValueChange={async (v) => {
@@ -230,7 +230,7 @@ export default function HostProfileScreen() {
           <View style={[styles.menuIcon, { backgroundColor: notificationsGranted ? colors.surface : colors.surface }]}>
             <Image source={require("@/assets/icons/ic_notify.png")} style={styles.menuIconImg} tintColor={notificationsGranted ? "#0BAF23" : colors.text} resizeMode="contain" />
           </View>
-          <Text style={[styles.menuLabel, { color: colors.text }]}>Push Notifications</Text>
+          <Text style={[styles.menuLabel, { color: colors.text }]}>{t.profileScreen.pushNotifications}</Text>
           <Switch
             value={notificationsGranted}
             onValueChange={handleNotifToggle}
@@ -241,13 +241,13 @@ export default function HostProfileScreen() {
       </View>
 
       <View style={[styles.section, { backgroundColor: colors.card }]}>
-        <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Account</Text>
+        <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>{t.profileScreen.account}</Text>
         {[
-          { icon: require("@/assets/icons/ic_edit.png"), label: "Edit Profile", onPress: () => router.push("/profile/edit") },
-          { icon: require("@/assets/icons/ic_coin.png"), label: "Call Rates", onPress: () => router.push("/call-rates") },
-          { icon: require("@/assets/icons/ic_topic.png"), label: "My Topics", onPress: () => router.push("/manage-topics") },
-          { icon: require("@/assets/icons/ic_settings.png"), label: "Settings", onPress: () => router.push("/settings") },
-          { icon: require("@/assets/icons/ic_language.png"), label: "Language", value: currentLangLabel, onPress: () => router.push("/language") },
+          { icon: require("@/assets/icons/ic_edit.png"), label: t.profileScreen.editProfile, onPress: () => router.push("/profile/edit") },
+          { icon: require("@/assets/icons/ic_coin.png"), label: t.profileScreen.callRates, onPress: () => router.push("/call-rates") },
+          { icon: require("@/assets/icons/ic_topic.png"), label: t.profileScreen.myTopics, onPress: () => router.push("/manage-topics") },
+          { icon: require("@/assets/icons/ic_settings.png"), label: t.profileScreen.settings, onPress: () => router.push("/settings") },
+          { icon: require("@/assets/icons/ic_language.png"), label: t.profileScreen.language, value: currentLangLabel, onPress: () => router.push("/language") },
         ].map((m, i) => (
           <TouchableOpacity key={i} style={[styles.menuItem, { borderBottomColor: colors.border }]} onPress={m.onPress} activeOpacity={0.75}>
             <View style={[styles.menuIcon, { backgroundColor: colors.surface }]}>
@@ -263,13 +263,13 @@ export default function HostProfileScreen() {
       </View>
 
       <View style={[styles.section, { backgroundColor: colors.card }]}>
-        <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>More</Text>
+        <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>{t.profileScreen.more}</Text>
 
         <TouchableOpacity style={[styles.menuItem, { borderBottomColor: colors.border }]} onPress={() => router.push("/referral")} activeOpacity={0.75}>
           <View style={[styles.menuIcon, { backgroundColor: colors.surface }]}>
             <Image source={require("@/assets/icons/ic_bonus.png")} style={styles.menuIconImg} tintColor={colors.text} resizeMode="contain" />
           </View>
-          <Text style={[styles.menuLabel, { color: colors.text }]}>Refer & Earn</Text>
+          <Text style={[styles.menuLabel, { color: colors.text }]}>{t.profileScreen.referEarn}</Text>
           <Image source={require("@/assets/icons/ic_back.png")} style={[styles.chevron, CHEVRON_ROTATE]} tintColor={colors.mutedForeground} resizeMode="contain" />
         </TouchableOpacity>
 
@@ -277,7 +277,7 @@ export default function HostProfileScreen() {
           <View style={[styles.menuIcon, { backgroundColor: colors.surface }]}>
             <Image source={require("@/assets/icons/ic_listener.png")} style={styles.menuIconImg} tintColor={colors.text} resizeMode="contain" />
           </View>
-          <Text style={[styles.menuLabel, { color: colors.text }]}>Help Center</Text>
+          <Text style={[styles.menuLabel, { color: colors.text }]}>{t.profileScreen.helpCenter}</Text>
           <Image source={require("@/assets/icons/ic_back.png")} style={[styles.chevron, CHEVRON_ROTATE]} tintColor={colors.mutedForeground} resizeMode="contain" />
         </TouchableOpacity>
 
@@ -285,7 +285,7 @@ export default function HostProfileScreen() {
           <View style={[styles.menuIcon, { backgroundColor: colors.surface }]}>
             <Image source={require("@/assets/icons/ic_secure.png")} style={styles.menuIconImg} tintColor={colors.text} resizeMode="contain" />
           </View>
-          <Text style={[styles.menuLabel, { color: colors.text }]}>Privacy Policy</Text>
+          <Text style={[styles.menuLabel, { color: colors.text }]}>{t.profileScreen.privacyPolicy}</Text>
           <Image source={require("@/assets/icons/ic_back.png")} style={[styles.chevron, CHEVRON_ROTATE]} tintColor={colors.mutedForeground} resizeMode="contain" />
         </TouchableOpacity>
 
@@ -293,7 +293,7 @@ export default function HostProfileScreen() {
           <View style={[styles.menuIcon, { backgroundColor: colors.surface }]}>
             <Image source={require("@/assets/icons/ic_id_badge.png")} style={styles.menuIconImg} tintColor={colors.text} resizeMode="contain" />
           </View>
-          <Text style={[styles.menuLabel, { color: colors.text }]}>About VoxLink</Text>
+          <Text style={[styles.menuLabel, { color: colors.text }]}>{t.profileScreen.about}</Text>
           <Image source={require("@/assets/icons/ic_back.png")} style={[styles.chevron, CHEVRON_ROTATE]} tintColor={colors.mutedForeground} resizeMode="contain" />
         </TouchableOpacity>
       </View>
@@ -303,7 +303,7 @@ export default function HostProfileScreen() {
           <View style={[styles.menuIcon, { backgroundColor: colors.surface }]}>
             <Image source={require("@/assets/images/icon_logout.png")} style={styles.menuIconImg} tintColor="#E84855" resizeMode="contain" />
           </View>
-          <Text style={[styles.menuLabel, { color: "#E84855" }]}>Sign Out</Text>
+          <Text style={[styles.menuLabel, { color: "#E84855" }]}>{t.profileScreen.signOut}</Text>
           <Image source={require("@/assets/icons/ic_back.png")} style={[styles.chevron, CHEVRON_ROTATE]} tintColor="#E84855" resizeMode="contain" />
         </TouchableOpacity>
       </View>

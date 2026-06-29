@@ -9,6 +9,7 @@ import { useColors } from "@/hooks/useColors";
 import { IconView } from "@/components/IconView";
 import { useChat } from "@/context/ChatContext";
 import { useAuth } from "@/context/AuthContext";
+import { useLanguage } from "@/context/LanguageContext";
 import { resolveMediaUrl } from "@/services/api";
 
 function formatTime(ts?: number): string {
@@ -27,6 +28,7 @@ export default function HostChatScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const { conversations, loadConversations } = useChat();
+  const { t } = useLanguage();
   const [search, setSearch] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   // Initial-load flag — ChatContext doesn't expose one, so we track the first
@@ -56,7 +58,7 @@ export default function HostChatScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <View style={[styles.header, { paddingTop: topPad + 12 }]}>
-        <Text style={[styles.title, { color: colors.text }]}>Messages</Text>
+        <Text style={[styles.title, { color: colors.text }]}>{t.chatScreen.title}</Text>
       </View>
 
       <View
@@ -66,7 +68,7 @@ export default function HostChatScreen() {
         <IconView name="search" size={16} color={colors.mutedForeground} />
         <TextInput
           style={[styles.searchInput, { color: colors.text }]}
-          placeholder="Search conversations..."
+          placeholder={t.chatScreen.searchPlaceholder}
           placeholderTextColor={colors.mutedForeground}
           value={search}
           onChangeText={setSearch}
@@ -88,7 +90,7 @@ export default function HostChatScreen() {
           ) : (
             <View style={styles.empty}>
               <Image source={require("@/assets/images/empty_chat.png")} style={styles.emptyImg} resizeMode="contain" />
-              <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>No conversations yet</Text>
+              <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>{t.chatScreen.noConversations}</Text>
             </View>
           )
         }
@@ -107,7 +109,7 @@ export default function HostChatScreen() {
             <View style={{ flex: 1, gap: 3 }}>
               <Text style={[styles.chatName, { color: colors.text }]} numberOfLines={1}>{item.participantName}</Text>
               <Text style={[styles.chatLast, { color: colors.mutedForeground }]} numberOfLines={1}>
-                {item.lastMessage || "No messages yet"}
+                {item.lastMessage || t.chatScreen.noMessagesYet}
               </Text>
             </View>
             <View style={{ alignItems: "flex-end", gap: 6 }}>

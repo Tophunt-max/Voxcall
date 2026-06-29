@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router, useFocusEffect } from "expo-router";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
+import { useLanguage } from "@/context/LanguageContext";
 import { API } from "@/services/api";
 import { useSocketEvent } from "@/context/SocketContext";
 import { SocketEvents } from "@/constants/events";
@@ -112,6 +113,7 @@ export default function HostWalletScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { user, refreshProfile } = useAuth();
+  const { t: tr } = useLanguage();
   const [tab, setTab] = useState<"history" | "withdraw">("history");
   const [withdrawAmt, setWithdrawAmt] = useState("");
   // Saved payout channel + details, loaded from the host record. The withdraw
@@ -161,7 +163,7 @@ export default function HostWalletScreen() {
       await refreshProfile();
     } catch {
       setEarnings([]);
-      showErrorToast("Failed to load earnings data.");
+      showErrorToast(tr.walletScreen.failedLoad);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -237,7 +239,7 @@ export default function HostWalletScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <View style={[styles.header, { paddingTop: topPad + 12 }]}>
-        <Text style={[styles.title, { color: colors.text }]}>Host Wallet</Text>
+        <Text style={[styles.title, { color: colors.text }]}>{tr.walletScreen.title}</Text>
       </View>
 
       {/* Balance card */}
@@ -251,14 +253,14 @@ export default function HostWalletScreen() {
           <View style={styles.cardContent}>
             <View style={styles.cardTop}>
               <View style={{ gap: 4 }}>
-                <Text style={styles.cardLabel}>Available Balance</Text>
+                <Text style={styles.cardLabel}>{tr.walletScreen.availableBalance}</Text>
                 <View style={styles.coinRow}>
                   <Image source={require("@/assets/images/coin_large.png")} style={styles.coinBig} resizeMode="contain" />
                   <Text style={styles.coinAmt}>{(user?.coins ?? 0).toLocaleString()}</Text>
-                  <Text style={styles.coinUnit}>Coins</Text>
+                  <Text style={styles.coinUnit}>{tr.walletScreen.coins}</Text>
                 </View>
                 {payoutRate > 0 && (
-                  <Text style={styles.payoutValue}>≈ {formatPayout(user?.coins ?? 0)} payout value</Text>
+                  <Text style={styles.payoutValue}>≈ {formatPayout(user?.coins ?? 0)} {tr.walletScreen.payoutValue}</Text>
                 )}
               </View>
               <Image source={require("@/assets/images/wallet_graphic.png")} style={styles.walletImg} resizeMode="contain" />
@@ -266,17 +268,17 @@ export default function HostWalletScreen() {
             <View style={styles.statsRow}>
               <View style={styles.miniStat}>
                 <Text style={styles.miniVal}>{loading ? "…" : stats.thisWeek}</Text>
-                <Text style={styles.miniLabel}>This Week</Text>
+                <Text style={styles.miniLabel}>{tr.walletScreen.thisWeek}</Text>
               </View>
               <View style={styles.miniDiv} />
               <View style={styles.miniStat}>
                 <Text style={styles.miniVal}>{loading ? "…" : stats.sessions}</Text>
-                <Text style={styles.miniLabel}>Sessions</Text>
+                <Text style={styles.miniLabel}>{tr.walletScreen.sessions}</Text>
               </View>
               <View style={styles.miniDiv} />
               <View style={styles.miniStat}>
                 <Text style={styles.miniVal}>{loading ? "…" : stats.withdrawn}</Text>
-                <Text style={styles.miniLabel}>Withdrawn</Text>
+                <Text style={styles.miniLabel}>{tr.walletScreen.withdrawn}</Text>
               </View>
             </View>
           </View>
@@ -292,7 +294,7 @@ export default function HostWalletScreen() {
             style={[styles.tabItem, t === tab && { borderBottomColor: colors.primary, borderBottomWidth: 2.5 }]}
           >
             <Text style={[styles.tabText, { color: t === tab ? colors.primary : colors.mutedForeground }]}>
-              {t === "history" ? "Earnings History" : "Withdraw"}
+              {t === "history" ? tr.walletScreen.earningsHistory : tr.walletScreen.withdraw}
             </Text>
           </TouchableOpacity>
         ))}
@@ -305,7 +307,7 @@ export default function HostWalletScreen() {
           </View>
         ) : earnings.length === 0 ? (
           <View style={styles.loadingCenter}>
-            <Text style={{ color: colors.mutedForeground, fontFamily: "Poppins_400Regular" }}>No earnings yet</Text>
+            <Text style={{ color: colors.mutedForeground, fontFamily: "Poppins_400Regular" }}>{tr.walletScreen.noEarnings}</Text>
           </View>
         ) : (
           <FlatList
@@ -338,7 +340,7 @@ export default function HostWalletScreen() {
         )
       ) : (
         <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 12, gap: 12, paddingBottom: 100 }}>
-          <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Quick Select Amount</Text>
+          <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>{tr.walletScreen.quickSelect}</Text>
           <View style={styles.withdrawGrid}>
             {WITHDRAW_OPTIONS.map((amt) => (
               <TouchableOpacity
@@ -355,12 +357,12 @@ export default function HostWalletScreen() {
             ))}
           </View>
 
-          <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Or Enter Amount</Text>
+          <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>{tr.walletScreen.orEnter}</Text>
           <View accessible={false} style={[styles.inputWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <Image source={require("@/assets/icons/ic_coin.png")} style={styles.inputIcon} tintColor="#FFA100" resizeMode="contain" />
             <TextInput
               style={[styles.input, { color: colors.text }]}
-              placeholder="Enter coin amount"
+              placeholder={tr.walletScreen.enterCoinAmount}
               placeholderTextColor={colors.mutedForeground}
               value={withdrawAmt}
               onChangeText={setWithdrawAmt}
@@ -375,7 +377,7 @@ export default function HostWalletScreen() {
             </Text>
           )}
 
-          <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Payout To</Text>
+          <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>{tr.walletScreen.payoutTo}</Text>
           {payoutMethod ? (
             <TouchableOpacity
               accessibilityRole="button"
@@ -393,7 +395,7 @@ export default function HostWalletScreen() {
                   {summarizePayout(payoutMethod, payoutDetails)}
                 </Text>
               </View>
-              <Text style={[styles.payoutEdit, { color: colors.primary }]}>Edit</Text>
+              <Text style={[styles.payoutEdit, { color: colors.primary }]}>{tr.walletScreen.edit}</Text>
             </TouchableOpacity>
           ) : (
             <TouchableOpacity
@@ -404,7 +406,7 @@ export default function HostWalletScreen() {
               activeOpacity={0.8}
             >
               <Image source={require("@/assets/icons/ic_withdraw.png")} style={styles.payoutIcon} tintColor={colors.primary} resizeMode="contain" />
-              <Text style={[styles.payoutSetupText, { color: colors.primary }]}>Set up your payout method</Text>
+              <Text style={[styles.payoutSetupText, { color: colors.primary }]}>{tr.walletScreen.setupPayout}</Text>
             </TouchableOpacity>
           )}
 
@@ -419,13 +421,13 @@ export default function HostWalletScreen() {
             ) : (
               <>
                 <Image source={require("@/assets/icons/ic_withdraw.png")} style={styles.withdrawIcon} tintColor="#fff" resizeMode="contain" />
-                <Text style={styles.withdrawBtnText}>Request Withdrawal</Text>
+                <Text style={styles.withdrawBtnText}>{tr.walletScreen.requestWithdrawal}</Text>
               </>
             )}
           </TouchableOpacity>
 
           <View style={[styles.noteCard, { backgroundColor: colors.coinGoldBg }]}>
-            <Text style={[styles.noteTitle, { color: "#FFA100" }]}>Note</Text>
+            <Text style={[styles.noteTitle, { color: "#FFA100" }]}>{tr.walletScreen.note}</Text>
             <Text style={[styles.noteText, { color: colors.mutedForeground }]}>
               Minimum withdrawal is {minWithdraw} coins. Processing takes 2-3 business days.
               {payoutRate > 0 ? ` Current rate: 1,000 coins ≈ ${formatPayout(1000)}.` : ""}
@@ -437,7 +439,7 @@ export default function HostWalletScreen() {
             onPress={() => router.push("/payout-method")}
           >
             <Image source={require("@/assets/icons/ic_withdraw.png")} style={styles.withdrawIcon} tintColor={colors.primary} resizeMode="contain" />
-            <Text style={[styles.fullWithdrawText, { color: colors.primary }]}>Manage Payout Method</Text>
+            <Text style={[styles.fullWithdrawText, { color: colors.primary }]}>{tr.walletScreen.managePayout}</Text>
           </TouchableOpacity>
         </ScrollView>
       )}
