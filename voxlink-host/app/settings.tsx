@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity, Image,
   ScrollView, Switch, Alert, ImageSourcePropType
 } from "react-native";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { IconView } from "@/components/IconView";
 import { SvgIcon } from "@/components/SvgIcon";
@@ -16,6 +16,22 @@ import { useLanguage } from "@/context/LanguageContext";
 import { LANGUAGES } from "@/localization";
 import { useHostSettings } from "@/utils/hostSettings";
 import { showErrorToast } from "@/components/Toast";
+
+// "14:30" → "2:30 PM" (defensive: empty for malformed input).
+function fmtTime(hhmm?: string | null): string {
+  if (!hhmm || !/^\d{1,2}:\d{2}$/.test(hhmm)) return "";
+  const [hStr, m] = hhmm.split(":");
+  const h = parseInt(hStr, 10);
+  const period = h >= 12 ? "PM" : "AM";
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${m} ${period}`;
+}
+
+// Build the Availability Schedule row's summary value from the host record.
+function scheduleSummary(from?: string | null, to?: string | null): string {
+  if (from && to) return `${fmtTime(from)} – ${fmtTime(to)}`;
+  return "Always available";
+}
 
 function Row({
   icon, iconImg, label, value, onPress, isSwitch, switchVal, onSwitch, danger
@@ -60,7 +76,7 @@ export default function HostSettingsScreen() {
   const insets = useSafeAreaInsets();
   const { logout } = useAuth();
   const { permissions, requestNotifications, openSettings } = usePermissions();
-  const { language } = useLanguage();
+  const { language, t } = useLanguage();
   const currentLangLabel = LANGUAGES.find((l) => l.code === language)?.name ?? "English";
 
   const [showNotifDialog, setShowNotifDialog] = useState(false);
@@ -99,6 +115,25 @@ export default function HostSettingsScreen() {
   // Saving = a PATCH is currently in flight; we disable both switches so
   // a quick double-flip can't race two requests against each other.
   const [randomSaving, setRandomSaving] = useState(false);
+
+  // Availability schedule summary, shown on the "Availability Schedule" row and
+  // refreshed whenever Settings regains focus (e.g. after editing it).
+  const [scheduleLabel, setScheduleLabel] = useState<string>("");
+
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      (async () => {
+        try {
+          const me: any = await API.getHostMe();
+          if (!cancelled) setScheduleLabel(scheduleSummary(me?.available_from, me?.available_to));
+        } catch {
+          /* leave blank on failure — the row still navigates */
+        }
+      })();
+      return () => { cancelled = true; };
+    }, [])
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -232,19 +267,19 @@ export default function HostSettingsScreen() {
         <TouchableOpacity onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Go back" style={[styles.backBtn, { backgroundColor: colors.surface }]}>
           <Image source={require("@/assets/icons/ic_back.png")} style={styles.backIconImg} tintColor={colors.text} resizeMode="contain" />
         </TouchableOpacity>
-        <Text style={[styles.title, { color: colors.text }]}>Host Settings</Text>
+        <Text style={[styles.title, { color: colors.text }]}>{t.hostSettings.title}</Text>
         <View style={{ width: 40 }} />
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
-        <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Availability</Text>
+        <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>{t.hostSettings.availability}</Text>
         <View style={[styles.card, { backgroundColor: colors.card }]}>
-          <Row icon="clock" label="Auto Go Online on App Open" isSwitch switchVal={autoOnline} onSwitch={handleAutoOnline} onPress={() => {}} />
+          <Row icon="clock" label={t.hostSettings.autoOnline} isSwitch switchVal={autoOnline} onSwitch={handleAutoOnline} onPress={() => {}} />
           <Row
             icon="phone-off"
             iconImg={require("@/assets/icons/ic_call_end.png")}
-            label="Do Not Disturb Mode"
-            value={dndMode ? "On — silencing notifications" : undefined}
+            label={t.hostSettings.dnd}
+            value={dndMode ? t.hostSettings.dndOn : undefined}
             isSwitch
             switchVal={dndMode}
             onSwitch={handleDndMode}
@@ -253,30 +288,27 @@ export default function HostSettingsScreen() {
           <Row
             icon="calendar"
             iconImg={require("@/assets/icons/ic_calendar.png")}
-            label="Availability Schedule"
-            value="Coming soon"
-            onPress={() => Alert.alert(
-              "Availability Schedule",
-              "Scheduled availability is coming in a future update. For now, use Do Not Disturb Mode to mute notifications when you're unavailable, or toggle online/offline manually."
-            )}
+            label={t.hostSettings.schedule}
+            value={scheduleLabel || undefined}
+            onPress={() => router.push("/availability")}
           />
         </View>
 
         {/* Random Match controls — server-side opt-ins persisted on the host
             row. Independent from local notification preferences because they
             affect who can match with you, not just what alerts you see. */}
-        <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Random Calls</Text>
+        <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>{t.hostSettings.randomCalls}</Text>
         <View style={[styles.card, { backgroundColor: colors.card }]}>
           <Row
             icon="shuffle"
             iconImg={require("@/assets/icons/ic_shuffle.png")}
-            label="Available for Random Calls"
+            label={t.hostSettings.availableRandom}
             value={
               !randomLoaded
-                ? "Loading…"
+                ? t.hostSettings.loading
                 : acceptsRandomCalls
-                  ? "On — included in random match pool"
-                  : "Off — only direct calls"
+                  ? t.hostSettings.randomOn
+                  : t.hostSettings.randomOff
             }
             isSwitch
             switchVal={acceptsRandomCalls}
@@ -289,15 +321,15 @@ export default function HostSettingsScreen() {
           <Row
             icon="video"
             iconImg={require("@/assets/icons/ic_chat_video.png")}
-            label="Allow Video Random Calls"
+            label={t.hostSettings.allowVideoRandom}
             value={
               !randomLoaded
-                ? "Loading…"
+                ? t.hostSettings.loading
                 : !acceptsRandomCalls
-                  ? "Disabled — random calls are off"
+                  ? t.hostSettings.videoDisabled
                   : allowsVideo
-                    ? "On — accepts video random calls"
-                    : "Off — audio random calls only"
+                    ? t.hostSettings.videoOn
+                    : t.hostSettings.videoOff
             }
             isSwitch
             switchVal={acceptsRandomCalls && allowsVideo}
@@ -309,13 +341,13 @@ export default function HostSettingsScreen() {
           />
         </View>
 
-        <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Push Notifications</Text>
+        <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>{t.hostSettings.pushNotifications}</Text>
         <View style={[styles.card, { backgroundColor: colors.card }]}>
           <Row
             icon="bell"
             iconImg={require("@/assets/icons/ic_notify.png")}
-            label="Push Notifications"
-            value={notificationsGranted ? "On" : "Off"}
+            label={t.hostSettings.pushNotifications}
+            value={notificationsGranted ? t.hostSettings.on : t.hostSettings.off}
             isSwitch
             switchVal={notificationsGranted}
             onSwitch={handlePushNotifToggle}
@@ -323,36 +355,36 @@ export default function HostSettingsScreen() {
           />
         </View>
 
-        <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Notification Preferences</Text>
+        <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>{t.hostSettings.notificationPrefs}</Text>
         <View style={[styles.card, { backgroundColor: colors.card }]}>
-          <Row icon="phone" iconImg={require("@/assets/icons/ic_call.png")} label="Incoming Call Alerts" isSwitch switchVal={callNotif} onSwitch={handleCallNotif} onPress={() => {}} />
-          <Row icon="message-circle" iconImg={require("@/assets/icons/ic_chat.png")} label="Chat Notifications" isSwitch switchVal={chatNotif} onSwitch={handleChatNotif} onPress={() => {}} />
-          <Row icon="dollar-sign" iconImg={require("@/assets/icons/ic_coin.png")} label="Coin Earned Alerts" isSwitch switchVal={coinNotif} onSwitch={handleCoinNotif} onPress={() => {}} />
+          <Row icon="phone" iconImg={require("@/assets/icons/ic_call.png")} label={t.hostSettings.incomingCallAlerts} isSwitch switchVal={callNotif} onSwitch={handleCallNotif} onPress={() => {}} />
+          <Row icon="message-circle" iconImg={require("@/assets/icons/ic_chat.png")} label={t.hostSettings.chatNotifications} isSwitch switchVal={chatNotif} onSwitch={handleChatNotif} onPress={() => {}} />
+          <Row icon="dollar-sign" iconImg={require("@/assets/icons/ic_coin.png")} label={t.hostSettings.coinEarnedAlerts} isSwitch switchVal={coinNotif} onSwitch={handleCoinNotif} onPress={() => {}} />
         </View>
 
-        <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Earnings</Text>
+        <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>{t.hostSettings.earnings}</Text>
         <View style={[styles.card, { backgroundColor: colors.card }]}>
-          <Row icon="trending-up" iconImg={require("@/assets/icons/ic_arrow_up.png")} label="Payout Method" onPress={() => router.push("/payout-method")} />
-          <Row icon="file-text" iconImg={require("@/assets/icons/ic_withdraw.png")} label="Withdraw Earnings" onPress={() => router.push("/(tabs)/wallet")} />
-          <Row icon="gift" iconImg={require("@/assets/icons/ic_bonus.png")} label="Refer & Earn" onPress={() => router.push("/referral")} />
+          <Row icon="trending-up" iconImg={require("@/assets/icons/ic_arrow_up.png")} label={t.hostSettings.payoutMethod} onPress={() => router.push("/payout-method")} />
+          <Row icon="file-text" iconImg={require("@/assets/icons/ic_withdraw.png")} label={t.hostSettings.withdrawEarnings} onPress={() => router.push("/(tabs)/wallet")} />
+          <Row icon="gift" iconImg={require("@/assets/icons/ic_bonus.png")} label={t.hostSettings.referEarn} onPress={() => router.push("/referral")} />
         </View>
 
-        <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Preferences</Text>
+        <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>{t.hostSettings.preferences}</Text>
         <View style={[styles.card, { backgroundColor: colors.card }]}>
-          <Row icon="globe" iconImg={require("@/assets/icons/ic_language.png")} label="App Language" value={currentLangLabel} onPress={() => router.push("/language")} />
+          <Row icon="globe" iconImg={require("@/assets/icons/ic_language.png")} label={t.hostSettings.appLanguage} value={currentLangLabel} onPress={() => router.push("/language")} />
         </View>
 
-        <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Support</Text>
+        <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>{t.hostSettings.support}</Text>
         <View style={[styles.card, { backgroundColor: colors.card }]}>
-          <Row icon="help-circle" label="Help & Support" onPress={() => router.push("/help-center")} />
-          <Row icon="shield" iconImg={require("@/assets/icons/ic_secure.png")} label="Privacy Policy" onPress={() => router.push("/privacy")} />
-          <Row icon="info" iconImg={require("@/assets/icons/ic_id_badge.png")} label="About VoxLink Host" onPress={() => router.push("/about")} />
+          <Row icon="help-circle" label={t.hostSettings.helpSupport} onPress={() => router.push("/help-center")} />
+          <Row icon="shield" iconImg={require("@/assets/icons/ic_secure.png")} label={t.hostSettings.privacyPolicy} onPress={() => router.push("/privacy")} />
+          <Row icon="info" iconImg={require("@/assets/icons/ic_id_badge.png")} label={t.hostSettings.aboutApp} onPress={() => router.push("/about")} />
         </View>
 
-        <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Account</Text>
+        <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>{t.hostSettings.account}</Text>
         <View style={[styles.card, { backgroundColor: colors.card }]}>
-          <Row icon="log-out" label="Sign Out" onPress={handleLogout} danger />
-          <Row icon="trash-2" label="Delete Account" onPress={handleDeleteAccount} danger />
+          <Row icon="log-out" label={t.hostSettings.signOut} onPress={handleLogout} danger />
+          <Row icon="trash-2" label={t.hostSettings.deleteAccount} onPress={handleDeleteAccount} danger />
         </View>
       </ScrollView>
     </View>

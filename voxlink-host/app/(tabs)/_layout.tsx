@@ -2,6 +2,7 @@ import { Tabs } from "expo-router";
 import { Image, Platform, View } from "react-native";
 import { useColors } from "@/hooks/useColors";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useLanguage } from "@/context/LanguageContext";
 import LevelUpCelebration from "@/components/LevelUpCelebration";
 
 function TabIcon({ source, focused, color }: { source: any; focused: boolean; color: string }) {
@@ -18,6 +19,7 @@ function TabIcon({ source, focused, color }: { source: any; focused: boolean; co
 export default function HostTabLayout() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { t } = useLanguage();
 
   return (
     <>
@@ -46,35 +48,35 @@ export default function HostTabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: "Home",
+          title: t.tabs.home,
           tabBarIcon: ({ color, focused }) => <TabIcon source={require("@/assets/icons/ic_home.png")} focused={focused} color={color} />,
         }}
       />
       <Tabs.Screen
         name="chat"
         options={{
-          title: "Chat",
+          title: t.tabs.chat,
           tabBarIcon: ({ color, focused }) => <TabIcon source={require("@/assets/icons/ic_chat.png")} focused={focused} color={color} />,
         }}
       />
       <Tabs.Screen
         name="calls"
         options={{
-          title: "Calls",
+          title: t.tabs.calls,
           tabBarIcon: ({ color, focused }) => <TabIcon source={require("@/assets/icons/ic_calling.png")} focused={focused} color={color} />,
         }}
       />
       <Tabs.Screen
         name="wallet"
         options={{
-          title: "Wallet",
+          title: t.tabs.wallet,
           tabBarIcon: ({ color, focused }) => <TabIcon source={require("@/assets/icons/ic_coin.png")} focused={focused} color={color} />,
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
-          title: "Profile",
+          title: t.tabs.profile,
           tabBarIcon: ({ color, focused }) => <TabIcon source={require("@/assets/icons/ic_profile.png")} focused={focused} color={color} />,
         }}
       />

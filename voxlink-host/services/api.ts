@@ -223,6 +223,12 @@ export const API = {
   // so the form pre-fills with whatever the host saved last time.
   getHostMe: () => apiRequest<any>('GET', '/api/host/me'),
   setHostOnline: (online: boolean) => apiRequest('PATCH', '/api/host/status', { is_online: online }),
+  // Availability schedule — the daily window (HH:MM) during which the host is
+  // shown as available, plus their timezone. Persisted on the hosts row
+  // (available_from / available_to / timezone). Pass null to clear a field
+  // (e.g. "always available" sends both times as null).
+  setHostSchedule: (data: { available_from?: string | null; available_to?: string | null; timezone?: string }) =>
+    apiRequest<{ success: boolean }>('PATCH', '/api/host/schedule', data),
   getEarnings: () => apiRequest<any>('GET', '/api/host/earnings'),
   // Host level + progress towards the next level (drives the dashboard Level card).
   // Returns the configurable ladder, current/next level info, progress %, and
