@@ -176,7 +176,23 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           try {
             const session = await API.getCallSession(call.sessionId);
             if (session?.coins_charged != null) {
-              coinsEarned = Math.floor(session.coins_charged * 0.7);
+              // The host's share is NOT a flat 70% — it depends on the host's
+              // level (earning_share, admin-configurable from 0.70 up to 0.95).
+              // Fetch the host's actual share from the server instead of
+              // hardcoding 0.7, which only happened to be correct for level-1
+              // hosts and silently under/over-reported earnings for everyone
+              // else. This value is display-only (refreshProfile() above syncs
+              // the real balance), so we fall back to the historical 0.70 if
+              // the level lookup fails.
+              let earningShare = 0.7;
+              try {
+                const level = await API.getHostLevel();
+                const share = level?.perks?.earning_share;
+                if (typeof share === "number" && share > 0) earningShare = share;
+              } catch (e) {
+                console.warn('[CallContext] getHostLevel failed, using default share:', e);
+              }
+              coinsEarned = Math.floor(session.coins_charged * earningShare);
             }
           } catch (e) { console.warn('[CallContext] getCallSession failed:', e); }
         } else {

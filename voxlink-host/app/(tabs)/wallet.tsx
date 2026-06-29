@@ -4,8 +4,7 @@ import {
   FlatList, ImageBackground, TextInput, ActivityIndicator, RefreshControl
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { SvgIcon } from "@/components/SvgIcon";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { API } from "@/services/api";
@@ -16,6 +15,49 @@ import { formatPrice, getCurrencyCode } from "@/utils/currency";
 import { useAppConfig } from "@/hooks/useAppConfig";
 
 const WITHDRAW_OPTIONS = [100, 200, 500, 1000];
+
+// Payout method types mirror the Payout Method screen (app/payout-method.tsx).
+// Withdrawals MUST use the channel + details the host configured there instead
+// of a re-typed free-text field, so the two flows stay consistent.
+type PayoutMethod = "bank" | "upi" | "paytm" | "phonepe";
+
+const PAYOUT_LABELS: Record<PayoutMethod, string> = {
+  bank: "Bank Account",
+  upi: "UPI",
+  paytm: "Paytm",
+  phonepe: "PhonePe",
+};
+
+// Build the single `account_info` string the withdrawal endpoint stores, from
+// the structured payout_details the host saved on the Payout Method screen.
+function buildAccountInfo(method: PayoutMethod, details: Record<string, string>): string {
+  switch (method) {
+    case "bank":
+      return [details.account_holder, details.account_number, details.ifsc, details.bank_name]
+        .map((v) => (v ?? "").trim())
+        .filter(Boolean)
+        .join(" | ");
+    case "upi":
+      return (details.upi_id ?? "").trim();
+    case "paytm":
+    case "phonepe":
+      return (details.phone_number ?? "").trim();
+    default:
+      return "";
+  }
+}
+
+// Short masked summary for display (e.g. "HDFC Bank • ••••6789", "name@bank").
+function summarizePayout(method: PayoutMethod, details: Record<string, string>): string {
+  if (method === "bank") {
+    const acc = (details.account_number ?? "").trim();
+    const masked = acc.length > 4 ? `••••${acc.slice(-4)}` : acc;
+    return [details.bank_name || "Bank", masked].filter(Boolean).join(" • ");
+  }
+  if (method === "upi") return (details.upi_id ?? "").trim() || "UPI";
+  const ph = (details.phone_number ?? "").trim();
+  return ph.length > 4 ? `••••${ph.slice(-4)}` : ph || PAYOUT_LABELS[method];
+}
 
 interface EarningTx {
   id: string;
@@ -72,7 +114,11 @@ export default function HostWalletScreen() {
   const { user, refreshProfile } = useAuth();
   const [tab, setTab] = useState<"history" | "withdraw">("history");
   const [withdrawAmt, setWithdrawAmt] = useState("");
-  const [bankAccount, setBankAccount] = useState("");
+  // Saved payout channel + details, loaded from the host record. The withdraw
+  // action uses these instead of a free-text field so it matches whatever the
+  // host configured on the Payout Method screen.
+  const [payoutMethod, setPayoutMethod] = useState<PayoutMethod | null>(null);
+  const [payoutDetails, setPayoutDetails] = useState<Record<string, string>>({});
   const [withdrawing, setWithdrawing] = useState(false);
   const [earnings, setEarnings] = useState<EarningTx[]>([]);
   const [stats, setStats] = useState<EarningsStats>({ thisWeek: 0, sessions: 0, withdrawn: 0, totalEarnings: 0 });
@@ -124,6 +170,25 @@ export default function HostWalletScreen() {
 
   useEffect(() => { load(); }, []);
 
+  // Load the saved payout method/details, and refresh it whenever the wallet
+  // regains focus (e.g. after the host edits it on the Payout Method screen).
+  const loadPayout = useCallback(async () => {
+    try {
+      const me: any = await API.getHostMe();
+      const method = (me?.payout_method as PayoutMethod) || null;
+      setPayoutMethod(method && PAYOUT_LABELS[method] ? method : null);
+      setPayoutDetails((me?.payout_details ?? {}) as Record<string, string>);
+    } catch (e) {
+      console.warn("[Wallet] getHostMe failed:", e);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadPayout();
+    }, [loadPayout])
+  );
+
   // Call khatam hone par coin_update event aata hai — wallet reload karo
   useSocketEvent(SocketEvents.COIN_DEDUCTED, () => {
     load();
@@ -143,13 +208,22 @@ export default function HostWalletScreen() {
       showErrorToast("You don't have enough coins.", "Insufficient Balance");
       return;
     }
-    if (!bankAccount.trim()) {
-      showWarningToast("Please enter your bank account or UPI ID.", "Account Required");
+    // Require a configured payout method — withdrawals are sent to the channel
+    // the host set up on the Payout Method screen, not a re-typed field.
+    if (!payoutMethod) {
+      showWarningToast("Please set up your payout method first.", "Setup Required");
+      router.push("/payout-method");
+      return;
+    }
+    const accountInfo = buildAccountInfo(payoutMethod, payoutDetails);
+    if (!accountInfo) {
+      showWarningToast("Your payout details look incomplete. Please update them.", "Incomplete Details");
+      router.push("/payout-method");
       return;
     }
     setWithdrawing(true);
     try {
-      await API.requestWithdrawal(amt, "bank", bankAccount.trim());
+      await API.requestWithdrawal(amt, payoutMethod, accountInfo);
       setWithdrawAmt("");
       showSuccessToast(`${amt} coins withdrawal submitted!`, "Request Sent");
       await load(true);
@@ -158,7 +232,7 @@ export default function HostWalletScreen() {
     } finally {
       setWithdrawing(false);
     }
-  }, [withdrawAmt, user, load, minWithdraw]);
+  }, [withdrawAmt, user, load, minWithdraw, payoutMethod, payoutDetails]);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
@@ -301,21 +375,38 @@ export default function HostWalletScreen() {
             </Text>
           )}
 
-          <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Bank Account / UPI ID</Text>
-          <View accessible={false} style={[styles.inputWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <SvgIcon name="credit-card" size={18} color={colors.mutedForeground} />
-            <TextInput
-              style={[styles.input, { color: colors.text }]}
-              placeholder="Enter bank account no. or UPI ID"
-              placeholderTextColor={colors.mutedForeground}
-              value={bankAccount}
-              onChangeText={setBankAccount}
-              autoCapitalize="none"
-              autoCorrect={false}
-              selectionColor={colors.accent}
-              underlineColorAndroid="transparent"
-            />
-          </View>
+          <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Payout To</Text>
+          {payoutMethod ? (
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Edit payout method"
+              style={[styles.payoutRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
+              onPress={() => router.push("/payout-method")}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.payoutIconWrap, { backgroundColor: colors.coinGoldBg }]}>
+                <Image source={require("@/assets/icons/ic_withdraw.png")} style={styles.payoutIcon} tintColor={colors.primary} resizeMode="contain" />
+              </View>
+              <View style={{ flex: 1, gap: 2 }}>
+                <Text style={[styles.payoutMethodLabel, { color: colors.text }]}>{PAYOUT_LABELS[payoutMethod]}</Text>
+                <Text style={[styles.payoutMethodSub, { color: colors.mutedForeground }]} numberOfLines={1}>
+                  {summarizePayout(payoutMethod, payoutDetails)}
+                </Text>
+              </View>
+              <Text style={[styles.payoutEdit, { color: colors.primary }]}>Edit</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Set up payout method"
+              style={[styles.payoutSetup, { borderColor: colors.primary, backgroundColor: colors.surface }]}
+              onPress={() => router.push("/payout-method")}
+              activeOpacity={0.8}
+            >
+              <Image source={require("@/assets/icons/ic_withdraw.png")} style={styles.payoutIcon} tintColor={colors.primary} resizeMode="contain" />
+              <Text style={[styles.payoutSetupText, { color: colors.primary }]}>Set up your payout method</Text>
+            </TouchableOpacity>
+          )}
 
           <TouchableOpacity
             style={[styles.withdrawBtn, { backgroundColor: withdrawing ? colors.mutedForeground : colors.primary }]}
@@ -343,10 +434,10 @@ export default function HostWalletScreen() {
 
           <TouchableOpacity
             style={[styles.fullWithdrawBtn, { backgroundColor: colors.surface, borderColor: colors.primary }]}
-            onPress={() => setTab("withdraw")}
+            onPress={() => router.push("/payout-method")}
           >
             <Image source={require("@/assets/icons/ic_withdraw.png")} style={styles.withdrawIcon} tintColor={colors.primary} resizeMode="contain" />
-            <Text style={[styles.fullWithdrawText, { color: colors.primary }]}>Full Withdrawal Options</Text>
+            <Text style={[styles.fullWithdrawText, { color: colors.primary }]}>Manage Payout Method</Text>
           </TouchableOpacity>
         </ScrollView>
       )}
@@ -392,6 +483,14 @@ const styles = StyleSheet.create({
   chipCoin: { width: 16, height: 16 },
   chipAmt: { fontSize: 15, fontFamily: "Poppins_600SemiBold" },
   inputWrap: { flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1.5, borderRadius: 14, paddingHorizontal: 16, height: 54 },
+  payoutRow: { flexDirection: "row", alignItems: "center", gap: 12, borderWidth: 1.5, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12 },
+  payoutIconWrap: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
+  payoutIcon: { width: 20, height: 20 },
+  payoutMethodLabel: { fontSize: 15, fontFamily: "Poppins_600SemiBold" },
+  payoutMethodSub: { fontSize: 12, fontFamily: "Poppins_400Regular" },
+  payoutEdit: { fontSize: 14, fontFamily: "Poppins_600SemiBold" },
+  payoutSetup: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderWidth: 1.5, borderRadius: 14, height: 54, borderStyle: "dashed" },
+  payoutSetupText: { fontSize: 14, fontFamily: "Poppins_600SemiBold" },
   inputIcon: { width: 20, height: 20 },
   input: { flex: 1, fontSize: 15, fontFamily: "Poppins_400Regular", backgroundColor: "transparent", borderWidth: 0 },
   withdrawBtn: { height: 54, borderRadius: 14, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 10 },

@@ -1,8 +1,9 @@
 // VoxLink API Client — connects to Cloudflare Workers backend
 import { getItem, setItem } from '@/utils/storage';
 import { StorageKeys } from '@/utils/storage';
+import { API_BASE_URL } from '@/constants/config';
 
-const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://voxlink-api.ssunilkumarmohanta3.workers.dev';
+const BASE_URL = API_BASE_URL;
 
 export function resolveMediaUrl(path?: string | null): string | undefined {
   if (!path) return undefined;

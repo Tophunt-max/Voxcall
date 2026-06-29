@@ -4,8 +4,9 @@
 
 import { SocketEvents } from "@/constants/events";
 import { refreshAuthToken } from "@/services/api";
+import { API_BASE_URL } from "@/constants/config";
 
-const BASE_URL = process.env.EXPO_PUBLIC_API_URL || "https://voxlink-api.ssunilkumarmohanta3.workers.dev";
+const BASE_URL = API_BASE_URL;
 
 function getWsUrl(userId: string): string {
   const wsBase = BASE_URL.replace(/^https?:\/\//, (match: string) =>

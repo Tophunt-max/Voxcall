@@ -13,6 +13,7 @@ import { useWebRTC } from "@/hooks/useWebRTC";
 import { useSocket } from "@/context/SocketContext";
 import { SocketEvents } from "@/constants/events";
 import { API } from "@/services/api";
+import { API_BASE_URL } from "@/constants/config";
 import * as Haptics from "expo-haptics";
 
 const useNativeDriverValue = Platform.OS !== "web";
@@ -282,7 +283,7 @@ export default function AudioCallScreen() {
       const sid = activeCall?.sessionId;
       if (sid && status === 'active') {
         try {
-          const url = `${(process.env.EXPO_PUBLIC_API_URL || '').replace(/\/$/, '')}/api/calls/${sid}/end`;
+          const url = `${API_BASE_URL}/api/calls/${sid}/end`;
           const blob = new Blob([JSON.stringify({ duration_seconds: 0 })], { type: 'application/json' });
           (navigator as any).sendBeacon?.(url, blob);
         } catch { /* best-effort */ }

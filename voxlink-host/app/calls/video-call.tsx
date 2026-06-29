@@ -17,6 +17,7 @@ import { useWebRTC } from "@/hooks/useWebRTC";
 import { useSocket } from "@/context/SocketContext";
 import { SocketEvents } from "@/constants/events";
 import { API } from "@/services/api";
+import { API_BASE_URL } from "@/constants/config";
 
 // FIX (UI: draggable self-preview): see voxlink/app/user/call/video-call.tsx
 // for full rationale. Identical numbers so both apps behave the same.
@@ -420,7 +421,7 @@ export default function VideoCallScreen() {
       const sid = activeCall?.sessionId;
       if (sid && status === 'active') {
         try {
-          const url = `${(process.env.EXPO_PUBLIC_API_URL || '').replace(/\/$/, '')}/api/calls/${sid}/end`;
+          const url = `${API_BASE_URL}/api/calls/${sid}/end`;
           const blob = new Blob([JSON.stringify({ duration_seconds: 0 })], { type: 'application/json' });
           (navigator as any).sendBeacon?.(url, blob);
         } catch { /* best-effort — cron reaper will catch if this fails */ }
