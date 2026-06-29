@@ -795,6 +795,10 @@ const es = {
     shareTitle: "Únete a VoxLink",
     shareMessage: "¡Únete a VoxLink y conéctate con anfitriones increíbles para llamadas de audio y video!\n\nUsa mi código de referido: {code} para obtener monedas de bono al registrarte.\n\nDescárgala ahora: https://voxlink.app",
   },
+
+  splash: {
+    tagline: "Conecta y crea relaciones significativas",
+  },
 };
 
 export default es;

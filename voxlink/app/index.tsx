@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import { Redirect } from "expo-router";
 import { useAuth } from "@/context/AuthContext";
+import { useLanguage } from "@/context/LanguageContext";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const { width: SW, height: SH } = Dimensions.get("window");
@@ -69,6 +70,7 @@ const dot = StyleSheet.create({
 /* ─── Main Splash Screen ─── */
 export default function Index() {
   const { isLoggedIn, isLoading, user } = useAuth();
+  const { t } = useLanguage();
   const [splashDone, setSplashDone] = useState(false);
   const [seenOnboarding, setSeenOnboarding] = useState<boolean | null>(null);
 
@@ -129,7 +131,7 @@ export default function Index() {
         {/* App name + subtitle */}
         <View style={s.textBlock}>
           <Text style={s.appName}>VoxLink</Text>
-          <Text style={s.tagline}>Connect & establish meaningful connections</Text>
+          <Text style={s.tagline}>{t.splash.tagline}</Text>
         </View>
 
         {/* Staggered dots wave loading */}

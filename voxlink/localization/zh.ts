@@ -795,6 +795,10 @@ const zh = {
     shareTitle: "加入 VoxLink",
     shareMessage: "加入 VoxLink，与出色的主播进行音视频通话！\n\n使用我的推荐码：{code}，注册即可获得奖励金币！\n\n立即下载：https://voxlink.app",
   },
+
+  splash: {
+    tagline: "连接并建立有意义的关系",
+  },
 };
 
 export default zh;

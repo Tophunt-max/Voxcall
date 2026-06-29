@@ -795,6 +795,10 @@ const ar = {
     shareTitle: "انضم إلى VoxLink",
     shareMessage: "انضم إلى VoxLink وتواصل مع مضيفين رائعين للمكالمات الصوتية والمرئية!\n\nاستخدم رمز الإحالة الخاص بي: {code} للحصول على عملات مكافأة عند التسجيل!\n\nحمّله الآن: https://voxlink.app",
   },
+
+  splash: {
+    tagline: "تواصل وأنشئ علاقات هادفة",
+  },
 };
 
 export default ar;

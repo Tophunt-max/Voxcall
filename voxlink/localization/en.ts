@@ -824,6 +824,10 @@ const en = {
     shareTitle: "Join VoxLink",
     shareMessage: "Join VoxLink and connect with amazing hosts for audio & video calls!\n\nUse my referral code: {code} to get bonus coins on signup!\n\nDownload now: https://voxlink.app",
   },
+
+  splash: {
+    tagline: "Connect & establish meaningful connections",
+  },
 };
 
 export type Translations = typeof en;

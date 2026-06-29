@@ -807,6 +807,10 @@ const hi = {
     shareTitle: "VoxLink से जुड़ें",
     shareMessage: "VoxLink से जुड़ें और शानदार होस्ट के साथ ऑडियो और वीडियो कॉल पर जुड़ें!\n\nसाइनअप पर बोनस कॉइन पाने के लिए मेरा रेफ़रल कोड उपयोग करें: {code}!\n\nअभी डाउनलोड करें: https://voxlink.app",
   },
+
+  splash: {
+    tagline: "जुड़ें और सार्थक रिश्ते बनाएं",
+  },
 };
 
 export default hi;
