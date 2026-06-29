@@ -1049,6 +1049,30 @@ const es = {
     message: "Esta pantalla no existe.",
     goHome: "¡Ir al inicio!",
   },
+
+  // Availability schedule screen
+  availabilityScreen: {
+    title: "Horario de disponibilidad",
+    helpText: "Define las horas en que sueles estar disponible. Quienes llaman lo ven en tu perfil. Es solo una indicación — no te desconecta.",
+    always24Title: "Siempre disponible (24/7)",
+    always24Sub: "Sin horario fijo — disponible en cualquier momento",
+    availableHours: "Horas disponibles",
+    availableFrom: "Disponible desde",
+    availableTo: "Disponible hasta",
+    sameTimeWarn: "La hora de inicio y de fin no pueden ser iguales.",
+    overnightHint: "Franja nocturna — pasa de la medianoche.",
+    timezone: "Zona horaria",
+    callersWillSee: "Quienes llamen verán",
+    available247: "Disponible 24/7",
+    saveSchedule: "Guardar horario",
+    selectTimezone: "Seleccionar zona horaria",
+    scheduleSaved: "Horario de disponibilidad guardado.",
+    savedTitle: "Guardado",
+    invalidWindow: "Franja no válida",
+    featureUnavailable: "Esta función aún no está habilitada en el servidor. Inténtalo más tarde.",
+    unavailableTitle: "No disponible",
+    saveFailed: "Error al guardar. Inténtalo de nuevo.",
+  },
 };
 
 export default es;

@@ -21,6 +21,7 @@ import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { useCall } from "@/context/CallContext";
 import { useChat } from "@/context/ChatContext";
+import { useLanguage } from "@/context/LanguageContext";
 import { API, resolveMediaUrl } from "@/services/api";
 import { showErrorToast, showSuccessToast } from "@/components/Toast";
 import { InsufficientCoinsPopup } from "@/components/InsufficientCoinsPopup";
@@ -74,6 +75,7 @@ function TalkNowSheet({
   const audioRate = host?.audio_coins_per_minute ?? host?.coinsPerMinute ?? 25;
   const videoRate = host?.video_coins_per_minute ?? (audioRate + 5);
   const colors = useColors();
+  const { t } = useLanguage();
   const isDark = useColorScheme() === "dark";
   const boxBg = isDark ? colors.card : "#fff";
   const txtColor = isDark ? colors.text : "#111329";
@@ -83,14 +85,14 @@ function TalkNowSheet({
       <TouchableOpacity style={sht.overlay} activeOpacity={1} onPress={onClose}>
         <View style={[sht.box, { backgroundColor: boxBg }]}>
           <View style={sht.handle} />
-          <Text style={[sht.title, { color: txtColor, borderBottomColor: dividerColor }]}>Select Call Type</Text>
+          <Text style={[sht.title, { color: txtColor, borderBottomColor: dividerColor }]}>{t.hostDetail.selectCallType}</Text>
 
           <TouchableOpacity onPress={onAudio} style={sht.row} activeOpacity={0.8}>
             <Image source={require("@/assets/icons/ic_call_gradient.png")} style={sht.ico} resizeMode="contain" />
-            <Text style={[sht.label, { color: txtColor }]}>Audio Call</Text>
+            <Text style={[sht.label, { color: txtColor }]}>{t.hosts.audioCall}</Text>
             <View style={sht.chip}>
               <Image source={require("@/assets/icons/ic_coin.png")} style={sht.chipIco} resizeMode="contain" />
-              <Text style={sht.chipTxt}>{audioRate} Coin/min</Text>
+              <Text style={sht.chipTxt}>{t.hostDetail.coinPerMin.replace("{count}", String(audioRate))}</Text>
             </View>
           </TouchableOpacity>
 
@@ -98,10 +100,10 @@ function TalkNowSheet({
 
           <TouchableOpacity onPress={onVideo} style={sht.row} activeOpacity={0.8}>
             <Image source={require("@/assets/icons/ic_video_gradient.png")} style={sht.ico} resizeMode="contain" />
-            <Text style={[sht.label, { color: txtColor }]}>Video Call</Text>
+            <Text style={[sht.label, { color: txtColor }]}>{t.hosts.videoCall}</Text>
             <View style={sht.chip}>
               <Image source={require("@/assets/icons/ic_coin.png")} style={sht.chipIco} resizeMode="contain" />
-              <Text style={sht.chipTxt}>{videoRate} Coin/min</Text>
+              <Text style={sht.chipTxt}>{t.hostDetail.coinPerMin.replace("{count}", String(videoRate))}</Text>
             </View>
           </TouchableOpacity>
         </View>
@@ -123,6 +125,7 @@ const LEVEL_CONFIG: Record<number, { name: string; badge: string; color: string 
 export default function HostDetailScreen() {
   const insets = useSafeAreaInsets();
   const colors = useColors();
+  const { t } = useLanguage();
   // Dark-mode theming: keep the branded LIGHT look exactly as-is in light mode
   // (isDark === false → original Flutter-matched constants), and swap surfaces
   // + text to palette tokens in dark mode so the screen isn't a wall of white.
@@ -162,7 +165,7 @@ export default function HostDetailScreen() {
       setHost(h);
       setReviews(revs ?? []);
       setChatUnlocked((chatStatus as any)?.unlocked ?? false);
-    }).catch(() => { showErrorToast("Failed to load host details."); }).finally(() => setLoading(false));
+    }).catch(() => { showErrorToast(t.hostDetail.failedLoad); }).finally(() => setLoading(false));
   }, [id]);
 
   if (loading) {
@@ -176,13 +179,13 @@ export default function HostDetailScreen() {
   if (!host) {
     return (
       <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.background }}>
-        <Text style={{ color: colors.text, fontFamily: "Poppins_500Medium" }}>Host not found</Text>
+        <Text style={{ color: colors.text, fontFamily: "Poppins_500Medium" }}>{t.hostDetail.notFound}</Text>
       </View>
     );
   }
 
   /* ─── Derived fields ─── */
-  const hostName = host.display_name || host.name || "Host";
+  const hostName = host.display_name || host.name || t.hosts.host;
   const hostAvatar = resolveMediaUrl(host.avatar_url) || `https://api.dicebear.com/7.x/avataaars/png?seed=${host.id}`;
   const uniqueId = `VX${String(host.id).slice(-6).padStart(6, "0")}`;
   const callCount = host.total_minutes ? Math.floor(host.total_minutes / 30) : host.review_count * 2;
@@ -223,12 +226,12 @@ export default function HostDetailScreen() {
   const handleChat = async () => {
     if (!chatUnlocked) {
       confirmDialog({
-        title: "🔒 Chat Locked",
-        message: `To chat with ${hostName}, you need to call them first. Chat unlocks automatically after a call!`,
-        confirmText: "Call Now",
+        title: t.hostDetail.chatLockedTitle,
+        message: t.hostDetail.chatLockedMsg.replace("{name}", hostName),
+        confirmText: t.hosts.callNow,
         onConfirm: () => {
           if (host.is_online) setTalkSheet(true);
-          else alertDialog("Offline", `${hostName} is currently offline.`);
+          else alertDialog(t.hosts.offline, t.hostDetail.offlineMsg.replace("{name}", hostName));
         },
       });
       return;
@@ -246,7 +249,7 @@ export default function HostDetailScreen() {
       router.push(`/user/chat/${room.id}`);
     } catch (e: any) {
       if (e.message?.includes("CHAT_LOCKED") || e.message?.includes("locked")) {
-        alertDialog("🔒 Chat Locked", "Make a call first, then chat will unlock automatically!");
+        alertDialog(t.hostDetail.chatLockedTitle, t.hostDetail.chatLockedMsg2);
       } else {
         getOrCreateConversation(host.id, hostName, hostAvatar, undefined, {
           participantUserId: host.user_id,
@@ -260,7 +263,7 @@ export default function HostDetailScreen() {
   const copyId = async () => {
     try {
       await Clipboard.setStringAsync(uniqueId);
-      showSuccessToast("Host ID copied to clipboard.", "Copied");
+      showSuccessToast(t.hostDetail.idCopied, t.common.copied);
     } catch {
       // Clipboard write can fail on some web/permission contexts — non-fatal.
     }
@@ -269,17 +272,17 @@ export default function HostDetailScreen() {
   const handleReport = async (reason: string, category: string) => {
     try {
       await API.submitReport({ reported_user_id: host.user_id || host.id, reported_user: hostName, reason, category, reported_type: "host" });
-      showSuccessToast("Thank you for your report. Our team will review it shortly.", "Report Submitted");
+      showSuccessToast(t.hostDetail.reportThanks, t.hostDetail.reportSubmitted);
     } catch (err: any) {
-      const msg = err?.message || "Could not submit report. Please try again.";
-      showErrorToast(msg, "Report Failed");
+      const msg = err?.message || t.hostDetail.reportFailMsg;
+      showErrorToast(msg, t.hostDetail.reportFailed);
     }
   };
 
   const statsList = [
-    { image: require("@/assets/icons/ic_call_gradient.png"), title: "Total Call", count: String(callCount) },
-    { image: require("@/assets/icons/ic_star.png"), title: "Rating", count: (host.rating ?? 0).toFixed(1) },
-    { image: require("@/assets/icons/ic_experience.png"), title: "Experience", count: experience },
+    { image: require("@/assets/icons/ic_call_gradient.png"), title: t.hostDetail.totalCall, count: String(callCount) },
+    { image: require("@/assets/icons/ic_star.png"), title: t.hosts.rating, count: (host.rating ?? 0).toFixed(1) },
+    { image: require("@/assets/icons/ic_experience.png"), title: t.hostDetail.experience, count: experience },
   ];
 
   const BOTTOM_H = insets.bottom + 70;
@@ -321,12 +324,12 @@ export default function HostDetailScreen() {
             {/* Level badge */}
             <View style={[s.levelBadge, { backgroundColor: levelInfo.color + "33", borderColor: levelInfo.color }]}>
               <Text style={s.levelBadgeEmoji}>{levelInfo.badge}</Text>
-              <Text style={[s.levelBadgeTxt, { color: levelInfo.color }]}>Lv.{level} {levelInfo.name}</Text>
+              <Text style={[s.levelBadgeTxt, { color: levelInfo.color }]}>{t.hostDetail.levelShort}{level} {levelInfo.name}</Text>
             </View>
             <Text style={s.heroName}>{hostName}</Text>
             <View style={s.heroRatingRow}>
               <Image source={require("@/assets/icons/ic_star.png")} style={{ width: 16, height: 16 }} tintColor={STAR_COLOR} resizeMode="contain" />
-              <Text style={s.heroRatingTxt}>{(host.rating ?? 0).toFixed(1)} ({host.review_count ?? 0} reviews)</Text>
+              <Text style={s.heroRatingTxt}>{(host.rating ?? 0).toFixed(1)} ({t.reviews.reviewsCount.replace("{count}", String(host.review_count ?? 0))})</Text>
             </View>
           </View>
         </LinearGradient>
@@ -351,12 +354,12 @@ export default function HostDetailScreen() {
                     <View style={[s.dotInner, { backgroundColor: host.is_online ? "#fff" : PROFILE_LANG }]} />
                   </View>
                   <Text style={[s.statusTxt, { color: host.is_online ? "#fff" : PROFILE_LANG }]}>
-                    {host.is_online ? "Online" : "Offline"}
+                    {host.is_online ? t.hosts.online : t.hosts.offline}
                   </Text>
                 </View>
                 {/* ID chip */}
                 <TouchableOpacity onPress={copyId} style={s.idChip} activeOpacity={0.7}>
-                  <Text style={s.idTxt} numberOfLines={1}>ID: {uniqueId}</Text>
+                  <Text style={s.idTxt} numberOfLines={1}>{t.hostDetail.idLabel} {uniqueId}</Text>
                   <Image source={require("@/assets/icons/ic_copy.png")} style={s.copyIco} tintColor={ID_TXT} resizeMode="contain" />
                 </TouchableOpacity>
               </View>
@@ -365,7 +368,7 @@ export default function HostDetailScreen() {
             {/* Coin rate chip */}
             <View style={s.coinChip}>
               <Image source={require("@/assets/icons/ic_coin.png")} style={s.coinChipIco} resizeMode="contain" />
-              <Text style={s.coinChipTxt}>{audioRate} Coin</Text>
+              <Text style={s.coinChipTxt}>{t.hostDetail.coin.replace("{count}", String(audioRate))}</Text>
             </View>
           </View>
 
@@ -375,7 +378,7 @@ export default function HostDetailScreen() {
           {/* Language */}
           <View style={s.langRow}>
             <Image source={require("@/assets/icons/ic_language.png")} style={s.langIco} resizeMode="contain" />
-            <Text style={[s.langLabel, { color: subColor }]}>Language : </Text>
+            <Text style={[s.langLabel, { color: subColor }]}>{t.hostDetail.languageColon}</Text>
             <Text style={[s.langVal, { color: titleColor }]} numberOfLines={2}>{(host.languages ?? []).join(", ")}</Text>
           </View>
 
@@ -408,12 +411,12 @@ export default function HostDetailScreen() {
         {/* ══════ ReviewShow ══════ */}
         <View style={s.reviewSec}>
           <View style={s.reviewHeader}>
-            <Text style={[s.reviewHeaderTxt, { color: titleColor }]}>Reviews</Text>
+            <Text style={[s.reviewHeaderTxt, { color: titleColor }]}>{t.hosts.reviews}</Text>
           </View>
 
           {reviews.length === 0 && (
             <Text style={{ color: subColor, fontFamily: "Poppins_400Regular", fontSize: 13, textAlign: "center", paddingVertical: 16 }}>
-              No reviews yet
+              {t.reviews.noReviews}
             </Text>
           )}
 
@@ -429,11 +432,11 @@ export default function HostDetailScreen() {
                   </View>
                 </View>
                 <View style={s.reviewInfo}>
-                  <Text style={[s.reviewName, { color: titleColor }]}>{r.name ?? "User"}</Text>
+                  <Text style={[s.reviewName, { color: titleColor }]}>{r.name ?? t.reviews.user}</Text>
                   <StarRating rating={r.stars ?? r.rating ?? 5} size={16} />
                 </View>
                 <View style={s.timeBadge}>
-                  <Text style={s.timeTxt}>{r.created_at ? new Date(r.created_at * 1000).toLocaleDateString() : "Recent"}</Text>
+                  <Text style={s.timeTxt}>{r.created_at ? new Date(r.created_at * 1000).toLocaleDateString() : t.hostDetail.recent}</Text>
                 </View>
               </View>
               {r.comment ? <Text style={[s.reviewTxt, { color: subColor }]}>{r.comment}</Text> : null}
@@ -445,17 +448,17 @@ export default function HostDetailScreen() {
       {/* ══════ ProfileBottomButtonView ══════ */}
       <View style={[s.bottomBar, { paddingBottom: insets.bottom + 10, backgroundColor: barBg }]}>
         <TouchableOpacity onPress={handleChat} style={[s.bottomBtn, { backgroundColor: chatUnlocked ? GREEN : "#9CA3AF" }]} activeOpacity={0.85}>
-          <Text style={s.bottomBtnTxt}>{chatUnlocked ? "Chat Now" : "🔒 Chat"}</Text>
+          <Text style={s.bottomBtnTxt}>{chatUnlocked ? t.hostDetail.chatNow : t.hostDetail.chatLocked}</Text>
         </TouchableOpacity>
 
         {host.is_online ? (
           <TouchableOpacity onPress={() => setTalkSheet(true)} style={[s.bottomBtn, { backgroundColor: APP_COLOR }]} activeOpacity={0.85}>
             <Image source={require("@/assets/icons/ic_call_gradient.png")} style={s.talkIco} tintColor="#fff" resizeMode="contain" />
-            <Text style={s.bottomBtnTxt}>Talk Now</Text>
+            <Text style={s.bottomBtnTxt}>{t.hosts.talkNow}</Text>
           </TouchableOpacity>
         ) : (
           <View style={[s.bottomBtn, { backgroundColor: "#D1D5DB" }]}>
-            <Text style={[s.bottomBtnTxt, { color: "#6B7280" }]}>Offline</Text>
+            <Text style={[s.bottomBtnTxt, { color: "#6B7280" }]}>{t.hosts.offline}</Text>
           </View>
         )}
       </View>
@@ -479,14 +482,14 @@ export default function HostDetailScreen() {
         <TouchableOpacity style={s.reportOverlay} activeOpacity={1} onPress={() => setReportModal(false)}>
           <View style={[s.reportSheet, { backgroundColor: sheetBg }]}>
             <View style={s.reportHandle} />
-            <Text style={[s.reportTitle, { color: titleColor }]}>Report {hostName}</Text>
-            <Text style={s.reportSubtitle}>Why are you reporting this host?</Text>
+            <Text style={[s.reportTitle, { color: titleColor }]}>{t.hostDetail.reportTitle.replace("{name}", hostName)}</Text>
+            <Text style={s.reportSubtitle}>{t.hostDetail.reportSubtitle}</Text>
             {[
-              { label: "Inappropriate Content", reason: "Inappropriate Content", category: "inappropriate_content" },
-              { label: "Harassment", reason: "Harassment or Bullying", category: "harassment" },
-              { label: "Fake Profile", reason: "Fake or Misleading Profile", category: "fake_profile" },
-              { label: "Scam / Fraud", reason: "Scam or Fraudulent Activity", category: "fraud" },
-              { label: "Spam", reason: "Spamming or Unsolicited Messages", category: "spam" },
+              { label: t.hostDetail.reportInappropriate, reason: "Inappropriate Content", category: "inappropriate_content" },
+              { label: t.hostDetail.reportHarassment, reason: "Harassment or Bullying", category: "harassment" },
+              { label: t.hostDetail.reportFakeProfile, reason: "Fake or Misleading Profile", category: "fake_profile" },
+              { label: t.hostDetail.reportScam, reason: "Scam or Fraudulent Activity", category: "fraud" },
+              { label: t.hostDetail.reportSpam, reason: "Spamming or Unsolicited Messages", category: "spam" },
             ].map((opt) => (
               <TouchableOpacity
                 key={opt.label}
@@ -499,7 +502,7 @@ export default function HostDetailScreen() {
               </TouchableOpacity>
             ))}
             <TouchableOpacity onPress={() => setReportModal(false)} style={s.reportCancel} activeOpacity={0.8}>
-              <Text style={s.reportCancelTxt}>Cancel</Text>
+              <Text style={s.reportCancelTxt}>{t.common.cancel}</Text>
             </TouchableOpacity>
           </View>
         </TouchableOpacity>

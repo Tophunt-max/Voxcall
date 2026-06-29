@@ -5,12 +5,14 @@ import { View, Text, StyleSheet, Animated, TouchableOpacity, Image, Platform } f
 import { router } from "expo-router";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
+import { useLanguage } from "@/context/LanguageContext";
 
 const useNativeDriverValue = Platform.OS !== "web";
 
 export default function PaymentSuccessScreen() {
   const colors = useColors();
   const { user } = useAuth();
+  const { t } = useLanguage();
   const scaleAnim = useRef(new Animated.Value(0)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
@@ -45,9 +47,9 @@ export default function PaymentSuccessScreen() {
         </Animated.View>
 
         <Animated.View style={{ opacity: fadeAnim, alignItems: "center" }}>
-          <Text style={[styles.title, { color: colors.text }]}>Payment Successful!</Text>
+          <Text style={[styles.title, { color: colors.text }]}>{t.successScreen.title}</Text>
           <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
-            Coins have been added to your wallet
+            {t.successScreen.subtitle}
           </Text>
 
           <View style={[styles.balanceCard, { backgroundColor: colors.coinGoldBg }]}>
@@ -56,12 +58,12 @@ export default function PaymentSuccessScreen() {
               style={styles.coinIcon}
             />
             <Text style={[styles.balanceText, { color: colors.coinGoldText }]}>
-              {(user?.coins ?? 0).toLocaleString()} Coins
+              {(user?.coins ?? 0).toLocaleString()} {t.wallet.coins}
             </Text>
           </View>
 
           <Text style={[styles.note, { color: colors.mutedForeground }]}>
-            You can now use your coins to make calls with hosts
+            {t.successScreen.note}
           </Text>
         </Animated.View>
       </View>
@@ -72,14 +74,14 @@ export default function PaymentSuccessScreen() {
           onPress={() => router.replace("/user/screens/home/")}
           activeOpacity={0.88}
         >
-          <Text style={styles.primaryBtnText}>Find a Host to Talk With</Text>
+          <Text style={styles.primaryBtnText}>{t.successScreen.findHost}</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.secondaryBtn, { borderColor: colors.border }]}
           onPress={() => router.replace("/user/screens/home/wallet")}
           activeOpacity={0.8}
         >
-          <Text style={[styles.secondaryBtnText, { color: colors.text }]}>View Wallet</Text>
+          <Text style={[styles.secondaryBtnText, { color: colors.text }]}>{t.successScreen.viewWallet}</Text>
         </TouchableOpacity>
       </Animated.View>
     </View>

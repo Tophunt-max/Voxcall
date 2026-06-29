@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SvgIcon } from "@/components/SvgIcon";
 import { IconView } from "@/components/IconView";
 import { useColors } from "@/hooks/useColors";
+import { useLanguage } from "@/context/LanguageContext";
 
 const SECTIONS = [
   {
@@ -53,6 +54,7 @@ const SECTIONS = [
 
 export default function PrivacyScreen() {
   const colors = useColors();
+  const { t } = useLanguage();
   const insets = useSafeAreaInsets();
   const [expanded, setExpanded] = useState<number | null>(0);
   const topPad = insets.top;
@@ -63,7 +65,7 @@ export default function PrivacyScreen() {
         <TouchableOpacity onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Go back" style={[styles.backBtn, { backgroundColor: colors.surface }]}>
           <Image source={require("@/assets/icons/ic_back.png")} style={styles.backIcon} tintColor={colors.text} resizeMode="contain" />
         </TouchableOpacity>
-        <Text style={[styles.title, { color: colors.text }]}>Privacy Policy</Text>
+        <Text style={[styles.title, { color: colors.text }]}>{t.privacyScreen.title}</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -72,11 +74,11 @@ export default function PrivacyScreen() {
           <View style={[styles.bannerIcon, { backgroundColor: "#A00EE7" }]}>
             <IconView name="shield" size={28} color="#fff" />
           </View>
-          <Text style={[styles.bannerTitle, { color: "#111329" }]}>Your Privacy Matters</Text>
+          <Text style={[styles.bannerTitle, { color: "#111329" }]}>{t.privacyScreen.bannerTitle}</Text>
           <Text style={[styles.bannerSub, { color: "#757396" }]}>
-            This policy explains how VoxLink Host collects, uses, and protects your data.
+            {t.privacyScreen.bannerSub}
           </Text>
-          <Text style={[styles.lastUpdated, { color: "#757396" }]}>Last Updated: March 1, 2026</Text>
+          <Text style={[styles.lastUpdated, { color: "#757396" }]}>{t.privacyScreen.lastUpdated}</Text>
         </View>
 
         <View style={{ paddingHorizontal: 16, marginTop: 16, gap: 10 }}>
@@ -88,7 +90,7 @@ export default function PrivacyScreen() {
               activeOpacity={0.85}
             >
               <View style={styles.accordionHeader}>
-                <Text style={[styles.accordionTitle, { color: colors.text }]}>{s.title}</Text>
+                <Text style={[styles.accordionTitle, { color: colors.text }]}>{t.privacyScreen.sectionTitles[i]}</Text>
                 <SvgIcon name={expanded === i ? "chevron-up" : "chevron-down"} size={16} color={colors.mutedForeground} />
               </View>
               {expanded === i && (
@@ -101,7 +103,7 @@ export default function PrivacyScreen() {
         <View style={[styles.contactBox, { backgroundColor: colors.surface, marginHorizontal: 16, marginTop: 20 }]}>
           <IconView name="mail" size={20} color={colors.primary} />
           <View style={{ flex: 1 }}>
-            <Text style={[styles.contactTitle, { color: colors.text }]}>Questions about Privacy?</Text>
+            <Text style={[styles.contactTitle, { color: colors.text }]}>{t.privacyScreen.contactTitle}</Text>
             <Text style={[styles.contactSub, { color: colors.mutedForeground }]}>privacy@voxlink.app</Text>
           </View>
         </View>

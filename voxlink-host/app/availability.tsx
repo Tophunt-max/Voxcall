@@ -19,6 +19,7 @@ import {
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
+import { useLanguage } from "@/context/LanguageContext";
 import { API } from "@/services/api";
 import BottomSheet from "@/components/BottomSheet";
 import { showErrorToast, showSuccessToast } from "@/components/Toast";
@@ -59,6 +60,7 @@ function formatTime(hhmm?: string | null): string {
 
 export default function AvailabilityScreen() {
   const colors = useColors();
+  const { t } = useLanguage();
   const insets = useSafeAreaInsets();
 
   const [loading, setLoading] = useState(true);
@@ -102,13 +104,13 @@ export default function AvailabilityScreen() {
   const sameTime = !alwaysAvailable && fromTime === toTime;
 
   const summary = useMemo(() => {
-    if (alwaysAvailable) return "Available 24/7";
+    if (alwaysAvailable) return t.availabilityScreen.available247;
     return `${formatTime(fromTime)} – ${formatTime(toTime)}`;
-  }, [alwaysAvailable, fromTime, toTime]);
+  }, [alwaysAvailable, fromTime, toTime, t]);
 
   const handleSave = useCallback(async () => {
     if (sameTime) {
-      showErrorToast("Start and end time can't be the same.", "Invalid Window");
+      showErrorToast(t.availabilityScreen.sameTimeWarn, t.availabilityScreen.invalidWindow);
       return;
     }
     setSaving(true);
@@ -118,19 +120,19 @@ export default function AvailabilityScreen() {
         available_to: alwaysAvailable ? null : toTime,
         timezone,
       });
-      showSuccessToast("Availability schedule saved.", "Saved");
+      showSuccessToast(t.availabilityScreen.scheduleSaved, t.availabilityScreen.savedTitle);
       router.back();
     } catch (e: any) {
       const msg = e?.message || "";
       if (/not yet available|503/i.test(msg)) {
-        showErrorToast("This feature isn't enabled on the server yet. Please try again later.", "Unavailable");
+        showErrorToast(t.availabilityScreen.featureUnavailable, t.availabilityScreen.unavailableTitle);
       } else {
-        showErrorToast(msg || "Failed to save. Please try again.");
+        showErrorToast(msg || t.availabilityScreen.saveFailed);
       }
     } finally {
       setSaving(false);
     }
-  }, [alwaysAvailable, fromTime, toTime, timezone, sameTime]);
+  }, [alwaysAvailable, fromTime, toTime, timezone, sameTime, t]);
 
   if (loading) {
     return (
@@ -146,13 +148,13 @@ export default function AvailabilityScreen() {
         <TouchableOpacity onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Go back" style={[styles.backBtn, { backgroundColor: colors.surface }]}>
           <Image source={require("@/assets/icons/ic_back.png")} style={styles.backIconImg} tintColor={colors.text} resizeMode="contain" />
         </TouchableOpacity>
-        <Text style={[styles.title, { color: colors.text }]}>Availability Schedule</Text>
+        <Text style={[styles.title, { color: colors.text }]}>{t.availabilityScreen.title}</Text>
         <View style={{ width: 40 }} />
       </View>
 
       <ScrollView contentContainerStyle={{ paddingBottom: 120 }} showsVerticalScrollIndicator={false}>
         <Text style={[styles.helpText, { color: colors.mutedForeground }]}>
-          Set the hours you're usually available. Callers see this on your profile. It's a display hint — it doesn't force you offline.
+          {t.availabilityScreen.helpText}
         </Text>
 
         {/* Always available toggle */}
@@ -162,8 +164,8 @@ export default function AvailabilityScreen() {
               <Image source={require("@/assets/icons/ic_calendar.png")} style={styles.rowIconImg} tintColor={colors.primary} resizeMode="contain" />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.rowLabel, { color: colors.text }]}>Always Available (24/7)</Text>
-              <Text style={[styles.rowSub, { color: colors.mutedForeground }]}>No fixed hours — available any time</Text>
+              <Text style={[styles.rowLabel, { color: colors.text }]}>{t.availabilityScreen.always24Title}</Text>
+              <Text style={[styles.rowSub, { color: colors.mutedForeground }]}>{t.availabilityScreen.always24Sub}</Text>
             </View>
             <Switch
               value={alwaysAvailable}
@@ -177,39 +179,39 @@ export default function AvailabilityScreen() {
         {/* Time window — only when not always available */}
         {!alwaysAvailable && (
           <>
-            <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Available Hours</Text>
+            <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>{t.availabilityScreen.availableHours}</Text>
             <View style={[styles.card, { backgroundColor: colors.card }]}>
               <TouchableOpacity style={[styles.pickRow, { borderBottomColor: colors.border }]} onPress={() => setPicker("from")} activeOpacity={0.75}>
-                <Text style={[styles.pickLabel, { color: colors.text }]}>Available From</Text>
+                <Text style={[styles.pickLabel, { color: colors.text }]}>{t.availabilityScreen.availableFrom}</Text>
                 <Text style={[styles.pickValue, { color: colors.primary }]}>{formatTime(fromTime)}</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.pickRow} onPress={() => setPicker("to")} activeOpacity={0.75}>
-                <Text style={[styles.pickLabel, { color: colors.text }]}>Available To</Text>
+                <Text style={[styles.pickLabel, { color: colors.text }]}>{t.availabilityScreen.availableTo}</Text>
                 <Text style={[styles.pickValue, { color: colors.primary }]}>{formatTime(toTime)}</Text>
               </TouchableOpacity>
             </View>
             {sameTime && (
-              <Text style={[styles.warn, { color: colors.destructive }]}>Start and end time can't be the same.</Text>
+              <Text style={[styles.warn, { color: colors.destructive }]}>{t.availabilityScreen.sameTimeWarn}</Text>
             )}
             {!sameTime && (
               <Text style={[styles.hint, { color: colors.mutedForeground }]}>
-                {fromTime > toTime ? "Overnight window — spans past midnight." : ""}
+                {fromTime > toTime ? t.availabilityScreen.overnightHint : ""}
               </Text>
             )}
           </>
         )}
 
         {/* Timezone */}
-        <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Timezone</Text>
+        <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>{t.availabilityScreen.timezone}</Text>
         <View style={[styles.card, { backgroundColor: colors.card }]}>
           <TouchableOpacity style={styles.pickRow} onPress={() => setPicker("tz")} activeOpacity={0.75}>
-            <Text style={[styles.pickLabel, { color: colors.text }]}>Timezone</Text>
+            <Text style={[styles.pickLabel, { color: colors.text }]}>{t.availabilityScreen.timezone}</Text>
             <Text style={[styles.pickValue, { color: colors.primary }]}>{timezone}</Text>
           </TouchableOpacity>
         </View>
 
         <View style={[styles.summaryCard, { backgroundColor: colors.coinGoldBg }]}>
-          <Text style={[styles.summaryLabel, { color: colors.mutedForeground }]}>Callers will see</Text>
+          <Text style={[styles.summaryLabel, { color: colors.mutedForeground }]}>{t.availabilityScreen.callersWillSee}</Text>
           <Text style={[styles.summaryValue, { color: colors.text }]}>{summary}</Text>
         </View>
       </ScrollView>
@@ -221,7 +223,7 @@ export default function AvailabilityScreen() {
           disabled={saving}
           activeOpacity={0.85}
         >
-          {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>Save Schedule</Text>}
+          {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>{t.availabilityScreen.saveSchedule}</Text>}
         </TouchableOpacity>
       </View>
 
@@ -229,7 +231,7 @@ export default function AvailabilityScreen() {
       <BottomSheet
         visible={picker === "from" || picker === "to"}
         onClose={() => setPicker(null)}
-        title={picker === "from" ? "Available From" : "Available To"}
+        title={picker === "from" ? t.availabilityScreen.availableFrom : t.availabilityScreen.availableTo}
       >
         <View style={styles.optionWrap}>
           {TIME_SLOTS.map((slot) => {
@@ -252,7 +254,7 @@ export default function AvailabilityScreen() {
       </BottomSheet>
 
       {/* Timezone picker sheet */}
-      <BottomSheet visible={picker === "tz"} onClose={() => setPicker(null)} title="Select Timezone">
+      <BottomSheet visible={picker === "tz"} onClose={() => setPicker(null)} title={t.availabilityScreen.selectTimezone}>
         <View style={{ gap: 4 }}>
           {(TIMEZONES.includes(timezone) ? TIMEZONES : [timezone, ...TIMEZONES]).map((tz) => {
             const active = tz === timezone;

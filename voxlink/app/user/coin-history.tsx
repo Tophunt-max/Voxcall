@@ -7,6 +7,8 @@ import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
+import { useLanguage } from "@/context/LanguageContext";
+import type { Translations } from "@/localization/en";
 import { API } from "@/services/api";
 import { showErrorToast } from "@/components/Toast";
 
@@ -40,24 +42,24 @@ function filterByTab(txs: Transaction[], tab: Tab): Transaction[] {
   return txs.filter(t => t.type === "bonus" || t.type === "refund");
 }
 
-function formatApiDate(ts: number): string {
+function formatApiDate(ts: number, tr: Translations): string {
   const d = new Date(ts * 1000);
   const now = new Date();
   const diffDays = Math.floor((now.getTime() - d.getTime()) / 86400000);
   const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  if (diffDays === 0) return `Today, ${time}`;
-  if (diffDays === 1) return `Yesterday, ${time}`;
+  if (diffDays === 0) return `${tr.coinHistory.today}, ${time}`;
+  if (diffDays === 1) return `${tr.coinHistory.yesterday}, ${time}`;
   return d.toLocaleDateString([], { month: "short", day: "numeric" }) + `, ${time}`;
 }
 
-function mapApiTx(tx: any): Transaction {
+function mapApiTx(tx: any, tr: Translations): Transaction {
   return {
     id: tx.id,
     type: tx.type as TxType,
     title: tx.description || tx.type,
-    subtitle: tx.ref_id ? `Ref: ${tx.ref_id.slice(0, 8)}` : "",
+    subtitle: tx.ref_id ? `${tr.coinHistory.ref} ${tx.ref_id.slice(0, 8)}` : "",
     coins: tx.amount,
-    date: tx.created_at ? formatApiDate(tx.created_at) : "",
+    date: tx.created_at ? formatApiDate(tx.created_at, tr) : "",
   };
 }
 
@@ -65,6 +67,7 @@ export default function CoinHistoryScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { user, refreshBalance } = useAuth();
+  const { t: tr } = useLanguage();
   const [tab, setTab] = useState<Tab>("All");
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
@@ -77,22 +80,28 @@ export default function CoinHistoryScreen() {
     else setLoading(true);
     try {
       const data = await API.getCoinHistory();
-      setTransactions(data.map(mapApiTx));
+      setTransactions(data.map((row) => mapApiTx(row, tr)));
       await refreshBalance();
     } catch {
       setTransactions([]);
-      showErrorToast("Failed to load coin history.");
+      showErrorToast(tr.coinHistory.failedLoad);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [tr]);
 
   useEffect(() => { load(); }, []);
 
   const filtered = filterByTab(transactions, tab);
   const totalIn  = transactions.filter(t => t.coins > 0).reduce((s, t) => s + t.coins, 0);
   const totalOut = transactions.filter(t => t.coins < 0).reduce((s, t) => s + t.coins, 0);
+
+  const tabLabel = (key: Tab): string =>
+    key === "All" ? tr.coinHistory.tabAll
+    : key === "Purchase" ? tr.coinHistory.tabPurchase
+    : key === "Spent" ? tr.coinHistory.tabSpent
+    : tr.coinHistory.tabBonus;
 
   const renderItem = ({ item }: { item: Transaction }) => {
     const cfg = TYPE_CONFIG[item.type] ?? TYPE_CONFIG.spend;
@@ -124,14 +133,14 @@ export default function CoinHistoryScreen() {
         <TouchableOpacity onPress={() => router.back()} style={[styles.backBtn, { backgroundColor: colors.surface }]}>
           <Image source={require("@/assets/icons/ic_back.png")} style={styles.backIcon} tintColor={colors.text} resizeMode="contain" />
         </TouchableOpacity>
-        <Text style={[styles.title, { color: colors.text }]}>Coin History</Text>
+        <Text style={[styles.title, { color: colors.text }]}>{tr.coinHistory.title}</Text>
         <View style={{ width: 40 }} />
       </View>
 
       {/* Balance summary */}
       <View style={[styles.summaryCard, { backgroundColor: "#A00EE7" }]}>
         <View style={styles.summaryLeft}>
-          <Text style={styles.summaryLabel}>Current Balance</Text>
+          <Text style={styles.summaryLabel}>{tr.coinHistory.currentBalance}</Text>
           <View style={styles.summaryBalance}>
             <Image source={require("@/assets/icons/ic_coin.png")} style={styles.summaryIcon} resizeMode="contain" />
             <Text style={styles.summaryAmount}>{(user?.coins ?? 0).toLocaleString()}</Text>
@@ -140,11 +149,11 @@ export default function CoinHistoryScreen() {
         <View style={styles.summaryDivider} />
         <View style={styles.summaryRight}>
           <View style={styles.miniStat}>
-            <Text style={styles.miniLabel}>Earned</Text>
+            <Text style={styles.miniLabel}>{tr.coinHistory.earned}</Text>
             <Text style={styles.miniVal}>+{totalIn}</Text>
           </View>
           <View style={styles.miniStat}>
-            <Text style={styles.miniLabel}>Spent</Text>
+            <Text style={styles.miniLabel}>{tr.coinHistory.spent}</Text>
             <Text style={styles.miniVal}>{totalOut}</Text>
           </View>
         </View>
@@ -154,7 +163,7 @@ export default function CoinHistoryScreen() {
       <View style={[styles.tabRow, { borderBottomColor: colors.border }]}>
         {TABS.map((t) => (
           <TouchableOpacity key={t} style={[styles.tabItem, tab === t && { borderBottomColor: colors.primary, borderBottomWidth: 2 }]} onPress={() => setTab(t)}>
-            <Text style={[styles.tabText, { color: tab === t ? colors.primary : colors.mutedForeground }]}>{t}</Text>
+            <Text style={[styles.tabText, { color: tab === t ? colors.primary : colors.mutedForeground }]}>{tabLabel(t)}</Text>
           </TouchableOpacity>
         ))}
       </View>
@@ -166,7 +175,7 @@ export default function CoinHistoryScreen() {
       ) : filtered.length === 0 ? (
         <View style={styles.empty}>
           <Image source={require("@/assets/icons/ic_download.png")} style={{ width: 64, height: 64, tintColor: colors.border }} resizeMode="contain" />
-          <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>No transactions found</Text>
+          <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>{tr.coinHistory.noTransactions}</Text>
         </View>
       ) : (
         <FlatList

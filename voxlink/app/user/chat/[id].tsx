@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { useChat, Message } from "@/context/ChatContext";
+import { useLanguage } from "@/context/LanguageContext";
 import { API, resolveMediaUrl } from "@/services/api";
 import { appendFileToFormData } from "@/utils/fileUpload";
 import { alertDialog } from "@/utils/dialog";
@@ -24,10 +25,11 @@ export default function ChatScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user } = useAuth();
   const { conversations, sendMessage, retryMessage, markRead, loadMessages, sendTyping } = useChat();
+  const { t } = useLanguage();
   const [text, setText] = useState("");
   const [sendingPhoto, setSendingPhoto] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [participantName, setParticipantName] = useState("Chat");
+  const [participantName, setParticipantName] = useState(t.chatScreen.defaultName);
   const [participantAvatar, setParticipantAvatar] = useState(`https://api.dicebear.com/7.x/avataaars/png?seed=${id}`);
   const listRef = useRef<FlatList>(null);
   // Typing debounce — track whether we've already told the other side
@@ -43,10 +45,10 @@ export default function ChatScreen() {
   // "Offline" when we haven't loaded the convo yet so we never show a
   // stale / fake "Online" pill.
   const headerStatus: { text: string; color: string } = convo?.isTyping
-    ? { text: "typing\u2026", color: colors.primary }
+    ? { text: t.chat.typing, color: colors.primary }
     : convo?.participantIsOnline
-      ? { text: "Online", color: colors.online }
-      : { text: "Offline", color: colors.mutedForeground };
+      ? { text: t.chat.online, color: colors.online }
+      : { text: t.chat.offline, color: colors.mutedForeground };
 
   useEffect(() => {
     if (!id) return;
@@ -60,7 +62,7 @@ export default function ChatScreen() {
       }
     } else {
       setLoading(true);
-      loadMessages(id, id).catch(() => { showErrorToast("Failed to load messages."); }).finally(() => setLoading(false));
+      loadMessages(id, id).catch(() => { showErrorToast(t.chatScreen.failedLoadMessages); }).finally(() => setLoading(false));
     }
   }, [id]);
 
@@ -124,7 +126,7 @@ export default function ChatScreen() {
     try {
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (perm.status !== "granted") {
-        alertDialog("Permission Required", "Please allow photo library access to send a photo.");
+        alertDialog(t.chatScreen.permissionTitle, t.chatScreen.permissionPhoto);
         return;
       }
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -140,11 +142,11 @@ export default function ChatScreen() {
       await appendFileToFormData(fd, "file", asset.uri, `chat.${rawExt}`, `image/${mime}`);
       const res = await API.uploadFile(fd);
       const url = res?.url ? (resolveMediaUrl(res.url) || res.url) : null;
-      if (!url) { showErrorToast("Upload failed. Please try again."); return; }
+      if (!url) { showErrorToast(t.chatScreen.uploadFailed); return; }
       await sendMessage(convo?.id ?? id, url, "image");
       setTimeout(() => listRef.current?.scrollToOffset({ offset: 0, animated: true }), 100);
     } catch {
-      showErrorToast("Couldn't send photo. Please try again.");
+      showErrorToast(t.chatScreen.photoSendFailed);
     } finally {
       setSendingPhoto(false);
     }
@@ -164,7 +166,7 @@ export default function ChatScreen() {
               source={{ uri: item.content }}
               style={styles.bubbleImage}
               resizeMode="cover"
-              accessibilityLabel="Photo message"
+              accessibilityLabel={t.chatScreen.a11yPhotoMessage}
             />
           ) : (
             <Text style={[styles.bubbleText, { color: isMe ? "#fff" : colors.foreground }]}>{item.content}</Text>
@@ -174,16 +176,16 @@ export default function ChatScreen() {
               {formatTime(item.timestamp)}
             </Text>
             {isMe && item.status === "sending" && (
-              <Text style={[styles.bubbleStatus, { color: "rgba(255,255,255,0.7)" }]}>Sending…</Text>
+              <Text style={[styles.bubbleStatus, { color: "rgba(255,255,255,0.7)" }]}>{t.chatScreen.sending}</Text>
             )}
             {isMe && item.status === "failed" && (
               <TouchableOpacity
                 onPress={() => retryMessage(convo?.id ?? (id as string), item.id)}
                 accessibilityRole="button"
-                accessibilityLabel="Retry sending message"
+                accessibilityLabel={t.chatScreen.a11yRetry}
                 hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
               >
-                <Text style={[styles.bubbleStatus, { color: "#FFD2D2", textDecorationLine: "underline" }]}>Tap to retry</Text>
+                <Text style={[styles.bubbleStatus, { color: "#FFD2D2", textDecorationLine: "underline" }]}>{t.chatScreen.tapToRetry}</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -195,7 +197,7 @@ export default function ChatScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { paddingTop: insets.top + 8, borderBottomColor: colors.border }]}>
-        <TouchableOpacity onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Go back">
+        <TouchableOpacity onPress={() => router.back()} accessibilityRole="button" accessibilityLabel={t.chatScreen.a11yBack}>
           <Image source={require("@/assets/icons/ic_back.png")} style={{ width: 22, height: 22, tintColor: colors.foreground }} resizeMode="contain" />
         </TouchableOpacity>
         <Image source={{ uri: participantAvatar }} style={styles.headerAvatar} />
@@ -223,7 +225,7 @@ export default function ChatScreen() {
           <View style={styles.empty}>
             <Image source={{ uri: participantAvatar }} style={styles.emptyAvatar} />
             <Text style={[styles.emptyName, { color: colors.foreground }]}>{participantName}</Text>
-            <Text style={[styles.emptyHint, { color: colors.mutedForeground }]}>Send a message to start the conversation</Text>
+            <Text style={[styles.emptyHint, { color: colors.mutedForeground }]}>{t.chatScreen.emptyHint}</Text>
           </View>
         ) : (
           <FlatList
@@ -238,7 +240,7 @@ export default function ChatScreen() {
         )}
 
         <View style={[styles.inputBar, { borderTopColor: colors.border, backgroundColor: colors.background, paddingBottom: insets.bottom + 8 }]}>
-          <TouchableOpacity onPress={handleAttachPhoto} disabled={sendingPhoto} style={[styles.iconBtn, { backgroundColor: colors.muted }]} accessibilityRole="button" accessibilityLabel="Attach photo">
+          <TouchableOpacity onPress={handleAttachPhoto} disabled={sendingPhoto} style={[styles.iconBtn, { backgroundColor: colors.muted }]} accessibilityRole="button" accessibilityLabel={t.chatScreen.a11yAttach}>
             {sendingPhoto ? (
               <ActivityIndicator size="small" color={colors.mutedForeground} />
             ) : (
@@ -249,7 +251,7 @@ export default function ChatScreen() {
             <TextInput
               value={text}
               onChangeText={handleChangeText}
-              placeholder="Type a message..."
+              placeholder={t.chat.typeMessage}
               placeholderTextColor={colors.mutedForeground}
               style={[styles.input, { color: colors.foreground }]}
               multiline
@@ -264,7 +266,7 @@ export default function ChatScreen() {
             disabled={!text.trim()}
             style={[styles.sendBtn, { backgroundColor: text.trim() ? colors.primary : colors.muted }]}
             accessibilityRole="button"
-            accessibilityLabel="Send message"
+            accessibilityLabel={t.chatScreen.a11ySend}
           >
             <Image source={require("@/assets/icons/ic_send.png")} style={{ width: 18, height: 18, tintColor: text.trim() ? "#fff" : colors.mutedForeground }} resizeMode="contain" />
           </TouchableOpacity>

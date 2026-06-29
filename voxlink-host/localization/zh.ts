@@ -1049,6 +1049,30 @@ const zh = {
     message: "此页面不存在。",
     goHome: "前往首页！",
   },
+
+  // Availability schedule screen
+  availabilityScreen: {
+    title: "可用时间安排",
+    helpText: "设置您通常可用的时间。来电者会在您的资料中看到。这只是显示提示——不会强制您离线。",
+    always24Title: "全天候可用 (24/7)",
+    always24Sub: "无固定时间——随时可用",
+    availableHours: "可用时段",
+    availableFrom: "可用起始",
+    availableTo: "可用结束",
+    sameTimeWarn: "开始和结束时间不能相同。",
+    overnightHint: "跨夜时段——延续到午夜之后。",
+    timezone: "时区",
+    callersWillSee: "来电者将看到",
+    available247: "24/7 可用",
+    saveSchedule: "保存安排",
+    selectTimezone: "选择时区",
+    scheduleSaved: "可用时间安排已保存。",
+    savedTitle: "已保存",
+    invalidWindow: "无效时段",
+    featureUnavailable: "此功能尚未在服务器上启用。请稍后再试。",
+    unavailableTitle: "不可用",
+    saveFailed: "保存失败，请重试。",
+  },
 };
 
 export default zh;

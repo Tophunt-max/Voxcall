@@ -1049,6 +1049,30 @@ const ar = {
     message: "هذه الشاشة غير موجودة.",
     goHome: "اذهب إلى الرئيسية!",
   },
+
+  // Availability schedule screen
+  availabilityScreen: {
+    title: "جدول التوفر",
+    helpText: "حدّد الساعات التي تكون متاحًا فيها عادةً. يراها المتصلون في ملفك الشخصي. إنها مجرد إشارة عرض — لا تجعلك غير متصل.",
+    always24Title: "متاح دائمًا (24/7)",
+    always24Sub: "لا ساعات محددة — متاح في أي وقت",
+    availableHours: "ساعات التوفر",
+    availableFrom: "متاح من",
+    availableTo: "متاح حتى",
+    sameTimeWarn: "لا يمكن أن يكون وقت البداية والنهاية متطابقين.",
+    overnightHint: "فترة ليلية — تمتد بعد منتصف الليل.",
+    timezone: "المنطقة الزمنية",
+    callersWillSee: "سيرى المتصلون",
+    available247: "متاح 24/7",
+    saveSchedule: "حفظ الجدول",
+    selectTimezone: "اختر المنطقة الزمنية",
+    scheduleSaved: "تم حفظ جدول التوفر.",
+    savedTitle: "تم الحفظ",
+    invalidWindow: "فترة غير صالحة",
+    featureUnavailable: "هذه الميزة غير مفعّلة على الخادم بعد. يرجى المحاولة لاحقًا.",
+    unavailableTitle: "غير متاح",
+    saveFailed: "فشل الحفظ. يرجى المحاولة مجددًا.",
+  },
 };
 
 export default ar;

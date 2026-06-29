@@ -15,6 +15,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
+import { useLanguage } from "@/context/LanguageContext";
 import { API } from "@/services/api";
 import { showSuccessToast, showErrorToast } from "@/components/Toast";
 import { formatLocalAmount } from "@/utils/currency";
@@ -35,6 +36,7 @@ export default function ManualQRPaymentPage() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { updateCoins } = useAuth();
+  const { t } = useLanguage();
   const params = useLocalSearchParams<{
     plan_id: string;
     plan_name: string;
@@ -54,7 +56,7 @@ export default function ManualQRPaymentPage() {
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const planName = params.plan_name || "Coin Pack";
+  const planName = params.plan_name || t.checkout.coinPack;
   const totalCoins = parseInt(params.coins || "0");
   const price = parseFloat(params.price || "0");
   const currency = params.currency || "INR";
@@ -123,15 +125,15 @@ export default function ManualQRPaymentPage() {
   const handleSubmit = useCallback(async () => {
     const trimmedUtr = utr.trim();
     if (!trimmedUtr) {
-      showErrorToast("Please enter UTR / Transaction Reference number", "Required");
+      showErrorToast(t.checkout.utrRequiredMsg2, t.common.required);
       return;
     }
     if (trimmedUtr.length < 6) {
-      showErrorToast("UTR should be at least 6 characters", "Invalid UTR");
+      showErrorToast(t.checkout.utrTooShort, t.checkout.invalidUtr);
       return;
     }
     if (!params.plan_id) {
-      showErrorToast("Plan information missing. Please go back and try again.", "Error");
+      showErrorToast(t.checkout.planMissing, t.calls.errorTitle);
       return;
     }
 
@@ -157,7 +159,7 @@ export default function ManualQRPaymentPage() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e: any) {
       setState("payment");
-      showErrorToast(e?.message || "Submission failed. Please try again.", "Error");
+      showErrorToast(e?.message || t.checkout.submissionFailedShort, t.calls.errorTitle);
     }
   }, [utr, params, currentQR, updateCoins]);
 
@@ -177,7 +179,7 @@ export default function ManualQRPaymentPage() {
         <Header colors={colors} />
         <View style={s.center}>
           <ActivityIndicator color={colors.accent} size="large" />
-          <Text style={[s.loadingText, { color: colors.mutedForeground }]}>Loading payment details...</Text>
+          <Text style={[s.loadingText, { color: colors.mutedForeground }]}>{t.checkout.loadingPayment}</Text>
         </View>
       </View>
     );
@@ -189,12 +191,12 @@ export default function ManualQRPaymentPage() {
         <Header colors={colors} />
         <View style={s.center}>
           <Text style={{ fontSize: 48 }}>😔</Text>
-          <Text style={[s.errorTitle, { color: colors.text }]}>Not Available</Text>
+          <Text style={[s.errorTitle, { color: colors.text }]}>{t.checkout.notAvailable}</Text>
           <Text style={[s.errorSub, { color: colors.mutedForeground }]}>
-            Manual UPI payment is currently unavailable. Please try another payment method.
+            {t.checkout.manualUnavailable}
           </Text>
           <TouchableOpacity style={[s.retryBtn, { borderColor: colors.accent }]} onPress={loadQR}>
-            <Text style={[s.retryBtnText, { color: colors.accent }]}>Retry</Text>
+            <Text style={[s.retryBtnText, { color: colors.accent }]}>{t.checkout.retry}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -211,45 +213,45 @@ export default function ManualQRPaymentPage() {
           </View>
           {autoApproved && (
             <View style={s.autoBadge}>
-              <Text style={s.autoBadgeText}>Instant Approval</Text>
+              <Text style={s.autoBadgeText}>{t.checkout.instantApproval}</Text>
             </View>
           )}
           <Text style={[s.successTitle, { color: colors.text }]}>
-            {autoApproved ? "Coins Added!" : "Payment Submitted!"}
+            {autoApproved ? t.checkout.coinsAdded : t.checkout.paymentSubmitted}
           </Text>
           <Text style={[s.successSub, { color: colors.mutedForeground }]}>
             {autoApproved
-              ? `${totalCoins.toLocaleString()} coins have been added to your wallet!`
-              : "Your payment is being reviewed. Coins will be credited within a few hours."}
+              ? t.checkout.coinsAddedWallet.replace("{count}", totalCoins.toLocaleString())
+              : t.checkout.beingReviewed}
           </Text>
           <View style={[s.receiptCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <View style={s.receiptRow}>
-              <Text style={[s.receiptLabel, { color: colors.mutedForeground }]}>Package</Text>
+              <Text style={[s.receiptLabel, { color: colors.mutedForeground }]}>{t.checkout.package}</Text>
               <Text style={[s.receiptValue, { color: colors.text }]}>{planName}</Text>
             </View>
             <View style={s.receiptRow}>
-              <Text style={[s.receiptLabel, { color: colors.mutedForeground }]}>Coins</Text>
+              <Text style={[s.receiptLabel, { color: colors.mutedForeground }]}>{t.wallet.coins}</Text>
               <Text style={[s.receiptValue, { color: colors.accent }]}>{totalCoins.toLocaleString()}</Text>
             </View>
             <View style={s.receiptRow}>
-              <Text style={[s.receiptLabel, { color: colors.mutedForeground }]}>Amount</Text>
+              <Text style={[s.receiptLabel, { color: colors.mutedForeground }]}>{t.checkout.amount}</Text>
               <Text style={[s.receiptValue, { color: colors.text }]}>{formatLocalAmount(price, currency)}</Text>
             </View>
             <View style={s.receiptRow}>
-              <Text style={[s.receiptLabel, { color: colors.mutedForeground }]}>UTR / Ref</Text>
+              <Text style={[s.receiptLabel, { color: colors.mutedForeground }]}>{t.checkout.utrRef}</Text>
               <Text style={[s.receiptValue, { color: colors.text }]}>{utr}</Text>
             </View>
             <View style={s.receiptRow}>
-              <Text style={[s.receiptLabel, { color: colors.mutedForeground }]}>Status</Text>
+              <Text style={[s.receiptLabel, { color: colors.mutedForeground }]}>{t.checkout.status}</Text>
               <View style={[s.statusBadge, { backgroundColor: autoApproved ? "#E8F5E9" : "#FFF3E0" }]}>
                 <Text style={[s.statusText, { color: autoApproved ? "#2E7D32" : "#E65100" }]}>
-                  {autoApproved ? "Approved" : "Pending Review"}
+                  {autoApproved ? t.checkout.approved : t.checkout.pendingReview}
                 </Text>
               </View>
             </View>
           </View>
           <TouchableOpacity style={[s.doneBtn, { backgroundColor: colors.accent }]} onPress={handleDone}>
-            <Text style={s.doneBtnText}>Done</Text>
+            <Text style={s.doneBtnText}>{t.common.done}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -289,7 +291,7 @@ export default function ManualQRPaymentPage() {
             <View style={s.stepBadge}>
               <Text style={s.stepNum}>1</Text>
             </View>
-            <Text style={[s.stepTitle, { color: colors.text }]}>Scan QR Code & Pay</Text>
+            <Text style={[s.stepTitle, { color: colors.text }]}>{t.checkout.scanQrPay}</Text>
           </View>
 
           {/* QR Card */}
@@ -303,7 +305,7 @@ export default function ManualQRPaymentPage() {
             ) : (
               <View style={[s.qrPlaceholder, { backgroundColor: colors.surface }]}>
                 <Text style={{ fontSize: 40 }}>📱</Text>
-                <Text style={[s.placeholderText, { color: colors.mutedForeground }]}>QR not available</Text>
+                <Text style={[s.placeholderText, { color: colors.mutedForeground }]}>{t.checkout.qrNotAvailable}</Text>
               </View>
             )}
           </Animated.View>
@@ -315,25 +317,25 @@ export default function ManualQRPaymentPage() {
             activeOpacity={0.7}
           >
             <View style={s.upiLeft}>
-              <Text style={[s.upiLabel, { color: colors.mutedForeground }]}>UPI ID</Text>
+              <Text style={[s.upiLabel, { color: colors.mutedForeground }]}>{t.checkout.upiId}</Text>
               <Text style={[s.upiId, { color: colors.accent }]}>{currentQR?.upi_id}</Text>
             </View>
             <View style={[s.copyBtn, { backgroundColor: copied ? "#E8F5E9" : colors.accentLight }]}>
               <Text style={[s.copyText, { color: copied ? "#2E7D32" : colors.accent }]}>
-                {copied ? "Copied!" : "Copy"}
+                {copied ? t.common.copied : t.checkout.copy}
               </Text>
             </View>
           </TouchableOpacity>
 
           {/* Account name */}
           <Text style={[s.accountName, { color: colors.mutedForeground }]}>
-            Account: {currentQR?.name}
+            {t.checkout.account} {currentQR?.name}
           </Text>
 
           {/* Amount reminder */}
           <View style={[s.amountReminder, { backgroundColor: "#FFF8E1", borderColor: "#FFE082" }]}>
             <Text style={[s.reminderText, { color: "#F57F17" }]}>
-              Pay exactly {formatLocalAmount(price, currency)} to this UPI ID
+              {t.checkout.payExactly.replace("{amount}", formatLocalAmount(price, currency))}
             </Text>
           </View>
 
@@ -350,17 +352,17 @@ export default function ManualQRPaymentPage() {
             <View style={s.stepBadge}>
               <Text style={s.stepNum}>2</Text>
             </View>
-            <Text style={[s.stepTitle, { color: colors.text }]}>Enter UTR / Transaction ID</Text>
+            <Text style={[s.stepTitle, { color: colors.text }]}>{t.checkout.enterUtrStep}</Text>
           </View>
 
           <Text style={[s.utrHint, { color: colors.mutedForeground }]}>
-            After payment, find the 12-digit UTR or transaction reference in your UPI app's payment history.
+            {t.checkout.utrHintHistory}
           </Text>
 
           <View style={[s.inputContainer, { backgroundColor: colors.card, borderColor: utr.trim().length >= 6 ? "#4CAF50" : colors.border }]}>
             <TextInput
               style={[s.input, { color: colors.text }]}
-              placeholder="e.g. 412345678901"
+              placeholder={t.checkout.utrExample}
               placeholderTextColor={colors.mutedForeground}
               value={utr}
               onChangeText={setUtr}
@@ -380,9 +382,9 @@ export default function ManualQRPaymentPage() {
 
           {/* Where to find UTR hint */}
           <View style={[s.hintCard, { backgroundColor: colors.surface }]}>
-            <Text style={[s.hintTitle, { color: colors.text }]}>Where to find UTR?</Text>
+            <Text style={[s.hintTitle, { color: colors.text }]}>{t.checkout.whereUtr}</Text>
             <Text style={[s.hintText, { color: colors.mutedForeground }]}>
-              Open your UPI app (PhonePe / GPay / Paytm) → Transaction History → Tap on the payment → Copy the "UTR" or "Reference ID"
+              {t.checkout.whereUtrText}
             </Text>
           </View>
         </View>
@@ -392,7 +394,7 @@ export default function ManualQRPaymentPage() {
           <Text style={[s.noteIcon]}>ℹ️</Text>
           <View style={{ flex: 1 }}>
             <Text style={[s.noteText, { color: colors.mutedForeground }]}>
-              Coins will be added after admin verification (usually within a few hours). Make sure to pay the exact amount.
+              {t.checkout.verifyNote}
             </Text>
           </View>
         </View>
@@ -411,7 +413,7 @@ export default function ManualQRPaymentPage() {
             <ActivityIndicator color="#fff" />
           ) : (
             <Text style={s.submitText}>
-              {utr.trim().length >= 6 ? "Submit Payment" : "Enter UTR to continue"}
+              {utr.trim().length >= 6 ? t.checkout.submitPayment : t.checkout.enterUtrContinue}
             </Text>
           )}
         </TouchableOpacity>
@@ -422,12 +424,13 @@ export default function ManualQRPaymentPage() {
 
 // ─── Header Component ────────────────────────────────────────────────────────
 function Header({ colors }: { colors: any }) {
+  const { t } = useLanguage();
   return (
     <View style={[s.header, { borderBottomColor: colors.border }]}>
-      <TouchableOpacity onPress={() => router.back()} style={s.backBtn} accessibilityRole="button" accessibilityLabel="Go back">
+      <TouchableOpacity onPress={() => router.back()} style={s.backBtn} accessibilityRole="button" accessibilityLabel={t.notificationsScreen.goBack}>
         <Text style={[s.backIcon, { color: colors.text }]}>←</Text>
       </TouchableOpacity>
-      <Text style={[s.headerTitle, { color: colors.text }]}>UPI / QR Payment</Text>
+      <Text style={[s.headerTitle, { color: colors.text }]}>{t.checkout.upiQrPayment}</Text>
       <View style={{ width: 44 }} />
     </View>
   );

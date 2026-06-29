@@ -11,12 +11,14 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
+import { useLanguage } from "@/context/LanguageContext";
 import { PrimaryButton } from "@/components/PrimaryButton";
 
 export default function EditProfileScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { user, updateProfile } = useAuth();
+  const { t } = useLanguage();
   const [name, setName] = useState(user?.name ?? "");
   const [bio, setBio] = useState(user?.bio ?? "");
   const [loading, setLoading] = useState(false);
@@ -29,12 +31,12 @@ export default function EditProfileScreen() {
     setLoading(true);
     try {
       await updateProfile({ name, bio });
-      showSuccessToast("Your profile has been updated.", "Profile Saved");
+      showSuccessToast(t.editProfile.updated, t.editProfile.savedTitle);
       router.back();
     } catch (e: any) {
       // Don't fail silently — the spinner stopping with no feedback looks like
       // the save "worked". Tell the user so they can retry.
-      showErrorToast(e?.message || "Could not save your profile. Please try again.", "Save Failed");
+      showErrorToast(e?.message || t.editProfile.saveFailedMsg, t.editProfile.saveFailed);
     } finally {
       setLoading(false);
     }
@@ -43,7 +45,7 @@ export default function EditProfileScreen() {
   const handleAvatarPress = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== "granted") {
-      alertDialog("Permission Required", "Please allow access to your photo library to change your avatar.");
+      alertDialog(t.editProfile.permissionTitle, t.editProfile.permissionMsg);
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -72,7 +74,7 @@ export default function EditProfileScreen() {
         await updateProfile({ avatar: resolveMediaUrl(uploadData.url) || uploadData.url });
       }
     } catch {
-      alertDialog("Upload Failed", "Could not upload avatar. Please try again.");
+      alertDialog(t.editProfile.uploadFailed, t.editProfile.uploadFailedMsg);
       setAvatarUri(null);
     } finally {
       setUploadingAvatar(false);
@@ -85,7 +87,7 @@ export default function EditProfileScreen() {
         <TouchableOpacity onPress={() => router.back()}>
           <Image source={require("@/assets/icons/ic_close.png")} style={{ width: 22, height: 22 }} tintColor={colors.foreground} resizeMode="contain" />
         </TouchableOpacity>
-        <Text style={[styles.title, { color: colors.foreground }]}>Edit Profile</Text>
+        <Text style={[styles.title, { color: colors.foreground }]}>{t.profile.editProfile}</Text>
         <View style={{ width: 22 }} />
       </View>
 
@@ -107,7 +109,7 @@ export default function EditProfileScreen() {
 
         <View style={styles.form}>
           <View>
-            <Text style={[styles.label, { color: colors.mutedForeground }]}>Display Name</Text>
+            <Text style={[styles.label, { color: colors.mutedForeground }]}>{t.editProfile.displayName}</Text>
             <AppInput
               variant="custom"
               inactiveBorder={colors.border}
@@ -115,12 +117,12 @@ export default function EditProfileScreen() {
               textColor={colors.foreground}
               value={name}
               onChangeText={setName}
-              placeholder="Your name"
+              placeholder={t.editProfile.namePlaceholder}
               placeholderTextColor={colors.mutedForeground}
             />
           </View>
           <View>
-            <Text style={[styles.label, { color: colors.mutedForeground }]}>Bio</Text>
+            <Text style={[styles.label, { color: colors.mutedForeground }]}>{t.profile.bio}</Text>
             <AppInput
               variant="custom"
               inactiveBorder={colors.border}
@@ -128,7 +130,7 @@ export default function EditProfileScreen() {
               textColor={colors.foreground}
               value={bio}
               onChangeText={setBio}
-              placeholder="Tell others about yourself..."
+              placeholder={t.editProfile.bioPlaceholder}
               placeholderTextColor={colors.mutedForeground}
               multiline
               numberOfLines={4}
@@ -137,7 +139,7 @@ export default function EditProfileScreen() {
             />
           </View>
           <View>
-            <Text style={[styles.label, { color: colors.mutedForeground }]}>Email</Text>
+            <Text style={[styles.label, { color: colors.mutedForeground }]}>{t.profile.email}</Text>
             <AppInput
               variant="custom"
               inactiveBorder={colors.border}
@@ -150,7 +152,7 @@ export default function EditProfileScreen() {
           </View>
         </View>
 
-        <PrimaryButton title="Save Changes" onPress={handleSave} loading={loading} />
+        <PrimaryButton title={t.editProfile.saveChanges} onPress={handleSave} loading={loading} />
       </View>
     </ScrollView>
   );

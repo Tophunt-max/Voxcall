@@ -1110,6 +1110,30 @@ const en = {
     message: "This screen doesn't exist.",
     goHome: "Go to Home!",
   },
+
+  // Availability schedule screen
+  availabilityScreen: {
+    title: "Availability Schedule",
+    helpText: "Set the hours you're usually available. Callers see this on your profile. It's a display hint — it doesn't force you offline.",
+    always24Title: "Always Available (24/7)",
+    always24Sub: "No fixed hours — available any time",
+    availableHours: "Available Hours",
+    availableFrom: "Available From",
+    availableTo: "Available To",
+    sameTimeWarn: "Start and end time can't be the same.",
+    overnightHint: "Overnight window — spans past midnight.",
+    timezone: "Timezone",
+    callersWillSee: "Callers will see",
+    available247: "Available 24/7",
+    saveSchedule: "Save Schedule",
+    selectTimezone: "Select Timezone",
+    scheduleSaved: "Availability schedule saved.",
+    savedTitle: "Saved",
+    invalidWindow: "Invalid Window",
+    featureUnavailable: "This feature isn't enabled on the server yet. Please try again later.",
+    unavailableTitle: "Unavailable",
+    saveFailed: "Failed to save. Please try again.",
+  },
 };
 
 export type Translations = typeof en;

@@ -6,55 +6,32 @@ import {
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
+import { useLanguage } from "@/context/LanguageContext";
 
-const SECTIONS = [
-  {
-    title: "1. Information We Collect",
-    body: "We collect information you provide directly to us, such as when you create an account, update your profile, make purchases, or contact us for support. This includes your name, email address, username, profile picture, and payment information.\n\nWe also collect information automatically when you use VoxLink, including log data, device information, location information (if permitted), and usage data such as the features you use and the time spent on calls."
-  },
-  {
-    title: "2. How We Use Your Information",
-    body: "We use the information we collect to provide, maintain, and improve our services, process transactions and send related information, send notifications, technical notices, updates, and support messages.\n\nWe also use your data to respond to your comments, questions, and requests, monitor and analyze trends and usage, detect, investigate and prevent fraudulent transactions and other illegal activities."
-  },
-  {
-    title: "3. Sharing of Information",
-    body: "We do not share your personal information with third parties except as described in this policy. We may share information with vendors, consultants, and other service providers who need access to such information to carry out work on our behalf.\n\nWe may disclose your information if we believe disclosure is in accordance with, or required by, any applicable law or legal process, including lawful requests by public authorities to meet national security or law enforcement requirements."
-  },
-  {
-    title: "4. Call Data & Audio",
-    body: "Audio and video call content is transmitted through encrypted channels. We do not record or store the content of your calls unless you explicitly enable a recording feature (if available). Call metadata (duration, participants, timestamps) is stored to provide billing and history features."
-  },
-  {
-    title: "5. Coins & Payments",
-    body: "Payment information is processed through secure third-party payment processors. We do not store full payment card details on our servers. Coin transactions are logged for accounting and dispute resolution purposes."
-  },
-  {
-    title: "6. Data Security",
-    body: "We take reasonable measures to help protect information about you from loss, theft, misuse and unauthorized access, disclosure, alteration, and destruction. All data is encrypted in transit using TLS and at rest using AES-256 encryption."
-  },
-  {
-    title: "7. Data Retention",
-    body: "We retain personal information for as long as necessary to provide our services and fulfill the purposes outlined in this Privacy Policy, unless a longer retention period is required or permitted by law. You may request deletion of your account and associated data at any time through the Settings screen."
-  },
-  {
-    title: "8. Children's Privacy",
-    body: "VoxLink is not intended for children under the age of 18. We do not knowingly collect personal information from children under 18. If we learn we have collected personal information from a child under 18, we will delete that information."
-  },
-  {
-    title: "9. Your Rights",
-    body: "You have the right to access, update, or delete your personal information at any time. You may also object to processing, request data portability, or withdraw consent where processing is based on consent. To exercise these rights, contact us through the Help Center."
-  },
-  {
-    title: "10. Changes to This Policy",
-    body: "We may update this Privacy Policy from time to time. We will notify you of any changes by posting the new policy on this page and updating the 'Last Updated' date. Your continued use of VoxLink after any change constitutes your acceptance of the new Privacy Policy."
-  },
-];
+const SECTION_KEYS = [
+  ["s1Title", "s1Body"],
+  ["s2Title", "s2Body"],
+  ["s3Title", "s3Body"],
+  ["s4Title", "s4Body"],
+  ["s5Title", "s5Body"],
+  ["s6Title", "s6Body"],
+  ["s7Title", "s7Body"],
+  ["s8Title", "s8Body"],
+  ["s9Title", "s9Body"],
+  ["s10Title", "s10Body"],
+] as const;
 
 export default function PrivacyScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { t } = useLanguage();
   const [expanded, setExpanded] = useState<number | null>(0);
   const topPad = insets.top;
+
+  const SECTIONS = SECTION_KEYS.map(([titleKey, bodyKey]) => ({
+    title: t.privacyScreen[titleKey],
+    body: t.privacyScreen[bodyKey],
+  }));
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
@@ -62,7 +39,7 @@ export default function PrivacyScreen() {
         <TouchableOpacity onPress={() => router.back()} style={[styles.backBtn, { backgroundColor: colors.surface }]}>
           <Image source={require("@/assets/icons/ic_back.png")} style={styles.backIcon} tintColor={colors.text} resizeMode="contain" />
         </TouchableOpacity>
-        <Text style={[styles.title, { color: colors.text }]}>Privacy Policy</Text>
+        <Text style={[styles.title, { color: colors.text }]}>{t.profile.privacy}</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -72,11 +49,11 @@ export default function PrivacyScreen() {
           <View style={[styles.bannerIcon, { backgroundColor: "#A00EE7" }]}>
             <Image source={require("@/assets/icons/ic_secure.png")} style={{ width: 28, height: 28, tintColor: "#fff" }} resizeMode="contain" />
           </View>
-          <Text style={[styles.bannerTitle, { color: "#111329" }]}>Your Privacy Matters</Text>
+          <Text style={[styles.bannerTitle, { color: "#111329" }]}>{t.privacyScreen.bannerTitle}</Text>
           <Text style={[styles.bannerSub, { color: "#757396" }]}>
-            This policy explains how VoxLink collects, uses, and protects your data.
+            {t.privacyScreen.bannerSub}
           </Text>
-          <Text style={[styles.lastUpdated, { color: "#757396" }]}>Last Updated: March 1, 2026</Text>
+          <Text style={[styles.lastUpdated, { color: "#757396" }]}>{t.privacyScreen.lastUpdated}</Text>
         </View>
 
         <View style={{ paddingHorizontal: 16, marginTop: 16, gap: 10 }}>
@@ -101,7 +78,7 @@ export default function PrivacyScreen() {
         <View style={[styles.contactBox, { backgroundColor: colors.surface, marginHorizontal: 16, marginTop: 20 }]}>
           <Image source={require("@/assets/icons/ic_mail.png")} style={{ width: 20, height: 20, tintColor: colors.primary }} resizeMode="contain" />
           <View style={{ flex: 1 }}>
-            <Text style={[styles.contactTitle, { color: colors.text }]}>Questions about Privacy?</Text>
+            <Text style={[styles.contactTitle, { color: colors.text }]}>{t.privacyScreen.contactTitle}</Text>
             <Text style={[styles.contactSub, { color: colors.mutedForeground }]}>privacy@voxlink.app</Text>
           </View>
         </View>

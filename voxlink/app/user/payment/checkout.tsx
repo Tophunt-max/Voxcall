@@ -18,6 +18,8 @@ import { router, useFocusEffect } from "expo-router";
 import { alertDialog } from "@/utils/dialog";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
+import { useLanguage } from "@/context/LanguageContext";
+import type { Translations } from "@/localization/en";
 import { API } from "@/services/api";
 import { notifyPurchaseSuccess } from "@/services/NotificationService";
 import LoadingOverlay from "@/components/LoadingOverlay";
@@ -174,6 +176,7 @@ async function tryProcessPayment(
   finalPrice: number,
   updateCoins: (n: number) => void,
   setLoading: (v: boolean) => void,
+  tr: Translations,
   promoCode?: string
 ): Promise<void> {
   const platform = Platform.OS;
@@ -185,7 +188,7 @@ async function tryProcessPayment(
     if (result?.new_balance != null) {
       updateCoins(result.new_balance);
       await notifyPurchaseSuccess(totalCoins);
-      showSuccessToast(`${totalCoins.toLocaleString()} coins added!`, "Purchase Successful");
+      showSuccessToast(tr.checkout.coinsAddedToast.replace("{count}", totalCoins.toLocaleString()), tr.checkout.purchaseSuccessful);
       router.replace("/user/payment/success");
     } else {
       throw new Error("Payment failed");
@@ -210,7 +213,7 @@ async function tryProcessPayment(
       if (result?.new_balance != null) {
         updateCoins(result.new_balance);
         await notifyPurchaseSuccess(totalCoins);
-        showSuccessToast(`${totalCoins.toLocaleString()} coins added!`, "Purchase Successful");
+        showSuccessToast(tr.checkout.coinsAddedToast.replace("{count}", totalCoins.toLocaleString()), tr.checkout.purchaseSuccessful);
         router.replace("/user/payment/success");
         return;
       }
@@ -234,6 +237,7 @@ interface ManualPayModalProps {
 
 function ManualPayModal({ visible, plan, totalCoins, promoCode, onClose, onSuccess }: ManualPayModalProps) {
   const colors = useColors();
+  const { t } = useLanguage();
   const [qrData, setQrData] = useState<{ qr_codes: ManualQR[]; current: ManualQR | null; rotate_interval_min: number } | null>(null);
   const [qrLoading, setQrLoading] = useState(true);
   const [utr, setUtr] = useState("");
@@ -266,7 +270,7 @@ function ManualPayModal({ visible, plan, totalCoins, promoCode, onClose, onSucce
   const { refreshBalance } = useAuth();
 
   const handleSubmit = useCallback(async () => {
-    if (!utr.trim()) { alertDialog("Required", "Please enter the UTR / transaction reference number."); return; }
+    if (!utr.trim()) { alertDialog(t.common.required, t.checkout.utrRequiredMsg); return; }
     if (!plan) return;
     setSubmitting(true);
     try {
@@ -282,7 +286,7 @@ function ManualPayModal({ visible, plan, totalCoins, promoCode, onClose, onSucce
       }
       setSubmitted(true);
     } catch (err: any) {
-      alertDialog("Submission Failed", err?.message || "Could not submit payment. Please try again.");
+      alertDialog(t.checkout.submissionFailed, err?.message || t.checkout.submissionFailedMsg);
     } finally {
       setSubmitting(false);
     }
@@ -298,7 +302,7 @@ function ManualPayModal({ visible, plan, totalCoins, promoCode, onClose, onSucce
           <TouchableOpacity onPress={onClose} style={mStyles.closeBtn}>
             <Text style={[mStyles.closeText, { color: colors.mutedForeground }]}>✕</Text>
           </TouchableOpacity>
-          <Text style={[mStyles.title, { color: colors.text }]}>Manual UPI Payment</Text>
+          <Text style={[mStyles.title, { color: colors.text }]}>{t.checkout.manualUpiTitle}</Text>
           <View style={{ width: 40 }} />
         </View>
 
@@ -311,40 +315,40 @@ function ManualPayModal({ visible, plan, totalCoins, promoCode, onClose, onSucce
               </View>
               {autoApproved && (
                 <View style={[mStyles.autoBadge, { backgroundColor: "#4CAF50" }]}>
-                  <Text style={mStyles.autoBadgeText}>⚡ Auto-Approved!</Text>
+                  <Text style={mStyles.autoBadgeText}>{t.checkout.autoApproved}</Text>
                 </View>
               )}
               <Text style={[mStyles.successTitle, { color: colors.text }]}>
-                {autoApproved ? "Coins Added!" : "Payment Submitted!"}
+                {autoApproved ? t.checkout.coinsAdded : t.checkout.paymentSubmitted}
               </Text>
               <Text style={[mStyles.successSub, { color: colors.mutedForeground }]}>
                 {autoApproved
-                  ? `${totalCoins.toLocaleString()} coins have been instantly added to your account!`
-                  : "Your payment is under review. Coins will be added once the admin approves it (usually within a few hours)."}
+                  ? t.checkout.autoApprovedSub.replace("{count}", totalCoins.toLocaleString())
+                  : t.checkout.underReviewSub}
               </Text>
               <View style={[mStyles.infoCard, { backgroundColor: colors.card }]}>
-                <Text style={[mStyles.infoLabel, { color: colors.mutedForeground }]}>Package</Text>
-                <Text style={[mStyles.infoValue, { color: colors.text }]}>{plan?.name} — {totalCoins.toLocaleString()} Coins</Text>
-                <Text style={[mStyles.infoLabel, { color: colors.mutedForeground, marginTop: 8 }]}>UTR / Ref</Text>
+                <Text style={[mStyles.infoLabel, { color: colors.mutedForeground }]}>{t.checkout.package}</Text>
+                <Text style={[mStyles.infoValue, { color: colors.text }]}>{plan?.name} — {totalCoins.toLocaleString()} {t.wallet.coins}</Text>
+                <Text style={[mStyles.infoLabel, { color: colors.mutedForeground, marginTop: 8 }]}>{t.checkout.utrRef}</Text>
                 <Text style={[mStyles.infoValue, { color: colors.text, fontFamily: "Poppins_500Medium" }]}>{utr}</Text>
               </View>
               <TouchableOpacity
                 style={[mStyles.doneBtn, { backgroundColor: colors.accent }]}
                 onPress={() => { onSuccess(); onClose(); }}
               >
-                <Text style={mStyles.doneBtnText}>Done</Text>
+                <Text style={mStyles.doneBtnText}>{t.common.done}</Text>
               </TouchableOpacity>
             </View>
           ) : qrLoading ? (
             <View style={mStyles.loadingWrap}>
               <ActivityIndicator color="#A00EE7" size="large" />
-              <Text style={[mStyles.loadingText, { color: colors.mutedForeground }]}>Loading payment details...</Text>
+              <Text style={[mStyles.loadingText, { color: colors.mutedForeground }]}>{t.checkout.loadingPayment}</Text>
             </View>
           ) : !currentQR ? (
             <View style={mStyles.loadingWrap}>
               <Text style={{ fontSize: 40 }}>⚠️</Text>
-              <Text style={[mStyles.successTitle, { color: colors.text }]}>Unavailable</Text>
-              <Text style={[mStyles.successSub, { color: colors.mutedForeground }]}>Manual payment is not available right now. Please try another payment method.</Text>
+              <Text style={[mStyles.successTitle, { color: colors.text }]}>{t.checkout.unavailable}</Text>
+              <Text style={[mStyles.successSub, { color: colors.mutedForeground }]}>{t.checkout.unavailableSub}</Text>
             </View>
           ) : (
             <>
@@ -369,7 +373,7 @@ function ManualPayModal({ visible, plan, totalCoins, promoCode, onClose, onSucce
                 <View style={[mStyles.stepBadge, { backgroundColor: "#A00EE7" }]}>
                   <Text style={mStyles.stepNum}>1</Text>
                 </View>
-                <Text style={[mStyles.stepTitle, { color: colors.text }]}>Scan QR or pay to UPI ID</Text>
+                <Text style={[mStyles.stepTitle, { color: colors.text }]}>{t.checkout.scanQrStep}</Text>
               </View>
 
               {/* QR Code */}
@@ -389,15 +393,15 @@ function ManualPayModal({ visible, plan, totalCoins, promoCode, onClose, onSucce
                   {/* Rotate badge */}
                   {qrData && qrData.qr_codes.length > 1 && (
                     <View style={[mStyles.rotateBadge, { backgroundColor: "rgba(0,0,0,0.6)" }]}>
-                      <Text style={mStyles.rotateText}>🔄 Auto-rotating</Text>
+                      <Text style={mStyles.rotateText}>{t.checkout.autoRotating}</Text>
                     </View>
                   )}
                 </View>
-                <Text style={[mStyles.qrLabel, { color: colors.mutedForeground }]}>Pay to UPI ID</Text>
+                <Text style={[mStyles.qrLabel, { color: colors.mutedForeground }]}>{t.checkout.payToUpi}</Text>
                 <View style={[mStyles.upiBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                   <Text style={[mStyles.upiId, { color: "#A00EE7" }]}>{currentQR.upi_id}</Text>
                 </View>
-                <Text style={[mStyles.qrName, { color: colors.mutedForeground }]}>Account: {currentQR.name}</Text>
+                <Text style={[mStyles.qrName, { color: colors.mutedForeground }]}>{t.checkout.account} {currentQR.name}</Text>
                 {currentQR.instructions ? (
                   <Text style={[mStyles.qrInstructions, { color: colors.mutedForeground }]}>{currentQR.instructions}</Text>
                 ) : null}
@@ -408,17 +412,17 @@ function ManualPayModal({ visible, plan, totalCoins, promoCode, onClose, onSucce
                 <View style={[mStyles.stepBadge, { backgroundColor: "#A00EE7" }]}>
                   <Text style={mStyles.stepNum}>2</Text>
                 </View>
-                <Text style={[mStyles.stepTitle, { color: colors.text }]}>Enter UTR / Transaction ID</Text>
+                <Text style={[mStyles.stepTitle, { color: colors.text }]}>{t.checkout.enterUtrStep}</Text>
               </View>
 
               <Text style={[mStyles.utrHint, { color: colors.mutedForeground }]}>
-                After payment, find the 12-digit UTR or transaction reference in your UPI app.
+                {t.checkout.utrHint}
               </Text>
 
               <View style={[mStyles.inputWrap, { backgroundColor: colors.card, borderColor: colors.border }]}>
                 <TextInput
                   style={[mStyles.input, { color: colors.text }]}
-                  placeholder="Enter UTR / Reference No."
+                  placeholder={t.checkout.utrPlaceholder}
                   placeholderTextColor={colors.mutedForeground}
                   value={utr}
                   onChangeText={setUtr}
@@ -431,9 +435,9 @@ function ManualPayModal({ visible, plan, totalCoins, promoCode, onClose, onSucce
 
               {/* Note */}
               <View style={[mStyles.noteCard, { backgroundColor: "#FFF8E1", borderColor: "#FFE082" }]}>
-                <Text style={[mStyles.noteTitle, { color: "#F57F17" }]}>⏱ Admin Approval Required</Text>
+                <Text style={[mStyles.noteTitle, { color: "#F57F17" }]}>{t.checkout.adminApprovalTitle}</Text>
                 <Text style={[mStyles.noteText, { color: "#795548" }]}>
-                  Manual payments are verified by our team. Coins will be credited within a few hours of approval. Ensure the exact amount is paid.
+                  {t.checkout.adminApprovalNote}
                 </Text>
               </View>
 
@@ -447,7 +451,7 @@ function ManualPayModal({ visible, plan, totalCoins, promoCode, onClose, onSucce
                 {submitting ? (
                   <ActivityIndicator color="#fff" />
                 ) : (
-                  <Text style={mStyles.submitBtnText}>Submit Payment Proof</Text>
+                  <Text style={mStyles.submitBtnText}>{t.checkout.submitProof}</Text>
                 )}
               </TouchableOpacity>
             </>
@@ -520,6 +524,7 @@ const mStyles = StyleSheet.create({
 export default function CheckoutScreen() {
   const colors = useColors();
   const { user, updateCoins } = useAuth();
+  const { t } = useLanguage();
   const userCurrency = getCurrencyCode();
   const [plans, setPlans] = useState<CoinPlan[]>([]);
   const [plansLoading, setPlansLoading] = useState(true);
@@ -575,7 +580,7 @@ export default function CheckoutScreen() {
       const result = await API.applyPromoCode(promoCode.trim(), selectedPlan?.id) as any;
       setPromoApplied(result);
     } catch (err: any) {
-      setPromoError(err?.message || "Invalid promo code");
+      setPromoError(err?.message || t.checkout.invalidPromo);
       setPromoApplied(null);
     } finally {
       setPromoLoading(false);
@@ -602,9 +607,9 @@ export default function CheckoutScreen() {
     }
     setLoading(true);
     try {
-      await tryProcessPayment(gateways, selectedPlan, totalCoins, finalPrice, updateCoins, setLoading, promoCode);
+      await tryProcessPayment(gateways, selectedPlan, totalCoins, finalPrice, updateCoins, setLoading, t, promoCode);
     } catch (err: any) {
-      showErrorToast(err?.message || "Payment failed. Please try again.", "Payment Failed");
+      showErrorToast(err?.message || t.checkout.paymentFailed, t.checkout.paymentFailedTitle);
     } finally {
       setLoading(false);
     }
@@ -619,7 +624,7 @@ export default function CheckoutScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Image source={require("@/assets/icons/ic_back.png")} style={styles.backIcon} tintColor={colors.text} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>Buy Coins</Text>
+        <Text style={[styles.headerTitle, { color: colors.text }]}>{t.wallet.buyCoins}</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -628,9 +633,9 @@ export default function CheckoutScreen() {
         <View style={[styles.balanceCard, { backgroundColor: colors.accentLight }]}>
           <Image source={require("@/assets/icons/ic_coin.png")} style={styles.balanceCoin} />
           <View>
-            <Text style={[styles.balanceLabel, { color: colors.mutedForeground }]}>Current Balance</Text>
+            <Text style={[styles.balanceLabel, { color: colors.mutedForeground }]}>{t.checkout.currentBalance}</Text>
             <Text style={[styles.balanceValue, { color: colors.text }]}>
-              {(user?.coins ?? 0).toLocaleString()} Coins
+              {(user?.coins ?? 0).toLocaleString()} {t.wallet.coins}
             </Text>
           </View>
         </View>
@@ -639,7 +644,7 @@ export default function CheckoutScreen() {
         <WalletBannerSlider banners={walletBanners} />
 
         {/* Choose Package */}
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>Choose a Package</Text>
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>{t.wallet.choosePackage}</Text>
         {plansLoading ? (
           <View style={styles.plansLoading}>
             <ActivityIndicator color="#A00EE7" />
@@ -658,7 +663,7 @@ export default function CheckoutScreen() {
                 >
                   {plan.is_popular ? (
                     <View style={[styles.popularTag, { backgroundColor: colors.coinGoldBg }]}>
-                      <Text style={[styles.popularTagText, { color: colors.coinGoldText }]}>Popular</Text>
+                      <Text style={[styles.popularTagText, { color: colors.coinGoldText }]}>{t.checkout.popular}</Text>
                     </View>
                   ) : null}
                   {bonus > 0 ? (
@@ -670,7 +675,7 @@ export default function CheckoutScreen() {
                   <Text style={[styles.planCoins, { color: selected ? "#fff" : colors.text }]}>
                     {plan.coins.toLocaleString()}
                   </Text>
-                  <Text style={[styles.planLabel, { color: selected ? "rgba(255,255,255,0.8)" : colors.mutedForeground }]}>Coins</Text>
+                  <Text style={[styles.planLabel, { color: selected ? "rgba(255,255,255,0.8)" : colors.mutedForeground }]}>{t.wallet.coins}</Text>
                   <Text style={[styles.planPrice, { color: selected ? "#fff" : colors.accent }]}>
                     {plan.price_local != null
                       ? formatLocalAmount(plan.price_local, plan.currency)
@@ -685,7 +690,7 @@ export default function CheckoutScreen() {
         {/* Payment Method Selector (Web + when manual QR available) */}
         {isWeb && hasManualQR && (
           <>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Payment Method</Text>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>{t.payment.paymentMethod}</Text>
             <View style={[styles.methodRow, { gap: 10 }]}>
               <TouchableOpacity
                 onPress={() => setPaymentMethod("auto")}
@@ -693,8 +698,8 @@ export default function CheckoutScreen() {
                 activeOpacity={0.82}
               >
                 <Text style={styles.methodEmoji}>💳</Text>
-                <Text style={[styles.methodLabel, { color: paymentMethod === "auto" ? "#fff" : colors.text }]}>Online</Text>
-                <Text style={[styles.methodSub, { color: paymentMethod === "auto" ? "rgba(255,255,255,0.75)" : colors.mutedForeground }]}>Auto gateway</Text>
+                <Text style={[styles.methodLabel, { color: paymentMethod === "auto" ? "#fff" : colors.text }]}>{t.checkout.online}</Text>
+                <Text style={[styles.methodSub, { color: paymentMethod === "auto" ? "rgba(255,255,255,0.75)" : colors.mutedForeground }]}>{t.checkout.autoGateway}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={() => setPaymentMethod("manual")}
@@ -702,14 +707,14 @@ export default function CheckoutScreen() {
                 activeOpacity={0.82}
               >
                 <Text style={styles.methodEmoji}>📲</Text>
-                <Text style={[styles.methodLabel, { color: paymentMethod === "manual" ? "#fff" : colors.text }]}>Manual UPI</Text>
-                <Text style={[styles.methodSub, { color: paymentMethod === "manual" ? "rgba(255,255,255,0.75)" : colors.mutedForeground }]}>QR / UPI ID</Text>
+                <Text style={[styles.methodLabel, { color: paymentMethod === "manual" ? "#fff" : colors.text }]}>{t.checkout.manualUpi}</Text>
+                <Text style={[styles.methodSub, { color: paymentMethod === "manual" ? "rgba(255,255,255,0.75)" : colors.mutedForeground }]}>{t.checkout.qrUpiId}</Text>
               </TouchableOpacity>
             </View>
             {paymentMethod === "manual" && (
               <View style={[styles.manualNote, { backgroundColor: "#FFF3E0", borderColor: "#FFB74D" }]}>
                 <Text style={[styles.manualNoteText, { color: "#E65100" }]}>
-                  ⏱ Manual payment requires admin approval (a few hours). Coins will be added after verification.
+                  {t.checkout.manualApprovalNote}
                 </Text>
               </View>
             )}
@@ -717,11 +722,11 @@ export default function CheckoutScreen() {
         )}
 
         {/* Promo Code */}
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>Promo Code</Text>
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>{t.checkout.promoCode}</Text>
         <View style={[styles.promoRow, { backgroundColor: colors.card, borderColor: promoApplied ? colors.online : colors.border }]}>
           <TextInput
             style={[styles.promoInput, { color: colors.text }]}
-            placeholder="Enter promo code"
+            placeholder={t.checkout.promoPlaceholder}
             placeholderTextColor={colors.mutedForeground}
             value={promoCode}
             onChangeText={(t) => { setPromoCode(t); setPromoApplied(null); setPromoError(""); }}
@@ -730,11 +735,11 @@ export default function CheckoutScreen() {
           />
           {promoApplied ? (
             <TouchableOpacity onPress={() => { setPromoApplied(null); setPromoCode(""); }} style={[styles.promoBtn, { backgroundColor: colors.destructive }]}>
-              <Text style={styles.promoBtnText}>Remove</Text>
+              <Text style={styles.promoBtnText}>{t.checkout.remove}</Text>
             </TouchableOpacity>
           ) : (
             <TouchableOpacity onPress={handleApplyPromo} disabled={promoLoading || !promoCode.trim()} style={[styles.promoBtn, { backgroundColor: promoCode.trim() ? colors.accent : colors.border }]}>
-              {promoLoading ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.promoBtnText}>Apply</Text>}
+              {promoLoading ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.promoBtnText}>{t.common.apply}</Text>}
             </TouchableOpacity>
           )}
         </View>
@@ -743,8 +748,8 @@ export default function CheckoutScreen() {
           <View style={[styles.promoBadge, { backgroundColor: colors.online + "18" }]}>
             <Text style={[styles.promoBadgeText, { color: colors.online }]}>
               {promoApplied.type === "percent"
-                ? `🎉 ${promoApplied.discount_pct}% off — Save ${formatPlanDisplayAmount(selectedPlan, displayDiscount)}`
-                : `🎁 +${promoApplied.bonus_coins} Bonus Coins added!`}
+                ? t.checkout.percentOff.replace("{pct}", String(promoApplied.discount_pct)).replace("{amount}", formatPlanDisplayAmount(selectedPlan, displayDiscount))
+                : t.checkout.bonusCoinsAdded.replace("{count}", String(promoApplied.bonus_coins))}
             </Text>
           </View>
         ) : null}
@@ -752,37 +757,37 @@ export default function CheckoutScreen() {
         {/* Order Summary */}
         {selectedPlan && (
           <>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Order Summary</Text>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>{t.payment.orderSummary}</Text>
             <View style={[styles.summaryCard, { backgroundColor: colors.card }]}>
               <View style={styles.summaryRow}>
-                <Text style={[styles.summaryLabel, { color: colors.mutedForeground }]}>Package</Text>
-                <Text style={[styles.summaryValue, { color: colors.text }]}>{selectedPlan.coins.toLocaleString()} Coins</Text>
+                <Text style={[styles.summaryLabel, { color: colors.mutedForeground }]}>{t.checkout.package}</Text>
+                <Text style={[styles.summaryValue, { color: colors.text }]}>{selectedPlan.coins.toLocaleString()} {t.wallet.coins}</Text>
               </View>
               {(selectedPlan.bonus_coins ?? 0) > 0 && (
                 <View style={styles.summaryRow}>
-                  <Text style={[styles.summaryLabel, { color: colors.mutedForeground }]}>Bonus Coins</Text>
+                  <Text style={[styles.summaryLabel, { color: colors.mutedForeground }]}>{t.payment.bonusCoins}</Text>
                   <Text style={[styles.summaryValue, { color: colors.online }]}>+{selectedPlan.bonus_coins!.toLocaleString()}</Text>
                 </View>
               )}
               {(promoApplied?.bonus_coins ?? 0) > 0 && (
                 <View style={styles.summaryRow}>
-                  <Text style={[styles.summaryLabel, { color: colors.mutedForeground }]}>Promo Bonus</Text>
-                  <Text style={[styles.summaryValue, { color: colors.online }]}>+{promoApplied!.bonus_coins.toLocaleString()} Coins</Text>
+                  <Text style={[styles.summaryLabel, { color: colors.mutedForeground }]}>{t.checkout.promoBonus}</Text>
+                  <Text style={[styles.summaryValue, { color: colors.online }]}>+{promoApplied!.bonus_coins.toLocaleString()} {t.wallet.coins}</Text>
                 </View>
               )}
               <View style={styles.summaryRow}>
-                <Text style={[styles.summaryLabel, { color: colors.mutedForeground }]}>You Get</Text>
-                <Text style={[styles.summaryValue, { color: colors.coinGold, fontFamily: "Poppins_700Bold" }]}>{totalCoins.toLocaleString()} Coins</Text>
+                <Text style={[styles.summaryLabel, { color: colors.mutedForeground }]}>{t.checkout.youGet}</Text>
+                <Text style={[styles.summaryValue, { color: colors.coinGold, fontFamily: "Poppins_700Bold" }]}>{totalCoins.toLocaleString()} {t.wallet.coins}</Text>
               </View>
               <View style={[styles.divider, { backgroundColor: colors.border }]} />
               {(promoApplied?.discount ?? 0) > 0 && (
                 <View style={styles.summaryRow}>
-                  <Text style={[styles.summaryLabel, { color: colors.mutedForeground }]}>Promo Discount</Text>
+                  <Text style={[styles.summaryLabel, { color: colors.mutedForeground }]}>{t.checkout.promoDiscount}</Text>
                   <Text style={[styles.summaryValue, { color: colors.online }]}>-{formatPlanDisplayAmount(selectedPlan, displayDiscount)}</Text>
                 </View>
               )}
               <View style={styles.summaryRow}>
-                <Text style={[styles.totalLabel, { color: colors.text }]}>Total</Text>
+                <Text style={[styles.totalLabel, { color: colors.text }]}>{t.payment.total}</Text>
                 <Text style={[styles.totalValue, { color: colors.accent }]}>{finalDisplayPriceText}</Text>
               </View>
             </View>
@@ -791,7 +796,7 @@ export default function CheckoutScreen() {
 
         <View style={styles.secureRow}>
           <Image source={require("@/assets/icons/ic_secure.png")} style={styles.secureIcon} tintColor={colors.online} />
-          <Text style={[styles.secureText, { color: colors.mutedForeground }]}>Payments are 100% secured & encrypted</Text>
+          <Text style={[styles.secureText, { color: colors.mutedForeground }]}>{t.checkout.securePayments}</Text>
         </View>
       </ScrollView>
 
@@ -805,15 +810,15 @@ export default function CheckoutScreen() {
         >
           <Text style={styles.buyBtnText}>
             {!selectedPlan
-              ? "Select a Package"
+              ? t.checkout.selectPackageBtn
               : paymentMethod === "manual"
-              ? `Pay via UPI — ${finalDisplayPriceText} for ${totalCoins.toLocaleString()} Coins`
-              : `Continue — ${finalDisplayPriceText} for ${totalCoins.toLocaleString()} Coins`}
+              ? t.checkout.payViaUpi.replace("{price}", finalDisplayPriceText).replace("{coins}", totalCoins.toLocaleString())
+              : t.checkout.continuePay.replace("{price}", finalDisplayPriceText).replace("{coins}", totalCoins.toLocaleString())}
           </Text>
         </TouchableOpacity>
       </View>
 
-      <LoadingOverlay visible={loading} message="Redirecting to payment..." />
+      <LoadingOverlay visible={loading} message={t.checkout.redirecting} />
 
       <ManualPayModal
         visible={showManualModal}
@@ -821,7 +826,7 @@ export default function CheckoutScreen() {
         totalCoins={totalCoins}
         promoCode={promoApplied ? promoCode : undefined}
         onClose={() => setShowManualModal(false)}
-        onSuccess={() => showSuccessToast("Payment submitted for review!", "Submitted")}
+        onSuccess={() => showSuccessToast(t.checkout.submittedForReview, t.checkout.submitted)}
       />
     </View>
   );

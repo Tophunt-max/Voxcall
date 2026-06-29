@@ -6,22 +6,11 @@ import {
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
+import { useLanguage } from "@/context/LanguageContext";
 import { API } from "@/services/api";
 import { fetchAppConfig } from "@/hooks/useAppConfig";
 
 const DEFAULT_SUPPORT_EMAIL = "support@voxlink.app";
-
-// Fallback FAQs — shown only if the admin-managed list (GET /api/faqs) is
-// empty or fails to load. Admin edits in the panel take precedence.
-const FALLBACK_FAQS = [
-  { q: "What is VoxLink?", a: "VoxLink is a social platform where you can connect with professional listeners and hosts via audio or video calls. Get personalized support on topics like relationships, career, life coaching, and more." },
-  { q: "Who are Hosts/Listeners?", a: "Hosts are verified professionals or experienced individuals who provide support and conversation. They specialize in various topics and are available for audio and video calls." },
-  { q: "How can I make a call?", a: "Browse available hosts on the home screen, tap a host card to view their profile, then tap 'Talk Now' to start an audio or video call. Calls are charged in coins per minute." },
-  { q: "What are Coins?", a: "Coins are VoxLink's in-app currency. You purchase coin packages from the Wallet section and spend them during calls with hosts at their listed rate per minute." },
-  { q: "Is my conversation private?", a: "Yes, all conversations are private and confidential. We follow strict data protection policies and do not share personal conversation details with third parties." },
-  { q: "How do I become a Host?", a: "Hosting is done through our separate VoxLink Host app. Download the Host app to apply, verify your identity, and start taking calls and earning." },
-  { q: "What if I run out of coins?", a: "If you run out of coins during a call, the call will end automatically. You can purchase more coins anytime from the Wallet section." },
-];
 
 function FAQItem({ q, a }: { q: string; a: string }) {
   const colors = useColors();
@@ -45,7 +34,20 @@ function FAQItem({ q, a }: { q: string; a: string }) {
 export default function HelpCenterScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { t } = useLanguage();
   const topPad = insets.top;
+
+  // Fallback FAQs — shown only if the admin-managed list (GET /api/faqs) is
+  // empty or fails to load. Admin edits in the panel take precedence.
+  const FALLBACK_FAQS = [
+    { q: t.helpScreen.q1, a: t.helpScreen.a1 },
+    { q: t.helpScreen.q2, a: t.helpScreen.a2 },
+    { q: t.helpScreen.q3, a: t.helpScreen.a3 },
+    { q: t.helpScreen.q4, a: t.helpScreen.a4 },
+    { q: t.helpScreen.q5, a: t.helpScreen.a5 },
+    { q: t.helpScreen.q6, a: t.helpScreen.a6 },
+    { q: t.helpScreen.q7, a: t.helpScreen.a7 },
+  ];
 
   // Admin-managed FAQs + support email. Both fall back to bundled defaults so
   // the screen is never empty if the network/admin config is unavailable.
@@ -74,7 +76,7 @@ export default function HelpCenterScreen() {
         <TouchableOpacity onPress={() => router.back()} style={[styles.backBtn, { backgroundColor: colors.surface }]}>
           <Image source={require("@/assets/icons/ic_back.png")} style={styles.backIcon} tintColor={colors.text} resizeMode="contain" />
         </TouchableOpacity>
-        <Text style={[styles.title, { color: colors.text }]}>Help Center</Text>
+        <Text style={[styles.title, { color: colors.text }]}>{t.helpScreen.title}</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -83,8 +85,8 @@ export default function HelpCenterScreen() {
         <View style={[styles.banner, { backgroundColor: "#F3E6FF" }]}>
           <Image source={require("@/assets/images/help_blur.png")} style={styles.bannerImg} resizeMode="contain" />
           <View style={{ flex: 1 }}>
-            <Text style={[styles.bannerTitle, { color: colors.text }]}>Need Help or FAQ?</Text>
-            <Text style={[styles.bannerSub, { color: colors.mutedForeground }]}>Find answers to common questions</Text>
+            <Text style={[styles.bannerTitle, { color: colors.text }]}>{t.helpScreen.bannerTitle}</Text>
+            <Text style={[styles.bannerSub, { color: colors.mutedForeground }]}>{t.helpScreen.bannerSub}</Text>
           </View>
         </View>
 
@@ -92,14 +94,14 @@ export default function HelpCenterScreen() {
         <TouchableOpacity style={[styles.contactCard, { backgroundColor: colors.card }]} activeOpacity={0.8} onPress={() => Linking.openURL(`mailto:${supportEmail}`)}>
           <Image source={require("@/assets/images/help_person.png")} style={styles.contactImg} resizeMode="contain" />
           <View style={{ flex: 1, gap: 4 }}>
-            <Text style={[styles.contactTitle, { color: colors.text }]}>Have an Issue?</Text>
+            <Text style={[styles.contactTitle, { color: colors.text }]}>{t.helpScreen.contactTitle}</Text>
             <Text style={[styles.contactSub, { color: colors.mutedForeground }]}>{supportEmail}</Text>
           </View>
           <Image source={require("@/assets/icons/ic_back.png")} style={[styles.chevron, { transform: [{ rotate: "180deg" }] }]} tintColor={colors.mutedForeground} resizeMode="contain" />
         </TouchableOpacity>
 
         {/* FAQ */}
-        <Text style={[styles.faqTitle, { color: colors.text }]}>Frequently Asked Questions</Text>
+        <Text style={[styles.faqTitle, { color: colors.text }]}>{t.helpScreen.faqTitle}</Text>
 
         {faqs.map((faq, i) => <FAQItem key={i} q={faq.q} a={faq.a} />)}
       </ScrollView>

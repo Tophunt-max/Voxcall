@@ -12,6 +12,7 @@ import {
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
+import { useLanguage } from "@/context/LanguageContext";
 import { API } from "@/services/api";
 import { showErrorToast, showSuccessToast } from "@/components/Toast";
 
@@ -42,6 +43,7 @@ interface RateRowProps {
 }
 
 function RateRow({ label, sublabel, emoji, value, max, onChange, onStep, onCommit, colors }: RateRowProps) {
+  const { t: tr } = useLanguage();
   const over = (parseInt(value, 10) || 0) > max;
   return (
     <View style={[styles.rateCard, { backgroundColor: colors.card }]}>
@@ -72,7 +74,7 @@ function RateRow({ label, sublabel, emoji, value, max, onChange, onStep, onCommi
             maxLength={3}
             textAlign="center"
           />
-          <Text style={[styles.valueUnit, { color: colors.mutedForeground }]}>coins / min</Text>
+          <Text style={[styles.valueUnit, { color: colors.mutedForeground }]}>{tr.callRatesScreen.coinsMin}</Text>
         </View>
 
         <TouchableOpacity
@@ -84,7 +86,7 @@ function RateRow({ label, sublabel, emoji, value, max, onChange, onStep, onCommi
         </TouchableOpacity>
       </View>
       <Text style={[styles.capHint, { color: over ? "#E84855" : colors.mutedForeground }]}>
-        {over ? `Max ${max} coins/min at your level` : `Up to ${max} coins/min at your level`}
+        {over ? `${tr.callRatesScreen.maxLabel}${max}${tr.callRatesScreen.capSuffix}` : `${tr.callRatesScreen.upToLabel}${max}${tr.callRatesScreen.capSuffix}`}
       </Text>
     </View>
   );
@@ -92,6 +94,7 @@ function RateRow({ label, sublabel, emoji, value, max, onChange, onStep, onCommi
 
 export default function CallRatesScreen() {
   const colors = useColors();
+  const { t: tr } = useLanguage();
   const insets = useSafeAreaInsets();
 
   const [loading, setLoading] = useState(true);
@@ -137,8 +140,8 @@ export default function CallRatesScreen() {
         setVideo(String(clamp(v, effVideo)));
         // /api/host/me returns `level` (number) and optionally `level_info`.
         const li = me?.level_info;
-        if (li?.name) setLevelLabel(`${li.badge ?? "⭐"} ${li.name} host`);
-        else if (me?.level) setLevelLabel(`Level ${me.level} host`);
+        if (li?.name) setLevelLabel(`${li.badge ?? "⭐"} ${li.name}${tr.callRatesScreen.hostSuffix}`);
+        else if (me?.level) setLevelLabel(`${tr.callRatesScreen.levelWord} ${me.level}${tr.callRatesScreen.hostSuffix}`);
       } catch (e) {
         console.warn("[CallRates] getHostMe failed:", e);
       } finally {
@@ -175,10 +178,10 @@ export default function CallRatesScreen() {
       // Reflect the clamped values back into the inputs.
       setAudio(String(a));
       setVideo(String(v));
-      showSuccessToast("Your call rates have been updated.", "Rates Saved");
+      showSuccessToast(tr.callRatesScreen.ratesSaved, tr.callRatesScreen.ratesSavedTitle);
       router.back();
     } catch (e: any) {
-      showErrorToast(e?.message || "Failed to save rates. Please try again.");
+      showErrorToast(e?.message || tr.callRatesScreen.saveFailed);
     } finally {
       setSaving(false);
     }
@@ -201,22 +204,21 @@ export default function CallRatesScreen() {
         <TouchableOpacity onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Go back" style={[styles.backBtn, { backgroundColor: colors.surface }]}>
           <Image source={require("@/assets/icons/ic_back.png")} style={styles.backIconImg} tintColor={colors.text} resizeMode="contain" />
         </TouchableOpacity>
-        <Text style={[styles.title, { color: colors.text }]}>Call Rates</Text>
+        <Text style={[styles.title, { color: colors.text }]}>{tr.callRatesScreen.title}</Text>
         <View style={{ width: 40 }} />
       </View>
 
       <ScrollView contentContainerStyle={{ paddingBottom: 130 }} keyboardShouldPersistTaps="handled">
         <Text style={[styles.helpText, { color: colors.mutedForeground }]}>
-          Set how many coins users pay you per minute. Video calls usually earn
-          more than audio. At your current level you can charge up to{" "}
+          {tr.callRatesScreen.helpA}
           <Text style={{ fontFamily: "Poppins_600SemiBold", color: colors.text }}>
-            {maxAudio} coins/min for audio
-          </Text>{" "}
-          and{" "}
+            {maxAudio}{tr.callRatesScreen.coinsPerMinAudio}
+          </Text>
+          {tr.callRatesScreen.helpB}
           <Text style={{ fontFamily: "Poppins_600SemiBold", color: colors.text }}>
-            {maxVideo} coins/min for video
-          </Text>{" "}
-          (admin level cap +{HOST_RATE_BONUS} bonus). Reach higher levels to raise these caps.
+            {maxVideo}{tr.callRatesScreen.coinsPerMinVideo}
+          </Text>
+          {tr.callRatesScreen.helpC}{HOST_RATE_BONUS}{tr.callRatesScreen.helpD}
         </Text>
 
         {levelLabel ? (
@@ -225,11 +227,11 @@ export default function CallRatesScreen() {
           </View>
         ) : null}
 
-        <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Your Rates</Text>
+        <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>{tr.callRatesScreen.yourRates}</Text>
 
         <RateRow
-          label="Audio Call"
-          sublabel="Per minute for voice calls"
+          label={tr.callRatesScreen.audioCall}
+          sublabel={tr.callRatesScreen.audioSub}
           emoji="🎙️"
           value={audio}
           max={maxAudio}
@@ -240,8 +242,8 @@ export default function CallRatesScreen() {
         />
 
         <RateRow
-          label="Video Call"
-          sublabel="Per minute for video calls"
+          label={tr.callRatesScreen.videoCall}
+          sublabel={tr.callRatesScreen.videoSub}
           emoji="📹"
           value={video}
           max={maxVideo}
@@ -252,15 +254,15 @@ export default function CallRatesScreen() {
         />
 
         <View style={[styles.estBox, { backgroundColor: colors.accentLight }]}>
-          <Text style={[styles.estTitle, { color: colors.text }]}>Earnings estimate</Text>
+          <Text style={[styles.estTitle, { color: colors.text }]}>{tr.callRatesScreen.estTitle}</Text>
           <Text style={[styles.estRow, { color: colors.text }]}>
-            10-min audio call ≈ {clamp(parseInt(audio, 10) || 0, maxAudio) * 10} coins
+            {tr.callRatesScreen.est10AudioPrefix}{clamp(parseInt(audio, 10) || 0, maxAudio) * 10}{tr.callRatesScreen.coinsSuffix}
           </Text>
           <Text style={[styles.estRow, { color: colors.text }]}>
-            10-min video call ≈ {clamp(parseInt(video, 10) || 0, maxVideo) * 10} coins
+            {tr.callRatesScreen.est10VideoPrefix}{clamp(parseInt(video, 10) || 0, maxVideo) * 10}{tr.callRatesScreen.coinsSuffix}
           </Text>
           <Text style={[styles.estNote, { color: colors.mutedForeground }]}>
-            Coins are added to your earnings after each completed call.
+            {tr.callRatesScreen.estNote}
           </Text>
         </View>
       </ScrollView>
@@ -272,7 +274,7 @@ export default function CallRatesScreen() {
           disabled={saving}
           activeOpacity={0.85}
         >
-          {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>Save Rates</Text>}
+          {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>{tr.callRatesScreen.saveRates}</Text>}
         </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>

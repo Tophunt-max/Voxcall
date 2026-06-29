@@ -11,11 +11,13 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
+import { useLanguage } from "@/context/LanguageContext";
 import { API } from "@/services/api";
 import { showSuccessToast, showErrorToast } from "@/components/Toast";
 
 export default function ReferralScreen() {
   const colors = useColors();
+  const { t } = useLanguage();
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
 
@@ -36,7 +38,7 @@ export default function ReferralScreen() {
   useEffect(() => {
     API.getReferral()
       .then(setReferral)
-      .catch(() => { showErrorToast("Failed to load referral info."); })
+      .catch(() => { showErrorToast(t.referralScreen.loadFailed); })
       .finally(() => setLoading(false));
   }, []);
 
@@ -45,10 +47,10 @@ export default function ReferralScreen() {
     try {
       await ClipboardModule.setStringAsync(referral.code);
       setCopied(true);
-      showSuccessToast("Referral code copied!", "Copied");
+      showSuccessToast(t.referralScreen.copiedToast, t.referralScreen.copiedTitle);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      showErrorToast("Couldn't copy the code. Please try again.");
+      showErrorToast(t.referralScreen.copyFailed);
     }
   };
 
@@ -56,8 +58,8 @@ export default function ReferralScreen() {
     if (!referral?.code) return;
     try {
       await crossShare({
-        message: `Join me on VoxLink as a host and start earning from audio & video calls!\n\nUse my referral code: ${referral.code} to get a bonus when you sign up as a host!\n\nDownload now: https://voxlink.app/host`,
-        title: "Join VoxLink as a Host",
+        message: t.referralScreen.shareMessage.replace("{code}", referral.code),
+        title: t.referralScreen.shareTitle,
         url: "https://voxlink.app/host",
       });
     } catch {
@@ -74,21 +76,20 @@ export default function ReferralScreen() {
         <TouchableOpacity onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Go back" style={styles.backBtn}>
           <IconView name="arrow-left" size={22} color="#fff" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Refer & Earn</Text>
+        <Text style={styles.headerTitle}>{t.referralScreen.title}</Text>
         <View style={{ width: 40 }} />
       </LinearGradient>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 32 }]}>
         <View style={[styles.heroCard, { backgroundColor: "#F4E8FD" }]}>
           <Text style={styles.heroEmoji}>🎁</Text>
-          <Text style={[styles.heroTitle, { color: "#6A00B8" }]}>Refer Hosts, Earn More!</Text>
+          <Text style={[styles.heroTitle, { color: "#6A00B8" }]}>{t.referralScreen.heroTitle}</Text>
           <Text style={[styles.heroSub, { color: "#9A74BD" }]}>
-            Invite other hosts with your code. When they complete their first call,
-            they get {newUserReward} coins and you earn {referrerReward} coins!
+            {t.referralScreen.heroSubA}{newUserReward}{t.referralScreen.coinsAnd}{referrerReward}{t.referralScreen.coinsBang}
           </Text>
         </View>
 
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>Your Referral Code</Text>
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>{t.referralScreen.yourCode}</Text>
         {loading ? (
           <View style={styles.codeLoading}>
             <ActivityIndicator color={colors.accent} />
@@ -101,7 +102,7 @@ export default function ReferralScreen() {
               style={[styles.copyBtn, { backgroundColor: copied ? "#0BAF23" : colors.accent }]}
             >
               <IconView name={copied ? "check" : "copy"} size={16} color="#fff" />
-              <Text style={styles.copyBtnText}>{copied ? "Copied!" : "Copy"}</Text>
+              <Text style={styles.copyBtnText}>{copied ? t.referralScreen.copied : t.referralScreen.copy}</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -112,31 +113,31 @@ export default function ReferralScreen() {
           activeOpacity={0.88}
         >
           <IconView name="share-2" size={18} color="#fff" />
-          <Text style={styles.shareBtnText}>Share with Other Hosts</Text>
+          <Text style={styles.shareBtnText}>{t.referralScreen.shareBtn}</Text>
         </TouchableOpacity>
 
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>Your Referral Stats</Text>
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>{t.referralScreen.yourStats}</Text>
         <View style={styles.statsRow}>
           <View style={[styles.statCard, { backgroundColor: colors.card }]}>
             <Text style={[styles.statNum, { color: colors.accent }]}>{referral?.referred ?? 0}</Text>
-            <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>Hosts Referred</Text>
+            <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>{t.referralScreen.hostsReferred}</Text>
           </View>
           <View style={[styles.statCard, { backgroundColor: colors.card }]}>
             <View style={styles.statCoinRow}>
               <Image source={require("@/assets/icons/ic_coin.png")} style={styles.statCoin} resizeMode="contain" />
               <Text style={[styles.statNum, { color: "#D97706" }]}>{referral?.coins_earned ?? 0}</Text>
             </View>
-            <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>Coins Earned</Text>
+            <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>{t.referralScreen.coinsEarned}</Text>
           </View>
         </View>
 
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>How it Works</Text>
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>{t.referralScreen.howItWorks}</Text>
         <View style={[styles.stepsCard, { backgroundColor: colors.card }]}>
           {[
-            { step: "1", icon: "share-2", text: "Share your unique referral code with other hosts" },
-            { step: "2", icon: "user-plus", text: "They sign up as a host using your code" },
-            { step: "3", icon: "phone", text: minCalls > 0 ? `They complete ${minCalls} call${minCalls === 1 ? "" : "s"} on VoxLink` : "They complete their first call on VoxLink" },
-            { step: "4", icon: "gift", text: `You earn ${referrerReward} coins, they get ${newUserReward}!` },
+            { step: "1", icon: "share-2", text: t.referralScreen.step1 },
+            { step: "2", icon: "user-plus", text: t.referralScreen.step2 },
+            { step: "3", icon: "phone", text: minCalls > 0 ? (minCalls === 1 ? t.referralScreen.step3Single : t.referralScreen.step3Plural.replace("{n}", String(minCalls))) : t.referralScreen.step3Default },
+            { step: "4", icon: "gift", text: `${t.referralScreen.step4a}${referrerReward}${t.referralScreen.step4b}${newUserReward}${t.referralScreen.step4c}` },
           ].map((item) => (
             <View key={item.step} style={styles.stepRow}>
               <View style={[styles.stepNum, { backgroundColor: colors.accent }]}>

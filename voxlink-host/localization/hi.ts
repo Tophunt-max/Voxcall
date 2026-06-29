@@ -1061,6 +1061,30 @@ const hi = {
     message: "यह स्क्रीन मौजूद नहीं है।",
     goHome: "होम पर जाएं!",
   },
+
+  // Availability schedule screen
+  availabilityScreen: {
+    title: "उपलब्धता शेड्यूल",
+    helpText: "वे घंटे सेट करें जब आप आमतौर पर उपलब्ध रहते हैं। कॉलर इसे आपकी प्रोफ़ाइल पर देखते हैं। यह केवल एक प्रदर्शन संकेत है — यह आपको ऑफ़लाइन नहीं करता।",
+    always24Title: "हमेशा उपलब्ध (24/7)",
+    always24Sub: "कोई निश्चित घंटे नहीं — किसी भी समय उपलब्ध",
+    availableHours: "उपलब्ध घंटे",
+    availableFrom: "उपलब्ध से",
+    availableTo: "उपलब्ध तक",
+    sameTimeWarn: "आरंभ और समाप्ति समय समान नहीं हो सकते।",
+    overnightHint: "रातभर की अवधि — आधी रात के पार जाती है।",
+    timezone: "समय क्षेत्र",
+    callersWillSee: "कॉलर देखेंगे",
+    available247: "24/7 उपलब्ध",
+    saveSchedule: "शेड्यूल सहेजें",
+    selectTimezone: "समय क्षेत्र चुनें",
+    scheduleSaved: "उपलब्धता शेड्यूल सहेजा गया।",
+    savedTitle: "सहेजा गया",
+    invalidWindow: "अमान्य अवधि",
+    featureUnavailable: "यह सुविधा अभी सर्वर पर सक्षम नहीं है। कृपया बाद में पुनः प्रयास करें।",
+    unavailableTitle: "अनुपलब्ध",
+    saveFailed: "सहेजने में विफल। कृपया पुनः प्रयास करें।",
+  },
 };
 
 export default hi;

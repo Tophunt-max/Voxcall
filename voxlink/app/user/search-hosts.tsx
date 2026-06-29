@@ -6,6 +6,7 @@ import {
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
+import { useLanguage } from "@/context/LanguageContext";
 import { API, resolveMediaUrl } from "@/services/api";
 import { showErrorToast } from "@/components/Toast";
 
@@ -18,6 +19,7 @@ const ACCENT = "#A00EE7";
 export default function SearchHostsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { t: tr } = useLanguage();
   const [query, setQuery] = useState("");
   const [selectedTopic, setSelectedTopic] = useState("All");
   const [selectedLang, setSelectedLang] = useState("All");
@@ -32,7 +34,7 @@ export default function SearchHostsScreen() {
     // backend's small default page (this screen has no infinite scroll).
     API.getHosts({ limit: 100 })
       .then((res) => setHosts(res?.hosts ?? []))
-      .catch(() => { setHosts([]); showErrorToast("Failed to load hosts."); })
+      .catch(() => { setHosts([]); showErrorToast(tr.searchHosts.failedLoad); })
       .finally(() => setLoading(false));
   }, []);
 
@@ -55,11 +57,11 @@ export default function SearchHostsScreen() {
     });
   }, [hosts, query, selectedTopic, selectedLang, selectedStatus]);
 
-  const statusLabel = (h: any) => h.is_online ? "Online" : "Offline";
+  const statusLabel = (h: any) => h.is_online ? tr.hosts.online : tr.hosts.offline;
   const statusColor = (h: any) => h.is_online ? "#0BAF23" : "#9E9E9E";
 
   const renderHost = ({ item }: { item: any }) => {
-    const name = item.display_name ?? item.name ?? "Host";
+    const name = item.display_name ?? item.name ?? tr.hosts.host;
     const avatar = resolveMediaUrl(item.avatar_url) || `https://api.dicebear.com/7.x/avataaars/png?seed=${item.id}`;
     const rating = (item.rating ?? 4.5).toFixed(1);
     const rate = item.audio_coins_per_minute ?? item.coinsPerMinute ?? 25;
@@ -103,7 +105,7 @@ export default function SearchHostsScreen() {
           onPress={() => router.push(`/user/hosts/${item.id}`)}
         >
           <Image source={require("@/assets/icons/ic_call.png")} style={{ width: 13, height: 13, tintColor: "#fff" }} resizeMode="contain" />
-          <Text style={styles.talkTxt}>Talk</Text>
+          <Text style={styles.talkTxt}>{tr.searchHosts.talk}</Text>
         </TouchableOpacity>
       </TouchableOpacity>
     );
@@ -125,7 +127,7 @@ export default function SearchHostsScreen() {
           <Image source={require("@/assets/icons/ic_search.png")} style={{ width: 16, height: 16, tintColor: colors.mutedForeground }} resizeMode="contain" />
           <TextInput
             style={[styles.searchInput, { color: colors.text }]}
-            placeholder="Search hosts by name..."
+            placeholder={tr.searchHosts.searchPlaceholder}
             placeholderTextColor={colors.mutedForeground}
             value={query}
             onChangeText={setQuery}
@@ -149,7 +151,7 @@ export default function SearchHostsScreen() {
 
       {showFilters && (
         <View style={[styles.filtersPanel, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-          <Text style={[styles.filterGroupLabel, { color: colors.mutedForeground }]}>Topic</Text>
+          <Text style={[styles.filterGroupLabel, { color: colors.mutedForeground }]}>{tr.searchHosts.topic}</Text>
           <View style={styles.chipRow}>
             {TOPICS.map((t) => (
               <TouchableOpacity
@@ -161,7 +163,7 @@ export default function SearchHostsScreen() {
               </TouchableOpacity>
             ))}
           </View>
-          <Text style={[styles.filterGroupLabel, { color: colors.mutedForeground }]}>Status</Text>
+          <Text style={[styles.filterGroupLabel, { color: colors.mutedForeground }]}>{tr.searchHosts.status}</Text>
           <View style={styles.chipRow}>
             {STATUS_FILTERS.map((s) => (
               <TouchableOpacity
@@ -173,7 +175,7 @@ export default function SearchHostsScreen() {
               </TouchableOpacity>
             ))}
           </View>
-          <Text style={[styles.filterGroupLabel, { color: colors.mutedForeground }]}>Language</Text>
+          <Text style={[styles.filterGroupLabel, { color: colors.mutedForeground }]}>{tr.searchHosts.language}</Text>
           <View style={styles.chipRow}>
             {LANGUAGES.map((l) => (
               <TouchableOpacity
@@ -190,7 +192,7 @@ export default function SearchHostsScreen() {
 
       <View style={[styles.resultsBar, { backgroundColor: colors.background }]}>
         <Text style={[styles.resultsText, { color: colors.mutedForeground }]}>
-          {loading ? "Loading..." : `${filtered.length} host${filtered.length !== 1 ? "s" : ""} found`}
+          {loading ? tr.common.loading : tr.searchHosts.hostsFound.replace("{count}", String(filtered.length))}
         </Text>
       </View>
 
@@ -201,7 +203,7 @@ export default function SearchHostsScreen() {
       ) : filtered.length === 0 ? (
         <View style={styles.empty}>
           <Image source={require("@/assets/icons/ic_users.png")} style={{ width: 64, height: 64, tintColor: colors.border }} resizeMode="contain" />
-          <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>No hosts found matching your search</Text>
+          <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>{tr.searchHosts.noResults}</Text>
         </View>
       ) : (
         <FlatList

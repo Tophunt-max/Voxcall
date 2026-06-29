@@ -6,24 +6,13 @@ import {
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
+import { useLanguage } from "@/context/LanguageContext";
 import { fetchAppConfig } from "@/hooks/useAppConfig";
 
 const APP_VERSION = "1.0.0";
 const DEFAULT_SUPPORT_EMAIL = "hello@voxlink.app";
 
-const STATS = [
-  { value: "50K+", label: "Active Users" },
-  { value: "1,200+", label: "Hosts" },
-  { value: "2M+", label: "Calls Made" },
-  { value: "4.8", label: "App Rating" },
-];
-
-const LINKS = [
-  { icon: require("@/assets/icons/ic_search.png"),   label: "Website",       url: "https://voxlink.app" },
-  { icon: require("@/assets/icons/ic_arrow_up.png"), label: "Twitter / X",   url: "https://twitter.com/voxlink" },
-  { icon: require("@/assets/icons/ic_photo.png"),    label: "Instagram",     url: "https://instagram.com/voxlink" },
-  { icon: require("@/assets/icons/ic_mail.png"),     label: "Contact Us",    url: "mailto:hello@voxlink.app" },
-];
+const STAT_VALUES = ["50K+", "1,200+", "2M+", "4.8"] as const;
 
 const FEATURE_ICONS: any[] = [
   require("@/assets/icons/ic_call.png"),
@@ -37,7 +26,31 @@ const FEATURE_ICONS: any[] = [
 export default function AboutScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { t } = useLanguage();
   const topPad = insets.top;
+
+  const STATS = [
+    { value: STAT_VALUES[0], label: t.aboutScreen.statActiveUsers },
+    { value: STAT_VALUES[1], label: t.aboutScreen.statHosts },
+    { value: STAT_VALUES[2], label: t.aboutScreen.statCallsMade },
+    { value: STAT_VALUES[3], label: t.aboutScreen.statAppRating },
+  ];
+
+  const LINKS = [
+    { icon: require("@/assets/icons/ic_search.png"),   label: t.aboutScreen.linkWebsite,   url: "https://voxlink.app", isContact: false },
+    { icon: require("@/assets/icons/ic_arrow_up.png"), label: t.aboutScreen.linkTwitter,   url: "https://twitter.com/voxlink", isContact: false },
+    { icon: require("@/assets/icons/ic_photo.png"),    label: t.aboutScreen.linkInstagram, url: "https://instagram.com/voxlink", isContact: false },
+    { icon: require("@/assets/icons/ic_mail.png"),     label: t.aboutScreen.linkContact,   url: "mailto:hello@voxlink.app", isContact: true },
+  ];
+
+  const FEATURES = [
+    t.aboutScreen.feature1,
+    t.aboutScreen.feature2,
+    t.aboutScreen.feature3,
+    t.aboutScreen.feature4,
+    t.aboutScreen.feature5,
+    t.aboutScreen.feature6,
+  ];
 
   // Admin-managed support email drives the "Contact Us" link.
   const [supportEmail, setSupportEmail] = useState(DEFAULT_SUPPORT_EMAIL);
@@ -53,7 +66,7 @@ export default function AboutScreen() {
         <TouchableOpacity onPress={() => router.back()} style={[styles.backBtn, { backgroundColor: colors.surface }]}>
           <Image source={require("@/assets/icons/ic_back.png")} style={styles.backIcon} tintColor={colors.text} resizeMode="contain" />
         </TouchableOpacity>
-        <Text style={[styles.title, { color: colors.text }]}>About VoxLink</Text>
+        <Text style={[styles.title, { color: colors.text }]}>{t.aboutScreen.title}</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -64,9 +77,9 @@ export default function AboutScreen() {
             <Image source={require("@/assets/images/app_logo.png")} style={styles.logo} resizeMode="contain" />
           </View>
           <Text style={[styles.appName, { color: colors.text }]}>VoxLink</Text>
-          <Text style={[styles.tagline, { color: colors.mutedForeground }]}>Voice & Video Connection</Text>
+          <Text style={[styles.tagline, { color: colors.mutedForeground }]}>{t.aboutScreen.appTagline}</Text>
           <View style={[styles.versionBadge, { backgroundColor: colors.surface }]}>
-            <Text style={[styles.version, { color: colors.mutedForeground }]}>Version {APP_VERSION}</Text>
+            <Text style={[styles.version, { color: colors.mutedForeground }]}>{t.aboutScreen.version.replace("{version}", APP_VERSION)}</Text>
           </View>
         </View>
 
@@ -85,26 +98,19 @@ export default function AboutScreen() {
 
         {/* About text */}
         <View style={[styles.descCard, { backgroundColor: colors.card }]}>
-          <Text style={[styles.descTitle, { color: colors.text }]}>What is VoxLink?</Text>
+          <Text style={[styles.descTitle, { color: colors.text }]}>{t.aboutScreen.whatIsTitle}</Text>
           <Text style={[styles.desc, { color: colors.mutedForeground }]}>
-            VoxLink is a social audio and video calling platform that connects people with verified hosts for meaningful conversations. Whether you need life advice, language practice, emotional support, or just someone to talk to — our hosts are here for you.
+            {t.aboutScreen.whatIsBody1}
           </Text>
           <Text style={[styles.desc, { color: colors.mutedForeground, marginTop: 10 }]}>
-            Hosts are real, trained individuals vetted by our team. Every call is secure, private, and backed by our coin-based payment system — so you only pay for the time you use.
+            {t.aboutScreen.whatIsBody2}
           </Text>
         </View>
 
         {/* Features */}
         <View style={[styles.featuresCard, { backgroundColor: colors.card }]}>
-          <Text style={[styles.featuresTitle, { color: colors.text }]}>Key Features</Text>
-          {[
-            "HD Audio & Video Calls",
-            "End-to-End Encrypted",
-            "1,200+ Verified Hosts",
-            "Coin-Based Fair Pricing",
-            "In-App Chat",
-            "Rated Reviews System",
-          ].map((text, idx) => (
+          <Text style={[styles.featuresTitle, { color: colors.text }]}>{t.aboutScreen.keyFeatures}</Text>
+          {FEATURES.map((text, idx) => (
             <View key={text} style={styles.featureRow}>
               <View style={[styles.featureIcon, { backgroundColor: colors.primary + "15" }]}>
                 <Image source={FEATURE_ICONS[idx]} style={{ width: 16, height: 16, tintColor: colors.primary }} resizeMode="contain" />
@@ -116,12 +122,12 @@ export default function AboutScreen() {
 
         {/* Social links */}
         <View style={[styles.linksCard, { backgroundColor: colors.card }]}>
-          <Text style={[styles.featuresTitle, { color: colors.text }]}>Connect With Us</Text>
+          <Text style={[styles.featuresTitle, { color: colors.text }]}>{t.aboutScreen.connectWithUs}</Text>
           {LINKS.map((l) => (
             <TouchableOpacity
               key={l.label}
               style={[styles.linkRow, { borderBottomColor: colors.border }]}
-              onPress={() => Linking.openURL(l.label === "Contact Us" ? `mailto:${supportEmail}` : l.url)}
+              onPress={() => Linking.openURL(l.isContact ? `mailto:${supportEmail}` : l.url)}
             >
               <View style={[styles.linkIcon, { backgroundColor: colors.surface }]}>
                 <Image source={l.icon} style={{ width: 17, height: 17, tintColor: colors.primary }} resizeMode="contain" />
@@ -135,16 +141,16 @@ export default function AboutScreen() {
         {/* Legal */}
         <View style={styles.legalRow}>
           <TouchableOpacity onPress={() => router.push("/user/privacy")}>
-            <Text style={[styles.legalLink, { color: colors.primary }]}>Privacy Policy</Text>
+            <Text style={[styles.legalLink, { color: colors.primary }]}>{t.profile.privacy}</Text>
           </TouchableOpacity>
           <Text style={[styles.legalSep, { color: colors.border }]}>|</Text>
           <TouchableOpacity onPress={() => router.push("/user/help-center")}>
-            <Text style={[styles.legalLink, { color: colors.primary }]}>Help Center</Text>
+            <Text style={[styles.legalLink, { color: colors.primary }]}>{t.aboutScreen.helpCenter}</Text>
           </TouchableOpacity>
         </View>
 
         <Text style={[styles.copyright, { color: colors.mutedForeground }]}>
-          © 2026 VoxLink Inc. All rights reserved.
+          {t.aboutScreen.copyright}
         </Text>
       </ScrollView>
     </View>
