@@ -170,6 +170,7 @@ const en = {
     statusGiveUp: "No host found right now. Try again in a bit.",
     statusNetworkError: "Network error, retrying…",
     statusServerUnreachable: "Couldn't reach the server. Please try again.",
+    retryIn: "Try again in {time}",
     hostBusy: "Host just got busy — finding another match.",
     hostOffline: "Host went offline — finding another match.",
     hostUnavailable: "Host unavailable — finding another match.",

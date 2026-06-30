@@ -162,6 +162,7 @@ const es = {
     statusGiveUp: "No se encontró anfitrión. Inténtalo más tarde.",
     statusNetworkError: "Error de red, reintentando…",
     statusServerUnreachable: "No se pudo contactar el servidor. Inténtalo de nuevo.",
+    retryIn: "Reintenta en {time}",
     hostBusy: "El anfitrión está ocupado — buscando otro.",
     hostOffline: "El anfitrión se desconectó — buscando otro.",
     hostUnavailable: "Anfitrión no disponible — buscando otro.",
