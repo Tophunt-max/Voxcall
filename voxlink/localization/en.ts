@@ -670,6 +670,8 @@ const en = {
   hostDetail: {
     notFound: "Host not found",
     selectCallType: "Select Call Type",
+    highlights: "Highlights",
+    introVideo: "Intro Video",
     coinPerMin: "{count} Coin/min",
     coin: "{count} Coin",
     levelShort: "Lv.",

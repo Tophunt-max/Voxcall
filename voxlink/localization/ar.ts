@@ -641,6 +641,8 @@ const ar = {
   hostDetail: {
     notFound: "لم يتم العثور على المضيف",
     selectCallType: "اختر نوع المكالمة",
+    highlights: "أبرز اللحظات",
+    introVideo: "فيديو تعريفي",
     coinPerMin: "{count} عملة/دقيقة",
     coin: "{count} عملة",
     levelShort: "مستوى",

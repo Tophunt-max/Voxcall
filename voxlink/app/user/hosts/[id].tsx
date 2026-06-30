@@ -12,6 +12,7 @@ import {
   Platform,
   ActivityIndicator,
   RefreshControl,
+  Linking,
   useColorScheme,
 } from "react-native";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -178,6 +179,16 @@ export default function HostDetailScreen() {
     staleTime: 30_000,
   });
 
+  // Highlight gallery (photos / videos the host uploaded). Public endpoint.
+  const { data: gallery = [] } = useQuery<any[]>({
+    queryKey: ['host-gallery', id],
+    queryFn: () => API.getHostGallery(id!),
+    enabled: !!id,
+    staleTime: 60_000,
+  });
+  // Full-screen image viewer target (null = closed). Videos open externally.
+  const [viewerImage, setViewerImage] = useState<string | null>(null);
+
   // H3: favorite state derived from the favorites list, mirrored into local
   // state so the heart toggles instantly (optimistic) before the server round-trip.
   const { data: serverIsFavorite = false } = useQuery({
@@ -230,6 +241,7 @@ export default function HostDetailScreen() {
         queryClient.invalidateQueries({ queryKey: ['host-reviews', id] }),
         queryClient.invalidateQueries({ queryKey: ['chat-status', id] }),
         queryClient.invalidateQueries({ queryKey: ['favorite-status', id] }),
+        queryClient.invalidateQueries({ queryKey: ['host-gallery', id] }),
       ]);
     } finally {
       setRefreshing(false);
@@ -264,6 +276,19 @@ export default function HostDetailScreen() {
   // fall back to the local map only if the API is on an older build.
   const level: number = host.level_info?.level ?? host.level ?? 1;
   const levelInfo = host.level_info ?? LEVEL_CONFIG[level] ?? LEVEL_CONFIG[1];
+  // Intro video (hosts.intro_video_url). Resolved to an absolute media URL.
+  const introVideoUrl: string | null = host.intro_video_url
+    ? (resolveMediaUrl(host.intro_video_url) || host.intro_video_url)
+    : null;
+
+  // Open a gallery item: images go to the in-app full-screen viewer; videos
+  // open in the device's player/browser (no bundled video component needed,
+  // so it works identically on web + native).
+  const openMedia = (url: string, type: string) => {
+    const full = resolveMediaUrl(url) || url;
+    if (type === "video") { Linking.openURL(full).catch(() => {}); }
+    else { setViewerImage(full); }
+  };
 
   /* ─── Handlers ─── */
   const checkCoins = (rate: number) => {
@@ -479,6 +504,61 @@ export default function HostDetailScreen() {
           </ScrollView>
         </View>
 
+        {/* ══════ Highlights — host gallery photos / videos + intro video ══════ */}
+        {(introVideoUrl || gallery.length > 0) && (
+          <View style={s.highlightsSec}>
+            <Text style={[s.highlightsTitle, { color: titleColor }]}>{t.hostDetail.highlights}</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={s.highlightsRow}
+            >
+              {introVideoUrl ? (
+                <TouchableOpacity
+                  onPress={() => openMedia(introVideoUrl, "video")}
+                  style={s.highlightCard}
+                  activeOpacity={0.85}
+                  accessibilityRole="button"
+                  accessibilityLabel={t.hostDetail.introVideo}
+                >
+                  <LinearGradient colors={COVER_GRAD} style={s.highlightMedia}>
+                    <View style={s.playBadge}>
+                      <Text style={s.playGlyph}>▶</Text>
+                    </View>
+                  </LinearGradient>
+                  <Text style={[s.highlightCaption, { color: subColor }]} numberOfLines={1}>{t.hostDetail.introVideo}</Text>
+                </TouchableOpacity>
+              ) : null}
+
+              {gallery.map((g: any) => (
+                <TouchableOpacity
+                  key={g.id}
+                  onPress={() => openMedia(g.media_url, g.media_type)}
+                  style={s.highlightCard}
+                  activeOpacity={0.85}
+                  accessibilityRole="button"
+                  accessibilityLabel={g.caption || (g.media_type === "video" ? "Play video" : "View photo")}
+                >
+                  {g.media_type === "video" ? (
+                    <View style={[s.highlightMedia, { backgroundColor: "#111329", alignItems: "center", justifyContent: "center" }]}>
+                      <View style={s.playBadge}>
+                        <Text style={s.playGlyph}>▶</Text>
+                      </View>
+                    </View>
+                  ) : (
+                    <Image
+                      source={{ uri: resolveMediaUrl(g.media_url) || g.media_url }}
+                      style={s.highlightMedia}
+                      resizeMode="cover"
+                    />
+                  )}
+                  {g.caption ? <Text style={[s.highlightCaption, { color: subColor }]} numberOfLines={1}>{g.caption}</Text> : null}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        )}
+
         {/* ══════ StatusView — 3 stat boxes ══════ */}
         <View style={s.statsRow}>
           {statsList.map((item, i) => (
@@ -575,6 +655,16 @@ export default function HostDetailScreen() {
         requiredCoins={coinPopupRequired}
         currentCoins={user?.coins ?? 0}
       />
+
+      {/* Full-screen image viewer for gallery photos. */}
+      <Modal visible={!!viewerImage} transparent animationType="fade" onRequestClose={() => setViewerImage(null)}>
+        <TouchableOpacity style={s.viewerOverlay} activeOpacity={1} onPress={() => setViewerImage(null)}>
+          {viewerImage ? <Image source={{ uri: viewerImage }} style={s.viewerImg} resizeMode="contain" /> : null}
+          <View style={s.viewerClose}>
+            <Image source={require("@/assets/icons/ic_close.png")} style={{ width: 22, height: 22, tintColor: "#fff" }} resizeMode="contain" />
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
       <Modal visible={reportModal} transparent animationType="slide" onRequestClose={() => setReportModal(false)}>
         <TouchableOpacity style={s.reportOverlay} activeOpacity={1} onPress={() => setReportModal(false)}>
@@ -769,6 +859,25 @@ const s = StyleSheet.create({
   timeBadge: { backgroundColor: "#E7EBF7", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 34, marginLeft: 8 },
   timeTxt: { fontSize: 10, fontFamily: "Poppins_600SemiBold", color: PROFILE_LANG },
   reviewTxt: { fontSize: 12, fontFamily: "Poppins_500Medium", color: PROFILE_LANG, lineHeight: 20 },
+
+  /* ── Highlights (gallery) ── */
+  highlightsSec: { paddingHorizontal: 16, paddingTop: 14, gap: 10 },
+  highlightsTitle: { fontSize: 16, fontFamily: "Poppins_600SemiBold", color: "#111329" },
+  highlightsRow: { gap: 10, paddingRight: 16 },
+  highlightCard: { width: 110, gap: 5 },
+  highlightMedia: { width: 110, height: 150, borderRadius: 14, backgroundColor: "#EEE", overflow: "hidden" },
+  playBadge: {
+    position: "absolute", top: "50%", left: "50%", marginTop: -20, marginLeft: -20,
+    width: 40, height: 40, borderRadius: 20, backgroundColor: "rgba(255,255,255,0.92)",
+    alignItems: "center", justifyContent: "center",
+  },
+  playGlyph: { fontSize: 16, color: "#111329", marginLeft: 2 },
+  highlightCaption: { fontSize: 11, fontFamily: "Poppins_500Medium" },
+
+  /* ── Image viewer ── */
+  viewerOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.92)", alignItems: "center", justifyContent: "center" },
+  viewerImg: { width: SW, height: SH * 0.8 },
+  viewerClose: { position: "absolute", top: 50, right: 20, width: 40, height: 40, borderRadius: 20, backgroundColor: "rgba(255,255,255,0.18)", alignItems: "center", justifyContent: "center" },
 
   /* ── Bottom bar ── */
   bottomBar: {

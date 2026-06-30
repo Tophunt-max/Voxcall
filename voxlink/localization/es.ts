@@ -641,6 +641,8 @@ const es = {
   hostDetail: {
     notFound: "Anfitrión no encontrado",
     selectCallType: "Seleccionar tipo de llamada",
+    highlights: "Destacados",
+    introVideo: "Vídeo de presentación",
     coinPerMin: "{count} monedas/min",
     coin: "{count} monedas",
     levelShort: "Nv.",

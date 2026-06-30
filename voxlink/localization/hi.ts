@@ -653,6 +653,8 @@ const hi = {
   hostDetail: {
     notFound: "होस्ट नहीं मिला",
     selectCallType: "कॉल प्रकार चुनें",
+    highlights: "झलकियाँ",
+    introVideo: "परिचय वीडियो",
     coinPerMin: "{count} कॉइन/मिनट",
     coin: "{count} कॉइन",
     levelShort: "लेव.",

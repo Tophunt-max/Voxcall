@@ -284,6 +284,9 @@ export const API = {
     apiRequest<{ personalized: boolean; hosts: any[] }>('GET', `/api/hosts/recommended?limit=${limit}`),
   getHost: (id: string) => apiRequest<any>('GET', `/api/hosts/${id}`),
   getHostReviews: (id: string) => apiRequest<any[]>('GET', `/api/hosts/${id}/reviews`),
+  // Public host gallery (highlight photos / videos). Rows: { id, media_url,
+  // media_type: 'image'|'video', caption, sort_order }.
+  getHostGallery: (id: string) => apiRequest<any[]>('GET', `/api/hosts/${id}/gallery`),
 
   // Favorited hosts for the "Your favorites" home rail. Rows expose host_id
   // (the hosts.id) + display fields; the caller maps host_id -> id.

@@ -641,6 +641,8 @@ const zh = {
   hostDetail: {
     notFound: "未找到主播",
     selectCallType: "选择通话类型",
+    highlights: "精彩展示",
+    introVideo: "介绍视频",
     coinPerMin: "{count} 金币/分钟",
     coin: "{count} 金币",
     levelShort: "Lv.",
