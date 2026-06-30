@@ -35,6 +35,35 @@ const AUTO_SLIDE_INTERVAL = 3500;
 // afford a couple of minutes at a typical rate). Kept in sync conceptually with
 // AuthContext's low-coin alert threshold.
 const LOW_BALANCE_THRESHOLD = 20;
+// How often the home host list re-shuffles its order + how often it pulls a
+// fresh list. Re-ordering on a timer keeps the "available now" list feeling
+// live (different hosts surface to the top over time) instead of a static
+// arrangement; the data refresh keeps online status current.
+const ROTATE_INTERVAL_MS = 9000;
+const REFRESH_EVERY_N_TICKS = 4; // ~36s → invalidate the hosts query
+
+/**
+ * Deterministic shuffle: same (array, seed) always yields the same order, so a
+ * re-render within one rotation tick is stable (no flicker) while a new tick
+ * produces a fresh arrangement. Uses a mulberry32 PRNG seeded by the tick +
+ * Fisher-Yates, so every position is equally likely (unlike a biased
+ * `sort(() => Math.random() - 0.5)`).
+ */
+function seededShuffle<T>(input: T[], seed: number): T[] {
+  const a = input.slice();
+  let s = seed >>> 0;
+  const rand = () => {
+    s = (s + 0x6d2b79f5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
 
 function mapApiHost(h: any): Host {
   return {
@@ -201,6 +230,8 @@ export default function HomeScreen() {
   // fallback rate when a host row somehow lacks an explicit rate, so the UI
   // mirrors exactly what the server will bill.
   const [defaultRates, setDefaultRates] = useState({ audio: 25, video: 40 });
+  // Bumps every ROTATE_INTERVAL_MS to re-shuffle the host list order.
+  const [rotationTick, setRotationTick] = useState(0);
 
   useEffect(() => {
     fetchAppConfig()
@@ -344,6 +375,11 @@ export default function HomeScreen() {
         );
   const onlineHosts = filteredHosts.filter((h) => h.isOnline);
   const offlineHosts = filteredHosts.filter((h) => !h.isOnline);
+  // Re-ordered copies that change every rotation tick (see the rotate effect).
+  // Deterministic per tick so a re-render within the same tick doesn't reshuffle
+  // mid-frame. Keys stay host.id, so React just reorders the existing cards.
+  const displayedOnline = seededShuffle(onlineHosts, rotationTick);
+  const displayedOffline = seededShuffle(offlineHosts, rotationTick);
 
   // OPTIMIZATION #10: Prefetch host detail page when host is tapped (before navigation)
   const prefetchHost = useCallback((hostId: string) => {
@@ -395,6 +431,23 @@ export default function HomeScreen() {
     } finally {
       setRefreshing(false);
     }
+  }, [queryClient]);
+
+  // Auto-rotate the host list order on a timer so the "available now" list
+  // feels live (different listeners surface to the top over time) instead of a
+  // static arrangement, and periodically pull a fresh list so online status
+  // stays current. One interval drives both: every tick re-shuffles, every
+  // Nth tick also invalidates the hosts query (React Query dedupes the fetch).
+  useEffect(() => {
+    let ticks = 0;
+    const id = setInterval(() => {
+      ticks += 1;
+      setRotationTick((t) => t + 1);
+      if (ticks % REFRESH_EVERY_N_TICKS === 0) {
+        queryClient.invalidateQueries({ queryKey: ['hosts'] });
+      }
+    }, ROTATE_INTERVAL_MS);
+    return () => clearInterval(id);
   }, [queryClient]);
 
   // PRESENCE_UPDATE — host_id (hosts.id) se match karo. Backend user_id (users.id)
@@ -723,7 +776,7 @@ export default function HomeScreen() {
           {hostsLoading ? (
             [1, 2, 3, 4].map((i) => <SkeletonHostCard key={i} />)
           ) : onlineHosts.length > 0 ? (
-            onlineHosts.map((host) => (
+            displayedOnline.map((host) => (
               <HostCard
                 key={host.id}
                 host={host}
@@ -761,7 +814,7 @@ export default function HomeScreen() {
               <Text style={[styles.offlineLabel, { color: colors.mutedForeground }]}>
                 {tr.home.offlineListeners}
               </Text>
-              {offlineHosts.map((host) => (
+              {displayedOffline.map((host) => (
                 <HostCard
                   key={host.id}
                   host={host}
