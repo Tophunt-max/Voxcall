@@ -183,7 +183,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         setConversations(convos);
       }
     } catch (e) {
-      console.log("loadConversations error:", e);
+      console.warn("loadConversations error:", e);
     }
   }, []);
 
@@ -227,7 +227,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         return [newConvo, ...prev];
       });
     } catch (e) {
-      console.log("loadMessages error:", e);
+      console.warn("loadMessages error:", e);
     }
   }, []);
 

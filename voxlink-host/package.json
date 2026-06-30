@@ -7,10 +7,12 @@
     "dev": "bash -c 'until curl -sf http://localhost:${PORT:-8099}/status > /dev/null 2>&1; do echo \"Waiting for VoxLink-Host on port ${PORT:-8099}...\"; sleep 3; done; echo \"VoxLink-Host ready\"; sleep infinity'",
     "build": "expo export --platform web --output-dir static-build",
     "serve": "node server/serve.js",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint ."
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
+    "@eslint/js": "^9.0.0",
     "@expo-google-fonts/inter": "^0.4.0",
     "@expo/cli": "54.0.23",
     "@expo/ngrok": "^4.1.0",
@@ -24,6 +26,8 @@
     "@workspace/api-client-react": "workspace:*",
     "@workspace/shared-ui": "workspace:*",
     "babel-plugin-react-compiler": "^19.0.0-beta-e993439-20250117",
+    "eslint": "^9.0.0",
+    "eslint-plugin-react-hooks": "^5.0.0",
     "expo": "~54.0.27",
     "expo-blur": "~15.0.8",
     "expo-constants": "~18.0.11",
@@ -40,6 +44,7 @@
     "expo-symbols": "~1.0.8",
     "expo-system-ui": "~6.0.9",
     "expo-web-browser": "~15.0.10",
+    "globals": "^15.0.0",
     "react": "catalog:",
     "react-dom": "catalog:",
     "react-native": "0.81.5",
@@ -52,6 +57,7 @@
     "react-native-web": "^0.21.0",
     "react-native-worklets": "0.5.1",
     "typescript": "~5.9.2",
+    "typescript-eslint": "^8.0.0",
     "zod": "catalog:",
     "zod-validation-error": "^3.4.0"
   },

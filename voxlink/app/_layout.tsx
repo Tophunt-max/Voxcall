@@ -100,7 +100,7 @@ function FCMNotificationTapBridge() {
     const unsubForeground = onForegroundMessage(({ title, body, data }) => {
       // Foreground call notifications are handled via WebSocket (AppBridge)
       // Chat messages — could show in-app toast here if needed
-      console.log("[FCM Foreground]", title, body, data);
+      if (__DEV__) console.log("[FCM Foreground]", title, body, data);
     });
 
     return () => {

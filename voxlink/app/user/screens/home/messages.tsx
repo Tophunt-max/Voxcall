@@ -52,14 +52,23 @@ export default function MessagesScreen() {
               selectionColor={ACCENT}
               underlineColorAndroid="transparent"
             />
-            <TouchableOpacity onPress={() => { setShowSearch(false); setSearch(""); }}>
+            <TouchableOpacity
+              onPress={() => { setShowSearch(false); setSearch(""); }}
+              accessibilityRole="button"
+              accessibilityLabel="Close search"
+            >
               <Image source={require("@/assets/icons/ic_close.png")} style={{ width: 18, height: 18, tintColor: colors.mutedForeground }} resizeMode="contain" />
             </TouchableOpacity>
           </View>
         ) : (
           <View style={styles.headerRow}>
             <Text style={[styles.headerTitle, { color: colors.text }]}>{t.chat.chats}</Text>
-            <TouchableOpacity onPress={() => setShowSearch(true)} style={[styles.searchBtn, { backgroundColor: colors.muted }]}>
+            <TouchableOpacity
+              onPress={() => setShowSearch(true)}
+              style={[styles.searchBtn, { backgroundColor: colors.muted }]}
+              accessibilityRole="button"
+              accessibilityLabel={t.chat.searchConversations}
+            >
               <Image source={require("@/assets/icons/ic_search.png")} style={{ width: 20, height: 20, tintColor: colors.text }} resizeMode="contain" />
             </TouchableOpacity>
           </View>
