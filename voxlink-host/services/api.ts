@@ -170,7 +170,7 @@ export const API = {
   updateProfile: (data: any) => apiRequest('PATCH', '/api/user/me', data),
   updateAvatar: async (formData: FormData, _retry = true): Promise<any> => {
     // Bug 6 Fix (host): 401 auto-refresh for file uploads
-    let token = await getToken();
+    const token = await getToken();
     const res = await fetch(`${BASE_URL}/api/upload/avatar`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
@@ -188,7 +188,7 @@ export const API = {
   },
   uploadFile: async (formData: FormData, _retry = true): Promise<{ url: string; key: string }> => {
     // Bug 6 Fix (host): 401 auto-refresh for file uploads
-    let token = await getToken();
+    const token = await getToken();
     const res = await fetch(`${BASE_URL}/api/upload/media`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },

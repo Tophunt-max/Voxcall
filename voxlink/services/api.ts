@@ -207,7 +207,7 @@ export const API = {
     apiRequest<{ ok: boolean; recorded: boolean }>('POST', `/api/calls/${sessionId}/quality`, sample),
   updateAvatar: async (formData: FormData, _retry = true): Promise<any> => {
     // Bug 6 Fix: Use shared token getter with 401 auto-refresh (same as apiRequest)
-    let token = await getToken();
+    const token = await getToken();
     const res = await fetch(`${BASE_URL}/api/upload/avatar`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
@@ -231,7 +231,7 @@ export const API = {
   },
   uploadFile: async (formData: FormData, _retry = true): Promise<{ url: string; key: string }> => {
     // Bug 6 Fix: Use shared token getter with 401 auto-refresh (same as apiRequest)
-    let token = await getToken();
+    const token = await getToken();
     const res = await fetch(`${BASE_URL}/api/upload/media`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },

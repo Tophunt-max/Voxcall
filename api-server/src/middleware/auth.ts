@@ -79,12 +79,12 @@ export const adminMiddleware = createMiddleware<{ Bindings: Env; Variables: Vari
     const user = c.get('user');
     if (user?.role !== 'admin') return c.json({ error: 'Forbidden' }, 403);
 
-    // Rate limiting (TODO #29 follow-up): cap admin endpoints per-admin so a
-    // leaked admin JWT can't be used to mass-mutate via /api/admin/* (mass
-    // user delete, app-settings rewrite, force-end loop, bulk withdrawal
-    // approval). We deliberately key on the admin user ID instead of IP —
-    // an office full of admins typically shares one egress IP, and the
-    // attacker also controls IPs cheaply, so per-user is both more
+    // Rate limiting (#29 follow-up, implemented below): cap admin endpoints
+    // per-admin so a leaked admin JWT can't be used to mass-mutate via
+    // /api/admin/* (mass user delete, app-settings rewrite, force-end loop,
+    // bulk withdrawal approval). We deliberately key on the admin user ID
+    // instead of IP — an office full of admins typically shares one egress IP,
+    // and the attacker also controls IPs cheaply, so per-user is both more
     // permissive for legit ops and tighter for theft scenarios.
     //
     // 600 req / 60s ≈ 10 req/s sustained, which is well above any human

@@ -96,7 +96,10 @@ export function usePermissions() {
   // real OS state instead of acting on the DEFAULT placeholder.
   const [refreshDone, setRefreshDone] = useState(false);
 
-  // Native camera hook — only active on non-web
+  // Native camera hook — only active on non-web.
+   
+  // is platform-constant: it's the expo-camera hook on native and undefined on web,
+  // decided once at module load, so this condition never changes between renders.
   const nativeCameraHook = useCameraPermissionsNative ? useCameraPermissionsNative() : [null, null];
   const cameraPermission = nativeCameraHook[0];
   const requestCameraPermissionNative = nativeCameraHook[1];
