@@ -12,6 +12,8 @@ import { useLanguage } from "@/context/LanguageContext";
 import type { Translations } from "@/localization/en";
 import { API, resolveMediaUrl } from "@/services/api";
 import { showErrorToast } from "@/components/Toast";
+import { InsufficientCoinsPopup } from "@/components/InsufficientCoinsPopup";
+import { ConfirmModal } from "@/components/ConfirmModal";
 
 const { width: SW, height: SH } = Dimensions.get("window");
 const BG        = "#FBF1EA";
@@ -93,6 +95,24 @@ function searchingMessageForCode(code: string | undefined, onlineCount: number, 
         : tr.random.statusNoneOnline;
     default:
       return tr.random.findingMatch;
+  }
+}
+
+/**
+ * Maps a 429-family limit code to the popup content (emoji + body) shown when
+ * a random search is hard-stopped. Reuses the existing status strings so no
+ * new i18n keys are needed across the 5 supported languages.
+ */
+function limitPopupContent(code: string | undefined, tr: Translations): { emoji: string; message: string } {
+  switch (code) {
+    case "DAILY_LIMIT_REACHED":
+      return { emoji: "📅", message: tr.random.statusDailyLimit };
+    case "DECLINE_COOLDOWN":
+      return { emoji: "⏳", message: tr.random.statusDeclineCooldown };
+    case "RATE_LIMITED":
+      return { emoji: "🚦", message: tr.random.statusRateLimited };
+    default:
+      return { emoji: "ℹ️", message: tr.random.statusGiveUp };
   }
 }
 
@@ -444,6 +464,13 @@ export default function RandomScreen() {
   // True when matched host's live status check fails — gate Accept on this.
   const [hostCheckBusy, setHostCheckBusy] = useState(false);
 
+  // Limit / abuse popups. INSUFFICIENT_COINS gets the coin-plans sheet; the
+  // 429 family (daily limit / decline cooldown / rate limit) gets a simple
+  // single-button info modal.
+  const [showCoinsPopup, setShowCoinsPopup] = useState(false);
+  const [requiredCoins, setRequiredCoins] = useState(0);
+  const [limitPopup, setLimitPopup] = useState<{ emoji: string; message: string } | null>(null);
+
   // Floating card hosts (real API)
   const [cardHosts, setCardHosts] = useState<HostCard[]>([]);
   const currentHosts = useRef<HostCard[]>([]);
@@ -542,20 +569,26 @@ export default function RandomScreen() {
           return;
         }
 
-        // Hard-stop conditions — keep polling won't help.
+        // Hard-stop conditions — more polling won't help. Each is surfaced as
+        // a POPUP so the user clearly sees why the search stopped (a toast used
+        // to vanish, leaving the screen looking stuck). INSUFFICIENT_COINS →
+        // coin-plans sheet; the 429 family → single-button info modal.
         if (
           res.code === "INSUFFICIENT_COINS" ||
           res.code === "DAILY_LIMIT_REACHED" ||
-          res.code === "DECLINE_COOLDOWN"
+          res.code === "DECLINE_COOLDOWN" ||
+          res.code === "RATE_LIMITED"
         ) {
-          setStatusMsg(searchingMessageForCode(res.code, onlineCount, tr));
-          setStatusCode(res.code);
           if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
           setPhase("idle");
-          showErrorToast(searchingMessageForCode(res.code, onlineCount, tr));
-          // Insufficient coins → nudge to the wallet (consistent with the
-          // legacy direct-call flow).
-          if (res.code === "INSUFFICIENT_COINS") router.push("/user/payment/checkout");
+          setStatusCode(res.code);
+          setStatusMsg(searchingMessageForCode(res.code, onlineCount, tr));
+          if (res.code === "INSUFFICIENT_COINS") {
+            setRequiredCoins(res.min_needed ?? adminCoinRate * 2);
+            setShowCoinsPopup(true);
+          } else {
+            setLimitPopup(limitPopupContent(res.code, tr));
+          }
           return;
         }
 
@@ -582,7 +615,7 @@ export default function RandomScreen() {
 
     poll(); // immediate first call
     pollRef.current = setInterval(poll, 2500);
-  }, [callType, buildFilterPayload, onlineCount]);
+  }, [callType, buildFilterPayload, onlineCount, adminCoinRate]);
 
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
 
@@ -596,8 +629,8 @@ export default function RandomScreen() {
     if ((user?.coins ?? 0) < adminCoinRate * 2) {
       setPhase("idle");
       setMatchedHost(null);
-      showErrorToast(tr.random.needCoins.replace("{count}", String(adminCoinRate * 2)), tr.random.statusNotEnoughCoinsTitle);
-      router.push("/user/payment/checkout");
+      setRequiredCoins(adminCoinRate * 2);
+      setShowCoinsPopup(true);
       return;
     }
 
@@ -823,6 +856,25 @@ export default function RandomScreen() {
           onSkip={handleSkipNext}
         />
       )}
+
+      {/* Insufficient-coins sheet (coin plans + Go to Wallet). */}
+      <InsufficientCoinsPopup
+        visible={showCoinsPopup}
+        onClose={() => setShowCoinsPopup(false)}
+        requiredCoins={requiredCoins}
+        currentCoins={user?.coins ?? 0}
+      />
+
+      {/* 429-family limit info popup (daily limit / decline cooldown / rate). */}
+      <ConfirmModal
+        visible={!!limitPopup}
+        emoji={limitPopup?.emoji}
+        title={limitPopup?.message ?? ""}
+        singleButton
+        confirmText={tr.common.ok}
+        onConfirm={() => setLimitPopup(null)}
+        onCancel={() => setLimitPopup(null)}
+      />
     </View>
   );
 }
