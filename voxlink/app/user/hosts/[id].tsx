@@ -223,7 +223,8 @@ export default function HostDetailScreen() {
   useSocketEvent(
     SocketEvents.PRESENCE_UPDATE,
     (data: any) => {
-      const hid = data?.host_id;
+      // SocketService emits camelCase `hostId` (= hosts.id). Accept snake_case too.
+      const hid = data?.hostId ?? data?.host_id;
       if (!hid || hid !== id) return;
       const online = !!(data?.isOnline ?? data?.is_online);
       queryClient.setQueryData(['host', id], (old: any) => (old ? { ...old, is_online: online } : old));

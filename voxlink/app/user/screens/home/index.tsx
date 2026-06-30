@@ -461,7 +461,11 @@ export default function HomeScreen() {
   useSocketEvent(
     SocketEvents.PRESENCE_UPDATE,
     (data: any) => {
-      const hostId: string | undefined = data?.host_id;
+      // SocketService emits camelCase `hostId` (= hosts.id); accept snake_case
+      // too for safety. Reading only `host_id` here was the bug that left the
+      // home list stale when a host came online (hostId was always undefined →
+      // the handler early-returned and never patched the cache).
+      const hostId: string | undefined = data?.hostId ?? data?.host_id;
       const isOnline: boolean = !!(data?.isOnline ?? data?.is_online);
       if (!hostId) return;
 
