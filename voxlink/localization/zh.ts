@@ -163,6 +163,7 @@ const zh = {
     statusNetworkError: "网络错误,正在重试…",
     statusServerUnreachable: "无法连接服务器,请重试。",
     retryIn: "{time} 后重试",
+    dailyLimitReset: "明天重置",
     hostBusy: "主播正忙 — 正在寻找其他匹配。",
     hostOffline: "主播已下线 — 正在寻找其他匹配。",
     hostUnavailable: "主播不可用 — 正在寻找其他匹配。",

@@ -104,20 +104,22 @@ function searchingMessageForCode(code: string | undefined, onlineCount: number, 
  * new i18n keys are needed across the 5 supported languages.
  */
 function limitPopupContent(
-  code: string | undefined,
-  retryAfterSec: number | undefined,
+  res: { code?: string; retry_after_sec?: number; used?: number; daily_limit?: number },
   tr: Translations,
-): { emoji: string; message: string; retryAfterSec?: number } {
-  switch (code) {
-    case "DAILY_LIMIT_REACHED":
-      // Daily cap is a 24h rolling window — no short retry timer.
-      return { emoji: "📅", message: tr.random.statusDailyLimit };
+): { emoji: string; message: string; subtext?: string; retryAfterSec?: number } {
+  switch (res.code) {
+    case "DAILY_LIMIT_REACHED": {
+      // Show usage (e.g. "5/5 · ") when the server reported it, plus the
+      // reset hint. No retry timer — the daily cap is a 24h rolling window.
+      const usage = res.used != null && res.daily_limit != null ? `${res.used}/${res.daily_limit} · ` : "";
+      return { emoji: "📅", message: tr.random.statusDailyLimit, subtext: `${usage}${tr.random.dailyLimitReset}` };
+    }
     case "DECLINE_COOLDOWN":
-      return { emoji: "⏳", message: tr.random.statusDeclineCooldown, retryAfterSec };
+      return { emoji: "⏳", message: tr.random.statusDeclineCooldown, retryAfterSec: res.retry_after_sec };
     case "RATE_LIMITED":
-      return { emoji: "🚦", message: tr.random.statusRateLimited, retryAfterSec };
+      return { emoji: "🚦", message: tr.random.statusRateLimited, retryAfterSec: res.retry_after_sec };
     default:
-      return { emoji: "ℹ️", message: tr.random.statusGiveUp, retryAfterSec };
+      return { emoji: "ℹ️", message: tr.random.statusGiveUp, retryAfterSec: res.retry_after_sec };
   }
 }
 
@@ -474,7 +476,7 @@ export default function RandomScreen() {
   // single-button info modal.
   const [showCoinsPopup, setShowCoinsPopup] = useState(false);
   const [requiredCoins, setRequiredCoins] = useState(0);
-  const [limitPopup, setLimitPopup] = useState<{ emoji: string; message: string; retryAfterSec?: number } | null>(null);
+  const [limitPopup, setLimitPopup] = useState<{ emoji: string; message: string; subtext?: string; retryAfterSec?: number } | null>(null);
 
   // Floating card hosts (real API)
   const [cardHosts, setCardHosts] = useState<HostCard[]>([]);
@@ -592,7 +594,7 @@ export default function RandomScreen() {
             setRequiredCoins(res.min_needed ?? adminCoinRate * 2);
             setShowCoinsPopup(true);
           } else {
-            setLimitPopup(limitPopupContent(res.code, res.retry_after_sec, tr));
+            setLimitPopup(limitPopupContent(res, tr));
           }
           return;
         }
@@ -877,6 +879,7 @@ export default function RandomScreen() {
         visible={!!limitPopup}
         emoji={limitPopup?.emoji ?? "ℹ️"}
         message={limitPopup?.message ?? ""}
+        subtext={limitPopup?.subtext}
         retryAfterSec={limitPopup?.retryAfterSec}
         retryInTemplate={tr.random.retryIn}
         retryLabel={tr.common.retry}

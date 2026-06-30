@@ -415,6 +415,12 @@ export const API = {
       retry_after_sec?: number;
       coins?: number;
       min_needed?: number;
+      // Limit metadata spread by the server (...abuse.meta): daily cap usage
+      // for DAILY_LIMIT_REACHED, cooldown config for DECLINE_COOLDOWN.
+      used?: number;
+      daily_limit?: number;
+      cooldown_min?: number;
+      threshold?: number;
       // The server returns these limit/abuse states as HTTP 402 (insufficient
       // coins) / 429 (rate, daily cap, decline cooldown) with a code-bearing
       // body. We opt to receive that body instead of a thrown error so the UI

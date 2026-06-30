@@ -163,6 +163,7 @@ const ar = {
     statusNetworkError: "خطأ شبكة، إعادة المحاولة…",
     statusServerUnreachable: "تعذّر الوصول إلى الخادم. يُرجى المحاولة مجددًا.",
     retryIn: "أعد المحاولة خلال {time}",
+    dailyLimitReset: "تتم إعادة التعيين غدًا",
     hostBusy: "المضيف مشغول الآن — نبحث عن غيره.",
     hostOffline: "خرج المضيف عن الاتصال — نبحث عن غيره.",
     hostUnavailable: "المضيف غير متاح — نبحث عن غيره.",

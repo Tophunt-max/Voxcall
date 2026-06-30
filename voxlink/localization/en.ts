@@ -171,6 +171,7 @@ const en = {
     statusNetworkError: "Network error, retrying…",
     statusServerUnreachable: "Couldn't reach the server. Please try again.",
     retryIn: "Try again in {time}",
+    dailyLimitReset: "Resets tomorrow",
     hostBusy: "Host just got busy — finding another match.",
     hostOffline: "Host went offline — finding another match.",
     hostUnavailable: "Host unavailable — finding another match.",

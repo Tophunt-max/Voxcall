@@ -1,9 +1,18 @@
 import React, { useEffect, useRef, useState } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Modal } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
+import Svg, { Circle } from "react-native-svg";
 
 // Brand gradient — matches the random-match screen's accent.
 const GRAD: [string, string] = ["#CF00FD", "#8400FF"];
+const RING_TRACK = "#EFE6F8";
+const RING_FILL = "#8400FF";
+
+// Countdown ring geometry.
+const RING_SIZE = 116;
+const RING_STROKE = 8;
+const RING_R = (RING_SIZE - RING_STROKE) / 2;
+const RING_CIRC = 2 * Math.PI * RING_R;
 
 interface Props {
   visible: boolean;
@@ -11,11 +20,13 @@ interface Props {
   emoji: string;
   /** Main human-readable reason the search was stopped. */
   message: string;
+  /** Optional secondary line (e.g. "3/5 · Resets tomorrow"). */
+  subtext?: string;
   /**
-   * Seconds until the user may retry. When > 0 a live countdown is shown and
-   * the "Try Again" button stays disabled until it reaches 0. Omitted (or 0)
-   * for non-time-bound limits like the daily cap, where only a close button
-   * is shown.
+   * Seconds until the user may retry. When > 0 a live countdown ring is shown
+   * and the "Try Again" button stays disabled until it reaches 0. Omitted (or
+   * 0) for non-time-bound limits like the daily cap, where only the emoji and
+   * a close button are shown.
    */
   retryAfterSec?: number;
   /** i18n template containing "{time}", e.g. "Try again in {time}". */
@@ -42,13 +53,14 @@ function formatTime(totalSec: number): string {
 /**
  * Bottom-sheet shown when a random-match search is hard-stopped by a 429-family
  * limit (rate limit / daily cap / decline cooldown). For time-bound limits it
- * ticks a countdown and enables "Try Again" once the cooldown elapses, so the
- * user can resume without leaving the screen.
+ * renders a live circular countdown and enables "Try Again" once the cooldown
+ * elapses, so the user can resume without leaving the screen.
  */
 export function MatchLimitSheet({
   visible,
   emoji,
   message,
+  subtext,
   retryAfterSec,
   retryInTemplate,
   retryLabel,
@@ -58,10 +70,13 @@ export function MatchLimitSheet({
 }: Props) {
   const hasCountdown = typeof retryAfterSec === "number" && retryAfterSec > 0;
   const [remaining, setRemaining] = useState(retryAfterSec ?? 0);
+  // Snapshot the starting value so the ring's fill ratio is stable across ticks.
+  const totalRef = useRef(retryAfterSec ?? 0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     if (!visible || !hasCountdown) return;
+    totalRef.current = retryAfterSec ?? 0;
     setRemaining(retryAfterSec ?? 0);
     timerRef.current = setInterval(() => {
       setRemaining((r) => {
@@ -78,14 +93,52 @@ export function MatchLimitSheet({
   }, [visible, retryAfterSec, hasCountdown]);
 
   const canRetry = hasCountdown && remaining <= 0;
+  const progress = hasCountdown && totalRef.current > 0 ? remaining / totalRef.current : 0;
+  // Deplete the ring as time runs down (full at start → empty at 0).
+  const dashOffset = RING_CIRC * (1 - progress);
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <TouchableOpacity style={st.overlay} activeOpacity={1} onPress={onClose}>
         <View style={st.sheet} onStartShouldSetResponder={() => true}>
           <View style={st.handle} />
-          <Text style={st.emoji}>{emoji}</Text>
+
+          {hasCountdown ? (
+            <View style={st.ringWrap}>
+              <Svg width={RING_SIZE} height={RING_SIZE}>
+                <Circle
+                  cx={RING_SIZE / 2}
+                  cy={RING_SIZE / 2}
+                  r={RING_R}
+                  stroke={RING_TRACK}
+                  strokeWidth={RING_STROKE}
+                  fill="none"
+                />
+                <Circle
+                  cx={RING_SIZE / 2}
+                  cy={RING_SIZE / 2}
+                  r={RING_R}
+                  stroke={RING_FILL}
+                  strokeWidth={RING_STROKE}
+                  fill="none"
+                  strokeLinecap="round"
+                  strokeDasharray={RING_CIRC}
+                  strokeDashoffset={dashOffset}
+                  // Start the arc at 12 o'clock instead of 3 o'clock.
+                  transform={`rotate(-90 ${RING_SIZE / 2} ${RING_SIZE / 2})`}
+                />
+              </Svg>
+              <View style={st.ringCenter} pointerEvents="none">
+                <Text style={st.ringEmoji}>{emoji}</Text>
+                <Text style={st.ringTime}>{remaining > 0 ? formatTime(remaining) : "✓"}</Text>
+              </View>
+            </View>
+          ) : (
+            <Text style={st.emoji}>{emoji}</Text>
+          )}
+
           <Text style={st.message}>{message}</Text>
+          {subtext ? <Text style={st.subtext}>{subtext}</Text> : null}
 
           {hasCountdown && remaining > 0 && (
             <Text style={st.countdown}>
@@ -134,12 +187,23 @@ const st = StyleSheet.create({
   },
   handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: "#D1D5DB", marginTop: 10, marginBottom: 18 },
   emoji: { fontSize: 44, marginBottom: 10 },
+  ringWrap: { width: RING_SIZE, height: RING_SIZE, alignItems: "center", justifyContent: "center", marginBottom: 14 },
+  ringCenter: { ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "center" },
+  ringEmoji: { fontSize: 30 },
+  ringTime: { fontSize: 16, fontFamily: "Poppins_700Bold", color: "#111329", marginTop: 2 },
   message: {
     fontSize: 15,
     fontFamily: "Poppins_600SemiBold",
     color: "#111329",
     textAlign: "center",
     lineHeight: 22,
+  },
+  subtext: {
+    fontSize: 12.5,
+    fontFamily: "Poppins_500Medium",
+    color: "#6B7280",
+    textAlign: "center",
+    marginTop: 6,
   },
   countdown: {
     fontSize: 13,
