@@ -61,7 +61,15 @@ export async function apiRequest<T>(
   path: string,
   body?: unknown,
   auth = true,
-  _retry = true
+  _retry = true,
+  // Some endpoints return a STRUCTURED JSON body (with a stable `code`) on an
+  // HTTP error status — e.g. POST /api/match/find replies 402/429 with
+  // { matched:false, code:'DAILY_LIMIT_REACHED' | 'RATE_LIMITED' | ... }.
+  // Callers that pass the relevant statuses here receive that parsed body
+  // instead of a thrown Error, so they can act on the code rather than
+  // mistaking an expected limit for a network failure. Default keeps the
+  // original throw-on-any-error behaviour for every other caller.
+  returnBodyForStatuses?: number[],
 ): Promise<T> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (auth) {
@@ -77,7 +85,7 @@ export async function apiRequest<T>(
   // Auto-refresh on 401 then retry once
   if (res.status === 401 && auth && _retry) {
     const newToken = await refreshAuthToken();
-    if (newToken) return apiRequest<T>(method, path, body, auth, false);
+    if (newToken) return apiRequest<T>(method, path, body, auth, false, returnBodyForStatuses);
     // Refresh bhi fail hua — token revoked ya expired hai, force logout karo
     try {
       const { removeItem } = await import('@/utils/storage');
@@ -92,6 +100,10 @@ export async function apiRequest<T>(
   }
 
   if (!res.ok) {
+    // Expected, code-bearing error response → hand the body back to the caller.
+    if (returnBodyForStatuses?.includes(res.status)) {
+      return res.json() as Promise<T>;
+    }
     const err = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error((err as any).error || res.statusText);
   }
@@ -403,7 +415,12 @@ export const API = {
       retry_after_sec?: number;
       coins?: number;
       min_needed?: number;
-    }>('POST', '/api/match/find', { call_type, ...(filters ?? {}) }),
+      // The server returns these limit/abuse states as HTTP 402 (insufficient
+      // coins) / 429 (rate, daily cap, decline cooldown) with a code-bearing
+      // body. We opt to receive that body instead of a thrown error so the UI
+      // can show the real reason and stop searching immediately, rather than
+      // spinning on a misleading "network error".
+    }>('POST', '/api/match/find', { call_type, ...(filters ?? {}) }, true, true, [402, 429]),
   matchOnlineHosts: () =>
     apiRequest<{ hosts: any[]; online_count: number }>('GET', '/api/match/online-hosts'),
   /**

@@ -730,17 +730,24 @@ export default function RandomScreen() {
         </View>
       )}
 
-      {/* Online listeners count — visible whenever idle so user knows
-          whether it's worth starting a search. Hidden during searching to
-          avoid duplicating the searching badge. */}
-      {phase === "idle" && onlineCount > 0 && (
+      {/* Idle status line. After a search ends with a reason (daily limit,
+          cooldown, insufficient coins, gave up, etc.) we show that reason
+          persistently — previously the message was only rendered during
+          `searching`, so a hard-stop dropped the user back to a blank idle
+          screen with no explanation. Otherwise we show the online-listener
+          count so the user knows whether it's worth starting a search. */}
+      {phase === "idle" && statusMsg ? (
+        <View style={styles.statusPill}>
+          <Text style={styles.statusPillTxt}>{statusMsg}</Text>
+        </View>
+      ) : phase === "idle" && onlineCount > 0 ? (
         <View style={styles.onlineCountPill}>
           <View style={styles.onlineDot} />
           <Text style={styles.onlineCountTxt}>
             {(onlineCount === 1 ? tr.random.listenerOnline : tr.random.listenersOnline).replace("{count}", String(onlineCount))}
           </Text>
         </View>
-      )}
+      ) : null}
 
       {/* Bottom Buttons */}
       <View style={[styles.bottomBtns, { paddingBottom: insets.bottom + 16 }]}>
@@ -861,6 +868,10 @@ const styles = StyleSheet.create({
   onlineCountPill: { position: "absolute", top: SH * 0.43, alignSelf: "center", flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "rgba(255,255,255,0.92)", paddingHorizontal: 14, paddingVertical: 8, borderRadius: 24, shadowColor: "#000", shadowOpacity: 0.08, shadowRadius: 12, elevation: 4 },
   onlineDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#0BAF23" },
   onlineCountTxt: { fontSize: 12, fontFamily: "Poppins_600SemiBold", color: "#111329" },
+  // Persistent idle status line (limit reached / cooldown / gave up). Wider +
+  // centered so a full sentence wraps cleanly instead of being clipped.
+  statusPill: { position: "absolute", top: SH * 0.42, alignSelf: "center", maxWidth: SW - 72, backgroundColor: "rgba(255,255,255,0.95)", paddingHorizontal: 18, paddingVertical: 11, borderRadius: 22, shadowColor: "#000", shadowOpacity: 0.08, shadowRadius: 12, elevation: 4 },
+  statusPillTxt: { fontSize: 12.5, fontFamily: "Poppins_500Medium", color: "#111329", textAlign: "center" },
   // Filter chip
   bottomChipsRow: { flexDirection: "row", alignItems: "center", gap: 8, justifyContent: "center" },
   filterChip: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 30, paddingVertical: 10, paddingHorizontal: 14, shadowColor: "#000", shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.1, shadowRadius: 18, elevation: 6 },
