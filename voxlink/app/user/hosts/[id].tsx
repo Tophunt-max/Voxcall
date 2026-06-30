@@ -32,6 +32,9 @@ import { showErrorToast, showSuccessToast } from "@/components/Toast";
 import { InsufficientCoinsPopup } from "@/components/InsufficientCoinsPopup";
 
 const { width: SW, height: SH } = Dimensions.get("window");
+// Fixed hero height so the cover-media carousel + overlaid profile info have a
+// stable canvas (the old hero used minHeight which can't host a paged carousel).
+const HERO_H = Math.round(SH * 0.46);
 
 /* ─── Colors (exact Flutter source) ─── */
 const INFO_BG       = "#F3E6FF";
@@ -63,6 +66,40 @@ function StarRating({ rating, size = 18 }: { rating: number; size?: number }) {
           resizeMode="contain"
         />
       ))}
+    </View>
+  );
+}
+
+/* ─── Hero media cover — swipeable gallery photos / videos behind the
+   profile header. Falls back to the brand gradient when the host has no
+   media. ─── */
+function HeroMediaCover({ media, onOpen, topOffset }: { media: { url: string; type: string }[]; onOpen: (u: string, t: string) => void; topOffset: number }) {
+  const [idx, setIdx] = useState(0);
+  return (
+    <View style={StyleSheet.absoluteFill}>
+      <ScrollView
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        onMomentumScrollEnd={(e) => setIdx(Math.round(e.nativeEvent.contentOffset.x / SW))}
+      >
+        {media.map((m, i) => (
+          <TouchableOpacity key={i} activeOpacity={0.95} onPress={() => onOpen(m.url, m.type)} style={{ width: SW, height: HERO_H }}>
+            {m.type === "video" ? (
+              <View style={s.coverVideo}>
+                <View style={s.coverPlayBadge}><Text style={s.coverPlayGlyph}>▶</Text></View>
+              </View>
+            ) : (
+              <Image source={{ uri: resolveMediaUrl(m.url) || m.url }} style={{ width: SW, height: HERO_H }} resizeMode="cover" />
+            )}
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+      {media.length > 1 && (
+        <View style={[s.coverDots, { top: topOffset }]} pointerEvents="none">
+          {media.map((_, i) => <View key={i} style={[s.coverDot, i === idx && s.coverDotActive]} />)}
+        </View>
+      )}
     </View>
   );
 }
@@ -291,6 +328,13 @@ export default function HostDetailScreen() {
     else { setViewerImage(full); }
   };
 
+  // Media shown in the hero cover carousel: intro video first (if any), then
+  // gallery photos/videos. Empty → hero falls back to the brand gradient.
+  const coverMedia: { url: string; type: string }[] = [
+    ...(introVideoUrl ? [{ url: introVideoUrl, type: "video" }] : []),
+    ...gallery.map((g: any) => ({ url: g.media_url, type: g.media_type || "image" })),
+  ];
+
   /* ─── Handlers ─── */
   const checkCoins = (rate: number) => {
     if ((user?.coins ?? 0) < rate * 2) {
@@ -391,7 +435,24 @@ export default function HostDetailScreen() {
         }
       >
         {/* ══════ TopImageView — gradient hero + centered avatar ══════ */}
-        <LinearGradient colors={COVER_GRAD} style={[s.hero, { paddingTop: insets.top + 8 }]}>
+        <View style={s.hero}>
+          {/* Cover: swipeable gallery photos/videos, or the brand gradient
+              when the host has no media yet. */}
+          {coverMedia.length > 0 ? (
+            <HeroMediaCover media={coverMedia} onOpen={openMedia} topOffset={insets.top + 56} />
+          ) : (
+            <LinearGradient colors={COVER_GRAD} style={StyleSheet.absoluteFill} />
+          )}
+          {/* Dark scrim keeps the overlaid avatar / name / rating readable over
+              bright photos. */}
+          <LinearGradient
+            colors={["rgba(17,19,41,0.20)", "rgba(17,19,41,0.45)", "rgba(17,19,41,0.92)"]}
+            style={StyleSheet.absoluteFill}
+            pointerEvents="none"
+          />
+          {/* box-none → empty areas pass touches to the cover carousel below so
+              it stays swipeable, while the buttons still receive taps. */}
+          <View style={[StyleSheet.absoluteFill, s.heroContent, { paddingTop: insets.top + 8 }]} pointerEvents="box-none">
           {/* Back button + Favorite + Report */}
           <View style={s.heroTopRow}>
             <TouchableOpacity onPress={() => router.back()} style={s.backBtn} activeOpacity={0.85} accessibilityRole="button" accessibilityLabel="Go back">
@@ -440,7 +501,8 @@ export default function HostDetailScreen() {
               <Text style={s.heroRatingTxt}>{(host.rating ?? 0).toFixed(1)} ({t.reviews.reviewsCount.replace("{count}", String(host.review_count ?? 0))})</Text>
             </View>
           </View>
-        </LinearGradient>
+          </View>
+        </View>
 
         {/* ══════ UserProfileInfoView ══════ */}
         <View style={[s.infoCard, { backgroundColor: infoBg }]}>
@@ -707,10 +769,21 @@ const s = StyleSheet.create({
   /* ── Hero / cover ── */
   hero: {
     width: SW,
-    minHeight: SH * 0.36,
-    paddingHorizontal: 20,
-    paddingBottom: 24,
+    height: HERO_H,
+    overflow: "hidden",
   },
+  heroContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    justifyContent: "space-between",
+  },
+  // Cover carousel
+  coverVideo: { width: SW, height: HERO_H, backgroundColor: "#1A1140", alignItems: "center", justifyContent: "center" },
+  coverPlayBadge: { width: 64, height: 64, borderRadius: 32, backgroundColor: "rgba(255,255,255,0.9)", alignItems: "center", justifyContent: "center" },
+  coverPlayGlyph: { fontSize: 26, color: "#111329", marginLeft: 4 },
+  coverDots: { position: "absolute", alignSelf: "center", flexDirection: "row", gap: 6 },
+  coverDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "rgba(255,255,255,0.45)" },
+  coverDotActive: { width: 18, backgroundColor: "#fff" },
   heroTopRow: {
     flexDirection: "row", justifyContent: "space-between",
     alignItems: "center", marginBottom: 12,
