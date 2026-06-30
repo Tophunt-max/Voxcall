@@ -288,6 +288,11 @@ export const API = {
   // Favorited hosts for the "Your favorites" home rail. Rows expose host_id
   // (the hosts.id) + display fields; the caller maps host_id -> id.
   getFavorites: () => apiRequest<any[]>('GET', '/api/user/favorites'),
+  // Add / remove a host from the user's favorites (hostId = hosts.id).
+  addFavorite: (hostId: string) =>
+    apiRequest<{ success: boolean }>('POST', `/api/user/favorites/${hostId}`),
+  removeFavorite: (hostId: string) =>
+    apiRequest<{ success: boolean }>('DELETE', `/api/user/favorites/${hostId}`),
 
   // ─── User Blocking ──────────────────────────────────────────────────────────
   // Block/unblock users. Blocked users cannot call or message the blocker.

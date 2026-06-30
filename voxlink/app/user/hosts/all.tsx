@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, ActivityIndicator } from "react-native";
+import React, { useState, useEffect, useCallback } from "react";
+import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, ActivityIndicator, RefreshControl } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { useColors } from "@/hooks/useColors";
@@ -16,19 +16,34 @@ export default function AllHostsScreen() {
   const [query, setQuery] = useState("");
   const [hosts, setHosts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    // FIX: API.getHosts now returns { hosts, nextCursor } — read .hosts before mapping.
-    // Explicit limit so the full roster loads (no infinite scroll on this screen).
-    API.getHosts({ limit: 100 }).then((res) => {
+  const loadHosts = useCallback(async () => {
+    try {
+      // API.getHosts returns { hosts, nextCursor } — read .hosts before mapping.
+      // Explicit limit so the full roster loads (no infinite scroll on this screen).
+      const res = await API.getHosts({ limit: 100 });
       const list = res?.hosts ?? [];
-      const mapped = list.map((h: any) => ({
+      setHosts(list.map((h: any) => ({
         ...h,
         avatar: resolveMediaUrl(h.avatar_url || h.avatar) || `https://api.dicebear.com/7.x/avataaars/png?seed=${h.id}`,
-      }));
-      setHosts(mapped);
-    }).catch(() => { setHosts([]); showErrorToast(t.hostsScreen.failedLoad); }).finally(() => setLoading(false));
-  }, []);
+      })));
+    } catch {
+      setHosts([]);
+      showErrorToast(t.hostsScreen.failedLoad);
+    }
+  }, [t.hostsScreen.failedLoad]);
+
+  useEffect(() => {
+    setLoading(true);
+    loadHosts().finally(() => setLoading(false));
+  }, [loadHosts]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadHosts();
+    setRefreshing(false);
+  }, [loadHosts]);
 
   const filtered = hosts.filter((h) =>
     !query || (h.display_name ?? h.name ?? "").toLowerCase().includes(query.toLowerCase())
@@ -57,6 +72,7 @@ export default function AllHostsScreen() {
           renderItem={({ item }) => <HostCard host={item} onPress={() => router.push(`/user/hosts/${item.id}`)} />}
           contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: insets.bottom + 20 }}
           showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />}
           ListEmptyComponent={
             <View style={{ alignItems: "center", paddingTop: 60 }}>
               <Text style={{ color: colors.mutedForeground, fontFamily: "Poppins_400Regular" }}>{t.hosts.noHostsFound}</Text>

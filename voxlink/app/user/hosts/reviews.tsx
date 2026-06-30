@@ -1,19 +1,23 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, Image,
-  FlatList, ActivityIndicator,
+  FlatList, ActivityIndicator, RefreshControl,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useLanguage } from "@/context/LanguageContext";
 import type { Translations } from "@/localization/en";
-import { API } from "@/services/api";
+import { API, resolveMediaUrl } from "@/services/api";
 import { showErrorToast } from "@/components/Toast";
 
 interface Review {
   id: string;
+  // Server returns the reviewer's `name` + `avatar_url` (SELECT r.*, u.name,
+  // u.avatar_url). `user_name` kept only as a defensive fallback.
+  name?: string;
   user_name?: string;
+  avatar_url?: string;
   user_id?: string;
   rating: number;
   comment?: string;
@@ -61,14 +65,30 @@ export default function AllReviewsScreen() {
 
   const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const loadReviews = useCallback(async () => {
+    if (!params.hostId) return;
+    try {
+      const data = await API.getHostReviews(params.hostId);
+      setReviews((data ?? []) as Review[]);
+    } catch {
+      setReviews([]);
+      showErrorToast(t.reviews.failedLoad);
+    }
+  }, [params.hostId, t.reviews.failedLoad]);
 
   useEffect(() => {
     if (!params.hostId) { setLoading(false); return; }
-    API.getHostReviews(params.hostId)
-      .then((data) => setReviews(data ?? []))
-      .catch(() => { setReviews([]); showErrorToast(t.reviews.failedLoad); })
-      .finally(() => setLoading(false));
-  }, [params.hostId]);
+    setLoading(true);
+    loadReviews().finally(() => setLoading(false));
+  }, [params.hostId, loadReviews]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadReviews();
+    setRefreshing(false);
+  }, [loadReviews]);
 
   const displayRating = rating || (reviews.length > 0
     ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length
@@ -121,6 +141,7 @@ export default function AllReviewsScreen() {
           keyExtractor={r => r.id}
           contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 12, gap: 10, paddingBottom: insets.bottom + 20 }}
           showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#A00EE7" colors={["#A00EE7"]} />}
           ListEmptyComponent={
             <View style={{ alignItems: "center", paddingTop: 60, gap: 8 }}>
               <Text style={{ fontSize: 40 }}>💬</Text>
@@ -134,11 +155,11 @@ export default function AllReviewsScreen() {
             <View style={[styles.reviewCard, { backgroundColor: colors.card }]}>
               <View style={styles.reviewTop}>
                 <Image
-                  source={{ uri: `https://api.dicebear.com/7.x/avataaars/png?seed=${item.user_id ?? item.id}` }}
+                  source={{ uri: resolveMediaUrl(item.avatar_url) || `https://api.dicebear.com/7.x/avataaars/png?seed=${item.user_id ?? item.id}` }}
                   style={styles.reviewAvatar}
                 />
                 <View style={{ flex: 1, gap: 2 }}>
-                  <Text style={[styles.reviewUser, { color: colors.text }]}>{item.user_name ?? t.reviews.user}</Text>
+                  <Text style={[styles.reviewUser, { color: colors.text }]}>{item.name ?? item.user_name ?? t.reviews.user}</Text>
                   <Stars count={Math.round(item.rating)} />
                 </View>
                 <Text style={[styles.reviewDate, { color: colors.mutedForeground }]}>{formatDate(item.created_at, t)}</Text>

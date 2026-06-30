@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { confirmDialog, alertDialog } from "@/utils/dialog";
 import {
   View,
@@ -11,8 +11,10 @@ import {
   Dimensions,
   Platform,
   ActivityIndicator,
+  RefreshControl,
   useColorScheme,
 } from "react-native";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
 import * as Clipboard from "expo-clipboard";
@@ -22,6 +24,8 @@ import { useAuth } from "@/context/AuthContext";
 import { useCall } from "@/context/CallContext";
 import { useChat } from "@/context/ChatContext";
 import { useLanguage } from "@/context/LanguageContext";
+import { useSocketEvent } from "@/context/SocketContext";
+import { SocketEvents } from "@/constants/events";
 import { API, resolveMediaUrl } from "@/services/api";
 import { showErrorToast, showSuccessToast } from "@/components/Toast";
 import { InsufficientCoinsPopup } from "@/components/InsufficientCoinsPopup";
@@ -146,27 +150,91 @@ export default function HostDetailScreen() {
   const { user } = useAuth();
   const { initiateCall } = useCall();
   const { getOrCreateConversation } = useChat();
+  const queryClient = useQueryClient();
   const [talkSheet, setTalkSheet] = useState(false);
-  const [host, setHost] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [chatUnlocked, setChatUnlocked] = useState(false);
-  const [reviews, setReviews] = useState<any[]>([]);
   const [coinPopup, setCoinPopup] = useState(false);
   const [coinPopupRequired, setCoinPopupRequired] = useState(0);
   const [reportModal, setReportModal] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
+  // M1: consume the ['host', id] cache the home screen prefetches on tap, so
+  // opening a profile is instant (no spinner on a warm cache) + cached.
+  const { data: host, isLoading: loading } = useQuery({
+    queryKey: ['host', id],
+    queryFn: () => API.getHost(id!),
+    enabled: !!id,
+    staleTime: 30_000,
+  });
+  const { data: reviews = [] } = useQuery<any[]>({
+    queryKey: ['host-reviews', id],
+    queryFn: () => API.getHostReviews(id!),
+    enabled: !!id,
+    staleTime: 60_000,
+  });
+  const { data: chatUnlocked = false } = useQuery({
+    queryKey: ['chat-status', id],
+    queryFn: async () => { try { const sN = await API.getChatStatus(id!); return !!(sN as any)?.unlocked; } catch { return false; } },
+    enabled: !!id,
+    staleTime: 30_000,
+  });
+
+  // H3: favorite state derived from the favorites list, mirrored into local
+  // state so the heart toggles instantly (optimistic) before the server round-trip.
+  const { data: serverIsFavorite = false } = useQuery({
+    queryKey: ['favorite-status', id],
+    queryFn: async () => {
+      try { const favs = await API.getFavorites(); return (favs ?? []).some((f: any) => (f.host_id ?? f.id) === id); }
+      catch { return false; }
+    },
+    enabled: !!id,
+    staleTime: 30_000,
+  });
+  const [isFavorite, setIsFavorite] = useState(false);
+  useEffect(() => { setIsFavorite(serverIsFavorite); }, [serverIsFavorite]);
+
+  const toggleFavorite = useCallback(async () => {
     if (!id) return;
-    Promise.all([
-      API.getHost(id),
-      API.getHostReviews(id),
-      API.getChatStatus(id).catch(() => ({ unlocked: false })),
-    ]).then(([h, revs, chatStatus]) => {
-      setHost(h);
-      setReviews(revs ?? []);
-      setChatUnlocked((chatStatus as any)?.unlocked ?? false);
-    }).catch(() => { showErrorToast(t.hostDetail.failedLoad); }).finally(() => setLoading(false));
-  }, [id]);
+    const next = !isFavorite;
+    setIsFavorite(next); // optimistic
+    try {
+      if (next) await API.addFavorite(id); else await API.removeFavorite(id);
+      // Keep the home "Your favorites" rail + this screen's status in sync.
+      queryClient.invalidateQueries({ queryKey: ['favorite-hosts'] });
+      queryClient.invalidateQueries({ queryKey: ['favorite-status', id] });
+    } catch {
+      setIsFavorite(!next); // revert on failure — the reverted heart is the feedback
+    }
+  }, [id, isFavorite, queryClient]);
+
+  // H4: live presence — if this host's online status flips while the profile is
+  // open, patch the cached host so the "Talk Now" button enables/disables
+  // immediately (the screen used to show stale status until re-opened).
+  useSocketEvent(
+    SocketEvents.PRESENCE_UPDATE,
+    (data: any) => {
+      const hid = data?.host_id;
+      if (!hid || hid !== id) return;
+      const online = !!(data?.isOnline ?? data?.is_online);
+      queryClient.setQueryData(['host', id], (old: any) => (old ? { ...old, is_online: online } : old));
+    },
+    [id, queryClient],
+  );
+
+  // M2: pull-to-refresh re-pulls host, reviews, chat-unlock + favorite status.
+  const onRefresh = useCallback(async () => {
+    if (!id) return;
+    setRefreshing(true);
+    try {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['host', id] }),
+        queryClient.invalidateQueries({ queryKey: ['host-reviews', id] }),
+        queryClient.invalidateQueries({ queryKey: ['chat-status', id] }),
+        queryClient.invalidateQueries({ queryKey: ['favorite-status', id] }),
+      ]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [id, queryClient]);
 
   if (loading) {
     return (
@@ -292,10 +360,13 @@ export default function HostDetailScreen() {
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: BOTTOM_H + 16 }}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />
+        }
       >
         {/* ══════ TopImageView — gradient hero + centered avatar ══════ */}
         <LinearGradient colors={COVER_GRAD} style={[s.hero, { paddingTop: insets.top + 8 }]}>
-          {/* Back button + Report */}
+          {/* Back button + Favorite + Report */}
           <View style={s.heroTopRow}>
             <TouchableOpacity onPress={() => router.back()} style={s.backBtn} activeOpacity={0.85} accessibilityRole="button" accessibilityLabel="Go back">
               <Image
@@ -305,15 +376,26 @@ export default function HostDetailScreen() {
                 resizeMode="contain"
               />
             </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => setReportModal(true)}
-              style={s.reportBtn}
-              activeOpacity={0.85}
-              accessibilityRole="button"
-              accessibilityLabel={`Report ${hostName}`}
-            >
-              <Image source={require("@/assets/icons/ic_flag.png")} style={{ width: 18, height: 18, tintColor: "#fff" }} resizeMode="contain" />
-            </TouchableOpacity>
+            <View style={{ flexDirection: "row", gap: 10 }}>
+              <TouchableOpacity
+                onPress={toggleFavorite}
+                style={s.reportBtn}
+                activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityLabel={isFavorite ? `Remove ${hostName} from favorites` : `Add ${hostName} to favorites`}
+              >
+                <Text style={{ fontSize: 17 }}>{isFavorite ? "❤️" : "🤍"}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setReportModal(true)}
+                style={s.reportBtn}
+                activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityLabel={`Report ${hostName}`}
+              >
+                <Image source={require("@/assets/icons/ic_flag.png")} style={{ width: 18, height: 18, tintColor: "#fff" }} resizeMode="contain" />
+              </TouchableOpacity>
+            </View>
           </View>
 
           {/* Centered avatar */}
@@ -412,6 +494,22 @@ export default function HostDetailScreen() {
         <View style={s.reviewSec}>
           <View style={s.reviewHeader}>
             <Text style={[s.reviewHeaderTxt, { color: titleColor }]}>{t.hosts.reviews}</Text>
+            {(host.review_count ?? reviews.length) > 0 && (
+              <TouchableOpacity
+                onPress={() => router.push({
+                  pathname: "/user/hosts/reviews",
+                  params: {
+                    hostId: String(host.id),
+                    hostRating: String(host.rating ?? 0),
+                    hostReviewCount: String(host.review_count ?? reviews.length),
+                  },
+                })}
+                accessibilityRole="button"
+                accessibilityLabel="View all reviews"
+              >
+                <Text style={[s.viewAllTxt, { color: subColor }]}>{t.home.viewAll}</Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           {reviews.length === 0 && (
