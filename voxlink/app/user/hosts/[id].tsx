@@ -53,6 +53,16 @@ const GREEN         = "#0BAF23";
 const APP_COLOR     = "#111329";
 const COVER_GRAD: [string, string] = ["#2A1A4E", "#111329"];
 
+/** "21:00" → "9:00 PM". Returns null for empty/invalid input. */
+function formatTime12(hhmm?: string | null): string | null {
+  if (!hhmm || !/^\d{1,2}:\d{2}$/.test(hhmm)) return null;
+  const [hStr, m] = hhmm.split(":");
+  let h = parseInt(hStr, 10);
+  const period = h >= 12 ? "PM" : "AM";
+  h = h % 12; if (h === 0) h = 12;
+  return `${h}:${m} ${period}`;
+}
+
 /* ─── Star rating ─── */
 function StarRating({ rating, size = 18 }: { rating: number; size?: number }) {
   return (
@@ -335,6 +345,13 @@ export default function HostDetailScreen() {
     ...gallery.map((g: any) => ({ url: g.media_url, type: g.media_type || "image" })),
   ];
 
+  // Availability window (host-set schedule). Shown only when a real window is
+  // configured; "always available" hosts clear both fields → no chip.
+  const availFrom = formatTime12(host.available_from);
+  const availTo = formatTime12(host.available_to);
+  const tzShort = host.timezone ? String(host.timezone).split("/").pop()?.replace(/_/g, " ") : null;
+  const scheduleText = availFrom && availTo ? `${availFrom} – ${availTo}${tzShort ? ` · ${tzShort}` : ""}` : null;
+
   /* ─── Handlers ─── */
   const checkCoins = (rate: number) => {
     if ((user?.coins ?? 0) < rate * 2) {
@@ -500,6 +517,10 @@ export default function HostDetailScreen() {
               <Image source={require("@/assets/icons/ic_star.png")} style={{ width: 16, height: 16 }} tintColor={STAR_COLOR} resizeMode="contain" />
               <Text style={s.heroRatingTxt}>{(host.rating ?? 0).toFixed(1)} ({t.reviews.reviewsCount.replace("{count}", String(host.review_count ?? 0))})</Text>
             </View>
+            <View style={[s.heroStatusPill, { backgroundColor: host.is_online ? "rgba(11,175,35,0.92)" : "rgba(255,255,255,0.18)" }]}>
+              <View style={[s.heroStatusDot, { backgroundColor: host.is_online ? "#fff" : "#CBCBD4" }]} />
+              <Text style={s.heroStatusTxt}>{host.is_online ? t.hosts.online : t.hosts.offline}</Text>
+            </View>
           </View>
           </View>
         </View>
@@ -551,6 +572,14 @@ export default function HostDetailScreen() {
             <Text style={[s.langLabel, { color: subColor }]}>{t.hostDetail.languageColon}</Text>
             <Text style={[s.langVal, { color: titleColor }]} numberOfLines={2}>{(host.languages ?? []).join(", ")}</Text>
           </View>
+
+          {/* Availability window (host-set schedule) */}
+          {scheduleText ? (
+            <View style={s.scheduleRow}>
+              <Text style={s.scheduleClock}>🕒</Text>
+              <Text style={[s.scheduleTxt, { color: subColor }]} numberOfLines={1}>{scheduleText}</Text>
+            </View>
+          ) : null}
 
           {/* Topics */}
           <ScrollView
@@ -817,6 +846,9 @@ const s = StyleSheet.create({
   heroName: { fontSize: 20, fontFamily: "Poppins_700Bold", color: "#fff", marginTop: 4 },
   heroRatingRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   heroRatingTxt: { fontSize: 13, fontFamily: "Poppins_400Regular", color: "rgba(255,255,255,0.8)" },
+  heroStatusPill: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, marginTop: 8 },
+  heroStatusDot: { width: 7, height: 7, borderRadius: 4 },
+  heroStatusTxt: { fontSize: 11, fontFamily: "Poppins_600SemiBold", color: "#fff" },
   levelBadge: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, borderWidth: 1, marginTop: 6 },
   levelBadgeEmoji: { fontSize: 14 },
   levelBadgeTxt: { fontSize: 12, fontFamily: "Poppins_600SemiBold" },
@@ -875,6 +907,11 @@ const s = StyleSheet.create({
   langIco: { width: 20, height: 20, marginTop: 1 },
   langLabel: { fontSize: 14, fontFamily: "Poppins_500Medium", color: PROFILE_LANG, marginLeft: 8 },
   langVal: { flex: 1, fontSize: 14, fontFamily: "Poppins_600SemiBold", color: "#111329" },
+
+  /* availability schedule */
+  scheduleRow: { flexDirection: "row", alignItems: "center", gap: 6, paddingTop: 8 },
+  scheduleClock: { fontSize: 14 },
+  scheduleTxt: { fontSize: 13, fontFamily: "Poppins_500Medium", color: PROFILE_LANG },
 
   /* topics */
   topicsScroll: { marginTop: 16, marginBottom: 12, maxHeight: 36 },
