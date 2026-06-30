@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -7,13 +7,15 @@ import {
   TouchableOpacity,
   Image,
   Platform,
+  ActivityIndicator,
+  RefreshControl,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { useColors } from "@/hooks/useColors";
 import { useLanguage } from "@/context/LanguageContext";
 import { formatDuration, formatRelativeTime } from "@/utils/format";
-import { API } from "@/services/api";
+import { API, resolveMediaUrl } from "@/services/api";
 import { showErrorToast } from "@/components/Toast";
 
 type CallFilter = "All" | "Audio" | "Video";
@@ -25,25 +27,40 @@ export default function CallingHistoryScreen() {
   const [filter, setFilter] = useState<CallFilter>("All");
   const [callHistory, setCallHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const loadHistory = useCallback(async () => {
+    try {
+      const data = await API.getCallHistory();
+      setCallHistory((data as any[]).map((c: any) => ({
+        id: c.id,
+        hostId: c.host_id,
+        hostName: c.host_name || c.host_display_name || "Host",
+        // Use the host's real avatar when the server provides one; fall back to
+        // a deterministic generated avatar only when it's missing.
+        hostAvatar: resolveMediaUrl(c.host_avatar) || `https://api.dicebear.com/7.x/avataaars/png?seed=${c.host_id}`,
+        type: c.type || "audio",
+        duration: c.duration_seconds || 0,
+        coinsSpent: c.coins_charged || 0,
+        timestamp: (c.created_at || 0) * 1000,
+        rating: c.rating,
+      })));
+    } catch {
+      setCallHistory([]);
+      showErrorToast("Failed to load call history.");
+    }
+  }, []);
 
   useEffect(() => {
-    API.getCallHistory()
-      .then((data: any[]) => {
-        setCallHistory(data.map((c: any) => ({
-          id: c.id,
-          hostId: c.host_id,
-          hostName: c.host_name || c.host_display_name || "Host",
-          hostAvatar: `https://api.dicebear.com/7.x/avataaars/png?seed=${c.host_id}`,
-          type: c.type || "audio",
-          duration: c.duration_seconds || 0,
-          coinsSpent: c.coins_charged || 0,
-          timestamp: (c.created_at || 0) * 1000,
-          rating: c.rating,
-        })));
-      })
-      .catch(() => { setCallHistory([]); showErrorToast("Failed to load call history."); })
-      .finally(() => setLoading(false));
-  }, []);
+    setLoading(true);
+    loadHistory().finally(() => setLoading(false));
+  }, [loadHistory]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadHistory();
+    setRefreshing(false);
+  }, [loadHistory]);
 
   const filtered = callHistory.filter((c) => {
     if (filter === "All") return true;
@@ -76,11 +93,18 @@ export default function CallingHistoryScreen() {
         data={filtered}
         keyExtractor={(c) => c.id}
         contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + 100 }]}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#A00EE7" colors={["#A00EE7"]} />}
         ListEmptyComponent={
-          <View style={styles.emptyWrap}>
-            <Image source={require("@/assets/images/empty_history.png")} style={styles.emptyImg} resizeMode="contain" />
-            <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>{t.calls.noCallHistory}</Text>
-          </View>
+          loading ? (
+            <View style={styles.emptyWrap}>
+              <ActivityIndicator size="large" color="#A00EE7" />
+            </View>
+          ) : (
+            <View style={styles.emptyWrap}>
+              <Image source={require("@/assets/images/empty_history.png")} style={styles.emptyImg} resizeMode="contain" />
+              <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>{t.calls.noCallHistory}</Text>
+            </View>
+          )
         }
         renderItem={({ item }) => (
           <TouchableOpacity
@@ -102,7 +126,7 @@ export default function CallingHistoryScreen() {
           >
             <View style={styles.avatarWrap}>
               <Image
-                source={{ uri: `https://api.dicebear.com/7.x/avataaars/png?seed=${item.hostId}` }}
+                source={{ uri: item.hostAvatar }}
                 style={styles.avatar}
               />
               <View style={[styles.callTypeBadge, { backgroundColor: item.type === "video" ? "#F1F0FF" : "#E8CFFF" }]}>

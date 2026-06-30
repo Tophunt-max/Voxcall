@@ -10,6 +10,7 @@ import {
   Modal,
   Platform,
   RefreshControl,
+  ActivityIndicator,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
@@ -150,6 +151,7 @@ export default function ListenerScreen() {
   const [showLangModal, setShowLangModal] = useState(false);
   const [showTopicModal, setShowTopicModal] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [hosts, setHosts] = useState<ReturnType<typeof mapApiHost>[]>([]);
   const [coinPopup, setCoinPopup] = useState(false);
   const [coinPopupRequired, setCoinPopupRequired] = useState(0);
@@ -177,9 +179,14 @@ export default function ListenerScreen() {
       setHosts([]);
       showErrorToast(tr.listener.failedLoad);
     }
-  }, [selectedTopic]);
+  }, [selectedTopic, tr.listener.failedLoad]);
 
-  useEffect(() => { loadHosts(); }, [selectedTopic]);
+  // Show a spinner on first load instead of flashing the "no listeners found"
+  // empty state before the request resolves.
+  useEffect(() => {
+    setLoading(true);
+    loadHosts().finally(() => setLoading(false));
+  }, [loadHosts]);
 
   const filtered = hosts.filter((h) => {
     return selectedLang === "All" || h.languages.includes(selectedLang);
@@ -210,7 +217,11 @@ export default function ListenerScreen() {
         </TouchableOpacity>
       </View>
 
-      {filtered.length === 0 ? (
+      {loading && filtered.length === 0 ? (
+        <View style={styles.emptyWrap}>
+          <ActivityIndicator size="large" color={ACCENT} />
+        </View>
+      ) : filtered.length === 0 ? (
         <View style={styles.emptyWrap}>
           <Image source={require("@/assets/images/empty_hosts.png")} style={styles.emptyImg} resizeMode="contain" />
           <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>{tr.listener.noListenersFound}</Text>

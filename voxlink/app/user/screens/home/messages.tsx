@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   Image,
   TextInput,
   Platform,
+  RefreshControl,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
@@ -16,6 +17,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useChat } from "@/context/ChatContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { formatRelativeTime } from "@/utils/format";
+import { resolveMediaUrl } from "@/services/api";
 
 const ACCENT = "#A00EE7";
 
@@ -27,10 +29,21 @@ export default function MessagesScreen() {
   const { t } = useLanguage();
   const [search, setSearch] = useState("");
   const [showSearch, setShowSearch] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     if (user) loadConversations(user.id);
   }, [user?.id]);
+
+  const onRefresh = useCallback(async () => {
+    if (!user) return;
+    setRefreshing(true);
+    try {
+      await loadConversations(user.id);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [user?.id, loadConversations]);
 
   const filtered = conversations.filter((c) =>
     !search || c.participantName.toLowerCase().includes(search.toLowerCase())
@@ -91,6 +104,7 @@ export default function MessagesScreen() {
           keyExtractor={(c) => c.id}
           contentContainerStyle={{ paddingBottom: insets.bottom + 90 }}
           style={{ backgroundColor: colors.background }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={ACCENT} colors={[ACCENT]} />}
           ItemSeparatorComponent={() => <View style={[styles.separator, { backgroundColor: colors.border }]} />}
           renderItem={({ item }) => (
             <TouchableOpacity
@@ -100,7 +114,7 @@ export default function MessagesScreen() {
             >
               <View style={styles.avatarWrap}>
                 <Image
-                  source={{ uri: `https://api.dicebear.com/7.x/avataaars/png?seed=${item.participantId}` }}
+                  source={{ uri: resolveMediaUrl(item.participantAvatar) || `https://api.dicebear.com/7.x/avataaars/png?seed=${item.participantId}` }}
                   style={styles.avatar}
                 />
               </View>
@@ -145,7 +159,6 @@ const styles = StyleSheet.create({
   convoRow: { flexDirection: "row", paddingHorizontal: 20, paddingVertical: 14, gap: 14, alignItems: "center" },
   avatarWrap: { position: "relative" },
   avatar: { width: 52, height: 52, borderRadius: 26 },
-  onlineDot: { position: "absolute", right: 2, bottom: 2, width: 12, height: 12, borderRadius: 6, borderWidth: 2 },
   info: { flex: 1, gap: 4 },
   topRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   name: { fontSize: 15, fontFamily: "Poppins_600SemiBold" },
