@@ -9,7 +9,6 @@ import {
   TouchableOpacity,
   Image,
   Dimensions,
-  Animated,
   Platform,
 } from "react-native";
 import { router } from "expo-router";
@@ -26,7 +25,6 @@ import { SkeletonHostCard, SkeletonHostCardCompact } from "@/components/Skeleton
 import { Host } from "@/data/mockData";
 import { API, resolveMediaUrl } from "@/services/api";
 import { fetchAppConfig } from "@/hooks/useAppConfig";
-import { showErrorToast } from "@/components/Toast";
 import { logEngagement, logImpressionOnce } from "@/services/engagement";
 import { RefreshControl } from "react-native";
 
@@ -76,25 +74,29 @@ function BannerSlider({ slides }: { slides: SlideItem[] }) {
     setActiveIdx(safe);
   }, [slides.length]);
 
-  useEffect(() => {
+  // Single source of truth for the auto-advance timer. Both the initial mount
+  // and every swipe/tap interaction call this, so we never leave two
+  // overlapping intervals fighting each other (the previous code duplicated the
+  // setInterval setup in the effect AND in onMomentumScrollEnd).
+  const restartAutoSlide = useCallback(() => {
+    if (timerRef.current) clearInterval(timerRef.current);
     if (slides.length <= 1) return;
     timerRef.current = setInterval(() => {
-      const next = (currentIdx.current + 1) % slides.length;
-      goTo(next);
+      goTo((currentIdx.current + 1) % slides.length);
     }, AUTO_SLIDE_INTERVAL);
-    return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [slides.length, goTo]);
+
+  useEffect(() => {
+    restartAutoSlide();
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [restartAutoSlide]);
 
   const onMomentumScrollEnd = useCallback((e: any) => {
     const idx = Math.round(e.nativeEvent.contentOffset.x / BANNER_W);
     currentIdx.current = idx;
     setActiveIdx(idx);
-    if (timerRef.current) clearInterval(timerRef.current);
-    timerRef.current = setInterval(() => {
-      const next = (currentIdx.current + 1) % slides.length;
-      goTo(next);
-    }, AUTO_SLIDE_INTERVAL);
-  }, [slides.length, goTo]);
+    restartAutoSlide();
+  }, [restartAutoSlide]);
 
   const renderSlide = ({ item }: { item: SlideItem }) => {
     if (item.type === "find_more") {
@@ -161,6 +163,10 @@ function BannerSlider({ slides }: { slides: SlideItem[] }) {
         snapToInterval={BANNER_W}
         decelerationRate="fast"
         getItemLayout={(_, index) => ({ length: BANNER_W, offset: BANNER_W * index, index })}
+        onScrollToIndexFailed={({ index }) => {
+          // Rare race when the list isn't laid out yet. Retry on the next tick.
+          setTimeout(() => flatRef.current?.scrollToIndex({ index, animated: true }), 50);
+        }}
         style={{ width: BANNER_W }}
       />
       {slides.length > 1 && (
@@ -233,7 +239,7 @@ export default function HomeScreen() {
   //   - Automatic background refetch every 2 min (online status changes frequently)
   //   - Cached in React Query store: navigating back to home is INSTANT (no re-fetch if fresh)
   //   - staleTime=60s: won't re-fetch within 60s of last fetch even on component remount
-  const { data: hostsData, isLoading: hostsLoading, refetch: refetchHosts } = useQuery({
+  const { data: hostsData, isLoading: hostsLoading } = useQuery({
     queryKey: ['hosts'],
     queryFn: async () => {
       const res = await API.getHosts({ limit: 50 });
@@ -337,6 +343,7 @@ export default function HomeScreen() {
           )
         );
   const onlineHosts = filteredHosts.filter((h) => h.isOnline);
+  const offlineHosts = filteredHosts.filter((h) => !h.isOnline);
 
   // OPTIMIZATION #10: Prefetch host detail page when host is tapped (before navigation)
   const prefetchHost = useCallback((hostId: string) => {
@@ -369,42 +376,54 @@ export default function HomeScreen() {
   }).current;
   const favViewabilityConfig = useRef({ itemVisiblePercentThreshold: 60 }).current;
 
-  // Pull-to-refresh invalidates all home screen queries
+  // Pull-to-refresh invalidates ALL queries the home feed renders, so the user
+  // gets a fully fresh screen (hosts, favorites, recommendations, topics,
+  // banners and the free-minute balance) — not just the main host list.
+  // invalidateQueries refetches the active queries; awaiting them keeps the
+  // spinner up until every rail has settled.
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await queryClient.invalidateQueries({ queryKey: ['hosts'] });
-    await refetchHosts();
-    setRefreshing(false);
-  }, [queryClient, refetchHosts]);
+    try {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['hosts'] }),
+        queryClient.invalidateQueries({ queryKey: ['recommended-hosts'] }),
+        queryClient.invalidateQueries({ queryKey: ['favorite-hosts'] }),
+        queryClient.invalidateQueries({ queryKey: ['talk-topics'] }),
+        queryClient.invalidateQueries({ queryKey: ['banners', 'home'] }),
+        queryClient.invalidateQueries({ queryKey: ['free-call-minutes'] }),
+      ]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [queryClient]);
 
-  // FIX: PRESENCE_UPDATE — host_id (hosts.id) se match karo
-  // Backend user_id (users.id) bhi bhejta hai, lekin user app cache mein h.id = hosts.id hota hai
-  // Isliye h.id === data.host_id comparison sahi hai, user_id se nahi
+  // PRESENCE_UPDATE — host_id (hosts.id) se match karo. Backend user_id (users.id)
+  // bhi bhejta hai, lekin user app cache mein h.id = hosts.id hota hai, isliye
+  // host_id comparison hi sahi hai.
+  //
+  // FIX: pehle invalidateQueries() setQueryData ke updater ke ANDAR call ho raha
+  // tha — updater pure hona chahiye (React Query use dobara bhi chala sakta hai),
+  // to side-effect bahar nikal diya. Ab pehle cache check karte hain, phir ya to
+  // sirf us host ko patch karte hain ya (cache miss par) ek hi baar invalidate.
   useSocketEvent(
     SocketEvents.PRESENCE_UPDATE,
     (data: any) => {
-      const hostId: string = data?.host_id;           // hosts.id (PK) — cache match ke liye
-      const hostUserId: string = data?.user_id ?? data?.userId; // users.id — fallback
+      const hostId: string | undefined = data?.host_id;
       const isOnline: boolean = !!(data?.isOnline ?? data?.is_online);
+      if (!hostId) return;
 
-      queryClient.setQueryData<Host[]>(['hosts'], (old) => {
-        if (!old) return old;
-        // host_id se match karo (hosts.id = h.id in cache)
-        const updated = old.map((h) => {
-          if (hostId && h.id === hostId) return { ...h, isOnline };
-          // Fallback: user_id se bhi try karo agar host_id nahi mila
-          // (purane events ke liye backward compatibility)
-          return h;
-        });
-        const found = hostId
-          ? old.some((h) => h.id === hostId)
-          : false;
-        if (!found) {
-          // Host cache mein nahi — full refetch karo
-          queryClient.invalidateQueries({ queryKey: ['hosts'] });
-        }
-        return updated;
-      });
+      const current = queryClient.getQueryData<Host[]>(['hosts']);
+      const inCache = current?.some((h) => h.id === hostId);
+
+      if (inCache) {
+        // Sirf is host ka online flag patch karo — poori list refetch ki zarurat nahi.
+        queryClient.setQueryData<Host[]>(['hosts'], (old) =>
+          old?.map((h) => (h.id === hostId ? { ...h, isOnline } : h)),
+        );
+      } else if (current) {
+        // Host cache mein nahi mila — fresh list le aao.
+        queryClient.invalidateQueries({ queryKey: ['hosts'] });
+      }
     },
     [queryClient]
   );
@@ -716,7 +735,8 @@ export default function HomeScreen() {
                 onVideoCall={() => startCall(host, "video")}
               />
             ))
-          ) : (
+          ) : offlineHosts.length === 0 ? (
+            // Truly nothing for this filter — full empty-state illustration.
             <View style={styles.emptyState}>
               <Image
                 source={require("@/assets/images/empty_hosts.png")}
@@ -727,25 +747,30 @@ export default function HomeScreen() {
                 {tr.home.noListenersAvailable}
               </Text>
             </View>
+          ) : (
+            // Nobody online right now, but offline listeners exist below — show a
+            // compact note instead of the big "empty" illustration (which would
+            // contradict the offline list rendered just beneath it).
+            <Text style={[styles.offlineLabel, { color: colors.mutedForeground }]}>
+              {tr.home.noListenersAvailable}
+            </Text>
           )}
 
-          {!hostsLoading && filteredHosts.filter((h) => !h.isOnline).length > 0 && (
+          {!hostsLoading && offlineHosts.length > 0 && (
             <>
               <Text style={[styles.offlineLabel, { color: colors.mutedForeground }]}>
                 {tr.home.offlineListeners}
               </Text>
-              {filteredHosts
-                .filter((h) => !h.isOnline)
-                .map((host) => (
-                  <HostCard
-                    key={host.id}
-                    host={host}
-                    onPress={() => {
-                      prefetchHost(host.id);
-                      router.push(`/user/hosts/${host.id}`);
-                    }}
-                  />
-                ))}
+              {offlineHosts.map((host) => (
+                <HostCard
+                  key={host.id}
+                  host={host}
+                  onPress={() => {
+                    prefetchHost(host.id);
+                    router.push(`/user/hosts/${host.id}`);
+                  }}
+                />
+              ))}
             </>
           )}
         </View>
