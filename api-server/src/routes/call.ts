@@ -6,7 +6,7 @@ import { createCFCalls, CFCallsTrack } from '../lib/cf-calls';
 import { sendFCMPush } from '../lib/fcm';
 import { getLevelConfig, getEarningShare, getDefaultCallRates, DEFAULT_AUDIO_RATE, DEFAULT_VIDEO_RATE } from '../lib/levels';
 import { applyLevelUp } from '../lib/levelService';
-import { billedMinutes, coinsForCall, chargeCallerWithFreePool } from '../lib/billing';
+import { billedMinutes, coinsForCall, chargeCallerWithFreePool, affordableCallSeconds } from '../lib/billing';
 import { registerHit } from '../lib/rateLimit';
 import { apiError, ErrorCode } from '../lib/errors';
 import type { Env, JWTPayload, HostRow, CallSessionRow, CallerData, HostData } from '../types';
@@ -202,10 +202,25 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
     ? (host.video_coins_per_minute ?? host.coins_per_minute ?? defaultRates.video)
     : (host.audio_coins_per_minute ?? host.coins_per_minute ?? defaultRates.audio);
 
-  const caller = await db.prepare('SELECT coins, name FROM users WHERE id = ?').bind(sub).first<CallerData>();
-  // Require at least 2 minutes worth of coins — WebRTC negotiation takes ~15s
-  // so 1-min minimum would auto-end the call before it truly starts
-  if (!caller || caller.coins < ratePerMin * 2) {
+  // Read coins + free-minute pool. The free pool is consumed before coins at
+  // settlement, so it counts toward affordability. COALESCE handles a legacy
+  // DB where the column is 0/NULL; the try/catch handles a pre-migration DB
+  // where the column doesn't exist yet (feature degrades to coins-only).
+  let caller: (CallerData & { free_call_minutes?: number }) | null = null;
+  try {
+    caller = await db
+      .prepare('SELECT coins, name, COALESCE(free_call_minutes, 0) as free_call_minutes FROM users WHERE id = ?')
+      .bind(sub)
+      .first<CallerData & { free_call_minutes: number }>();
+  } catch {
+    caller = await db.prepare('SELECT coins, name FROM users WHERE id = ?').bind(sub).first<CallerData>();
+  }
+  const callerFreeMinutes = Number((caller as any)?.free_call_minutes) || 0;
+  // Require at least 2 minutes worth of *affordable* time (coins + free pool) —
+  // WebRTC negotiation takes ~15s so a 1-min minimum would auto-end the call
+  // before it truly starts. Free minutes count here, so a coinless user who
+  // still has free trial minutes can start a call.
+  if (!caller || affordableCallSeconds(caller.coins, callerFreeMinutes, ratePerMin) < 120) {
     return apiError(c, ErrorCode.INSUFFICIENT_COINS, 402, 'Insufficient coins. You need at least 2 minutes worth of coins to start a call.');
   }
 
@@ -316,7 +331,9 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
   // Fix H2: include caller_name so host sees caller's name instead of "Incoming Call"
   // FIX: also include max_seconds so host's call timer has a real cap (prevents
   // running past the caller's balance on the host UI when the polling fallback is bypassed).
-  const maxSeconds = Math.floor((caller.coins / ratePerMin) * 60);
+  // Includes the caller's free-minute pool so a free-trial call gets its full
+  // affordable window rather than being capped at coins alone.
+  const maxSeconds = affordableCallSeconds(caller.coins, callerFreeMinutes, ratePerMin);
   try {
     const notifId = c.env.NOTIFICATION_HUB.idFromName(host.user_id);
     const notifStub = c.env.NOTIFICATION_HUB.get(notifId);
@@ -1149,10 +1166,32 @@ call.post('/:id/heartbeat', async (c) => {
   const startedAt = session.started_at ?? now;
   const elapsed = Math.max(0, now - startedAt);
   const rate = session.rate_per_minute ?? 5;
-  const caller = await db.prepare('SELECT coins FROM users WHERE id = ?').bind(session.caller_id).first<{ coins: number }>();
-  const balance = caller?.coins ?? 0;
-  const maxSeconds = rate > 0 ? Math.floor((balance / rate) * 60) : 0;
+  // Coins + free-minute pool (free pool is consumed first at settlement, so it
+  // extends the affordable window). Tolerate a pre-migration DB without the
+  // column.
+  let balance = 0;
+  let callerFreeMinutes = 0;
+  try {
+    const caller = await db
+      .prepare('SELECT coins, COALESCE(free_call_minutes, 0) as free_call_minutes FROM users WHERE id = ?')
+      .bind(session.caller_id)
+      .first<{ coins: number; free_call_minutes: number }>();
+    balance = caller?.coins ?? 0;
+    callerFreeMinutes = Number(caller?.free_call_minutes) || 0;
+  } catch {
+    const caller = await db.prepare('SELECT coins FROM users WHERE id = ?').bind(session.caller_id).first<{ coins: number }>();
+    balance = caller?.coins ?? 0;
+  }
+  const maxSeconds = affordableCallSeconds(balance, callerFreeMinutes, rate);
   const remaining = Math.max(0, maxSeconds - elapsed);
+
+  // F2: stamp heartbeat freshness so the cron reaper can tell a live call
+  // (recent heartbeat) from a dead-client call, instead of force-ending every
+  // call older than 30 min. Best-effort — must not break the balance check.
+  // Column added by migration 0040 / schemaGuard; tolerate its absence.
+  try {
+    await db.prepare("UPDATE call_sessions SET last_heartbeat_at = ? WHERE id = ?").bind(now, sessionId).run();
+  } catch { /* column missing on legacy DB — reaper falls back to started_at */ }
 
   if (remaining > 0) {
     // Low-balance early warning — when the caller has fewer than the
@@ -1361,7 +1400,8 @@ call.get('/pending-for-host', async (c) => {
   // caller's balance even though the server's atomic guard refuses to charge).
   const session = await db.prepare(
     `SELECT cs.id, cs.caller_id, cs.type as call_type, cs.rate_per_minute,
-            u.name as caller_name, u.avatar_url as caller_avatar, u.coins as caller_coins
+            u.name as caller_name, u.avatar_url as caller_avatar, u.coins as caller_coins,
+            COALESCE(u.free_call_minutes, 0) as caller_free_minutes
      FROM call_sessions cs
      JOIN users u ON u.id = cs.caller_id
      WHERE cs.host_id = ? AND cs.status = 'pending' AND cs.created_at > ?
@@ -1370,9 +1410,9 @@ call.get('/pending-for-host', async (c) => {
   if (!session) return c.json(null);
   const rate = session.rate_per_minute ?? 5;
   const callerCoins = session.caller_coins ?? 0;
-  const max_seconds = Math.floor((callerCoins / rate) * 60);
-  // Strip caller_coins from the response (internal only) and append max_seconds
-  const { caller_coins, ...rest } = session;
+  const max_seconds = affordableCallSeconds(callerCoins, session.caller_free_minutes ?? 0, rate);
+  // Strip internal-only fields from the response and append max_seconds
+  const { caller_coins, caller_free_minutes, ...rest } = session;
   return c.json({ ...rest, max_seconds });
 });
 

@@ -196,6 +196,11 @@ let callObsSchemaReadyPromise: Promise<boolean> | null = null;
 
 const REQUIRED_CALL_OBS_COLUMNS: ReadonlyArray<{ name: string; ddl: string }> = [
   { name: 'end_reason', ddl: 'ALTER TABLE call_sessions ADD COLUMN end_reason TEXT' },
+  // Heartbeat freshness — updated every ~25s by POST /:id/heartbeat. The cron
+  // reaper uses it to force-end only calls whose client has gone silent,
+  // instead of force-ending every call older than 30 min (which killed
+  // healthy long calls). See index.ts reapStaleCalls.
+  { name: 'last_heartbeat_at', ddl: 'ALTER TABLE call_sessions ADD COLUMN last_heartbeat_at INTEGER' },
 ];
 
 const CALL_QUALITY_DDL = `

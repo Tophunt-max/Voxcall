@@ -121,6 +121,34 @@ export function affordableCoins(coinsCharged: number, callerBalance: number): nu
 }
 
 /**
+ * Seconds a caller can afford to talk, accounting for BOTH their coin balance
+ * and their free-minute pool.
+ *
+ * Billing (chargeCallerWithFreePool) consumes the free-minute pool first and
+ * only then charges coins, so the real affordable duration is:
+ *
+ *   (coins / ratePerMinute) * 60   +   freeMinutes * 60
+ *
+ * Centralised here so the call-admission gate (/initiate), the per-call
+ * `max_seconds` cap, the host's incoming-call timer (/pending-for-host) and
+ * the mid-call balance check (/heartbeat) all agree with how the call is
+ * actually settled. Before this, those sites used `coins/rate` only and so
+ * ignored the free pool — blocking coinless-but-free-minute callers and
+ * force-ending calls earlier than the caller could actually afford.
+ */
+export function affordableCallSeconds(
+  coins: number,
+  freeMinutes: number,
+  ratePerMinute: number,
+): number {
+  const rate = Number.isFinite(ratePerMinute) && ratePerMinute > 0 ? ratePerMinute : 0;
+  if (rate <= 0) return 0;
+  const c = Number.isFinite(coins) && coins > 0 ? coins : 0;
+  const fm = Number.isFinite(freeMinutes) && freeMinutes > 0 ? freeMinutes : 0;
+  return Math.floor((c / rate + fm) * 60);
+}
+
+/**
  * Best-effort caller→host settlement: charge the caller what they can afford
  * (capped at their balance) and pay the host their level-based share of the
  * amount actually collected. Returns the amounts that really moved (0/0 if the
@@ -287,6 +315,8 @@ export async function chargeCallerWithFreePool(
   // 4. Atomic batch: decrement free pool + debit caller + credit host.
   //    SQLite/D1 batches are transactional — either all three land or none.
   const ops: D1PreparedStatement[] = [];
+  // Track the caller-debit's position so we can verify it actually applied.
+  let debitOpIndex = -1;
   if (freeMinutesToDecrement > 0) {
     ops.push(
       db
@@ -295,6 +325,7 @@ export async function chargeCallerWithFreePool(
     );
   }
   if (callerActuallyPays > 0) {
+    debitOpIndex = ops.length;
     ops.push(
       db
         .prepare('UPDATE users SET coins = coins - ? WHERE id = ? AND coins >= ?')
@@ -308,17 +339,33 @@ export async function chargeCallerWithFreePool(
         .bind(hostEarn, params.hostUserId),
     );
   }
+
+  let actualCharged = callerActuallyPays;
   if (ops.length > 0) {
+    let results: D1Result[];
     try {
-      await db.batch(ops);
+      results = await db.batch(ops);
     } catch (err) {
       console.warn('[billing] free-pool batch failed:', err);
       return { charged: 0, hostEarned: 0, free_minutes_used: 0, billed_minutes: totalUnits };
     }
+    // Verify the caller-debit actually applied. The debit is guarded by
+    // `coins >= ?`; if a concurrent debit drained the caller between our
+    // balance read above and this batch, it matches 0 rows. The host is still
+    // paid (platform absorbs, same model as free minutes) but we must NOT
+    // report `charged`, else the caller-spend ledger row written by the call
+    // routes would claim coins that were never deducted (balance/ledger
+    // drift). Only zero out when changes is EXPLICITLY 0 — if a runtime
+    // doesn't surface per-statement changes we keep the optimistic value,
+    // preserving the prior behaviour exactly.
+    if (debitOpIndex >= 0) {
+      const changes = results?.[debitOpIndex]?.meta?.changes;
+      if (changes === 0) actualCharged = 0;
+    }
   }
 
   return {
-    charged: callerActuallyPays,
+    charged: actualCharged,
     hostEarned: hostEarn,
     free_minutes_used: freeMinutesToDecrement,
     billed_minutes: totalUnits,

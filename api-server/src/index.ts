@@ -289,8 +289,14 @@ async function reapStaleCalls(env: Env): Promise<void> {
 
   // Pending calls: 2 min ke baad expire (ring timeout 45s hai — 2min is generous)
   const pendingCutoff = now - 120;
-  // Active calls: 30 min ke baad expire (crash/disconnect scenario)
-  const activeCutoff = now - (30 * 60);
+  // Active calls: reap by HEARTBEAT FRESHNESS, not total duration. The caller's
+  // client posts a heartbeat every ~25s (updating last_heartbeat_at); a call
+  // whose last heartbeat is older than this window has a dead/disconnected
+  // client and is safe to force-end. This replaces the old "active > 30 min"
+  // rule, which wrongly killed healthy long calls. 5 min tolerates brief
+  // mobile backgrounding / network blips (≈12 missed heartbeats) before reaping.
+  const HEARTBEAT_STALE_SEC = 5 * 60;
+  const activeCutoff = now - HEARTBEAT_STALE_SEC;
 
   try {
     const staleCalls = await db
@@ -302,7 +308,7 @@ async function reapStaleCalls(env: Env): Promise<void> {
          FROM call_sessions cs
          JOIN hosts h ON h.id = cs.host_id
          WHERE (cs.status = 'pending' AND cs.created_at < ?)
-            OR (cs.status = 'active'  AND cs.started_at < ?)
+            OR (cs.status = 'active'  AND COALESCE(cs.last_heartbeat_at, cs.started_at) < ?)
          LIMIT 50`
       )
       .bind(pendingCutoff, activeCutoff)

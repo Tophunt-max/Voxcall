@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { billedMinutes, coinsForCall, hostShareOf, affordableCoins } from '../src/lib/billing';
+import { billedMinutes, coinsForCall, hostShareOf, affordableCoins, affordableCallSeconds } from '../src/lib/billing';
 
 describe('billedMinutes — minutes are rounded UP, any started minute is billed', () => {
   it('bills 0 for non-positive / invalid durations', () => {
@@ -234,5 +234,42 @@ describe('chargeCallerWithFreePool — per-second granularity (granularitySec=1)
     });
     expect(r2.charged).toBe(5);    // 5s × 1 coin/s = 5 coins
     expect(r2.charged).toBeLessThan(r1.charged); // per-second is leaner for sub-minute calls
+  });
+});
+
+
+describe('affordableCallSeconds — coins + free-minute pool both fund call time', () => {
+  it('returns coins-only seconds when there are no free minutes', () => {
+    // 100 coins at 5/min = 20 min = 1200s
+    expect(affordableCallSeconds(100, 0, 5)).toBe(1200);
+    // 10 coins at 5/min = 2 min = 120s
+    expect(affordableCallSeconds(10, 0, 5)).toBe(120);
+  });
+
+  it('adds the free-minute pool on top of coin-funded time', () => {
+    // 10 coins @5/min (120s) + 3 free minutes (180s) = 300s
+    expect(affordableCallSeconds(10, 3, 5)).toBe(300);
+  });
+
+  it('lets a coinless caller with free minutes still afford a call', () => {
+    // 0 coins + 5 free minutes = 300s (≥ the 120s / 2-min admission gate)
+    expect(affordableCallSeconds(0, 5, 10)).toBe(300);
+    expect(affordableCallSeconds(0, 5, 10)).toBeGreaterThanOrEqual(120);
+  });
+
+  it('floors fractional coin-minutes (never over-credits time)', () => {
+    // 7 coins @5/min = 1.4 min = 84s, +1 free min (60s) = 144s
+    expect(affordableCallSeconds(7, 1, 5)).toBe(144);
+  });
+
+  it('returns 0 for a non-positive or invalid rate', () => {
+    expect(affordableCallSeconds(100, 5, 0)).toBe(0);
+    expect(affordableCallSeconds(100, 5, Number.NaN)).toBe(0);
+  });
+
+  it('treats negative / invalid coins and free minutes as 0', () => {
+    expect(affordableCallSeconds(-50, 0, 5)).toBe(0);
+    expect(affordableCallSeconds(0, -3, 5)).toBe(0);
+    expect(affordableCallSeconds(Number.NaN, Number.NaN, 5)).toBe(0);
   });
 });
