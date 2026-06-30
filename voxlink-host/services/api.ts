@@ -229,6 +229,16 @@ export const API = {
   // (e.g. "always available" sends both times as null).
   setHostSchedule: (data: { available_from?: string | null; available_to?: string | null; timezone?: string }) =>
     apiRequest<{ success: boolean }>('PATCH', '/api/host/schedule', data),
+  // Profile gallery — highlight photos/videos shown on the host's public
+  // profile (max 6). media_type: 'image' | 'video'.
+  getMyGallery: () => apiRequest<any[]>('GET', '/api/host/gallery'),
+  addGalleryItem: (data: { media_url: string; media_type?: string; caption?: string }) =>
+    apiRequest<{ success: boolean; id: string }>('POST', '/api/host/gallery', data),
+  deleteGalleryItem: (id: string) =>
+    apiRequest<{ success: boolean }>('DELETE', `/api/host/gallery/${id}`),
+  // Intro video URL shown at the top of the host's Highlights on their profile.
+  setIntroVideo: (intro_video_url: string | null) =>
+    apiRequest<{ success: boolean }>('PATCH', '/api/host/intro-video', { intro_video_url }),
   getEarnings: () => apiRequest<any>('GET', '/api/host/earnings'),
   // Host level + progress towards the next level (drives the dashboard Level card).
   // Returns the configurable ladder, current/next level info, progress %, and

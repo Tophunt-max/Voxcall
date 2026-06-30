@@ -175,6 +175,15 @@ export default function EditHostProfileScreen() {
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.linkRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
+            onPress={() => router.push("/gallery")}
+            activeOpacity={0.8}
+          >
+            <SvgIcon name="info" size={16} color={colors.primary} />
+            <Text style={[styles.linkText, { color: colors.text }]}>Highlights (photos / video)</Text>
+            <Image source={require("@/assets/icons/ic_back.png")} style={styles.linkChevron} tintColor={colors.mutedForeground} resizeMode="contain" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.linkRow, { backgroundColor: colors.surface, borderColor: colors.border }]}
             onPress={() => router.push("/manage-topics")}
             activeOpacity={0.8}
           >

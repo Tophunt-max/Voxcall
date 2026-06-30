@@ -294,6 +294,7 @@ function RootLayoutNav() {
         <Stack.Screen name="availability" />
         <Stack.Screen name="call-rates" />
         <Stack.Screen name="manage-topics" />
+        <Stack.Screen name="gallery" />
       </Stack>
       <ToastContainer />
       <OfflineBanner />
