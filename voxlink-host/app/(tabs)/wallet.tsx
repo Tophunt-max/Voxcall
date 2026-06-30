@@ -17,6 +17,14 @@ import { useAppConfig } from "@/hooks/useAppConfig";
 
 const WITHDRAW_OPTIONS = [100, 200, 500, 1000];
 
+// Visual meta for each withdrawal status (schema CHECK: pending|approved|paid|rejected).
+const WITHDRAW_STATUS: Record<string, { label: string; color: string; bg: string }> = {
+  pending: { label: "Pending", color: "#B26A00", bg: "#FFF3D6" },
+  approved: { label: "Approved", color: "#0078CC", bg: "#D5EEFF" },
+  paid: { label: "Paid", color: "#0BAF23", bg: "#E8F8EC" },
+  rejected: { label: "Rejected", color: "#F44336", bg: "#FDE8E8" },
+};
+
 // Payout method types mirror the Payout Method screen (app/payout-method.tsx).
 // Withdrawals MUST use the channel + details the host configured there instead
 // of a re-typed free-text field, so the two flows stay consistent.
@@ -124,6 +132,11 @@ export default function HostWalletScreen() {
   const [withdrawing, setWithdrawing] = useState(false);
   const [earnings, setEarnings] = useState<EarningTx[]>([]);
   const [stats, setStats] = useState<EarningsStats>({ thisWeek: 0, sessions: 0, withdrawn: 0, totalEarnings: 0 });
+  // Full withdrawal-request list so the host can SEE the status of their
+  // payouts (pending/approved/paid/rejected). Coins are frozen — not deducted —
+  // until an admin approves, so without this the host gets zero feedback after
+  // requesting and the balance looks unchanged.
+  const [withdrawals, setWithdrawals] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   // #10: minimum withdrawal + coin value come from server app_settings (single
@@ -151,9 +164,15 @@ export default function HostWalletScreen() {
     try {
       const data = await API.getEarnings() as any;
       const txList = (data.transactions || []).map(mapTxToEarning);
-      const withdrawalsDone = (data.withdrawals || []).filter((w: any) => w.status === "paid" || w.status === "completed");
-      const totalWithdrawn = withdrawalsDone.reduce((s: number, w: any) => s + (w.coins || 0), 0);
+      const allWithdrawals = (data.withdrawals || []) as any[];
+      // 'paid' is the only completed status in the schema CHECK
+      // (pending|approved|rejected|paid) — the old code also matched a
+      // non-existent 'completed', which never counted anything extra.
+      const totalWithdrawn = allWithdrawals
+        .filter((w) => w.status === "paid")
+        .reduce((s: number, w: any) => s + (w.coins || 0), 0);
       setEarnings(txList);
+      setWithdrawals(allWithdrawals);
       setStats({
         thisWeek: weeklyCoins(txList),
         sessions: txList.length,
@@ -168,7 +187,7 @@ export default function HostWalletScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [refreshProfile, tr]);
 
   useEffect(() => { load(); }, []);
 
@@ -198,6 +217,13 @@ export default function HostWalletScreen() {
 
   const handleWithdraw = useCallback(async () => {
     const amt = parseInt(withdrawAmt, 10);
+    // Only one withdrawal can be in flight at a time (server enforces this and
+    // would reject the request); block early with a clear message + keep coins
+    // visible as "pending" rather than letting the host think it failed.
+    if (withdrawals.some((w) => w.status === "pending" || w.status === "approved")) {
+      showWarningToast("You already have a withdrawal being processed. Please wait for it to complete.", "Already in Progress");
+      return;
+    }
     if (!amt || amt <= 0) {
       showWarningToast("Please enter a valid amount.", "Invalid Amount");
       return;
@@ -234,7 +260,10 @@ export default function HostWalletScreen() {
     } finally {
       setWithdrawing(false);
     }
-  }, [withdrawAmt, user, load, minWithdraw, payoutMethod, payoutDetails]);
+  }, [withdrawAmt, user, load, minWithdraw, payoutMethod, payoutDetails, withdrawals]);
+
+  // A pending/approved request blocks new withdrawals (server allows one at a time).
+  const pendingWithdrawal = withdrawals.find((w) => w.status === "pending" || w.status === "approved");
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
@@ -411,17 +440,17 @@ export default function HostWalletScreen() {
           )}
 
           <TouchableOpacity
-            style={[styles.withdrawBtn, { backgroundColor: withdrawing ? colors.mutedForeground : colors.primary }]}
+            style={[styles.withdrawBtn, { backgroundColor: (withdrawing || !!pendingWithdrawal) ? colors.mutedForeground : colors.primary }]}
             onPress={handleWithdraw}
             activeOpacity={0.85}
-            disabled={withdrawing}
+            disabled={withdrawing || !!pendingWithdrawal}
           >
             {withdrawing ? (
               <ActivityIndicator color="#fff" />
             ) : (
               <>
                 <Image source={require("@/assets/icons/ic_withdraw.png")} style={styles.withdrawIcon} tintColor="#fff" resizeMode="contain" />
-                <Text style={styles.withdrawBtnText}>{tr.walletScreen.requestWithdrawal}</Text>
+                <Text style={styles.withdrawBtnText}>{pendingWithdrawal ? "Withdrawal in progress" : tr.walletScreen.requestWithdrawal}</Text>
               </>
             )}
           </TouchableOpacity>
@@ -433,6 +462,29 @@ export default function HostWalletScreen() {
               {payoutRate > 0 ? ` Current rate: 1,000 coins ≈ ${formatPayout(1000)}.` : ""}
             </Text>
           </View>
+
+          {withdrawals.length > 0 && (
+            <View style={{ gap: 8, marginTop: 4 }}>
+              <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Your withdrawals</Text>
+              {withdrawals.slice(0, 5).map((w: any) => {
+                const meta = WITHDRAW_STATUS[w.status] ?? WITHDRAW_STATUS.pending;
+                return (
+                  <View key={w.id} style={[styles.wdRow, { backgroundColor: colors.card }]}>
+                    <View style={styles.wdLeft}>
+                      <Image source={require("@/assets/icons/ic_coin.png")} style={styles.wdCoin} resizeMode="contain" />
+                      <View>
+                        <Text style={[styles.wdAmt, { color: colors.text }]}>{w.coins} {tr.walletScreen.coins}</Text>
+                        <Text style={[styles.wdDate, { color: colors.mutedForeground }]}>{w.created_at ? formatTxDate(w.created_at) : ""}</Text>
+                      </View>
+                    </View>
+                    <View style={[styles.wdBadge, { backgroundColor: meta.bg }]}>
+                      <Text style={[styles.wdBadgeTxt, { color: meta.color }]}>{meta.label}</Text>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          )}
 
           <TouchableOpacity
             style={[styles.fullWithdrawBtn, { backgroundColor: colors.surface, borderColor: colors.primary }]}
@@ -503,4 +555,12 @@ const styles = StyleSheet.create({
   noteText: { fontSize: 13, fontFamily: "Poppins_400Regular", lineHeight: 18 },
   fullWithdrawBtn: { height: 50, borderRadius: 14, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 8, borderWidth: 1.5 },
   fullWithdrawText: { fontSize: 14, fontFamily: "Poppins_600SemiBold" },
+  // Withdrawal request rows (status visibility)
+  wdRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12 },
+  wdLeft: { flexDirection: "row", alignItems: "center", gap: 10 },
+  wdCoin: { width: 22, height: 22 },
+  wdAmt: { fontSize: 14, fontFamily: "Poppins_600SemiBold" },
+  wdDate: { fontSize: 11, fontFamily: "Poppins_400Regular", marginTop: 1 },
+  wdBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
+  wdBadgeTxt: { fontSize: 11, fontFamily: "Poppins_600SemiBold" },
 });
