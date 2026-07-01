@@ -358,14 +358,34 @@ function MatchRipple() {
   );
 }
 
-/* ─── Connecting screen overlay (non-interactive; auto-calls) ─── */
-function ConnectingScreen({ host, callType, adminCoinRate }: {
+/* ─── Connecting screen overlay (short cancel window, then auto-calls) ─── */
+const CONNECT_COUNTDOWN = 3;
+function ConnectingScreen({ host, callType, adminCoinRate, onConnect, onCancel }: {
   host: HostCard; callType: CallType; adminCoinRate: number;
+  onConnect: () => void; onCancel: () => void;
 }) {
   const { t: tr } = useLanguage();
   const scale = useRef(new Animated.Value(0.7)).current;
+  const [count, setCount] = useState(CONNECT_COUNTDOWN);
+  // Latest onConnect without retriggering the countdown effect; guard so we
+  // only fire the call once even if the interval and unmount race.
+  const onConnectRef = useRef(onConnect);
+  onConnectRef.current = onConnect;
+  const firedRef = useRef(false);
+
   useEffect(() => {
     Animated.spring(scale, { toValue: 1, tension: 55, friction: 8, useNativeDriver: false }).start();
+    let n = CONNECT_COUNTDOWN;
+    const id = setInterval(() => {
+      n -= 1;
+      setCount(n);
+      if (n <= 0) {
+        clearInterval(id);
+        if (!firedRef.current) { firedRef.current = true; onConnectRef.current(); }
+      }
+    }, 1000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const avatarUri = resolveMediaUrl(host.avatar_url) || `https://api.dicebear.com/7.x/avataaars/png?seed=${host.id}`;
@@ -405,12 +425,20 @@ function ConnectingScreen({ host, callType, adminCoinRate }: {
             {callType === "video" ? `🎥 ${tr.random.videoCall}` : `🎤 ${tr.random.voiceCall}`}
           </Text>
 
-          {/* Auto-connect indicator — the call is being placed in the
-              background; there's no manual Accept step. */}
-          <View style={styles.connectingRow}>
-            <ActivityIndicator color="#8400FF" />
-            <Text style={styles.connectingTxt}>{tr.random.checking}</Text>
-          </View>
+          {/* Auto-connect: a short cancel window (countdown) then the call is
+              placed in the background. Once the countdown hits 0 we show a
+              spinner while the outgoing call is set up. */}
+          {count > 0 ? (
+            <TouchableOpacity onPress={onCancel} activeOpacity={0.85} style={styles.connectCancelBtn} accessibilityLabel="Cancel and stop connecting">
+              <Image source={require("@/assets/icons/ic_call_end.png")} style={styles.connectCancelIco} tintColor="#fff" resizeMode="contain" />
+              <Text style={styles.connectCancelTxt}>{tr.random.decline}  ·  {count}</Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.connectingRow}>
+              <ActivityIndicator color="#8400FF" />
+              <Text style={styles.connectingTxt}>{tr.random.checking}</Text>
+            </View>
+          )}
         </Animated.View>
       </View>
     </View>
@@ -591,10 +619,10 @@ export default function RandomScreen() {
           const rate = res.coins_per_minute ?? res.host?.coins_per_minute ?? 25;
           setMatchedHost(res.host);
           setAdminCoinRate(rate);
-          // Show the non-interactive "Connecting…" state and place the call
-          // automatically in the background — no manual Accept step.
+          // Show the "Connecting…" state with a short cancel window; the
+          // ConnectingScreen auto-connects when its countdown completes (or the
+          // user cancels). No manual Accept step.
           setPhase("connecting");
-          void autoConnect(res.host, rate);
           return;
         }
 
@@ -644,13 +672,21 @@ export default function RandomScreen() {
 
     poll(); // immediate first call
     pollRef.current = setInterval(poll, 2500);
-  }, [callType, buildFilterPayload, onlineCount, adminCoinRate, autoConnect]);
+  }, [callType, buildFilterPayload, onlineCount, adminCoinRate]);
 
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
 
   // Keep the ref pointing at the latest startSearching so autoConnect (defined
   // above it) can resume searching without a circular hook dependency.
   useEffect(() => { startSearchingRef.current = startSearching; }, [startSearching]);
+
+  // User cancelled during the connecting countdown — relay a decline (so the
+  // cooldown guard counts it) and drop back to idle.
+  const handleCancelConnect = useCallback(() => {
+    if (matchedHost) API.matchDecline(matchedHost.id).catch(() => {});
+    setMatchedHost(null);
+    setPhase("idle");
+  }, [matchedHost]);
 
   const dotTop    = SH * 0.2;
   const cardTop   = SH * 0.18;
@@ -806,6 +842,8 @@ export default function RandomScreen() {
           host={matchedHost}
           callType={callType}
           adminCoinRate={adminCoinRate}
+          onConnect={() => autoConnect(matchedHost, adminCoinRate)}
+          onCancel={handleCancelConnect}
         />
       )}
 
@@ -941,6 +979,13 @@ const styles = StyleSheet.create({
   matchCallType: { fontSize: 14, fontFamily: "Poppins_500Medium", color: "#757396", marginVertical: 4 },
   connectingRow: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 16 },
   connectingTxt: { fontSize: 15, fontFamily: "Poppins_600SemiBold", color: "#8400FF" },
+  connectCancelBtn: {
+    flexDirection: "row", alignItems: "center", gap: 8, marginTop: 16,
+    backgroundColor: "#FF4D5E", paddingHorizontal: 22, paddingVertical: 11, borderRadius: 999,
+    shadowColor: "#FF4D5E", shadowOpacity: 0.35, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 5,
+  },
+  connectCancelIco: { width: 18, height: 18 },
+  connectCancelTxt: { fontSize: 15, fontFamily: "Poppins_700Bold", color: "#fff", letterSpacing: 0.3 },
   matchBtns: { flexDirection: "row", gap: 24, marginTop: 12 },
   matchBtnItem: { alignItems: "center", gap: 8 },
   matchBtnLabel: { fontSize: 12, fontFamily: "Poppins_500Medium", color: "#111329" },
