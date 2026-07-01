@@ -134,8 +134,8 @@ const DEFAULTS: Record<string, string> = {
   min_withdrawal_coins: '100',
   app_name: 'VoxLink',
   app_version: '1.0.0',
-  random_call_audio_rate: '5',
-  random_call_video_rate: '8',
+  random_call_audio_rate: '25',
+  random_call_video_rate: '40',
   // Random-call anti-abuse defaults — preserve historical behaviour
   // (no limits, no cooldown) so a fresh deployment doesn't surprise users.
   random_calls_per_day_limit: '0',
@@ -247,10 +247,10 @@ function inrPerUsd(s: Record<string, string>): number {
 
 // ─── built-in formula evaluators ─────────────────────────────────────────────
 function evalFormula(formula: ComputedRow['formula'], expr: string | undefined, s: Record<string, string>) {
-  const rate = parseFloat(s.coin_to_usd_rate || '0.0015');     // USD per coin
+  const rate = parseFloat(s.coin_to_usd_rate || '0.0006');     // USD per coin
   const rateInr = rate * inrPerUsd(s);                         // ₹ per coin (live FX)
   const share = parseFloat(s.host_revenue_share || '0.70');
-  const minW = parseInt(s.min_withdrawal_coins || '5000');
+  const minW = parseInt(s.min_withdrawal_coins || '100');
   const audioRate = parseInt(s.default_audio_rate || '25');
   const videoRate = parseInt(s.default_video_rate || '40');
   // Convert a coin-amount to ₹ for display.
@@ -584,7 +584,7 @@ export default function SettingsPage() {
   const coinRate = (() => {
     const fx = Number.isFinite(inrRate) && inrRate > 0 ? inrRate : 83;
     if (Number.isFinite(coinValueInr) && coinValueInr > 0) return coinValueInr / fx;
-    return parseFloat(settings.coin_to_usd_rate || '0.0015');
+    return parseFloat(settings.coin_to_usd_rate || '0.0006');
   })();
 
   // Snapshot fed to the formula evaluator so the Computed Values rows react to
@@ -609,7 +609,7 @@ export default function SettingsPage() {
       return { code, symbol: CUR_SYMBOLS[code], inr: fxRates.INR / r };
     })
     .filter((x): x is { code: string; symbol: string; inr: number } => !!x && Number.isFinite(x.inr) && x.inr > 0);
-  const minWithdraw = parseInt(settings.min_withdrawal_coins || '1000');
+  const minWithdraw = parseInt(settings.min_withdrawal_coins || '100');
   // Value of a coin amount in a given currency: coins × USD/coin × units-per-USD.
   const valueIn = (coins: number, code: string) => {
     if (code === 'INR') return coins * coinValueInr;

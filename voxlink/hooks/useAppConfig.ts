@@ -132,7 +132,7 @@ export function useCoinValue() {
   }, [config.coin_to_usd_rate]);
   
   return {
-    coinValue: parseFloat(config.coin_to_usd_rate || '0.01'),
+    coinValue: parseFloat(config.coin_to_usd_rate || '0.0006'),
     coinValueChanged,
     coinToUsdRate: config.coin_to_usd_rate
   };

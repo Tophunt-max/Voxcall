@@ -12,7 +12,7 @@ import { API } from "@/services/api";
 import { useSocketEvent } from "@/context/SocketContext";
 import { SocketEvents } from "@/constants/events";
 import { showSuccessToast, showErrorToast, showWarningToast } from "@/components/Toast";
-import { formatPrice, USD_TO_FOREIGN } from "@/utils/currency";
+import { USD_TO_FOREIGN, coinsToLocalCurrency } from "@/utils/currency";
 import { useAppConfig } from "@/hooks/useAppConfig";
 
 const WITHDRAW_OPTIONS = [100, 200, 500, 1000];
@@ -146,10 +146,13 @@ export default function HostWalletScreen() {
   const { config } = useAppConfig();
   const parsedMinWithdraw = parseInt(config.min_withdrawal_coins ?? "", 10);
   const minWithdraw = Number.isFinite(parsedMinWithdraw) && parsedMinWithdraw > 0 ? parsedMinWithdraw : 100;
-  // coin_to_usd_rate = value of 1 coin in USD (admin-set). Used to show hosts
-  // the real-money value of their coins. 0 = not configured/hide.
-  const parsedPayoutRate = parseFloat(config.coin_to_usd_rate ?? "");
-  const payoutRate = Number.isFinite(parsedPayoutRate) && parsedPayoutRate > 0 ? parsedPayoutRate : 0;
+  // coin_value_inr = PAYOUT value of 1 coin in ₹ (admin-set, INR base). Used to
+  // show hosts the real-money value of their coins in their own currency
+  // (converted from ₹). 0 = not configured/hide. useAppConfig has already
+  // pushed this into the currency module via setCoinValueInr(), so
+  // coinsToLocalCurrency() below reflects the same admin value.
+  const parsedCoinInr = parseFloat(config.coin_value_inr ?? "");
+  const payoutRate = Number.isFinite(parsedCoinInr) && parsedCoinInr > 0 ? parsedCoinInr : 0;
   const topPad = insets.top;
 
   // Payout currency = the host's ACCOUNT currency (server-detected from their
@@ -159,7 +162,9 @@ export default function HostWalletScreen() {
   // locale, which made web wrongly resolve to USD for Indian hosts.
   const hostCurrency = String((user as any)?.currency || "").toUpperCase();
   const payoutCurrency = hostCurrency && USD_TO_FOREIGN[hostCurrency] ? hostCurrency : "INR";
-  const formatPayout = (coins: number) => formatPrice(coins * payoutRate, payoutCurrency);
+  // Coins → the host's payout currency, converted from the ₹ base (single
+  // source of truth = admin coin_value_inr).
+  const formatPayout = (coins: number) => coinsToLocalCurrency(coins, payoutCurrency);
 
   const load = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);

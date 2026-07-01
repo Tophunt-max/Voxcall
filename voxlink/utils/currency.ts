@@ -77,24 +77,98 @@ export function setServerCurrency(currency: string | null | undefined): void {
   _serverCurrency = currency && USD_TO_FOREIGN[currency] ? currency : null;
 }
 
-// ─── Admin-controlled coin value (single source of truth) ──────────────────
-// The money-worth of 1 coin in USD. The admin sets this once in the panel
-// (app_settings.coin_to_usd_rate) and the apps fetch it via /api/app-config on
-// launch, then call setCoinToUsdRate(). EVERY coins→money conversion in the app
-// (coinsToLocalCurrency) reads this, so changing it in the admin panel updates
-// the displayed value everywhere — no hardcoded coin price anywhere.
-const DEFAULT_COIN_TO_USD = 0.01;
-let _coinToUsdRate = DEFAULT_COIN_TO_USD;
+// ─── Coin BUY value (USER side — single source of truth) ───────────────────
+// In the USER app a coin is shown at its BUY value: what the user effectively
+// pays per coin, derived from the admin's coin plans (₹ price ÷ coins received).
+// INR is the BASE currency for this India-first product; every other currency
+// is converted FROM ₹. Until real plans load we default to ₹0.18/coin (the
+// typical plan rate); deriveCoinBuyValueInr() then pins the real value from
+// /api/coins/plans. This is intentionally DIFFERENT from the HOST app, where a
+// coin is shown at its lower PAYOUT value (app_settings.coin_value_inr).
+const DEFAULT_COIN_BUY_VALUE_INR = 0.18;
+let _coinBuyValueInr = DEFAULT_COIN_BUY_VALUE_INR;
 
-/** Set the platform coin→USD value (from admin app_settings.coin_to_usd_rate). */
+/** Set the user-side coin BUY value in ₹ (derived from coin plans). */
+export function setCoinBuyValueInr(inr: number | string | null | undefined): void {
+  const n = typeof inr === "string" ? parseFloat(inr) : inr;
+  if (typeof n === "number" && Number.isFinite(n) && n > 0) _coinBuyValueInr = n;
+}
+
+/** The current user-side coin BUY value in ₹ (admin-plan-derived). */
+export function getCoinBuyValueInr(): number {
+  return _coinBuyValueInr;
+}
+
+/** Minimal coin-plan shape needed to derive the ₹/coin buy value. */
+export interface CoinPlanForBuyValue {
+  coins: number;
+  bonus_coins?: number | null;
+  price: number; // authored base price, in `currency`
+  currency?: string | null;
+  is_popular?: number | boolean | null;
+  is_active?: number | boolean | null;
+}
+
+/**
+ * Derive an effective ₹/coin BUY value from the coin plans returned by
+ * /api/coins/plans and pin it via setCoinBuyValueInr(). Effective rate for a
+ * plan = ₹price ÷ (coins + bonus_coins). Prefers the popular plan, else the
+ * average across active plans. Returns the value applied, or null when no
+ * usable plan was found (leaves the current value untouched).
+ */
+export function deriveCoinBuyValueInr(plans: CoinPlanForBuyValue[] | null | undefined): number | null {
+  if (!Array.isArray(plans) || plans.length === 0) return null;
+  const inrRate = USD_TO_FOREIGN["INR"] ?? 83;
+  const rateFor = (p: CoinPlanForBuyValue): number | null => {
+    const coins = Number(p.coins) + Number(p.bonus_coins || 0);
+    const price = Number(p.price);
+    if (!Number.isFinite(coins) || coins <= 0 || !Number.isFinite(price) || price <= 0) return null;
+    const cur = (p.currency || "INR").toUpperCase();
+    // Express the authored base price in ₹ so the buy value is always INR-based
+    // regardless of how the plan was priced.
+    const priceInr = cur === "INR" ? price : price * (inrRate / (USD_TO_FOREIGN[cur] ?? inrRate));
+    return priceInr / coins;
+  };
+  const active = plans.filter((p) => p.is_active == null || !!p.is_active);
+  const pool = active.length ? active : plans;
+  const popular = pool.find((p) => !!p.is_popular);
+  let value: number | null = popular ? rateFor(popular) : null;
+  if (value == null) {
+    const rates = pool.map(rateFor).filter((r): r is number => r != null);
+    if (rates.length) value = rates.reduce((s, r) => s + r, 0) / rates.length;
+  }
+  if (value != null && Number.isFinite(value) && value > 0) {
+    setCoinBuyValueInr(value);
+    return value;
+  }
+  return null;
+}
+
+// Back-compat: config plumbing (useAppConfig) still calls setCoinToUsdRate()
+// with the admin payout rate. The USER app shows coins at their BUY value
+// (above), so this is retained only so existing callers don't break — it is
+// NOT used for display here. Defaults to the canonical ₹0.05/coin payout
+// (0.05 ÷ 83 ≈ 0.0006), never the old 0.01.
+let _coinToUsdRate = 0.0006;
+
+/** Set the platform coin→USD payout value (from admin app_settings.coin_to_usd_rate). */
 export function setCoinToUsdRate(rate: number | string | null | undefined): void {
   const n = typeof rate === "string" ? parseFloat(rate) : rate;
   if (typeof n === "number" && Number.isFinite(n) && n > 0) _coinToUsdRate = n;
 }
 
-/** The current platform coin→USD value (admin-set, defaults to 0.01). */
+/** The current platform coin→USD payout value (admin-set). */
 export function getCoinToUsdRate(): number {
   return _coinToUsdRate;
+}
+
+/** Format a ₹ (INR-base) amount in the active/target currency. */
+function formatInrInCurrency(inrAmount: number, currency?: string): string {
+  const c = currency ?? getCurrencyCode();
+  if (c === "INR") return formatLocalAmount(inrAmount, "INR");
+  const inrRate = USD_TO_FOREIGN["INR"] ?? 83;
+  const targetRate = USD_TO_FOREIGN[c] ?? inrRate;
+  return formatLocalAmount(inrAmount * (targetRate / inrRate), c);
 }
 
 let _localeCurrency: string | null = null;
@@ -172,14 +246,13 @@ export function formatLocalAmount(amount: number, currency?: string): string {
 }
 
 /**
- * Convert in-app coins to a localized fiat string. Useful for showing host
- * earnings or "you'll receive ~₹X" hints. Uses the admin-controlled
- * platform coin → USD value (app_settings.coin_to_usd_rate), set once on
- * launch via setCoinToUsdRate(). Defaults to $0.01/coin until config loads.
+ * Convert in-app coins to a localized fiat string using the USER-side BUY
+ * value (₹/coin derived from coin plans). INR is the base; other currencies
+ * are converted from ₹. Use this for any "your coins ≈ ₹X" hint in the user
+ * app. The HOST app has its own module that uses the lower PAYOUT value.
  */
 export function coinsToLocalCurrency(coins: number, currency?: string): string {
-  const usd = coins * _coinToUsdRate;
-  return formatPrice(usd, currency);
+  return formatInrInCurrency(coins * _coinBuyValueInr, currency);
 }
 
 /**

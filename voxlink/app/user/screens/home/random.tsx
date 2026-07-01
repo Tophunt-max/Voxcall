@@ -496,7 +496,11 @@ export default function RandomScreen() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filters, setFilters] = useState<MatchFilters>({ gender: "any", minRating: 0 });
   const [matchedHost, setMatchedHost] = useState<HostCard | null>(null);
-  const [adminCoinRate, setAdminCoinRate] = useState<number>(5);
+  // Per-minute rate (coins) for the current random match. Initialised to the
+  // canonical default (DEFAULT_AUDIO_RATE = 25) so any pre-match estimate
+  // (e.g. the insufficient-coins threshold) matches what the server bills;
+  // replaced with the exact server value the moment a host is matched.
+  const [adminCoinRate, setAdminCoinRate] = useState<number>(25);
   const [statusMsg, setStatusMsg]  = useState("");
   const [statusCode, setStatusCode] = useState<string | undefined>(undefined);
   const [onlineCount, setOnlineCount] = useState<number>(0);

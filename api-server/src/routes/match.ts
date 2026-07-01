@@ -121,7 +121,9 @@ async function readBoolSetting(
  * the per-level `random_audio_rate` / `random_video_rate` set by the admin
  * in Level System Configuration, falling back to the global
  * `random_call_audio_rate` / `random_call_video_rate` settings (and finally
- * to 5 / 8) for older configs / fresh deploys.
+ * to the standard DEFAULT_AUDIO_RATE / DEFAULT_VIDEO_RATE, 25 / 40) for older
+ * configs / fresh deploys — so random calls are billed at the SAME advertised
+ * rate as direct calls unless an admin explicitly sets a different one.
  */
 async function resolveRandomRate(
   db: D1Database,
@@ -134,7 +136,7 @@ async function resolveRandomRate(
     : getRandomAudioRate(hostLevel, config);
   if (Number.isFinite(fromLadder) && fromLadder > 0) return fromLadder;
   const fallbackKey = callType === 'video' ? 'random_call_video_rate' : 'random_call_audio_rate';
-  return readIntSetting(db, fallbackKey, callType === 'video' ? 8 : 5);
+  return readIntSetting(db, fallbackKey, callType === 'video' ? DEFAULT_VIDEO_RATE : DEFAULT_AUDIO_RATE);
 }
 
 // ─── Rate limit (1 RPS, burst 5) ────────────────────────────────────────────

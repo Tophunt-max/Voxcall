@@ -24,7 +24,7 @@ import { API } from "@/services/api";
 import { notifyPurchaseSuccess } from "@/services/NotificationService";
 import LoadingOverlay from "@/components/LoadingOverlay";
 import { showSuccessToast, showErrorToast } from "@/components/Toast";
-import { formatPrice, formatLocalAmount, getCurrencyCode } from "@/utils/currency";
+import { formatPrice, formatLocalAmount, getCurrencyCode, deriveCoinBuyValueInr } from "@/utils/currency";
 
 const SCREEN_W = Dimensions.get("window").width;
 const WALLET_BANNER_W = SCREEN_W - 40;
@@ -551,6 +551,10 @@ export default function CheckoutScreen() {
         .then((data: any[]) => {
           const active = data.filter((p) => p.is_active !== 0);
           setPlans(active);
+          // Pin the user-side coin BUY value (₹/coin) from the live plans so
+          // any "your coins ≈ ₹X" display in the user app matches what the
+          // user actually pays. INR base; see utils/currency.ts.
+          deriveCoinBuyValueInr(active);
           setSelectedPlan((prev) => {
             if (prev) {
               const stillThere = active.find((p) => p.id === prev.id);

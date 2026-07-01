@@ -77,24 +77,51 @@ export function setServerCurrency(currency: string | null | undefined): void {
   _serverCurrency = currency && USD_TO_FOREIGN[currency] ? currency : null;
 }
 
-// ─── Admin-controlled coin value (single source of truth) ──────────────────
-// The money-worth of 1 coin in USD. The admin sets this once in the panel
-// (app_settings.coin_to_usd_rate) and the apps fetch it via /api/app-config on
-// launch, then call setCoinToUsdRate(). EVERY coins→money conversion in the app
-// reads this, so changing it in the admin panel updates the displayed value
-// everywhere — no hardcoded coin price anywhere.
-const DEFAULT_COIN_TO_USD = 0.01;
-let _coinToUsdRate = DEFAULT_COIN_TO_USD;
+// ─── Coin PAYOUT value (HOST side — single source of truth) ────────────────
+// In the HOST app a coin is shown at its PAYOUT value: what the host receives
+// per coin on withdrawal. The admin sets this once in the panel as
+// app_settings.coin_value_inr (₹ per coin). INR is the BASE currency for this
+// India-first product; every other currency (international hosts) is converted
+// FROM ₹. Apps fetch it via /api/app-config on launch and call setCoinValueInr().
+// Defaults to ₹0.05/coin until config loads. This is intentionally DIFFERENT
+// from the USER app, which shows the higher BUY value (₹/coin from coin plans).
+const DEFAULT_COIN_VALUE_INR = 0.05;
+let _coinValueInr = DEFAULT_COIN_VALUE_INR;
 
-/** Set the platform coin→USD value (from admin app_settings.coin_to_usd_rate). */
+/** Set the host-side coin PAYOUT value in ₹ (from admin app_settings.coin_value_inr). */
+export function setCoinValueInr(inr: number | string | null | undefined): void {
+  const n = typeof inr === "string" ? parseFloat(inr) : inr;
+  if (typeof n === "number" && Number.isFinite(n) && n > 0) _coinValueInr = n;
+}
+
+/** The current host-side coin PAYOUT value in ₹ (admin-set). */
+export function getCoinValueInr(): number {
+  return _coinValueInr;
+}
+
+// Back-compat: config plumbing (useAppConfig) still calls setCoinToUsdRate()
+// with the admin coin_to_usd_rate. Retained so callers don't break; defaults
+// to the canonical ₹0.05/coin (0.05 ÷ 83 ≈ 0.0006), never the old 0.01.
+let _coinToUsdRate = 0.0006;
+
+/** Set the platform coin→USD payout value (from admin app_settings.coin_to_usd_rate). */
 export function setCoinToUsdRate(rate: number | string | null | undefined): void {
   const n = typeof rate === "string" ? parseFloat(rate) : rate;
   if (typeof n === "number" && Number.isFinite(n) && n > 0) _coinToUsdRate = n;
 }
 
-/** The current platform coin→USD value (admin-set, defaults to 0.01). */
+/** The current platform coin→USD payout value (admin-set). */
 export function getCoinToUsdRate(): number {
   return _coinToUsdRate;
+}
+
+/** Format a ₹ (INR-base) amount in the active/target currency. */
+function formatInrInCurrency(inrAmount: number, currency?: string): string {
+  const c = currency ?? getCurrencyCode();
+  if (c === "INR") return formatLocalAmount(inrAmount, "INR");
+  const inrRate = USD_TO_FOREIGN["INR"] ?? 83;
+  const targetRate = USD_TO_FOREIGN[c] ?? inrRate;
+  return formatLocalAmount(inrAmount * (targetRate / inrRate), c);
 }
 
 let _localeCurrency: string | null = null;
@@ -171,14 +198,13 @@ export function formatLocalAmount(amount: number, currency?: string): string {
 }
 
 /**
- * Convert in-app coins to a localized fiat string. Useful for showing host
- * earnings or "you'll receive ~₹X" hints. Uses the admin-controlled platform
- * coin → USD value (app_settings.coin_to_usd_rate), set once on launch via
- * setCoinToUsdRate(). Defaults to $0.01/coin until config loads.
+ * Convert in-app coins to a localized fiat string using the HOST-side PAYOUT
+ * value (admin app_settings.coin_value_inr, ₹/coin). INR is the base; other
+ * currencies are converted from ₹ for international hosts. Use this for host
+ * earnings / "you'll receive ~₹X" hints. The USER app uses the higher BUY value.
  */
 export function coinsToLocalCurrency(coins: number, currency?: string): string {
-  const usd = coins * _coinToUsdRate;
-  return formatPrice(usd, currency);
+  return formatInrInCurrency(coins * _coinValueInr, currency);
 }
 
 /**

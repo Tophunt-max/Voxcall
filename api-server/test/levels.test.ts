@@ -217,9 +217,12 @@ describe('variable-length ladder (admin add/remove rungs)', () => {
 
 describe('per-level random call rates', () => {
   it('reads admin-set random_audio_rate / random_video_rate from the ladder', () => {
-    // Seeded defaults — keep in sync with DEFAULT_LEVEL_CONFIG.
-    expect(getRandomAudioRate(1, DEFAULT_LEVEL_CONFIG)).toBe(5);
-    expect(getRandomVideoRate(1, DEFAULT_LEVEL_CONFIG)).toBe(8);
+    // Seeded defaults — keep in sync with DEFAULT_LEVEL_CONFIG. Random-call
+    // rates now default to the standard 25/40 across all levels so random
+    // calls bill at the same advertised rate as direct calls (admins can still
+    // tune per level).
+    expect(getRandomAudioRate(1, DEFAULT_LEVEL_CONFIG)).toBe(25);
+    expect(getRandomVideoRate(1, DEFAULT_LEVEL_CONFIG)).toBe(40);
     expect(getRandomAudioRate(5, DEFAULT_LEVEL_CONFIG)).toBe(25);
     expect(getRandomVideoRate(5, DEFAULT_LEVEL_CONFIG)).toBe(40);
   });

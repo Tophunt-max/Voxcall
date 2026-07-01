@@ -14,7 +14,7 @@
 // empty object), so the app never blocks on this.
 import { useEffect, useState, useRef } from "react";
 import { API } from "@/services/api";
-import { setCoinToUsdRate } from "@/utils/currency";
+import { setCoinToUsdRate, setCoinValueInr } from "@/utils/currency";
 
 export type AppConfig = Record<string, string>;
 
@@ -23,9 +23,11 @@ let _inflight: Promise<AppConfig> | null = null;
 let _listeners: Array<(cfg: AppConfig) => void> = [];
 
 // Push the admin-controlled coin value into the currency module so EVERY
-// coins→money conversion in the app reflects the admin's
-// app_settings.coin_to_usd_rate. Called every time config resolves.
+// coins→money conversion in the app reflects the admin's settings.
+// coin_value_inr (₹/coin PAYOUT value) is the INR-base source of truth; we
+// also keep the legacy coin_to_usd_rate in sync for back-compat.
 function applyConfigSideEffects(cfg: AppConfig): void {
+  if (cfg && cfg.coin_value_inr != null) setCoinValueInr(cfg.coin_value_inr);
   if (cfg && cfg.coin_to_usd_rate != null) setCoinToUsdRate(cfg.coin_to_usd_rate);
 }
 
@@ -131,7 +133,7 @@ export function useCoinValue() {
   }, [config.coin_to_usd_rate]);
   
   return {
-    coinValue: parseFloat(config.coin_to_usd_rate || '0.01'),
+    coinValue: parseFloat(config.coin_to_usd_rate || '0.0006'),
     coinValueChanged,
     coinToUsdRate: config.coin_to_usd_rate
   };
