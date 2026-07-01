@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { authMiddleware } from '../middleware/auth';
-import { USD_TO_FOREIGN, currencyForCountry, convertCurrency, detectCountryFromRequest } from '../lib/currency';
+import { USD_TO_FOREIGN, currencyForCountry, convertCurrency, convertFromUSD, detectCountryFromRequest } from '../lib/currency';
 import type { Env, JWTPayload } from '../types';
 
 const coin = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
@@ -332,6 +332,20 @@ coin.post('/withdraw', async (c) => {
     rate = 0.0006;
   }
   const usdAmount = coinsReq * rate;
+
+  // Store the payout in the HOST'S local currency (+ currency code) instead of
+  // raw USD. This matches what the host sees in their wallet and tells the
+  // admin exactly how much to pay in which currency. Falls back to the host's
+  // country currency, then the platform default INR. Uses the same static FX
+  // table the client wallet uses, so the stored figure == the displayed figure.
+  const hostAcc = await db
+    .prepare('SELECT currency, country FROM users WHERE id = ?')
+    .bind(sub)
+    .first<{ currency: string | null; country: string | null }>();
+  const payoutCurrency = (hostAcc?.currency && USD_TO_FOREIGN[hostAcc.currency])
+    ? hostAcc.currency
+    : currencyForCountry(hostAcc?.country);
+  const localAmount = convertFromUSD(usdAmount, payoutCurrency);
   const withdrawId = crypto.randomUUID();
 
   // RACE FIX (concurrent withdrawal → 2× payout):
@@ -364,8 +378,8 @@ coin.post('/withdraw', async (c) => {
   //       withdrawal_requests row — leaving the system in a clean state.
   const insertResult = await db.prepare(
     `INSERT INTO withdrawal_requests
-       (id, host_id, coins, amount, payment_method, account_details, status)
-     SELECT ?1, ?2, ?3, ?4, ?5, ?6, 'pending'
+       (id, host_id, coins, amount, currency, payment_method, account_details, status)
+     SELECT ?1, ?2, ?3, ?4, ?8, ?5, ?6, 'pending'
      WHERE NOT EXISTS (
        SELECT 1 FROM withdrawal_requests WHERE host_id = ?2 AND status = 'pending'
      )
@@ -376,10 +390,11 @@ coin.post('/withdraw', async (c) => {
     withdrawId,
     h.id,
     coinsReq,
-    usdAmount,
+    localAmount,
     method ?? 'bank',
     account_info ?? '',
-    sub
+    sub,
+    payoutCurrency
   ).run();
 
   if (!insertResult.meta?.changes) {

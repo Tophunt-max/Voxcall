@@ -637,3 +637,48 @@ export function ensureEngagementSchema(db: D1Database): Promise<boolean> {
 
   return engagementSchemaReadyPromise;
 }
+
+
+// ============================================================================
+// Withdrawal payout currency
+// ============================================================================
+//
+// Adds withdrawal_requests.currency so a payout can be stored + displayed in
+// the host's own currency (INR/USD/EUR/…). Before this the amount was raw USD
+// with no currency, so the admin panel rendered it as INR — an ~83× wrong
+// figure for ₹ hosts. Migration 0018 recreated the table without the original
+// 0001 `currency` column, so this heals prod DBs that lost it.
+
+let withdrawalSchemaReadyPromise: Promise<boolean> | null = null;
+
+const REQUIRED_WITHDRAWAL_COLS: ReadonlyArray<{ name: string; ddl: string }> = [
+  { name: 'currency', ddl: "ALTER TABLE withdrawal_requests ADD COLUMN currency TEXT DEFAULT 'INR'" },
+];
+
+export function ensureWithdrawalSchema(db: D1Database): Promise<boolean> {
+  if (withdrawalSchemaReadyPromise) return withdrawalSchemaReadyPromise;
+
+  withdrawalSchemaReadyPromise = (async () => {
+    try {
+      const info = await db.prepare('PRAGMA table_info(withdrawal_requests)').all<{ name: string }>();
+      const cols = new Set((info.results ?? []).map((r) => r.name));
+      for (const col of REQUIRED_WITHDRAWAL_COLS) {
+        if (!cols.has(col.name)) {
+          try {
+            await db.prepare(col.ddl).run();
+            console.log(`[schemaGuard] added withdrawal_requests.${col.name}`);
+          } catch (err) {
+            console.warn(`[schemaGuard] add withdrawal_requests.${col.name} failed:`, err);
+          }
+        }
+      }
+      return true;
+    } catch (err) {
+      console.error('[schemaGuard] ensureWithdrawalSchema failed:', err);
+      withdrawalSchemaReadyPromise = null;
+      return false;
+    }
+  })();
+
+  return withdrawalSchemaReadyPromise;
+}

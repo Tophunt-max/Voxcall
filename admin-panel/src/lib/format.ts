@@ -33,6 +33,30 @@ export function formatInr(value: number | null | undefined): string {
   return `₹${formatAmount(value)}`;
 }
 
+/** Symbols for the currencies hosts can be paid in (mirror of the apps). */
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  USD: '$', INR: '₹', EUR: '€', GBP: '£', CAD: 'C$', AUD: 'A$', SGD: 'S$',
+  AED: 'AED ', SAR: 'SAR ', QAR: 'QAR ', KWD: 'KD ', BHD: 'BD ', OMR: 'OMR ',
+  MYR: 'RM', HKD: 'HK$', JPY: '¥', CNY: '¥', KRW: '₩', THB: '฿', IDR: 'Rp',
+  PHP: '₱', VND: '₫', BDT: '৳', NPR: 'Rs', LKR: 'Rs', PKR: 'Rs', ZAR: 'R',
+  NGN: '₦', BRL: 'R$', MXN: 'MX$', TRY: '₺', RUB: '₽',
+};
+// Currencies whose smallest unit is whole — displayed with no decimals.
+const NO_DECIMAL_CURRENCIES = ['INR', 'JPY', 'KRW', 'VND', 'IDR', 'CLP', 'ARS', 'COP', 'HUF'];
+
+/**
+ * Format a money amount in the given currency with the right symbol + rounding.
+ * Used for host payouts, which can be in INR (default) or an international
+ * host's own currency. Null/NaN-safe, unknown currency falls back to a code prefix.
+ */
+export function formatMoney(value: number | null | undefined, currency: string | null | undefined): string {
+  const c = (currency || 'INR').toUpperCase();
+  const symbol = CURRENCY_SYMBOLS[c] ?? `${c} `;
+  const amt = toFiniteNumber(value);
+  if (NO_DECIMAL_CURRENCIES.includes(c)) return `${symbol}${Math.round(amt).toLocaleString()}`;
+  return `${symbol}${amt.toFixed(2)}`;
+}
+
 /**
  * Sum a numeric field across rows, ignoring missing/non-numeric entries.
  * Safe against null/undefined row arrays. Used for the payout/withdrawal

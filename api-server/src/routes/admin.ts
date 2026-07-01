@@ -849,6 +849,7 @@ async function auditLog(d: D1Database, adminId: string, adminName: string, admin
 admin.get('/payouts', async (c) => {
   const result = await db(c).prepare(`
     SELECT wr.id, wr.coins as coins_earned, wr.amount as inr_amount, wr.status,
+      COALESCE(wr.currency, 'INR') as currency,
       wr.payment_method as bank, wr.admin_note, wr.created_at as requested_at,
       strftime('%B %Y', datetime(wr.created_at, 'unixepoch')) as period,
       h.display_name as host_name, u.name, u.email as host_email

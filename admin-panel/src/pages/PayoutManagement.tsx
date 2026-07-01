@@ -5,7 +5,7 @@ import { Table } from '@/components/ui/Table';
 import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
 import { StatCard } from '@/components/ui/StatCard';
-import { formatCoins, formatAmount, formatInr, sumBy, formatUnixDate } from '@/lib/format';
+import { formatCoins, formatInr, formatMoney, sumBy, formatUnixDate } from '@/lib/format';
 import { Search, Download, Coins, CheckCircle, Clock, XCircle, IndianRupee, Wallet, DollarSign, RefreshCw } from 'lucide-react';
 
 function HostAvatar({ name }: { name: string }) {
@@ -87,7 +87,7 @@ export default function PayoutManagement() {
       render: (r: any) => (
         <div>
           <div className="flex items-center gap-1 font-bold text-sm text-violet-600"><Coins size={13} />{formatCoins(r.coins_earned)}</div>
-          <div className="flex items-center gap-0.5 text-xs text-muted-foreground"><DollarSign size={10} />{formatAmount(r.inr_amount)}</div>
+          <div className="text-xs text-muted-foreground">{formatMoney(r.inr_amount, r.currency)}</div>
         </div>
       )
     },
@@ -178,7 +178,7 @@ export default function PayoutManagement() {
               </div>
               <div className="p-3 bg-green-50 rounded-xl">
                 <p className="text-xs text-muted-foreground">Amount</p>
-                <p className="font-bold text-green-600 mt-0.5">{formatInr(selected.inr_amount)}</p>
+                <p className="font-bold text-green-600 mt-0.5">{formatMoney(selected.inr_amount, selected.currency)}</p>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3 text-sm">
