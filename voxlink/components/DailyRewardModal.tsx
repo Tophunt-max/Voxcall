@@ -24,6 +24,8 @@ import { useLanguage } from "@/context/LanguageContext";
 import type { DailyStreakStatus, DailyStreakClaimResult } from "@/hooks/useDailyStreak";
 
 const GRADIENT: [string, string] = ["#CF00FD", "#8400FF"];
+// Richer 3-stop gradient for the header hero (more vibrant than the flat CTA).
+const HEADER_GRADIENT: [string, string, string] = ["#E24DFF", "#B026FF", "#7A00FF"];
 const COIN_GOLD = "#FFC93C";
 const CONFETTI_COLORS = ["#FFC93C", "#CF00FD", "#8400FF", "#22C55E", "#38BDF8", "#FF6B9D"];
 
@@ -159,6 +161,16 @@ export default function DailyRewardModal({
   const coinPulse = {
     transform: [{ scale: glow.interpolate({ inputRange: [0, 1], outputRange: [1, 1.08] }) }],
   };
+  // Soft pulsing ring that breathes out from behind the header icon.
+  const haloStyle = {
+    opacity: glow.interpolate({ inputRange: [0, 1], outputRange: [0.55, 0] }),
+    transform: [{ scale: glow.interpolate({ inputRange: [0, 1], outputRange: [0.85, 1.55] }) }],
+  };
+  // Golden glow that pulses behind the big coin number.
+  const coinHaloStyle = {
+    opacity: glow.interpolate({ inputRange: [0, 1], outputRange: [0.28, 0.5] }),
+    transform: [{ scale: glow.interpolate({ inputRange: [0, 1], outputRange: [0.95, 1.12] }) }],
+  };
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
@@ -166,14 +178,23 @@ export default function DailyRewardModal({
         <Animated.View style={[styles.card, { backgroundColor: colors.card, transform: [{ scale }] }]}>
           {/* Gradient header */}
           <LinearGradient
-            colors={GRADIENT}
+            colors={HEADER_GRADIENT}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={styles.header}
           >
+            {/* Decorative bokeh circles for depth */}
+            <View pointerEvents="none" style={styles.bokehTop} />
+            <View pointerEvents="none" style={styles.bokehBottom} />
+            {/* Floating sparkles */}
+            <Text pointerEvents="none" style={styles.sparkleTL}>✨</Text>
+            <Text pointerEvents="none" style={styles.sparkleTR}>✨</Text>
             {isCelebrating ? <Confetti /> : null}
             <View style={styles.headerEmojiWrap}>
-              <Text style={styles.headerEmoji}>{isCelebrating ? "🎉" : "🎁"}</Text>
+              <Animated.View pointerEvents="none" style={[styles.emojiHalo, haloStyle]} />
+              <View style={styles.emojiInner}>
+                <Text style={styles.headerEmoji}>{isCelebrating ? "🎉" : "🎁"}</Text>
+              </View>
             </View>
             <Text style={styles.headerTitle}>
               {isCelebrating ? tr.titleClaimed : tr.title}
@@ -191,9 +212,9 @@ export default function DailyRewardModal({
 
           {/* Body */}
           {isCelebrating ? (
-            <CelebrationBody result={lastClaim} status={status} colors={colors} tr={tr} coinPulse={coinPulse} />
+            <CelebrationBody result={lastClaim} status={status} colors={colors} tr={tr} coinPulse={coinPulse} coinHalo={coinHaloStyle} />
           ) : (
-            <ClaimableBody status={status} streakAfter={streakAfter} colors={colors} tr={tr} coinPulse={coinPulse} />
+            <ClaimableBody status={status} streakAfter={streakAfter} colors={colors} tr={tr} coinPulse={coinPulse} coinHalo={coinHaloStyle} />
           )}
 
           {/* Schedule strip — visible in BOTH states. */}
@@ -268,9 +289,9 @@ type Colors = ReturnType<typeof useColors>;
 /* ─── Sub-views ───────────────────────────────────────────────────────── */
 
 function ClaimableBody({
-  status, streakAfter, colors, tr, coinPulse,
+  status, streakAfter, colors, tr, coinPulse, coinHalo,
 }: {
-  status: DailyStreakStatus; streakAfter: number; colors: Colors; tr: TR; coinPulse: any;
+  status: DailyStreakStatus; streakAfter: number; colors: Colors; tr: TR; coinPulse: any; coinHalo: any;
 }) {
   const milestone = status.next_reward_milestone;
 
@@ -290,10 +311,13 @@ function ClaimableBody({
 
   return (
     <View style={styles.body}>
-      <Animated.View style={[styles.coinRow, coinPulse]}>
-        <Image source={require("@/assets/icons/ic_coin.png")} style={styles.coinIcon} resizeMode="contain" />
-        <Text style={[styles.bigNumber, { color: colors.text }]}>{status.next_reward}</Text>
-      </Animated.View>
+      <View style={styles.coinWrap}>
+        <Animated.View pointerEvents="none" style={[styles.coinHalo, coinHalo]} />
+        <Animated.View style={[styles.coinRow, coinPulse]}>
+          <Image source={require("@/assets/icons/ic_coin.png")} style={styles.coinIcon} resizeMode="contain" />
+          <Text style={[styles.bigNumber, { color: colors.text }]}>{status.next_reward}</Text>
+        </Animated.View>
+      </View>
       <Text style={[styles.bodyHint, { color: colors.mutedForeground }]}>{tr.claimHint}</Text>
       {milestone > 0 ? (
         <View style={styles.milestoneBadge}>
@@ -309,9 +333,9 @@ function ClaimableBody({
 }
 
 function CelebrationBody({
-  result, status, colors, tr, coinPulse,
+  result, status, colors, tr, coinPulse, coinHalo,
 }: {
-  result: DailyStreakClaimResult; status: DailyStreakStatus; colors: Colors; tr: TR; coinPulse: any;
+  result: DailyStreakClaimResult; status: DailyStreakStatus; colors: Colors; tr: TR; coinPulse: any; coinHalo: any;
 }) {
   // Lucky-wheel reveal — only when the server says this reward was drawn by
   // the variable engine. Expected payout unchanged (budget-neutral).
@@ -323,10 +347,13 @@ function CelebrationBody({
       {result.variable ? (
         <LuckyMultiplier multiplier={result.multiplier ?? 1} segments={segments} colors={colors} tr={tr} />
       ) : null}
-      <Animated.View style={[styles.coinRow, coinPulse]}>
-        <Image source={require("@/assets/icons/ic_coin.png")} style={styles.coinIcon} resizeMode="contain" />
-        <Text style={[styles.bigNumber, { color: colors.text }]}>+{counted}</Text>
-      </Animated.View>
+      <View style={styles.coinWrap}>
+        <Animated.View pointerEvents="none" style={[styles.coinHalo, coinHalo]} />
+        <Animated.View style={[styles.coinRow, coinPulse]}>
+          <Image source={require("@/assets/icons/ic_coin.png")} style={styles.coinIcon} resizeMode="contain" />
+          <Text style={[styles.bigNumber, { color: colors.text }]}>+{counted}</Text>
+        </Animated.View>
+      </View>
       {result.milestone_bonus > 0 ? (
         (() => {
           // Split the localized template at {bonus} so we can highlight the
@@ -583,34 +610,65 @@ const styles = StyleSheet.create({
   },
   card: {
     width: "100%", maxWidth: 380,
-    borderRadius: 24, overflow: "hidden",
-    shadowColor: "#000", shadowOpacity: 0.25, shadowRadius: 24, shadowOffset: { width: 0, height: 8 },
-    elevation: 12,
+    borderRadius: 28, overflow: "hidden",
+    borderWidth: StyleSheet.hairlineWidth, borderColor: "rgba(255,255,255,0.12)",
+    shadowColor: "#8400FF", shadowOpacity: 0.35, shadowRadius: 30, shadowOffset: { width: 0, height: 12 },
+    elevation: 16,
   },
   header: {
-    paddingTop: 24, paddingBottom: 20, paddingHorizontal: 20,
-    alignItems: "center", overflow: "hidden",
+    paddingTop: 28, paddingBottom: 24, paddingHorizontal: 20,
+    alignItems: "center", overflow: "hidden", position: "relative",
   },
+  bokehTop: {
+    position: "absolute", top: -40, right: -30, width: 130, height: 130,
+    borderRadius: 65, backgroundColor: "rgba(255,255,255,0.12)",
+  },
+  bokehBottom: {
+    position: "absolute", bottom: -50, left: -35, width: 120, height: 120,
+    borderRadius: 60, backgroundColor: "rgba(255,255,255,0.08)",
+  },
+  sparkleTL: { position: "absolute", top: 16, left: 22, fontSize: 15, opacity: 0.9 },
+  sparkleTR: { position: "absolute", top: 34, right: 26, fontSize: 11, opacity: 0.75 },
   headerEmojiWrap: {
-    width: 60, height: 60, borderRadius: 30,
-    backgroundColor: "rgba(255,255,255,0.18)",
-    alignItems: "center", justifyContent: "center", marginBottom: 6,
+    width: 76, height: 76, alignItems: "center", justifyContent: "center", marginBottom: 8,
   },
-  headerEmoji: { fontSize: 32 },
-  headerTitle: { fontSize: 20, fontFamily: "Poppins_700Bold", color: "#fff" },
-  headerSub: { fontSize: 12, fontFamily: "Poppins_500Medium", color: "rgba(255,255,255,0.85)", marginTop: 2 },
-  streakChip: {
-    marginTop: 10, paddingHorizontal: 12, paddingVertical: 4, borderRadius: 999,
+  emojiHalo: {
+    position: "absolute", width: 76, height: 76, borderRadius: 38,
+    backgroundColor: "rgba(255,255,255,0.9)",
+  },
+  emojiInner: {
+    width: 64, height: 64, borderRadius: 32,
     backgroundColor: "rgba(255,255,255,0.22)",
+    borderWidth: 1.5, borderColor: "rgba(255,255,255,0.45)",
+    alignItems: "center", justifyContent: "center",
+  },
+  headerEmoji: { fontSize: 34 },
+  headerTitle: {
+    fontSize: 21, fontFamily: "Poppins_700Bold", color: "#fff",
+    textShadowColor: "rgba(0,0,0,0.18)", textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4,
+  },
+  headerSub: { fontSize: 12.5, fontFamily: "Poppins_500Medium", color: "rgba(255,255,255,0.9)", marginTop: 3 },
+  streakChip: {
+    marginTop: 12, paddingHorizontal: 14, paddingVertical: 5, borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.25)",
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.35)",
   },
   streakChipTxt: { fontSize: 13, fontFamily: "Poppins_700Bold", color: "#fff" },
 
   confettiLayer: { ...StyleSheet.absoluteFillObject },
 
   body: { padding: 22, alignItems: "center" },
+  coinWrap: { alignItems: "center", justifyContent: "center" },
+  coinHalo: {
+    position: "absolute", width: 150, height: 150, borderRadius: 75,
+    backgroundColor: "rgba(255,201,60,0.22)",
+  },
   coinRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-  coinIcon: { width: 38, height: 38 },
-  bigNumber: { fontSize: 46, fontFamily: "Poppins_700Bold", letterSpacing: -1 },
+  coinIcon: { width: 40, height: 40 },
+  bigNumber: {
+    fontSize: 48, fontFamily: "Poppins_700Bold", letterSpacing: -1,
+    textShadowColor: "rgba(255,201,60,0.35)", textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 12,
+  },
   bodyHint: { fontSize: 13, fontFamily: "Poppins_400Regular", marginTop: 8, textAlign: "center" },
 
   milestoneBadge: {
@@ -689,7 +747,11 @@ const styles = StyleSheet.create({
   ctaRow: { flexDirection: "row", gap: 10, padding: 20, paddingTop: 14 },
   skipBtn: { paddingVertical: 12, paddingHorizontal: 18 },
   skipBtnTxt: { fontSize: 14, fontFamily: "Poppins_600SemiBold" },
-  primaryBtnWrap: { flex: 1 },
-  primaryBtn: { paddingVertical: 14, borderRadius: 14, alignItems: "center" },
-  primaryBtnTxt: { fontSize: 15, fontFamily: "Poppins_700Bold", color: "#fff" },
+  primaryBtnWrap: {
+    flex: 1, borderRadius: 14,
+    shadowColor: "#8400FF", shadowOpacity: 0.45, shadowRadius: 12, shadowOffset: { width: 0, height: 5 },
+    elevation: 6,
+  },
+  primaryBtn: { paddingVertical: 15, borderRadius: 14, alignItems: "center" },
+  primaryBtnTxt: { fontSize: 15, fontFamily: "Poppins_700Bold", color: "#fff", letterSpacing: 0.2 },
 });
