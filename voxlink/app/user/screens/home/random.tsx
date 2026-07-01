@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, Image,
-  Animated, Dimensions, Modal, ScrollView, ActivityIndicator,
+  Animated, Dimensions, Modal, ActivityIndicator,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
@@ -36,7 +36,7 @@ const MAX_POLL_ATTEMPTS = 20;
 const ONLINE_HOSTS_REFRESH_MS = 30_000;
 
 type CallType = "audio" | "video";
-type Phase = "idle" | "searching" | "connecting" | "no_hosts";
+type Phase = "idle" | "searching" | "no_hosts";
 
 type GenderFilter = "any" | "male" | "female";
 type RatingFilter = 0 | 3 | 4 | 4.5;
@@ -331,120 +331,6 @@ function FiltersDialog({ visible, value, onChange, onClose }: {
   );
 }
 
-/* ─── Match found ripple ─── */
-function MatchRipple() {
-  const m0 = useRef(new Animated.Value(0)).current;
-  const m1 = useRef(new Animated.Value(0)).current;
-  const m2 = useRef(new Animated.Value(0)).current;
-  const rings = [m0, m1, m2];
-  useEffect(() => {
-    const anim = Animated.parallel(rings.map((v, i) => Animated.loop(Animated.sequence([
-      Animated.delay(i * 400),
-      Animated.timing(v, { toValue: 1, duration: 3000, useNativeDriver: false }),
-      Animated.timing(v, { toValue: 0, duration: 0, useNativeDriver: false }),
-    ]))));
-    anim.start();
-    return () => anim.stop();
-  }, []);
-  return (
-    <View style={[styles.matchRippleWrap, { pointerEvents: "none" } as any]}>
-      {rings.map((v, i) => (
-        <Animated.View key={i} style={[styles.matchRippleRing, {
-          opacity: v.interpolate({ inputRange: [0, 0.2, 0.8, 1], outputRange: [0, 0.4, 0.4, 0] }),
-          transform: [{ scale: v.interpolate({ inputRange: [0, 1], outputRange: [0.4, 1.8] }) }],
-        }]} />
-      ))}
-    </View>
-  );
-}
-
-/* ─── Connecting screen overlay (short cancel window, then auto-calls) ─── */
-const CONNECT_COUNTDOWN = 3;
-function ConnectingScreen({ host, callType, adminCoinRate, onConnect, onCancel }: {
-  host: HostCard; callType: CallType; adminCoinRate: number;
-  onConnect: () => void; onCancel: () => void;
-}) {
-  const { t: tr } = useLanguage();
-  const scale = useRef(new Animated.Value(0.7)).current;
-  const [count, setCount] = useState(CONNECT_COUNTDOWN);
-  // Latest onConnect without retriggering the countdown effect; guard so we
-  // only fire the call once even if the interval and unmount race.
-  const onConnectRef = useRef(onConnect);
-  onConnectRef.current = onConnect;
-  const firedRef = useRef(false);
-
-  useEffect(() => {
-    Animated.spring(scale, { toValue: 1, tension: 55, friction: 8, useNativeDriver: false }).start();
-    let n = CONNECT_COUNTDOWN;
-    const id = setInterval(() => {
-      n -= 1;
-      setCount(n);
-      if (n <= 0) {
-        clearInterval(id);
-        if (!firedRef.current) { firedRef.current = true; onConnectRef.current(); }
-      }
-    }, 1000);
-    return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const avatarUri = resolveMediaUrl(host.avatar_url) || `https://api.dicebear.com/7.x/avataaars/png?seed=${host.id}`;
-  const coinsPerMin = adminCoinRate;
-
-  return (
-    <View style={StyleSheet.absoluteFillObject}>
-      <Image source={require("@/assets/images/match_bg.png")} style={styles.matchBg} resizeMode="cover" />
-      <View style={styles.matchOverlay}>
-        <Animated.View style={[styles.matchContent, { transform: [{ scale }] }]}>
-          <Text style={styles.matchTitle}>{tr.random.matchFound}</Text>
-
-          <View style={styles.matchAvatarWrap}>
-            <MatchRipple />
-            <View style={styles.matchAvatarCircle}>
-              <Image source={{ uri: avatarUri }} style={styles.matchAvatarImg} />
-            </View>
-          </View>
-
-          <Text style={styles.matchName}>{host.name}</Text>
-
-          <View style={styles.matchRatingRow}>
-            <Text style={styles.matchStar}>⭐</Text>
-            <Text style={styles.matchRating}>{(host.rating ?? 0).toFixed(1)}</Text>
-            <Text style={styles.matchCoins}>  •  🪙 {coinsPerMin}/min</Text>
-          </View>
-
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.matchTopicsRow}>
-            {(host.specialties ?? []).map((t, i) => (
-              <LinearGradient key={i} colors={GRAD} style={styles.matchTopicTag} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-                <Text style={styles.matchTopicTxt}>{t}</Text>
-              </LinearGradient>
-            ))}
-          </ScrollView>
-
-          <Text style={styles.matchCallType}>
-            {callType === "video" ? `🎥 ${tr.random.videoCall}` : `🎤 ${tr.random.voiceCall}`}
-          </Text>
-
-          {/* Auto-connect: a short cancel window (countdown) then the call is
-              placed in the background. Once the countdown hits 0 we show a
-              spinner while the outgoing call is set up. */}
-          {count > 0 ? (
-            <TouchableOpacity onPress={onCancel} activeOpacity={0.85} style={styles.connectCancelBtn} accessibilityLabel="Cancel and stop connecting">
-              <Image source={require("@/assets/icons/ic_call_end.png")} style={styles.connectCancelIco} tintColor="#fff" resizeMode="contain" />
-              <Text style={styles.connectCancelTxt}>{tr.random.decline}  ·  {count}</Text>
-            </TouchableOpacity>
-          ) : (
-            <View style={styles.connectingRow}>
-              <ActivityIndicator color="#8400FF" />
-              <Text style={styles.connectingTxt}>{tr.random.checking}</Text>
-            </View>
-          )}
-        </Animated.View>
-      </View>
-    </View>
-  );
-}
-
 /* ─── Main Screen ─── */
 export default function RandomScreen() {
   const insets = useSafeAreaInsets();
@@ -457,7 +343,6 @@ export default function RandomScreen() {
   const [dialogVisible, setDialog] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filters, setFilters] = useState<MatchFilters>({ gender: "any", minRating: 0 });
-  const [matchedHost, setMatchedHost] = useState<HostCard | null>(null);
   const [adminCoinRate, setAdminCoinRate] = useState<number>(5);
   const [statusMsg, setStatusMsg]  = useState("");
   const [statusCode, setStatusCode] = useState<string | undefined>(undefined);
@@ -529,7 +414,6 @@ export default function RandomScreen() {
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
     pollAttemptsRef.current = 0;
     setPhase("idle");
-    setMatchedHost(null);
     setStatusMsg("");
     setStatusCode(undefined);
   }, []);
@@ -554,7 +438,6 @@ export default function RandomScreen() {
   const autoConnect = useCallback(async (host: HostCard, rate: number) => {
     if ((user?.coins ?? 0) < rate * 2) {
       setPhase("idle");
-      setMatchedHost(null);
       setRequiredCoins(rate * 2);
       setShowCoinsPopup(true);
       return;
@@ -570,7 +453,6 @@ export default function RandomScreen() {
               ? tr.random.hostOffline
               : tr.random.hostUnavailable,
         );
-        setMatchedHost(null);
         startSearchingRef.current(); // resume search (no circular hook dep)
         return;
       }
@@ -605,7 +487,6 @@ export default function RandomScreen() {
 
   const startSearching = useCallback(() => {
     setPhase("searching");
-    setMatchedHost(null);
     setStatusMsg(searchingMessageForCode(undefined, onlineCount, tr));
     setStatusCode(undefined);
     pollAttemptsRef.current = 0;
@@ -622,12 +503,11 @@ export default function RandomScreen() {
         if (res.matched && res.host) {
           if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
           const rate = res.coins_per_minute ?? res.host?.coins_per_minute ?? 25;
-          setMatchedHost(res.host);
           setAdminCoinRate(rate);
-          // Show the "Connecting…" state with a short cancel window; the
-          // ConnectingScreen auto-connects when its countdown completes (or the
-          // user cancels). No manual Accept step.
-          setPhase("connecting");
+          // Go straight to the unified calling screen — no intermediate
+          // "match found" / countdown overlay. autoConnect rings the host in
+          // the background and pushes the auto-dialer screen.
+          void autoConnect(res.host, rate);
           return;
         }
 
@@ -684,14 +564,6 @@ export default function RandomScreen() {
   // Keep the ref pointing at the latest startSearching so autoConnect (defined
   // above it) can resume searching without a circular hook dependency.
   useEffect(() => { startSearchingRef.current = startSearching; }, [startSearching]);
-
-  // User cancelled during the connecting countdown — relay a decline (so the
-  // cooldown guard counts it) and drop back to idle.
-  const handleCancelConnect = useCallback(() => {
-    if (matchedHost) API.matchDecline(matchedHost.id).catch(() => {});
-    setMatchedHost(null);
-    setPhase("idle");
-  }, [matchedHost]);
 
   const dotTop    = SH * 0.2;
   const cardTop   = SH * 0.18;
@@ -841,16 +713,6 @@ export default function RandomScreen() {
         onChange={setFilters}
         onClose={() => setFiltersOpen(false)}
       />
-
-      {phase === "connecting" && matchedHost && (
-        <ConnectingScreen
-          host={matchedHost}
-          callType={callType}
-          adminCoinRate={adminCoinRate}
-          onConnect={() => autoConnect(matchedHost, adminCoinRate)}
-          onCancel={handleCancelConnect}
-        />
-      )}
 
       {/* Insufficient-coins sheet (coin plans + Go to Wallet). */}
       <InsufficientCoinsPopup

@@ -282,9 +282,9 @@ export default function OutgoingCallScreen() {
     const offReject = onEvent(SocketEvents.CALL_REJECT, async () => {
       if (navigated.current) return;
       if (isRandom) {
-        // Host declined — flash "declined" briefly, then dial the next host.
-        setStatus("declined");
-        scheduleTimeout(() => { if (!navigated.current) scanNextRef.current(); }, 900);
+        // Host declined — advance to the next host seamlessly, without
+        // flashing a "declined" state on screen.
+        scanNextRef.current();
         return;
       }
       setStatus("declined");
