@@ -7,7 +7,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import { useRingtone } from "@/hooks/useRingtone";
 import { resolveMediaUrl, API } from "@/services/api";
-import { showErrorToast } from "@/components/Toast";
 import { useCall } from "@/context/CallContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { useSocket } from "@/context/SocketContext";
@@ -58,7 +57,7 @@ function AnimatedDots({ color }: { color: string }) {
 
 export default function OutgoingCallScreen() {
   const insets = useSafeAreaInsets();
-  const { activeCall, endCall, syncServerStartTime, initiateCall } = useCall();
+  const { activeCall, endCall, syncServerStartTime } = useCall();
   const { onEvent } = useSocket();
   const { t } = useLanguage();
   const params = useLocalSearchParams<{
@@ -67,33 +66,13 @@ export default function OutgoingCallScreen() {
     hostName: string;
     hostAvatar: string;
     specialty: string;
-    isRandom: string;
-    gender: string;
-    minRating: string;
   }>();
 
+  const hostId    = params.hostId   ?? "host";
   const callType  = params.callType ?? "audio";
-  // Random calls turn this screen into an auto-dialer: on decline / no-answer
-  // (or when the user taps Skip) we ring the NEXT matched host in place instead
-  // of bailing back to the search screen. Direct calls (isRandom false) keep
-  // their original one-shot behaviour untouched.
-  const isRandom = params.isRandom === "1";
-  const matchFilters = useRef<{ gender?: "male" | "female"; min_rating?: number }>({
-    gender: params.gender === "male" || params.gender === "female" ? params.gender : undefined,
-    min_rating: Number(params.minRating) > 0 ? Number(params.minRating) : undefined,
-  }).current;
-
-  // Currently-dialed host. State (not derived from params) so the auto-dialer
-  // can swap in the next host without navigating away.
-  const [host, setHost] = useState(() => {
-    const id = params.hostId ?? "host";
-    return {
-      id,
-      name: params.hostName ?? t.hosts.host,
-      avatar: resolveMediaUrl(params.hostAvatar) ?? `https://api.dicebear.com/7.x/avataaars/png?seed=${id}`,
-      specialty: params.specialty ?? "",
-    };
-  });
+  const hostName  = params.hostName ?? t.hosts.host;
+  const hostAvatar = resolveMediaUrl(params.hostAvatar) ?? `https://api.dicebear.com/7.x/avataaars/png?seed=${hostId}`;
+  const specialty = params.specialty ?? "";
 
   const [status, setStatus] = useState<"connecting" | "ringing" | "declined" | "no_answer">("connecting");
   const navigated = useRef(false);
@@ -104,22 +83,6 @@ export default function OutgoingCallScreen() {
   // warning and (worse) cancelling the call AFTER the user had already
   // navigated to the call screen via the CALL_ACCEPT path.
   const pendingTimeouts = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
-
-  // ─── Random auto-dialer state ───────────────────────────────────────────
-  // Guards a scan in progress so overlapping triggers (socket + poll + timer)
-  // can't fire two matchFind calls at once.
-  const scanningRef = useRef(false);
-  // Ring-cycle timers (connecting→ringing→no-answer), reset on every host.
-  const ringTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
-  // Latest closures reached without re-triggering effects / circular deps.
-  const scanNextRef = useRef<() => void>(() => {});
-  const armRingCycleRef = useRef<() => void>(() => {});
-  // Live copies of the current session/host so scanNext (a stable callback)
-  // always ends the RIGHT pending session before dialing the next host.
-  const sessionIdRef = useRef<string | undefined>(undefined);
-  const hostIdRef = useRef<string>(host.id);
-  useEffect(() => { sessionIdRef.current = activeCall?.sessionId; }, [activeCall?.sessionId]);
-  useEffect(() => { hostIdRef.current = host.id; }, [host.id]);
 
   const { stop: stopRing } = useRingtone("outgoing", true);
 
@@ -152,94 +115,10 @@ export default function OutgoingCallScreen() {
     // FIX (UI feedback): warning haptic on Cancel — matches the destructive
     // visual intent of the red end-call button.
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
-    // Random dialer: relay a decline for the current host so the cooldown
-    // guard counts it (best-effort, non-blocking).
-    if (isRandom) { const hid = hostIdRef.current; if (hid) API.matchDecline(hid).catch(() => {}); }
     await stopRing();
     // Fix M1: end call on backend when user cancels
     endCall(false);
-  }, [stopRing, endCall, isRandom]);
-
-  // (Random auto-dialer) Start / restart the "connecting → ringing → 45s
-  // no-answer" cycle for the currently-dialed host. Called on mount and after
-  // every auto-scan. Direct calls run the same cycle but the no-answer branch
-  // ends the call instead of scanning.
-  const armRingCycle = useCallback(() => {
-    ringTimersRef.current.forEach((id) => clearTimeout(id));
-    ringTimersRef.current.clear();
-    setStatus("connecting");
-    const r1 = setTimeout(() => { if (!navigated.current) setStatus("ringing"); }, 1500);
-    ringTimersRef.current.add(r1);
-    const r2 = setTimeout(() => {
-      ringTimersRef.current.delete(r2);
-      if (navigated.current) return;
-      if (isRandom) {
-        scanNextRef.current(); // auto-advance to the next host on no-answer
-      } else {
-        (async () => {
-          setStatus("no_answer");
-          await stopRing();
-          scheduleTimeout(() => endCall(false), 1500);
-        })();
-      }
-    }, RING_TIMEOUT_MS);
-    ringTimersRef.current.add(r2);
-  }, [isRandom, stopRing, endCall, scheduleTimeout]);
-
-  // (Random auto-dialer) Ring the NEXT matched host in place: end the current
-  // pending session quietly, fetch the next match, place the new call, and
-  // re-arm the ring cycle. Stops the dialer with a toast if no host is
-  // available or a limit is hit.
-  const scanNext = useCallback(async () => {
-    if (navigated.current || scanningRef.current) return;
-    scanningRef.current = true;
-    const prevSession = sessionIdRef.current;
-    const prevHostId = hostIdRef.current;
-    // End the previous pending session (stops the old host's ring) and mark
-    // the match declined. We do NOT clear the call context — initiateCall
-    // replaces it below, so the "activeCall === null" safety net never trips.
-    try { if (prevSession) await API.endCall(prevSession, 0); } catch { /* best-effort */ }
-    if (prevHostId) API.matchDecline(prevHostId).catch(() => {});
-    if (navigated.current) { scanningRef.current = false; return; }
-
-    setStatus("connecting");
-    try {
-      // Skip the host we just tried so we don't immediately re-ring them —
-      // unless they're the only one online (server falls back in that case).
-      const res = await API.matchFind(callType as "audio" | "video", {
-        ...matchFilters,
-        exclude_host_id: prevHostId || undefined,
-      });
-      if (navigated.current) { scanningRef.current = false; return; }
-      if (!res.matched || !res.host) {
-        await stopRing();
-        showErrorToast(res.code === "INSUFFICIENT_COINS" ? t.random.statusInsufficientCoins : t.random.statusGiveUp);
-        navigated.current = true;
-        try { router.back(); } catch { /* nav gone */ }
-        return;
-      }
-      const nextRate = res.coins_per_minute ?? res.host?.coins_per_minute ?? 25;
-      const nextId = String(res.host.id);
-      const nextAvatar = resolveMediaUrl(res.host.avatar_url) || `https://api.dicebear.com/7.x/avataaars/png?seed=${nextId}`;
-      setHost({ id: nextId, name: res.host.name, avatar: nextAvatar, specialty: res.host.specialties?.[0] ?? "" });
-      // Place the new outgoing call (replaces the call-context session).
-      initiateCall({ id: nextId, name: res.host.name, avatar: nextAvatar, role: "host" }, callType as "audio" | "video", nextRate);
-      armRingCycleRef.current(); // reset the ring / no-answer timer for the new host
-    } catch {
-      if (!navigated.current) {
-        await stopRing();
-        showErrorToast(t.random.statusNetworkError);
-        navigated.current = true;
-        try { router.back(); } catch { /* nav gone */ }
-      }
-    } finally {
-      scanningRef.current = false;
-    }
-  }, [callType, matchFilters, initiateCall, stopRing, t]);
-
-  // Keep refs pointing at the latest closures (breaks the scanNext ⇄
-  // armRingCycle circular dependency).
-  useEffect(() => { scanNextRef.current = scanNext; armRingCycleRef.current = armRingCycle; }, [scanNext, armRingCycle]);
+  }, [stopRing, endCall]);
 
   useEffect(() => {
     const animateRipple = (val: Animated.Value, delay: number) =>
@@ -254,21 +133,30 @@ export default function OutgoingCallScreen() {
     animateRipple(ripple2, 800);
     animateRipple(ripple3, 1600);
 
-    // Kick off the ring cycle for the first host. The auto-dialer re-arms this
-    // per host via armRingCycleRef; the no-answer branch delegates through
-    // refs, so calling the mount-time closure once here is safe.
-    armRingCycle();
+    const t1 = setTimeout(() => setStatus("ringing"), 1500);
+    pendingTimeouts.current.add(t1);
+
+    // Fix C2: no-answer timeout — end call after 45s if host doesn't respond
+    const t2 = setTimeout(async () => {
+      pendingTimeouts.current.delete(t2);
+      if (!navigated.current) {
+        setStatus("no_answer");
+        await stopRing();
+        // FIX: tracked nested timeout so it can be cancelled on unmount.
+        scheduleTimeout(() => endCall(false), 1500);
+      }
+    }, RING_TIMEOUT_MS);
+    pendingTimeouts.current.add(t2);
 
     // FIX (cleanup): clear ALL pending timeouts on unmount, including the
-    // nested ones queued via scheduleTimeout and the per-host ring timers.
+    // nested ones queued via scheduleTimeout. Previously t1+t2 were cleared
+    // but the inner setTimeout(...→endCall, 1500) survived, firing endCall
+    // on a dead component.
     return () => {
       pendingTimeouts.current.forEach((id) => clearTimeout(id));
       pendingTimeouts.current.clear();
-      ringTimersRef.current.forEach((id) => clearTimeout(id));
-      ringTimersRef.current.clear();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [stopRing, endCall, scheduleTimeout]);
 
   // Fix C2 + H1: listen for call_accepted / call_declined / call_ended socket events
   useEffect(() => {
@@ -280,42 +168,34 @@ export default function OutgoingCallScreen() {
       goToCallScreen();
     });
     const offReject = onEvent(SocketEvents.CALL_REJECT, async () => {
-      if (navigated.current) return;
-      if (isRandom) {
-        // Host declined — advance to the next host seamlessly, without
-        // flashing a "declined" state on screen.
-        scanNextRef.current();
-        return;
+      if (!navigated.current) {
+        setStatus("declined");
+        await stopRing();
+        // FIX: tracked timeout — see scheduleTimeout for rationale.
+        scheduleTimeout(() => {
+          if (!navigated.current) {
+            navigated.current = true;
+            router.back();
+          }
+        }, 2000);
       }
-      setStatus("declined");
-      await stopRing();
-      // FIX: tracked timeout — see scheduleTimeout for rationale.
-      scheduleTimeout(() => {
-        if (!navigated.current) {
-          navigated.current = true;
-          router.back();
-        }
-      }, 2000);
     });
     // FIX: If server forcefully ends the pending call (cron cleanup / host crash),
     // dismiss the outgoing screen instead of staying stuck on "Ringing..."
     const offEnd = onEvent(SocketEvents.CALL_END, async () => {
-      if (navigated.current || scanningRef.current) return;
-      if (isRandom) {
-        scanNextRef.current(); // remote/pending end → advance to next host
-        return;
+      if (!navigated.current) {
+        setStatus("no_answer");
+        await stopRing();
+        scheduleTimeout(() => {
+          if (!navigated.current) {
+            navigated.current = true;
+            endCall(false);
+          }
+        }, 1500);
       }
-      setStatus("no_answer");
-      await stopRing();
-      scheduleTimeout(() => {
-        if (!navigated.current) {
-          navigated.current = true;
-          endCall(false);
-        }
-      }, 1500);
     });
     return () => { offAccept(); offReject(); offEnd(); };
-  }, [onEvent, goToCallScreen, stopRing, syncServerStartTime, endCall, scheduleTimeout, isRandom]);
+  }, [onEvent, goToCallScreen, stopRing, syncServerStartTime, endCall, scheduleTimeout]);
 
   // FIX (stuck-screen safety net): if activeCall goes null while we're still
   // showing this screen (logout, network issue cleared the context, or user
@@ -324,7 +204,7 @@ export default function OutgoingCallScreen() {
   // where activeCall is replaced with the active session shape.
   useEffect(() => {
     if (navigated.current) return;
-    if (activeCall === null && status !== "declined" && status !== "no_answer" && !scanningRef.current) {
+    if (activeCall === null && status !== "declined" && status !== "no_answer") {
       navigated.current = true;
       try { router.back(); } catch { /* navigation may be gone */ }
     }
@@ -350,8 +230,7 @@ export default function OutgoingCallScreen() {
           if (sess.started_at) syncServerStartTime(sess.started_at);
           goToCallScreen();
         } else if (sess?.status === "declined" || sess?.status === "missed" || sess?.status === "ended") {
-          // Host declined / cron-reaped / 410.
-          if (isRandom && !scanningRef.current) { scanNextRef.current(); return; }
+          // Host declined / cron-reaped / 410 — clean up.
           setStatus(sess.status === "declined" ? "declined" : "no_answer");
           await stopRing();
           scheduleTimeout(() => {
@@ -367,7 +246,7 @@ export default function OutgoingCallScreen() {
       }
     }, STATUS_POLL_MS);
     return () => { cancelled = true; clearInterval(interval); };
-  }, [activeCall?.sessionId, goToCallScreen, stopRing, endCall, syncServerStartTime, scheduleTimeout, isRandom]);
+  }, [activeCall?.sessionId, goToCallScreen, stopRing, endCall, syncServerStartTime, scheduleTimeout]);
 
   // FIX (UI polish): ripples now animate from the avatar's outer edge outward,
   // not from a fixed inner circle. The visual reads as the avatar "broadcasting"
@@ -422,12 +301,12 @@ export default function OutgoingCallScreen() {
             <Animated.View key={i} style={[s.rippleCircle, makeRipple(r)]} />
           ))}
           <View style={s.avatarRing}>
-            <Image source={{ uri: host.avatar }} style={s.avatar} />
+            <Image source={{ uri: hostAvatar }} style={s.avatar} />
           </View>
         </View>
 
-        <Text style={s.hostName} numberOfLines={1}>{host.name}</Text>
-        {!!host.specialty && <Text style={s.hostMeta} numberOfLines={1}>{host.specialty}</Text>}
+        <Text style={s.hostName} numberOfLines={1}>{hostName}</Text>
+        {!!specialty && <Text style={s.hostMeta} numberOfLines={1}>{specialty}</Text>}
 
         {/* Status row: text + animated dots (for in-progress states) */}
         <View style={s.statusRow}>
@@ -461,39 +340,20 @@ export default function OutgoingCallScreen() {
         )}
       </View>
 
-      {/* Bottom: cancel + (random) skip-to-next */}
+      {/* Bottom: cancel button */}
       <View style={[s.bottomControls, { paddingBottom: insets.bottom + 36 }]}>
-        <View style={s.controlsRow}>
-          <View style={s.controlItem}>
-            <TouchableOpacity
-              style={s.endBtn}
-              onPress={cancelCall}
-              activeOpacity={0.8}
-              // FIX (accessibility): explicit role + label so screen readers
-              // announce the destructive action correctly.
-              accessibilityRole="button"
-              accessibilityLabel="Cancel call"
-            >
-              <Image source={require("@/assets/icons/ic_call_end.png")} style={s.endIcon} resizeMode="contain" />
-            </TouchableOpacity>
-            <Text style={s.endLabel}>{t.common.cancel}</Text>
-          </View>
-
-          {isRandom && (
-            <View style={s.controlItem}>
-              <TouchableOpacity
-                style={s.skipBtn}
-                onPress={() => scanNextRef.current()}
-                activeOpacity={0.8}
-                accessibilityRole="button"
-                accessibilityLabel="Skip to next host"
-              >
-                <Image source={require("@/assets/icons/ic_shuffle.png")} style={s.skipIcon} resizeMode="contain" />
-              </TouchableOpacity>
-              <Text style={s.endLabel}>{t.random.skipNext}</Text>
-            </View>
-          )}
-        </View>
+        <TouchableOpacity
+          style={s.endBtn}
+          onPress={cancelCall}
+          activeOpacity={0.8}
+          // FIX (accessibility): explicit role + label so screen readers
+          // announce the destructive action correctly.
+          accessibilityRole="button"
+          accessibilityLabel="Cancel call"
+        >
+          <Image source={require("@/assets/icons/ic_call_end.png")} style={s.endIcon} resizeMode="contain" />
+        </TouchableOpacity>
+        <Text style={s.endLabel}>{t.common.cancel}</Text>
       </View>
     </LinearGradient>
   );
@@ -587,15 +447,6 @@ const s = StyleSheet.create({
 
   // ─── Bottom controls ─────────────────────────────────────────────────────
   bottomControls: { alignItems: "center", gap: 10 },
-  controlsRow: { flexDirection: "row", alignItems: "flex-start", justifyContent: "center", gap: 44 },
-  controlItem: { alignItems: "center", gap: 10 },
-  skipBtn: {
-    width: 64, height: 64, borderRadius: 32,
-    alignItems: "center", justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,0.16)",
-    borderWidth: 1, borderColor: "rgba(255,255,255,0.28)",
-  },
-  skipIcon: { width: 26, height: 26, tintColor: "#fff" },
   // FIX (touch target): bumped from 68px to 76px so the destructive button
   // reads as the most important action on screen (matches industry standard
   // for primary call actions: WhatsApp 80px, Telegram 76px, FaceTime 72px).

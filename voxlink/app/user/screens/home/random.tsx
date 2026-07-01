@@ -1,13 +1,16 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, Image,
-  Animated, Dimensions, Modal, ActivityIndicator,
+  Animated, Dimensions, Modal, ScrollView, ActivityIndicator,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/context/AuthContext";
 import { useCall } from "@/context/CallContext";
+import { useSocket } from "@/context/SocketContext";
+import { SocketEvents } from "@/constants/events";
+import { useRingtone } from "@/hooks/useRingtone";
 import { useLanguage } from "@/context/LanguageContext";
 import type { Translations } from "@/localization/en";
 import { API, resolveMediaUrl } from "@/services/api";
@@ -36,7 +39,7 @@ const MAX_POLL_ATTEMPTS = 20;
 const ONLINE_HOSTS_REFRESH_MS = 30_000;
 
 type CallType = "audio" | "video";
-type Phase = "idle" | "searching" | "no_hosts";
+type Phase = "idle" | "searching" | "connecting" | "no_hosts";
 
 type GenderFilter = "any" | "male" | "female";
 type RatingFilter = 0 | 3 | 4 | 4.5;
@@ -331,11 +334,250 @@ function FiltersDialog({ visible, value, onChange, onClose }: {
   );
 }
 
+/* ─── Match ripple (pulsing rings around the avatar while calling) ─── */
+function MatchRipple() {
+  const m0 = useRef(new Animated.Value(0)).current;
+  const m1 = useRef(new Animated.Value(0)).current;
+  const m2 = useRef(new Animated.Value(0)).current;
+  const rings = [m0, m1, m2];
+  useEffect(() => {
+    const anim = Animated.parallel(rings.map((v, i) => Animated.loop(Animated.sequence([
+      Animated.delay(i * 400),
+      Animated.timing(v, { toValue: 1, duration: 3000, useNativeDriver: false }),
+      Animated.timing(v, { toValue: 0, duration: 0, useNativeDriver: false }),
+    ]))));
+    anim.start();
+    return () => anim.stop();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return (
+    <View style={[styles.matchRippleWrap, { pointerEvents: "none" } as any]}>
+      {rings.map((v, i) => (
+        <Animated.View key={i} style={[styles.matchRippleRing, {
+          opacity: v.interpolate({ inputRange: [0, 0.2, 0.8, 1], outputRange: [0, 0.4, 0.4, 0] }),
+          transform: [{ scale: v.interpolate({ inputRange: [0, 1], outputRange: [0.4, 1.8] }) }],
+        }]} />
+      ))}
+    </View>
+  );
+}
+
+/* ─── Connecting screen ───────────────────────────────────────────────────
+ * The ONE screen for random calling. Shows the matched host's card and rings
+ * them in the background from here — there is no separate calling screen.
+ *   • Host answers            → go to the audio/video call screen.
+ *   • Host declines / no-answer / call ends → auto-scan the NEXT host in place
+ *     (card swaps, rings again) without leaving this screen.
+ *   • Skip / Next button      → manually advance to the next host.
+ *   • Decline button          → tear the dialer down and exit.
+ * ------------------------------------------------------------------------- */
+const NO_ANSWER_MS = 25000;
+function ConnectingScreen({ initialHost, callType, filters, onExit }: {
+  initialHost: HostCard; callType: CallType; filters: MatchFilters; onExit: () => void;
+}) {
+  const { t: tr } = useLanguage();
+  const { activeCall, initiateCall, syncServerStartTime, clearCall } = useCall();
+  const { onEvent } = useSocket();
+  const { stop: stopRing } = useRingtone("outgoing", true);
+
+  const [host, setHost] = useState<HostCard>(initialHost);
+  const scale = useRef(new Animated.Value(0.7)).current;
+
+  const hostRef = useRef<HostCard>(initialHost);
+  const sessionIdRef = useRef<string | undefined>(undefined);
+  const navigatedRef = useRef(false); // host answered → moved to the call screen
+  const exitedRef = useRef(false);    // dialer torn down
+  const scanningRef = useRef(false);
+  const noAnswerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scanNextRef = useRef<() => void>(() => {});
+
+  useEffect(() => { hostRef.current = host; }, [host]);
+  useEffect(() => { sessionIdRef.current = activeCall?.sessionId; }, [activeCall?.sessionId]);
+
+  const clearNoAnswer = () => {
+    if (noAnswerRef.current) { clearTimeout(noAnswerRef.current); noAnswerRef.current = null; }
+  };
+  const armNoAnswer = useCallback(() => {
+    clearNoAnswer();
+    noAnswerRef.current = setTimeout(() => {
+      if (navigatedRef.current || exitedRef.current) return;
+      scanNextRef.current();
+    }, NO_ANSWER_MS);
+  }, []);
+
+  // Place an outgoing call to `h` in the background + (re)arm the no-answer
+  // timer. Used for the first host and every scanned host.
+  const ringHost = useCallback((h: HostCard) => {
+    const avatarUri = resolveMediaUrl(h.avatar_url) || `https://api.dicebear.com/7.x/avataaars/png?seed=${h.id}`;
+    initiateCall({ id: h.id, name: h.name, avatar: avatarUri, role: "host" }, callType, h.coins_per_minute);
+    armNoAnswer();
+  }, [initiateCall, callType, armNoAnswer]);
+
+  const scanNext = useCallback(async () => {
+    if (navigatedRef.current || exitedRef.current || scanningRef.current) return;
+    scanningRef.current = true;
+    clearNoAnswer();
+    const prevSession = sessionIdRef.current;
+    const prevHostId = hostRef.current.id;
+    // End the previous pending session (stops the old host's ring) + mark it
+    // declined for the cooldown guard. We do NOT clear the call context here —
+    // ringHost's initiateCall replaces it below.
+    try { if (prevSession) await API.endCall(prevSession, 0); } catch { /* best-effort */ }
+    if (prevHostId) API.matchDecline(prevHostId).catch(() => {});
+    try {
+      const res = await API.matchFind(callType, {
+        gender: filters.gender !== "any" ? filters.gender : undefined,
+        min_rating: filters.minRating > 0 ? filters.minRating : undefined,
+        exclude_host_id: prevHostId || undefined,
+      });
+      if (exitedRef.current) { scanningRef.current = false; return; }
+      if (!res.matched || !res.host) {
+        await stopRing();
+        showErrorToast(res.code === "INSUFFICIENT_COINS" ? tr.random.statusInsufficientCoins : tr.random.statusGiveUp);
+        exitedRef.current = true;
+        clearCall();
+        onExit();
+        return;
+      }
+      const nextRate = res.coins_per_minute ?? res.host?.coins_per_minute ?? 25;
+      const nextHost: HostCard = {
+        id: String(res.host.id),
+        name: res.host.name,
+        avatar_url: res.host.avatar_url,
+        rating: res.host.rating ?? 0,
+        coins_per_minute: nextRate,
+        specialties: res.host.specialties ?? [],
+      };
+      hostRef.current = nextHost;
+      setHost(nextHost);
+      ringHost(nextHost);
+    } catch {
+      if (!exitedRef.current) {
+        await stopRing();
+        showErrorToast(tr.random.statusNetworkError);
+        exitedRef.current = true;
+        clearCall();
+        onExit();
+      }
+    } finally {
+      scanningRef.current = false;
+    }
+  }, [callType, filters, ringHost, stopRing, tr, clearCall, onExit]);
+
+  useEffect(() => { scanNextRef.current = scanNext; }, [scanNext]);
+
+  // Ring the first host + intro pop. Cleanup tears everything down.
+  useEffect(() => {
+    Animated.spring(scale, { toValue: 1, tension: 55, friction: 8, useNativeDriver: false }).start();
+    ringHost(initialHost);
+    return () => {
+      exitedRef.current = true;
+      clearNoAnswer();
+      stopRing();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Socket outcomes.
+  useEffect(() => {
+    const offAccept = onEvent(SocketEvents.CALL_ACCEPT, (payload: any) => {
+      if (navigatedRef.current || exitedRef.current) return;
+      navigatedRef.current = true;
+      clearNoAnswer();
+      if (payload?.startedAt) syncServerStartTime(payload.startedAt);
+      stopRing();
+      onExit();
+      router.push(callType === "video" ? "/user/call/video-call" : "/user/call/audio-call");
+    });
+    const offReject = onEvent(SocketEvents.CALL_REJECT, () => {
+      if (navigatedRef.current || exitedRef.current || scanningRef.current) return;
+      scanNextRef.current();
+    });
+    const offEnd = onEvent(SocketEvents.CALL_END, () => {
+      if (navigatedRef.current || exitedRef.current || scanningRef.current) return;
+      scanNextRef.current();
+    });
+    return () => { offAccept(); offReject(); offEnd(); };
+  }, [onEvent, syncServerStartTime, stopRing, onExit, callType]);
+
+  const handleDecline = useCallback(() => {
+    if (exitedRef.current) return;
+    exitedRef.current = true;
+    clearNoAnswer();
+    const sid = sessionIdRef.current;
+    const hid = hostRef.current.id;
+    if (hid) API.matchDecline(hid).catch(() => {});
+    if (sid) API.endCall(sid, 0).catch(() => {});
+    stopRing();
+    clearCall();
+    onExit();
+  }, [stopRing, clearCall, onExit]);
+
+  const avatarUri = resolveMediaUrl(host.avatar_url) || `https://api.dicebear.com/7.x/avataaars/png?seed=${host.id}`;
+
+  return (
+    <View style={StyleSheet.absoluteFillObject}>
+      <Image source={require("@/assets/images/match_bg.png")} style={styles.matchBg} resizeMode="cover" />
+      <View style={styles.matchOverlay}>
+        <Animated.View style={[styles.matchContent, { transform: [{ scale }] }]}>
+          <Text style={styles.matchTitle}>{tr.random.matchFound}</Text>
+
+          <View style={styles.matchAvatarWrap}>
+            <MatchRipple />
+            <View style={styles.matchAvatarCircle}>
+              <Image source={{ uri: avatarUri }} style={styles.matchAvatarImg} />
+            </View>
+          </View>
+
+          <Text style={styles.matchName}>{host.name}</Text>
+
+          <View style={styles.matchRatingRow}>
+            <Text style={styles.matchStar}>⭐</Text>
+            <Text style={styles.matchRating}>{(host.rating ?? 0).toFixed(1)}</Text>
+            <Text style={styles.matchCoins}>  •  🪙 {host.coins_per_minute}/min</Text>
+          </View>
+
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.matchTopicsRow}>
+            {(host.specialties ?? []).map((tt, i) => (
+              <LinearGradient key={i} colors={GRAD} style={styles.matchTopicTag} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+                <Text style={styles.matchTopicTxt}>{tt}</Text>
+              </LinearGradient>
+            ))}
+          </ScrollView>
+
+          <Text style={styles.matchCallType}>
+            {callType === "video" ? `🎥 ${tr.random.videoCall}` : `🎤 ${tr.random.voiceCall}`}
+          </Text>
+
+          <View style={styles.connectingRow}>
+            <ActivityIndicator color="#8400FF" />
+            <Text style={styles.connectingTxt}>{tr.calls.ringing}</Text>
+          </View>
+
+          <View style={styles.matchBtns}>
+            <View style={styles.matchBtnItem}>
+              <TouchableOpacity onPress={handleDecline} style={styles.matchDecline} activeOpacity={0.85} accessibilityLabel="Cancel">
+                <Image source={require("@/assets/icons/ic_call_end.png")} style={styles.matchBtnIco} tintColor="#fff" resizeMode="contain" />
+              </TouchableOpacity>
+              <Text style={styles.matchBtnLabel}>{tr.random.decline}</Text>
+            </View>
+            <View style={styles.matchBtnItem}>
+              <TouchableOpacity onPress={() => scanNextRef.current()} style={styles.matchSkip} activeOpacity={0.85} accessibilityLabel="Skip to next host">
+                <Image source={require("@/assets/icons/ic_shuffle.png")} style={styles.matchBtnIco} tintColor="#fff" resizeMode="contain" />
+              </TouchableOpacity>
+              <Text style={styles.matchBtnLabel}>{tr.random.skipNext}</Text>
+            </View>
+          </View>
+        </Animated.View>
+      </View>
+    </View>
+  );
+}
+
 /* ─── Main Screen ─── */
 export default function RandomScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
-  const { initiateCall } = useCall();
   const { t: tr } = useLanguage();
 
   const [phase, setPhase]         = useState<Phase>("idle");
@@ -343,6 +585,7 @@ export default function RandomScreen() {
   const [dialogVisible, setDialog] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filters, setFilters] = useState<MatchFilters>({ gender: "any", minRating: 0 });
+  const [matchedHost, setMatchedHost] = useState<HostCard | null>(null);
   const [adminCoinRate, setAdminCoinRate] = useState<number>(5);
   const [statusMsg, setStatusMsg]  = useState("");
   const [statusCode, setStatusCode] = useState<string | undefined>(undefined);
@@ -362,7 +605,6 @@ export default function RandomScreen() {
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollAttemptsRef = useRef(0);
-  const startSearchingRef = useRef<() => void>(() => {});
   const isMounted = useRef(true);
   useEffect(() => { isMounted.current = true; return () => { isMounted.current = false; }; }, []);
 
@@ -429,62 +671,6 @@ export default function RandomScreen() {
 
   // Start polling for match. Each poll runs against the configured filters;
   // a hard cap prevents an idle screen from hammering the server forever.
-  // Auto-connect a found match: coin gate → live availability re-check →
-  // place the outgoing call in the background and navigate to the call
-  // screen. Replaces the old manual "Match Found → Accept" step so a found
-  // host is rung immediately. If the host became unavailable in the seconds
-  // since /match/find, we transparently resume searching instead of
-  // dead-ending on an overlay.
-  const autoConnect = useCallback(async (host: HostCard, rate: number) => {
-    if ((user?.coins ?? 0) < rate * 2) {
-      setPhase("idle");
-      setRequiredCoins(rate * 2);
-      setShowCoinsPopup(true);
-      return;
-    }
-    try {
-      const status = await API.matchHostStatus(host.id);
-      if (!isMounted.current) return;
-      if (!status.available) {
-        showErrorToast(
-          status.code === "HOST_BUSY"
-            ? tr.random.hostBusy
-            : status.code === "HOST_OFFLINE"
-              ? tr.random.hostOffline
-              : tr.random.hostUnavailable,
-        );
-        startSearchingRef.current(); // resume search (no circular hook dep)
-        return;
-      }
-    } catch {
-      // Status endpoint failure — proceed optimistically; /call/initiate
-      // surfaces the real error if the host is genuinely unavailable.
-    }
-    if (!isMounted.current) return;
-    setPhase("idle");
-    const avatarUri = resolveMediaUrl(host.avatar_url) || `https://api.dicebear.com/7.x/avataaars/png?seed=${host.id}`;
-    initiateCall(
-      { id: host.id, name: host.name, avatar: avatarUri, role: "host" },
-      callType,
-      rate,
-    );
-    router.push({
-      pathname: "/user/call/outgoing",
-      params: {
-        hostId: host.id,
-        callType,
-        hostName: host.name,
-        hostAvatar: avatarUri,
-        specialty: host.specialties[0] ?? "",
-        // Turn the outgoing screen into a random auto-dialer: on decline /
-        // no-answer / Skip it rings the next matched host in place.
-        isRandom: "1",
-        gender: filters.gender,
-        minRating: String(filters.minRating),
-      },
-    });
-  }, [user?.coins, callType, initiateCall, tr, filters]);
-
   const startSearching = useCallback(() => {
     setPhase("searching");
     setStatusMsg(searchingMessageForCode(undefined, onlineCount, tr));
@@ -504,10 +690,11 @@ export default function RandomScreen() {
           if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
           const rate = res.coins_per_minute ?? res.host?.coins_per_minute ?? 25;
           setAdminCoinRate(rate);
-          // Go straight to the unified calling screen — no intermediate
-          // "match found" / countdown overlay. autoConnect rings the host in
-          // the background and pushes the auto-dialer screen.
-          void autoConnect(res.host, rate);
+          // Show the ConnectingScreen (host card). It rings the host in the
+          // background and handles skip / auto-scan-next entirely in place —
+          // there is no separate calling screen.
+          setMatchedHost({ ...res.host, coins_per_minute: rate });
+          setPhase("connecting");
           return;
         }
 
@@ -560,10 +747,6 @@ export default function RandomScreen() {
   }, [callType, buildFilterPayload, onlineCount, adminCoinRate]);
 
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
-
-  // Keep the ref pointing at the latest startSearching so autoConnect (defined
-  // above it) can resume searching without a circular hook dependency.
-  useEffect(() => { startSearchingRef.current = startSearching; }, [startSearching]);
 
   const dotTop    = SH * 0.2;
   const cardTop   = SH * 0.18;
@@ -713,6 +896,15 @@ export default function RandomScreen() {
         onChange={setFilters}
         onClose={() => setFiltersOpen(false)}
       />
+
+      {phase === "connecting" && matchedHost && (
+        <ConnectingScreen
+          initialHost={matchedHost}
+          callType={callType}
+          filters={filters}
+          onExit={() => { setMatchedHost(null); setPhase("idle"); }}
+        />
+      )}
 
       {/* Insufficient-coins sheet (coin plans + Go to Wallet). */}
       <InsufficientCoinsPopup

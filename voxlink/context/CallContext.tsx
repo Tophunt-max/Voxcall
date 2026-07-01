@@ -39,6 +39,7 @@ interface CallContextValue {
   syncServerStartTime: (serverStartedAtSeconds: number) => void;
   declineCall: () => void;
   endCall: (autoEnded?: boolean) => void;
+  clearCall: () => void;
   toggleMute: () => void;
   toggleCamera: () => void;
   toggleSpeaker: () => void;
@@ -269,8 +270,12 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     if (c) updateCall({ ...c, isSpeakerOn: !c.isSpeakerOn });
   }, []);
 
+  // Clear the active call WITHOUT navigation — used by the random dialer to
+  // tear down a ringing session when it exits, without bouncing the router.
+  const clearCall = useCallback(() => { updateCall(null); }, []);
+
   return (
-    <CallContext.Provider value={{ activeCall, initiateCall, receiveCall, acceptCall, markCallActive, syncServerStartTime, declineCall, endCall, toggleMute, toggleCamera, toggleSpeaker }}>
+    <CallContext.Provider value={{ activeCall, initiateCall, receiveCall, acceptCall, markCallActive, syncServerStartTime, declineCall, endCall, clearCall, toggleMute, toggleCamera, toggleSpeaker }}>
       {children}
     </CallContext.Provider>
   );
