@@ -5,13 +5,25 @@ import { Table } from '@/components/ui/Table';
 import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
 import { StatCard } from '@/components/ui/StatCard';
-import { formatCoins, formatInr, formatMoney, sumBy, formatUnixDate } from '@/lib/format';
+import { formatCoins, formatMoney, formatUnixDate } from '@/lib/format';
 import { Search, Download, Coins, CheckCircle, Clock, XCircle, IndianRupee, Wallet, DollarSign, RefreshCw } from 'lucide-react';
 
 function HostAvatar({ name }: { name: string }) {
   const colors = ['bg-violet-500', 'bg-blue-500', 'bg-green-500', 'bg-amber-500', 'bg-pink-500'];
   const c = colors[(name || '').charCodeAt(0) % colors.length];
   return <div className={`w-8 h-8 rounded-full ${c} flex items-center justify-center text-white font-bold text-xs flex-shrink-0`}>{(name || '?')[0]}</div>;
+}
+
+// Sum payout amounts grouped by currency so a mix of ₹/$/€ requests never
+// collapses into one meaningless number. Renders e.g. "₹4,400  ·  $12.00".
+function moneyTotals(list: any[]): string {
+  const byCurrency: Record<string, number> = {};
+  for (const r of list) {
+    const cur = (r.currency || 'INR').toUpperCase();
+    byCurrency[cur] = (byCurrency[cur] || 0) + (Number(r.inr_amount) || 0);
+  }
+  const parts = Object.keys(byCurrency).sort().map((cur) => formatMoney(byCurrency[cur], cur));
+  return parts.length ? parts.join('  ·  ') : formatMoney(0, 'INR');
 }
 
 export default function PayoutManagement() {
@@ -65,9 +77,9 @@ export default function PayoutManagement() {
   const statusIcon = (s: string) => s === 'paid' ? <CheckCircle size={14} className="text-green-500" /> : s === 'approved' ? <Clock size={14} className="text-blue-500" /> : s === 'pending' ? <Clock size={14} className="text-amber-500" /> : <XCircle size={14} className="text-red-500" />;
 
   const pending = rows.filter(r => r.status === 'pending');
-  const totalPending = sumBy(pending, 'inr_amount');
-  const totalPaid = sumBy(rows.filter(r => r.status === 'paid'), 'inr_amount');
-  const totalApproved = sumBy(rows.filter(r => r.status === 'approved'), 'inr_amount');
+  const totalPending = moneyTotals(pending);
+  const totalPaid = moneyTotals(rows.filter(r => r.status === 'paid'));
+  const totalApproved = moneyTotals(rows.filter(r => r.status === 'approved'));
 
   const cols = [
     {
@@ -123,9 +135,9 @@ export default function PayoutManagement() {
     <div className="space-y-5">
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <StatCard icon={Clock} label="Pending Payouts" value={formatInr(totalPending)} gradient="gradient-orange" />
-        <StatCard icon={CheckCircle} label="Approved" value={formatInr(totalApproved)} gradient="gradient-blue" />
-        <StatCard icon={Wallet} label="Total Paid" value={formatInr(totalPaid)} gradient="gradient-green" />
+        <StatCard icon={Clock} label="Pending Payouts" value={totalPending} gradient="gradient-orange" />
+        <StatCard icon={CheckCircle} label="Approved" value={totalApproved} gradient="gradient-blue" />
+        <StatCard icon={Wallet} label="Total Paid" value={totalPaid} gradient="gradient-green" />
         <StatCard icon={IndianRupee} label="Total Requests" value={rows.length} gradient="gradient-purple" />
       </div>
 
