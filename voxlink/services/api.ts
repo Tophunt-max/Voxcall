@@ -407,7 +407,7 @@ export const API = {
   // Matchmaking
   matchFind: (
     call_type: 'audio' | 'video',
-    filters?: { gender?: 'male' | 'female'; languages?: string[]; min_rating?: number },
+    filters?: { gender?: 'male' | 'female'; languages?: string[]; min_rating?: number; exclude_host_id?: string },
   ) =>
     apiRequest<{
       matched: boolean;

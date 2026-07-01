@@ -512,6 +512,7 @@ match.post('/find', async (c) => {
     gender?: string;
     languages?: string[];
     min_rating?: number;
+    exclude_host_id?: string;
   }>().catch(() => ({} as any));
   const callType: 'audio' | 'video' = body.call_type === 'video' ? 'video' : 'audio';
   const gender = body.gender === 'male' || body.gender === 'female' ? body.gender : undefined;
@@ -593,6 +594,15 @@ match.post('/find', async (c) => {
     }
   }
 
+  // Random auto-dialer: the caller can ask to skip a specific host (the one
+  // that just didn't answer / was skipped) so we don't immediately re-ring
+  // them. Added to the exclusion set here; the pick below falls back to
+  // ignoring it when it's the only online host, so a solo host stays reachable.
+  const excludeHostId = typeof body.exclude_host_id === 'string' && body.exclude_host_id
+    ? body.exclude_host_id
+    : undefined;
+  if (excludeHostId && !excludeHostIds.includes(excludeHostId)) excludeHostIds.push(excludeHostId);
+
   const filters: MatchFilters = {
     callType,
     gender,
@@ -630,35 +640,48 @@ match.post('/find', async (c) => {
     matchWeights = normalizeMatchWeights(undefined);
   }
 
-  const pickPromise = weightingEnabled
-    ? pickWeightedHost(db, filter, () => buildPoolFilter(sub, filters, true), levelCfg, matchWeights)
-    : pickRandomHost(db, filter, () => buildPoolFilter(sub, filters, true));
+  // Kick off the online-count query concurrently with the host pick.
+  const onlineCountPromise = (async () => {
+    try {
+      return await db
+        .prepare(
+          `SELECT COUNT(*) as cnt FROM hosts h JOIN users u ON u.id = h.user_id
+           WHERE h.is_active = 1 AND h.is_online = 1 AND h.user_id != ?
+             AND COALESCE(h.accepts_random_calls, 1) = 1`,
+        )
+        .bind(sub)
+        .first<{ cnt: number }>();
+    } catch {
+      // Fall back without the new column for the brief healer race window.
+      return await db
+        .prepare(
+          `SELECT COUNT(*) as cnt FROM hosts h JOIN users u ON u.id = h.user_id
+           WHERE h.is_active = 1 AND h.is_online = 1 AND h.user_id != ?`,
+        )
+        .bind(sub)
+        .first<{ cnt: number }>()
+        .catch(() => null);
+    }
+  })();
 
-  const [pick, totalOnlineRow] = await Promise.all([
-    pickPromise,
-    (async () => {
-      try {
-        return await db
-          .prepare(
-            `SELECT COUNT(*) as cnt FROM hosts h JOIN users u ON u.id = h.user_id
-             WHERE h.is_active = 1 AND h.is_online = 1 AND h.user_id != ?
-               AND COALESCE(h.accepts_random_calls, 1) = 1`,
-          )
-          .bind(sub)
-          .first<{ cnt: number }>();
-      } catch {
-        // Fall back without the new column for the brief healer race window.
-        return await db
-          .prepare(
-            `SELECT COUNT(*) as cnt FROM hosts h JOIN users u ON u.id = h.user_id
-             WHERE h.is_active = 1 AND h.is_online = 1 AND h.user_id != ?`,
-          )
-          .bind(sub)
-          .first<{ cnt: number }>()
-          .catch(() => null);
-      }
-    })(),
-  ]);
+  let pick = weightingEnabled
+    ? await pickWeightedHost(db, filter, () => buildPoolFilter(sub, filters, true), levelCfg, matchWeights)
+    : await pickRandomHost(db, filter, () => buildPoolFilter(sub, filters, true));
+
+  // Fallback: if the caller's skip-host exclusion emptied the pool (that host
+  // was the only one online), retry without it so a solo host stays reachable.
+  if (!pick.host && excludeHostId) {
+    const relaxed: MatchFilters = {
+      ...filters,
+      excludeHostIds: filters.excludeHostIds.filter((id) => id !== excludeHostId),
+    };
+    const relaxedFilter = buildPoolFilter(sub, relaxed);
+    pick = weightingEnabled
+      ? await pickWeightedHost(db, relaxedFilter, () => buildPoolFilter(sub, relaxed, true), levelCfg, matchWeights)
+      : await pickRandomHost(db, relaxedFilter, () => buildPoolFilter(sub, relaxed, true));
+  }
+
+  const totalOnlineRow = await onlineCountPromise;
   const onlineCount = totalOnlineRow?.cnt ?? 0;
 
   if (!pick.host) {

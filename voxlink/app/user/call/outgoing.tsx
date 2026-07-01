@@ -204,7 +204,12 @@ export default function OutgoingCallScreen() {
 
     setStatus("connecting");
     try {
-      const res = await API.matchFind(callType as "audio" | "video", matchFilters);
+      // Skip the host we just tried so we don't immediately re-ring them —
+      // unless they're the only one online (server falls back in that case).
+      const res = await API.matchFind(callType as "audio" | "video", {
+        ...matchFilters,
+        exclude_host_id: prevHostId || undefined,
+      });
       if (navigated.current) { scanningRef.current = false; return; }
       if (!res.matched || !res.host) {
         await stopRing();
