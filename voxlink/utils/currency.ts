@@ -14,6 +14,7 @@
 // still wins when available so international users see localized amounts.
 
 import * as Localization from "expo-localization";
+import { Platform } from "react-native";
 
 // 1 USD = X foreign-currency units. Bump quarterly if rates drift materially.
 // Mirror of api-server/src/lib/currency.ts USD_TO_FOREIGN — keep them in sync.
@@ -99,6 +100,12 @@ export function getCoinToUsdRate(): number {
 let _localeCurrency: string | null = null;
 function detectFromLocale(): string {
   if (_localeCurrency) return _localeCurrency;
+  // On web the browser locale is an unreliable currency signal — plenty of
+  // users in India (and elsewhere) run an en-US browser, which made prices
+  // render in USD. Skip locale on web and use the platform default INR; real
+  // international users still get their correct currency from _serverCurrency
+  // (server-detected from their country at signup).
+  if (Platform.OS === "web") { _localeCurrency = "INR"; return "INR"; }
   try {
     const locales = Localization.getLocales();
     const region = locales[0]?.regionCode;
