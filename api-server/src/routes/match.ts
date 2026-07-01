@@ -559,8 +559,14 @@ match.post('/find', async (c) => {
     );
   }
 
-  // 5. Build pool filter (incl. no-repeat exclusion)
-  const repeatBlockMin = await readIntSetting(db, 'random_match_repeat_block_min', 30);
+  // 5. Build pool filter. The hard no-repeat exclusion is OFF by default
+  //    (`random_match_repeat_block_min` = 0) so the SAME host can be matched
+  //    again — important for small rosters where blocking a just-matched host
+  //    for 30 min would leave the user with "no hosts available". Demand is
+  //    still spread softly via the weighted-pick recent-match penalty
+  //    (MATCH_DEMAND_WINDOW_MIN), and admins can re-enable a hard block by
+  //    setting the app_setting to a positive number of minutes.
+  const repeatBlockMin = await readIntSetting(db, 'random_match_repeat_block_min', 0);
   const excludeHostIds = await recentlyMatchedHostIds(db, sub, repeatBlockMin);
 
   // Also exclude hosts who have blocked this caller (migration 0036).

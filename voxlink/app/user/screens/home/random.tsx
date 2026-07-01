@@ -36,7 +36,7 @@ const MAX_POLL_ATTEMPTS = 20;
 const ONLINE_HOSTS_REFRESH_MS = 30_000;
 
 type CallType = "audio" | "video";
-type Phase = "idle" | "searching" | "found" | "no_hosts";
+type Phase = "idle" | "searching" | "connecting" | "no_hosts";
 
 type GenderFilter = "any" | "male" | "female";
 type RatingFilter = 0 | 3 | 4 | 4.5;
@@ -358,11 +358,9 @@ function MatchRipple() {
   );
 }
 
-/* ─── Match found screen overlay ─── */
-function MatchFoundScreen({ host, callType, adminCoinRate, busy, onAccept, onDecline, onSkip }: {
+/* ─── Connecting screen overlay (non-interactive; auto-calls) ─── */
+function ConnectingScreen({ host, callType, adminCoinRate }: {
   host: HostCard; callType: CallType; adminCoinRate: number;
-  busy: boolean;
-  onAccept: () => void; onDecline: () => void; onSkip: () => void;
 }) {
   const { t: tr } = useLanguage();
   const scale = useRef(new Animated.Value(0.7)).current;
@@ -371,17 +369,12 @@ function MatchFoundScreen({ host, callType, adminCoinRate, busy, onAccept, onDec
   }, []);
 
   const avatarUri = resolveMediaUrl(host.avatar_url) || `https://api.dicebear.com/7.x/avataaars/png?seed=${host.id}`;
-
   const coinsPerMin = adminCoinRate;
 
   return (
     <View style={StyleSheet.absoluteFillObject}>
       <Image source={require("@/assets/images/match_bg.png")} style={styles.matchBg} resizeMode="cover" />
       <View style={styles.matchOverlay}>
-        <TouchableOpacity onPress={onDecline} style={styles.matchClose}>
-          <Image source={require("@/assets/icons/ic_close.png")} style={styles.matchCloseIco} tintColor="#111329" resizeMode="contain" />
-        </TouchableOpacity>
-
         <Animated.View style={[styles.matchContent, { transform: [{ scale }] }]}>
           <Text style={styles.matchTitle}>{tr.random.matchFound}</Text>
 
@@ -412,38 +405,11 @@ function MatchFoundScreen({ host, callType, adminCoinRate, busy, onAccept, onDec
             {callType === "video" ? `🎥 ${tr.random.videoCall}` : `🎤 ${tr.random.voiceCall}`}
           </Text>
 
-          <View style={styles.matchBtns}>
-            <View style={styles.matchBtnItem}>
-              <TouchableOpacity onPress={onDecline} style={styles.matchDecline} activeOpacity={0.8} disabled={busy}>
-                <Image source={require("@/assets/icons/ic_call_end.png")} style={styles.matchBtnIco} tintColor="#fff" resizeMode="contain" />
-              </TouchableOpacity>
-              <Text style={styles.matchBtnLabel}>{tr.random.decline}</Text>
-            </View>
-            <View style={styles.matchBtnItem}>
-              <TouchableOpacity
-                onPress={onSkip}
-                activeOpacity={0.8}
-                disabled={busy}
-                accessibilityLabel="Skip and find another match"
-              >
-                <View style={styles.matchSkip}>
-                  <Image source={require("@/assets/icons/ic_shuffle.png")} style={styles.matchBtnIco} tintColor="#fff" resizeMode="contain" />
-                </View>
-              </TouchableOpacity>
-              <Text style={styles.matchBtnLabel}>{tr.random.skipNext}</Text>
-            </View>
-            <View style={styles.matchBtnItem}>
-              <TouchableOpacity onPress={onAccept} activeOpacity={0.8} disabled={busy}>
-                <LinearGradient colors={GRAD} style={styles.matchAccept} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-                  {busy ? (
-                    <ActivityIndicator color="#fff" />
-                  ) : (
-                    <Image source={require("@/assets/icons/ic_call_gradient.png")} style={styles.matchBtnIco} tintColor="#fff" resizeMode="contain" />
-                  )}
-                </LinearGradient>
-              </TouchableOpacity>
-              <Text style={styles.matchBtnLabel}>{busy ? tr.random.checking : tr.random.accept}</Text>
-            </View>
+          {/* Auto-connect indicator — the call is being placed in the
+              background; there's no manual Accept step. */}
+          <View style={styles.connectingRow}>
+            <ActivityIndicator color="#8400FF" />
+            <Text style={styles.connectingTxt}>{tr.random.checking}</Text>
           </View>
         </Animated.View>
       </View>
@@ -468,8 +434,6 @@ export default function RandomScreen() {
   const [statusMsg, setStatusMsg]  = useState("");
   const [statusCode, setStatusCode] = useState<string | undefined>(undefined);
   const [onlineCount, setOnlineCount] = useState<number>(0);
-  // True when matched host's live status check fails — gate Accept on this.
-  const [hostCheckBusy, setHostCheckBusy] = useState(false);
 
   // Limit / abuse popups. INSUFFICIENT_COINS gets the coin-plans sheet; the
   // 429 family (daily limit / decline cooldown / rate limit) gets a simple
@@ -485,6 +449,7 @@ export default function RandomScreen() {
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollAttemptsRef = useRef(0);
+  const startSearchingRef = useRef<() => void>(() => {});
   const isMounted = useRef(true);
   useEffect(() => { isMounted.current = true; return () => { isMounted.current = false; }; }, []);
 
@@ -552,6 +517,59 @@ export default function RandomScreen() {
 
   // Start polling for match. Each poll runs against the configured filters;
   // a hard cap prevents an idle screen from hammering the server forever.
+  // Auto-connect a found match: coin gate → live availability re-check →
+  // place the outgoing call in the background and navigate to the call
+  // screen. Replaces the old manual "Match Found → Accept" step so a found
+  // host is rung immediately. If the host became unavailable in the seconds
+  // since /match/find, we transparently resume searching instead of
+  // dead-ending on an overlay.
+  const autoConnect = useCallback(async (host: HostCard, rate: number) => {
+    if ((user?.coins ?? 0) < rate * 2) {
+      setPhase("idle");
+      setMatchedHost(null);
+      setRequiredCoins(rate * 2);
+      setShowCoinsPopup(true);
+      return;
+    }
+    try {
+      const status = await API.matchHostStatus(host.id);
+      if (!isMounted.current) return;
+      if (!status.available) {
+        showErrorToast(
+          status.code === "HOST_BUSY"
+            ? tr.random.hostBusy
+            : status.code === "HOST_OFFLINE"
+              ? tr.random.hostOffline
+              : tr.random.hostUnavailable,
+        );
+        setMatchedHost(null);
+        startSearchingRef.current(); // resume search (no circular hook dep)
+        return;
+      }
+    } catch {
+      // Status endpoint failure — proceed optimistically; /call/initiate
+      // surfaces the real error if the host is genuinely unavailable.
+    }
+    if (!isMounted.current) return;
+    setPhase("idle");
+    const avatarUri = resolveMediaUrl(host.avatar_url) || `https://api.dicebear.com/7.x/avataaars/png?seed=${host.id}`;
+    initiateCall(
+      { id: host.id, name: host.name, avatar: avatarUri, role: "host" },
+      callType,
+      rate,
+    );
+    router.push({
+      pathname: "/user/call/outgoing",
+      params: {
+        hostId: host.id,
+        callType,
+        hostName: host.name,
+        hostAvatar: avatarUri,
+        specialty: host.specialties[0] ?? "",
+      },
+    });
+  }, [user?.coins, callType, initiateCall, tr]);
+
   const startSearching = useCallback(() => {
     setPhase("searching");
     setMatchedHost(null);
@@ -569,10 +587,14 @@ export default function RandomScreen() {
         if (typeof res.online_count === "number") setOnlineCount(res.online_count);
 
         if (res.matched && res.host) {
-          setMatchedHost(res.host);
-          setAdminCoinRate(res.coins_per_minute ?? res.host?.coins_per_minute ?? 25);
-          setPhase("found");
           if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+          const rate = res.coins_per_minute ?? res.host?.coins_per_minute ?? 25;
+          setMatchedHost(res.host);
+          setAdminCoinRate(rate);
+          // Show the non-interactive "Connecting…" state and place the call
+          // automatically in the background — no manual Accept step.
+          setPhase("connecting");
+          void autoConnect(res.host, rate);
           return;
         }
 
@@ -622,86 +644,13 @@ export default function RandomScreen() {
 
     poll(); // immediate first call
     pollRef.current = setInterval(poll, 2500);
-  }, [callType, buildFilterPayload, onlineCount, adminCoinRate]);
+  }, [callType, buildFilterPayload, onlineCount, adminCoinRate, autoConnect]);
 
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
 
-  // Accept match → live host status re-check before placing the call. The
-  // few seconds between /match/find and Accept can be enough for the host
-  // to go offline or join another call; without this re-check the user's
-  // call would silently fail at /call/initiate.
-  const handleAccept = useCallback(async () => {
-    if (!matchedHost) return;
-
-    if ((user?.coins ?? 0) < adminCoinRate * 2) {
-      setPhase("idle");
-      setMatchedHost(null);
-      setRequiredCoins(adminCoinRate * 2);
-      setShowCoinsPopup(true);
-      return;
-    }
-
-    setHostCheckBusy(true);
-    try {
-      const status = await API.matchHostStatus(matchedHost.id);
-      if (!status.available) {
-        showErrorToast(
-          status.code === "HOST_BUSY"
-            ? tr.random.hostBusy
-            : status.code === "HOST_OFFLINE"
-              ? tr.random.hostOffline
-              : tr.random.hostUnavailable,
-        );
-        // Roll the user back into a fresh search instead of leaving them
-        // staring at a dead Match Found overlay.
-        setPhase("idle");
-        setMatchedHost(null);
-        startSearching();
-        return;
-      }
-    } catch {
-      // Status endpoint failure — proceed optimistically; /call/initiate
-      // will surface the real error if the host is genuinely unavailable.
-    } finally {
-      setHostCheckBusy(false);
-    }
-
-    setPhase("idle");
-    const avatarUri = resolveMediaUrl(matchedHost.avatar_url) || `https://api.dicebear.com/7.x/avataaars/png?seed=${matchedHost.id}`;
-    initiateCall(
-      { id: matchedHost.id, name: matchedHost.name, avatar: avatarUri, role: "host" },
-      callType,
-      adminCoinRate,
-    );
-    router.push({
-      pathname: "/user/call/outgoing",
-      params: {
-        hostId: matchedHost.id,
-        callType,
-        hostName: matchedHost.name,
-        hostAvatar: avatarUri,
-        specialty: matchedHost.specialties[0] ?? "",
-      },
-    });
-  }, [matchedHost, callType, initiateCall, adminCoinRate, user?.coins, startSearching]);
-
-  const handleDecline = useCallback(() => {
-    if (matchedHost) {
-      // Best-effort decline relay so the cooldown guard counts it. We don't
-      // await — failure here must never block the UI from going back to idle.
-      API.matchDecline(matchedHost.id).catch(() => {});
-    }
-    setPhase("idle");
-    setMatchedHost(null);
-  }, [matchedHost]);
-
-  // "Skip / Next match" — same as Decline but immediately re-enters the
-  // search so the user never has to bounce back to the home screen.
-  const handleSkipNext = useCallback(() => {
-    if (matchedHost) API.matchDecline(matchedHost.id).catch(() => {});
-    setMatchedHost(null);
-    startSearching();
-  }, [matchedHost, startSearching]);
+  // Keep the ref pointing at the latest startSearching so autoConnect (defined
+  // above it) can resume searching without a circular hook dependency.
+  useEffect(() => { startSearchingRef.current = startSearching; }, [startSearching]);
 
   const dotTop    = SH * 0.2;
   const cardTop   = SH * 0.18;
@@ -852,15 +801,11 @@ export default function RandomScreen() {
         onClose={() => setFiltersOpen(false)}
       />
 
-      {phase === "found" && matchedHost && (
-        <MatchFoundScreen
+      {phase === "connecting" && matchedHost && (
+        <ConnectingScreen
           host={matchedHost}
           callType={callType}
           adminCoinRate={adminCoinRate}
-          busy={hostCheckBusy}
-          onAccept={handleAccept}
-          onDecline={handleDecline}
-          onSkip={handleSkipNext}
         />
       )}
 
@@ -994,6 +939,8 @@ const styles = StyleSheet.create({
   matchTopicTag: { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20, marginHorizontal: 5 },
   matchTopicTxt: { fontSize: 12, fontFamily: "Poppins_500Medium", color: "#fff" },
   matchCallType: { fontSize: 14, fontFamily: "Poppins_500Medium", color: "#757396", marginVertical: 4 },
+  connectingRow: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 16 },
+  connectingTxt: { fontSize: 15, fontFamily: "Poppins_600SemiBold", color: "#8400FF" },
   matchBtns: { flexDirection: "row", gap: 24, marginTop: 12 },
   matchBtnItem: { alignItems: "center", gap: 8 },
   matchBtnLabel: { fontSize: 12, fontFamily: "Poppins_500Medium", color: "#111329" },
