@@ -160,6 +160,7 @@ export default function DailyRewardModal({
   }, [visible, scale, opacity, glow, bounce]);
 
   const isCelebrating = lastClaim?.claimed === true;
+  const isMilestone = isCelebrating && (lastClaim?.milestone_bonus ?? 0) > 0;
 
   // Trigger haptic feedback when the celebration view appears.
   useEffect(() => {
@@ -215,7 +216,7 @@ export default function DailyRewardModal({
             {/* Floating sparkles */}
             <Text pointerEvents="none" style={styles.sparkleTL}>✨</Text>
             <Text pointerEvents="none" style={styles.sparkleTR}>✨</Text>
-            {isCelebrating ? <Confetti /> : null}
+            {isCelebrating ? <Confetti intense={isMilestone} /> : null}
             <View style={styles.headerEmojiWrap}>
               {/* Slowly rotating sunburst rays behind the icon */}
               <Sunburst />
@@ -275,6 +276,7 @@ export default function DailyRewardModal({
                 accessibilityLabel={tr.awesome}
               >
                 <LinearGradient colors={GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.primaryBtn}>
+                  <Shimmer />
                   <Text style={styles.primaryBtnTxt}>{tr.awesome}</Text>
                 </LinearGradient>
               </TouchableOpacity>
@@ -299,6 +301,7 @@ export default function DailyRewardModal({
                   accessibilityLabel={interpolate(tr.claim, { count: status.next_reward })}
                 >
                   <LinearGradient colors={GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.primaryBtn}>
+                    <Shimmer />
                     <Text style={styles.primaryBtnTxt}>
                       {claiming ? tr.claiming : interpolate(tr.claim, { count: status.next_reward })}
                     </Text>
@@ -343,6 +346,7 @@ function ClaimableBody({
     <View style={styles.body}>
       <View style={styles.coinWrap}>
         <Animated.View pointerEvents="none" style={[styles.coinHalo, coinHalo]} />
+          <CoinSparkles />
         <Animated.View style={[styles.coinRow, coinPulse]}>
           <Image source={require("@/assets/icons/ic_coin.png")} style={styles.coinIcon} resizeMode="contain" />
           <Text style={[styles.bigNumber, { color: colors.text }]}>{status.next_reward}</Text>
@@ -379,11 +383,13 @@ function CelebrationBody({
       ) : null}
       <View style={styles.coinWrap}>
         <Animated.View pointerEvents="none" style={[styles.coinHalo, coinHalo]} />
+          <CoinSparkles />
         <Animated.View style={[styles.coinRow, coinPulse]}>
           <Image source={require("@/assets/icons/ic_coin.png")} style={styles.coinIcon} resizeMode="contain" />
           <Text style={[styles.bigNumber, { color: colors.text }]}>+{counted}</Text>
         </Animated.View>
       </View>
+      {result.milestone_bonus > 0 ? <MilestoneCelebration bonus={result.milestone_bonus} /> : null}
       {result.milestone_bonus > 0 ? (
         (() => {
           // Split the localized template at {bonus} so we can highlight the
@@ -595,15 +601,122 @@ function Sunburst() {
   );
 }
 
+/* ─── Floating sparkle particles (around the coin) ────────────────────── */
+
+function CoinSparkles() {
+  // A handful of ✨/⭐ that drift outward from the coin and fade, on a loop —
+  // gives the reward a lively, "shiny treasure" feel.
+  const parts = useRef(
+    Array.from({ length: 7 }, (_, i) => ({
+      key: i,
+      angle: (Math.PI * 2 * i) / 7 + Math.random() * 0.5,
+      dist: 44 + Math.random() * 22,
+      delay: Math.random() * 1500,
+      char: i % 3 === 0 ? "⭐" : "✨",
+      size: 9 + Math.random() * 7,
+      anim: new Animated.Value(0),
+    }))
+  ).current;
+
+  useEffect(() => {
+    const loops = parts.map((p) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(p.delay),
+          Animated.timing(p.anim, { toValue: 1, duration: 1700, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+        ])
+      )
+    );
+    loops.forEach((l) => l.start());
+    return () => loops.forEach((l) => l.stop());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <View pointerEvents="none" style={styles.sparkleLayer}>
+      {parts.map((p) => {
+        const tx = Math.cos(p.angle) * p.dist;
+        const ty = Math.sin(p.angle) * p.dist;
+        const translateX = p.anim.interpolate({ inputRange: [0, 1], outputRange: [0, tx] });
+        const translateY = p.anim.interpolate({ inputRange: [0, 1], outputRange: [0, ty] });
+        const opacity = p.anim.interpolate({ inputRange: [0, 0.15, 0.7, 1], outputRange: [0, 1, 1, 0] });
+        const scale = p.anim.interpolate({ inputRange: [0, 0.4, 1], outputRange: [0.3, 1, 0.5] });
+        return (
+          <Animated.Text
+            key={p.key}
+            style={{ position: "absolute", fontSize: p.size, opacity, transform: [{ translateX }, { translateY }, { scale }] }}
+          >
+            {p.char}
+          </Animated.Text>
+        );
+      })}
+    </View>
+  );
+}
+
+/* ─── Shimmer sweep (over the CTA button) ─────────────────────────────── */
+
+function Shimmer() {
+  const x = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(x, { toValue: 1, duration: 1300, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.delay(1100),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [x]);
+  const translateX = x.interpolate({ inputRange: [0, 1], outputRange: [-90, 360] });
+  return (
+    <Animated.View pointerEvents="none" style={[styles.shimmer, { transform: [{ translateX }, { rotate: "18deg" }] }]}>
+      <LinearGradient
+        colors={["rgba(255,255,255,0)", "rgba(255,255,255,0.5)", "rgba(255,255,255,0)"]}
+        start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+        style={StyleSheet.absoluteFill}
+      />
+    </Animated.View>
+  );
+}
+
+/* ─── Milestone flourish (celebration, milestone days only) ───────────── */
+
+function MilestoneCelebration({ bonus }: { bonus: number }) {
+  const pop = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.sequence([
+      Animated.delay(400),
+      Animated.spring(pop, { toValue: 1, tension: 90, friction: 5, useNativeDriver: true }),
+    ]).start();
+    try { setTimeout(() => { void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy); }, 420); } catch {}
+  }, [pop]);
+  const scale = pop.interpolate({ inputRange: [0, 1], outputRange: [0.3, 1] });
+  return (
+    <Animated.View style={{ opacity: pop, transform: [{ scale }] }}>
+      <LinearGradient
+        colors={["#FFDE86", "#FFB300"]}
+        start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+        style={styles.milestoneCelebrate}
+      >
+        <Text style={styles.milestoneCelebrateTxt}>🏆 +{bonus}</Text>
+      </LinearGradient>
+    </Animated.View>
+  );
+}
+
 /* ─── Confetti burst (celebration only) ───────────────────────────────── */
 
-function Confetti() {
-  // 14 lightweight pieces that fan out + fall over ~1.4s on mount.
+function Confetti({ intense = false }: { intense?: boolean }) {
+  // 14 lightweight pieces normally; a denser gold-weighted burst on milestone
+  // days so hitting Day 7/14/… feels like a genuine jackpot.
+  const count = intense ? 28 : 14;
+  const palette = intense ? [COIN_GOLD, "#FFD87A", "#FFB300", ...CONFETTI_COLORS] : CONFETTI_COLORS;
   const pieces = useRef(
-    Array.from({ length: 14 }, (_, i) => ({
+    Array.from({ length: count }, (_, i) => ({
       key: i,
       left: Math.random() * 100,
-      color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
+      color: palette[i % palette.length],
       size: 6 + Math.random() * 6,
       delay: Math.random() * 250,
       drift: (Math.random() - 0.5) * 80,
@@ -719,6 +832,7 @@ const styles = StyleSheet.create({
 
   body: { padding: 22, alignItems: "center" },
   coinWrap: { alignItems: "center", justifyContent: "center" },
+  sparkleLayer: { ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "center" },
   coinHalo: {
     position: "absolute", width: 150, height: 150, borderRadius: 75,
     backgroundColor: "rgba(255,201,60,0.22)",
@@ -742,6 +856,12 @@ const styles = StyleSheet.create({
 
   celebrationSub: { fontSize: 13, fontFamily: "Poppins_500Medium", marginTop: 6 },
   celebrationBonus: { color: COIN_GOLD, fontFamily: "Poppins_700Bold" },
+  milestoneCelebrate: {
+    marginTop: 14, paddingHorizontal: 20, paddingVertical: 8, borderRadius: 999,
+    shadowColor: "#FFB300", shadowOpacity: 0.5, shadowRadius: 10, shadowOffset: { width: 0, height: 3 },
+    elevation: 5,
+  },
+  milestoneCelebrateTxt: { fontSize: 17, fontFamily: "Poppins_700Bold", color: "#6B3F00", letterSpacing: 0.3 },
 
   luckyWrap: {
     alignItems: "center", marginBottom: 10, paddingHorizontal: 18, paddingVertical: 8,
@@ -813,6 +933,7 @@ const styles = StyleSheet.create({
     shadowColor: "#8400FF", shadowOpacity: 0.45, shadowRadius: 12, shadowOffset: { width: 0, height: 5 },
     elevation: 6,
   },
-  primaryBtn: { paddingVertical: 15, borderRadius: 14, alignItems: "center" },
+  primaryBtn: { paddingVertical: 15, borderRadius: 14, alignItems: "center", overflow: "hidden" },
+  shimmer: { position: "absolute", top: -20, left: 0, width: 46, height: 100 },
   primaryBtnTxt: { fontSize: 15, fontFamily: "Poppins_700Bold", color: "#fff", letterSpacing: 0.2 },
 });
