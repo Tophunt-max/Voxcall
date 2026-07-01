@@ -320,7 +320,7 @@ coin.post('/withdraw', async (c) => {
   const coinsReq = Math.floor(Number(coins_requested));
 
   const settings = await db.prepare("SELECT value FROM app_settings WHERE key = 'min_withdrawal_coins'").first<any>();
-  const minCoins = parseInt(settings?.value ?? '1000');
+  const minCoins = parseInt(settings?.value ?? '100');
   if (coinsReq < minCoins) return c.json({ error: `Minimum withdrawal is ${minCoins} coins` }, 400);
 
   const rateRow = await db.prepare("SELECT value FROM app_settings WHERE key = 'coin_to_usd_rate'").first<any>();

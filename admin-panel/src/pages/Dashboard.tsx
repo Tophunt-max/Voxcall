@@ -67,7 +67,7 @@ export default function Dashboard() {
     : '70%';
   const coinValue = (settings as any)['coin_value_inr']
     ? `₹${(settings as any)['coin_value_inr']}`
-    : '₹0.01';
+    : '₹0.05';
 
   const loading = loadingDash || loadingAnalytics;
 

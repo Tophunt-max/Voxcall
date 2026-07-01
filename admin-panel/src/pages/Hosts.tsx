@@ -77,8 +77,8 @@ function HostDetailSheet({
 }) {
   const [tab, setTab] = useState<'details' | 'edit'>('details');
   const [level, setLevel] = useState(String(host.level ?? 1));
-  const [audio, setAudio] = useState(String(host.audio_coins_per_minute ?? host.coins_per_minute ?? 5));
-  const [video, setVideo] = useState(String(host.video_coins_per_minute ?? 10));
+  const [audio, setAudio] = useState(String(host.audio_coins_per_minute ?? host.coins_per_minute ?? 25));
+  const [video, setVideo] = useState(String(host.video_coins_per_minute ?? 40));
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
   const qc = useQueryClient();

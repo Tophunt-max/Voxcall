@@ -2,6 +2,7 @@
 import { Hono } from 'hono';
 import { authMiddleware } from '../middleware/auth';
 import type { Env, JWTPayload } from '../types';
+import { DEFAULT_AUDIO_RATE, DEFAULT_VIDEO_RATE } from '../lib/levels';
 
 // FIX #20: Validate KYC document URLs are well-formed https URLs before
 // persisting. We don't fetch them — that's the admin/reviewer's job — but we
@@ -116,9 +117,10 @@ hostapp.post('/submit', async (c) => {
   if (experience && String(experience).length > 2000) return c.json({ error: 'experience must be under 2000 characters' }, 400);
 
   // Validate rates: must be positive numbers, not too large
-  // Allow 0 when call type doesn't include that mode
-  const audioRateNum = Number(audio_rate ?? 5);
-  const videoRateNum = Number(video_rate ?? 8);
+  // Allow 0 when call type doesn't include that mode. Default to the canonical
+  // per-minute rates (25 audio / 40 video) when a host omits them.
+  const audioRateNum = Number(audio_rate ?? DEFAULT_AUDIO_RATE);
+  const videoRateNum = Number(video_rate ?? DEFAULT_VIDEO_RATE);
   if (safeAppType !== 'video' && (isNaN(audioRateNum) || audioRateNum < 1 || audioRateNum > 500)) {
     return c.json({ error: 'audio_rate must be between 1 and 500' }, 400);
   }

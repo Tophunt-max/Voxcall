@@ -654,15 +654,15 @@ export default function SettingsPage() {
             <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
               <strong>One-click production setup!</strong> Sets optimal coin value (₹0.05/coin), 
               70% host share, psychological pricing (₹49-₹4999 plans with bonuses), 
-              call rates (₹0.50/min audio, ₹1/min video), referral rewards, and daily streak.
+              call rates (₹1.25/min audio, ₹2/min video), referral rewards, and daily streak.
               <span className="block mt-2 text-green-700 dark:text-green-300 font-medium">
                 ✅ User-friendly pricing ✅ Sustainable margins ✅ Host earning potential
               </span>
             </p>
             <div className="mt-3 p-3 bg-white/50 dark:bg-black/20 rounded-xl text-xs space-y-1">
               <div className="flex justify-between"><span>Coin Value:</span><strong>₹0.05/coin</strong></div>
-              <div className="flex justify-between"><span>Audio Call:</span><strong>₹0.50/min (host gets ₹0.35)</strong></div>
-              <div className="flex justify-between"><span>Video Call:</span><strong>₹1.00/min (host gets ₹0.70)</strong></div>
+              <div className="flex justify-between"><span>Audio Call:</span><strong>₹1.25/min (host gets ₹0.88)</strong></div>
+              <div className="flex justify-between"><span>Video Call:</span><strong>₹2.00/min (host gets ₹1.40)</strong></div>
               <div className="flex justify-between"><span>Host Revenue:</span><strong>70% of coins earned</strong></div>
               <div className="flex justify-between"><span>Min Withdrawal:</span><strong>₹50 (1000 coins)</strong></div>
               <div className="flex justify-between"><span>Plans:</span><strong>₹49 → ₹4999 (8 tiers)</strong></div>

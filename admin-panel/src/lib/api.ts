@@ -155,8 +155,8 @@ export const api = {
 
   // ─── India coin economy seed ─────────────────────────────────────────────
   // Destructive: wipes coin_plans + replaces level_config + upserts the
-  // India-tuned app_settings (coin_value_inr=0.10, min_withdrawal=500,
-  // host_revenue_share=0.60). The backend requires both ?confirm=true AND
+  // canonical app_settings (coin_value_inr=0.05, min_withdrawal=1000,
+  // host_revenue_share=0.70, rates 25/40). The backend requires both ?confirm=true AND
   // the X-Confirm-Seed header — bare `req()` doesn't pass custom headers,
   // so we call fetch directly with the same auth/error handling.
   seedIndiaDefaults: async (): Promise<{

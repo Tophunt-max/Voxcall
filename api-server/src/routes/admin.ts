@@ -1741,11 +1741,11 @@ admin.post('/run-migrations', async (c) => {
 // One-shot admin action to apply the India-tuned defaults discussed in the
 // economy review:
 //   - 8 INR coin plans (₹19 → ₹6999 with progressive volume discount)
-//   - coin_value_inr = 0.10 (stored as coin_to_usd_rate = 0.001204819; 1 coin = ₹0.10 host payout)
-//   - min_withdrawal_coins = 500   (= ₹50)
-//   - host_revenue_share fallback = 0.60 (level 1 hosts; per-level overrides)
-//   - level_config retuned for INR economy: 60/65/70/75/80% earning share,
-//     India-scaled max audio/video caps + per-level random call rates
+//   - coin_value_inr = 0.05 (stored as coin_to_usd_rate = 0.0006; 1 coin = ₹0.05 host payout)
+//   - min_withdrawal_coins = 1000  (= ₹50)
+//   - host_revenue_share = 0.70 (level 1 hosts; per-level overrides up to 0.80)
+//   - default + random call rates = 25 audio / 40 video (canonical)
+//   - level_config: 70/70/72/75/80% earning share, 25/40 random rates
 //
 // Destructive: it WIPES existing coin_plans before re-seeding so admins
 // don't end up with a mixed USD + INR plan list. Existing app_settings
@@ -1803,23 +1803,26 @@ admin.post('/seed/india-defaults', async (c) => {
   // does NOT touch other admin-configured keys (random call rates etc.) so a
   // half-customised deployment isn't reverted to factory defaults.
   const settingUpserts: Array<[string, string]> = [
-    ['coin_to_usd_rate', '0.001204819'],
-    ['host_revenue_share', '0.60'],
-    ['min_withdrawal_coins', '500'],
+    ['coin_value_inr', '0.05'],          // canonical INR source of truth
+    ['coin_to_usd_rate', '0.0006'],      // ≈ ₹0.05 ÷ 83 (FX cron re-pins it)
+    ['host_revenue_share', '0.70'],
+    ['min_withdrawal_coins', '1000'],
+    ['default_audio_rate', '25'],
+    ['default_video_rate', '40'],
+    ['random_call_audio_rate', '25'],
+    ['random_call_video_rate', '40'],
   ];
 
-  // ─── 3. Level config — India-tuned 5-tier ladder ───────────────────────
-  // Earning share dropped 10pp at L1 (70 → 60) to absorb the higher payout
-  // rate (₹0.10 vs ₹0.01). Top tiers keep their existing high share so
-  // power-host retention isn't punished. Random call rates climb steeply
-  // by level so the user sees a meaningful difference between Newcomer
-  // (10/min audio) and Elite (60/min audio).
+  // ─── 3. Level config — 5-tier ladder (canonical earning shares + rates) ─
+  // Earning share matches DEFAULT_LEVEL_CONFIG (0.70 → 0.80) and per-level
+  // random rates default to the canonical 25/40 so this seed stays consistent
+  // with the rest of the economy. Admins can still tune per-level rates later.
   const indiaLevelConfig = [
-    { level: 1, name: 'Newcomer', badge: '🌱', color: '#6B7280', min_calls: 0,    min_rating: 0.0, coin_reward: 0,    description: 'New to the platform',  perks: { max_rate: 30,  max_audio_rate: 30,  max_video_rate: 50,  random_audio_rate: 10, random_video_rate: 18, earning_share: 0.60, rank_boost: 0 } },
-    { level: 2, name: 'Rising',   badge: '⭐', color: '#F59E0B', min_calls: 50,   min_rating: 4.0, coin_reward: 100,  description: 'Getting established',   perks: { max_rate: 60,  max_audio_rate: 60,  max_video_rate: 100, random_audio_rate: 15, random_video_rate: 25, earning_share: 0.65, rank_boost: 1 } },
-    { level: 3, name: 'Expert',   badge: '🔥', color: '#EF4444', min_calls: 200,  min_rating: 4.3, coin_reward: 300,  description: 'Proven expertise',      perks: { max_rate: 100, max_audio_rate: 100, max_video_rate: 180, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.70, rank_boost: 2 } },
-    { level: 4, name: 'Pro',      badge: '💎', color: '#8B5CF6', min_calls: 500,  min_rating: 4.6, coin_reward: 500,  description: 'Professional tier',     perks: { max_rate: 180, max_audio_rate: 180, max_video_rate: 300, random_audio_rate: 40, random_video_rate: 65, earning_share: 0.75, rank_boost: 3 } },
-    { level: 5, name: 'Elite',    badge: '👑', color: '#D97706', min_calls: 1000, min_rating: 4.8, coin_reward: 1000, description: 'Top performer',         perks: { max_rate: 300, max_audio_rate: 300, max_video_rate: 500, random_audio_rate: 60, random_video_rate: 100, earning_share: 0.80, rank_boost: 5 } },
+    { level: 1, name: 'Newcomer', badge: '🌱', color: '#6B7280', min_calls: 0,    min_rating: 0.0, coin_reward: 0,    description: 'New to the platform',  perks: { max_rate: 100, max_audio_rate: 100, max_video_rate: 100, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.70, rank_boost: 0 } },
+    { level: 2, name: 'Rising',   badge: '⭐', color: '#F59E0B', min_calls: 50,   min_rating: 4.0, coin_reward: 100,  description: 'Getting established',   perks: { max_rate: 150, max_audio_rate: 150, max_video_rate: 150, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.70, rank_boost: 1 } },
+    { level: 3, name: 'Expert',   badge: '🔥', color: '#EF4444', min_calls: 200,  min_rating: 4.3, coin_reward: 300,  description: 'Proven expertise',      perks: { max_rate: 250, max_audio_rate: 250, max_video_rate: 250, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.72, rank_boost: 2 } },
+    { level: 4, name: 'Pro',      badge: '💎', color: '#8B5CF6', min_calls: 500,  min_rating: 4.6, coin_reward: 500,  description: 'Professional tier',     perks: { max_rate: 400, max_audio_rate: 400, max_video_rate: 400, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.75, rank_boost: 3 } },
+    { level: 5, name: 'Elite',    badge: '👑', color: '#D97706', min_calls: 1000, min_rating: 4.8, coin_reward: 1000, description: 'Top performer',         perks: { max_rate: 500, max_audio_rate: 500, max_video_rate: 500, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.80, rank_boost: 5 } },
   ];
 
   // ─── Execute as a single batch (atomic at D1 batch level) ──────────────
@@ -1872,7 +1875,7 @@ admin.post('/seed/india-defaults', async (c) => {
     'update',
     'settings',
     'india-coin-economy',
-    `Seeded India coin economy: ${indiaPlans.length} INR plans, level_config retuned, coin_value_inr=0.10 (coin_to_usd_rate=0.001204819), min_withdrawal_coins=500`,
+    `Seeded India coin economy: ${indiaPlans.length} INR plans, level_config retuned, coin_value_inr=0.05 (coin_to_usd_rate=0.0006), min_withdrawal_coins=1000, rates 25/40`,
     ip,
   );
 
@@ -1890,7 +1893,7 @@ admin.post('/seed/india-defaults', async (c) => {
 //   • Coin value         ₹0.05/coin (stored as coin_to_usd_rate via live FX)
 //   • Host revenue share  70%
 //   • Min withdrawal      1000 coins (₹50)
-//   • Call rates          ₹0.50/min audio (10 coins), ₹1.00/min video (20 coins)
+//   • Call rates          ₹1.25/min audio (25 coins), ₹2.00/min video (40 coins)
 //   • Plans               8 INR tiers, ₹49 → ₹4999, with climbing bonuses
 //   • Referral rewards + daily streak enabled
 //
@@ -1916,10 +1919,13 @@ admin.post('/seed-coin-economy', async (c) => {
     const COIN_VALUE_INR = 0.05;          // ₹ per coin
     const HOST_REVENUE_SHARE = 0.70;      // host keeps 70% of coins earned
     const MIN_WITHDRAWAL_COINS = 1000;    // ₹50 at ₹0.05/coin
-    // Call rates expressed in coins/min. ₹0.50/min audio = 10 coins,
-    // ₹1.00/min video = 20 coins (host gets 70% → ₹0.35 / ₹0.70 per min).
-    const AUDIO_RATE_COINS = 10;
-    const VIDEO_RATE_COINS = 20;
+    // Call rates expressed in coins/min — the canonical platform defaults.
+    // 25 coins/min audio = ₹1.25/min, 40 coins/min video = ₹2.00/min at
+    // ₹0.05/coin (host gets 70% → ₹0.875 / ₹1.40 per min). Kept identical to
+    // DEFAULT_AUDIO_RATE / DEFAULT_VIDEO_RATE so the seed, the code defaults and
+    // migration 0042 all agree.
+    const AUDIO_RATE_COINS = 25;
+    const VIDEO_RATE_COINS = 40;
 
     // Live INR→USD FX so the stored coin_to_usd_rate always represents ₹0.05,
     // regardless of the current exchange rate. Falls back to 83 if the

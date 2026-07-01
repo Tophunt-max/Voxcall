@@ -59,7 +59,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     setActiveCall(call);
   };
 
-  const initiateCall = useCallback(async (participant: CallParticipant, type: CallType, coinsPerMinute = 5) => {
+  const initiateCall = useCallback(async (participant: CallParticipant, type: CallType, coinsPerMinute = 25) => {
     const localId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
     const call: ActiveCall = {
       callId: localId,

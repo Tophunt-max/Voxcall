@@ -1165,7 +1165,7 @@ call.post('/:id/heartbeat', async (c) => {
   const now = Math.floor(Date.now() / 1000);
   const startedAt = session.started_at ?? now;
   const elapsed = Math.max(0, now - startedAt);
-  const rate = session.rate_per_minute ?? 5;
+  const rate = session.rate_per_minute ?? DEFAULT_AUDIO_RATE;
   // Coins + free-minute pool (free pool is consumed first at settlement, so it
   // extends the affordable window). Tolerate a pre-migration DB without the
   // column.
@@ -1408,7 +1408,7 @@ call.get('/pending-for-host', async (c) => {
      ORDER BY cs.created_at DESC LIMIT 1`
   ).bind(host.id, cutoff).first<any>();
   if (!session) return c.json(null);
-  const rate = session.rate_per_minute ?? 5;
+  const rate = session.rate_per_minute ?? DEFAULT_AUDIO_RATE;
   const callerCoins = session.caller_coins ?? 0;
   const max_seconds = affordableCallSeconds(callerCoins, session.caller_free_minutes ?? 0, rate);
   // Strip internal-only fields from the response and append max_seconds
