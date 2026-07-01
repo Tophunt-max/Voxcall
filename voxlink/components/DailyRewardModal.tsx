@@ -15,7 +15,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, Modal,
-  Animated, Easing, Image, ScrollView,
+  Animated, Easing, Image, ScrollView, useColorScheme,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
@@ -25,8 +25,12 @@ import type { DailyStreakStatus, DailyStreakClaimResult } from "@/hooks/useDaily
 
 const GRADIENT: [string, string] = ["#CF00FD", "#8400FF"];
 // Richer 3-stop gradient for the header hero (more vibrant than the flat CTA).
+// Slightly deeper/less glaring variant for dark mode so it doesn't blast the
+// user's eyes on an otherwise dark screen.
 const HEADER_GRADIENT: [string, string, string] = ["#E24DFF", "#B026FF", "#7A00FF"];
+const HEADER_GRADIENT_DARK: [string, string, string] = ["#B93DE8", "#8A1FD0", "#5A00C4"];
 const COIN_GOLD = "#FFC93C";
+const COIN_GOLD_DARK = "#FFD87A"; // brighter gold — readable on dark surfaces
 const CONFETTI_COLORS = ["#FFC93C", "#CF00FD", "#8400FF", "#22C55E", "#38BDF8", "#FF6B9D"];
 
 interface DailyRewardModalProps {
@@ -113,6 +117,8 @@ export default function DailyRewardModal({
   onRepair,
 }: DailyRewardModalProps) {
   const colors = useColors();
+  const scheme = useColorScheme();
+  const isDark = scheme === "dark";
   const { t } = useLanguage();
   const tr = t.dailyReward;
 
@@ -121,6 +127,8 @@ export default function DailyRewardModal({
   const opacity = useRef(new Animated.Value(0)).current;
   // Coin glow pulse (loops gently while open).
   const glow = useRef(new Animated.Value(0)).current;
+  // Gentle idle bounce for the gift box (claimable state only).
+  const bounce = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (visible) {
@@ -135,13 +143,21 @@ export default function DailyRewardModal({
         ])
       );
       loop.start();
-      return () => loop.stop();
+      const bounceLoop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(bounce, { toValue: 1, duration: 850, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+          Animated.timing(bounce, { toValue: 0, duration: 850, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+        ])
+      );
+      bounceLoop.start();
+      return () => { loop.stop(); bounceLoop.stop(); };
     } else {
       scale.setValue(0.85);
       opacity.setValue(0);
       glow.setValue(0);
+      bounce.setValue(0);
     }
-  }, [visible, scale, opacity, glow]);
+  }, [visible, scale, opacity, glow, bounce]);
 
   const isCelebrating = lastClaim?.claimed === true;
 
@@ -171,6 +187,16 @@ export default function DailyRewardModal({
     opacity: glow.interpolate({ inputRange: [0, 1], outputRange: [0.28, 0.5] }),
     transform: [{ scale: glow.interpolate({ inputRange: [0, 1], outputRange: [0.95, 1.12] }) }],
   };
+  // Idle gift-box bounce: a gentle rise + tilt + squash, celebration-safe
+  // (only applied to the 🎁 in the claimable state).
+  const giftBounce = {
+    transform: [
+      { translateY: bounce.interpolate({ inputRange: [0, 1], outputRange: [0, -6] }) },
+      { scale: bounce.interpolate({ inputRange: [0, 1], outputRange: [1, 1.07] }) },
+      { rotate: bounce.interpolate({ inputRange: [0, 1], outputRange: ["-5deg", "5deg"] }) },
+    ],
+  };
+  const headerColors = isDark ? HEADER_GRADIENT_DARK : HEADER_GRADIENT;
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
@@ -178,7 +204,7 @@ export default function DailyRewardModal({
         <Animated.View style={[styles.card, { backgroundColor: colors.card, transform: [{ scale }] }]}>
           {/* Gradient header */}
           <LinearGradient
-            colors={HEADER_GRADIENT}
+            colors={headerColors}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={styles.header}
@@ -191,9 +217,13 @@ export default function DailyRewardModal({
             <Text pointerEvents="none" style={styles.sparkleTR}>✨</Text>
             {isCelebrating ? <Confetti /> : null}
             <View style={styles.headerEmojiWrap}>
+              {/* Slowly rotating sunburst rays behind the icon */}
+              <Sunburst />
               <Animated.View pointerEvents="none" style={[styles.emojiHalo, haloStyle]} />
               <View style={styles.emojiInner}>
-                <Text style={styles.headerEmoji}>{isCelebrating ? "🎉" : "🎁"}</Text>
+                <Animated.Text style={[styles.headerEmoji, !isCelebrating && giftBounce]}>
+                  {isCelebrating ? "🎉" : "🎁"}
+                </Animated.Text>
               </View>
             </View>
             <Text style={styles.headerTitle}>
@@ -212,9 +242,9 @@ export default function DailyRewardModal({
 
           {/* Body */}
           {isCelebrating ? (
-            <CelebrationBody result={lastClaim} status={status} colors={colors} tr={tr} coinPulse={coinPulse} coinHalo={coinHaloStyle} />
+            <CelebrationBody result={lastClaim} status={status} colors={colors} tr={tr} coinPulse={coinPulse} coinHalo={coinHaloStyle} isDark={isDark} />
           ) : (
-            <ClaimableBody status={status} streakAfter={streakAfter} colors={colors} tr={tr} coinPulse={coinPulse} coinHalo={coinHaloStyle} />
+            <ClaimableBody status={status} streakAfter={streakAfter} colors={colors} tr={tr} coinPulse={coinPulse} coinHalo={coinHaloStyle} isDark={isDark} />
           )}
 
           {/* Schedule strip — visible in BOTH states. */}
@@ -289,9 +319,9 @@ type Colors = ReturnType<typeof useColors>;
 /* ─── Sub-views ───────────────────────────────────────────────────────── */
 
 function ClaimableBody({
-  status, streakAfter, colors, tr, coinPulse, coinHalo,
+  status, streakAfter, colors, tr, coinPulse, coinHalo, isDark,
 }: {
-  status: DailyStreakStatus; streakAfter: number; colors: Colors; tr: TR; coinPulse: any; coinHalo: any;
+  status: DailyStreakStatus; streakAfter: number; colors: Colors; tr: TR; coinPulse: any; coinHalo: any; isDark: boolean;
 }) {
   const milestone = status.next_reward_milestone;
 
@@ -320,8 +350,8 @@ function ClaimableBody({
       </View>
       <Text style={[styles.bodyHint, { color: colors.mutedForeground }]}>{tr.claimHint}</Text>
       {milestone > 0 ? (
-        <View style={styles.milestoneBadge}>
-          <Text style={styles.milestoneTxt}>
+        <View style={[styles.milestoneBadge, isDark && styles.milestoneBadgeDark]}>
+          <Text style={[styles.milestoneTxt, isDark && { color: COIN_GOLD_DARK }]}>
             🎉 {interpolate(tr.dayBonus, { day: streakAfter, count: milestone })}
           </Text>
         </View>
@@ -333,9 +363,9 @@ function ClaimableBody({
 }
 
 function CelebrationBody({
-  result, status, colors, tr, coinPulse, coinHalo,
+  result, status, colors, tr, coinPulse, coinHalo, isDark,
 }: {
-  result: DailyStreakClaimResult; status: DailyStreakStatus; colors: Colors; tr: TR; coinPulse: any; coinHalo: any;
+  result: DailyStreakClaimResult; status: DailyStreakStatus; colors: Colors; tr: TR; coinPulse: any; coinHalo: any; isDark: boolean;
 }) {
   // Lucky-wheel reveal — only when the server says this reward was drawn by
   // the variable engine. Expected payout unchanged (budget-neutral).
@@ -345,7 +375,7 @@ function CelebrationBody({
   return (
     <View style={styles.body}>
       {result.variable ? (
-        <LuckyMultiplier multiplier={result.multiplier ?? 1} segments={segments} colors={colors} tr={tr} />
+        <LuckyMultiplier multiplier={result.multiplier ?? 1} segments={segments} tr={tr} />
       ) : null}
       <View style={styles.coinWrap}>
         <Animated.View pointerEvents="none" style={[styles.coinHalo, coinHalo]} />
@@ -365,7 +395,7 @@ function CelebrationBody({
           return (
             <Text style={[styles.celebrationSub, { color: colors.mutedForeground }]}>
               {before}
-              <Text style={styles.celebrationBonus}>{result.milestone_bonus}{after}</Text>
+              <Text style={[styles.celebrationBonus, isDark && { color: COIN_GOLD_DARK }]}>{result.milestone_bonus}{after}</Text>
             </Text>
           );
         })()
@@ -398,9 +428,9 @@ function CelebrationBody({
 }
 
 function LuckyMultiplier({
-  multiplier, segments, colors, tr,
+  multiplier, segments, tr,
 }: {
-  multiplier: number; segments: number[]; colors: Colors; tr: TR;
+  multiplier: number; segments: number[]; tr: TR;
 }) {
   const pool = segments.length ? segments : [0.5, 0.8, 1, 2, 5];
   const [display, setDisplay] = useState<number>(pool[0]);
@@ -543,6 +573,28 @@ function AtRiskBanner({ status, tr }: { status: DailyStreakStatus; tr: TR }) {
   );
 }
 
+/* ─── Sunburst rays (behind header icon) ──────────────────────────────── */
+
+function Sunburst() {
+  const spin = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.timing(spin, { toValue: 1, duration: 16000, easing: Easing.linear, useNativeDriver: true })
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [spin]);
+  const rotate = spin.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "360deg"] });
+  const RAYS = 9; // 9 diameters → 18 evenly-spaced spokes (step 20°)
+  return (
+    <Animated.View pointerEvents="none" style={[styles.sunburst, { transform: [{ rotate }] }]}>
+      {Array.from({ length: RAYS }).map((_, i) => (
+        <View key={i} style={[styles.ray, { transform: [{ rotate: `${(180 / RAYS) * i}deg` }] }]} />
+      ))}
+    </Animated.View>
+  );
+}
+
 /* ─── Confetti burst (celebration only) ───────────────────────────────── */
 
 function Confetti() {
@@ -632,6 +684,14 @@ const styles = StyleSheet.create({
   headerEmojiWrap: {
     width: 76, height: 76, alignItems: "center", justifyContent: "center", marginBottom: 8,
   },
+  sunburst: {
+    position: "absolute", width: 132, height: 132, top: -28, left: -28,
+    alignItems: "center", justifyContent: "center",
+  },
+  ray: {
+    position: "absolute", width: 2.5, height: 132, borderRadius: 2,
+    backgroundColor: "rgba(255,255,255,0.16)",
+  },
   emojiHalo: {
     position: "absolute", width: 76, height: 76, borderRadius: 38,
     backgroundColor: "rgba(255,255,255,0.9)",
@@ -677,6 +737,7 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: "rgba(255,201,60,0.5)",
   },
   milestoneTxt: { fontSize: 12, fontFamily: "Poppins_600SemiBold", color: "#A56A00", textAlign: "center" },
+  milestoneBadgeDark: { backgroundColor: "rgba(255,201,60,0.20)", borderColor: "rgba(255,201,60,0.6)" },
   nextMilestoneHint: { fontSize: 12, fontFamily: "Poppins_500Medium", marginTop: 12, textAlign: "center" },
 
   celebrationSub: { fontSize: 13, fontFamily: "Poppins_500Medium", marginTop: 6 },
