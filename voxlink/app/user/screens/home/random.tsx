@@ -10,7 +10,6 @@ import { useAuth } from "@/context/AuthContext";
 import { useCall } from "@/context/CallContext";
 import { useSocket } from "@/context/SocketContext";
 import { SocketEvents } from "@/constants/events";
-import { useRingtone } from "@/hooks/useRingtone";
 import { useLanguage } from "@/context/LanguageContext";
 import type { Translations } from "@/localization/en";
 import { API, resolveMediaUrl } from "@/services/api";
@@ -363,155 +362,72 @@ function MatchRipple() {
 }
 
 /* ─── Connecting screen ───────────────────────────────────────────────────
- * The ONE screen for random calling. Shows the matched host's card and rings
- * them in the background from here — there is no separate calling screen.
- *   • Host answers            → go to the audio/video call screen.
- *   • Host declines / no-answer / call ends → auto-scan the NEXT host in place
- *     (card swaps, rings again) without leaving this screen.
- *   • Skip / Next button      → manually advance to the next host.
- *   • Decline button          → tear the dialer down and exit.
+ * Shown once a host is matched. Rings that ONE host in the background (no ring
+ * sound). It does NOT scan hosts itself — on decline / no-answer / Skip it
+ * ends the call and hands control back to the random screen, which searches
+ * for the next host and re-shows this screen.
+ *   • Host answers                     → audio/video call screen.
+ *   • Host declines / no-answer / Skip → onNext(): back to the searching screen.
  * ------------------------------------------------------------------------- */
 const NO_ANSWER_MS = 25000;
-function ConnectingScreen({ initialHost, callType, filters, onExit }: {
-  initialHost: HostCard; callType: CallType; filters: MatchFilters; onExit: () => void;
+function ConnectingScreen({ host, callType, onAnswered, onNext }: {
+  host: HostCard; callType: CallType; onAnswered: () => void; onNext: (hostId: string) => void;
 }) {
   const { t: tr } = useLanguage();
   const { activeCall, initiateCall, syncServerStartTime, clearCall } = useCall();
   const { onEvent } = useSocket();
-  const { stop: stopRing } = useRingtone("outgoing", true);
 
-  const [host, setHost] = useState<HostCard>(initialHost);
   const scale = useRef(new Animated.Value(0.7)).current;
-
-  const hostRef = useRef<HostCard>(initialHost);
   const sessionIdRef = useRef<string | undefined>(undefined);
-  const navigatedRef = useRef(false); // host answered → moved to the call screen
-  const exitedRef = useRef(false);    // dialer torn down
-  const scanningRef = useRef(false);
+  const doneRef = useRef(false); // answered or moving on — fire the exit once
   const noAnswerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const scanNextRef = useRef<() => void>(() => {});
+  const goNextRef = useRef<() => void>(() => {});
 
-  useEffect(() => { hostRef.current = host; }, [host]);
   useEffect(() => { sessionIdRef.current = activeCall?.sessionId; }, [activeCall?.sessionId]);
 
   const clearNoAnswer = () => {
     if (noAnswerRef.current) { clearTimeout(noAnswerRef.current); noAnswerRef.current = null; }
   };
-  const armNoAnswer = useCallback(() => {
+
+  // Host didn't answer / declined / user skipped → end this pending call and
+  // ask the parent to search the next host (which re-shows this screen).
+  const goNext = useCallback(() => {
+    if (doneRef.current) return;
+    doneRef.current = true;
     clearNoAnswer();
-    noAnswerRef.current = setTimeout(() => {
-      if (navigatedRef.current || exitedRef.current) return;
-      scanNextRef.current();
-    }, NO_ANSWER_MS);
-  }, []);
+    const sid = sessionIdRef.current;
+    API.matchDecline(host.id).catch(() => {});
+    if (sid) API.endCall(sid, 0).catch(() => {});
+    clearCall();
+    onNext(host.id);
+  }, [host.id, clearCall, onNext]);
+  useEffect(() => { goNextRef.current = goNext; }, [goNext]);
 
-  // Place an outgoing call to `h` in the background + (re)arm the no-answer
-  // timer. Used for the first host and every scanned host.
-  const ringHost = useCallback((h: HostCard) => {
-    const avatarUri = resolveMediaUrl(h.avatar_url) || `https://api.dicebear.com/7.x/avataaars/png?seed=${h.id}`;
-    initiateCall({ id: h.id, name: h.name, avatar: avatarUri, role: "host" }, callType, h.coins_per_minute);
-    armNoAnswer();
-  }, [initiateCall, callType, armNoAnswer]);
-
-  const scanNext = useCallback(async () => {
-    if (navigatedRef.current || exitedRef.current || scanningRef.current) return;
-    scanningRef.current = true;
-    clearNoAnswer();
-    const prevSession = sessionIdRef.current;
-    const prevHostId = hostRef.current.id;
-    // End the previous pending session (stops the old host's ring) + mark it
-    // declined for the cooldown guard. We do NOT clear the call context here —
-    // ringHost's initiateCall replaces it below.
-    try { if (prevSession) await API.endCall(prevSession, 0); } catch { /* best-effort */ }
-    if (prevHostId) API.matchDecline(prevHostId).catch(() => {});
-    try {
-      const res = await API.matchFind(callType, {
-        gender: filters.gender !== "any" ? filters.gender : undefined,
-        min_rating: filters.minRating > 0 ? filters.minRating : undefined,
-        exclude_host_id: prevHostId || undefined,
-      });
-      if (exitedRef.current) { scanningRef.current = false; return; }
-      if (!res.matched || !res.host) {
-        await stopRing();
-        showErrorToast(res.code === "INSUFFICIENT_COINS" ? tr.random.statusInsufficientCoins : tr.random.statusGiveUp);
-        exitedRef.current = true;
-        clearCall();
-        onExit();
-        return;
-      }
-      const nextRate = res.coins_per_minute ?? res.host?.coins_per_minute ?? 25;
-      const nextHost: HostCard = {
-        id: String(res.host.id),
-        name: res.host.name,
-        avatar_url: res.host.avatar_url,
-        rating: res.host.rating ?? 0,
-        coins_per_minute: nextRate,
-        specialties: res.host.specialties ?? [],
-      };
-      hostRef.current = nextHost;
-      setHost(nextHost);
-      ringHost(nextHost);
-    } catch {
-      if (!exitedRef.current) {
-        await stopRing();
-        showErrorToast(tr.random.statusNetworkError);
-        exitedRef.current = true;
-        clearCall();
-        onExit();
-      }
-    } finally {
-      scanningRef.current = false;
-    }
-  }, [callType, filters, ringHost, stopRing, tr, clearCall, onExit]);
-
-  useEffect(() => { scanNextRef.current = scanNext; }, [scanNext]);
-
-  // Ring the first host + intro pop. Cleanup tears everything down.
+  // Ring this host on mount + intro pop. A fresh ConnectingScreen mounts for
+  // every matched host, so this runs once per host.
   useEffect(() => {
     Animated.spring(scale, { toValue: 1, tension: 55, friction: 8, useNativeDriver: false }).start();
-    ringHost(initialHost);
-    return () => {
-      exitedRef.current = true;
-      clearNoAnswer();
-      stopRing();
-    };
+    const avatarUri = resolveMediaUrl(host.avatar_url) || `https://api.dicebear.com/7.x/avataaars/png?seed=${host.id}`;
+    initiateCall({ id: host.id, name: host.name, avatar: avatarUri, role: "host" }, callType, host.coins_per_minute);
+    noAnswerRef.current = setTimeout(() => { if (!doneRef.current) goNextRef.current(); }, NO_ANSWER_MS);
+    return () => { clearNoAnswer(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Socket outcomes.
   useEffect(() => {
     const offAccept = onEvent(SocketEvents.CALL_ACCEPT, (payload: any) => {
-      if (navigatedRef.current || exitedRef.current) return;
-      navigatedRef.current = true;
+      if (doneRef.current) return;
+      doneRef.current = true;
       clearNoAnswer();
       if (payload?.startedAt) syncServerStartTime(payload.startedAt);
-      stopRing();
-      onExit();
+      onAnswered();
       router.push(callType === "video" ? "/user/call/video-call" : "/user/call/audio-call");
     });
-    const offReject = onEvent(SocketEvents.CALL_REJECT, () => {
-      if (navigatedRef.current || exitedRef.current || scanningRef.current) return;
-      scanNextRef.current();
-    });
-    const offEnd = onEvent(SocketEvents.CALL_END, () => {
-      if (navigatedRef.current || exitedRef.current || scanningRef.current) return;
-      scanNextRef.current();
-    });
+    const offReject = onEvent(SocketEvents.CALL_REJECT, () => { if (!doneRef.current) goNextRef.current(); });
+    const offEnd = onEvent(SocketEvents.CALL_END, () => { if (!doneRef.current) goNextRef.current(); });
     return () => { offAccept(); offReject(); offEnd(); };
-  }, [onEvent, syncServerStartTime, stopRing, onExit, callType]);
-
-  const handleDecline = useCallback(() => {
-    if (exitedRef.current) return;
-    exitedRef.current = true;
-    clearNoAnswer();
-    const sid = sessionIdRef.current;
-    const hid = hostRef.current.id;
-    if (hid) API.matchDecline(hid).catch(() => {});
-    if (sid) API.endCall(sid, 0).catch(() => {});
-    stopRing();
-    clearCall();
-    onExit();
-  }, [stopRing, clearCall, onExit]);
+  }, [onEvent, syncServerStartTime, onAnswered, callType]);
 
   const avatarUri = resolveMediaUrl(host.avatar_url) || `https://api.dicebear.com/7.x/avataaars/png?seed=${host.id}`;
 
@@ -556,13 +472,7 @@ function ConnectingScreen({ initialHost, callType, filters, onExit }: {
 
           <View style={styles.matchBtns}>
             <View style={styles.matchBtnItem}>
-              <TouchableOpacity onPress={handleDecline} style={styles.matchDecline} activeOpacity={0.85} accessibilityLabel="Cancel">
-                <Image source={require("@/assets/icons/ic_call_end.png")} style={styles.matchBtnIco} tintColor="#fff" resizeMode="contain" />
-              </TouchableOpacity>
-              <Text style={styles.matchBtnLabel}>{tr.random.decline}</Text>
-            </View>
-            <View style={styles.matchBtnItem}>
-              <TouchableOpacity onPress={() => scanNextRef.current()} style={styles.matchSkip} activeOpacity={0.85} accessibilityLabel="Skip to next host">
+              <TouchableOpacity onPress={() => goNextRef.current()} style={styles.matchSkip} activeOpacity={0.85} accessibilityLabel="Skip to next host">
                 <Image source={require("@/assets/icons/ic_shuffle.png")} style={styles.matchBtnIco} tintColor="#fff" resizeMode="contain" />
               </TouchableOpacity>
               <Text style={styles.matchBtnLabel}>{tr.random.skipNext}</Text>
@@ -605,6 +515,10 @@ export default function RandomScreen() {
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollAttemptsRef = useRef(0);
+  // Host we just rang (declined / no-answer / skipped). Excluded from the very
+  // next search so we don't immediately re-match the same host; the backend
+  // falls back to including them if they're the only one online.
+  const lastTriedHostRef = useRef<string | undefined>(undefined);
   const isMounted = useRef(true);
   useEffect(() => { isMounted.current = true; return () => { isMounted.current = false; }; }, []);
 
@@ -663,9 +577,10 @@ export default function RandomScreen() {
   // Build the request filters payload from the controlled state. Empty fields
   // are omitted so the server falls through to "any" matching.
   const buildFilterPayload = useCallback(() => {
-    const payload: { gender?: "male" | "female"; min_rating?: number } = {};
+    const payload: { gender?: "male" | "female"; min_rating?: number; exclude_host_id?: string } = {};
     if (filters.gender !== "any") payload.gender = filters.gender;
     if (filters.minRating > 0) payload.min_rating = filters.minRating;
+    if (lastTriedHostRef.current) payload.exclude_host_id = lastTriedHostRef.current;
     return payload;
   }, [filters]);
 
@@ -875,7 +790,7 @@ export default function RandomScreen() {
             </View>
           </TouchableOpacity>
         ) : (
-          <TouchableOpacity onPress={startSearching} activeOpacity={0.85} style={styles.randomBtnWrap}>
+          <TouchableOpacity onPress={() => { lastTriedHostRef.current = undefined; startSearching(); }} activeOpacity={0.85} style={styles.randomBtnWrap}>
             <LinearGradient colors={GRAD} style={styles.randomBtn} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
               <Text style={styles.randomBtnTxt}>{tr.random.randomMatch}</Text>
             </LinearGradient>
@@ -899,10 +814,17 @@ export default function RandomScreen() {
 
       {phase === "connecting" && matchedHost && (
         <ConnectingScreen
-          initialHost={matchedHost}
+          host={matchedHost}
           callType={callType}
-          filters={filters}
-          onExit={() => { setMatchedHost(null); setPhase("idle"); }}
+          onAnswered={() => { setMatchedHost(null); setPhase("idle"); }}
+          onNext={(hostId) => {
+            // Host declined / didn't answer / user skipped → exclude them from
+            // the next search and go back to the searching screen to find the
+            // next host (which re-shows the ConnectingScreen).
+            lastTriedHostRef.current = hostId;
+            setMatchedHost(null);
+            startSearching();
+          }}
         />
       )}
 
