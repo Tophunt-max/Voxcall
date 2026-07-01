@@ -42,27 +42,94 @@ const LOW_BALANCE_THRESHOLD = 20;
 const ROTATE_INTERVAL_MS = 9000;
 const REFRESH_EVERY_N_TICKS = 4; // ~36s → invalidate the hosts query
 
-/**
- * Deterministic shuffle: same (array, seed) always yields the same order, so a
- * re-render within one rotation tick is stable (no flicker) while a new tick
- * produces a fresh arrangement. Uses a mulberry32 PRNG seeded by the tick +
- * Fisher-Yates, so every position is equally likely (unlike a biased
- * `sort(() => Math.random() - 0.5)`).
- */
-function seededShuffle<T>(input: T[], seed: number): T[] {
-  const a = input.slice();
-  let s = seed >>> 0;
-  const rand = () => {
-    s = (s + 0x6d2b79f5) | 0;
-    let t = Math.imul(s ^ (s >>> 15), 1 | s);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(rand() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
+// ---------------------------------------------------------------------------
+// Host ranking algorithm
+// ---------------------------------------------------------------------------
+// The home "available now" list used to be a pure Fisher-Yates shuffle keyed by
+// the rotation tick. That gave a "live" rotating feel, but it also buried the
+// best listeners at random — a proven 4.9★/200-review host could land at the
+// bottom while a brand-new 5.0★/1-review host floated to the top. That's bad for
+// both users (worse matches surfaced first) and good hosts (lost visibility).
+//
+// We replace it with a weighted composite score:
+//   • Bayesian-smoothed rating  — a lone 5★ doesn't outrank a proven high rating
+//   • log-scaled popularity     — total minutes talked, diminishing returns
+//   • top-rated bonus           — small editorial boost for flagged hosts
+//   • affordability nudge        — softly demote hosts the viewer can't afford a
+//                                  minute of (avoids leading them into a top-up wall)
+//   • deterministic tick jitter  — a bounded per-(host,tick) wobble so near-equal
+//                                  hosts gently rotate positions over time
+//                                  (fairness for newer hosts + the "live" feel)
+// The jitter band is small relative to the quality signal, so ordering stays
+// stable/quality-first while still visibly rotating among comparable hosts.
+
+// Global prior for the Bayesian average (a sensible platform-wide mean) and the
+// confidence weight — how many reviews a host needs before their own average
+// dominates the prior instead of it.
+const RATING_PRIOR = 4.3;
+const RATING_CONFIDENCE = 8;
+
+/** FNV-1a hash of a string id → stable 32-bit int (per-host jitter seed base). */
+function hashId(id: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < id.length; i++) {
+    h ^= id.charCodeAt(i);
+    h = Math.imul(h, 16777619);
   }
-  return a;
+  return h >>> 0;
+}
+
+/** mulberry32 → deterministic float in [0,1) for a given integer seed. */
+function pseudoRandom(seed: number): number {
+  let s = seed >>> 0;
+  s = (s + 0x6d2b79f5) | 0;
+  let t = Math.imul(s ^ (s >>> 15), 1 | s);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+
+/**
+ * Composite quality score for ranking hosts. Higher = surfaced earlier.
+ * `tick` drives the rotation jitter (bump it to gently reshuffle near-ties);
+ * `userCoins` (when known) applies the affordability nudge.
+ */
+function hostScore(h: Host, tick: number, userCoins?: number): number {
+  const reviews = Math.max(0, h.reviewCount || 0);
+  const rating = Math.max(0, Math.min(5, h.rating || 0));
+  // Bayesian average pulls low-sample ratings toward the prior.
+  const bayes = (RATING_PRIOR * RATING_CONFIDENCE + rating * reviews) / (RATING_CONFIDENCE + reviews);
+  const ratingComponent = (bayes / 5) * 60; // up to ~60 pts
+
+  // log10(1 + minutes): 100min→~2, 1k→3, 10k→4. Capped so a whale host can't
+  // dominate purely on volume.
+  const popularity = Math.log10(1 + Math.max(0, h.totalMinutes || 0));
+  const popComponent = Math.min(popularity / 4, 1) * 20; // up to 20 pts
+
+  const topRatedBonus = h.isTopRated ? 8 : 0;
+
+  let affordability = 0;
+  if (typeof userCoins === "number" && h.coinsPerMinute > 0) {
+    affordability = userCoins >= h.coinsPerMinute ? 5 : -6;
+  }
+
+  // Bounded jitter in [0,12): reorders hosts whose scores are within ~12 pts of
+  // each other, so comparable listeners rotate over time without letting a weak
+  // host leapfrog a clearly stronger one.
+  const jitter = pseudoRandom(hashId(h.id) ^ Math.imul(tick + 1, 0x9e3779b1)) * 12;
+
+  return ratingComponent + popComponent + topRatedBonus + affordability + jitter;
+}
+
+/**
+ * Rank a host list by composite score (descending). Same (list, tick, coins)
+ * always yields the same order, so a re-render within one tick is stable (no
+ * flicker); a new tick re-rolls the jitter and gently rotates near-ties.
+ */
+function rankHosts(list: Host[], tick: number, userCoins?: number): Host[] {
+  return list
+    .map((h) => ({ h, s: hostScore(h, tick, userCoins) }))
+    .sort((a, b) => b.s - a.s)
+    .map((x) => x.h);
 }
 
 function mapApiHost(h: any): Host {
@@ -364,7 +431,14 @@ export default function HomeScreen() {
     { type: "find_more" },
   ];
 
-  const topHosts = hosts.filter((h) => h.isTopRated && h.isOnline);
+  // "Top Listeners" rail. Prefer hosts the admin flagged as top-rated. If none
+  // are flagged, fall back to the highest-scoring online hosts — but only when
+  // the roster is large enough (≥5 online) that a curated strip is meaningfully
+  // different from the full list below (avoids showing the same 2-3 cards twice).
+  const onlineForTop = hosts.filter((h) => h.isOnline);
+  const flaggedTop = onlineForTop.filter((h) => h.isTopRated);
+  const topPool = flaggedTop.length > 0 ? flaggedTop : (onlineForTop.length >= 5 ? onlineForTop : []);
+  const topHosts = rankHosts(topPool, rotationTick, user?.coins).slice(0, 10);
   const filteredHosts =
     selectedSpecialty === "All"
       ? hosts
@@ -375,11 +449,14 @@ export default function HomeScreen() {
         );
   const onlineHosts = filteredHosts.filter((h) => h.isOnline);
   const offlineHosts = filteredHosts.filter((h) => !h.isOnline);
-  // Re-ordered copies that change every rotation tick (see the rotate effect).
-  // Deterministic per tick so a re-render within the same tick doesn't reshuffle
-  // mid-frame. Keys stay host.id, so React just reorders the existing cards.
-  const displayedOnline = seededShuffle(onlineHosts, rotationTick);
-  const displayedOffline = seededShuffle(offlineHosts, rotationTick);
+  // Quality-ranked copies (see hostScore/rankHosts). The rotation tick re-rolls
+  // the bounded jitter so comparable hosts gently swap positions over time,
+  // while a re-render within the same tick is stable (no mid-frame reshuffle).
+  // Keys stay host.id, so React just reorders the existing cards. Affordability
+  // is only applied to the online list — offline hosts can't be called now, so
+  // demoting them by the viewer's balance would be noise.
+  const displayedOnline = rankHosts(onlineHosts, rotationTick, user?.coins);
+  const displayedOffline = rankHosts(offlineHosts, rotationTick);
 
   // OPTIMIZATION #10: Prefetch host detail page when host is tapped (before navigation)
   const prefetchHost = useCallback((hostId: string) => {
@@ -767,9 +844,14 @@ export default function HomeScreen() {
         {/* Listener list — OPTIMIZATION #8: skeleton while loading, #10: prefetch on press */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>
-              {selectedSpecialty === "All" ? tr.home.availableNow : selectedSpecialty}
-            </Text>
+            <View style={styles.availableTitleRow}>
+              {!hostsLoading && onlineHosts.length > 0 && selectedSpecialty === "All" && (
+                <View style={[styles.livePulseDot, { backgroundColor: colors.online }]} />
+              )}
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>
+                {selectedSpecialty === "All" ? tr.home.availableNow : selectedSpecialty}
+              </Text>
+            </View>
             {!hostsLoading && (
               <Text style={[styles.countText, { color: colors.mutedForeground }]}>
                 {onlineHosts.length} {tr.home.online}
@@ -952,6 +1034,8 @@ const styles = StyleSheet.create({
   section: { marginBottom: 20, gap: 12 },
   sectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   sectionTitle: { fontSize: 16, fontFamily: "Poppins_600SemiBold" },
+  availableTitleRow: { flexDirection: "row", alignItems: "center", gap: 7 },
+  livePulseDot: { width: 8, height: 8, borderRadius: 4 },
   recoItem: { marginRight: 0 },
   recoReason: { fontSize: 10, fontFamily: "Poppins_500Medium", marginTop: 4, marginLeft: 4, maxWidth: 150 },
   seeAll: { fontSize: 12, fontFamily: "Poppins_500Medium" },
