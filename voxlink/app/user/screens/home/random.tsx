@@ -594,9 +594,14 @@ export default function RandomScreen() {
         hostName: host.name,
         hostAvatar: avatarUri,
         specialty: host.specialties[0] ?? "",
+        // Turn the outgoing screen into a random auto-dialer: on decline /
+        // no-answer / Skip it rings the next matched host in place.
+        isRandom: "1",
+        gender: filters.gender,
+        minRating: String(filters.minRating),
       },
     });
-  }, [user?.coins, callType, initiateCall, tr]);
+  }, [user?.coins, callType, initiateCall, tr, filters]);
 
   const startSearching = useCallback(() => {
     setPhase("searching");
