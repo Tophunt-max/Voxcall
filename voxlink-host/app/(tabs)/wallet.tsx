@@ -12,7 +12,7 @@ import { API } from "@/services/api";
 import { useSocketEvent } from "@/context/SocketContext";
 import { SocketEvents } from "@/constants/events";
 import { showSuccessToast, showErrorToast, showWarningToast } from "@/components/Toast";
-import { formatPrice } from "@/utils/currency";
+import { formatPrice, USD_TO_FOREIGN } from "@/utils/currency";
 import { useAppConfig } from "@/hooks/useAppConfig";
 
 const WITHDRAW_OPTIONS = [100, 200, 500, 1000];
@@ -152,11 +152,13 @@ export default function HostWalletScreen() {
   const payoutRate = Number.isFinite(parsedPayoutRate) && parsedPayoutRate > 0 ? parsedPayoutRate : 0;
   const topPad = insets.top;
 
-  // Payouts are settled in INR — the payout channels (bank/UPI/Paytm/PhonePe)
-  // are India-only and the coin economy is INR-based. So always render the
-  // payout value in ₹, never the host's browser/locale currency (on web that
-  // resolved to USD, showing "$0.40" instead of "₹33").
-  const payoutCurrency = "INR";
+  // Payout currency = the host's ACCOUNT currency (server-detected from their
+  // country at signup), so international hosts see their own money (US → $,
+  // EU → €, India → ₹). We validate it against the known FX table and fall
+  // back to the platform default INR — deliberately NOT the device/browser
+  // locale, which made web wrongly resolve to USD for Indian hosts.
+  const hostCurrency = String((user as any)?.currency || "").toUpperCase();
+  const payoutCurrency = hostCurrency && USD_TO_FOREIGN[hostCurrency] ? hostCurrency : "INR";
   const formatPayout = (coins: number) => formatPrice(coins * payoutRate, payoutCurrency);
 
   const load = useCallback(async (isRefresh = false) => {
