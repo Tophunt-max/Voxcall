@@ -191,6 +191,76 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
   }
 
   // Concurrent call check — user pehle se kisi call mein hai?
+  //
+  // SELF-HEAL: a caller re-initiating from the home / host screen means any
+  // PRIOR call of their OWN has been abandoned (if a call were genuinely live,
+  // the in-call UI would be on screen, not the initiate button). Previously a
+  // session left stuck in 'pending'/'active' — e.g. a call that failed to
+  // connect while CF Calls was mis-configured, or whose /end never landed —
+  // locked the user out with a 409 until the 2–5 min cron reaper cleaned it.
+  // We now force-end the caller's OWN lingering sessions right here, settling
+  // any real talk-time exactly like the reaper (host still gets paid, caller
+  // charged only what they can afford). We ONLY ever touch sessions where THIS
+  // user is the caller — never someone else's call.
+  const staleOwn = await db.prepare(
+    "SELECT id, host_id, started_at, rate_per_minute, type, cf_session_id, cf_host_session_id FROM call_sessions WHERE caller_id = ? AND status IN ('pending','active') AND ended_at IS NULL"
+  ).bind(sub).all<any>();
+  if (staleOwn.results?.length) {
+    const nowTs = Math.floor(Date.now() / 1000);
+    const levelCfg = await getLevelConfig(db);
+    const cfCleanup = createCFCalls(c.env);
+    for (const s of staleOwn.results) {
+      // Atomic claim so a concurrent /end can't double-settle the same row.
+      const claim = await db.prepare(
+        "UPDATE call_sessions SET ended_at = ? WHERE id = ? AND status IN ('pending','active') AND ended_at IS NULL"
+      ).bind(nowTs, s.id).run();
+      if (!claim.meta?.changes) continue;
+
+      const durationSec = s.started_at ? Math.max(0, nowTs - s.started_at) : 0;
+      const rate = s.rate_per_minute ?? DEFAULT_AUDIO_RATE;
+      const coinsCharged = coinsForCall({ status: 'active', durationSec, ratePerMinute: rate });
+      const hostRow = await db.prepare('SELECT user_id, level FROM hosts WHERE id = ?').bind(s.host_id).first<{ user_id: string; level: number }>();
+
+      let actualCoinsCharged = 0, actualHostShare = 0, freeMinutesUsed = 0;
+      if (coinsCharged > 0 && hostRow?.user_id) {
+        const { charged, hostEarned, free_minutes_used } = await chargeCallerWithFreePool(db, {
+          callerId: sub,
+          hostUserId: hostRow.user_id,
+          durationSec,
+          ratePerMinute: rate,
+          earningShare: getEarningShare(hostRow.level ?? 1, levelCfg),
+        });
+        actualCoinsCharged = charged; actualHostShare = hostEarned; freeMinutesUsed = free_minutes_used;
+      }
+
+      const durationMin = billedMinutes(durationSec);
+      const ops: any[] = [
+        db.prepare("UPDATE call_sessions SET status = 'ended', duration_seconds = ?, coins_charged = ?, free_minutes_used = ?, end_reason = 'superseded' WHERE id = ?")
+          .bind(durationSec, actualCoinsCharged, freeMinutesUsed, s.id),
+      ];
+      if ((actualCoinsCharged > 0 || actualHostShare > 0) && hostRow?.user_id) {
+        ops.push(db.prepare('UPDATE hosts SET total_minutes = total_minutes + ?, total_earnings = total_earnings + ? WHERE id = ?').bind(durationMin, actualHostShare, s.host_id));
+        if (actualCoinsCharged > 0) {
+          ops.push(db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?,?,?,?,?,?)')
+            .bind(crypto.randomUUID(), sub, 'spend', -actualCoinsCharged, `${s.type || 'audio'} call — ${durationMin} min (superseded)`, s.id));
+        }
+        if (actualHostShare > 0) {
+          ops.push(db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?,?,?,?,?,?)')
+            .bind(crypto.randomUUID(), hostRow.user_id, 'bonus', actualHostShare, `${s.type || 'audio'} call — ${durationMin} min (superseded)`, s.id));
+        }
+      }
+      try { await db.batch(ops); } catch (e) { console.warn('[initiate] self-heal settle failed:', e); }
+
+      if (cfCleanup) {
+        for (const sid of [s.cf_session_id, s.cf_host_session_id]) {
+          if (sid) { try { await cfCleanup.closeSession(sid); } catch { /* best-effort */ } }
+        }
+      }
+    }
+  }
+
+  // Fallback safety: if (despite self-heal) a live session for this caller
+  // still exists, refuse rather than create a duplicate.
   const existingCall = await db.prepare(
     "SELECT id FROM call_sessions WHERE caller_id = ? AND status IN ('pending','active') LIMIT 1"
   ).bind(sub).first<{ id: string }>();
