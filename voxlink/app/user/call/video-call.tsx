@@ -102,28 +102,56 @@ function StreamView({ stream, style, mirror = false, audioOnly = false }: { stre
     const el = videoRef.current;
     if (!el || !stream) return;
     try { el.srcObject = stream; } catch {}
-    // Explicit play() — autoPlay alone is unreliable on iOS Safari / Chrome
-    // mobile when the page is in the background or the track was added late.
-    const tryPlay = () => {
-      const p = el.play?.();
+
+    // Explicit play() with a bounded retry — autoPlay alone is unreliable on
+    // iOS Safari / Chrome mobile when the track is added late or the tab was
+    // backgrounded. We retry on a short interval AND on the next user gesture /
+    // visibility change so the call doesn't stay silent/black forever.
+    let settled = false;
+    let attempts = 0;
+    let intervalId: any = null;
+    let gestureBound = false;
+
+    const cleanupGesture = () => {
+      try { window.removeEventListener('click', onGesture); } catch {}
+      try { window.removeEventListener('touchend', onGesture); } catch {}
+      try { document.removeEventListener('visibilitychange', onVisible); } catch {}
+      gestureBound = false;
+    };
+    const stopInterval = () => { if (intervalId) { clearInterval(intervalId); intervalId = null; } };
+
+    const attempt = () => {
+      if (settled || !videoRef.current) return;
+      const p = videoRef.current.play?.();
       if (p && typeof p.catch === 'function') {
-        p.catch((err: any) => {
-          // Most common reason: autoplay policy. We re-try on the next user
-          // tap/click so the call doesn't stay silent forever.
-          console.warn('[StreamView] play() rejected:', err?.message ?? err);
-          const retry = () => {
-            el.play?.().catch(() => {});
-            window.removeEventListener('click', retry);
-            window.removeEventListener('touchend', retry);
-          };
-          try {
-            window.addEventListener('click', retry, { once: true });
-            window.addEventListener('touchend', retry, { once: true });
-          } catch {}
-        });
+        p.then(() => { settled = true; stopInterval(); cleanupGesture(); })
+          .catch((err: any) => {
+            if (attempts <= 1) console.warn('[StreamView] play() rejected:', err?.message ?? err);
+            if (!gestureBound) {
+              gestureBound = true;
+              try {
+                window.addEventListener('click', onGesture, { once: true } as any);
+                window.addEventListener('touchend', onGesture, { once: true } as any);
+                document.addEventListener('visibilitychange', onVisible);
+              } catch {}
+            }
+          });
+      } else {
+        settled = true;
+        stopInterval();
       }
     };
-    tryPlay();
+    function onGesture() { attempt(); }
+    function onVisible() { if (document.visibilityState === 'visible') attempt(); }
+
+    attempt();
+    intervalId = setInterval(() => {
+      attempts++;
+      if (settled || attempts > 15) { stopInterval(); return; }
+      attempt();
+    }, 1000);
+
+    return () => { stopInterval(); cleanupGesture(); };
   }, [stream]);
 
   if (!stream) return null;
@@ -303,7 +331,7 @@ export default function VideoCallScreen() {
         /session.*expired/i.test(webrtc.error);
       if (isFatalError) {
         webrtc.cleanup();
-        endCall(false);
+        endCall(true, "connection");
       }
     }
   }, [webrtc.error, webrtc.clearError, webrtc.cleanup, endCall, permissions.camera.status, permissions.microphone.status]);
@@ -372,13 +400,13 @@ export default function VideoCallScreen() {
         if (sess?.status === "ended" || sess?.status === "missed" || sess?.status === "declined") {
           console.warn("[video-call] Server reports session", sess.status, "— cleaning up");
           webrtc.cleanup();
-          endCall(true);
+          endCall(true, "remote");
         }
       } catch (e: any) {
         if (/not found|404/i.test(String(e?.message ?? ""))) {
           if (!cancelled) {
             webrtc.cleanup();
-            endCall(true);
+            endCall(true, "remote");
           }
         }
       }
@@ -424,7 +452,9 @@ export default function VideoCallScreen() {
         if (res.ended) {
           console.log("[video-call] Heartbeat reports call ended:", res.reason);
           webrtc.cleanup();
-          endCall(true);
+          // Heartbeat only force-ends on balance exhaustion, so this is a
+          // genuine "out of coins" — show the recharge banner.
+          endCall(true, "balance");
         }
       } catch (e) {
         console.warn("[video-call] Heartbeat failed:", e);
@@ -471,7 +501,8 @@ export default function VideoCallScreen() {
 
   const handleAutoEnd = useCallback(() => {
     webrtc.cleanup();
-    endCall(true);
+    // Client-side timer hit the affordable cap → caller ran out of coins.
+    endCall(true, "balance");
   }, [endCall, webrtc.cleanup]);
 
   const { elapsed, remaining, showLowCoinWarning, showRechargePopup, dismissRechargePopup } = useCallTimer({

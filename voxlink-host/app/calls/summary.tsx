@@ -26,6 +26,7 @@ export default function CallSummaryScreen() {
     sessionId,
     coinsEarned,
     autoEnded,
+    endReason,
   } = useLocalSearchParams<{
     duration: string;
     type: string;
@@ -34,11 +35,18 @@ export default function CallSummaryScreen() {
     sessionId: string;
     coinsEarned: string;
     autoEnded: string;
+    endReason: string;
   }>();
 
   const durationSec   = parseInt(duration    ?? "0", 10);
   const coinsGained   = parseInt(coinsEarned ?? "0", 10);
-  const isAutoEnded   = autoEnded === "1";
+  void autoEnded;
+  // Reason-specific banner: only a genuine balance exhaustion shows the
+  // "user ran out of coins" line; a network/WebRTC drop shows a neutral
+  // connection message. Any other end (normal hang-up) shows no banner.
+  const isOutOfCoins  = endReason === "balance";
+  const isConnectionDrop = endReason === "connection";
+  const showAutoBanner = isOutOfCoins || isConnectionDrop;
   const isVideo       = type === "video";
   const userName      = participantName ?? t.callSummaryScreen.user;
   const sid           = sessionId ?? "";
@@ -70,10 +78,12 @@ export default function CallSummaryScreen() {
     }]}>
       <View style={[s.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
 
-        {isAutoEnded && (
+        {showAutoBanner && (
           <View style={s.autoEndedBanner}>
             <SvgIcon name="info" size={14} color="#60B8FF" />
-            <Text style={s.autoEndedText}>{t.callSummaryScreen.autoEndedBanner}</Text>
+            <Text style={s.autoEndedText}>
+              {isOutOfCoins ? t.callSummaryScreen.autoEndedBanner : t.callSummaryScreen.connectionLostBanner}
+            </Text>
           </View>
         )}
 
@@ -87,7 +97,7 @@ export default function CallSummaryScreen() {
         </View>
 
         <Text style={[s.title, { color: colors.foreground }]}>
-          {isAutoEnded ? t.callSummaryScreen.callAutoEnded : t.callSummaryScreen.callCompleted}
+          {showAutoBanner ? t.callSummaryScreen.callAutoEnded : t.callSummaryScreen.callCompleted}
         </Text>
         <Text style={[s.hostName, { color: colors.mutedForeground }]}>{t.callSummaryScreen.withName} {userName}</Text>
 

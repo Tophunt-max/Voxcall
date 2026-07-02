@@ -38,10 +38,21 @@ call.get('/ice-config', async (c) => {
   // only carries the public relay OUTSIDE production so local/dev calls still
   // traverse NAT without extra setup.
   const isProd = c.env.ENVIRONMENT === 'production';
-  const publicTurn = isProd ? [] : [
+  // Public Open Relay TURN servers. These are rate-limited and NOT suitable
+  // for production scale, but we now include them as a LAST-RESORT relay even
+  // in production WHEN Cloudflare TURN credentials are not configured. Reason:
+  // without ANY TURN relay, clients on symmetric-NAT / UDP-blocked mobile
+  // carrier networks get pure silence (signalling succeeds but no audio/video
+  // media ever flows) — which is far worse than a rate-limited relay. Configure
+  // TURN_KEY_ID / TURN_KEY_TOKEN to replace this with proper short-lived
+  // Cloudflare Realtime credentials (see the loud warning below).
+  // `turns:` (TLS over 443) is included so networks that block everything
+  // except HTTPS can still tunnel media.
+  const publicTurn = [
     { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
     { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
     { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+    { urls: 'turns:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
   ];
 
   // Default fallback: STUN (+ public TURN in dev). Public TURN is rate-limited

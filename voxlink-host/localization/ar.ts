@@ -756,6 +756,7 @@ const ar = {
 
   callSummaryScreen: {
     autoEndedBanner: "نفدت عملات المستخدم — تم قطع المكالمة تلقائيًا",
+    connectionLostBanner: "انقطعت المكالمة — فقد الاتصال",
     callAutoEnded: "انتهت المكالمة تلقائيًا",
     callCompleted: "اكتملت المكالمة",
     withName: "مع",

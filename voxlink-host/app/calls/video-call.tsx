@@ -99,28 +99,56 @@ function StreamView({ stream, style, mirror = false, audioOnly = false }: { stre
     const el = videoRef.current;
     if (!el || !stream) return;
     try { el.srcObject = stream; } catch {}
-    // Explicit play() — autoPlay alone is unreliable on iOS Safari / Chrome
-    // mobile when the page is in the background or the track was added late.
-    const tryPlay = () => {
-      const p = el.play?.();
+
+    // Explicit play() with a bounded retry — autoPlay alone is unreliable on
+    // iOS Safari / Chrome mobile when the track is added late or the tab was
+    // backgrounded. We retry on a short interval AND on the next user gesture /
+    // visibility change so the call doesn't stay silent/black forever.
+    let settled = false;
+    let attempts = 0;
+    let intervalId: any = null;
+    let gestureBound = false;
+
+    const cleanupGesture = () => {
+      try { window.removeEventListener('click', onGesture); } catch {}
+      try { window.removeEventListener('touchend', onGesture); } catch {}
+      try { document.removeEventListener('visibilitychange', onVisible); } catch {}
+      gestureBound = false;
+    };
+    const stopInterval = () => { if (intervalId) { clearInterval(intervalId); intervalId = null; } };
+
+    const attempt = () => {
+      if (settled || !videoRef.current) return;
+      const p = videoRef.current.play?.();
       if (p && typeof p.catch === 'function') {
-        p.catch((err: any) => {
-          // Most common reason: autoplay policy. We re-try on the next user
-          // tap/click so the call doesn't stay silent forever.
-          console.warn('[StreamView] play() rejected:', err?.message ?? err);
-          const retry = () => {
-            el.play?.().catch(() => {});
-            window.removeEventListener('click', retry);
-            window.removeEventListener('touchend', retry);
-          };
-          try {
-            window.addEventListener('click', retry, { once: true });
-            window.addEventListener('touchend', retry, { once: true });
-          } catch {}
-        });
+        p.then(() => { settled = true; stopInterval(); cleanupGesture(); })
+          .catch((err: any) => {
+            if (attempts <= 1) console.warn('[StreamView] play() rejected:', err?.message ?? err);
+            if (!gestureBound) {
+              gestureBound = true;
+              try {
+                window.addEventListener('click', onGesture, { once: true } as any);
+                window.addEventListener('touchend', onGesture, { once: true } as any);
+                document.addEventListener('visibilitychange', onVisible);
+              } catch {}
+            }
+          });
+      } else {
+        settled = true;
+        stopInterval();
       }
     };
-    tryPlay();
+    function onGesture() { attempt(); }
+    function onVisible() { if (document.visibilityState === 'visible') attempt(); }
+
+    attempt();
+    intervalId = setInterval(() => {
+      attempts++;
+      if (settled || attempts > 15) { stopInterval(); return; }
+      attempt();
+    }, 1000);
+
+    return () => { stopInterval(); cleanupGesture(); };
   }, [stream]);
 
   if (!stream) return null;
@@ -293,7 +321,7 @@ export default function VideoCallScreen() {
         /session.*expired/i.test(webrtc.error);
       if (isFatalError) {
         webrtc.cleanup();
-        endCall(false);
+        endCall(true, "connection");
       }
     }
   }, [webrtc.error, webrtc.clearError, webrtc.cleanup, endCall, permissions.camera.status, permissions.microphone.status]);
@@ -309,44 +337,53 @@ export default function VideoCallScreen() {
   useEffect(() => {
     const off = onEvent(SocketEvents.CALL_END, () => {
       webrtc.cleanup();
-      endCall(true);
+      endCall(true, "remote");
     });
     return off;
   }, [onEvent, webrtc.cleanup, endCall]);
 
   // FIX (call-disconnect propagation safety net): see audio-call for rationale.
-  // If WebRTC stays disconnected/failed for >15 s, auto-end the call.
+  // If WebRTC stays disconnected/failed for >20 s, auto-end the call.
   useEffect(() => {
     if (status !== "active") return;
     const s = webrtc.connectionState;
     if (s !== "disconnected" && s !== "failed") return;
     const t = setTimeout(() => {
-      console.warn("[host video-call] Connection stayed", s, "for 15s — auto-ending");
+      if (webrtc.isConnected) return; // recovered via ICE restart
+      console.warn("[host video-call] Connection stayed", s, "for 20s — auto-ending");
       webrtc.cleanup();
-      endCall(true);
-    }, 15000);
+      endCall(true, "connection");
+    }, 20000);
     return () => clearTimeout(t);
-  }, [webrtc.connectionState, status, webrtc.cleanup, endCall]);
+  }, [webrtc.connectionState, status, webrtc.isConnected, webrtc.cleanup, endCall]);
 
-  // FIX (connecting timeout): if WebRTC media never reaches `connected` state
-  // within 30 s, the call is stalled (CF Calls negotiation hung, ICE timed out,
-  // etc.). Auto-end so the host is not stuck on a dead call while the server
-  // keeps the session alive (and the caller keeps getting billed). NOTE: gated
-  // on the REAL webrtc.isConnected, NOT on `status` — `status` now flips to
-  // "active" off the server startTime before media is up, so gating on status
-  // would disable this safety net.
+  // FIX (connecting timeout — media-aware): if WebRTC media never reaches a
+  // usable state within the window, the call is stalled (CF Calls negotiation
+  // hung, ICE timed out, no TURN relay on this network, etc.). Auto-end so the
+  // host is not stuck on a dead call.
+  //
+  // ROOT-CAUSE FIX for "call auto-ends after ~30s even though it connected":
+  // the previous version gated ONLY on `webrtc.isConnected` (connectionState
+  // === 'connected'). On web / mobile browsers that aggregate state often
+  // lags behind real media — it can stay 'connecting' while audio+video are
+  // already flowing through the Cloudflare SFU. So a perfectly healthy call
+  // was being force-ended at exactly 30s, and the CALLER then saw a bogus
+  // "you ran out of coins" summary. We now consider the call connected if
+  // EITHER connectionState is 'connected' OR a remote media stream has
+  // actually arrived, and extend the window to 45s for slow cellular
+  // negotiation. Ends with a CONNECTION reason (never blames coins).
   useEffect(() => {
-    if (webrtc.isConnected) return;
+    if (webrtc.isConnected || webrtc.remoteStream) return;
     if (!webrtcReady) return;
     const t = setTimeout(() => {
-      if (!webrtc.isConnected) {
-        console.warn("[host video-call] Media did not connect within 30s — auto-ending");
+      if (!webrtc.isConnected && !webrtc.remoteStream) {
+        console.warn("[host video-call] Media did not connect within 45s — auto-ending");
         webrtc.cleanup();
-        endCall(true);
+        endCall(true, "connection");
       }
-    }, 30000);
+    }, 45000);
     return () => clearTimeout(t);
-  }, [webrtcReady, webrtc.isConnected, webrtc.cleanup, endCall]);
+  }, [webrtcReady, webrtc.isConnected, webrtc.remoteStream, webrtc.cleanup, endCall]);
 
   // FIX (call-disconnect propagation safety net #2): poll the server every 10s
   // while active. Catches sessions that ended server-side (cron reaper, /end
@@ -364,13 +401,13 @@ export default function VideoCallScreen() {
         if (sess?.status === "ended" || sess?.status === "missed" || sess?.status === "declined") {
           console.warn("[host video-call] Server reports session", sess.status, "— cleaning up");
           webrtc.cleanup();
-          endCall(true);
+          endCall(true, "remote");
         }
       } catch (e: any) {
         if (/not found|404/i.test(String(e?.message ?? ""))) {
           if (!cancelled) {
             webrtc.cleanup();
-            endCall(true);
+            endCall(true, "remote");
           }
         }
       }
@@ -456,7 +493,8 @@ export default function VideoCallScreen() {
 
   const handleAutoEnd = useCallback(() => {
     webrtc.cleanup();
-    endCall(true);
+    // Timer hit the caller's affordable cap → caller ran out of coins.
+    endCall(true, "balance");
   }, [endCall, webrtc.cleanup]);
 
   const { elapsed, remaining, showLowCoinWarning } = useCallTimer({

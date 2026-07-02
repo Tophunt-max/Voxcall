@@ -251,6 +251,7 @@ const en = {
     oneMinMinimum: "1 min minimum",
     callAutoEnded: "Call Auto-Ended",
     autoDisconnected: "You ran out of coins — call was auto-disconnected",
+    connectionLost: "Call disconnected — connection lost. Please check your network.",
     with: "with",
     minBilling: "Min. 1 min billing applied",
     duration: "Duration",

@@ -244,6 +244,7 @@ const hi = {
     oneMinMinimum: "न्यूनतम 1 मिनट",
     callAutoEnded: "कॉल स्वतः समाप्त",
     autoDisconnected: "आपके कॉइन समाप्त हो गए — कॉल स्वतः कट गई",
+    connectionLost: "कॉल कट गई — कनेक्शन टूट गया। कृपया अपना नेटवर्क जांचें।",
     with: "के साथ",
     minBilling: "न्यूनतम 1 मिनट की बिलिंग लागू",
     duration: "अवधि",

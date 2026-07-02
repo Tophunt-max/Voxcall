@@ -756,6 +756,7 @@ const es = {
 
   callSummaryScreen: {
     autoEndedBanner: "El usuario se quedó sin monedas — la llamada se desconectó automáticamente",
+    connectionLostBanner: "Llamada desconectada — se perdió la conexión",
     callAutoEnded: "Llamada finalizada automáticamente",
     callCompleted: "Llamada completada",
     withName: "con",

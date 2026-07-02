@@ -756,6 +756,7 @@ const zh = {
 
   callSummaryScreen: {
     autoEndedBanner: "用户金币用尽 — 通话已自动断开",
+    connectionLostBanner: "通话已断开 — 连接丢失",
     callAutoEnded: "通话自动结束",
     callCompleted: "通话完成",
     withName: "与",

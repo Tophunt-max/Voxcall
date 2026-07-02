@@ -6,6 +6,15 @@ import { useAuth } from "@/context/AuthContext";
 export type CallType = "audio" | "video";
 export type CallStatus = "idle" | "incoming" | "active" | "ended";
 
+// Why a call ended — drives the summary banner so the host never sees a
+// misleading "user ran out of coins" line when the call actually dropped
+// because of a network / WebRTC problem or a normal hang-up.
+export type CallEndReason =
+  | "balance"     // caller's coins/free-minutes exhausted
+  | "connection"  // WebRTC/ICE never connected or dropped
+  | "remote"      // caller hung up / server ended the session
+  | "user";       // host tapped End
+
 export interface CallParticipant {
   id: string;
   name: string;
@@ -35,7 +44,7 @@ interface CallContextValue {
   acceptCall: () => void;
   markCallActive: () => void;
   declineCall: () => void;
-  endCall: (autoEnded?: boolean) => void;
+  endCall: (autoEnded?: boolean, reason?: CallEndReason) => void;
   toggleMute: () => void;
   toggleCamera: () => void;
   toggleSpeaker: () => void;
@@ -138,7 +147,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     // would double-pop the navigation stack.
   }, []);
 
-  const endCall = useCallback(async (autoEnded = false) => {
+  const endCall = useCallback(async (autoEnded = false, reason?: CallEndReason) => {
     const call = activeCallRef.current;
     const wasActive = !!(call?.startTime);
     let duration = wasActive ? Math.floor((Date.now() - call!.startTime!) / 1000) : 0;
@@ -203,6 +212,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     }
 
     if (call) {
+      const endReason: CallEndReason = reason ?? (autoEnded ? "remote" : "user");
       router.replace({
         pathname: "/calls/summary",
         params: {
@@ -213,6 +223,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           sessionId: call.sessionId ?? "",
           coinsEarned: String(coinsEarned),
           autoEnded: autoEnded ? "1" : "0",
+          endReason,
         },
       });
     } else {

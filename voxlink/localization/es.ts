@@ -239,6 +239,7 @@ const es = {
     oneMinMinimum: "1 min mínimo",
     callAutoEnded: "Llamada finalizada automáticamente",
     autoDisconnected: "Te quedaste sin monedas — la llamada se desconectó automáticamente",
+    connectionLost: "Llamada desconectada — se perdió la conexión. Comprueba tu red.",
     with: "con",
     minBilling: "Cobro mínimo de 1 min aplicado",
     duration: "Duración",

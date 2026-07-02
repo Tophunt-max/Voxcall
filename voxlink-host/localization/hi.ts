@@ -768,6 +768,7 @@ const hi = {
 
   callSummaryScreen: {
     autoEndedBanner: "उपयोगकर्ता के कॉइन समाप्त हो गए — कॉल स्वतः डिस्कनेक्ट हुई",
+    connectionLostBanner: "कॉल डिस्कनेक्ट हुई — कनेक्शन टूट गया",
     callAutoEnded: "कॉल स्वतः समाप्त",
     callCompleted: "कॉल पूर्ण",
     withName: "के साथ",

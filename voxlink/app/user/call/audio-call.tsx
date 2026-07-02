@@ -29,24 +29,59 @@ function RemoteAudioMount({ stream }: { stream: any }) {
     const el = ref.current;
     if (!el || !stream) return;
     try { el.srcObject = stream; } catch {}
-    const tryPlay = () => {
-      const p = el.play?.();
+    try { el.muted = false; el.volume = 1; } catch {}
+
+    let settled = false;
+    let attempts = 0;
+    let intervalId: any = null;
+    let gestureBound = false;
+
+    const cleanupGesture = () => {
+      try { window.removeEventListener("click", onGesture); } catch {}
+      try { window.removeEventListener("touchend", onGesture); } catch {}
+      try { document.removeEventListener("visibilitychange", onVisible); } catch {}
+      gestureBound = false;
+    };
+    const stopInterval = () => { if (intervalId) { clearInterval(intervalId); intervalId = null; } };
+
+    const attempt = () => {
+      if (settled || !ref.current) return;
+      const p = ref.current.play?.();
       if (p && typeof p.catch === "function") {
-        p.catch((err: any) => {
-          console.warn("[audio-call] remote audio play() rejected:", err?.message ?? err);
-          const retry = () => {
-            el.play?.().catch(() => {});
-            try { window.removeEventListener("click", retry); } catch {}
-            try { window.removeEventListener("touchend", retry); } catch {}
-          };
-          try {
-            window.addEventListener("click", retry, { once: true } as any);
-            window.addEventListener("touchend", retry, { once: true } as any);
-          } catch {}
-        });
+        p.then(() => { settled = true; stopInterval(); cleanupGesture(); })
+          .catch((err: any) => {
+            if (attempts <= 1) console.warn("[audio-call] remote audio play() rejected:", err?.message ?? err);
+            // Autoplay blocked — bind a one-shot gesture retry AND keep the
+            // periodic retry running for a bit (a late user tap OR the browser
+            // relaxing its policy will unblock it).
+            if (!gestureBound) {
+              gestureBound = true;
+              try {
+                window.addEventListener("click", onGesture, { once: true } as any);
+                window.addEventListener("touchend", onGesture, { once: true } as any);
+                document.addEventListener("visibilitychange", onVisible);
+              } catch {}
+            }
+          });
+      } else {
+        settled = true;
+        stopInterval();
       }
     };
-    tryPlay();
+    function onGesture() { attempt(); }
+    function onVisible() { if (document.visibilityState === "visible") attempt(); }
+
+    attempt();
+    // Bounded periodic retry (every 1s, ~15 tries) so audio starts as soon as
+    // the browser allows it, without waiting only on a user tap that may never
+    // come during a hands-free call.
+    intervalId = setInterval(() => {
+      attempts++;
+      if (settled || attempts > 15) { stopInterval(); return; }
+      attempt();
+    }, 1000);
+
+    return () => { stopInterval(); cleanupGesture(); };
   }, [stream]);
   if (Platform.OS !== "web" || !stream) return null;
   return React.createElement("audio", {
@@ -173,7 +208,7 @@ export default function AudioCallScreen() {
         /session.*expired/i.test(webrtc.error);
       if (isFatalError) {
         webrtc.cleanup();
-        endCall(false);
+        endCall(true, "connection");
       }
     }
   }, [webrtc.error, webrtc.clearError, webrtc.cleanup, endCall, permissions.microphone.status]);
@@ -189,48 +224,57 @@ export default function AudioCallScreen() {
   useEffect(() => {
     const off = onEvent(SocketEvents.CALL_END, () => {
       webrtc.cleanup();
-      endCall(true);
+      endCall(true, "remote");
     });
     return off;
   }, [onEvent, webrtc.cleanup, endCall]);
 
   // FIX (call-disconnect propagation safety net): if WebRTC stays in
-  // 'disconnected' or 'failed' for longer than 15 s, the remote party most
+  // 'disconnected' or 'failed' for longer than 20 s, the remote party most
   // likely hung up and the WS-driven CALL_END notification was missed
   // (offline at the moment of /end, FCM also dropped). Auto-end so the user
   // is not stuck on the call screen and the server stops billing.
-  // The 15 s window covers transient cellular blips that ICE restart can
+  // The window covers transient cellular blips that ICE restart can
   // recover from — do NOT shorten this without testing on real bad networks.
   useEffect(() => {
     if (status !== "active") return;
     const s = webrtc.connectionState;
     if (s !== "disconnected" && s !== "failed") return;
     const t = setTimeout(() => {
-      console.warn("[audio-call] Connection stayed", s, "for 15s — auto-ending");
+      // If media resumed (ICE restart recovered), don't kill the call.
+      if (webrtc.isConnected) return;
+      console.warn("[audio-call] Connection stayed", s, "for 20s — auto-ending");
       webrtc.cleanup();
-      endCall(true);
-    }, 15000);
+      endCall(true, "connection");
+    }, 20000);
     return () => clearTimeout(t);
-  }, [webrtc.connectionState, status, webrtc.cleanup, endCall]);
+  }, [webrtc.connectionState, status, webrtc.isConnected, webrtc.cleanup, endCall]);
 
-  // FIX (connecting timeout): if WebRTC media never reaches `connected` state
-  // within 30 s, the call is stalled (CF Calls negotiation hung, ICE timed out,
-  // etc.). Auto-end gracefully. NOTE: this is gated on the REAL
-  // webrtc.isConnected, NOT on `status` — because `status` now flips to "active"
-  // off the server startTime before media is actually up, so gating on status
-  // would silently disable this safety net.
+  // FIX (connecting timeout — media-aware): if WebRTC media never reaches a
+  // usable state within the window, the call is stalled (CF Calls negotiation
+  // hung, ICE timed out, no TURN relay on this network, etc.). Auto-end
+  // gracefully with a CONNECTION reason (not "out of coins").
+  //
+  // IMPORTANT: we treat the call as connected if EITHER the aggregate
+  // connectionState reports 'connected' OR a remote media stream has actually
+  // arrived. On web/mobile browsers `connectionState` sometimes lags behind
+  // real media (stays 'connecting' while audio already flows through the SFU),
+  // so gating purely on `isConnected` was force-ending calls that were in fact
+  // working. Requiring BOTH signals to be absent before ending fixes the
+  // "call auto-ends after ~30s even though it connected" bug. Window extended
+  // to 45s to tolerate slow cellular negotiation.
   useEffect(() => {
-    if (webrtc.isConnected) return;
+    if (webrtc.isConnected || webrtc.remoteStream) return;
     if (!webrtcReady) return;
     const t = setTimeout(() => {
-      if (!webrtc.isConnected) {
-        console.warn("[audio-call] Media did not connect within 30s — auto-ending");
+      if (!webrtc.isConnected && !webrtc.remoteStream) {
+        console.warn("[audio-call] Media did not connect within 45s — auto-ending");
         webrtc.cleanup();
-        endCall(true);
+        endCall(true, "connection");
       }
-    }, 30000);
+    }, 45000);
     return () => clearTimeout(t);
-  }, [webrtcReady, webrtc.isConnected, webrtc.cleanup, endCall]);
+  }, [webrtcReady, webrtc.isConnected, webrtc.remoteStream, webrtc.cleanup, endCall]);
 
   // FIX (call-disconnect propagation safety net #2): poll the server every 10 s
   // while the call is active. If the session is reported as ended/missed/
@@ -249,7 +293,7 @@ export default function AudioCallScreen() {
         if (sess?.status === "ended" || sess?.status === "missed" || sess?.status === "declined") {
           console.warn("[audio-call] Server reports session", sess.status, "— cleaning up");
           webrtc.cleanup();
-          endCall(true);
+          endCall(true, "remote");
         }
       } catch (e: any) {
         // 404 = session pruned; treat as ended so the screen unblocks.
@@ -257,7 +301,7 @@ export default function AudioCallScreen() {
         if (/not found|404/i.test(String(e?.message ?? ""))) {
           if (!cancelled) {
             webrtc.cleanup();
-            endCall(true);
+            endCall(true, "remote");
           }
         }
       }
@@ -346,7 +390,8 @@ export default function AudioCallScreen() {
         if (res.ended) {
           console.log("[audio-call] Heartbeat reports call ended:", res.reason);
           webrtc.cleanup();
-          endCall(true);
+          // Heartbeat only force-ends on balance exhaustion → real out-of-coins.
+          endCall(true, "balance");
         }
       } catch (e) {
         console.warn("[audio-call] Heartbeat failed:", e);
@@ -360,7 +405,8 @@ export default function AudioCallScreen() {
 
   const handleAutoEnd = useCallback(() => {
     webrtc.cleanup();
-    endCall(true);
+    // Client-side timer hit the affordable cap → caller ran out of coins.
+    endCall(true, "balance");
   }, [endCall, webrtc.cleanup]);
 
   const { elapsed, remaining, showLowCoinWarning, showRechargePopup, dismissRechargePopup } = useCallTimer({

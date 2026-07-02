@@ -802,6 +802,7 @@ const en = {
   // Call summary screen
   callSummaryScreen: {
     autoEndedBanner: "User ran out of coins — call was auto-disconnected",
+    connectionLostBanner: "Call disconnected — connection lost",
     callAutoEnded: "Call Auto-Ended",
     callCompleted: "Call Completed",
     withName: "with",

@@ -118,3 +118,40 @@ all of the above. **Keep SFU.**
 
 > The code is production-ready; enabling calls is purely about setting the
 > Cloudflare Realtime credentials above on the `voxlink-api` Worker.
+
+
+---
+
+## ⚠️ Mobile-data calls: TURN credentials are REQUIRED
+
+**Symptom:** calls connect on Wi‑Fi but on **mobile data** you get "no audio /
+no video" (signalling succeeds, the call screen shows connected, but media
+never flows), and the call may auto-end after ~30–45s.
+
+**Cause:** most mobile carriers use symmetric NAT and/or block UDP. Without a
+**TURN relay**, WebRTC media cannot traverse the NAT to reach the Cloudflare
+SFU. STUN alone is not enough on these networks.
+
+**Fix:** set the Cloudflare Realtime TURN credentials as **Worker secrets** on
+`voxlink-api`:
+
+```
+npx wrangler secret put TURN_KEY_ID      # Cloudflare Realtime → TURN → Key ID
+npx wrangler secret put TURN_KEY_TOKEN   # Cloudflare Realtime → TURN → Key Token
+```
+
+Also confirm the SFU credentials are set (calls won't start at all without
+these):
+
+```
+npx wrangler secret put CF_CALLS_APP_ID
+npx wrangler secret put CF_CALLS_APP_SECRET
+```
+
+`GET /api/calls/ice-config` mints short-lived TURN credentials when
+`TURN_KEY_ID`/`TURN_KEY_TOKEN` are present. As a **last resort** (when they are
+NOT set) the endpoint now also returns a public Open Relay TURN server —
+including a `turns:` (TLS/443) entry for UDP-blocked networks — so mobile-data
+calls have *some* chance of connecting instead of pure silence. The public
+relay is rate-limited and unreliable, so **configure the Cloudflare TURN keys
+for production.**

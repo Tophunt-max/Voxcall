@@ -168,6 +168,7 @@ const FALLBACK_ICE_SERVERS = [
   { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
   { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
   { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turns:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
 ];
 
 export type ConnectionQuality = 'excellent' | 'good' | 'poor' | 'lost' | 'unknown';
@@ -252,6 +253,16 @@ export class WebRTCService {
   // permission denials (NotAllowedError) are rethrown immediately so the UI
   // can re-prompt rather than silently degrading.
   private async acquireLocalStream(): Promise<any> {
+    // WEB camera-busy race fix: the permission pre-check (usePermissions →
+    // requestWebMediaPermission) opens a camera/mic stream and immediately
+    // STOPS it to detect the grant. On mobile Chrome the hardware needs a
+    // beat to actually release before we re-acquire here, otherwise the first
+    // getUserMedia throws NotReadableError ("Could not start video source")
+    // and the self-view can get stuck on "Starting camera…". A short settle
+    // delay before the first attempt makes the very first acquire succeed.
+    if (Platform.OS === 'web' && this.isVideo) {
+      await new Promise((r) => setTimeout(r, 350));
+    }
     const hdVideo = {
       facingMode: 'user',
       width:  { min: 320, ideal: 1280, max: 1920 },

@@ -239,6 +239,7 @@ const zh = {
     oneMinMinimum: "最低 1 分钟",
     callAutoEnded: "通话已自动结束",
     autoDisconnected: "您的金币已用完——通话已自动断开",
+    connectionLost: "通话已断开——连接丢失。请检查您的网络。",
     with: "与",
     minBilling: "已应用最低 1 分钟计费",
     duration: "时长",

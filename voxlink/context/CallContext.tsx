@@ -7,6 +7,16 @@ import { useAuth } from "@/context/AuthContext";
 export type CallType = "audio" | "video";
 export type CallStatus = "idle" | "outgoing" | "incoming" | "active" | "ended";
 
+// Why a call ended. Drives the summary screen's banner + messaging so we never
+// show a misleading "you ran out of coins" line for a call that actually
+// dropped because of a network / WebRTC problem or because the other party
+// hung up. Only `balance` means the caller genuinely exhausted their coins.
+export type CallEndReason =
+  | "balance"     // coins/free-minutes exhausted (real out-of-coins)
+  | "connection"  // WebRTC/ICE never connected or dropped (network problem)
+  | "remote"      // other party hung up / server ended the session
+  | "user";       // this user tapped End (normal hang-up)
+
 export interface CallParticipant {
   id: string;
   name: string;
@@ -38,7 +48,7 @@ interface CallContextValue {
   markCallActive: () => void;
   syncServerStartTime: (serverStartedAtSeconds: number) => void;
   declineCall: () => void;
-  endCall: (autoEnded?: boolean) => void;
+  endCall: (autoEnded?: boolean, reason?: CallEndReason) => void;
   clearCall: () => void;
   toggleMute: () => void;
   toggleCamera: () => void;
@@ -176,7 +186,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   // BUG FIX #7: Improved duration handling with server validation
-  const endCall = useCallback(async (autoEnded = false) => {
+  const endCall = useCallback(async (autoEnded = false, reason?: CallEndReason) => {
     const call = activeCallRef.current;
     const wasActive = !!(call?.startTime);
     const clientDuration = wasActive ? Math.floor((Date.now() - call!.startTime!) / 1000) : 0;
@@ -236,6 +246,10 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     }
 
     if (call) {
+      // Effective end reason: an explicit reason always wins; otherwise an
+      // auto-end with no reason is treated as a generic "ended" (NOT
+      // "ran out of coins"), and a manual end is "user".
+      const endReason: CallEndReason = reason ?? (autoEnded ? "remote" : "user");
       router.replace({
         pathname: "/user/call/summary",
         params: {
@@ -246,6 +260,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           sessionId: call.sessionId ?? "",
           coinsSpent: String(coinsSpent),
           autoEnded: autoEnded ? "1" : "0",
+          endReason,
         },
       });
     } else {

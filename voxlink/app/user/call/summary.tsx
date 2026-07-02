@@ -26,6 +26,7 @@ export default function CallSummaryScreen() {
     sessionId,
     coinsSpent,
     autoEnded,
+    endReason,
   } = useLocalSearchParams<{
     duration: string;
     type: string;
@@ -34,11 +35,19 @@ export default function CallSummaryScreen() {
     sessionId: string;
     coinsSpent: string;
     autoEnded: string;
+    endReason: string;
   }>();
 
   const durationSec  = parseInt(duration  ?? "0", 10);
   const coinsUsed    = parseInt(coinsSpent ?? "0", 10);
-  const isAutoEnded  = autoEnded === "1";
+  // `autoEnded` is retained in the route params for backward-compat but the
+  // banner/messaging is now driven by the precise `endReason` below.
+  void autoEnded;
+  // Only a genuine balance exhaustion should tell the user they ran out of
+  // coins. Network / WebRTC drops and remote hang-ups must NOT show that
+  // (misleading) banner — they get a neutral "call ended" / "connection lost".
+  const isOutOfCoins = endReason === "balance";
+  const isConnectionDrop = endReason === "connection";
   const isVideo      = type === "video";
   const hostName     = participantName ?? t.hosts.host;
   const sid          = sessionId ?? "";
@@ -77,11 +86,19 @@ export default function CallSummaryScreen() {
       {/* Main card */}
       <View style={[s.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
 
-        {/* Auto-ended banner */}
-        {isAutoEnded && (
+        {/* Auto-ended banner — reason-specific. Only a real balance
+            exhaustion shows the "ran out of coins" line; a network / WebRTC
+            drop shows a neutral connection message instead. */}
+        {isOutOfCoins && (
           <View style={s.autoEndedBanner}>
             <Image source={require("@/assets/icons/ic_close_fill.png")} style={{ width: 14, height: 14, tintColor: "#FF6B6B" }} resizeMode="contain" />
             <Text style={s.autoEndedText}>{t.calls.autoDisconnected}</Text>
+          </View>
+        )}
+        {isConnectionDrop && (
+          <View style={s.autoEndedBanner}>
+            <Image source={require("@/assets/icons/ic_close_fill.png")} style={{ width: 14, height: 14, tintColor: "#FF6B6B" }} resizeMode="contain" />
+            <Text style={s.autoEndedText}>{t.calls.connectionLost}</Text>
           </View>
         )}
 
@@ -91,7 +108,7 @@ export default function CallSummaryScreen() {
         </View>
 
         <Text style={[s.title, { color: colors.foreground }]}>
-          {isAutoEnded ? t.calls.callAutoEnded : t.calls.callEnded}
+          {(isOutOfCoins || isConnectionDrop) ? t.calls.callAutoEnded : t.calls.callEnded}
         </Text>
         <Text style={[s.hostName, { color: colors.mutedForeground }]}>{t.calls.with} {hostName}</Text>
 
@@ -186,8 +203,8 @@ export default function CallSummaryScreen() {
         )}
       </View>
 
-      {/* Recharge button if auto-ended */}
-      {isAutoEnded && (
+      {/* Recharge button only when the caller actually ran out of coins */}
+      {isOutOfCoins && (
         <TouchableOpacity
           onPress={() => router.replace("/user/screens/home/wallet")}
           style={[s.actionBtn, { backgroundColor: "#A00EE7" }]}
@@ -201,11 +218,11 @@ export default function CallSummaryScreen() {
       {/* Back to home */}
       <TouchableOpacity
         onPress={() => router.replace("/user/screens/home")}
-        style={[s.actionBtn, { backgroundColor: isAutoEnded ? colors.surface : colors.primary, borderWidth: isAutoEnded ? 1 : 0, borderColor: colors.border }]}
+        style={[s.actionBtn, { backgroundColor: isOutOfCoins ? colors.surface : colors.primary, borderWidth: isOutOfCoins ? 1 : 0, borderColor: colors.border }]}
         activeOpacity={0.85}
       >
-        <Image source={require("@/assets/icons/ic_home.png")} style={{ width: 16, height: 16, tintColor: isAutoEnded ? colors.foreground : "#fff" }} resizeMode="contain" />
-        <Text style={[s.actionBtnText, isAutoEnded && { color: colors.foreground }]}>
+        <Image source={require("@/assets/icons/ic_home.png")} style={{ width: 16, height: 16, tintColor: isOutOfCoins ? colors.foreground : "#fff" }} resizeMode="contain" />
+        <Text style={[s.actionBtnText, isOutOfCoins && { color: colors.foreground }]}>
           {t.calls.backHome}
         </Text>
       </TouchableOpacity>
