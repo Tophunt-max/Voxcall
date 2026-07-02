@@ -6,7 +6,7 @@ import { useCall } from "@/context/CallContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { useSocket } from "@/context/SocketContext";
 import { SocketEvents } from "@/constants/events";
-import { resolveMediaUrl } from "@/services/api";
+import { resolveMediaUrl, API } from "@/services/api";
 import { router } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { useRingtone } from "@/hooks/useRingtone";
@@ -64,6 +64,36 @@ export default function IncomingCallScreen() {
     await stopRing();
     acceptCall();
   }, [acceptCall, stopRing]);
+
+  // FIX (phantom incoming): a stale / replayed `incoming_call` event — e.g. a
+  // WebSocket reconnect replay, a late FCM tap, or the polling fallback firing
+  // right as a call ends — could pop this screen for a call that is no longer
+  // ringing. Validate against the server: if the session is not 'pending'
+  // anymore (ended / declined / missed / active elsewhere), stop the ringtone
+  // and dismiss instead of showing a phantom incoming call. Runs immediately
+  // on mount and every 3s while the screen is up.
+  useEffect(() => {
+    const sid = activeCall?.sessionId;
+    if (!sid) return;
+    let cancelled = false;
+    const validate = async () => {
+      try {
+        const sess: any = await API.getCallSession(sid);
+        if (cancelled) return;
+        if (sess?.status && sess.status !== "pending") {
+          await stopRing().catch(() => {});
+          declineCall();
+        }
+      } catch (e: any) {
+        if (/not found|404/i.test(String(e?.message ?? ""))) {
+          if (!cancelled) { await stopRing().catch(() => {}); declineCall(); }
+        }
+      }
+    };
+    validate();
+    const interval = setInterval(validate, 3000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [activeCall?.sessionId, stopRing, declineCall]);
 
   const handleDecline = useCallback(async () => {
     await stopRing();

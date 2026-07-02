@@ -161,6 +161,14 @@ function StreamView({ stream, style, mirror = false, audioOnly = false }: { stre
       muted: mirror, // self-view is muted, remote is not
       style: {
         ...StyleSheet.flatten(style),
+        // FIX (video showed only "aadha photo", not full screen): an
+        // absolutely-positioned <video> is a REPLACED element — with
+        // width/height:auto it renders at the intrinsic video resolution and
+        // IGNORES the right/bottom insets from absoluteFillObject, so it only
+        // filled part of the screen. Force 100% so it fills its container and
+        // object-fit can crop to cover.
+        width: '100%',
+        height: '100%',
         objectFit: 'cover',
         transform: mirror ? 'scaleX(-1)' : undefined,
         // For audio-only mounts, render a 1x1 invisible element. We can't

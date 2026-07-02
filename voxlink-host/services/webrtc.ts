@@ -446,14 +446,17 @@ export class WebRTCService {
         this.triggerPullPending = false;
         this._startPull();
       } else {
-        // Fallback: pull after 5 seconds if no peer_tracks_ready event arrives
+        // Fallback: start pulling after 1.5s if no peer_tracks_ready event
+        // arrives (was 5s — that made connect feel slow when the socket event
+        // was missed/late; the pull loop already retries harmlessly if the
+        // remote hasn't published yet, so starting sooner is safe).
         this.pullTimer = setTimeout(() => {
           if (!this.pullStarted) {
             this.pullStarted = true;
             this.pullRunning = true;
             this.pullRemoteTracks();
           }
-        }, 5000);
+        }, 1500);
       }
 
       return this.localStream;
@@ -771,9 +774,20 @@ export class WebRTCService {
         for (const enc of params.encodings) {
           enc.maxBitrate = VIDEO_MAX_BPS;
           enc.maxFramerate = 30;
-          enc.scaleResolutionDownBy = 1;
+          // FIX (choppy / "atak-atak" video on mobile): do NOT pin
+          // scaleResolutionDownBy = 1. Pinning it to 1 forbade the encoder
+          // from lowering resolution when the uplink is congested, so on weak
+          // mobile networks it stuttered (dropped frames) instead of sending a
+          // slightly smaller-but-smooth picture. Leaving it unset lets WebRTC's
+          // adaptive scaling kick in.
+          delete (enc as any).scaleResolutionDownBy;
           (enc as any).networkPriority = 'high';
         }
+        // Prefer smooth motion over max resolution when bandwidth is tight —
+        // 'balanced' lets WebRTC trade resolution AND framerate as needed, which
+        // is much less janky on cellular than the default for a talking-head
+        // video call.
+        (params as any).degradationPreference = 'balanced';
         await videoSender.setParameters(params);
       }
     } catch (e) {
