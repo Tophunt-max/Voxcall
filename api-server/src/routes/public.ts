@@ -68,9 +68,18 @@ pub.get('/calls-config-status', (c) => {
   const present = (v: unknown) => typeof v === 'string' && v.trim().length > 0;
   const cfCallsConfigured = present(c.env.CF_CALLS_APP_ID) && present(c.env.CF_CALLS_APP_SECRET);
   const turnConfigured = present(c.env.TURN_KEY_ID) && present(c.env.TURN_KEY_TOKEN);
+  const agoraConfigured = present(c.env.AGORA_APP_ID) && present(c.env.AGORA_APP_CERTIFICATE);
+  // Agora wins when configured; otherwise fall back to the Cloudflare SFU.
+  const rtcProvider = agoraConfigured ? 'agora' : 'cloudflare';
   return c.json({
     ok: true,
     environment: c.env.ENVIRONMENT ?? 'unknown',
+    rtc_provider: rtcProvider,
+    agora: {
+      configured: agoraConfigured,
+      app_id_present: present(c.env.AGORA_APP_ID),
+      app_certificate_present: present(c.env.AGORA_APP_CERTIFICATE),
+    },
     // Presence-only booleans — NOT the secret values.
     cf_calls: {
       configured: cfCallsConfigured,
@@ -83,10 +92,8 @@ pub.get('/calls-config-status', (c) => {
       key_id_present: present(c.env.TURN_KEY_ID),
       key_token_present: present(c.env.TURN_KEY_TOKEN),
     },
-    // If cf_calls.configured is false, audio/video will NEVER connect —
-    // the /sdp/push route returns 500 "CF Calls not configured". Set the
-    // CF_CALLS_APP_ID / CF_CALLS_APP_SECRET secrets on the voxlink-api Worker.
-    calling_ready: cfCallsConfigured,
+    // calling_ready = the chosen provider is actually configured.
+    calling_ready: agoraConfigured || cfCallsConfigured,
   });
 });
 

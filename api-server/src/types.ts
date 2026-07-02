@@ -8,6 +8,11 @@ export interface Env {
   CF_CALLS_APP_ID: string;
   CF_CALLS_APP_SECRET: string;
   CF_ACCOUNT_ID: string;
+  // Agora RTC credentials. When BOTH are set, calls are routed through Agora
+  // (managed SDK — better weak-network quality) instead of the Cloudflare
+  // Realtime SFU. AGORA_APP_CERTIFICATE must be a Worker SECRET (never a var).
+  AGORA_APP_ID?: string;
+  AGORA_APP_CERTIFICATE?: string;
   // Cloudflare Realtime TURN credentials. Optional — when configured the
   // /api/calls/ice-config endpoint hands out short-lived TURN credentials so
   // clients on symmetric NATs / UDP-blocked networks (most mobile carriers)

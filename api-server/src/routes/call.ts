@@ -3,6 +3,7 @@ import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth';
 import { createCFCalls, CFCallsTrack } from '../lib/cf-calls';
+import { buildAgoraRtcToken, isAgoraConfigured } from '../lib/agoraToken';
 import { sendFCMPush } from '../lib/fcm';
 import { getLevelConfig, getEarningShare, getDefaultCallRates, DEFAULT_AUDIO_RATE, DEFAULT_VIDEO_RATE } from '../lib/levels';
 import { applyLevelUp } from '../lib/levelService';
@@ -453,6 +454,10 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
     rate_per_minute: ratePerMin,
     call_type: callType,
     max_seconds: maxSeconds,
+    // Tells the client which media transport to use for this call. When Agora
+    // is configured on the Worker it wins; otherwise the Cloudflare Realtime
+    // SFU path is used. Lets us switch providers without a client release.
+    rtc_provider: isAgoraConfigured(c.env) ? 'agora' : 'cloudflare',
   });
 });
 
@@ -1573,6 +1578,50 @@ call.get('/:id/cf-token', async (c) => {
     app_id: c.env.CF_CALLS_APP_ID,
     role: result.role,
   });
+});
+
+// ─── Agora RTC token ─────────────────────────────────────────────────────────
+// Returns everything the Agora client SDK needs to join the call:
+//   { app_id, channel, uid, token, role }
+// The channel is the call session id (a random UUID), uid = 0 (Agora auto-
+// assigns; the token is valid for any uid on the channel), and only the two
+// authorized participants (deriveRole) can mint a token for a given session.
+// Used only when Agora is configured; otherwise clients use the CF Calls path.
+call.get('/:id/agora-token', async (c) => {
+  const { sub } = c.get('user');
+  const sessionId = c.req.param('id');
+  if (!isAgoraConfigured(c.env)) {
+    console.error('[agora-token] NOT CONFIGURED — set AGORA_APP_ID + AGORA_APP_CERTIFICATE secrets');
+    return c.json({ error: 'Agora not configured — contact admin to set AGORA_APP_ID / AGORA_APP_CERTIFICATE' }, 500);
+  }
+  const result = await deriveRole(c.env.DB, sessionId, sub);
+  if (!result) return c.json({ error: 'Session not found or access denied' }, 403);
+
+  const channel = sessionId;
+  const uid = 0; // let Agora auto-assign; a uid-0 token is valid for any uid.
+  // Generous 4h window so a long call never has its token expire mid-way.
+  const EXPIRE_SECONDS = 4 * 60 * 60;
+  try {
+    const token = await buildAgoraRtcToken(
+      c.env.AGORA_APP_ID!,
+      c.env.AGORA_APP_CERTIFICATE!,
+      channel,
+      uid,
+      EXPIRE_SECONDS,
+    );
+    return c.json({
+      provider: 'agora' as const,
+      app_id: c.env.AGORA_APP_ID,
+      channel,
+      uid,
+      token,
+      role: result.role,
+      call_type: result.session.type,
+    });
+  } catch (e: any) {
+    console.error('[agora-token] token build failed:', e);
+    return c.json({ error: 'Failed to build Agora token' }, 500);
+  }
 });
 
 export default call;
