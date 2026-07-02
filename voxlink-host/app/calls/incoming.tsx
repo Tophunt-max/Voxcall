@@ -67,7 +67,12 @@ export default function IncomingCallScreen() {
       try {
         const sess: any = await API.getCallSession(sid);
         if (cancelled) return;
-        if (sess?.status && sess.status !== "pending") {
+        // Dismiss ONLY on terminal states. Crucially do NOT dismiss on
+        // 'active' — that is the NORMAL transition when THIS host accepts the
+        // call, and dismissing there was cancelling the call right as it
+        // connected (host's video screen vanished). 'pending' = still ringing.
+        const TERMINAL = ["ended", "declined", "missed", "cancelled", "rejected", "no_answer", "timeout"];
+        if (sess?.status && TERMINAL.includes(String(sess.status))) {
           await stopRing().catch(() => {});
           declineCall();
         }
