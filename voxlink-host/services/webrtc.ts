@@ -871,7 +871,35 @@ export class WebRTCService {
   private _emitQuality(quality: ConnectionQuality, detail?: { rtt?: number; packetLoss?: number; jitter?: number }): void {
     if (quality === this.currentQuality) return; // de-dupe stable states
     this.currentQuality = quality;
+    // ADAPTIVE BITRATE (weak-signal smoothness): proactively lower the video
+    // target the moment our own getStats signal says the link is bad, so the
+    // encoder sends a smaller-but-smooth picture instead of stalling / lagging,
+    // and ramp back up when it recovers. WebRTC's congestion control does this
+    // too, but reacting to our measured quality recovers noticeably faster on
+    // flaky cellular. Audio is never throttled (a separate m-line) so voice
+    // stays clear even when video drops.
+    if (this.isVideo) void this._adaptVideoBitrateToQuality(quality);
     this.callbacks.onQualityChange?.(quality, detail);
+  }
+
+  private async _adaptVideoBitrateToQuality(quality: ConnectionQuality): Promise<void> {
+    try {
+      const sender = this.videoSender ?? this.pc?.getSenders?.().find((s: any) => s.track?.kind === 'video');
+      if (!sender?.getParameters || !sender.setParameters) return;
+      // Weak link → tiny target so it stays fluid; good → moderate; excellent →
+      // full ceiling. Resolution follows automatically (degradationPreference).
+      const target =
+        (quality === 'poor' || quality === 'lost') ? 350_000 :
+        quality === 'good' ? 1_000_000 :
+        VIDEO_MAX_BPS;
+      const params = sender.getParameters();
+      if (!params.encodings || params.encodings.length === 0) params.encodings = [{}];
+      for (const enc of params.encodings) enc.maxBitrate = target;
+      (params as any).degradationPreference = 'balanced';
+      await sender.setParameters(params);
+    } catch {
+      // best-effort — setParameters unsupported or transient renegotiation.
+    }
   }
 
   toggleMute(muted: boolean): void {
