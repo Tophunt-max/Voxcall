@@ -59,6 +59,38 @@ async function edgePut(cacheKey: string, data: unknown): Promise<void> {
 
 const pub = new Hono<{ Bindings: Env }>();
 
+// GET /api/calls-config-status — UNAUTHENTICATED diagnostic. Reports ONLY
+// whether each calling-related secret is PRESENT on the Worker (booleans, never
+// the values). Lets anyone quickly confirm the "CF Calls not configured" root
+// cause without needing a JWT or `wrangler tail`. Safe to expose: it leaks no
+// secret material, only configured/not-configured flags.
+pub.get('/calls-config-status', (c) => {
+  const present = (v: unknown) => typeof v === 'string' && v.trim().length > 0;
+  const cfCallsConfigured = present(c.env.CF_CALLS_APP_ID) && present(c.env.CF_CALLS_APP_SECRET);
+  const turnConfigured = present(c.env.TURN_KEY_ID) && present(c.env.TURN_KEY_TOKEN);
+  return c.json({
+    ok: true,
+    environment: c.env.ENVIRONMENT ?? 'unknown',
+    // Presence-only booleans — NOT the secret values.
+    cf_calls: {
+      configured: cfCallsConfigured,
+      app_id_present: present(c.env.CF_CALLS_APP_ID),
+      app_secret_present: present(c.env.CF_CALLS_APP_SECRET),
+      account_id_present: present(c.env.CF_ACCOUNT_ID),
+    },
+    turn: {
+      configured: turnConfigured,
+      key_id_present: present(c.env.TURN_KEY_ID),
+      key_token_present: present(c.env.TURN_KEY_TOKEN),
+    },
+    // If cf_calls.configured is false, audio/video will NEVER connect —
+    // the /sdp/push route returns 500 "CF Calls not configured". Set the
+    // CF_CALLS_APP_ID / CF_CALLS_APP_SECRET secrets on the voxlink-api Worker.
+    calling_ready: cfCallsConfigured,
+  });
+});
+
+
 // GET /api/files/:key* — public R2 file serving (avatars, media ONLY)
 // SECURITY FIX: Block access to KYC documents (aadhar, verification, kyc paths).
 // KYC docs should only be accessible via authenticated admin endpoints.
