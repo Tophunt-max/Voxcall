@@ -230,19 +230,42 @@ export class WebRTCService {
       if (!this.pc) { resolve(); return; }
       if (this.pc.iceGatheringState === 'complete') { resolve(); return; }
 
-      const timeout = setTimeout(() => {
-        this.pc?.removeEventListener('icegatheringstatechange', handler);
+      // CF Calls uses a NON-TRICKLE model: the full SDP (with all ICE
+      // candidates) is sent in one shot to the SFU. So we MUST wait long
+      // enough to gather the slow candidates — especially TURN `relay`
+      // candidates, and TURN-over-TCP/TLS which arrive last. The old 3s cap
+      // frequently fired BEFORE the relay candidate was gathered, so on
+      // symmetric-NAT / UDP-blocked mobile-carrier networks the SFU got an
+      // SDP with no reachable candidate → signalling succeeded but audio/video
+      // never flowed. We now:
+      //   • hard-cap at 10s (up from 3s) so relay/TLS candidates make it in, and
+      //   • early-resolve ~800ms after the FIRST relay candidate appears (so
+      //     good networks that already have a relay don't pay the full 10s).
+      let done = false;
+      let earlyTimer: any = null;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        clearTimeout(hardTimeout);
+        if (earlyTimer) clearTimeout(earlyTimer);
+        try { this.pc?.removeEventListener('icegatheringstatechange', handler); } catch {}
+        try { this.pc?.removeEventListener('icecandidate', onCandidate); } catch {}
         resolve();
-      }, 3000);
+      };
+
+      const hardTimeout = setTimeout(finish, 10000);
 
       const handler = () => {
-        if (this.pc?.iceGatheringState === 'complete') {
-          clearTimeout(timeout);
-          this.pc.removeEventListener('icegatheringstatechange', handler);
-          resolve();
+        if (this.pc?.iceGatheringState === 'complete') finish();
+      };
+      const onCandidate = (e: any) => {
+        const cand = e?.candidate?.candidate;
+        if (cand && /typ relay/i.test(cand) && !earlyTimer && !done) {
+          earlyTimer = setTimeout(finish, 800);
         }
       };
       this.pc.addEventListener('icegatheringstatechange', handler);
+      try { this.pc.addEventListener('icecandidate', onCandidate); } catch {}
     });
   }
 
