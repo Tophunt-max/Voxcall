@@ -15,12 +15,13 @@ import { SocketEvents } from "@/constants/events";
 const useNativeDriverValue = Platform.OS !== "web";
 
 const RING_TIMEOUT_MS = 45000;
-// FIX: poll the server's session status every 12s while the call is pending.
-// Catches the case where the host accepted/declined but the WebSocket
-// CALL_ACCEPT/CALL_REJECT event was missed (mobile data switch, brief WS
-// drop). Without this, the user is stuck on "Ringing..." until the 45s
-// no-answer timeout even though the host already picked up.
-const STATUS_POLL_MS = 12000;
+// FIX: poll the server's session status every 5s (and once immediately) while
+// the call is pending. Catches the case where the host accepted/declined but
+// the WebSocket CALL_ACCEPT/CALL_REJECT event was missed (mobile data switch,
+// brief WS drop / token-refresh reconnect). Without this, the user is stuck on
+// "Ringing..." until the 45s no-answer timeout even though the host already
+// picked up. 5s (was 12s) so a missed accept recovers almost immediately.
+const STATUS_POLL_MS = 5000;
 
 // ─── AnimatedDots ────────────────────────────────────────────────────────────
 // FIX (UI polish): the previous version showed a static "Ringing..." string
@@ -220,13 +221,13 @@ export default function OutgoingCallScreen() {
     if (!activeCall?.sessionId) return;
     const sid = activeCall.sessionId;
     let cancelled = false;
-    const interval = setInterval(async () => {
+    const check = async () => {
       if (cancelled || navigated.current) return;
       try {
         const sess: any = await API.getCallSession(sid);
         if (cancelled || navigated.current) return;
-        if (sess?.status === "active") {
-          // Host accepted — navigate even though WS event was missed.
+        if (sess?.status === "active" || sess?.started_at) {
+          // Host accepted — navigate even though the WS event was missed.
           if (sess.started_at) syncServerStartTime(sess.started_at);
           goToCallScreen();
         } else if (sess?.status === "declined" || sess?.status === "missed" || sess?.status === "ended") {
@@ -244,7 +245,11 @@ export default function OutgoingCallScreen() {
         // Network blip — try again next tick. 404 here means the session
         // was pruned, treat as no_answer.
       }
-    }, STATUS_POLL_MS);
+    };
+    // Fire once immediately so a missed WS accept is caught within a moment,
+    // not after a full poll interval, then keep polling as the fallback.
+    check();
+    const interval = setInterval(check, STATUS_POLL_MS);
     return () => { cancelled = true; clearInterval(interval); };
   }, [activeCall?.sessionId, goToCallScreen, stopRing, endCall, syncServerStartTime, scheduleTimeout]);
 
