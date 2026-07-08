@@ -106,7 +106,7 @@ function StatusPill({ online, colors }: { online: boolean; colors: Colors }) {
         <View style={[styles.statusDot, { backgroundColor: colors.red }]} />
       )}
       <Text style={[styles.statusText, { color: online ? colors.online : "rgba(255,255,255,0.9)" }]}>
-        {online ? "Live" : "Offline"}
+        {online ? "Online" : "Offline"}
       </Text>
     </View>
   );
@@ -142,44 +142,67 @@ function CountryTab({ tab, active, colors, onPress }: { tab: typeof COUNTRY_TABS
 }
 
 // ─── Host grid card ──────────────────────────────────────────────────────────
-function HostGridCard({ host, colors, onPress, onVideoCall }: { host: UIHost; colors: Colors; onPress: () => void; onVideoCall: () => void }) {
+function HostGridCard({ host, colors, onPress, onAudioCall, onVideoCall }: { host: UIHost; colors: Colors; onPress: () => void; onAudioCall: () => void; onVideoCall: () => void }) {
   return (
     <TouchableOpacity
-      style={[styles.card, { backgroundColor: colors.muted, borderColor: colors.border }]}
+      style={[
+        styles.card,
+        { backgroundColor: colors.muted, borderColor: host.isOnline ? colors.online : colors.border },
+      ]}
       activeOpacity={0.9}
       onPress={onPress}
     >
       <Image source={{ uri: host.avatar }} style={styles.cardAvatar} resizeMode="cover" />
-      {/* Dark bottom gradient keeps the name/country legible over any photo,
-          independent of the app (light/dark) theme. */}
+      {/* Offline hosts are dimmed so online (callable) hosts stand out. */}
+      {!host.isOnline && <View style={styles.offlineDim} pointerEvents="none" />}
+      {/* Dark bottom gradient keeps the name/country/buttons legible over any
+          photo, independent of the app (light/dark) theme. */}
       <LinearGradient
-        colors={["transparent", "rgba(10,6,24,0.15)", "rgba(10,6,24,0.92)"]}
+        colors={["transparent", "rgba(10,6,24,0.2)", "rgba(10,6,24,0.95)"]}
         style={styles.cardOverlay}
         pointerEvents="none"
       />
 
+      {/* Coin rate chip (top-left) */}
+      <View style={styles.coinChip}>
+        <Image source={require("@/assets/icons/ic_coin.png")} style={styles.coinChipIcon} resizeMode="contain" />
+        <Text style={styles.coinChipText}>{host.coinsPerMinute}/min</Text>
+      </View>
+
       <StatusPill online={host.isOnline} colors={colors} />
 
       <View style={styles.cardBottom} pointerEvents="box-none">
-        <View style={styles.cardTextCol}>
-          <Text style={styles.cardName} numberOfLines={1}>{host.name}</Text>
-          {host.country ? (
-            <View style={styles.cardCountryRow}>
-              <Image source={{ uri: flagUrl(host.country, 40) }} style={styles.cardFlag} resizeMode="cover" />
-              <Text style={styles.cardCountry} numberOfLines={1}>{countryName(host.country)}</Text>
-            </View>
-          ) : null}
-        </View>
+        <Text style={styles.cardName} numberOfLines={1}>{host.name}</Text>
+        {host.country ? (
+          <View style={styles.cardCountryRow}>
+            <Image source={{ uri: flagUrl(host.country, 40) }} style={styles.cardFlag} resizeMode="cover" />
+            <Text style={styles.cardCountry} numberOfLines={1}>{countryName(host.country)}</Text>
+          </View>
+        ) : null}
 
-        <TouchableOpacity
-          onPress={onVideoCall}
-          style={[styles.videoBtn, { backgroundColor: colors.accent }]}
-          activeOpacity={0.85}
-          accessibilityRole="button"
-          accessibilityLabel={`Video call ${host.name}`}
-        >
-          <Image source={require("@/assets/icons/ic_video.png")} style={styles.videoIcon} tintColor="#fff" resizeMode="contain" />
-        </TouchableOpacity>
+        {/* Audio + Video call buttons */}
+        <View style={styles.btnRow}>
+          <TouchableOpacity
+            onPress={onAudioCall}
+            style={styles.audioBtn}
+            activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel={`Audio call ${host.name}`}
+          >
+            <Image source={require("@/assets/icons/ic_call.png")} style={styles.btnIcon} tintColor="#fff" resizeMode="contain" />
+            <Text style={styles.btnLabel}>Audio</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={onVideoCall}
+            style={[styles.videoBtn, { backgroundColor: colors.accent }]}
+            activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel={`Video call ${host.name}`}
+          >
+            <Image source={require("@/assets/icons/ic_video.png")} style={styles.btnIcon} tintColor="#fff" resizeMode="contain" />
+            <Text style={styles.btnLabel}>Video</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </TouchableOpacity>
   );
@@ -267,21 +290,21 @@ export default function SearchScreen() {
     setRefreshing(false);
   }, [loadHosts]);
 
-  const startVideoCall = useCallback((host: UIHost) => {
+  const startCall = useCallback((host: UIHost, type: "audio" | "video") => {
     // Offline hosts can't be called — open their profile instead.
     if (!host.isOnline) {
       router.push(`/user/hosts/${host.id}`);
       return;
     }
-    const rate = host.videoCoinsPerMinute || host.coinsPerMinute || 1;
+    const rate = (type === "video" ? host.videoCoinsPerMinute : host.coinsPerMinute) || host.coinsPerMinute || 1;
     const required = rate * 2;
     if ((user?.coins ?? 0) < required) {
       setCoinPopupRequired(required);
       setCoinPopup(true);
       return;
     }
-    initiateCall({ id: host.id, name: host.name, avatar: host.avatar, role: "host" }, "video", rate);
-    router.push({ pathname: "/user/call/outgoing", params: { hostId: host.id, callType: "video", hostName: host.name, hostAvatar: host.avatar, specialty: host.specialties?.[0] ?? "" } });
+    initiateCall({ id: host.id, name: host.name, avatar: host.avatar, role: "host" }, type, rate);
+    router.push({ pathname: "/user/call/outgoing", params: { hostId: host.id, callType: type, hostName: host.name, hostAvatar: host.avatar, specialty: host.specialties?.[0] ?? "" } });
   }, [user?.coins, initiateCall]);
 
   const filtered = useMemo(() => {
@@ -387,7 +410,8 @@ export default function SearchScreen() {
               host={item}
               colors={colors}
               onPress={() => router.push(`/user/hosts/${item.id}`)}
-              onVideoCall={() => startVideoCall(item)}
+              onAudioCall={() => startCall(item, "audio")}
+              onVideoCall={() => startCall(item, "video")}
             />
           )}
         />
@@ -427,17 +451,17 @@ const styles = StyleSheet.create({
 
   // Top bar
   topBar: { flexDirection: "row", alignItems: "center", paddingRight: 12, paddingBottom: 12, gap: 8 },
-  tabsRow: { paddingHorizontal: 12, gap: 10, alignItems: "center" },
-  tabTouch: { borderRadius: 24 },
-  tabPill: { borderRadius: 24, paddingHorizontal: 4, paddingVertical: 4 },
-  tabInner: { flexDirection: "row", alignItems: "center", gap: 8, paddingRight: 14 },
-  tabFlag: { width: 30, height: 30, borderRadius: 15, backgroundColor: "rgba(0,0,0,0.06)" },
-  tabGlobe: { fontSize: 22, width: 30, height: 30, textAlign: "center", lineHeight: 30 },
-  tabLabel: { fontSize: 14, fontFamily: "Poppins_500Medium" },
+  tabsRow: { paddingHorizontal: 12, gap: 8, alignItems: "center" },
+  tabTouch: { borderRadius: 20 },
+  tabPill: { borderRadius: 20, paddingHorizontal: 3, paddingVertical: 3 },
+  tabInner: { flexDirection: "row", alignItems: "center", gap: 6, paddingRight: 11 },
+  tabFlag: { width: 24, height: 24, borderRadius: 12, backgroundColor: "rgba(0,0,0,0.06)" },
+  tabGlobe: { fontSize: 17, width: 24, height: 24, textAlign: "center", lineHeight: 24 },
+  tabLabel: { fontSize: 12.5, fontFamily: "Poppins_500Medium" },
   tabLabelActive: { fontFamily: "Poppins_700Bold" },
 
   globeBtn: {
-    width: 44, height: 44, borderRadius: 22,
+    width: 40, height: 40, borderRadius: 20,
     borderWidth: 1,
     alignItems: "center", justifyContent: "center",
     ...Platform.select({
@@ -481,7 +505,7 @@ const styles = StyleSheet.create({
   // Grid card
   card: {
     width: CARD_W,
-    aspectRatio: 0.86,
+    aspectRatio: 0.68,
     borderRadius: 18,
     marginBottom: GRID_GAP,
     overflow: "hidden",
@@ -493,7 +517,7 @@ const styles = StyleSheet.create({
     }),
   },
   cardAvatar: { ...StyleSheet.absoluteFillObject, width: "100%", height: "100%" },
-  cardOverlay: { position: "absolute", left: 0, right: 0, bottom: 0, height: "60%" },
+  cardOverlay: { position: "absolute", left: 0, right: 0, bottom: 0, height: "62%" },
 
   statusPill: {
     position: "absolute", top: 10, right: 10,
@@ -508,24 +532,43 @@ const styles = StyleSheet.create({
 
   cardBottom: {
     position: "absolute", left: 0, right: 0, bottom: 0,
-    flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between",
-    padding: 10, gap: 8,
+    padding: 10, gap: 6,
   },
-  cardTextCol: { flex: 1, gap: 3 },
   cardName: {
-    color: "#fff", fontSize: 16, fontFamily: "Poppins_700Bold",
+    color: "#fff", fontSize: 15, fontFamily: "Poppins_700Bold",
     textShadowColor: "rgba(0,0,0,0.6)", textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4,
   },
   cardCountryRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   cardFlag: { width: 18, height: 13, borderRadius: 2, backgroundColor: "rgba(255,255,255,0.15)" },
   cardCountry: { flex: 1, color: "rgba(255,255,255,0.85)", fontSize: 12, fontFamily: "Poppins_400Regular", textTransform: "lowercase" },
 
-  videoBtn: {
-    width: 46, height: 46, borderRadius: 23,
-    borderWidth: 2, borderColor: "rgba(255,255,255,0.35)",
-    alignItems: "center", justifyContent: "center",
+  // Offline hosts dimmed to make online (callable) hosts pop.
+  offlineDim: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(10,6,24,0.38)" },
+
+  // Coin-rate chip (top-left)
+  coinChip: {
+    position: "absolute", top: 10, left: 10,
+    flexDirection: "row", alignItems: "center", gap: 4,
+    backgroundColor: "rgba(10,6,24,0.55)",
+    paddingHorizontal: 8, paddingVertical: 4, borderRadius: 20,
   },
-  videoIcon: { width: 22, height: 22 },
+  coinChipIcon: { width: 13, height: 13 },
+  coinChipText: { color: "#FFD166", fontSize: 11, fontFamily: "Poppins_600SemiBold" },
+
+  // Audio + Video call buttons
+  btnRow: { flexDirection: "row", gap: 7, marginTop: 2 },
+  audioBtn: {
+    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5,
+    paddingVertical: 8, borderRadius: 12,
+    backgroundColor: "rgba(255,255,255,0.20)",
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.35)",
+  },
+  videoBtn: {
+    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5,
+    paddingVertical: 8, borderRadius: 12,
+  },
+  btnIcon: { width: 16, height: 16 },
+  btnLabel: { color: "#fff", fontSize: 12, fontFamily: "Poppins_600SemiBold" },
 
   // States
   centerWrap: { flex: 1, alignItems: "center", justifyContent: "center", gap: 8, paddingBottom: 80 },
