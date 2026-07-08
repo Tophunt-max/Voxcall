@@ -1,25 +1,21 @@
-name: Deploy Web App (Cloudflare Pages)
+name: Deploy Web Apps (Cloudflare Pages)
 
-# CI for the Cloudflare Pages deployment of the USER web app (voxlink →
-# voxcall.pages.dev).
+# Builds and deploys BOTH Expo web apps to Cloudflare Pages via a matrix:
+#   - user app  (voxlink)      -> project "voxcall"              (voxcall.pages.dev)
+#   - host app  (voxlink-host) -> project "voxlink-host-mobile"
 #
-# WHY THIS EXISTS: the backend, admin panel, and mobile apps all had deploy
-# automation, but the user web app did NOT. After the calling system was
-# migrated from Cloudflare Realtime (WebRTC + /api/calls/ice-config) to Agora
-# RTC, the backend was redeployed but the web bundle was never rebuilt — so the
-# live site kept shipping the OLD Cloudflare client, which called the now-removed
-# /api/calls/ice-config endpoint (404) and could never connect a call. This
-# workflow keeps the web frontend in lock-step with the backend so that class
-# of drift cannot happen again.
+# Consolidates the previous three overlapping workflows (deploy-web.yml,
+# deploy-mobile.yml, deploy-host-mobile.yml) into one. The web clients get
+# their Agora config from the backend at runtime (GET /api/calls/:id/agora-token),
+# so NO Agora secret is baked into the web bundle — only EXPO_PUBLIC_API_URL.
 #
-# Required GitHub secrets / variables (Settings → Secrets and variables):
-#   - secrets.CLOUDFLARE_API_TOKEN  Workers + Pages: Edit scope (same token the
-#     admin-panel + backend workflows use).
-#   - vars.CF_ACCOUNT_ID            Cloudflare account ID.
-#   - vars.EXPO_PUBLIC_API_URL      (optional) API base URL. Defaults in code to
-#     the production Worker URL, so this is only needed to override it.
-#   - vars.EXPO_PUBLIC_SITE_URL     (optional) public site origin used by
-#     expo-router (defaults to https://voxcall.pages.dev/).
+# Required GitHub secrets / variables:
+#   - secrets.CLOUDFLARE_API_TOKEN       Workers + Pages: Edit scope.
+#   - vars.CF_ACCOUNT_ID                 Cloudflare account ID.
+#   - vars.EXPO_PUBLIC_API_URL           (optional) API base URL override.
+#   - vars.EXPO_PUBLIC_SITE_URL          (optional) public site origin (user app).
+#   - vars.EXPO_PUBLIC_FIREBASE_API_KEY  (optional) web push / FCM.
+#   - vars.EXPO_PUBLIC_FIREBASE_VAPID_KEY (optional) web push VAPID key.
 
 on:
   push:
@@ -27,6 +23,7 @@ on:
       - main
     paths:
       - 'voxlink/**'
+      - 'voxlink-host/**'
       - 'lib/**'
       - 'packages/**'
       - 'pnpm-lock.yaml'
@@ -34,14 +31,30 @@ on:
       - '.github/workflows/deploy-web.yml'
   workflow_dispatch:
 
+concurrency:
+  group: deploy-web-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   deploy:
-    name: Build & Deploy to Cloudflare Pages
+    name: ${{ matrix.label }}
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     permissions:
       contents: read
       deployments: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: User web (voxlink -> voxcall)
+            dir: voxlink
+            filter: '@workspace/voxlink'
+            project: voxcall
+          - label: Host web (voxlink-host -> voxlink-host-mobile)
+            dir: voxlink-host
+            filter: '@workspace/voxlink-host'
+            project: voxlink-host-mobile
 
     steps:
       - name: Checkout code
@@ -49,8 +62,7 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        # pnpm version comes from `packageManager` in root package.json — do not
-        # also pin it here (pnpm/action-setup@v4 errors with ERR_PNPM_BAD_PM_VERSION).
+        # Version comes from `packageManager` in root package.json.
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -59,25 +71,38 @@ jobs:
           cache: 'pnpm'
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --filter '${{ matrix.filter }}...'
 
-      - name: Build Web App
-        working-directory: voxlink
+      - name: Build Expo web (${{ matrix.dir }})
+        working-directory: ${{ matrix.dir }}
         # `pnpm build` = expo export --platform web --output-dir static-build.
-        # EXPO_PUBLIC_* are baked into the static bundle at build time. Both have
-        # safe in-code defaults (production Worker URL + voxcall.pages.dev), so
-        # the vars below only override when explicitly set in repo settings.
         run: pnpm build
         env:
           NODE_ENV: production
           EXPO_PUBLIC_API_URL: ${{ vars.EXPO_PUBLIC_API_URL }}
           EXPO_PUBLIC_SITE_URL: ${{ vars.EXPO_PUBLIC_SITE_URL }}
+          EXPO_PUBLIC_FIREBASE_API_KEY: ${{ vars.EXPO_PUBLIC_FIREBASE_API_KEY }}
+          EXPO_PUBLIC_FIREBASE_VAPID_KEY: ${{ vars.EXPO_PUBLIC_FIREBASE_VAPID_KEY }}
+          EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN: 'connectme-80909.firebaseapp.com'
+          EXPO_PUBLIC_FIREBASE_PROJECT_ID: 'connectme-80909'
+          EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET: 'connectme-80909.firebasestorage.app'
+          EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: '128169786412'
+          EXPO_PUBLIC_FIREBASE_APP_ID: '1:128169786412:web:11cf3612a7f4520f98e589'
+
+      - name: Copy FCM service worker into build output
+        run: |
+          SW="${{ matrix.dir }}/public/firebase-messaging-sw.js"
+          OUT="${{ matrix.dir }}/static-build/firebase-messaging-sw.js"
+          if [ -f "$SW" ]; then
+            cp "$SW" "$OUT"
+            echo "Copied service worker -> $OUT"
+          else
+            echo "No firebase-messaging-sw.js in ${{ matrix.dir }}/public — skipping."
+          fi
 
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ vars.CF_ACCOUNT_ID }}
-          # --branch=main marks this a PRODUCTION deployment (voxcall.pages.dev).
-          # project-name must match the existing Cloudflare Pages project.
-          command: pages deploy voxlink/static-build --project-name=voxcall --branch=main
+          command: pages deploy ${{ matrix.dir }}/static-build --project-name=${{ matrix.project }} --branch=main
