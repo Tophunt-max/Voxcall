@@ -27,8 +27,6 @@ export interface CallParticipant {
 export interface ActiveCall {
   callId: string;
   sessionId?: string;
-  cfCallerSessionId?: string;
-  cfHostSessionId?: string;
   type: CallType;
   status: CallStatus;
   participant: CallParticipant;
@@ -89,8 +87,6 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
       const updated: ActiveCall = {
         ...call,
         sessionId,
-        cfCallerSessionId: res.cf_session_id,
-        cfHostSessionId: res.cf_host_session_id,
         coinsPerMinute: res.host_coins_per_minute ?? coinsPerMinute,
         maxSeconds: res.max_seconds,
       };

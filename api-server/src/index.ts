@@ -20,7 +20,6 @@ import paymentRouter from './routes/payment';
 import engagementRouter from './routes/engagement';
 import tipRouter from './routes/tip';
 import { ChatRoom } from './durable-objects/ChatRoom';
-import { CallSignaling } from './durable-objects/CallSignaling';
 import { NotificationHub } from './durable-objects/NotificationHub';
 import { ensureUsersSchema, ensureRandomCallSchema, ensureStreakSchema, ensureFirstCallFreeSchema, ensureCallObservabilitySchema, ensureEngagementSchema, ensureWithdrawalSchema } from './lib/schemaGuard';
 import { ensureAllMigrations } from './lib/autoMigrate';
@@ -33,7 +32,7 @@ import { getFCMTokens, sendFCMPush } from './lib/fcm';
 import { USD_TO_FOREIGN } from './lib/currency';
 
 // Re-export Durable Objects (required by wrangler)
-export { ChatRoom, CallSignaling, NotificationHub };
+export { ChatRoom, NotificationHub };
 
 // DEV-ONLY fallback origins. In production, set CORS_ALLOWED_ORIGINS to an
 // explicit allowlist (see buildExactAllowlist below). These broad patterns
@@ -233,44 +232,11 @@ app.get('/api/ws/notifications', async (c) => {
   return stub.fetch(c.req.raw);
 });
 
-// WebSocket: call signaling per session — JWT auth + identity binding.
-// CRITICAL FIX: Forward the JWT-verified userId AND the derived role to the DO
-// via trusted X-CF-* headers. Previously the DO read these from URL query
-// params, which an authenticated user with access to the session could spoof
-// to impersonate the OTHER party (caller posing as host or vice versa).
-app.get('/api/ws/call/:sessionId', async (c) => {
-  const { sessionId } = c.req.param();
-  const token = extractWsToken(c);
-  const verifiedUserId = await verifyWsToken(token, c.env.JWT_SECRET);
-  if (!verifiedUserId) {
-    return c.json({ error: 'Unauthorized' }, 401);
-  }
-  const session = await c.env.DB.prepare(
-    `SELECT cs.caller_id, h.user_id as host_user_id FROM call_sessions cs LEFT JOIN hosts h ON h.id = cs.host_id WHERE cs.id = ?`
-  ).bind(sessionId).first<any>();
-  if (!session) return c.json({ error: 'Session not found' }, 404);
-
-  // Derive role from the JWT-verified userId (server is the authority — never trust client claims)
-  let role: 'caller' | 'host';
-  if (session.caller_id === verifiedUserId) role = 'caller';
-  else if (session.host_user_id === verifiedUserId) role = 'host';
-  else return c.json({ error: 'Access denied to this call session' }, 403);
-
-  // Build a trusted request: copy original headers (preserves WebSocket upgrade
-  // headers like Sec-WebSocket-Key/Version/Extensions) and set our trusted ones.
-  // The DO requires X-CF-User-Id + X-CF-Role and ignores URL query params.
-  const trustedHeaders = new Headers(c.req.raw.headers);
-  trustedHeaders.set('X-CF-User-Id', verifiedUserId);
-  trustedHeaders.set('X-CF-Role', role);
-  const trustedReq = new Request(c.req.raw.url, {
-    method: c.req.raw.method,
-    headers: trustedHeaders,
-  });
-
-  const id = c.env.CALL_SIGNALING.idFromName(sessionId);
-  const stub = c.env.CALL_SIGNALING.get(id);
-  return stub.fetch(trustedReq);
-});
+// NOTE: The legacy per-session WebRTC signaling WebSocket (/api/ws/call/:id +
+// the CallSignaling Durable Object) was removed with the Agora migration. Agora
+// performs all call signaling over its own global network, so the app no longer
+// needs a self-hosted signaling channel. In-call mic/camera state is relayed
+// over the NotificationHub socket (peer_media_state) instead.
 
 // 404 handler — path is intentionally omitted to prevent internal route enumeration
 app.notFound((c) => c.json({ error: 'Not found' }, 404));

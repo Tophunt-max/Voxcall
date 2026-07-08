@@ -1645,7 +1645,8 @@ admin.post('/calls/:id/force-end', async (c) => {
   //      actually moved.
   //   4. Notify both parties (WS + FCM fallback) so their call screens
   //      unblock and the local billing timer halts.
-  //   5. Close the CF Calls SFU sessions so we don't leak edge resources.
+  // (Agora media sessions need no server-side teardown — Agora releases the
+  //  channel automatically once both participants leave.)
   // ──────────────────────────────────────────────────────────────────────────────
 
   // Atomic guard — use ended_at IS NULL (matches the rest of the codebase).
