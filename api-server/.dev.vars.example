@@ -2,9 +2,13 @@
 # In production, secrets are set via: wrangler secret put <NAME>
 
 JWT_SECRET=your-strong-random-secret-min-32-chars
-CF_CALLS_APP_SECRET=your-cloudflare-calls-app-secret
 
-# Marks local dev as NOT production so /api/calls/ice-config keeps serving the
-# public Open Relay TURN fallback (handy when you have not configured the
-# Cloudflare TURN key locally). Omit/keep as "development" in dev.
+# ── Agora RTC (the media provider) ───────────────────────────────────────────
+# BOTH are REQUIRED — Agora is the only RTC transport. /api/calls/initiate and
+# /health report rtc_provider="agora" and the client joins via
+# /api/calls/:id/agora-token.
+AGORA_APP_ID=your-agora-app-id
+AGORA_APP_CERTIFICATE=your-agora-primary-certificate
+
+# Marks local dev as NOT production. Omit/keep as "development" in dev.
 ENVIRONMENT=development

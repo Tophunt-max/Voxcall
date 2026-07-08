@@ -2,135 +2,18 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth';
-import { createCFCalls, CFCallsTrack } from '../lib/cf-calls';
 import { buildAgoraRtcToken, isAgoraConfigured } from '../lib/agoraToken';
+import { getCallEconomicsConfig, floorRatePerMinCoins, agoraCostPerMinInr } from '../lib/callEconomics';
 import { sendFCMPush } from '../lib/fcm';
 import { getLevelConfig, getEarningShare, getDefaultCallRates, DEFAULT_AUDIO_RATE, DEFAULT_VIDEO_RATE } from '../lib/levels';
 import { applyLevelUp } from '../lib/levelService';
-import { billedMinutes, coinsForCall, chargeCallerWithFreePool, affordableCallSeconds } from '../lib/billing';
+import { billedMinutes, coinsForCall, chargeCallerWithFreePool, affordableCallSeconds, isPrepaidHoldEnabled, placeCallHold, releaseCallHold } from '../lib/billing';
 import { registerHit } from '../lib/rateLimit';
 import { apiError, ErrorCode } from '../lib/errors';
 import type { Env, JWTPayload, HostRow, CallSessionRow, CallerData, HostData } from '../types';
 
 const call = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
 call.use('*', authMiddleware);
-
-// ─── ICE config ──────────────────────────────────────────────────────────────
-// Returns the iceServers list clients should pass to RTCPeerConnection. When
-// TURN_KEY_ID + TURN_KEY_TOKEN are configured we mint a short-lived (1h)
-// Cloudflare Realtime TURN credential so clients on symmetric NATs / UDP-
-// blocked networks (Jio / Airtel / corporate Wi-Fi) can actually relay.
-// Without those env vars we still return STUN + a public TURN relay (Open
-// Relay) so calls work in development.
-//
-// FIX (no-audio / one-way audio on mobile carriers): symmetric NAT prevents
-// peers from finding each other through STUN alone; without TURN the call
-// either silently fails ICE or only one direction's media gets through. The
-// previous client hardcoded only STUN, which is why audio went missing on
-// real devices behind cellular networks even though signalling succeeded.
-call.get('/ice-config', async (c) => {
-  const keyId = c.env.TURN_KEY_ID;
-  const keyToken = c.env.TURN_KEY_TOKEN;
-
-  // The public Open Relay TURN servers are convenient for development but are
-  // rate-limited and unreliable — they must NOT be depended on in production.
-  // When CF TURN credentials (TURN_KEY_ID/TURN_KEY_TOKEN) are configured we
-  // mint proper short-lived credentials below; the static fallback therefore
-  // only carries the public relay OUTSIDE production so local/dev calls still
-  // traverse NAT without extra setup.
-  const isProd = c.env.ENVIRONMENT === 'production';
-  // Public Open Relay TURN servers. These are rate-limited and NOT suitable
-  // for production scale, but we now include them as a LAST-RESORT relay even
-  // in production WHEN Cloudflare TURN credentials are not configured. Reason:
-  // without ANY TURN relay, clients on symmetric-NAT / UDP-blocked mobile
-  // carrier networks get pure silence (signalling succeeds but no audio/video
-  // media ever flows) — which is far worse than a rate-limited relay. Configure
-  // TURN_KEY_ID / TURN_KEY_TOKEN to replace this with proper short-lived
-  // Cloudflare Realtime credentials (see the loud warning below).
-  // `turns:` (TLS over 443) is included so networks that block everything
-  // except HTTPS can still tunnel media.
-  const publicTurn = [
-    { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-    { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-    { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
-    { urls: 'turns:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
-  ];
-
-  // Default fallback: STUN (+ public TURN in dev). Public TURN is rate-limited
-  // and not suitable for production scale but ensures dev / first-deploy users
-  // are not blocked by NAT issues.
-  const fallback = {
-    iceServers: [
-      { urls: 'stun:stun.cloudflare.com:3478' },
-      { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' },
-      ...publicTurn,
-    ],
-    iceCandidatePoolSize: 10,
-    bundlePolicy: 'max-bundle' as const,
-    rtcpMuxPolicy: 'require' as const,
-    source: 'fallback' as const,
-  };
-
-  if (!keyId || !keyToken) {
-    if (isProd) {
-      // Loud warning: without CF TURN creds, production clients on UDP-blocked
-      // / symmetric-NAT networks (most mobile carriers) silently fail to
-      // connect media even though signalling succeeds.
-      console.error('[ice-config] PRODUCTION missing TURN_KEY_ID/TURN_KEY_TOKEN — clients behind symmetric NAT / UDP-blocked networks will fail to relay. Configure Cloudflare Realtime TURN credentials.');
-    }
-    return c.json(fallback);
-  }
-
-  try {
-    const res = await fetch(`https://rtc.live.cloudflare.com/v1/turn/keys/${keyId}/credentials/generate`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${keyToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ ttl: 3600 }),
-    });
-
-    if (!res.ok) {
-      console.warn('[ice-config] Cloudflare TURN credential request failed:', res.status, await res.text().catch(() => ''));
-      return c.json(fallback);
-    }
-
-    const data = await res.json<any>();
-    // Cloudflare's response shape: { iceServers: { urls: [...], username, credential }, ttl }
-    // RTCPeerConnection accepts both array-of-urls and a single-url-per-entry,
-    // so we normalize to a flat array that's safe for every browser.
-    const cfServers: any[] = [];
-    const iceField = data?.iceServers;
-    if (Array.isArray(iceField)) {
-      cfServers.push(...iceField);
-    } else if (iceField && typeof iceField === 'object') {
-      cfServers.push(iceField);
-    }
-
-    if (cfServers.length === 0) {
-      return c.json(fallback);
-    }
-
-    return c.json({
-      iceServers: [
-        // Keep the public STUN at the front for fast srflx candidate gathering.
-        { urls: 'stun:stun.cloudflare.com:3478' },
-        { urls: 'stun:stun.l.google.com:19302' },
-        ...cfServers,
-      ],
-      iceCandidatePoolSize: 10,
-      bundlePolicy: 'max-bundle' as const,
-      rtcpMuxPolicy: 'require' as const,
-      ttl: data?.ttl ?? 3600,
-      source: 'cloudflare' as const,
-    });
-  } catch (err: any) {
-    console.warn('[ice-config] error fetching Cloudflare TURN credentials:', err?.message ?? err);
-    return c.json(fallback);
-  }
-});
 
 const initiateSchema = z.object({
   host_id: z.string().min(1),
@@ -197,19 +80,17 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
   // PRIOR call of their OWN has been abandoned (if a call were genuinely live,
   // the in-call UI would be on screen, not the initiate button). Previously a
   // session left stuck in 'pending'/'active' — e.g. a call that failed to
-  // connect while CF Calls was mis-configured, or whose /end never landed —
-  // locked the user out with a 409 until the 2–5 min cron reaper cleaned it.
-  // We now force-end the caller's OWN lingering sessions right here, settling
-  // any real talk-time exactly like the reaper (host still gets paid, caller
-  // charged only what they can afford). We ONLY ever touch sessions where THIS
-  // user is the caller — never someone else's call.
+  // connect, or whose /end never landed — locked the user out with a 409 until
+  // the 2–5 min cron reaper cleaned it. We now force-end the caller's OWN
+  // lingering sessions right here, settling any real talk-time exactly like the
+  // reaper (host still gets paid, caller charged only what they can afford). We
+  // ONLY ever touch sessions where THIS user is the caller — never someone else's.
   const staleOwn = await db.prepare(
-    "SELECT id, host_id, started_at, rate_per_minute, type, cf_session_id, cf_host_session_id FROM call_sessions WHERE caller_id = ? AND status IN ('pending','active') AND ended_at IS NULL"
+    "SELECT id, host_id, started_at, rate_per_minute, type FROM call_sessions WHERE caller_id = ? AND status IN ('pending','active') AND ended_at IS NULL"
   ).bind(sub).all<any>();
   if (staleOwn.results?.length) {
     const nowTs = Math.floor(Date.now() / 1000);
     const levelCfg = await getLevelConfig(db);
-    const cfCleanup = createCFCalls(c.env);
     for (const s of staleOwn.results) {
       // Atomic claim so a concurrent /end can't double-settle the same row.
       const claim = await db.prepare(
@@ -251,12 +132,8 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
         }
       }
       try { await db.batch(ops); } catch (e) { console.warn('[initiate] self-heal settle failed:', e); }
-
-      if (cfCleanup) {
-        for (const sid of [s.cf_session_id, s.cf_host_session_id]) {
-          if (sid) { try { await cfCleanup.closeSession(sid); } catch { /* best-effort */ } }
-        }
-      }
+      // Item 2 — release any prepaid coin hold left over from the superseded call.
+      await releaseCallHold(db, { callerId: sub, sessionId: s.id });
     }
   }
 
@@ -280,37 +157,42 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
   // Admin-controlled default call rates (App Config → Calling System) — used
   // when the host has no explicit per-channel / legacy rate set.
   const defaultRates = await getDefaultCallRates(db);
-  const ratePerMin = callType === 'video'
+  const baseRate = callType === 'video'
     ? (host.video_coins_per_minute ?? host.coins_per_minute ?? defaultRates.video)
     : (host.audio_coins_per_minute ?? host.coins_per_minute ?? defaultRates.audio);
+  // Loss-proof floor: clamp the effective rate up to the Agora-cost + gateway
+  // break-even (with safety cushion) so a call can NEVER lose the platform
+  // money — even if a host set an unusually low rate or a stale/misconfigured
+  // rate slipped through. Only ever RAISES the rate; a healthy rate is untouched.
+  const econCfg = await getCallEconomicsConfig(db);
+  const floorRate = floorRatePerMinCoins(callType === 'video' ? 'video' : 'audio', econCfg);
+  const ratePerMin = Math.max(baseRate, floorRate);
 
   // Read coins + free-minute pool. The free pool is consumed before coins at
   // settlement, so it counts toward affordability. COALESCE handles a legacy
   // DB where the column is 0/NULL; the try/catch handles a pre-migration DB
   // where the column doesn't exist yet (feature degrades to coins-only).
-  let caller: (CallerData & { free_call_minutes?: number }) | null = null;
+  let caller: (CallerData & { free_call_minutes?: number; coins_held?: number }) | null = null;
   try {
     caller = await db
-      .prepare('SELECT coins, name, COALESCE(free_call_minutes, 0) as free_call_minutes FROM users WHERE id = ?')
+      .prepare('SELECT coins, name, COALESCE(free_call_minutes, 0) as free_call_minutes, COALESCE(coins_held, 0) as coins_held FROM users WHERE id = ?')
       .bind(sub)
-      .first<CallerData & { free_call_minutes: number }>();
+      .first<CallerData & { free_call_minutes: number; coins_held: number }>();
   } catch {
     caller = await db.prepare('SELECT coins, name FROM users WHERE id = ?').bind(sub).first<CallerData>();
   }
   const callerFreeMinutes = Number((caller as any)?.free_call_minutes) || 0;
+  // Item 2 — spend against SPENDABLE coins (coins − held). Any prior call's hold
+  // was released by self-heal above, but this stays correct even if one lingered.
+  const spendableCoins = Math.max(0, (Number(caller?.coins) || 0) - (Number((caller as any)?.coins_held) || 0));
   // Require at least 2 minutes worth of *affordable* time (coins + free pool) —
-  // WebRTC negotiation takes ~15s so a 1-min minimum would auto-end the call
-  // before it truly starts. Free minutes count here, so a coinless user who
+  // media negotiation takes a few seconds so a 1-min minimum would auto-end the
+  // call before it truly starts. Free minutes count here, so a coinless user who
   // still has free trial minutes can start a call.
-  if (!caller || affordableCallSeconds(caller.coins, callerFreeMinutes, ratePerMin) < 120) {
+  if (!caller || affordableCallSeconds(spendableCoins, callerFreeMinutes, ratePerMin) < 120) {
     return apiError(c, ErrorCode.INSUFFICIENT_COINS, 402, 'Insufficient coins. You need at least 2 minutes worth of coins to start a call.');
   }
 
-  // FIX BUG-1: Do NOT pre-create CF sessions at initiation time.
-  // CF Calls sessions idle-timeout in ~30-60s. Pre-creating them means by the time
-  // the host accepts and WebRTC negotiation starts, they are already expired (→ 410 session_error).
-  // Sessions are created lazily in /sdp/push when each party actually starts negotiating.
-  //
   // RACE FIX (host double-call): the previous code did two SELECTs — one for
   // the caller's existing call and one for the host's existing call — then a
   // bare INSERT. Two callers initiating to the same host within the same few
@@ -353,8 +235,8 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
   const insertResult = await (async () => {
     try {
       return await db.prepare(
-        `INSERT INTO call_sessions (id, caller_id, host_id, type, status, cf_session_id, cf_host_session_id, rate_per_minute, is_random_match)
-         SELECT ?1, ?2, ?3, ?4, 'pending', NULL, NULL, ?5, ?6
+        `INSERT INTO call_sessions (id, caller_id, host_id, type, status, rate_per_minute, is_random_match)
+         SELECT ?1, ?2, ?3, ?4, 'pending', ?5, ?6
          WHERE NOT EXISTS (
            SELECT 1 FROM call_sessions
            WHERE status IN ('pending', 'active')
@@ -364,14 +246,14 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
     } catch (err) {
       // is_random_match was added by migration 0026 — if the column isn't
       // there yet (deploy ran without applying migrations) we still want
-      // calls to work. Fall back to the legacy 8-column INSERT so the rest
-      // of the system keeps running while the schema healer catches up.
+      // calls to work. Fall back to the legacy INSERT so the rest of the
+      // system keeps running while the schema healer catches up.
       const msg = String((err as any)?.message || err);
       if (/no such column: is_random_match/i.test(msg)) {
         console.warn('[initiate] is_random_match column missing, using legacy INSERT');
         return await db.prepare(
-          `INSERT INTO call_sessions (id, caller_id, host_id, type, status, cf_session_id, cf_host_session_id, rate_per_minute)
-           SELECT ?1, ?2, ?3, ?4, 'pending', NULL, NULL, ?5
+          `INSERT INTO call_sessions (id, caller_id, host_id, type, status, rate_per_minute)
+           SELECT ?1, ?2, ?3, ?4, 'pending', ?5
            WHERE NOT EXISTS (
              SELECT 1 FROM call_sessions
              WHERE status IN ('pending', 'active')
@@ -415,7 +297,7 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
   // running past the caller's balance on the host UI when the polling fallback is bypassed).
   // Includes the caller's free-minute pool so a free-trial call gets its full
   // affordable window rather than being capped at coins alone.
-  const maxSeconds = affordableCallSeconds(caller.coins, callerFreeMinutes, ratePerMin);
+  const maxSeconds = affordableCallSeconds(spendableCoins, callerFreeMinutes, ratePerMin);
   try {
     const notifId = c.env.NOTIFICATION_HUB.idFromName(host.user_id);
     const notifStub = c.env.NOTIFICATION_HUB.get(notifId);
@@ -448,16 +330,14 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
 
   return c.json({
     session_id: sessionId,
-    cf_session_id: null,
-    cf_host_session_id: null,
     host_coins_per_minute: ratePerMin,
     rate_per_minute: ratePerMin,
     call_type: callType,
     max_seconds: maxSeconds,
-    // Tells the client which media transport to use for this call. When Agora
-    // is configured on the Worker it wins; otherwise the Cloudflare Realtime
-    // SFU path is used. Lets us switch providers without a client release.
-    rtc_provider: isAgoraConfigured(c.env) ? 'agora' : 'cloudflare',
+    // Media transport for this call. Calls run on Agora RTC; the client joins
+    // via GET /api/calls/:id/agora-token. Kept in the response so the client
+    // can assert the provider it expects.
+    rtc_provider: 'agora' as const,
   });
 });
 
@@ -493,7 +373,7 @@ call.post('/end', async (c) => {
 
     // BUG #1 FIX: Fixed incomplete query
     const hostRow = await db.prepare('SELECT coins_per_minute, audio_coins_per_minute, video_coins_per_minute, user_id, total_minutes, total_earnings, level FROM hosts WHERE id = ?').bind(session.host_id).first<HostRow>();
-    
+
     // BUG #4 FIX: Check if hostRow is null before using it
     if (!hostRow) {
       console.error('[/end] Host not found for session', session_id);
@@ -569,6 +449,17 @@ call.post('/end', async (c) => {
       }
     }
     await db.batch(txs);
+
+    // Best-effort: stamp the estimated Agora media cost (₹) for margin
+    // analytics. Observability only — never affects the settlement above.
+    try {
+      const econ = await getCallEconomicsConfig(db);
+      const cost = agoraCostPerMinInr(session.type === 'video' ? 'video' : 'audio', econ) * durationMin;
+      await db.prepare('UPDATE call_sessions SET agora_cost_est = ? WHERE id = ?').bind(cost, session_id).run();
+    } catch { /* observability only */ }
+
+    // Item 2 — release the caller's prepaid coin hold (idempotent, safe).
+    await releaseCallHold(db, { callerId: session.caller_id, sessionId: session_id });
 
     // Notify the OTHER party that the call ended.
     //
@@ -658,24 +549,6 @@ call.post('/end', async (c) => {
       }
     }
 
-    const cfCalls = createCFCalls(c.env);
-    if (cfCalls) {
-      if (session.cf_session_id) {
-        try {
-          await cfCalls.closeSession(session.cf_session_id);
-        } catch (e) {
-          console.warn('[/end] Failed to close CF session (caller):', e);
-        }
-      }
-      if (session.cf_host_session_id) {
-        try {
-          await cfCalls.closeSession(session.cf_host_session_id);
-        } catch (e) {
-          console.warn('[/end] Failed to close CF session (host):', e);
-        }
-      }
-    }
-
     return c.json({ success: true, duration_seconds: durationSec, coins_charged: actualCoinsCharged, host_earnings: actualHostShare });
   } catch (e: any) {
     console.error('[/end] error:', e);
@@ -760,6 +633,16 @@ call.post('/:id/answer', async (c) => {
     return c.json({ error: 'Call already answered or cancelled' }, 409);
   }
 
+  // Item 2 — prepaid coin hold: reserve the caller's spendable coins for the
+  // now-active call so they can't be double-spent (tips / a second call) while
+  // it bills. Best-effort — a failure here never blocks the call. Released on
+  // every end path + the cron reaper.
+  try {
+    if (await isPrepaidHoldEnabled(db)) {
+      await placeCallHold(db, { callerId: session.caller_id, sessionId });
+    }
+  } catch (e) { console.warn('[/:id/answer] placeCallHold failed:', e); }
+
   // FIX: include started_at so caller can sync their billing timer with the server
   try {
     const notifId = c.env.NOTIFICATION_HUB.idFromName(session.caller_id);
@@ -776,8 +659,6 @@ call.post('/:id/answer', async (c) => {
     success: true,
     status: 'active',
     started_at: now,
-    cf_session_id: session.cf_session_id,
-    cf_host_session_id: session.cf_host_session_id,
   });
 });
 
@@ -793,243 +674,12 @@ async function deriveRole(db: D1Database, sessionId: string, userId: string): Pr
   return null;
 }
 
-call.post('/:id/sdp/push', async (c) => {
-  const { sub } = c.get('user');
-  const sessionId = c.req.param('id');
-  const body = await c.req.json<{
-    sdp: string;
-    type: string;
-    tracks: Array<{ mid: string; trackName: string }>;
-  }>();
-  const db = c.env.DB;
-
-  const result = await deriveRole(db, sessionId, sub);
-  if (!result) return c.json({ error: 'Session not found or access denied' }, 403);
-  const { session, role } = result;
-
-  const cfCalls = createCFCalls(c.env);
-  if (!cfCalls) {
-    console.error('[CF Calls] NOT CONFIGURED — CF_CALLS_APP_ID:', !!c.env.CF_CALLS_APP_ID, 'CF_CALLS_APP_SECRET:', !!c.env.CF_CALLS_APP_SECRET);
-    return c.json({ error: 'CF Calls not configured — contact admin to set CF_CALLS_APP_SECRET' }, 500);
-  }
-
-  let cfSessionId = role === 'host' ? session.cf_host_session_id : session.cf_session_id;
-  const sessionField = role === 'host' ? 'cf_host_session_id' : 'cf_session_id';
-  const trackField = role === 'host' ? 'cf_host_track_names' : 'cf_caller_track_names';
-
-  // Lazy session creation: if no CF session ID stored (e.g. call was created before
-  // CF_CALLS_APP_ID was configured), create one now and persist it.
-  //
-  // RACE FIX: two concurrent /sdp/push requests for the same role (e.g. the
-  // initial push racing an ICE-restart re-push, or a retried request) could
-  // both observe a null cfSessionId, both call createSession(), and both
-  // UPDATE the row — the second write clobbering the first. Whichever session
-  // lost the write becomes an orphan, and tracks pushed to it are invisible to
-  // the peer (who pulls from the stored session id). We make the persist
-  // atomic with a `WHERE <field> IS NULL` guard so only the first writer wins;
-  // the loser re-reads the winning id and closes its now-orphaned session.
-  if (!cfSessionId) {
-    try {
-      const newSess = await cfCalls.createSession();
-      const claim = await db.prepare(
-        `UPDATE call_sessions SET ${sessionField} = ? WHERE id = ? AND ${sessionField} IS NULL`
-      ).bind(newSess.sessionId, sessionId).run();
-
-      if (claim.meta?.changes) {
-        cfSessionId = newSess.sessionId;
-      } else {
-        // Lost the race — reuse the session another concurrent push stored and
-        // discard ours so it doesn't linger on CF until idle-timeout.
-        const fresh = await db.prepare(
-          `SELECT ${sessionField} as sid FROM call_sessions WHERE id = ?`
-        ).bind(sessionId).first<{ sid: string | null }>();
-        cfSessionId = fresh?.sid ?? newSess.sessionId;
-        if (cfSessionId !== newSess.sessionId) {
-          try { await cfCalls.closeSession(newSess.sessionId); } catch { /* best-effort orphan cleanup */ }
-        }
-      }
-    } catch (e) {
-      console.error('Lazy CF session creation error:', e);
-      return c.json({ error: 'Failed to create CF session' }, 500);
-    }
-  }
-  const trackList = body.tracks.map(t => ({ location: 'local' as const, mid: t.mid, trackName: t.trackName }));
-
-  // Helper: notify other party + persist track names after a successful push
-  const afterPush = async (tracks: any[]) => {
-    try {
-      const otherUserId = role === 'host' ? session.caller_id : (session as any).host_user_id;
-      if (otherUserId) {
-        const notifId = c.env.NOTIFICATION_HUB.idFromName(otherUserId);
-        const notifStub = c.env.NOTIFICATION_HUB.get(notifId);
-        await notifStub.fetch('https://dummy/notify', {
-          method: 'POST',
-          body: JSON.stringify({ type: 'peer_tracks_ready', session_id: sessionId }),
-        });
-      }
-    } catch (e) {
-      console.warn('[sdp/push] Failed to notify tracks ready:', e);
-    }
-    try {
-      const trackNamesJson = JSON.stringify(body.tracks.map((t: any) => t.trackName));
-      await db.prepare(`UPDATE call_sessions SET ${trackField} = ? WHERE id = ?`)
-        .bind(trackNamesJson, sessionId).run();
-    } catch (e) {
-      console.warn('[sdp/push] Failed to persist track names:', e);
-    }
-  };
-
-  try {
-    const pushResult = await cfCalls.pushTracks(
-      cfSessionId!,
-      { type: body.type, sdp: body.sdp },
-      trackList
-    );
-    await afterPush(pushResult.tracks);
-    return c.json({ answer: pushResult.answer, tracks: pushResult.tracks, role });
-  } catch (e: any) {
-    console.error('pushTracks error:', e);
-
-    // FIX BUG-1 safety net: if the CF session expired (410 session_error) — which can happen
-    // if the lazy-created session also aged out — recreate a fresh session and retry once.
-    const isSessionExpired = e.message && (
-      e.message.includes('410') || e.message.toLowerCase().includes('session_error')
-    );
-    if (isSessionExpired) {
-      try {
-        const newSess = await cfCalls.createSession();
-        cfSessionId = newSess.sessionId;
-        await db.prepare(`UPDATE call_sessions SET ${sessionField} = ? WHERE id = ?`)
-          .bind(cfSessionId, sessionId).run();
-
-        const retryResult = await cfCalls.pushTracks(
-          cfSessionId,
-          { type: body.type, sdp: body.sdp },
-          trackList
-        );
-        await afterPush(retryResult.tracks);
-        return c.json({ answer: retryResult.answer, tracks: retryResult.tracks, role });
-      } catch (retryE: any) {
-        console.error('pushTracks retry failed:', retryE);
-        return c.json({ error: 'session_error', message: 'CF session expired, please retry the call' }, 410);
-      }
-    }
-
-    return c.json({ error: e.message || 'Failed to push tracks' }, 500);
-  }
-});
-
-call.post('/:id/sdp/pull', async (c) => {
-  const { sub } = c.get('user');
-  const sessionId = c.req.param('id');
-  const body = await c.req.json<{
-    trackNames: string[];
-  }>();
-  const db = c.env.DB;
-
-  const result = await deriveRole(db, sessionId, sub);
-  if (!result) return c.json({ error: 'Session not found or access denied' }, 403);
-  const { session, role } = result;
-
-  const cfCalls = createCFCalls(c.env);
-  if (!cfCalls) {
-    console.error('[CF Calls] NOT CONFIGURED — CF_CALLS_APP_ID:', !!c.env.CF_CALLS_APP_ID, 'CF_CALLS_APP_SECRET:', !!c.env.CF_CALLS_APP_SECRET);
-    return c.json({ error: 'CF Calls not configured — contact admin to set CF_CALLS_APP_SECRET' }, 500);
-  }
-
-  const mySessionId = role === 'host' ? session.cf_host_session_id : session.cf_session_id;
-  const remoteSessionId = role === 'host' ? session.cf_session_id : session.cf_host_session_id;
-
-  // If my session is missing, remote hasn't been set up yet — retry signal
-  if (!mySessionId) return c.json({ offer: null, tracks: [], role, retryable: true });
-  if (!remoteSessionId) return c.json({ offer: null, tracks: [], role, retryable: true });
-
-  // FIX: use stored remote track names if available — avoids hardcoded 'audio-0'/'video-1'
-  // assumption that breaks when MID assignment differs by platform
-  // BUG #5 FIX: Safe JSON parsing with error handling
-  const storedRemoteNames = role === 'caller'
-    ? (session as any).cf_host_track_names
-    : (session as any).cf_caller_track_names;
-  
-  let trackNamesToUse = body.trackNames;
-  if (storedRemoteNames) {
-    try {
-      trackNamesToUse = JSON.parse(storedRemoteNames);
-    } catch (e) {
-      console.warn('[sdp/pull] Malformed track names, using request body:', e);
-      // Fall back to request body
-    }
-  }
-
-  try {
-    const pullResult = await cfCalls.pullTracks(mySessionId, remoteSessionId, trackNamesToUse);
-
-    // If ALL requested tracks have errors, remote hasn't pushed yet — tell client to retry.
-    // CF Calls returns a valid offer SDP even when tracks are unavailable (a=inactive),
-    // so we must explicitly detect this and signal "not ready" instead of returning the bad offer.
-    const allTracksErrored =
-      pullResult.tracks?.length > 0 &&
-      pullResult.tracks.every((t: CFCallsTrack) => t.errorCode);
-
-    if (allTracksErrored) {
-      return c.json({ offer: null, tracks: [], role, retryable: true });
-    }
-
-    return c.json({
-      offer: pullResult.offer,
-      tracks: pullResult.tracks,
-      role,
-    });
-  } catch (e: any) {
-    // CF Calls returns 410 with session_error when the remote PeerConnection isn't established yet.
-    // This is equivalent to "remote hasn't pushed yet" — tell the client to retry.
-    const isSessionError = e.message?.includes('session_error') || e.message?.includes('410');
-    if (isSessionError) {
-      return c.json({ offer: null, tracks: [], role, retryable: true });
-    }
-    console.error('pullTracks error:', e);
-    return c.json({ error: e.message || 'Failed to pull tracks' }, 500);
-  }
-});
-
-call.post('/:id/sdp/answer', async (c) => {
-  const { sub } = c.get('user');
-  const sessionId = c.req.param('id');
-  const body = await c.req.json<{
-    sdp: string;
-    type: string;
-  }>();
-  const db = c.env.DB;
-
-  const result = await deriveRole(db, sessionId, sub);
-  if (!result) return c.json({ error: 'Session not found or access denied' }, 403);
-  const { session, role } = result;
-
-  const cfCalls = createCFCalls(c.env);
-  if (!cfCalls) {
-    console.error('[CF Calls] NOT CONFIGURED — CF_CALLS_APP_ID:', !!c.env.CF_CALLS_APP_ID, 'CF_CALLS_APP_SECRET:', !!c.env.CF_CALLS_APP_SECRET);
-    return c.json({ error: 'CF Calls not configured — contact admin to set CF_CALLS_APP_SECRET' }, 500);
-  }
-
-  const mySessionId = role === 'host' ? session.cf_host_session_id : session.cf_session_id;
-  if (!mySessionId) return c.json({ error: 'No CF session' }, 400);
-
-  try {
-    await cfCalls.sendAnswerForPull(mySessionId, { type: body.type, sdp: body.sdp });
-    return c.json({ success: true });
-  } catch (e: any) {
-    console.error('sendAnswer error:', e);
-    return c.json({ error: e.message || 'Failed to send answer' }, 500);
-  }
-});
-
 // In-call media-state relay. The client posts its current mic / camera state
 // whenever the user toggles mute or camera; we forward it to the OTHER party
 // over their NotificationHub socket so the remote UI updates INSTANTLY
 // (camera-off avatar, "muted" badge) instead of polling the remote track's
 // `muted` flag — which is laggy and fires unreliably across platforms.
-// Best-effort: a delivery failure never fails the toggle. No CF Calls call is
-// involved, so this is cheap and safe even on flaky networks.
+// Best-effort: a delivery failure never fails the toggle.
 call.post('/:id/media-state', async (c) => {
   const { sub } = c.get('user');
   const sessionId = c.req.param('id');
@@ -1094,10 +744,10 @@ call.post('/:id/end', async (c) => {
     const durationSec = session.started_at ? now - session.started_at : 0;
     // Whole minutes billed for this call (any started minute rounds up).
     const durationMin = billedMinutes(durationSec);
-    
+
     // BUG #1 FIX: Fixed incomplete query
     const hostRow = await db.prepare('SELECT coins_per_minute, audio_coins_per_minute, video_coins_per_minute, user_id, total_minutes, total_earnings, level FROM hosts WHERE id = ?').bind(session.host_id).first<HostRow>();
-    
+
     // BUG #4 FIX: Check if hostRow is null
     if (!hostRow) {
       console.error('[/:id/end] Host not found for session', sessionId);
@@ -1165,6 +815,16 @@ call.post('/:id/end', async (c) => {
 
     await db.batch(batchOps);
 
+    // Best-effort: stamp the estimated Agora media cost (₹) for margin analytics.
+    try {
+      const econ = await getCallEconomicsConfig(db);
+      const cost = agoraCostPerMinInr(session.type === 'video' ? 'video' : 'audio', econ) * durationMin;
+      await db.prepare('UPDATE call_sessions SET agora_cost_est = ? WHERE id = ?').bind(cost, sessionId).run();
+    } catch { /* observability only */ }
+
+    // Item 2 — release the caller's prepaid coin hold (idempotent, safe).
+    await releaseCallHold(db, { callerId: session.caller_id, sessionId });
+
     // Notify the OTHER party that call ended
     try {
       const isCallerEnding = session.caller_id === sub;
@@ -1202,24 +862,6 @@ call.post('/:id/end', async (c) => {
         });
       } catch (e) {
         console.warn('[/:id/end] Failed to notify user of coin deduction:', e);
-      }
-    }
-
-    const cfCalls = createCFCalls(c.env);
-    if (cfCalls) {
-      if (session.cf_session_id) {
-        try {
-          await cfCalls.closeSession(session.cf_session_id);
-        } catch (e) {
-          console.warn('[/:id/end] Failed to close CF session (caller):', e);
-        }
-      }
-      if (session.cf_host_session_id) {
-        try {
-          await cfCalls.closeSession(session.cf_host_session_id);
-        } catch (e) {
-          console.warn('[/:id/end] Failed to close CF session (host):', e);
-        }
       }
     }
 
@@ -1377,6 +1019,9 @@ call.post('/:id/heartbeat', async (c) => {
   }
   await db.batch(batchOps);
 
+  // Item 2 — release the caller's prepaid coin hold (balance-exhausted end).
+  await releaseCallHold(db, { callerId: session.caller_id, sessionId });
+
   // Notify both parties the call ended (balance exhausted).
   for (const uid of [session.caller_id, hostRow?.user_id]) {
     if (!uid) continue;
@@ -1388,16 +1033,6 @@ call.post('/:id/heartbeat', async (c) => {
       });
     } catch (e) {
       console.warn('[/:id/heartbeat] notify failed:', e);
-    }
-  }
-
-  // Best-effort: close CF sessions so media tears down promptly.
-  const cfCalls = createCFCalls(c.env);
-  if (cfCalls) {
-    for (const sid of [session.cf_session_id, session.cf_host_session_id]) {
-      if (sid) {
-        try { await cfCalls.closeSession(sid); } catch (e) { console.warn('[/:id/heartbeat] CF close failed:', e); }
-      }
     }
   }
 
@@ -1567,26 +1202,12 @@ call.get('/:id', async (c) => {
   return c.json(session);
 });
 
-call.get('/:id/cf-token', async (c) => {
-  const { sub } = c.get('user');
-  const sessionId = c.req.param('id');
-  const result = await deriveRole(c.env.DB, sessionId, sub);
-  if (!result) return c.json({ error: 'Not found or access denied' }, 403);
-  return c.json({
-    cf_session_id: result.session.cf_session_id,
-    cf_host_session_id: result.session.cf_host_session_id,
-    app_id: c.env.CF_CALLS_APP_ID,
-    role: result.role,
-  });
-});
-
 // ─── Agora RTC token ─────────────────────────────────────────────────────────
 // Returns everything the Agora client SDK needs to join the call:
 //   { app_id, channel, uid, token, role }
 // The channel is the call session id (a random UUID), uid = 0 (Agora auto-
 // assigns; the token is valid for any uid on the channel), and only the two
 // authorized participants (deriveRole) can mint a token for a given session.
-// Used only when Agora is configured; otherwise clients use the CF Calls path.
 call.get('/:id/agora-token', async (c) => {
   const { sub } = c.get('user');
   const sessionId = c.req.param('id');

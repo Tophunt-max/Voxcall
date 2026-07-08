@@ -18,19 +18,34 @@
 // ============================================================================
 
 /**
- * Whole minutes billed for a call of `durationSec` seconds.
+ * PER-MINUTE ROUND-UP billing — the canonical, product-mandated rule.
  *
- * Any started minute is charged in full (round UP), matching the historical
- * behaviour `Math.max(1, Math.ceil(durationSec / 60))` on the live /end path.
- * A non-positive / non-finite duration bills 0 minutes (e.g. a pending call
- * that never connected). Note that for any `durationSec > 0`, `ceil(...) >= 1`,
- * so the 1-minute floor only matters as a guard — it never inflates a real
- * sub-minute call beyond the single minute it already rounds up to.
+ * Any STARTED minute is charged in full (round UP), with a hard 1-minute floor
+ * for a connected call. Concretely:
+ *   - a 2-second answered call   → 1 minute billed
+ *   - a 59-second call           → 1 minute billed
+ *   - a 61-second call           → 2 minutes billed
+ * i.e. every 1–60s bucket = exactly one billed minute. A non-positive /
+ * non-finite duration bills 0 (a pending call that never connected is free).
+ *
+ * This is the ONLY granularity the platform bills at — per-second billing is
+ * intentionally NOT used (see MIN_BILLING_GRANULARITY_SEC + billedUnits).
  */
 export function billedMinutes(durationSec: number): number {
   if (!Number.isFinite(durationSec) || durationSec <= 0) return 0;
   return Math.max(1, Math.ceil(durationSec / 60));
 }
+
+/**
+ * Minimum (and effectively the only) billing granularity in seconds. The call
+ * settle paths bill PER MINUTE with a 1-minute round-up floor, so any call from
+ * 1–60 seconds costs one full minute. `billedUnits` clamps the requested
+ * granularity up to this value, which means even if `app_settings
+ * .billing_granularity_sec` is (mis)set below 60, billing can NEVER drop to
+ * sub-minute precision. To change the product rule you must change THIS
+ * constant — not a runtime setting.
+ */
+export const MIN_BILLING_GRANULARITY_SEC = 60;
 
 /**
  * Granularity-aware billable units for a call.
@@ -52,10 +67,12 @@ export function billedMinutes(durationSec: number): number {
  */
 export function billedUnits(durationSec: number, granularitySec: number): number {
   if (!Number.isFinite(durationSec) || durationSec <= 0) return 0;
-  const g = Number.isFinite(granularitySec) && granularitySec > 0 ? granularitySec : 60;
-  // Floor at 1 unit so a sub-granularity call (e.g. 0.5s on per-second
-  // billing) still costs the host's smallest unit — same fairness rule
-  // as the legacy 1-minute floor.
+  // PRODUCT RULE: never bill below per-minute. Clamp the requested granularity
+  // UP to MIN_BILLING_GRANULARITY_SEC (60) so a 2-second call is always one
+  // full minute — even if the app_settings value was set lower.
+  const requested = Number.isFinite(granularitySec) && granularitySec > 0 ? granularitySec : MIN_BILLING_GRANULARITY_SEC;
+  const g = Math.max(MIN_BILLING_GRANULARITY_SEC, requested);
+  // Floor at 1 unit so any connected call costs at least one minute.
   return Math.max(1, Math.ceil(durationSec / g));
 }
 
@@ -70,7 +87,10 @@ export function billedUnits(durationSec: number, granularitySec: number): number
  */
 export function rateForGranularity(ratePerMinute: number, granularitySec: number): number {
   if (!Number.isFinite(ratePerMinute) || ratePerMinute <= 0) return 0;
-  const g = Number.isFinite(granularitySec) && granularitySec > 0 ? granularitySec : 60;
+  // Clamp to the per-minute floor (see billedUnits) so the per-unit rate always
+  // matches the clamped billing unit. With g === 60 this is just ratePerMinute.
+  const requested = Number.isFinite(granularitySec) && granularitySec > 0 ? granularitySec : MIN_BILLING_GRANULARITY_SEC;
+  const g = Math.max(MIN_BILLING_GRANULARITY_SEC, requested);
   return (ratePerMinute * g) / 60;
 }
 
@@ -370,6 +390,96 @@ export async function chargeCallerWithFreePool(
     free_minutes_used: freeMinutesToDecrement,
     billed_minutes: totalUnits,
   };
+}
+
+// ============================================================================
+// Prepaid coin hold (item 2)
+// ============================================================================
+//
+// When enabled, the caller's SPENDABLE coins are RESERVED for the duration of
+// an active call so they can't be double-spent (tips / a second call) while the
+// call is still billing — guaranteeing the coins are there to charge at settle.
+//
+// Mechanics:
+//   • The hold lives in `users.coins_held`; a user's spendable balance is
+//     (coins - coins_held). The call's own settlement debits `coins` directly
+//     and is UNAFFECTED by the hold — only OTHER spend paths (tips, new call
+//     admission) subtract coins_held.
+//   • `call_sessions.coins_reserved` records how much this call holds, so
+//     release is exact and idempotent.
+//   • Trade-off: with the hold ON, a caller cannot tip DURING a call. Toggle
+//     `call_prepaid_hold_enabled` off if you prefer gifting-during-call.
+
+/** Whether the prepaid-hold feature is enabled (admin kill-switch, default ON). */
+export async function isPrepaidHoldEnabled(db: D1Database): Promise<boolean> {
+  try {
+    const row = await db.prepare("SELECT value FROM app_settings WHERE key = 'call_prepaid_hold_enabled'").first<{ value: string }>();
+    return (row?.value ?? '1') !== '0';
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Reserve the caller's full spendable balance for an active call. Atomic +
+ * idempotent (a second call for the same session is a no-op). Tolerates a
+ * legacy DB missing the coins_held / coins_reserved columns (returns 0).
+ * Returns the amount actually held.
+ */
+export async function placeCallHold(
+  db: D1Database,
+  params: { callerId: string; sessionId: string },
+): Promise<number> {
+  try {
+    const existing = await db
+      .prepare('SELECT coins_reserved FROM call_sessions WHERE id = ?')
+      .bind(params.sessionId)
+      .first<{ coins_reserved: number }>();
+    if ((existing?.coins_reserved ?? 0) > 0) return existing!.coins_reserved; // already held
+    const u = await db
+      .prepare('SELECT coins, COALESCE(coins_held, 0) as coins_held FROM users WHERE id = ?')
+      .bind(params.callerId)
+      .first<{ coins: number; coins_held: number }>();
+    if (!u) return 0;
+    const spendable = Math.max(0, (Number(u.coins) || 0) - (Number(u.coins_held) || 0));
+    if (spendable <= 0) return 0;
+    // Atomic guard: only reserve coins that are still spendable right now.
+    const res = await db
+      .prepare('UPDATE users SET coins_held = COALESCE(coins_held, 0) + ? WHERE id = ? AND (coins - COALESCE(coins_held, 0)) >= ?')
+      .bind(spendable, params.callerId, spendable)
+      .run();
+    if (!res.meta?.changes) return 0;
+    await db.prepare('UPDATE call_sessions SET coins_reserved = ? WHERE id = ?').bind(spendable, params.sessionId).run();
+    return spendable;
+  } catch (e) {
+    console.warn('[billing] placeCallHold failed:', e);
+    return 0;
+  }
+}
+
+/**
+ * Release a call's coin hold back to the caller's spendable balance. Idempotent
+ * — zeroes coins_reserved so a repeated call (end + cron) never double-releases.
+ * Safe on a legacy DB missing the columns.
+ */
+export async function releaseCallHold(
+  db: D1Database,
+  params: { callerId: string; sessionId: string },
+): Promise<void> {
+  try {
+    const s = await db
+      .prepare('SELECT coins_reserved FROM call_sessions WHERE id = ?')
+      .bind(params.sessionId)
+      .first<{ coins_reserved: number }>();
+    const reserved = Number(s?.coins_reserved) || 0;
+    if (reserved <= 0) return;
+    await db.batch([
+      db.prepare('UPDATE users SET coins_held = MAX(0, COALESCE(coins_held, 0) - ?) WHERE id = ?').bind(reserved, params.callerId),
+      db.prepare('UPDATE call_sessions SET coins_reserved = 0 WHERE id = ?').bind(params.sessionId),
+    ]);
+  } catch (e) {
+    console.warn('[billing] releaseCallHold failed:', e);
+  }
 }
 
 /**

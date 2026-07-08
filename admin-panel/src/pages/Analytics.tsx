@@ -32,6 +32,7 @@ export default function Analytics() {
   const [hosts, setHosts] = useState<any[]>([]);
   const [streak, setStreak] = useState<any>(null);
   const [recon, setRecon] = useState<any>(null);
+  const [margins, setMargins] = useState<any>(null);
   const [range, setRange] = useState<'7d' | '30d'>('7d');
   const [loading, setLoading] = useState(true);
 
@@ -43,11 +44,13 @@ export default function Analytics() {
       api.hosts().catch(() => []),
       api.streakAnalytics().catch(() => null),
       api.coinReconciliation().catch(() => null),
-    ]).then(([a, h, s, r]) => {
+      api.marginAnalytics(days).catch(() => null),
+    ]).then(([a, h, s, r, m]) => {
       setAnalytics(a);
       setHosts(Array.isArray(h) ? h.slice(0, 5) : []);
       setStreak(s);
       setRecon(r);
+      setMargins(m);
     }).finally(() => setLoading(false));
   }, [range]);
 
@@ -103,6 +106,64 @@ export default function Analytics() {
         <StatCard icon={Activity} label="Call/User Rate" value={estRetention} gradient="gradient-green" />
         <StatCard icon={Coins} label="Avg Revenue/User" value={avgRevenuePerUser > 0 ? `${avgRevenuePerUser} coins` : '—'} gradient="gradient-orange" />
       </div>
+
+      {/* ── Call Economics & Margins (Agora-aware P&L) ─────────────────── */}
+      {margins && (
+        <div className="bg-card border border-border rounded-2xl p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <div className="w-7 h-7 rounded-lg bg-emerald-100 flex items-center justify-center">
+              <TrendingUp size={14} className="text-emerald-600" />
+            </div>
+            <div>
+              <h3 className="font-bold text-base">Call Economics &amp; Margins</h3>
+              <p className="text-xs text-muted-foreground">
+                Last {range === '7d' ? '7' : '30'} days · {(margins.calls ?? 0).toLocaleString()} calls ·{' '}
+                {(margins.billed_minutes?.total ?? 0).toLocaleString()} billed min
+                (🎤 {(margins.billed_minutes?.audio ?? 0).toLocaleString()} / 🎥 {(margins.billed_minutes?.video ?? 0).toLocaleString()})
+              </p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
+            {[
+              { label: 'Revenue', value: margins.revenue_inr, color: 'text-green-600' },
+              { label: 'Host payout', value: margins.host_payout_inr, color: 'text-amber-600' },
+              { label: 'Agora cost', value: margins.agora_cost_inr, color: 'text-blue-600' },
+              { label: 'Gateway fee', value: margins.gateway_fee_inr, color: 'text-muted-foreground' },
+              { label: 'Platform net', value: margins.platform_net_inr, color: 'text-violet-600' },
+            ].map((s) => (
+              <div key={s.label} className="rounded-xl border border-border bg-background px-3 py-2.5">
+                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{s.label}</p>
+                <p className={`font-bold text-lg ${s.color}`}>₹{(s.value ?? 0).toLocaleString()}</p>
+              </div>
+            ))}
+            <div className="rounded-xl border border-border bg-emerald-50 dark:bg-emerald-950/20 px-3 py-2.5">
+              <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Margin</p>
+              <p className="font-bold text-lg text-emerald-600">{(margins.margin_pct ?? 0).toFixed(1)}%</p>
+            </div>
+          </div>
+
+          {/* Agora usage + volume discount (current month) */}
+          {margins.agora_usage_month && (
+            <div className="rounded-xl border border-border bg-blue-50/40 dark:bg-blue-950/10 p-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                Agora Usage — This Month
+              </p>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs">
+                <span>Call min: <strong>{(margins.agora_usage_month.call_minutes ?? 0).toLocaleString()}</strong></span>
+                <span>Participant min: <strong>{(margins.agora_usage_month.participant_minutes ?? 0).toLocaleString()}</strong></span>
+                <span className="text-green-600">Free: {(margins.agora_usage_month.free_minutes ?? 0).toLocaleString()}</span>
+                <span>Billable: <strong>{(margins.agora_usage_month.billable_minutes ?? 0).toLocaleString()}</strong></span>
+                <span className="px-2 py-0.5 rounded-lg bg-secondary font-semibold">{margins.agora_usage_month.tier_label}</span>
+                <span className="ml-auto">Est. bill: <strong className="text-blue-600">${(margins.agora_usage_month.est_bill_usd ?? 0).toLocaleString()}</strong> <span className="text-muted-foreground">(₹{(margins.agora_usage_month.est_bill_inr ?? 0).toLocaleString()})</span></span>
+              </div>
+            </div>
+          )}
+          <p className="text-[11px] text-muted-foreground italic mt-3">
+            Revenue = billed coins × ₹{margins.config?.coin_purchase_inr}/coin · Host payout = ledger bonus coins × ₹{margins.config?.coin_payout_inr}/coin ·
+            Agora @ FX ₹{margins.config?.fx_inr_per_usd}/$ ({margins.config?.video_max_resolution} video). Volume discount tiers: 100k/500k/1M participant-min → 5/7/10%.
+          </p>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         <div className="xl:col-span-2 bg-card border border-border rounded-2xl p-5">

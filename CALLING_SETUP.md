@@ -1,18 +1,17 @@
-# Calling Setup — Cloudflare Realtime (SFU + TURN)
+# Calling Setup — Agora RTC (single provider)
 
-Voxcall's audio/video calls run on **Cloudflare Realtime**:
+> **Provider model (2026):** Voxcall's audio/video calls run **exclusively on
+> Agora RTC**. The Cloudflare Realtime SFU + TURN path has been fully removed.
+> The backend mints a short-lived join token per call and both clients join the
+> same Agora channel (the channel name = the call session id).
 
-- **Realtime SFU** (formerly "Calls") — routes media. Each party publishes its
-  audio/video to the SFU, which forwards it to the other party. Used by
-  `api-server/src/lib/cf-calls.ts` (`https://rtc.live.cloudflare.com/v1/apps`).
-- **Realtime TURN** — NAT traversal so clients behind mobile data / firewalls
-  can still connect. Served via `GET /api/calls/ice-config`.
+Both the **user app** (`voxlink`) and the **host app** (`voxlink-host`) share
+the same backend Worker (`voxlink-api`), so configuring Agora once enables
+calling in **both** apps.
 
-Both the **user app** and the **host app** share the same backend Worker
-(`voxlink-api`), so configuring the Worker once fixes calling in **both** apps.
-
-> If calls fail with **"CF Calls not configured — contact admin to set
-> CF_CALLS_APP_SECRET"**, the credentials below are missing on the Worker.
+> If calls fail with **"Agora not configured — contact admin to set
+> AGORA_APP_ID / AGORA_APP_CERTIFICATE"**, the credentials below are missing on
+> the Worker.
 
 ---
 
@@ -20,76 +19,92 @@ Both the **user app** and the **host app** share the same backend Worker
 
 | Variable | What | Where to get it |
 |---|---|---|
-| `CF_CALLS_APP_ID` | Realtime SFU **App ID** | Cloudflare Dashboard → Realtime → your app |
-| `CF_CALLS_APP_SECRET` | Realtime SFU **App Secret** (secret) | Same app (shown once at creation) |
-| `TURN_KEY_ID` | Realtime **TURN Key ID** | Cloudflare Dashboard → Realtime → TURN |
-| `TURN_KEY_TOKEN` | Realtime **TURN Key Token** (secret) | Same TURN key |
-| `CF_ACCOUNT_ID` | Cloudflare account id | Already a deploy var (`b592b3b2…`) |
+| `AGORA_APP_ID` | Agora project **App ID** | [console.agora.io](https://console.agora.io) → your project |
+| `AGORA_APP_CERTIFICATE` | Agora project **primary certificate** (secret — signs RTC tokens) | Same project → enable App Certificate / token auth |
 
-All of these are **runtime Worker secrets** (the backend reads them at request
-time) — they go on the **Cloudflare Worker**, NOT in the static web build.
+Both are **runtime Worker secrets** (the backend reads them at request time when
+minting tokens) — they go on the **Cloudflare Worker**, NOT in the static web
+build. Create the project with **App Certificate / token authentication
+enabled**.
 
+### Set the credentials
 
----
-
-## How to set the credentials
-
-### Option A — wrangler CLI (fastest)
 ```bash
 cd api-server
-npx wrangler secret put CF_CALLS_APP_ID        # paste App ID
-npx wrangler secret put CF_CALLS_APP_SECRET    # paste App Secret
-npx wrangler secret put TURN_KEY_ID
-npx wrangler secret put TURN_KEY_TOKEN
-# CF_ACCOUNT_ID: add as a secret too if not already present on the Worker
+npx wrangler secret put AGORA_APP_ID           # Agora project App ID
+npx wrangler secret put AGORA_APP_CERTIFICATE  # Agora primary certificate (secret)
 ```
-Secrets take effect immediately — no redeploy needed.
 
-### Option B — Cloudflare Dashboard
-Workers & Pages → **voxlink-api** → Settings → **Variables and Secrets** → add
-each as a **Secret**.
+Secrets take effect immediately — no redeploy needed. Verify with
+`GET /api/calls-config-status` (or `/health`) → it should report
+`rtc_provider: "agora"` and `calling_ready: true`.
 
-### Option C — GitHub + CI
-`deploy-backend.yml` auto-sets **`CF_CALLS_APP_SECRET`**, `TURN_KEY_ID`,
-`TURN_KEY_TOKEN` from matching **GitHub repo secrets** on deploy.
-⚠️ It does **NOT** set `CF_CALLS_APP_ID` — set that one manually (Option A/B).
+You can also set them via **Cloudflare Dashboard → Workers → voxlink-api →
+Settings → Variables and Secrets**, or via matching **GitHub repo secrets** if
+`deploy-backend.yml` is wired to push them on deploy.
 
 ---
 
-## Architecture — why SFU (not P2P)
+## ⚠️ Mobile clients need a NEW native build
 
-Voxcall is a **1:1 paid marketplace call** (user ↔ host). SFU is the right
-production choice over peer-to-peer:
+`react-native-agora` is a **native module** that autolinks during EAS prebuild
+(the same way `react-native-incall-manager` does). So:
 
-- **Reliable connectivity** — media flows through Cloudflare's edge; no fragile
-  P2P NAT negotiation.
-- **Privacy** — peers never see each other's IP (P2P would expose it).
-- **Moderation / recording** — server-side media enables future recording for
-  dispute/abuse handling and AI moderation (impossible with pure P2P).
-- **Accurate billing** — the server knows a call is live (drives the heartbeat
-  balance cap + cron reaper).
-- **Future group calls** — SFU scales to 3+ participants.
-
-P2P + TURN would be slightly cheaper / lower-latency for 2 parties, but loses
-all of the above. **Keep SFU.**
-
+- **Web** uses the Agora **web** SDK (`agora-rtc-sdk-ng`) and works with **no
+  rebuild**.
+- **Android / iOS** require a fresh **dev/preview/production EAS build** before
+  Agora calls work on device. There is no JS-only fallback anymore, so an old
+  build (that still had the Cloudflare WebRTC native module) will **not** place
+  calls until rebuilt.
 
 ---
 
-## Production recommendations
+## How calling works (end to end)
 
-- **Configure SFU + TURN both.** SFU alone won't connect on restrictive
-  networks (mobile data / firewalls). In production the backend drops the
-  public dev TURN relay and requires real Cloudflare TURN keys
-  (`ENVIRONMENT = "production"` in `wrangler.toml`).
-- **Audio-first.** SFU egress is billed per GB; audio is cheap, video costs
-  more. Per-host audio/video rates already let you price video higher.
-- **Region** — Cloudflare is global anycast; clients auto-connect to the
-  nearest edge, no per-region setup.
-- **Monitor egress** in the Cloudflare Realtime dashboard as call volume grows.
-- **Keep secrets out of source** — App Secret / TURN token are real secrets;
-  never commit them (only `CF_ACCOUNT_ID` / `CF_CALLS_APP_ID` are non-sensitive
-  identifiers, but we still store them as Worker secrets).
+1. Caller hits `POST /api/calls/initiate` → creates a `call_sessions` row
+   (`pending`) and returns `rtc_provider: "agora"` + `session_id`.
+2. Host accepts via `POST /api/calls/:id/answer` → row goes `active`.
+3. Each client calls `GET /api/calls/:id/agora-token` → `{ app_id, channel,
+   uid, token }`. `channel` = session id, `uid` = 0 (Agora auto-assigns; the
+   token is valid for any uid). Only the two authorized participants
+   (`deriveRole`) can mint a token for a session.
+4. The client joins the channel with the Agora SDK and publishes mic (+ camera
+   for video calls).
+
+### Client code map
+- `hooks/useWebRTC.ts` — fetches the Agora token and drives one `AgoraService`.
+  `provider` is always `"agora"`.
+- `services/agora.ts` — `AgoraService`: native via `react-native-agora`, web via
+  `agora-rtc-sdk-ng`. Same lifecycle the call screens use
+  (`start`/`toggleMute`/`toggleCamera`/`setSpeaker`/`switchCamera`/`destroy`).
+- `components/RtcVideoView.tsx` — **native** renders video by `uid` through
+  Agora's `RtcSurfaceView`; **web** renders the SDK's `MediaStreamTrack`s in a
+  `<video>` element. Audio is routed by the Agora engine (native) or the audio
+  element (web).
+- In-call mic/camera state is relayed to the peer over
+  `POST /api/calls/:id/media-state` (WS `peer_media_state`) so the camera-off
+  avatar / muted badge update instantly — this is transport-agnostic.
+
+### Billing / signalling unchanged
+Call initiation, the atomic coin transfer, the heartbeat balance cap, the cron
+reaper, ratings, and all WS notifications are **provider-agnostic** — they key
+off the `call_sessions` row, not the media transport. (The unused
+`cf_session_id` / `cf_host_session_id` columns remain on the table for
+historical rows but are no longer written or read.)
+
+---
+
+## Why a managed SDK (Agora) over self-hosted SFU / P2P
+
+Voxcall is a **1:1 paid marketplace call** (user ↔ host):
+
+- **Weak-network quality** — Agora's global SD-RTN handles packet loss / jitter
+  and NAT traversal (its own TURN-equivalent), so no separate TURN key is needed
+  and mobile-data calls connect reliably.
+- **Privacy** — peers never exchange IPs (unlike P2P).
+- **Accurate billing** — the server still knows a call is live (heartbeat cap +
+  cron reaper) independent of the media path.
+- **Future group calls** — the channel model scales to 3+ participants.
 
 ---
 
@@ -97,61 +112,23 @@ all of the above. **Keep SFU.**
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| "CF Calls not configured — contact admin…" | `CF_CALLS_APP_ID` / `CF_CALLS_APP_SECRET` missing on Worker | Set both (Option A/B) |
-| Call starts but never connects (stuck "Connecting…") | TURN missing/invalid | Set `TURN_KEY_ID` + `TURN_KEY_TOKEN` |
-| `CF Calls createSession error 401/403` | Wrong App Secret, or secret for a different app | Re-copy App Secret for the correct App ID |
-| Works on Wi-Fi, fails on mobile data | No TURN relay | Configure Cloudflare TURN (above) |
+| "Agora not configured — contact admin…" | `AGORA_APP_ID` / `AGORA_APP_CERTIFICATE` missing on Worker | Set both, then re-check `/api/calls-config-status` |
+| Android/iOS call never starts, web works | App build predates the Agora native module | Ship a new EAS build |
+| `Agora error 110 / token expired` | Token invalid — wrong certificate, or clock skew | Re-copy the **primary certificate** for the correct App ID |
 | Calls connect but no audio/video | Mic/camera permission denied on client | Grant permissions (the app prompts) |
+| Join fails with an App ID error | Token auth not enabled on the Agora project | Enable App Certificate / token authentication |
 
 ---
 
 ## Current state (in code)
 
-- `api-server/src/lib/cf-calls.ts` — SFU client (sessions / pushTracks /
-  pullTracks). Guarded by `createCFCalls` which errors clearly when unconfigured.
-- `api-server/src/routes/call.ts` — initiate/answer/end; returns the
-  "CF Calls not configured" error when `CF_CALLS_APP_ID`/`_SECRET` are absent.
-- `GET /api/calls/ice-config` — serves STUN/TURN to clients; hardens to
-  Cloudflare TURN in production.
-- `voxlink/services/webrtc.ts` / `voxlink-host` — client SFU integration
-  (ICE-restart, heartbeat, quality monitoring).
+- `api-server/src/lib/agoraToken.ts` — Workers-native Agora RTC token generator
+  (legacy "006" AccessToken format, no Node deps).
+- `api-server/src/routes/call.ts` — `initiate` / `answer` / `end` / `heartbeat`
+  / `media-state` / `quality` + `GET /api/calls/:id/agora-token`. Returns
+  `rtc_provider: "agora"`.
+- `voxlink` + `voxlink-host` — `services/agora.ts`, `hooks/useWebRTC.ts`,
+  `components/RtcVideoView.tsx` implement the client side.
 
-> The code is production-ready; enabling calls is purely about setting the
-> Cloudflare Realtime credentials above on the `voxlink-api` Worker.
-
-
----
-
-## ⚠️ Mobile-data calls: TURN credentials are REQUIRED
-
-**Symptom:** calls connect on Wi‑Fi but on **mobile data** you get "no audio /
-no video" (signalling succeeds, the call screen shows connected, but media
-never flows), and the call may auto-end after ~30–45s.
-
-**Cause:** most mobile carriers use symmetric NAT and/or block UDP. Without a
-**TURN relay**, WebRTC media cannot traverse the NAT to reach the Cloudflare
-SFU. STUN alone is not enough on these networks.
-
-**Fix:** set the Cloudflare Realtime TURN credentials as **Worker secrets** on
-`voxlink-api`:
-
-```
-npx wrangler secret put TURN_KEY_ID      # Cloudflare Realtime → TURN → Key ID
-npx wrangler secret put TURN_KEY_TOKEN   # Cloudflare Realtime → TURN → Key Token
-```
-
-Also confirm the SFU credentials are set (calls won't start at all without
-these):
-
-```
-npx wrangler secret put CF_CALLS_APP_ID
-npx wrangler secret put CF_CALLS_APP_SECRET
-```
-
-`GET /api/calls/ice-config` mints short-lived TURN credentials when
-`TURN_KEY_ID`/`TURN_KEY_TOKEN` are present. As a **last resort** (when they are
-NOT set) the endpoint now also returns a public Open Relay TURN server —
-including a `turns:` (TLS/443) entry for UDP-blocked networks — so mobile-data
-calls have *some* chance of connecting instead of pure silence. The public
-relay is rate-limited and unreliable, so **configure the Cloudflare TURN keys
-for production.**
+> Enabling calls is purely about setting the two Agora secrets above on the
+> `voxlink-api` Worker (and shipping a native build for mobile).

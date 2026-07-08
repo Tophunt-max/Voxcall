@@ -213,13 +213,6 @@ export default function AudioCallScreen() {
     }
   }, [webrtc.error, webrtc.clearError, webrtc.cleanup, endCall, permissions.microphone.status]);
 
-  useEffect(() => {
-    const off = onEvent(SocketEvents.PEER_TRACKS_READY, () => {
-      webrtc.triggerPull();
-    });
-    return off;
-  }, [onEvent, webrtc.triggerPull]);
-
   // FIX: Handle remote party ending the call — clean up and show call summary
   useEffect(() => {
     const off = onEvent(SocketEvents.CALL_END, () => {

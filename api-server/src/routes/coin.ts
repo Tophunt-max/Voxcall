@@ -78,6 +78,23 @@ coin.get('/plans', async (c) => {
     console.warn('[coins/plans] Failed to load FX overrides, using static rates:', e);
   }
 
+  // Item 6 — regional coin-price cards. A { CURRENCY: multiplier } map applied
+  // ON TOP of the FX-converted price for purchasing-power adjustment (e.g. show
+  // US/EU users a 1.3× price, SE-Asia 0.8×). Pure FX (multiplier 1) when unset,
+  // {}, malformed, or no entry for the viewer's currency. The base ₹ price and
+  // price_usd stay unmarked so admin analytics see true authored values.
+  let regionalMultiplier = 1;
+  try {
+    const rmRow = await c.env.DB.prepare("SELECT value FROM app_settings WHERE key = 'regional_price_multiplier'").first<{ value: string }>();
+    if (rmRow?.value) {
+      const map = JSON.parse(rmRow.value) as Record<string, number>;
+      const m = Number(map?.[currency]);
+      if (Number.isFinite(m) && m > 0) regionalMultiplier = m;
+    }
+  } catch (e) {
+    console.warn('[coins/plans] Failed to parse regional_price_multiplier:', e);
+  }
+
   const localized = (plans.results as any[]).map((p) => {
     // Plan prices are authored in the plan's OWN currency (coin_plans.currency,
     // INR for this India-first product; older rows may be 'USD'). Convert from
@@ -85,15 +102,20 @@ coin.get('/plans', async (c) => {
     // converted INR-priced plans (₹99 → ₹8217) for Indian users.
     const planCurrency = (p.currency || 'INR').toUpperCase();
     const planPrice = Number(p.price ?? 0);
-    const priceLocal = roundForCurrency(convertCurrency(planPrice, planCurrency, currency, fxOverrides), currency);
+    // FX-convert, then apply the regional PPP multiplier for the viewer's currency.
+    const priceLocal = roundForCurrency(
+      convertCurrency(planPrice, planCurrency, currency, fxOverrides) * regionalMultiplier,
+      currency,
+    );
     return {
       ...p,
       // Original authored amount + its currency, preserved for admin/analytics.
       price_usd: Math.round(convertCurrency(planPrice, planCurrency, 'USD', fxOverrides) * 100) / 100,
       price_base: planPrice,
       base_currency: planCurrency,
-      // What the client should actually show.
+      // What the client should actually show (FX + regional multiplier applied).
       price_local: priceLocal,
+      regional_multiplier: regionalMultiplier,
       currency,
     };
   });
@@ -328,8 +350,12 @@ coin.post('/withdraw', async (c) => {
   if (!Number.isFinite(rate) || rate <= 0) {
     // SAFETY: never fall back to the legacy '0.01' (≈ ₹0.83/coin at ₹83/USD)
     // — that is ~16× the production payout rate and would massively overpay.
-    // Default to ₹0.05/coin ÷ 83 ≈ 0.0006 USD/coin, the production economy.
-    rate = 0.0006;
+    // Default to the RECOMMENDED payout ₹0.085/coin ÷ 83 ≈ 0.001024 USD/coin
+    // (host keeps ~30% of user spend — competitive with FRND/RealU-class apps).
+    // NOTE: this fallback only applies when coin_to_usd_rate is UNSET; on an
+    // existing deployment the admin-set coin_value_inr drives the live rate, so
+    // to actually raise payout to ₹0.085 set coin_value_inr = 0.085 in Settings.
+    rate = 0.001024;
   }
   const usdAmount = coinsReq * rate;
 

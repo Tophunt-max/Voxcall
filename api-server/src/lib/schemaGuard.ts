@@ -28,6 +28,10 @@ let schemaReadyPromise: Promise<boolean> | null = null;
 const REQUIRED_USER_COLUMNS: ReadonlyArray<{ name: string; ddl: string }> = [
   { name: 'country',  ddl: 'ALTER TABLE users ADD COLUMN country TEXT' },
   { name: 'currency', ddl: 'ALTER TABLE users ADD COLUMN currency TEXT' },
+  // Item 2 — prepaid coin hold. Coins reserved for an active call; a user's
+  // SPENDABLE balance is (coins - coins_held). Prevents double-spending the
+  // same coins on tips / a second call while a call is billing.
+  { name: 'coins_held', ddl: 'ALTER TABLE users ADD COLUMN coins_held INTEGER DEFAULT 0' },
 ];
 
 export function ensureUsersSchema(db: D1Database): Promise<boolean> {
@@ -201,6 +205,14 @@ const REQUIRED_CALL_OBS_COLUMNS: ReadonlyArray<{ name: string; ddl: string }> = 
   // instead of force-ending every call older than 30 min (which killed
   // healthy long calls). See index.ts reapStaleCalls.
   { name: 'last_heartbeat_at', ddl: 'ALTER TABLE call_sessions ADD COLUMN last_heartbeat_at INTEGER' },
+  // Estimated Agora media cost for this call, in ₹ (item 1 — margin tracking).
+  // Computed from call type + billed minutes + the live economics config at end
+  // time (see lib/callEconomics.ts). Best-effort/observability only — NOT part
+  // of the money settlement, so a failure to populate never affects billing.
+  { name: 'agora_cost_est', ddl: 'ALTER TABLE call_sessions ADD COLUMN agora_cost_est REAL' },
+  // Coins reserved (held) for this call at answer time (item 2 — prepaid hold).
+  // Released back to the caller's spendable balance on end/reap.
+  { name: 'coins_reserved', ddl: 'ALTER TABLE call_sessions ADD COLUMN coins_reserved INTEGER DEFAULT 0' },
 ];
 
 const CALL_QUALITY_DDL = `
@@ -226,6 +238,27 @@ const CALL_OBS_DEFAULT_SETTINGS: ReadonlyArray<{ key: string; value: string }> =
   // than this many seconds of coins left, so the client can surface a
   // mid-call top-up modal before the call hard-stops.
   { key: 'low_balance_warn_seconds', value: '60' },
+  // ── Agora-aware call economics (lib/callEconomics.ts) — RECOMMENDED prod
+  //    defaults. All admin-tunable via Settings → Calling System.
+  { key: 'default_video_fhd_rate', value: '80' },
+  { key: 'coin_purchase_inr', value: '0.20' },
+  { key: 'coin_payout_inr', value: '0.085' },
+  { key: 'payment_gateway_fee_pct', value: '2' },
+  { key: 'agora_audio_usd_per_1000', value: '0.99' },
+  { key: 'agora_video_hd_usd_per_1000', value: '3.99' },
+  { key: 'agora_video_fhd_usd_per_1000', value: '8.99' },
+  { key: 'call_participants', value: '2' },
+  { key: 'floor_max_host_share', value: '0.80' },
+  { key: 'call_floor_safety_multiplier', value: '1.5' },
+  { key: 'video_max_resolution', value: '720p' },
+  // Item 6 — regional coin-price cards. JSON { CURRENCY: multiplier } applied on
+  // top of the FX-converted plan price for purchasing-power adjustment. Empty /
+  // {} = pure FX (no regional markup). e.g. {"USD":1.3,"EUR":1.3,"GBP":1.3}.
+  { key: 'regional_price_multiplier', value: '{}' },
+  // Item 2 — prepaid coin hold kill-switch. '1' = reserve the caller's
+  // affordable coins for the duration of an active call so they can't be
+  // double-spent (tips/second call). '0' = disable (legacy behaviour).
+  { key: 'call_prepaid_hold_enabled', value: '1' },
 ];
 
 export function ensureCallObservabilitySchema(db: D1Database): Promise<boolean> {

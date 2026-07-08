@@ -1,6 +1,8 @@
 import { Hono } from 'hono';
 import { authMiddleware, adminMiddleware } from '../middleware/auth';
 import { sendFCMPush, getFCMTokens } from '../lib/fcm';
+import { buildAgoraRtcToken, isAgoraConfigured } from '../lib/agoraToken';
+import { getCallEconomicsConfig, agoraCostPerMinInr } from '../lib/callEconomics';
 import { getLevelConfig, normalizeLevelConfig, getDefaultCallRates, getEarningShare, MIN_LEVELS, MAX_LEVELS } from '../lib/levels';
 import { recalcAllHostLevels } from '../lib/levelService';
 import { approveDeposit, validatePromoInput } from './payment';
@@ -123,6 +125,115 @@ admin.get('/analytics', async (c) => {
       { name: 'Admins', value: roleMap['admin'] ?? 0 },
     ],
     avg_call_duration: Math.round(avg?.avg_duration ?? 0),
+  });
+});
+
+// GET /api/admin/analytics/margins?days=30 — Agora-aware P&L + volume-discount
+// tracking (items 1 + 5). Everything is computed ON-THE-FLY from call_sessions
+// + coin_transactions + the live economics config, so it's accurate for ALL
+// historical calls regardless of whether agora_cost_est was stamped.
+//
+//   Revenue      = billed coins × coin_purchase_inr
+//   Host payout  = actual host 'bonus' coins for these calls × coin_payout_inr
+//   Agora cost   = per-minute Agora cost × billed minutes (audio/video split)
+//   Gateway fee  = revenue × gateway%
+//   Platform net = revenue − gateway − host payout − Agora cost
+//
+// Billed minutes use the SAME per-minute round-up as billing: (sec+59)/60
+// integer division (any 1–60s call = 1 minute).
+admin.get('/analytics/margins', async (c) => {
+  const dbA = c.env.DB;
+  const daysParam = parseInt(c.req.query('days') || '30');
+  const days = [7, 30, 90].includes(daysParam) ? daysParam : 30;
+  const cutoff = Math.floor(Date.now() / 1000) - days * 86400;
+  const cfg = await getCallEconomicsConfig(dbA);
+
+  // Period aggregates. Billed minutes split by media type (round-up per minute).
+  const agg = await dbA.prepare(`
+    SELECT
+      COUNT(*) as calls,
+      COALESCE(SUM(coins_charged),0) as coins,
+      COALESCE(SUM(CASE WHEN type='video' THEN (duration_seconds + 59) / 60 ELSE 0 END),0) as video_min,
+      COALESCE(SUM(CASE WHEN type!='video' THEN (duration_seconds + 59) / 60 ELSE 0 END),0) as audio_min
+    FROM call_sessions
+    WHERE status='ended' AND created_at > ? AND duration_seconds > 0
+  `).bind(cutoff).first<any>();
+
+  // Actual host payout coins for these calls (accurate — from the ledger).
+  const hostRow = await dbA.prepare(`
+    SELECT COALESCE(SUM(ct.amount),0) as host_coins
+    FROM coin_transactions ct
+    JOIN call_sessions cs ON cs.id = ct.ref_id
+    WHERE ct.type='bonus' AND cs.created_at > ? AND cs.status='ended'
+  `).bind(cutoff).first<any>().catch(() => ({ host_coins: 0 }));
+
+  const audioMin = Number(agg?.audio_min) || 0;
+  const videoMin = Number(agg?.video_min) || 0;
+  const coins = Number(agg?.coins) || 0;
+  const hostCoins = Number(hostRow?.host_coins) || 0;
+
+  const revenueInr = coins * cfg.coinPurchaseInr;
+  const gatewayFeeInr = revenueInr * (cfg.gatewayFeePct / 100);
+  const hostPayoutInr = hostCoins * cfg.coinPayoutInr;
+  const agoraCostInr =
+    audioMin * agoraCostPerMinInr('audio', cfg) + videoMin * agoraCostPerMinInr('video', cfg);
+  const platformNetInr = revenueInr - gatewayFeeInr - hostPayoutInr - agoraCostInr;
+  const marginPct = revenueInr > 0 ? (platformNetInr / revenueInr) * 100 : 0;
+
+  // ── Item 5: current calendar-month Agora usage + volume discount ──────────
+  // Agora bills per participant-minute; free tier = first 10,000 min/month;
+  // volume discounts kick in at 100k / 500k / 1M monthly minutes.
+  const monthStart = Math.floor(new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime() / 1000);
+  const monthAgg = await dbA.prepare(`
+    SELECT
+      COALESCE(SUM(CASE WHEN type='video' THEN (duration_seconds + 59) / 60 ELSE 0 END),0) as video_min,
+      COALESCE(SUM(CASE WHEN type!='video' THEN (duration_seconds + 59) / 60 ELSE 0 END),0) as audio_min
+    FROM call_sessions
+    WHERE status='ended' AND created_at > ? AND duration_seconds > 0
+  `).bind(monthStart).first<any>();
+
+  const mAudioMin = Number(monthAgg?.audio_min) || 0;
+  const mVideoMin = Number(monthAgg?.video_min) || 0;
+  const participantMin = (mAudioMin + mVideoMin) * cfg.participantsPerCall;
+  const FREE_MIN = 10000;
+  const discountPct = participantMin >= 1_000_000 ? 10 : participantMin >= 500_000 ? 7 : participantMin >= 100_000 ? 5 : 0;
+  // Raw USD cost this month (before free tier + discount).
+  const rawUsd =
+    mAudioMin * cfg.participantsPerCall * (cfg.agoraAudioUsdPer1000 / 1000) +
+    mVideoMin * cfg.participantsPerCall *
+      ((cfg.videoMaxResolution === '1080p' ? cfg.agoraVideoFhdUsdPer1000 : cfg.agoraVideoHdUsdPer1000) / 1000);
+  // Free tier reduces cost proportionally; discount applies to the remainder.
+  const billableFraction = participantMin > FREE_MIN ? (participantMin - FREE_MIN) / participantMin : 0;
+  const estBillUsd = rawUsd * billableFraction * (1 - discountPct / 100);
+
+  return c.json({
+    period_days: days,
+    calls: Number(agg?.calls) || 0,
+    billed_minutes: { audio: audioMin, video: videoMin, total: audioMin + videoMin },
+    revenue_inr: Math.round(revenueInr * 100) / 100,
+    gateway_fee_inr: Math.round(gatewayFeeInr * 100) / 100,
+    host_payout_inr: Math.round(hostPayoutInr * 100) / 100,
+    agora_cost_inr: Math.round(agoraCostInr * 100) / 100,
+    platform_net_inr: Math.round(platformNetInr * 100) / 100,
+    margin_pct: Math.round(marginPct * 10) / 10,
+    agora_usage_month: {
+      call_minutes: mAudioMin + mVideoMin,
+      participant_minutes: participantMin,
+      free_minutes: FREE_MIN,
+      billable_minutes: Math.max(0, participantMin - FREE_MIN),
+      discount_pct: discountPct,
+      tier_label:
+        discountPct === 0 ? (participantMin <= FREE_MIN ? 'Free tier' : 'Standard (no discount)') : `${discountPct}% volume discount`,
+      est_bill_usd: Math.round(estBillUsd * 100) / 100,
+      est_bill_inr: Math.round(estBillUsd * cfg.fxInrPerUsd * 100) / 100,
+    },
+    config: {
+      coin_purchase_inr: cfg.coinPurchaseInr,
+      coin_payout_inr: cfg.coinPayoutInr,
+      gateway_fee_pct: cfg.gatewayFeePct,
+      fx_inr_per_usd: cfg.fxInrPerUsd,
+      video_max_resolution: cfg.videoMaxResolution,
+    },
   });
 });
 
@@ -475,8 +586,13 @@ admin.patch('/settings', async (c) => {
     'random_match_repeat_block_min',
     'daily_streak_enabled', 'daily_streak_schedule', 'daily_streak_milestones',
     'first_call_free_minutes',
-    'default_audio_rate', 'default_video_rate',
+    'default_audio_rate', 'default_video_rate', 'default_video_fhd_rate',
     'billing_granularity_sec', 'low_balance_warn_seconds',
+    // Agora-aware call economics (lib/callEconomics.ts). Cost inputs + margins.
+    'coin_purchase_inr', 'coin_payout_inr', 'payment_gateway_fee_pct',
+    'agora_audio_usd_per_1000', 'agora_video_hd_usd_per_1000', 'agora_video_fhd_usd_per_1000',
+    'call_participants', 'floor_max_host_share', 'call_floor_safety_multiplier',
+    'video_max_resolution', 'regional_price_multiplier', 'call_prepaid_hold_enabled',
     'reco_enabled', 'reco_weights',
     'reengagement_enabled', 'reengagement_idle_days', 'reengagement_winback_days',
     'reengagement_cooldown_days', 'reengagement_max_per_run',
@@ -1418,6 +1534,51 @@ admin.get('/calls/live', async (c) => {
   })));
 });
 
+// ─── Admin live-call listen-in (Agora) ─────────────────────────────────────
+// Mints an Agora RTC token so an admin can silently JOIN an active call's
+// channel and listen in for moderation. The channel is the call session id
+// (the same channel both participants joined). The admin client subscribes to
+// remote audio only and never publishes a mic/camera track, so the two parties
+// are not disturbed and don't hear/see the admin. Admin-only (adminMiddleware).
+// Every join is written to the audit log for accountability.
+admin.get('/calls/:id/agora-token', async (c) => {
+  const { id } = c.req.param();
+  if (!isAgoraConfigured(c.env)) {
+    return c.json({ error: 'Agora not configured — set AGORA_APP_ID / AGORA_APP_CERTIFICATE' }, 500);
+  }
+  const session = await db(c).prepare(
+    'SELECT id, type, status FROM call_sessions WHERE id = ?'
+  ).bind(id).first<{ id: string; type: string; status: string }>();
+  if (!session) return c.json({ error: 'Call not found' }, 404);
+  if (session.status !== 'active') return c.json({ error: 'Call is not active' }, 409);
+
+  const channel = id;
+  const uid = 0; // auto-assign; a uid-0 token is valid for any uid on the channel
+  const EXPIRE_SECONDS = 2 * 60 * 60;
+  try {
+    const token = await buildAgoraRtcToken(
+      c.env.AGORA_APP_ID!,
+      c.env.AGORA_APP_CERTIFICATE!,
+      channel,
+      uid,
+      EXPIRE_SECONDS,
+    );
+    const u = c.get('user');
+    await auditLog(db(c), u.sub, u.email || 'Admin', u.email || '', 'view', 'calls', id, `Listened in on live call ${id.slice(0, 8)}`);
+    return c.json({
+      provider: 'agora' as const,
+      app_id: c.env.AGORA_APP_ID,
+      channel,
+      uid,
+      token,
+      call_type: session.type,
+    });
+  } catch (e: any) {
+    console.error('[admin/agora-token] token build failed:', e);
+    return c.json({ error: 'Failed to build Agora token' }, 500);
+  }
+});
+
 admin.post('/calls/stale-cleanup', async (c) => {
   const body = await c.req.json().catch(() => ({})) as any;
   // FIX #16: Require an explicit `confirm: true` body so this destructive
@@ -1593,25 +1754,6 @@ admin.post('/calls/:id/force-end', async (c) => {
     } catch (e) {
       console.warn('[admin/force-end] coin_update caller notify failed:', e);
     }
-  }
-
-  // Best-effort CF Calls cleanup. Lazy-import so admin module load doesn't
-  // pay the cost on every request.
-  try {
-    const { createCFCalls } = await import('../lib/cf-calls');
-    const cfCalls = createCFCalls(c.env);
-    if (cfCalls) {
-      if (session.cf_session_id) {
-        try { await cfCalls.closeSession(session.cf_session_id); }
-        catch (e) { console.warn('[admin/force-end] close CF caller session failed:', e); }
-      }
-      if (session.cf_host_session_id) {
-        try { await cfCalls.closeSession(session.cf_host_session_id); }
-        catch (e) { console.warn('[admin/force-end] close CF host session failed:', e); }
-      }
-    }
-  } catch (e) {
-    console.warn('[admin/force-end] CF Calls cleanup skipped:', e);
   }
 
   const u = c.get('user');

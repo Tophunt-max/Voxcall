@@ -75,7 +75,8 @@
     "expo-camera": "^17.0.10",
     "expo-clipboard": "~8.0.8",
     "expo-localization": "~17.0.8",
-    "@cloudflare/react-native-webrtc": "^125.0.5",
+    "react-native-agora": "4.6.2",
+    "agora-rtc-sdk-ng": "4.24.0",
     "react-native-incall-manager": "^4.2.0"
   }
 }

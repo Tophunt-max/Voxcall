@@ -1,7 +1,12 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
-import { WebRTCService, isWebRTCAvailable } from '@/services/webrtc';
+import { AgoraService, isAgoraAvailable } from '@/services/agora';
+import { API } from '@/services/api';
 import { socketService } from '@/services/SocketService';
 import { SocketEvents } from '@/constants/events';
+
+// Agora is the only RTC transport. The `provider` field is retained (always
+// 'agora') so render components / analytics that branch on it keep working.
+export type RtcProvider = 'agora' | 'unknown';
 
 export interface UseWebRTCOptions {
   sessionId: string | undefined;
@@ -20,10 +25,17 @@ export interface UseWebRTCReturn {
   isConnected: boolean;
   isAvailable: boolean;
   error: string | null;
+  provider: RtcProvider;
+  // Agora native render target: the remote user's uid (rendered via
+  // <RtcVideoView>). Null until a remote participant joins. On web this stays
+  // null because rendering goes through the MediaStream path instead.
+  agoraRemoteUid: number | null;
   toggleMute: (muted: boolean) => void;
   toggleCamera: (enabled: boolean) => void;
   setSpeaker: (on: boolean) => void;
   switchCamera: () => void;
+  // No-op kept for call-screen API compatibility (Agora subscribes to remote
+  // media via events, there is no manual pull loop).
   triggerPull: () => void;
   clearError: () => void;
   cleanup: () => void;
@@ -33,25 +45,26 @@ export function useWebRTC(options: UseWebRTCOptions): UseWebRTCReturn {
   const { sessionId, isVideo, enabled } = options;
   const [localStream, setLocalStream] = useState<any>(null);
   const [remoteStream, setRemoteStream] = useState<any>(null);
-  // Track-derived remote video presence (polling/event based — see effect below).
-  const [trackHasVideo, setTrackHasVideo] = useState(false);
-  // Explicit remote camera signal from PEER_MEDIA_STATE (null = unknown). When
-  // the remote tells us their camera is off we trust it immediately instead of
-  // waiting for the laggy track-mute polling to catch up.
+  const [agoraRemoteUid, setAgoraRemoteUid] = useState<number | null>(null);
+  // has-video / muted are driven entirely by explicit signals from the Agora
+  // service (both native and web), so there is no MediaStream track polling.
+  const [remoteHasVideoSig, setRemoteHasVideoSig] = useState(false);
+  const [localHasVideoSig, setLocalHasVideoSig] = useState(false);
+  // Instant remote camera signal from PEER_MEDIA_STATE (null = unknown). Trust
+  // it immediately when present — it beats the Agora video-state event on toggles.
   const [remoteVideoSignal, setRemoteVideoSignal] = useState<boolean | null>(null);
   const [remoteMuted, setRemoteMuted] = useState(false);
-  const [localHasVideo, setLocalHasVideo] = useState(false);
   const [connectionState, setConnectionState] = useState('new');
   const [connectionQuality, setConnectionQuality] = useState<string>('unknown');
   const [error, setError] = useState<string | null>(null);
-  const serviceRef = useRef<WebRTCService | null>(null);
+  const serviceRef = useRef<AgoraService | null>(null);
   const startedRef = useRef(false);
 
-  const available = isWebRTCAvailable();
+  const available = isAgoraAvailable();
+  const provider: RtcProvider = 'agora';
 
-  // Combine the explicit signal with track detection: an explicit "camera off"
-  // forces false right away; otherwise fall back to what the track tells us.
-  const remoteHasVideo = remoteVideoSignal === false ? false : trackHasVideo;
+  const remoteHasVideo = remoteVideoSignal === false ? false : remoteHasVideoSig;
+  const localHasVideo = localHasVideoSig;
 
   const cleanup = useCallback(() => {
     if (serviceRef.current) {
@@ -61,10 +74,11 @@ export function useWebRTC(options: UseWebRTCOptions): UseWebRTCReturn {
     startedRef.current = false;
     setLocalStream(null);
     setRemoteStream(null);
-    setTrackHasVideo(false);
+    setRemoteHasVideoSig(false);
+    setLocalHasVideoSig(false);
+    setAgoraRemoteUid(null);
     setRemoteVideoSignal(null);
     setRemoteMuted(false);
-    setLocalHasVideo(false);
     setConnectionState('closed');
     setConnectionQuality('unknown');
   }, []);
@@ -74,44 +88,70 @@ export function useWebRTC(options: UseWebRTCOptions): UseWebRTCReturn {
     startedRef.current = true;
     setError(null);
 
-    const service = new WebRTCService(sessionId, isVideo, {
-      onRemoteStream: (stream) => {
-        setRemoteStream(stream);
-      },
-      onConnectionStateChange: (state) => {
-        setConnectionState(state);
-      },
-      onError: (err) => {
+    let cancelled = false;
+
+    const callbacks = {
+      onRemoteStream: (stream: any) => { if (!cancelled) setRemoteStream(stream); },
+      onConnectionStateChange: (state: string) => { if (!cancelled) setConnectionState(state); },
+      onError: (err: Error) => {
+        if (cancelled) return;
         setError(err.message);
-        console.error('WebRTC error:', err);
+        console.error('RTC error:', err);
       },
-      onQualityChange: (quality) => {
-        setConnectionQuality(quality);
-      },
-    });
+      onQualityChange: (quality: string) => { if (!cancelled) setConnectionQuality(quality); },
+      onRemoteVideo: (has: boolean) => { if (!cancelled) setRemoteHasVideoSig(has); },
+      onRemoteAudioMuted: (muted: boolean) => { if (!cancelled) setRemoteMuted(muted); },
+      onLocalVideo: (has: boolean) => { if (!cancelled) setLocalHasVideoSig(has); },
+      onRemoteUid: (uid: number | null) => { if (!cancelled) setAgoraRemoteUid(uid); },
+    };
 
-    serviceRef.current = service;
-
-    service.start().then((stream) => {
-      if (stream) {
-        setLocalStream(stream);
+    (async () => {
+      let cfg;
+      try {
+        cfg = await API.getAgoraToken(sessionId);
+      } catch (e: any) {
+        if (!cancelled) {
+          setError('Calling service unavailable. Please try again.');
+          console.error('[useWebRTC] getAgoraToken failed:', e);
+        }
+        return;
       }
-    }).catch((err: Error) => {
-      setError(err.message ?? 'Failed to start WebRTC');
-      console.error('WebRTC start error:', err);
-    });
+      if (cancelled) return;
+      if (!cfg?.token || !cfg?.app_id) {
+        setError('Calling service misconfigured.');
+        return;
+      }
+
+      const service = new AgoraService(sessionId, isVideo, callbacks, {
+        app_id: cfg.app_id,
+        channel: cfg.channel,
+        uid: cfg.uid ?? 0,
+        token: cfg.token,
+      });
+      serviceRef.current = service;
+
+      try {
+        const stream = await service.start();
+        if (!cancelled && stream) setLocalStream(stream);
+      } catch (err: any) {
+        if (!cancelled) {
+          setError(err?.message || 'RTC failed to start');
+          console.error('RTC start error:', err);
+        }
+      }
+    })();
 
     return () => {
-      service.destroy();
+      cancelled = true;
+      serviceRef.current?.destroy();
       serviceRef.current = null;
       startedRef.current = false;
     };
   }, [enabled, sessionId, isVideo, available]);
 
   // Instant remote mic/camera state via the PEER_MEDIA_STATE socket event the
-  // other party emits on every toggle. This makes the camera-off avatar and
-  // (optionally) a "muted" badge react immediately rather than waiting on the
-  // 1.5s track-mute poll, which is laggy and unreliable across platforms.
+  // other party emits on every toggle. Makes the camera-off avatar / muted
+  // badge react immediately.
   useEffect(() => {
     if (!sessionId) return;
     const off = socketService.on(SocketEvents.PEER_MEDIA_STATE, (data: any) => {
@@ -139,92 +179,12 @@ export function useWebRTC(options: UseWebRTCOptions): UseWebRTCReturn {
   }, []);
 
   const triggerPull = useCallback(() => {
-    serviceRef.current?.triggerPull();
+    // No-op: Agora subscribes to remote media via engine events.
   }, []);
 
   const clearError = useCallback(() => {
     setError(null);
   }, []);
-
-  // FIX (remote-camera-off detection): track whether the remote stream has an
-  // active video track. We can't simply check `!!remoteStream` because the
-  // peer connection keeps the stream alive even when the remote toggles their
-  // camera off — the video track stays present but goes muted/disabled, so
-  // <video>/RTCView shows pure black instead of falling back to the avatar.
-  // Listen to track add/remove and per-track mute/unmute/ended events, with a
-  // polling fallback because not every platform fires every event reliably.
-  // (The PEER_MEDIA_STATE signal above is the fast path; this is the backstop.)
-  useEffect(() => {
-    const stream = remoteStream;
-    if (!stream) {
-      setTrackHasVideo(false);
-      return;
-    }
-
-    const recompute = () => {
-      const tracks: any[] = stream.getVideoTracks?.() ?? [];
-      const active = tracks.some((t: any) => {
-        if (!t) return false;
-        if (t.enabled === false) return false;
-        if (t.readyState === 'ended') return false;
-        if (t.muted === true) return false;
-        return true;
-      });
-      setTrackHasVideo(active);
-    };
-
-    recompute();
-
-    const trackBindings: Array<{ t: any; evt: string; fn: any }> = [];
-    const streamBindings: Array<{ evt: string; fn: any }> = [];
-
-    try { stream.addEventListener?.('addtrack', recompute); streamBindings.push({ evt: 'addtrack', fn: recompute }); } catch {}
-    try { stream.addEventListener?.('removetrack', recompute); streamBindings.push({ evt: 'removetrack', fn: recompute }); } catch {}
-
-    const tracks: any[] = stream.getVideoTracks?.() ?? [];
-    for (const t of tracks) {
-      for (const evt of ['mute', 'unmute', 'ended']) {
-        try {
-          t.addEventListener?.(evt, recompute);
-          trackBindings.push({ t, evt, fn: recompute });
-        } catch {}
-      }
-    }
-
-    const interval = setInterval(recompute, 1500);
-
-    return () => {
-      clearInterval(interval);
-      for (const { evt, fn } of streamBindings) {
-        try { stream.removeEventListener?.(evt, fn); } catch {}
-      }
-      for (const { t, evt, fn } of trackBindings) {
-        try { t.removeEventListener?.(evt, fn); } catch {}
-      }
-    };
-  }, [remoteStream]);
-
-  // FIX (#6 — camera-unavailable feedback): track whether our LOCAL stream
-  // actually carries a usable video track. When a video call falls back to
-  // audio-only (camera busy / unreadable at start), there is no video track —
-  // the screen uses this to tell the user "Camera unavailable" instead of
-  // showing a permanently black self-preview. Polled because track add/remove
-  // (e.g. toggleCamera re-acquire) mutates the same stream object in place.
-  useEffect(() => {
-    const stream = localStream;
-    if (!stream) {
-      setLocalHasVideo(false);
-      return;
-    }
-    const recompute = () => {
-      const tracks: any[] = stream.getVideoTracks?.() ?? [];
-      const active = tracks.some((t: any) => t && t.readyState !== 'ended');
-      setLocalHasVideo(active);
-    };
-    recompute();
-    const interval = setInterval(recompute, 1500);
-    return () => clearInterval(interval);
-  }, [localStream]);
 
   return {
     localStream,
@@ -237,6 +197,8 @@ export function useWebRTC(options: UseWebRTCOptions): UseWebRTCReturn {
     isConnected: connectionState === 'connected',
     isAvailable: available,
     error,
+    provider,
+    agoraRemoteUid,
     toggleMute,
     toggleCamera,
     setSpeaker,

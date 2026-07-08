@@ -40,7 +40,7 @@ tip.post('/send', zValidator('json', sendTipSchema), async (c) => {
        ELSE 0
      END, updated_at = unixepoch()
      WHERE id IN (?, ?)
-       AND EXISTS (SELECT 1 FROM users WHERE id = ? AND coins >= ?)`
+       AND EXISTS (SELECT 1 FROM users WHERE id = ? AND (coins - COALESCE(coins_held, 0)) >= ?)`
   ).bind(
     sub, body.amount,
     host.user_id, body.amount,

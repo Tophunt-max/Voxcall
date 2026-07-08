@@ -19,6 +19,7 @@ import { useSocket } from "@/context/SocketContext";
 import { SocketEvents } from "@/constants/events";
 import { API } from "@/services/api";
 import { API_BASE_URL } from "@/constants/config";
+import { RtcVideoView } from "@/components/RtcVideoView";
 
 // FIX (UI: draggable self-preview): see voxlink/app/user/call/video-call.tsx
 // for full rationale. Identical numbers so both apps behave the same.
@@ -67,20 +68,14 @@ function ConnectionBars({ state, quality }: { state: string; quality?: string })
 
 const useNativeDriverValue = Platform.OS !== "web";
 
+// RTCView kept as a null placeholder so the legacy web-only StreamView helper
+// (used for the Agora WEB MediaStream path) still type-checks. Native video is
+// rendered by <RtcVideoView> via Agora's RtcSurfaceView — no react-native-webrtc.
 let RTCView: any = null;
-// FIX: CameraView placeholder removed — was causing camera-in-use crashes on
-// Android when WebRTC's getUserMedia tried to acquire the same camera. The
-// require remains for backward compat in case any future code references it.
 let CameraView: any = null;
 let Haptics: any = null;
 try {
-  if (Platform.OS !== 'web') {
-    // Cloudflare's react-native-webrtc fork — same RTCView component as upstream.
-    RTCView = require('@cloudflare/react-native-webrtc').RTCView;
-    CameraView = require('expo-camera').CameraView;
-  } else {
-    CameraView = require('expo-camera').CameraView; // has web support
-  }
+  CameraView = require('expo-camera').CameraView; // has web support
   Haptics = require('expo-haptics');
 } catch {}
 
@@ -333,13 +328,6 @@ export default function VideoCallScreen() {
       }
     }
   }, [webrtc.error, webrtc.clearError, webrtc.cleanup, endCall, permissions.camera.status, permissions.microphone.status]);
-
-  useEffect(() => {
-    const off = onEvent(SocketEvents.PEER_TRACKS_READY, () => {
-      webrtc.triggerPull();
-    });
-    return off;
-  }, [onEvent, webrtc.triggerPull]);
 
   // FIX: Handle remote party ending the call — clean up and show call summary
   useEffect(() => {
@@ -714,8 +702,12 @@ export default function VideoCallScreen() {
             when the remote has no active video track. Using StreamView for
             audio-only streams shows pure black on web, which is the original
             "blank screen" bug. */}
-        {webrtc.remoteStream && (
-          <StreamView stream={webrtc.remoteStream} style={styles.remoteVideo} mirror={false} />
+        {webrtc.provider === "agora" && Platform.OS !== "web" ? (
+          <RtcVideoView provider="agora" agoraUid={webrtc.agoraRemoteUid} style={styles.remoteVideo} mirror={false} />
+        ) : (
+          webrtc.remoteStream && (
+            <StreamView stream={webrtc.remoteStream} style={styles.remoteVideo} mirror={false} />
+          )
         )}
         {!webrtc.remoteHasVideo && (
           <>
@@ -765,7 +757,11 @@ export default function VideoCallScreen() {
             placeholder until the real WebRTC stream is ready (~200-1000 ms). */}
         {activeCall?.isCameraOn && cameraGranted ? (
           webrtc.localStream && webrtc.localHasVideo ? (
-            <StreamView stream={webrtc.localStream} style={styles.selfCameraView} mirror={true} />
+            webrtc.provider === "agora" && Platform.OS !== "web" ? (
+              <RtcVideoView provider="agora" agoraUid={0} isLocal style={styles.selfCameraView} mirror={true} />
+            ) : (
+              <StreamView stream={webrtc.localStream} style={styles.selfCameraView} mirror={true} />
+            )
           ) : webrtc.localStream && !webrtc.localHasVideo ? (
             // FIX (#6): a video call fell back to audio-only (camera busy /
             // unreadable at start). Tell the user instead of showing a

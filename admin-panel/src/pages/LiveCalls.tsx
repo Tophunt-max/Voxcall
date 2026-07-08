@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { api } from '@/lib/api';
-import { Phone, PhoneOff, RefreshCw, Clock, Mic2, Users, Activity, AlertTriangle, Trash2 } from 'lucide-react';
+import { Phone, PhoneOff, RefreshCw, Clock, Mic2, Users, Activity, AlertTriangle, Trash2, Headphones, X } from 'lucide-react';
 import { StatCard } from '@/components/ui/StatCard';
+import { CallListener } from '@/lib/callListener';
 
 function useTicker() {
   const [, setTick] = useState(0);
@@ -39,6 +40,10 @@ export default function LiveCalls() {
   const [endingId, setEndingId] = useState<string | null>(null);
   const [cleaningUp, setCleaningUp] = useState(false);
   const [fetchError, setFetchError] = useState('');
+  // Live "listen in" (Agora) — at most one call at a time.
+  const [listeningId, setListeningId] = useState<string | null>(null);
+  const [listenLoadingId, setListenLoadingId] = useState<string | null>(null);
+  const listenerRef = useRef<CallListener | null>(null);
   const intervalRef = useRef<any>(null);
   const errorCountRef = useRef(0);
   const autoRefreshRef = useRef(autoRefresh);
@@ -103,6 +108,46 @@ export default function LiveCalls() {
     }
   };
 
+  const stopListening = async () => {
+    try { await listenerRef.current?.leave(); } catch { /* ignore */ }
+    listenerRef.current = null;
+    setListeningId(null);
+  };
+
+  const handleListen = async (callId: string) => {
+    // Toggle off if already listening to this call.
+    if (listeningId === callId) {
+      await stopListening();
+      return;
+    }
+    setListenLoadingId(callId);
+    try {
+      // Leave any previous call first (only one listen session at a time).
+      await stopListening();
+      const cfg = await api.getCallAgoraToken(callId);
+      const listener = new CallListener();
+      await listener.join({ app_id: cfg.app_id, channel: cfg.channel, token: cfg.token, uid: cfg.uid });
+      listenerRef.current = listener;
+      setListeningId(callId);
+    } catch (e: any) {
+      alert(e?.message || 'Live call sunne mein error aaya');
+    } finally {
+      setListenLoadingId(null);
+    }
+  };
+
+  // Stop listening automatically when the call we're on ends (drops off the
+  // live list) or when leaving the page.
+  useEffect(() => {
+    if (listeningId && !loading && !calls.some(c => c.id === listeningId)) {
+      void stopListening();
+    }
+  }, [calls, loading, listeningId]);
+
+  useEffect(() => {
+    return () => { void listenerRef.current?.leave(); };
+  }, []);
+
   const totalCoinsPerMin = calls.reduce((a, c) => a + (c.coins_per_min || 0), 0);
   const voiceCalls = calls.filter(c => c.type === 'audio');
   const videoCalls = calls.filter(c => c.type === 'video');
@@ -113,6 +158,19 @@ export default function LiveCalls() {
       {fetchError && (
         <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm">
           <AlertTriangle size={15} /> {fetchError}
+        </div>
+      )}
+      {listeningId && (
+        <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-violet-50 border border-violet-200 text-violet-700 text-sm">
+          <Headphones size={15} className="animate-pulse" />
+          <span className="font-semibold">Listening in</span>
+          <span className="text-violet-600">on call {listeningId.slice(0, 8)} — audio only, participants are not notified.</span>
+          <button
+            onClick={() => void stopListening()}
+            className="ml-auto flex items-center gap-1 px-2.5 py-1 rounded-lg bg-violet-600 text-white text-xs font-semibold hover:bg-violet-700 transition-colors"
+          >
+            <X size={12} /> Stop
+          </button>
         </div>
       )}
       <div className="flex items-center justify-between">
@@ -217,6 +275,24 @@ export default function LiveCalls() {
                       </div>
                       <p className="text-xs text-amber-600">~{coinsSoFar} coins used</p>
                     </div>
+                    <button
+                      onClick={() => handleListen(call.id)}
+                      disabled={listenLoadingId === call.id}
+                      title={listeningId === call.id ? 'Stop listening' : 'Listen in on this call'}
+                      className={`p-2 rounded-xl border transition-colors disabled:opacity-50 ${
+                        listeningId === call.id
+                          ? 'bg-violet-100 border-violet-300 text-violet-600'
+                          : 'bg-secondary/50 border-border text-muted-foreground hover:bg-secondary'
+                      }`}
+                    >
+                      {listenLoadingId === call.id ? (
+                        <div className="w-4 h-4 border-2 border-violet-400 border-t-transparent rounded-full animate-spin" />
+                      ) : listeningId === call.id ? (
+                        <Headphones size={14} className="animate-pulse" />
+                      ) : (
+                        <Headphones size={14} />
+                      )}
+                    </button>
                     <button
                       onClick={() => handleForceEnd(call.id)}
                       disabled={isEnding}

@@ -69,15 +69,23 @@ export const ABSOLUTE_MAX_RATE = 500;
 export const BASE_EARNING_SHARE = 0.7;
 /**
  * Standard default per-minute call rates for a brand-new host, in COINS.
- * Tied to the production coin economy (migration 0030): coins are bought at
- * ≈ ₹0.20/coin, so:
- *   DEFAULT_AUDIO_RATE 25 coins/min ≈ ₹5/min   (the standard voice-call price)
- *   DEFAULT_VIDEO_RATE 40 coins/min ≈ ₹8/min   (video priced higher)
- * A host can still change these within their level cap; these are only the
- * starting values seeded when no explicit rate was chosen.
+ * Tied to the production coin economy: coins are bought at ≈ ₹0.20/coin, so:
+ *   DEFAULT_AUDIO_RATE    30 coins/min ≈ ₹6/min    (standard voice-call price)
+ *   DEFAULT_VIDEO_RATE    50 coins/min ≈ ₹10/min   (HD video — the default,
+ *                                                   capped at 720p on clients)
+ *   DEFAULT_VIDEO_FHD_RATE 80 coins/min ≈ ₹16/min  (Full-HD premium — only used
+ *                                                   if a host/plan opts into
+ *                                                   1080p, which costs ~2.25× as
+ *                                                   much on Agora)
+ * These were re-derived from the Agora cost model (see lib/callEconomics.ts):
+ * every default sits comfortably above the loss-proof floor, giving the host a
+ * competitive cash payout (~30% of user spend) while keeping a ~60%+ platform
+ * margin. A host can still change their own rate within their level cap; these
+ * are only the starting values used when no explicit rate was chosen.
  */
-export const DEFAULT_AUDIO_RATE = 25;
-export const DEFAULT_VIDEO_RATE = 40;
+export const DEFAULT_AUDIO_RATE = 30;
+export const DEFAULT_VIDEO_RATE = 50;
+export const DEFAULT_VIDEO_FHD_RATE = 80;
 /**
  * Headroom (coins/min) a host may charge ABOVE the admin-configured level cap.
  * Lets a host nudge their rate up to N coins past `max_audio_rate` /
@@ -279,24 +287,26 @@ export async function getLevelConfig(d: D1Database): Promise<LevelDef[]> {
  */
 export async function getDefaultCallRates(
   d: D1Database,
-): Promise<{ audio: number; video: number }> {
+): Promise<{ audio: number; video: number; videoFhd: number }> {
   let audio = DEFAULT_AUDIO_RATE;
   let video = DEFAULT_VIDEO_RATE;
+  let videoFhd = DEFAULT_VIDEO_FHD_RATE;
   try {
     const rows = await d
-      .prepare("SELECT key, value FROM app_settings WHERE key IN ('default_audio_rate','default_video_rate')")
+      .prepare("SELECT key, value FROM app_settings WHERE key IN ('default_audio_rate','default_video_rate','default_video_fhd_rate')")
       .all<{ key: string; value: string }>();
     for (const r of rows.results || []) {
       const n = parseInt(r.value, 10);
       if (Number.isFinite(n) && n >= 1) {
         if (r.key === 'default_audio_rate') audio = Math.min(ABSOLUTE_MAX_RATE, n);
         else if (r.key === 'default_video_rate') video = Math.min(ABSOLUTE_MAX_RATE, n);
+        else if (r.key === 'default_video_fhd_rate') videoFhd = Math.min(ABSOLUTE_MAX_RATE, n);
       }
     }
   } catch (err) {
     console.error('[getDefaultCallRates] Error fetching default call rates:', err);
   }
-  return { audio, video };
+  return { audio, video, videoFhd };
 }
 
 /**

@@ -5,25 +5,13 @@ export interface Env {
   CALL_SIGNALING: DurableObjectNamespace;
   NOTIFICATION_HUB: DurableObjectNamespace;
   JWT_SECRET: string;
-  CF_CALLS_APP_ID: string;
-  CF_CALLS_APP_SECRET: string;
-  CF_ACCOUNT_ID: string;
-  // Agora RTC credentials. When BOTH are set, calls are routed through Agora
-  // (managed SDK — better weak-network quality) instead of the Cloudflare
-  // Realtime SFU. AGORA_APP_CERTIFICATE must be a Worker SECRET (never a var).
-  AGORA_APP_ID?: string;
-  AGORA_APP_CERTIFICATE?: string;
-  // Cloudflare Realtime TURN credentials. Optional — when configured the
-  // /api/calls/ice-config endpoint hands out short-lived TURN credentials so
-  // clients on symmetric NATs / UDP-blocked networks (most mobile carriers)
-  // can actually connect. Without these we fall back to STUN + a public TURN
-  // relay which is fine for development but rate-limited in production.
-  TURN_KEY_ID?: string;
-  TURN_KEY_TOKEN?: string;
+  // Agora RTC credentials — the ONLY media transport. Both MUST be set for
+  // calls to work; AGORA_APP_CERTIFICATE must be a Worker SECRET (never a var).
+  // The backend mints per-call join tokens at GET /api/calls/:id/agora-token.
+  AGORA_APP_ID: string;
+  AGORA_APP_CERTIFICATE: string;
   // Deployment environment marker. Set to "production" in the production
-  // wrangler environment so runtime code can tighten behaviour (e.g. the
-  // /api/calls/ice-config endpoint drops the public dev TURN relay and warns
-  // loudly when Cloudflare TURN credentials are not configured).
+  // wrangler environment so runtime code can tighten behaviour.
   ENVIRONMENT?: string;
   FIREBASE_SERVICE_ACCOUNT: string;
   GOOGLE_PLAY_SERVICE_ACCOUNT_JSON?: string;

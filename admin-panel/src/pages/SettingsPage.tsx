@@ -88,14 +88,36 @@ const settingGroups = [
   {
     group: 'Calling System — Default Call Rate',
     settings: [
-      { key: 'default_audio_rate', label: 'Default Audio Rate (Coins/min)', type: 'number', hint: 'Standard per-minute price for a VOICE call, used everywhere a host has no explicit rate (call billing + rate shown in the apps). 25 coins ≈ ₹5/min at the production coin value. Hosts can still set their own rate up to their level cap.', step: '1' },
-      { key: 'default_video_rate', label: 'Default Video Rate (Coins/min)', type: 'number', hint: 'Standard per-minute price for a VIDEO call (used when a host has no explicit video rate). 40 coins ≈ ₹8/min at the production coin value.', step: '1' },
+      { key: 'default_audio_rate', label: 'Default Audio Rate (Coins/min)', type: 'number', hint: 'Standard per-minute price for a VOICE call, used everywhere a host has no explicit rate. RECOMMENDED 30 coins ≈ ₹6/min. Hosts can still set their own rate up to their level cap. A loss-proof floor (below) is enforced regardless.', step: '1' },
+      { key: 'default_video_rate', label: 'Default Video (HD) Rate (Coins/min)', type: 'number', hint: 'Standard per-minute price for an HD (≤720p) VIDEO call. RECOMMENDED 50 coins ≈ ₹10/min. Video is capped at 720p on clients so it always bills at Agora\'s cheaper HD tier.', step: '1' },
+      { key: 'default_video_fhd_rate', label: 'Default Video (Full-HD) Rate (Coins/min)', type: 'number', hint: 'Premium per-minute price for Full-HD (1080p) video. RECOMMENDED 80 coins ≈ ₹16/min. Only used if you set Video Max Resolution to 1080p (Agora bills FHD ~2.25× the HD rate).', step: '1' },
+    ],
+  },
+  {
+    group: 'Calling System — Agora Cost & Margins',
+    settings: [
+      { key: 'coin_purchase_inr', label: 'Coin Purchase Value (₹ per coin)', type: 'number', hint: 'What a user effectively pays to buy 1 coin (revenue side of the margin math). Coin plans keep their own authored prices — this is only used for the margin preview + loss-proof floor. RECOMMENDED ₹0.20.', step: '0.01' },
+      { key: 'coin_payout_inr', label: 'Coin Payout Value (₹ per coin)', type: 'number', hint: 'What a host redeems 1 coin for on withdrawal (cash payout). Defaults to the Economy → Coin Value. RECOMMENDED ₹0.085 so hosts keep ~30% of user spend.', step: '0.001' },
+      { key: 'payment_gateway_fee_pct', label: 'Payment Gateway Fee (%)', type: 'number', hint: 'Razorpay/Stripe fee taken on coin purchases. Subtracted from platform revenue in the margin math. Typically ~2%.', step: '0.1' },
+      { key: 'video_max_resolution', label: 'Video Max Resolution', type: 'text', hint: '720p = Agora HD tier ($3.99/1k min, RECOMMENDED). 1080p = Full-HD tier ($8.99/1k min) — only enable with the higher FHD rate. Clients cap capture to this.' },
+      { key: 'agora_audio_usd_per_1000', label: 'Agora Audio Cost ($/1000 min)', type: 'number', hint: 'Agora list price for audio, per participant. Update if your Agora contract differs. Default $0.99.', step: '0.01' },
+      { key: 'agora_video_hd_usd_per_1000', label: 'Agora Video HD Cost ($/1000 min)', type: 'number', hint: 'Agora list price for HD (≤720p) video, per participant. Default $3.99.', step: '0.01' },
+      { key: 'agora_video_fhd_usd_per_1000', label: 'Agora Video FHD Cost ($/1000 min)', type: 'number', hint: 'Agora list price for Full-HD (1080p) video, per participant. Default $8.99.', step: '0.01' },
+      { key: 'floor_max_host_share', label: 'Floor: Max Host Share', type: 'number', hint: 'Worst-case host share (top level) used to compute the loss-proof rate floor. Default 0.80.', step: '0.01' },
+      { key: 'call_floor_safety_multiplier', label: 'Floor: Safety Multiplier', type: 'number', hint: 'Headroom above raw break-even for the minimum enforced rate. 1.5 = floor is 50% above break-even. Default 1.5.', step: '0.1' },
+    ],
+  },
+  {
+    group: 'Calling System — Regional Pricing & Prepaid Hold',
+    settings: [
+      { key: 'regional_price_multiplier', label: 'Regional Price Multiplier (JSON)', type: 'text', hint: 'Purchasing-power markup applied ON TOP of FX-converted coin-plan prices, per currency. {} = pure FX (no markup). Example: {"USD":1.3,"EUR":1.3,"GBP":1.3,"AED":1.2} shows US/EU users 1.3× the FX price. INR (base) usually stays 1.' },
+      { key: 'call_prepaid_hold_enabled', label: 'Prepaid Coin Hold (1=on, 0=off)', type: 'text', hint: 'When on, a caller\'s affordable coins are RESERVED for the duration of an active call so they can\'t be double-spent on tips or a second call mid-call. Released automatically on call end. Recommended: 1.' },
     ],
   },
   {
     group: 'Calling System — Billing & UX',
     settings: [
-      { key: 'billing_granularity_sec', label: 'Billing granularity (seconds)', type: 'number', hint: 'How real seconds map to one billable unit. 60 = per-minute round-up (default, traditional). 1 = whole-second precision (more lenient to caller). Math: caller_owes = ceil(duration / N) * (rate * N / 60).', step: '1' },
+      { key: 'billing_granularity_sec', label: 'Billing granularity (seconds) — locked to per-minute', type: 'number', hint: 'PER-MINUTE round-up billing is enforced: any call of 1–60 seconds is charged 1 full minute (e.g. a 2-second call = 1 minute), 61–120s = 2 minutes, and so on. Values below 60 are clamped to 60 server-side, so sub-minute (per-second) billing cannot be enabled. Keep at 60.', step: '1' },
       { key: 'low_balance_warn_seconds', label: 'Low-balance warning threshold (seconds)', type: 'number', hint: 'Heartbeat pushes call_low_balance WS event to caller when fewer than this many seconds of coins remain — drives the mid-call top-up modal.', step: '1' },
     ],
   },
@@ -128,8 +150,8 @@ const settingGroups = [
 ];
 
 const DEFAULTS: Record<string, string> = {
-  coin_value_inr: '0.05', // INR value per coin (admin sets this directly)
-  coin_to_usd_rate: '0.0006', // ≈ coin_value_inr ÷ 83 — overwritten by live values on load
+  coin_value_inr: '0.085', // INR host-payout value per coin (RECOMMENDED — host keeps ~30% of user spend)
+  coin_to_usd_rate: '0.001024', // ≈ coin_value_inr ÷ 83 — overwritten by live values on load
   host_revenue_share: '0.70',
   min_withdrawal_coins: '100',
   app_name: 'VoxLink',
@@ -149,11 +171,29 @@ const DEFAULTS: Record<string, string> = {
   daily_streak_milestones: '{"7":50,"14":100,"30":500,"60":1500,"100":5000}',
   // First-call-free trial pool — per-user free minutes set on signup.
   first_call_free_minutes: '5',
-  // Calling system — default per-minute call rates (coins). 25 ≈ ₹5/min,
-  // 40 ≈ ₹8/min at the production coin value. Mirror DEFAULT_AUDIO_RATE /
-  // DEFAULT_VIDEO_RATE in api-server/src/lib/levels.ts.
-  default_audio_rate: '25',
-  default_video_rate: '40',
+  // Calling system — default per-minute call rates (coins). RECOMMENDED:
+  // 30 ≈ ₹6/min audio, 50 ≈ ₹10/min HD video, 80 ≈ ₹16/min Full-HD video.
+  // Mirror DEFAULT_AUDIO_RATE / DEFAULT_VIDEO_RATE / DEFAULT_VIDEO_FHD_RATE in
+  // api-server/src/lib/levels.ts.
+  default_audio_rate: '30',
+  default_video_rate: '50',
+  default_video_fhd_rate: '80',
+  // Agora-aware call economics (mirror api-server/src/lib/callEconomics.ts).
+  coin_purchase_inr: '0.20', // ₹ a user pays to buy 1 coin (revenue side)
+  coin_payout_inr: '0.085', // ₹ a host redeems 1 coin for (cash payout side)
+  payment_gateway_fee_pct: '2', // Razorpay/Stripe fee on coin purchases (%)
+  agora_audio_usd_per_1000: '0.99',
+  agora_video_hd_usd_per_1000: '3.99',
+  agora_video_fhd_usd_per_1000: '8.99',
+  call_participants: '2', // 1:1 call = 2 billed participants on Agora
+  floor_max_host_share: '0.80', // worst-case host share for the loss-proof floor
+  call_floor_safety_multiplier: '1.5', // headroom above raw break-even
+  video_max_resolution: '720p', // billing/cost tier for video (720p=HD, 1080p=FHD)
+  // Item 6 — regional coin-price cards. { CURRENCY: multiplier } PPP markup on
+  // top of FX. {} = pure FX. e.g. {"USD":1.3,"EUR":1.3,"GBP":1.3,"AED":1.2}.
+  regional_price_multiplier: '{}',
+  // Item 2 — prepaid coin hold kill-switch (1=on, 0=off).
+  call_prepaid_hold_enabled: '1',
   // Billing granularity (60 = per-minute, 1 = per-second).
   billing_granularity_sec: '60',
   // Heartbeat threshold for the call_low_balance WS event (seconds).
@@ -1116,8 +1156,140 @@ export default function SettingsPage() {
         </div>
       </div>
 
+      {/* Agora cost + per-minute margin preview (live, unsaved-aware) */}
+      <MarginPreview settings={settings} inrRate={inrRate} />
+
       {/* Database Maintenance */}
       <MigrationsCard />
+    </div>
+  );
+}
+
+// ─── Agora cost + margin preview ─────────────────────────────────────────────
+// Mirrors api-server/src/lib/callEconomics.ts so the admin sees the exact
+// per-minute P&L (user pays, host cash, Agora cost, gateway fee, platform net,
+// margin %) + the loss-proof floor rate — live, as they edit rates above.
+function MarginPreview({ settings, inrRate }: { settings: Record<string, string>; inrRate: number }) {
+  const num = (k: string, d: number) => {
+    const n = parseFloat(settings[k] ?? '');
+    return Number.isFinite(n) && n > 0 ? n : d;
+  };
+  const fx = Number.isFinite(inrRate) && inrRate > 0 ? inrRate : 88;
+  const cfg = {
+    audioUsd: num('agora_audio_usd_per_1000', 0.99),
+    hdUsd: num('agora_video_hd_usd_per_1000', 3.99),
+    fhdUsd: num('agora_video_fhd_usd_per_1000', 8.99),
+    participants: num('call_participants', 2),
+    gatewayPct: num('payment_gateway_fee_pct', 2),
+    purchase: num('coin_purchase_inr', 0.20),
+    payout: num('coin_payout_inr', num('coin_value_inr', 0.085)),
+    maxShare: Math.min(0.95, num('floor_max_host_share', 0.80)),
+    safety: num('call_floor_safety_multiplier', 1.5),
+    res: settings.video_max_resolution === '1080p' ? '1080p' : '720p',
+    hostShare: Math.min(0.95, num('host_revenue_share', 0.70)),
+    audioRate: num('default_audio_rate', 30),
+    videoRate: num('default_video_rate', 50),
+    videoFhdRate: num('default_video_fhd_rate', 80),
+  };
+
+  const agoraCostPerMin = (kind: 'audio' | 'video') => {
+    const usd = kind === 'audio' ? cfg.audioUsd : cfg.res === '1080p' ? cfg.fhdUsd : cfg.hdUsd;
+    return (usd / 1000) * cfg.participants * fx;
+  };
+  const floorRate = (kind: 'audio' | 'video') => {
+    const marginPerCoin = cfg.purchase * (1 - cfg.gatewayPct / 100) - cfg.maxShare * cfg.payout;
+    if (marginPerCoin <= 0) return 0;
+    return Math.ceil((agoraCostPerMin(kind) / marginPerCoin) * cfg.safety);
+  };
+  const estimate = (rate: number, kind: 'audio' | 'video') => {
+    const userPays = rate * cfg.purchase;
+    const hostPayout = Math.floor(rate * cfg.hostShare) * cfg.payout;
+    const gatewayFee = userPays * (cfg.gatewayPct / 100);
+    const agoraCost = agoraCostPerMin(kind);
+    const net = userPays - gatewayFee - hostPayout - agoraCost;
+    const margin = userPays > 0 ? (net / userPays) * 100 : 0;
+    const hostPctOfSpend = userPays > 0 ? (hostPayout / userPays) * 100 : 0;
+    return { userPays, hostPayout, agoraCost, gatewayFee, net, margin, hostPctOfSpend };
+  };
+
+  const videoLabel = cfg.res === '1080p' ? 'Video (Full-HD)' : 'Video (HD)';
+  const videoRate = cfg.res === '1080p' ? cfg.videoFhdRate : cfg.videoRate;
+  const rows: { label: string; rate: number; kind: 'audio' | 'video' }[] = [
+    { label: 'Audio', rate: cfg.audioRate, kind: 'audio' },
+    { label: videoLabel, rate: videoRate, kind: 'video' },
+  ];
+
+  return (
+    <div className="bg-card border border-border rounded-2xl overflow-hidden">
+      <div className="px-5 py-4 border-b border-border bg-secondary/30 flex items-center gap-2">
+        <div className="w-7 h-7 rounded-lg bg-emerald-100 flex items-center justify-center">
+          <TrendingUp size={13} className="text-emerald-600" />
+        </div>
+        <div>
+          <h3 className="font-bold text-sm">Agora Cost & Per-Minute Margins</h3>
+          <p className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+            Live P&amp;L per minute at the default rates
+            <span className="inline-flex items-center gap-1 text-green-600">
+              <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" /> Live
+            </span>
+          </p>
+        </div>
+      </div>
+      <div className="p-5 overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-left text-muted-foreground border-b border-border">
+              <th className="py-2 pr-3 font-semibold">Call type</th>
+              <th className="py-2 px-3 font-semibold">Rate</th>
+              <th className="py-2 px-3 font-semibold">User pays</th>
+              <th className="py-2 px-3 font-semibold">Host cash</th>
+              <th className="py-2 px-3 font-semibold">Agora</th>
+              <th className="py-2 px-3 font-semibold">Gateway</th>
+              <th className="py-2 px-3 font-semibold">Platform net</th>
+              <th className="py-2 px-3 font-semibold">Margin</th>
+              <th className="py-2 pl-3 font-semibold">Floor</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => {
+              const e = estimate(r.rate, r.kind);
+              const floor = floorRate(r.kind);
+              const belowFloor = r.rate < floor;
+              return (
+                <tr key={r.label} className="border-b border-border/50">
+                  <td className="py-2.5 pr-3 font-semibold">{r.label}</td>
+                  <td className="py-2.5 px-3">{r.rate} c/min</td>
+                  <td className="py-2.5 px-3 text-green-600 font-semibold">₹{e.userPays.toFixed(2)}</td>
+                  <td className="py-2.5 px-3 text-amber-600">₹{e.hostPayout.toFixed(2)} <span className="text-muted-foreground">({e.hostPctOfSpend.toFixed(0)}%)</span></td>
+                  <td className="py-2.5 px-3 text-muted-foreground">₹{e.agoraCost.toFixed(3)}</td>
+                  <td className="py-2.5 px-3 text-muted-foreground">₹{e.gatewayFee.toFixed(2)}</td>
+                  <td className="py-2.5 px-3 font-bold text-primary">₹{e.net.toFixed(2)}</td>
+                  <td className="py-2.5 px-3 font-semibold">{e.margin.toFixed(0)}%</td>
+                  <td className={`py-2.5 pl-3 ${belowFloor ? 'text-red-500 font-bold' : 'text-muted-foreground'}`}>
+                    {floor} c/min{belowFloor ? ' ⚠️' : ''}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        <div className="mt-3 space-y-1 text-[11px] text-muted-foreground">
+          <p>
+            <strong>Host cash %</strong> = host's cut of what the user actually paid (coins ×{' '}
+            {Math.round(cfg.hostShare * 100)}% share × ₹{cfg.payout}/coin ÷ ₹{cfg.purchase}/coin).
+            RECOMMENDED target ≈ 30%.
+          </p>
+          <p>
+            <strong>Floor</strong> = loss-proof minimum rate enforced at call start (Agora + gateway break-even ×{' '}
+            {cfg.safety} safety, at worst-case {Math.round(cfg.maxShare * 100)}% host share). A ⚠️ means your
+            default rate is below the floor and calls will be auto-raised to it.
+          </p>
+          <p>
+            Agora video tier: <strong>{cfg.res}</strong> (@ ${cfg.res === '1080p' ? cfg.fhdUsd : cfg.hdUsd}/1k min ×{' '}
+            {cfg.participants} participants, FX ₹{fx}/$). Clients cap capture to this so cost stays predictable.
+          </p>
+        </div>
+      </div>
     </div>
   );
 }

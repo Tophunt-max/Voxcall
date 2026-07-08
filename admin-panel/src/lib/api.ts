@@ -116,6 +116,8 @@ export const api = {
   coinTransactions: (page = 1, limit = 50) => req<any[]>('GET', `/admin/coin-transactions?page=${page}&limit=${limit}`),
   ratings: (page = 1, limit = 50) => req<any[]>('GET', `/admin/ratings?page=${page}&limit=${limit}`),
   analytics: (days?: number) => req<any>('GET', `/admin/analytics${days ? `?days=${days}` : ''}`),
+  // Agora-aware P&L + volume-discount / monthly-usage tracking.
+  marginAnalytics: (days?: number) => req<any>('GET', `/admin/analytics/margins${days ? `?days=${days}` : ''}`),
   streakAnalytics: () => req<any>('GET', '/admin/streak-analytics'),
   coinReconciliation: () => req<any>('GET', '/admin/coin-reconciliation'),
   notifications: () => req<any[]>('GET', '/admin/notifications'),
@@ -145,6 +147,16 @@ export const api = {
   referralConfig: () => req<any>('GET', '/admin/referral-config'),
   updateReferralConfig: (data: any) => req('PUT', '/admin/referral-config', data),
   liveCalls: () => req<any[]>('GET', '/admin/calls/live'),
+  // Mints an Agora token so the admin can silently listen in on an active call
+  // (audio-only, never publishes). channel = call session id.
+  getCallAgoraToken: (id: string) => req<{
+    provider: 'agora';
+    app_id: string;
+    channel: string;
+    uid: number;
+    token: string;
+    call_type: 'audio' | 'video';
+  }>('GET', `/admin/calls/${id}/agora-token`),
   forceEndCall: (id: string) => req<any>('POST', `/admin/calls/${id}/force-end`, {}),
   cleanupStaleCalls: (maxHours?: number) => req<any>('POST', '/admin/calls/stale-cleanup', { max_hours: maxHours ?? 4 }),
   appConfig: () => req<any>('GET', '/admin/app-config'),

@@ -268,27 +268,19 @@ export const API = {
   getCallSession: (sessionId: string) =>
     apiRequest<any>('GET', `/api/calls/${sessionId}`),
 
-  // FIX (no-audio / one-way audio on mobile carriers): fetch ICE config
-  // (STUN + TURN) from the backend so RTCPeerConnection has TURN relay
-  // candidates available. Without TURN, peers behind symmetric NATs (most
-  // mobile carrier networks) silently fail to negotiate media even when
-  // signalling succeeds.
-  getIceConfig: () =>
+  // Agora RTC join token — the client joins the call channel with this.
+  // channel = call session id, uid = 0 (Agora auto-assigns; token valid for
+  // any uid). Fails with 500 if the backend has no Agora credentials set.
+  getAgoraToken: (sessionId: string) =>
     apiRequest<{
-      iceServers: Array<{ urls: string | string[]; username?: string; credential?: string }>;
-      iceCandidatePoolSize?: number;
-      bundlePolicy?: string;
-      rtcpMuxPolicy?: string;
-      ttl?: number;
-      source?: string;
-    }>('GET', '/api/calls/ice-config'),
-
-  pushTracks: (sessionId: string, sdp: string, type: string, tracks: Array<{ mid: string; trackName: string }>) =>
-    apiRequest<{ answer: { type: string; sdp: string }; tracks: any[]; role: string }>('POST', `/api/calls/${sessionId}/sdp/push`, { sdp, type, tracks }),
-  pullTracks: (sessionId: string, trackNames: string[]) =>
-    apiRequest<{ offer: { type: string; sdp: string } | null; tracks: Array<{ mid?: string; trackName?: string; errorCode?: string }>; role: string; retryable?: boolean }>('POST', `/api/calls/${sessionId}/sdp/pull`, { trackNames }),
-  sendPullAnswer: (sessionId: string, sdp: string, type: string) =>
-    apiRequest<{ success: boolean }>('POST', `/api/calls/${sessionId}/sdp/answer`, { sdp, type }),
+      provider: 'agora';
+      app_id: string;
+      channel: string;
+      uid: number;
+      token: string;
+      role: 'caller' | 'host';
+      call_type: 'audio' | 'video';
+    }>('GET', `/api/calls/${sessionId}/agora-token`),
   // Relay in-call mic/camera state to the other party so their UI updates
   // instantly (camera-off avatar / muted badge) instead of polling the remote
   // track's muted flag. Best-effort — fire and forget on each toggle.

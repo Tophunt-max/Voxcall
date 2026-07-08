@@ -65,22 +65,22 @@ new_sqlite_classes = ["ChatRoom", "CallSignaling", "NotificationHub"]
 crons = ["* * * * *"]
 
 [vars]
-# Deployed worker is the production environment. Drives ice-config TURN
-# hardening (drops the public dev TURN relay, warns loudly when Cloudflare TURN
-# credentials are missing). Local `wrangler dev` overrides this to
-# "development" via .dev.vars so the public relay stays available locally.
+# Deployed worker is the production environment. Local `wrangler dev` overrides
+# this to "development" via .dev.vars.
 ENVIRONMENT = "production"
-# CF_ACCOUNT_ID and CF_CALLS_APP_ID must be set via Cloudflare Dashboard secrets
-# or via `wrangler secret put`. Do not commit these values to source control.
 
 # Secrets (set via Cloudflare Dashboard → Workers → voxlink-api → Settings → Variables & Secrets,
 # or via `wrangler secret put <NAME>`, or automatically by .github/workflows/deploy-backend.yml
 # when the matching GitHub repo secret is present):
-# - CF_CALLS_APP_SECRET       (Cloudflare Calls App Secret)
 # - JWT_SECRET                (JWT signing secret)
 # - FIREBASE_SERVICE_ACCOUNT  (Firebase Service Account JSON for FCM HTTP v1 API)
-# - TURN_KEY_ID               (Cloudflare Realtime TURN Key ID — for /api/calls/ice-config)
-# - TURN_KEY_TOKEN            (Cloudflare Realtime TURN Key Token — for /api/calls/ice-config)
+#
+# ── Agora RTC (the media provider) ──────────────────────────────────────────
+# BOTH are REQUIRED for calls to work — Agora is the only RTC transport. The
+# backend mints per-call join tokens at GET /api/calls/:id/agora-token and
+# advertises `rtc_provider: "agora"` in POST /api/calls/initiate + /health.
+# - AGORA_APP_ID              (Agora project App ID — stored as a secret for parity)
+# - AGORA_APP_CERTIFICATE     (Agora project primary certificate — SECRET, signs RTC tokens)
 
 [dev]
 port = 8787
