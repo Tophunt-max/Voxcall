@@ -2,7 +2,6 @@ export interface Env {
   DB: D1Database;
   STORAGE: R2Bucket;
   CHAT_ROOM: DurableObjectNamespace;
-  CALL_SIGNALING: DurableObjectNamespace;
   NOTIFICATION_HUB: DurableObjectNamespace;
   JWT_SECRET: string;
   // Agora RTC credentials — the ONLY media transport. Both MUST be set for
@@ -77,8 +76,6 @@ export interface CallSessionRow {
   host_id: string;
   type: 'audio' | 'video';
   status: 'pending' | 'active' | 'declined' | 'ended';
-  cf_session_id: string | null;
-  cf_host_session_id: string | null;
   rate_per_minute: number;
   started_at?: number;
   ended_at?: number;

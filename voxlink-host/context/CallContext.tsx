@@ -25,8 +25,6 @@ export interface CallParticipant {
 export interface ActiveCall {
   callId: string;
   sessionId?: string;
-  cfCallerSessionId?: string;
-  cfHostSessionId?: string;
   type: CallType;
   status: CallStatus;
   participant: CallParticipant;

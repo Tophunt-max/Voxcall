@@ -159,8 +159,10 @@ export async function buildAgoraRtcToken(
 }
 
 /**
- * Whether Agora is configured on this Worker. When true the app should route
- * calls through Agora; otherwise it falls back to the Cloudflare Realtime SFU.
+ * Whether Agora is configured on this Worker. Agora is the ONLY call transport,
+ * so when this is false the /agora-token endpoint returns 500 and calls are
+ * disabled until AGORA_APP_ID + AGORA_APP_CERTIFICATE are set. There is no
+ * fallback transport.
  */
 export function isAgoraConfigured(env: { AGORA_APP_ID?: string; AGORA_APP_CERTIFICATE?: string }): boolean {
   return !!(env.AGORA_APP_ID && env.AGORA_APP_ID.trim() && env.AGORA_APP_CERTIFICATE && env.AGORA_APP_CERTIFICATE.trim());

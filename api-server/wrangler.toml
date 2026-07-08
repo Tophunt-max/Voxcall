@@ -45,13 +45,19 @@ preview_bucket_name = "voxlink-storage-preview"
 [durable_objects]
 bindings = [
   { name = "CHAT_ROOM", class_name = "ChatRoom" },
-  { name = "CALL_SIGNALING", class_name = "CallSignaling" },
   { name = "NOTIFICATION_HUB", class_name = "NotificationHub" }
 ]
 
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["ChatRoom", "CallSignaling", "NotificationHub"]
+
+# v2 — Agora migration: the legacy Cloudflare Calls WebRTC signaling Durable
+# Object (CallSignaling) was removed. It held no durable storage (only
+# hibernatable WebSockets), so deleting the class is safe and drops no data.
+[[migrations]]
+tag = "v2"
+deleted_classes = ["CallSignaling"]
 
 # Stale call cleanup cron — runs every 1 minute.
 # Reaps call_sessions stuck in 'pending' (>2 min) and 'active' (>30 min) so
