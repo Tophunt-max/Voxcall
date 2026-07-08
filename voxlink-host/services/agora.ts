@@ -1,5 +1,5 @@
 // ============================================================================
-// AgoraService — Agora RTC media transport (drop-in peer of WebRTCService).
+// AgoraService — Agora RTC media transport (the only call transport).
 // ============================================================================
 //
 // This is the PRIMARY call transport when the backend has Agora configured
@@ -17,8 +17,7 @@
 //
 // Web: agora-rtc-sdk-ng. We build a real MediaStream from the remote/local
 //   MediaStreamTracks (getMediaStreamTrack) and DO NOT call track.play() — the
-//   existing <StreamView> / <RemoteAudioMount> elements play them, exactly like
-//   the Cloudflare path. This keeps web rendering byte-for-byte identical.
+//   existing <StreamView> / <RemoteAudioMount> elements play them.
 //
 // Both modules are loaded via require() (guarded) so a missing native module
 // (pre-EAS-rebuild) degrades gracefully instead of crashing the bundle.
@@ -29,8 +28,7 @@ import { API } from './api';
 
 export type ConnectionQuality = 'excellent' | 'good' | 'poor' | 'lost' | 'unknown';
 
-// Callback surface the useWebRTC hook wires up. Kept as a standalone contract
-// now that Agora is the only transport (previously shared with WebRTCService).
+// Callback surface the useWebRTC hook wires up. Agora is the only transport.
 export interface RtcCallbacks {
   onRemoteStream?: (stream: any) => void;
   onConnectionStateChange?: (state: string) => void;
@@ -233,7 +231,7 @@ export class AgoraService {
     } else {
       engine.disableVideo();
     }
-    // Video calls default to loudspeaker, audio calls to earpiece (matches CF).
+    // Video calls default to loudspeaker, audio calls to earpiece.
     try { engine.setEnableSpeakerphone(this.isVideo); } catch { /* best-effort */ }
 
     engine.joinChannel(this.config.token, this.config.channel, this.config.uid, {
@@ -351,7 +349,7 @@ export class AgoraService {
     return valid.length ? { __agora: true, tracks: valid } : null;
   }
 
-  // ── Controls (parity with WebRTCService) ─────────────────────────────────────
+  // ── Controls (call-screen lifecycle) ─────────────────────────────────────
   toggleMute(muted: boolean): void {
     this.localMuted = muted;
     try {

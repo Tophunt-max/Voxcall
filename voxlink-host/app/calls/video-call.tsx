@@ -68,10 +68,9 @@ function ConnectionBars({ state, quality }: { state: string; quality?: string })
 
 const useNativeDriverValue = Platform.OS !== "web";
 
-// RTCView kept as a null placeholder so the legacy web-only StreamView helper
-// (used for the Agora WEB MediaStream path) still type-checks. Native video is
-// rendered by <RtcVideoView> via Agora's RtcSurfaceView — no react-native-webrtc.
-let RTCView: any = null;
+// Native video is rendered by <RtcVideoView> (Agora's RtcSurfaceView). The
+// web-only StreamView helper below renders the Agora web MediaStream in a
+// <video> element. CameraView (expo-camera) is only a self-preview fallback.
 let CameraView: any = null;
 let Haptics: any = null;
 try {
@@ -80,12 +79,13 @@ try {
 } catch {}
 
 // ─── StreamView ──────────────────────────────────────────────────────────────
-// Renders a MediaStream as video. Native: RTCView; Web: <video> srcObject.
+// Web-only helper: renders the Agora web MediaStream in a <video> element.
 // FIX (no-audio bug): on web we MUST attach the MediaStream to a <video> /
 // <audio> element for the remote audio track to actually play. Browsers do
-// not auto-play tracks just because they're in an RTCPeerConnection. We also
-// explicitly call .play() because some mobile browsers (esp. iOS Safari)
-// ignore the `autoPlay` attribute even after a user gesture.
+// not auto-play a track just because it exists. We also explicitly call
+// .play() because some mobile browsers (esp. iOS Safari) ignore the
+// `autoPlay` attribute even after a user gesture. On native, video is drawn
+// by <RtcVideoView> (Agora), so StreamView is never used there.
 function StreamView({ stream, style, mirror = false, audioOnly = false }: { stream: any; style?: any; mirror?: boolean; audioOnly?: boolean }) {
   const videoRef = useRef<any>(null);
 
@@ -174,11 +174,9 @@ function StreamView({ stream, style, mirror = false, audioOnly = false }: { stre
     });
   }
 
-  // On native, react-native-webrtc routes audio through the audio session
-  // automatically — we only need RTCView for the video portion.
-  if (audioOnly) return null;
-  if (!RTCView || !stream?.toURL) return null;
-  return <RTCView streamURL={stream.toURL()} style={style} objectFit="cover" mirror={mirror} zOrder={mirror ? 1 : 0} />;
+  // Native never reaches here: video is drawn by <RtcVideoView> (Agora's
+  // RtcSurfaceView) and audio is routed by the Agora engine automatically.
+  return null;
 }
 
 type PermStep = "camera" | "microphone" | "done";
@@ -317,7 +315,7 @@ export default function VideoCallScreen() {
         webrtc.clearError();
         return;
       }
-      // FIX BUG-4: Fatal WebRTC/CF session error — auto-end call
+      // FIX BUG-4: Fatal RTC error — auto-end call
       const isFatalError =
         /session_error/i.test(webrtc.error) ||
         /410/i.test(webrtc.error) ||
@@ -354,15 +352,15 @@ export default function VideoCallScreen() {
   }, [webrtc.connectionState, status, webrtc.isConnected, webrtc.cleanup, endCall]);
 
   // FIX (connecting timeout — media-aware): if WebRTC media never reaches a
-  // usable state within the window, the call is stalled (CF Calls negotiation
-  // hung, ICE timed out, no TURN relay on this network, etc.). Auto-end so the
+  // usable state within the window, the call is stalled (Agora join failed,
+  // the network blocked media, etc.). Auto-end so the
   // host is not stuck on a dead call.
   //
   // ROOT-CAUSE FIX for "call auto-ends after ~30s even though it connected":
   // the previous version gated ONLY on `webrtc.isConnected` (connectionState
   // === 'connected'). On web / mobile browsers that aggregate state often
   // lags behind real media — it can stay 'connecting' while audio+video are
-  // already flowing through the Cloudflare SFU. So a perfectly healthy call
+  // already flowing through Agora. So a perfectly healthy call
   // was being force-ended at exactly 30s, and the CALLER then saw a bogus
   // "you ran out of coins" summary. We now consider the call connected if
   // EITHER connectionState is 'connected' OR a remote media stream has

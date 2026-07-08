@@ -20,10 +20,9 @@ import * as Haptics from "expo-haptics";
 const useNativeDriverValue = Platform.OS !== "web";
 
 // FIX (no-audio bug): on web, the remote audio track will not play unless
-// it is attached to an <audio>/<video> element. The peer connection alone
-// does not produce sound. Mount a hidden <audio srcObject={remoteStream}/>
-// so audio calls actually have audio on web. On native, react-native-webrtc
-// routes audio through the audio session automatically — no element needed.
+// it is attached to an <audio>/<video> element. Mount a hidden
+// <audio srcObject={remoteStream}/> so audio calls actually have audio on
+// web. On native, the Agora engine routes audio automatically — no element needed.
 function RemoteAudioMount({ stream }: { stream: any }) {
   const ref = useRef<any>(null);
   useEffect(() => {
@@ -188,7 +187,7 @@ export default function AudioCallScreen() {
         webrtc.clearError();
         return;
       }
-      // FIX BUG-4: Fatal WebRTC/CF session error — auto-end call
+      // FIX BUG-4: Fatal RTC error — auto-end call
       const isFatalError =
         /session_error/i.test(webrtc.error) ||
         /410/i.test(webrtc.error) ||
@@ -228,7 +227,7 @@ export default function AudioCallScreen() {
 
   // FIX (connecting timeout — media-aware): auto-end only if media never
   // arrives. See the host video-call screen for the full root-cause writeup:
-  // `connectionState` can lag behind real SFU media on web/mobile browsers, so
+  // `connectionState` can lag behind real Agora media on web/mobile browsers, so
   // we treat the call as connected if EITHER isConnected OR a remote stream
   // has arrived, and extend the window to 45s. Ends with a CONNECTION reason.
   useEffect(() => {

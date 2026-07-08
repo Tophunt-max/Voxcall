@@ -18,10 +18,9 @@ import { API } from "@/services/api";
 import * as Haptics from "expo-haptics";
 
 // FIX (no-audio bug): on web, the remote audio track will not play unless
-// it is attached to an <audio>/<video> element. The peer connection alone
-// does not produce sound. Mount a hidden <audio srcObject={remoteStream}/>
-// so audio calls actually have audio on web. On native, react-native-webrtc
-// routes audio through the audio session automatically — no element needed.
+// it is attached to an <audio>/<video> element. Mount a hidden
+// <audio srcObject={remoteStream}/> so audio calls actually have audio on
+// web. On native, the Agora engine routes audio automatically — no element needed.
 function RemoteAudioMount({ stream }: { stream: any }) {
   const ref = useRef<any>(null);
   useEffect(() => {
@@ -200,8 +199,8 @@ export default function AudioCallScreen() {
         webrtc.clearError();
         return;
       }
-      // FIX BUG-4: If the CF session expired or any fatal WebRTC error, auto-end the call
-      // with a user-friendly message instead of staying stuck on "Connecting..."
+      // FIX BUG-4: If any fatal RTC error occurs, auto-end the call with a
+      // user-friendly message instead of staying stuck on "Connecting..."
       const isFatalError =
         /session_error/i.test(webrtc.error) ||
         /410/i.test(webrtc.error) ||
@@ -244,14 +243,14 @@ export default function AudioCallScreen() {
   }, [webrtc.connectionState, status, webrtc.isConnected, webrtc.cleanup, endCall]);
 
   // FIX (connecting timeout — media-aware): if WebRTC media never reaches a
-  // usable state within the window, the call is stalled (CF Calls negotiation
-  // hung, ICE timed out, no TURN relay on this network, etc.). Auto-end
+  // usable state within the window, the call is stalled (Agora join failed,
+  // the network blocked media, etc.). Auto-end
   // gracefully with a CONNECTION reason (not "out of coins").
   //
   // IMPORTANT: we treat the call as connected if EITHER the aggregate
   // connectionState reports 'connected' OR a remote media stream has actually
   // arrived. On web/mobile browsers `connectionState` sometimes lags behind
-  // real media (stays 'connecting' while audio already flows through the SFU),
+  // real media (stays 'connecting' while audio already flows through Agora),
   // so gating purely on `isConnected` was force-ending calls that were in fact
   // working. Requiring BOTH signals to be absent before ending fixes the
   // "call auto-ends after ~30s even though it connected" bug. Window extended

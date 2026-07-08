@@ -2,16 +2,14 @@ import React, { useEffect, useRef } from 'react';
 import { Platform, StyleSheet } from 'react-native';
 
 // ============================================================================
-// RtcVideoView — provider/platform-agnostic video tile.
+// RtcVideoView — Agora RTC video tile (platform-agnostic).
 // ============================================================================
-// Renders remote or local video regardless of which transport is active:
+// Renders remote or local video for the Agora transport (the only transport):
 //
-//   • Agora + native  → <RtcSurfaceView> keyed by uid (Agora gives no
-//                        MediaStream on native; video is drawn by uid).
-//   • everything else → the same MediaStream path the app has always used
-//     (Cloudflare SFU on native via RTCView, and ALL web including Agora,
-//     since the Agora web path builds real MediaStreams). This keeps the
-//     web/CF rendering byte-for-byte identical to before.
+//   • native (iOS/Android) → <RtcSurfaceView> keyed by uid. Agora exposes no
+//                            MediaStream on native, so video is drawn by uid.
+//   • web                  → the Agora web SDK gives real MediaStreamTracks,
+//                            so the MediaStream is attached to a <video> tag.
 // ============================================================================
 
 let RtcSurfaceView: any = null;
@@ -27,9 +25,9 @@ try {
 }
 
 export interface RtcVideoViewProps {
-  /** MediaStream (web / Cloudflare native / Agora web). Ignored for Agora native. */
+  /** MediaStream for the Agora web path. Ignored on native (rendered by uid). */
   stream?: any;
-  provider?: 'agora' | 'cloudflare' | 'unknown';
+  provider?: 'agora' | 'unknown';
   /** Agora native render target: remote uid, or 0 for the local camera. */
   agoraUid?: number | null;
   isLocal?: boolean;
