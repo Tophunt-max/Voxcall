@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   View,
   Text,
@@ -30,6 +30,12 @@ const SCREEN_W = Dimensions.get("window").width;
 const H_PADDING = 14;
 const GRID_GAP = 12;
 const CARD_W = (SCREEN_W - H_PADDING * 2 - GRID_GAP) / 2;
+// Full-width promo banner (spans both grid columns), embedded between host rows.
+const BANNER_W = SCREEN_W - H_PADDING * 2;
+const BANNER_AUTO_SLIDE_MS = 3500;
+// The banner is injected into the host grid after this many host rows (each row
+// = 2 cards), mirroring the home/Explore placement (banner sits mid-grid).
+const BANNER_AFTER_ROWS = 2;
 
 // Purple accent gradient for the active country tab + video button (brand
 // accent; used for accents only, the screen itself follows the app theme).
@@ -249,6 +255,115 @@ function FilterModal({ visible, title, options, selected, colors, onSelect, onCl
   );
 }
 
+// ─── Admin-managed promo banner (full-width, mid-grid) ───────────────────────
+// Mirrors the home/Explore banner: coloured card (bg_color) with title +
+// subtitle + optional CTA pill, and an optional right-side image (image_url).
+// Auto-advances when the admin has published more than one search banner.
+type Banner = {
+  id: string;
+  title: string;
+  subtitle?: string;
+  image_url?: string;
+  bg_color?: string;
+  cta_text?: string;
+  cta_link?: string;
+};
+
+// Rows for the vertical grid: a "pair" holds up to 2 host cards (a single card
+// on the last odd row), while "banner" is the full-width promo strip.
+type ListRow =
+  | { kind: "pair"; key: string; items: UIHost[] }
+  | { kind: "banner"; key: string };
+
+function SearchBannerSlider({ banners, colors }: { banners: Banner[]; colors: Colors }) {
+  const [activeIdx, setActiveIdx] = useState(0);
+  const listRef = useRef<FlatList<Banner>>(null);
+  const currentIdx = useRef(0);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const goTo = useCallback((idx: number) => {
+    if (!listRef.current || banners.length === 0) return;
+    const safe = Math.max(0, Math.min(idx, banners.length - 1));
+    listRef.current.scrollToIndex({ index: safe, animated: true });
+    currentIdx.current = safe;
+    setActiveIdx(safe);
+  }, [banners.length]);
+
+  const restart = useCallback(() => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    if (banners.length <= 1) return;
+    timerRef.current = setInterval(() => {
+      goTo((currentIdx.current + 1) % banners.length);
+    }, BANNER_AUTO_SLIDE_MS);
+  }, [banners.length, goTo]);
+
+  useEffect(() => {
+    restart();
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [restart]);
+
+  const onMomentumEnd = useCallback((e: any) => {
+    const idx = Math.round(e.nativeEvent.contentOffset.x / BANNER_W);
+    currentIdx.current = idx;
+    setActiveIdx(idx);
+    restart();
+  }, [restart]);
+
+  if (banners.length === 0) return null;
+
+  const renderSlide = ({ item }: { item: Banner }) => (
+    <TouchableOpacity
+      activeOpacity={0.9}
+      onPress={() => { if (item.cta_link) router.push(item.cta_link as any); }}
+      style={[styles.bannerSlide, { backgroundColor: item.bg_color || colors.accent }]}
+    >
+      <View style={styles.bannerTextCol}>
+        <Text style={styles.bannerTitle} numberOfLines={2}>{item.title}</Text>
+        {item.subtitle ? <Text style={styles.bannerSub} numberOfLines={2}>{item.subtitle}</Text> : null}
+        {item.cta_text ? (
+          <View style={styles.bannerCta}>
+            <Text style={styles.bannerCtaText}>{item.cta_text}</Text>
+          </View>
+        ) : null}
+      </View>
+      {item.image_url ? (
+        <Image source={{ uri: resolveMediaUrl(item.image_url) }} style={styles.bannerImage} resizeMode="contain" />
+      ) : null}
+    </TouchableOpacity>
+  );
+
+  return (
+    <View style={styles.bannerWrap}>
+      <FlatList
+        ref={listRef}
+        data={banners}
+        horizontal
+        pagingEnabled={Platform.OS !== "web"}
+        showsHorizontalScrollIndicator={false}
+        keyExtractor={(b) => b.id}
+        renderItem={renderSlide}
+        onMomentumScrollEnd={onMomentumEnd}
+        snapToInterval={BANNER_W}
+        decelerationRate="fast"
+        getItemLayout={(_, index) => ({ length: BANNER_W, offset: BANNER_W * index, index })}
+        onScrollToIndexFailed={({ index }) => {
+          setTimeout(() => listRef.current?.scrollToIndex({ index, animated: true }), 50);
+        }}
+        style={{ width: BANNER_W }}
+      />
+      {banners.length > 1 && (
+        <View style={styles.bannerDots}>
+          {banners.map((_, i) => (
+            <TouchableOpacity key={i} onPress={() => goTo(i)} activeOpacity={0.7}>
+              <View style={[styles.bannerDot, activeIdx === i && [styles.bannerDotActive, { backgroundColor: colors.accent }]]} />
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
 export default function SearchScreen() {
   const insets = useSafeAreaInsets();
   const colors = useColors();
@@ -264,6 +379,7 @@ export default function SearchScreen() {
   const [showLangModal, setShowLangModal] = useState(false);
   const [showTopicModal, setShowTopicModal] = useState(false);
   const [hosts, setHosts] = useState<UIHost[]>([]);
+  const [banners, setBanners] = useState<Banner[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [coinPopup, setCoinPopup] = useState(false);
@@ -279,16 +395,28 @@ export default function SearchScreen() {
     }
   }, []);
 
+  // Admin-managed promo banners for the search page (position "search_top" in
+  // the admin Banners panel). Best-effort: an error / older backend simply
+  // yields no banner and the grid renders as before.
+  const loadBanners = useCallback(async () => {
+    try {
+      const res = await API.getBanners("search");
+      setBanners(Array.isArray(res) ? (res as Banner[]) : []);
+    } catch {
+      setBanners([]);
+    }
+  }, []);
+
   useEffect(() => {
     setLoading(true);
-    loadHosts().finally(() => setLoading(false));
-  }, [loadHosts]);
+    Promise.all([loadHosts(), loadBanners()]).finally(() => setLoading(false));
+  }, [loadHosts, loadBanners]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await loadHosts();
+    await Promise.all([loadHosts(), loadBanners()]);
     setRefreshing(false);
-  }, [loadHosts]);
+  }, [loadHosts, loadBanners]);
 
   const startCall = useCallback((host: UIHost, type: "audio" | "video") => {
     // Offline hosts can't be called — open their profile instead.
@@ -320,6 +448,21 @@ export default function SearchScreen() {
       return true;
     });
   }, [hosts, activeTab, searchText, selectedLang, selectedTopic]);
+
+  // Build the vertical list rows: hosts are chunked into pairs (2 columns) and
+  // the promo banner is injected as a full-width row after BANNER_AFTER_ROWS
+  // host rows — matching the home/Explore layout where the banner sits mid-grid.
+  const rows = useMemo(() => {
+    const out: ListRow[] = [];
+    for (let i = 0; i < filtered.length; i += 2) {
+      out.push({ kind: "pair", key: `pair-${filtered[i].id}`, items: filtered.slice(i, i + 2) });
+    }
+    if (banners.length > 0 && out.length > 0) {
+      const insertAt = Math.min(BANNER_AFTER_ROWS, out.length);
+      out.splice(insertAt, 0, { kind: "banner", key: "banner-row" });
+    }
+    return out;
+  }, [filtered, banners]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -398,22 +541,32 @@ export default function SearchScreen() {
         </View>
       ) : (
         <FlatList
-          data={filtered}
-          keyExtractor={(h) => h.id}
-          numColumns={2}
-          columnWrapperStyle={{ gap: GRID_GAP, paddingHorizontal: H_PADDING }}
+          data={rows}
+          keyExtractor={(r) => r.key}
           contentContainerStyle={{ paddingTop: 8, paddingBottom: insets.bottom + 100 }}
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
-          renderItem={({ item }) => (
-            <HostGridCard
-              host={item}
-              colors={colors}
-              onPress={() => router.push(`/user/hosts/${item.id}`)}
-              onAudioCall={() => startCall(item, "audio")}
-              onVideoCall={() => startCall(item, "video")}
-            />
-          )}
+          renderItem={({ item }) => {
+            if (item.kind === "banner") {
+              return <SearchBannerSlider banners={banners} colors={colors} />;
+            }
+            return (
+              <View style={styles.gridRow}>
+                {item.items.map((h) => (
+                  <HostGridCard
+                    key={h.id}
+                    host={h}
+                    colors={colors}
+                    onPress={() => router.push(`/user/hosts/${h.id}`)}
+                    onAudioCall={() => startCall(h, "audio")}
+                    onVideoCall={() => startCall(h, "video")}
+                  />
+                ))}
+                {/* Keep the last odd card left-aligned instead of stretched. */}
+                {item.items.length === 1 && <View style={{ width: CARD_W }} />}
+              </View>
+            );
+          }}
         />
       )}
 
@@ -448,6 +601,38 @@ export default function SearchScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+
+  // Host grid row (2 columns)
+  gridRow: { flexDirection: "row", gap: GRID_GAP, paddingHorizontal: H_PADDING },
+
+  // Full-width promo banner (mid-grid)
+  bannerWrap: { alignItems: "center", marginBottom: GRID_GAP },
+  bannerSlide: {
+    width: BANNER_W,
+    borderRadius: 18,
+    padding: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    overflow: "hidden",
+    minHeight: 120,
+  },
+  bannerTextCol: { flex: 1, gap: 6 },
+  bannerTitle: { fontSize: 20, fontFamily: "Poppins_700Bold", color: "#fff" },
+  bannerSub: { fontSize: 12, fontFamily: "Poppins_400Regular", color: "rgba(255,255,255,0.85)" },
+  bannerCta: {
+    alignSelf: "flex-start",
+    backgroundColor: "rgba(255,255,255,0.25)",
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+    marginTop: 4,
+  },
+  bannerCtaText: { fontSize: 12, fontFamily: "Poppins_600SemiBold", color: "#fff" },
+  bannerImage: { width: 90, height: 90, marginLeft: 12 },
+  bannerDots: { flexDirection: "row", justifyContent: "center", gap: 6, marginTop: 10 },
+  bannerDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#D0C0E0" },
+  bannerDotActive: { width: 20, borderRadius: 3 },
 
   // Top bar
   topBar: { flexDirection: "row", alignItems: "center", paddingRight: 12, paddingBottom: 12, gap: 8 },

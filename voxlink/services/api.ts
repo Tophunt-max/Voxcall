@@ -469,7 +469,7 @@ export const API = {
     apiRequest<{ success: boolean; id: string }>('POST', '/api/user/report', data),
 
   // Banners (public)
-  getBanners: (position?: 'home' | 'wallet') =>
+  getBanners: (position?: 'home' | 'wallet' | 'search') =>
     apiRequest<any[]>('GET', position ? `/api/banners?position=${position}` : '/api/banners', undefined, false),
 
   // Payment Gateways (public)
