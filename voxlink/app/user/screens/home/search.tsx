@@ -10,31 +10,28 @@ import {
   Dimensions,
   RefreshControl,
   ActivityIndicator,
+  Platform,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
+import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { useCall } from "@/context/CallContext";
 import { API, resolveMediaUrl } from "@/services/api";
 import { showErrorToast } from "@/components/Toast";
 import { InsufficientCoinsPopup } from "@/components/InsufficientCoinsPopup";
 
-// ─── Dark palette (this screen is intentionally a fixed dark "discover" view,
-// independent of the app light theme — mirrors the reference design). ─────────
-const BG_TOP = "#3A2A63";
-const BG_BOTTOM = "#140F29";
-const CARD_BG = "#2A2048";
-const CARD_BORDER = "rgba(255,255,255,0.08)";
-const TEXT = "#FFFFFF";
-const MUTED = "rgba(255,255,255,0.65)";
-const LIVE_GREEN = "#22C55E";
-const OFFLINE_RED = "#EF4444";
+type Colors = ReturnType<typeof useColors>;
 
 const SCREEN_W = Dimensions.get("window").width;
 const H_PADDING = 14;
 const GRID_GAP = 12;
 const CARD_W = (SCREEN_W - H_PADDING * 2 - GRID_GAP) / 2;
+
+// Purple accent gradient for the active country tab + video button (brand
+// accent; used for accents only, the screen itself follows the app theme).
+const ACCENT_GRADIENT = ["#C64BE8", "#8A2BD8"] as const;
 
 // Region filter tabs. `code` is the ISO alpha-2 matched against the host's
 // country; GLOBAL means no filter. India-first ordering.
@@ -87,19 +84,21 @@ function mapApiHost(h: any) {
 type UIHost = ReturnType<typeof mapApiHost>;
 
 // ─── Live / Offline status pill (top-right of each card) ─────────────────────
-function StatusPill({ online }: { online: boolean }) {
+// Sits over the card image, so it keeps a dark translucent background for
+// readability on both light and dark app themes.
+function StatusPill({ online, colors }: { online: boolean; colors: Colors }) {
   return (
     <View style={styles.statusPill}>
       {online ? (
         <View style={styles.bars}>
           {[6, 9, 12].map((h, i) => (
-            <View key={i} style={[styles.bar, { height: h, backgroundColor: LIVE_GREEN }]} />
+            <View key={i} style={[styles.bar, { height: h, backgroundColor: colors.online }]} />
           ))}
         </View>
       ) : (
-        <View style={[styles.statusDot, { backgroundColor: OFFLINE_RED }]} />
+        <View style={[styles.statusDot, { backgroundColor: colors.red }]} />
       )}
-      <Text style={[styles.statusText, { color: online ? LIVE_GREEN : "rgba(255,255,255,0.85)" }]}>
+      <Text style={[styles.statusText, { color: online ? colors.online : "rgba(255,255,255,0.9)" }]}>
         {online ? "Live" : "Offline"}
       </Text>
     </View>
@@ -107,7 +106,7 @@ function StatusPill({ online }: { online: boolean }) {
 }
 
 // ─── Country tab pill ────────────────────────────────────────────────────────
-function CountryTab({ tab, active, onPress }: { tab: typeof COUNTRY_TABS[number]; active: boolean; onPress: () => void }) {
+function CountryTab({ tab, active, colors, onPress }: { tab: typeof COUNTRY_TABS[number]; active: boolean; colors: Colors; onPress: () => void }) {
   const inner = (
     <View style={styles.tabInner}>
       {tab.code ? (
@@ -115,39 +114,44 @@ function CountryTab({ tab, active, onPress }: { tab: typeof COUNTRY_TABS[number]
       ) : (
         <Text style={styles.tabGlobe}>🌐</Text>
       )}
-      <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>{tab.label}</Text>
+      <Text style={[styles.tabLabel, { color: active ? "#fff" : colors.mutedForeground }, active && styles.tabLabelActive]}>
+        {tab.label}
+      </Text>
     </View>
   );
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.85} style={styles.tabTouch}>
       {active ? (
-        <LinearGradient
-          colors={["#F250C9", "#8A3FE8"]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={styles.tabActive}
-        >
+        <LinearGradient colors={ACCENT_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.tabPill}>
           {inner}
         </LinearGradient>
       ) : (
-        <View style={styles.tabIdle}>{inner}</View>
+        <View style={[styles.tabPill, { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }]}>
+          {inner}
+        </View>
       )}
     </TouchableOpacity>
   );
 }
 
 // ─── Host grid card ──────────────────────────────────────────────────────────
-function HostGridCard({ host, onPress, onVideoCall }: { host: UIHost; onPress: () => void; onVideoCall: () => void }) {
+function HostGridCard({ host, colors, onPress, onVideoCall }: { host: UIHost; colors: Colors; onPress: () => void; onVideoCall: () => void }) {
   return (
-    <TouchableOpacity style={styles.card} activeOpacity={0.9} onPress={onPress}>
+    <TouchableOpacity
+      style={[styles.card, { backgroundColor: colors.muted, borderColor: colors.border }]}
+      activeOpacity={0.9}
+      onPress={onPress}
+    >
       <Image source={{ uri: host.avatar }} style={styles.cardAvatar} resizeMode="cover" />
+      {/* Dark bottom gradient keeps the name/country legible over any photo,
+          independent of the app (light/dark) theme. */}
       <LinearGradient
         colors={["transparent", "rgba(10,6,24,0.15)", "rgba(10,6,24,0.92)"]}
         style={styles.cardOverlay}
         pointerEvents="none"
       />
 
-      <StatusPill online={host.isOnline} />
+      <StatusPill online={host.isOnline} colors={colors} />
 
       <View style={styles.cardBottom} pointerEvents="box-none">
         <View style={styles.cardTextCol}>
@@ -162,7 +166,7 @@ function HostGridCard({ host, onPress, onVideoCall }: { host: UIHost; onPress: (
 
         <TouchableOpacity
           onPress={onVideoCall}
-          style={styles.videoBtn}
+          style={[styles.videoBtn, { backgroundColor: colors.accent }]}
           activeOpacity={0.85}
           accessibilityRole="button"
           accessibilityLabel={`Video call ${host.name}`}
@@ -176,6 +180,7 @@ function HostGridCard({ host, onPress, onVideoCall }: { host: UIHost; onPress: (
 
 export default function SearchScreen() {
   const insets = useSafeAreaInsets();
+  const colors = useColors();
   const { user } = useAuth();
   const { initiateCall } = useCall();
 
@@ -237,10 +242,8 @@ export default function SearchScreen() {
   }, [hosts, activeTab, searchText]);
 
   return (
-    <View style={styles.container}>
-      <LinearGradient colors={[BG_TOP, BG_BOTTOM]} style={StyleSheet.absoluteFill} />
-
-      {/* Top bar: country tabs + globe-search button */}
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      {/* Top bar: country tabs + search button */}
       <View style={[styles.topBar, { paddingTop: insets.top + 10 }]}>
         <FlatList
           data={COUNTRY_TABS}
@@ -249,35 +252,35 @@ export default function SearchScreen() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.tabsRow}
           renderItem={({ item }) => (
-            <CountryTab tab={item} active={activeTab === item.key} onPress={() => setActiveTab(item.key)} />
+            <CountryTab tab={item} active={activeTab === item.key} colors={colors} onPress={() => setActiveTab(item.key)} />
           )}
         />
         <TouchableOpacity
           onPress={() => setSearchOpen((s) => !s)}
-          style={styles.globeBtn}
+          style={[styles.globeBtn, { backgroundColor: colors.card, borderColor: colors.accentBorder }]}
           activeOpacity={0.85}
           accessibilityRole="button"
           accessibilityLabel="Search hosts"
         >
-          <Image source={require("@/assets/icons/ic_search.png")} style={styles.globeIcon} tintColor="#fff" resizeMode="contain" />
+          <Image source={require("@/assets/icons/ic_search.png")} style={styles.globeIcon} tintColor={colors.accent} resizeMode="contain" />
         </TouchableOpacity>
       </View>
 
       {searchOpen && (
-        <View style={styles.searchWrap}>
-          <Image source={require("@/assets/icons/ic_search.png")} style={styles.searchInputIcon} tintColor={MUTED} resizeMode="contain" />
+        <View style={[styles.searchWrap, { backgroundColor: colors.muted, borderColor: colors.border }]}>
+          <Image source={require("@/assets/icons/ic_search.png")} style={styles.searchInputIcon} tintColor={colors.mutedForeground} resizeMode="contain" />
           <TextInput
             value={searchText}
             onChangeText={setSearchText}
             placeholder="Search by name…"
-            placeholderTextColor={MUTED}
-            style={styles.searchInput}
+            placeholderTextColor={colors.mutedForeground}
+            style={[styles.searchInput, { color: colors.text }]}
             autoFocus
             returnKeyType="search"
           />
           {searchText.length > 0 && (
             <TouchableOpacity onPress={() => setSearchText("")} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <Text style={styles.searchClear}>✕</Text>
+              <Text style={[styles.searchClear, { color: colors.mutedForeground }]}>✕</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -285,13 +288,13 @@ export default function SearchScreen() {
 
       {loading ? (
         <View style={styles.centerWrap}>
-          <ActivityIndicator size="large" color="#fff" />
+          <ActivityIndicator size="large" color={colors.accent} />
         </View>
       ) : filtered.length === 0 ? (
         <View style={styles.centerWrap}>
           <Text style={styles.emptyEmoji}>🔍</Text>
-          <Text style={styles.emptyText}>No hosts found</Text>
-          <Text style={styles.emptySub}>Try a different region or search.</Text>
+          <Text style={[styles.emptyText, { color: colors.text }]}>No hosts found</Text>
+          <Text style={[styles.emptySub, { color: colors.mutedForeground }]}>Try a different region or search.</Text>
         </View>
       ) : (
         <FlatList
@@ -301,10 +304,11 @@ export default function SearchScreen() {
           columnWrapperStyle={{ gap: GRID_GAP, paddingHorizontal: H_PADDING }}
           contentContainerStyle={{ paddingTop: 8, paddingBottom: insets.bottom + 100 }}
           showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#fff" />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
           renderItem={({ item }) => (
             <HostGridCard
               host={item}
+              colors={colors}
               onPress={() => router.push(`/user/hosts/${item.id}`)}
               onVideoCall={() => startVideoCall(item)}
             />
@@ -323,29 +327,28 @@ export default function SearchScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: BG_BOTTOM },
+  container: { flex: 1 },
 
   // Top bar
   topBar: { flexDirection: "row", alignItems: "center", paddingRight: 12, paddingBottom: 12, gap: 8 },
   tabsRow: { paddingHorizontal: 12, gap: 10, alignItems: "center" },
   tabTouch: { borderRadius: 24 },
-  tabActive: { borderRadius: 24, paddingHorizontal: 4, paddingVertical: 4 },
-  tabIdle: {
-    borderRadius: 24, paddingHorizontal: 4, paddingVertical: 4,
-    backgroundColor: "rgba(255,255,255,0.08)",
-    borderWidth: 1, borderColor: "rgba(255,255,255,0.12)",
-  },
+  tabPill: { borderRadius: 24, paddingHorizontal: 4, paddingVertical: 4 },
   tabInner: { flexDirection: "row", alignItems: "center", gap: 8, paddingRight: 14 },
-  tabFlag: { width: 30, height: 30, borderRadius: 15, backgroundColor: "rgba(255,255,255,0.15)" },
+  tabFlag: { width: 30, height: 30, borderRadius: 15, backgroundColor: "rgba(0,0,0,0.06)" },
   tabGlobe: { fontSize: 22, width: 30, height: 30, textAlign: "center", lineHeight: 30 },
-  tabLabel: { fontSize: 14, fontFamily: "Poppins_500Medium", color: "rgba(255,255,255,0.75)" },
-  tabLabelActive: { color: "#fff", fontFamily: "Poppins_700Bold" },
+  tabLabel: { fontSize: 14, fontFamily: "Poppins_500Medium" },
+  tabLabelActive: { fontFamily: "Poppins_700Bold" },
 
   globeBtn: {
     width: 44, height: 44, borderRadius: 22,
-    backgroundColor: "rgba(255,255,255,0.10)",
-    borderWidth: 1, borderColor: "rgba(255,255,255,0.14)",
+    borderWidth: 1,
     alignItems: "center", justifyContent: "center",
+    ...Platform.select({
+      ios: { shadowColor: "#000", shadowOpacity: 0.06, shadowRadius: 6, shadowOffset: { width: 0, height: 2 } },
+      android: { elevation: 2 },
+      web: { boxShadow: "0 2px 6px rgba(0,0,0,0.08)" } as any,
+    }),
   },
   globeIcon: { width: 20, height: 20 },
 
@@ -353,13 +356,12 @@ const styles = StyleSheet.create({
   searchWrap: {
     flexDirection: "row", alignItems: "center", gap: 8,
     marginHorizontal: H_PADDING, marginBottom: 10,
-    backgroundColor: "rgba(255,255,255,0.10)",
     borderRadius: 14, paddingHorizontal: 12, height: 46,
-    borderWidth: 1, borderColor: "rgba(255,255,255,0.12)",
+    borderWidth: 1,
   },
   searchInputIcon: { width: 18, height: 18 },
-  searchInput: { flex: 1, color: "#fff", fontSize: 14, fontFamily: "Poppins_400Regular", padding: 0 },
-  searchClear: { color: MUTED, fontSize: 16, paddingHorizontal: 4 },
+  searchInput: { flex: 1, fontSize: 14, fontFamily: "Poppins_400Regular", padding: 0 },
+  searchClear: { fontSize: 16, paddingHorizontal: 4 },
 
   // Grid card
   card: {
@@ -368,9 +370,12 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     marginBottom: GRID_GAP,
     overflow: "hidden",
-    backgroundColor: CARD_BG,
     borderWidth: 1,
-    borderColor: CARD_BORDER,
+    ...Platform.select({
+      ios: { shadowColor: "#000", shadowOpacity: 0.1, shadowRadius: 10, shadowOffset: { width: 0, height: 3 } },
+      android: { elevation: 3 },
+      web: { boxShadow: "0 3px 12px rgba(0,0,0,0.10)" } as any,
+    }),
   },
   cardAvatar: { ...StyleSheet.absoluteFillObject, width: "100%", height: "100%" },
   cardOverlay: { position: "absolute", left: 0, right: 0, bottom: 0, height: "60%" },
@@ -393,17 +398,16 @@ const styles = StyleSheet.create({
   },
   cardTextCol: { flex: 1, gap: 3 },
   cardName: {
-    color: TEXT, fontSize: 16, fontFamily: "Poppins_700Bold",
+    color: "#fff", fontSize: 16, fontFamily: "Poppins_700Bold",
     textShadowColor: "rgba(0,0,0,0.6)", textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4,
   },
   cardCountryRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   cardFlag: { width: 18, height: 13, borderRadius: 2, backgroundColor: "rgba(255,255,255,0.15)" },
-  cardCountry: { flex: 1, color: MUTED, fontSize: 12, fontFamily: "Poppins_400Regular", textTransform: "lowercase" },
+  cardCountry: { flex: 1, color: "rgba(255,255,255,0.85)", fontSize: 12, fontFamily: "Poppins_400Regular", textTransform: "lowercase" },
 
   videoBtn: {
     width: 46, height: 46, borderRadius: 23,
-    backgroundColor: "rgba(255,255,255,0.22)",
-    borderWidth: 1, borderColor: "rgba(255,255,255,0.3)",
+    borderWidth: 2, borderColor: "rgba(255,255,255,0.35)",
     alignItems: "center", justifyContent: "center",
   },
   videoIcon: { width: 22, height: 22 },
@@ -411,8 +415,8 @@ const styles = StyleSheet.create({
   // States
   centerWrap: { flex: 1, alignItems: "center", justifyContent: "center", gap: 8, paddingBottom: 80 },
   emptyEmoji: { fontSize: 44 },
-  emptyText: { color: "#fff", fontSize: 16, fontFamily: "Poppins_600SemiBold" },
-  emptySub: { color: MUTED, fontSize: 13, fontFamily: "Poppins_400Regular" },
+  emptyText: { fontSize: 16, fontFamily: "Poppins_600SemiBold" },
+  emptySub: { fontSize: 13, fontFamily: "Poppins_400Regular" },
 });
 
 // Per-screen error boundary — contains a render crash to this screen
