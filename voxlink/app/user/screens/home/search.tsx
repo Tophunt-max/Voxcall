@@ -25,8 +25,6 @@ import { API, resolveMediaUrl } from "@/services/api";
 import { showErrorToast } from "@/components/Toast";
 import { InsufficientCoinsPopup } from "@/components/InsufficientCoinsPopup";
 
-type Colors = ReturnType<typeof useColors>;
-
 const SCREEN_W = Dimensions.get("window").width;
 const H_PADDING = 12;
 const GRID_GAP = 10;
@@ -298,23 +296,108 @@ function HostGridCard({ host, mode, viewers, onPress, onAudioCall }: {
   );
 }
 
-// ─── Bottom-sheet option picker ──────────────────────────────────────────────
-function FilterModal({ visible, title, options, selected, colors, onSelect, onClose }: { visible: boolean; title: string; options: string[]; selected: string; colors: Colors; onSelect: (v: string) => void; onClose: () => void }) {
+// ─── Combined filters bottom-sheet (Language + Talk About) ───────────────────
+// Opened by tapping the "three-line" list icon on the right of the country row.
+// Shows BOTH filters in one sheet so the user can pick a language and a topic
+// in a single interaction, then apply or reset from the footer.
+function FiltersSheet({
+  visible,
+  lang, topic,
+  languagesLabel, talkAboutLabel,
+  onApply, onClose,
+}: {
+  visible: boolean;
+  lang: string;
+  topic: string;
+  languagesLabel: string;
+  talkAboutLabel: string;
+  onApply: (nextLang: string, nextTopic: string) => void;
+  onClose: () => void;
+}) {
+  // Draft state so the parent's filters don't update until the user hits Apply.
+  const [draftLang, setDraftLang] = useState(lang);
+  const [draftTopic, setDraftTopic] = useState(topic);
+
+  // Reset the draft every time the sheet is (re)opened so it mirrors the
+  // parent's currently-applied filters.
+  useEffect(() => {
+    if (visible) {
+      setDraftLang(lang);
+      setDraftTopic(topic);
+    }
+  }, [visible, lang, topic]);
+
+  const renderChip = (value: string, isSelected: boolean, onPress: () => void) => {
+    const inner = (
+      <Text style={[styles.sheetChipText, { color: isSelected ? "#fff" : DESIGN.pillInactiveText }, isSelected && styles.sheetChipTextActive]} numberOfLines={1}>
+        {value}
+      </Text>
+    );
+    return (
+      <TouchableOpacity key={value} onPress={onPress} activeOpacity={0.85} style={styles.sheetChipTouch}>
+        {isSelected ? (
+          <LinearGradient colors={DESIGN.pillActiveGradient as any} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.sheetChip}>
+            {inner}
+          </LinearGradient>
+        ) : (
+          <View style={[styles.sheetChip, { backgroundColor: DESIGN.pillInactiveBg }]}>{inner}</View>
+        )}
+      </TouchableOpacity>
+    );
+  };
+
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      {/* Tapping the backdrop dismisses. `activeOpacity=1` avoids the flash
+          on Android when the user just wants to close by tapping outside. */}
       <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={onClose}>
-        <View style={[styles.modalSheet, { backgroundColor: "#fff" }]}>
+        {/* Inner TouchableOpacity with onPress={undefined} would still swallow
+            events; use a View so backdrop taps propagate correctly. */}
+        <View style={[styles.modalSheet, { backgroundColor: "#fff" }]} onStartShouldSetResponder={() => true}>
           <View style={[styles.modalHandle, { backgroundColor: "#D6DEE7" }]} />
-          <Text style={[styles.modalTitle, { color: DESIGN.categoryActive }]}>{title}</Text>
-          {options.map((opt) => {
-            const isSel = selected === opt;
-            return (
-              <TouchableOpacity key={opt} onPress={() => { onSelect(opt); onClose(); }} style={[styles.modalOpt, { borderBottomColor: "#EEF3F8" }]}>
-                <Text style={[styles.modalOptText, { color: isSel ? colors.accent : DESIGN.categoryActive, fontFamily: isSel ? "Poppins_600SemiBold" : "Poppins_400Regular" }]}>{opt}</Text>
-                {isSel && <View style={[styles.modalCheck, { backgroundColor: colors.accent }]} />}
-              </TouchableOpacity>
-            );
-          })}
+          <Text style={[styles.modalTitle, { color: DESIGN.categoryActive }]}>Filters</Text>
+
+          {/* ── Language section ─────────────────────────────────────── */}
+          <Text style={[styles.sheetSectionTitle, { color: DESIGN.categoryActive }]}>{languagesLabel}</Text>
+          <View style={styles.sheetChipsWrap}>
+            {LANGUAGES.map((opt) => renderChip(opt, draftLang === opt, () => setDraftLang(opt)))}
+          </View>
+
+          {/* ── Talk About section ───────────────────────────────────── */}
+          <Text style={[styles.sheetSectionTitle, { color: DESIGN.categoryActive, marginTop: 18 }]}>{talkAboutLabel}</Text>
+          <View style={styles.sheetChipsWrap}>
+            {TOPICS.map((opt) => renderChip(opt, draftTopic === opt, () => setDraftTopic(opt)))}
+          </View>
+
+          {/* ── Footer: Reset + Apply ─────────────────────────────────── */}
+          <View style={styles.sheetFooter}>
+            <TouchableOpacity
+              onPress={() => { setDraftLang("All"); setDraftTopic("All"); }}
+              activeOpacity={0.8}
+              style={styles.sheetResetBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Reset filters"
+            >
+              <Text style={[styles.sheetResetText, { color: DESIGN.categoryActive }]}>Reset</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => { onApply(draftLang, draftTopic); onClose(); }}
+              activeOpacity={0.9}
+              style={styles.sheetApplyWrap}
+              accessibilityRole="button"
+              accessibilityLabel="Apply filters"
+            >
+              <LinearGradient
+                colors={DESIGN.pillActiveGradient as any}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.sheetApplyBtn}
+              >
+                <Text style={styles.sheetApplyText}>Apply</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
         </View>
       </TouchableOpacity>
     </Modal>
@@ -478,8 +561,8 @@ export default function SearchScreen() {
   const [searchText, setSearchText] = useState("");
   const [selectedLang, setSelectedLang] = useState("All");
   const [selectedTopic, setSelectedTopic] = useState("All");
-  const [showLangModal, setShowLangModal] = useState(false);
-  const [showTopicModal, setShowTopicModal] = useState(false);
+  // Single sheet showing BOTH filters (opened via the list icon).
+  const [showFiltersSheet, setShowFiltersSheet] = useState(false);
   const [hosts, setHosts] = useState<UIHost[]>([]);
   const [favIds, setFavIds] = useState<Set<string>>(new Set());
   const [banners, setBanners] = useState<Banner[]>([]);
@@ -679,15 +762,19 @@ export default function SearchScreen() {
           )}
         />
         <TouchableOpacity
-          onPress={() => setShowLangModal(true)}
+          onPress={() => setShowFiltersSheet(true)}
           style={styles.listIconBtn}
           activeOpacity={0.8}
           accessibilityRole="button"
-          accessibilityLabel="Open filters"
+          accessibilityLabel="Open language and topic filters"
         >
           <View style={styles.listIconLine} />
           <View style={[styles.listIconLine, { width: 14 }]} />
           <View style={[styles.listIconLine, { width: 10 }]} />
+          {/* Small dot indicates one or more filters are active. */}
+          {(selectedLang !== "All" || selectedTopic !== "All") && (
+            <View style={styles.listIconDot} pointerEvents="none" />
+          )}
         </TouchableOpacity>
       </View>
 
@@ -777,24 +864,20 @@ export default function SearchScreen() {
         </LinearGradient>
       </TouchableOpacity>
 
-      {/* Language sheet (opened from the list icon) */}
-      <FilterModal
-        visible={showLangModal}
-        title={t.listener.selectLanguage}
-        options={LANGUAGES}
-        selected={selectedLang}
-        colors={colors}
-        onSelect={setSelectedLang}
-        onClose={() => setShowLangModal(false)}
-      />
-      <FilterModal
-        visible={showTopicModal}
-        title={t.listener.talkAbout}
-        options={TOPICS}
-        selected={selectedTopic}
-        colors={colors}
-        onSelect={setSelectedTopic}
-        onClose={() => setShowTopicModal(false)}
+      {/* Combined Language + Talk About sheet, opened via the list icon in
+          the country row. Both filters live in one sheet with a shared
+          Reset / Apply footer. */}
+      <FiltersSheet
+        visible={showFiltersSheet}
+        lang={selectedLang}
+        topic={selectedTopic}
+        languagesLabel={t.listener.selectLanguage}
+        talkAboutLabel={t.listener.talkAbout}
+        onApply={(nextLang, nextTopic) => {
+          setSelectedLang(nextLang);
+          setSelectedTopic(nextTopic);
+        }}
+        onClose={() => setShowFiltersSheet(false)}
       />
 
       <InsufficientCoinsPopup
@@ -873,6 +956,17 @@ const styles = StyleSheet.create({
   },
   listIconLine: {
     height: 2, width: 18, backgroundColor: DESIGN.iconDark, borderRadius: 1,
+  },
+  listIconDot: {
+    position: "absolute",
+    top: 4,
+    right: 2,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: DESIGN.pillActiveGradient[0],
+    borderWidth: 1.5,
+    borderColor: "#fff",
   },
 
   // Search input (revealed on tap)
@@ -1057,12 +1151,57 @@ const styles = StyleSheet.create({
 
   // Bottom-sheet modal
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
-  modalSheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 20, paddingTop: 12, paddingBottom: 40 },
+  modalSheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 20, paddingTop: 12, paddingBottom: 34 },
   modalHandle: { width: 40, height: 4, borderRadius: 2, alignSelf: "center", marginBottom: 14 },
   modalTitle: { fontSize: 18, fontFamily: "Poppins_700Bold", marginBottom: 8 },
-  modalOpt: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 14, borderBottomWidth: 1 },
-  modalOptText: { fontSize: 15 },
-  modalCheck: { width: 10, height: 10, borderRadius: 5 },
+
+  // Filters sheet — section title + chip grid + footer
+  sheetSectionTitle: { fontSize: 14, fontFamily: "Poppins_600SemiBold", marginBottom: 10, marginTop: 6 },
+  sheetChipsWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  sheetChipTouch: { borderRadius: 22 },
+  sheetChip: {
+    borderRadius: 22,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    minHeight: 34,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  sheetChipText: { fontSize: 13, fontFamily: "Poppins_500Medium" },
+  sheetChipTextActive: { fontFamily: "Poppins_700Bold" },
+
+  sheetFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginTop: 22,
+  },
+  sheetResetBtn: {
+    flex: 1,
+    height: 48,
+    borderRadius: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: DESIGN.pillInactiveBg,
+  },
+  sheetResetText: { fontSize: 14, fontFamily: "Poppins_600SemiBold" },
+  sheetApplyWrap: {
+    flex: 1.4,
+    height: 48,
+    borderRadius: 24,
+    overflow: "hidden",
+    ...Platform.select({
+      ios: { shadowColor: "#8A2BD8", shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } },
+      android: { elevation: 4 },
+      web: { boxShadow: "0 4px 12px rgba(138,43,216,0.25)" } as any,
+    }),
+  },
+  sheetApplyBtn: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  sheetApplyText: { color: "#fff", fontSize: 14, fontFamily: "Poppins_700Bold" },
 
   // Empty / loading states
   centerWrap: { flex: 1, alignItems: "center", justifyContent: "center", gap: 8, paddingBottom: 80 },
