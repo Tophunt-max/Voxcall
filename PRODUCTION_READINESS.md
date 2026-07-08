@@ -1,5 +1,10 @@
 # VoxCall — Production Readiness Audit
 
+> ⚠️ **Historical record.** Since this audit the calling system migrated to **Agora RTC**.
+> Items mentioning `TURN_KEY_ID`/`TURN_KEY_TOKEN` and the `CallSignaling` Durable Object
+> are obsolete — Agora provides its own global relay (no TURN keys) and CallSignaling was
+> removed. Everything else (billing, payments, auth) still applies.
+
 > **Scope:** `api-server` (Cloudflare Workers + D1) — billing, payments, auth, CORS, cron, rate limiting, withdrawals.
 > **Date:** 2026-05-31
 > **Verdict:** The codebase is well-hardened for an MVP/beta (atomic coin transfers, webhook signature checks, token revocation, audit logs, race-condition guards). However, several **real gaps** remain before it is safe for **real-money production traffic** — two of them are direct revenue/abuse leaks.

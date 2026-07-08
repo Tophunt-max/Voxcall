@@ -1,5 +1,11 @@
 # Calling System Bugs — Status Report
 
+> ⚠️ **Historical record.** The calling system has since migrated to **Agora RTC**.
+> The Cloudflare Realtime SFU + TURN, the `CallSignaling` Durable Object, the
+> `/api/ws/call` route, and the `sdp/push` · `sdp/pull` · `ice-config` endpoints
+> were all removed. References to those below describe the pre-Agora system and
+> are kept only for history. See `CALLING_SETUP.md` for the current Agora setup.
+
 > **Status legend:** ✅ FIXED in code · ⚠️ Tracked TODO · 🔴 Open
 
 ---
