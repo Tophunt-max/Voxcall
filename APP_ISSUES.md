@@ -1,5 +1,10 @@
 # App Issues (User + Host) — Status Report
 
+> ⚠️ **Historical record.** The calling system has since migrated to **Agora RTC**.
+> Mentions of `sdp/pull`, `ice-config`, TURN, and Cloudflare Calls below describe
+> the pre-Agora WebRTC system and are kept only for history. See `CALLING_SETUP.md`
+> for the current Agora setup.
+
 > **Status legend:** ✅ FIXED in code · ⚠️ Tracked TODO · 🔴 Open
 
 ---

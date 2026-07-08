@@ -76,18 +76,17 @@ All three share a single Cloudflare-native backend (`api-server/`) — Hono on W
                   │  D1   │ │ R2 │ │FCM │ │ Durable        │
                   │SQLite │ │Blob│ │HTTP│ │ Objects        │
                   └───────┘ └────┘ └────┘ │ • ChatRoom     │
-                                          │ • CallSignaling│
                                           │ • NotifHub     │
                                           └────────────────┘
                                                   │
                                           ┌───────▼────────┐
-                                          │ Cloudflare     │
-                                          │ Calls (SFU)    │
-                                          │ → WebRTC media │
+                                          │  Agora RTC     │
+                                          │  (SD-RTN)      │
+                                          │ → audio/video  │
                                           └────────────────┘
 ```
 
-Media flows peer-to-SFU-to-peer via Cloudflare Calls; signaling rides our `CallSignaling` Durable Object; presence and call notifications use the `NotificationHub` DO with FCM as a push fallback.
+Audio/video media **and** signaling run on **Agora RTC** — the client mints a short-lived per-call join token from the backend (`GET /api/calls/:id/agora-token`) and joins the Agora channel directly, so no self-hosted media/signaling server is needed. Presence and call notifications use the `NotificationHub` DO with FCM as a push fallback.
 
 ---
 
@@ -115,7 +114,7 @@ Plus internal libraries:
 
 ### Mobile (both apps)
 - **Expo 54** + **React Native 0.81** + **expo-router** (file-based routing)
-- **react-native-webrtc** (native) / browser WebRTC (web) over Cloudflare Calls
+- **react-native-agora** (native) / **agora-rtc-sdk-ng** (web) for audio/video calls
 - **@react-native-firebase/messaging** for FCM push notifications
 - **expo-av** for ringtones
 - **@shopify/flash-list v2** for performant lists
@@ -128,8 +127,8 @@ Plus internal libraries:
 - **R2** for avatars, KYC documents, and media uploads
 - **Durable Objects** for stateful real-time:
   - `ChatRoom` — per-room WS message broadcast
-  - `CallSignaling` — per-session SDP/ICE relay with hibernation support
   - `NotificationHub` — per-user push hub with offline-disconnect detection
+    (also relays in-call mic/camera state as `peer_media_state`)
 - **JWT (HS256)** via `jose` with **revocation** (`token_invalidated_at`)
 - **PBKDF2-100k** password hashing with constant-time comparison
 - **Zod** validation on every mutating endpoint
@@ -206,8 +205,8 @@ Voxcall/
 │   │   ├── routes/               REST handlers (auth, user, host, call, chat,
 │   │   │                         coin, payment, admin, public, upload, ...)
 │   │   ├── middleware/           authMiddleware, adminMiddleware, auditLog
-│   │   ├── lib/                  jwt, hash, fcm, cf-calls, email
-│   │   └── durable-objects/      ChatRoom, CallSignaling, NotificationHub
+│   │   ├── lib/                  jwt, hash, fcm, agoraToken, email
+│   │   └── durable-objects/      ChatRoom, NotificationHub
 │   ├── migrations/               D1 SQL migrations 0001–0022
 │   ├── wrangler.toml             Cloudflare bindings + cron triggers
 │   └── seed.sql                  Local-dev seed data
@@ -337,8 +336,8 @@ For native builds, `google-services.json` (Android) and `GoogleService-Info.plis
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `JWT_SECRET` | ✅ | Long random string for JWT signing |
-| `CF_CALLS_APP_ID` | ✅ | Cloudflare Calls App ID |
-| `CF_CALLS_APP_SECRET` | ✅ | Cloudflare Calls App Secret |
+| `AGORA_APP_ID` | ✅ | Agora project App ID (required for calls) |
+| `AGORA_APP_CERTIFICATE` | ✅ | Agora primary certificate (signs RTC join tokens) |
 | `FIREBASE_SERVICE_ACCOUNT` | ✅ | Firebase Admin SDK service account JSON (one line) |
 | `RESEND_API_KEY` | ⚠️ | For OTP / password-reset emails |
 | `MIGRATION_SECRET` | — | Deprecated. Migrations now auto-apply on every cold start via `lib/autoMigrate.ts`; the admin `/run-migrations` button delegates to that runner under normal admin auth. Setting this var has no effect. |
@@ -405,7 +404,8 @@ GitHub Actions watches path filters and deploys what changed:
 |--------|---------|
 | `CLOUDFLARE_API_TOKEN` | All deploy-* workflows |
 | `CLOUDFLARE_ACCOUNT_ID` | All deploy-* workflows |
-| `CF_CALLS_APP_SECRET` | `deploy-backend` (set as Worker secret on first deploy) |
+| `AGORA_APP_ID` | `deploy-backend` (Worker secret — Agora App ID) |
+| `AGORA_APP_CERTIFICATE` | `deploy-backend` (Worker secret — signs RTC join tokens) |
 | `JWT_SECRET` | `deploy-backend` |
 | `FIREBASE_SERVICE_ACCOUNT` | `deploy-backend` |
 | `EXPO_TOKEN` | `android-eas-build*` |
@@ -449,7 +449,7 @@ The full API is described by `lib/api-spec/` (OpenAPI). High-level groups:
 | `/api/errors` | Optional JWT | Client error reports |
 | `/api/healthz` | Public | Liveness probe |
 | `/api/ws/notifications` | JWT (token in query) | NotificationHub WS |
-| `/api/ws/call/:sessionId` | JWT | CallSignaling WS |
+| `/api/calls/:id/agora-token` | JWT | Mint Agora RTC join token |
 | `/api/chat/ws/:roomId` | JWT | ChatRoom WS |
 
 ---

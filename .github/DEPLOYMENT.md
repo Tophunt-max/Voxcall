@@ -19,7 +19,9 @@ These are sensitive — never hardcode in code or logs.
 |---|---|
 | `CLOUDFLARE_API_TOKEN` | Cloudflare API Token with **Workers:Edit** + **Pages:Edit** + **workflow** scope |
 | `JWT_SECRET` | Strong random string (min 32 chars) for JWT signing |
-| `CF_CALLS_APP_SECRET` | Cloudflare Calls App Secret for WebRTC |
+| `AGORA_APP_ID` | Agora project App ID (required for audio/video calls) |
+| `AGORA_APP_CERTIFICATE` | Agora primary certificate — signs RTC join tokens |
+| `FIREBASE_SERVICE_ACCOUNT` | Firebase service-account JSON (FCM push) |
 
 ---
 
@@ -41,7 +43,7 @@ These are non-sensitive config values — safe to view.
 ### `deploy-backend.yml` — Cloudflare Workers
 - Trigger: push to `main` touching `artifacts/api-server/**`
 - Runs `wrangler deploy`
-- Sets `JWT_SECRET` and `CF_CALLS_APP_SECRET` as Worker secrets (via env block, never echoed)
+- Sets `JWT_SECRET`, `AGORA_APP_ID`, `AGORA_APP_CERTIFICATE`, and `FIREBASE_SERVICE_ACCOUNT` as Worker secrets (never echoed)
 
 ### `deploy-admin.yml` — Cloudflare Pages (`voxlink-admin`)
 - Trigger: push to `main` touching `artifacts/admin-panel/**` or `lib/**`
