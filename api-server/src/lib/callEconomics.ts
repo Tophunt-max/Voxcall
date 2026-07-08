@@ -116,7 +116,9 @@ export async function getCallEconomicsConfig(db: D1Database): Promise<CallEconom
       // NOT change actual coin-plan prices — those are authored per plan.
       coinPurchaseInr: num(m.coin_purchase_inr, d.coinPurchaseInr, 0.0001),
       // Prefer explicit coin_payout_inr, else the live economy value, else default.
-      coinPayoutInr: num(m.coin_payout_inr, num(m.coin_value_inr, d.coinPayoutInr, 0.0001), 0.0001),
+      // Canonical payout = coin_value_inr (the value the admin edits + that drives
+      // actual withdrawals). coin_payout_inr kept only as a legacy override.
+      coinPayoutInr: num(m.coin_value_inr, num(m.coin_payout_inr, d.coinPayoutInr, 0.0001), 0.0001),
       floorMaxHostShare: Math.min(0.95, num(m.floor_max_host_share, d.floorMaxHostShare, 0.1)),
       floorSafetyMultiplier: num(m.call_floor_safety_multiplier, d.floorSafetyMultiplier, 1),
       videoMaxResolution: m.video_max_resolution === '1080p' ? '1080p' : d.videoMaxResolution,

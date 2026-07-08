@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
-import { Save, Info, Calculator, TrendingUp, RefreshCw } from 'lucide-react';
+import { Save, Info, Calculator, TrendingUp, RefreshCw, Wifi } from 'lucide-react';
 
 // ============================================================================
 // Settings — focused on the Agora calling economy.
@@ -24,7 +24,8 @@ const settingGroups = [
   {
     group: 'Coin Economy',
     settings: [
-      { key: 'coin_value_inr', label: 'Coin Payout Value (₹ per coin)', type: 'number', hint: 'What a host redeems 1 coin for on withdrawal (host cash payout). RECOMMENDED ₹0.085 so hosts keep ~30% of user spend. Admin sets in ₹; backend auto-converts to each host\'s currency.', step: '0.001' },
+      { key: 'coin_purchase_inr', label: '💰 Coin Purchase Value (₹ per coin) — user buys', type: 'number', hint: 'What a user pays to BUY 1 coin. RECOMMENDED ₹0.20 (so ₹1 = 5 coins, 100 coins = ₹20). This is the revenue side — see the live calculator below.', step: '0.01' },
+      { key: 'coin_value_inr', label: '💸 Coin Payout Value (₹ per coin) — host redeems', type: 'number', hint: 'What a host redeems 1 coin for on withdrawal (host cash payout). RECOMMENDED ₹0.085. The gap vs the purchase value is the platform spread. Backend auto-converts to each host\'s currency.', step: '0.001' },
       { key: 'host_revenue_share', label: 'Host Revenue Share', type: 'number', hint: '0.70 means hosts receive 70% of coins charged per call. Platform keeps the rest. Per-level overrides live in Level System Configuration.', step: '0.01' },
       { key: 'min_withdrawal_coins', label: 'Minimum Withdrawal (Coins)', type: 'number', hint: 'Minimum coins a host must have to request a payout.', step: '1' },
     ],
@@ -41,9 +42,7 @@ const settingGroups = [
   {
     group: 'Agora Cost & Margins',
     settings: [
-      { key: 'coin_purchase_inr', label: 'Coin Purchase Value (₹ per coin)', type: 'number', hint: 'What a user effectively pays to buy 1 coin (revenue side of the margin math). Coin plans keep their own authored prices — this drives the margin preview + loss-proof floor. RECOMMENDED ₹0.20.', step: '0.01' },
-      { key: 'coin_payout_inr', label: 'Coin Payout Value override (₹ per coin)', type: 'number', hint: 'Optional override for the host payout used in the margin math. Leave equal to Coin Economy → Coin Payout Value. RECOMMENDED ₹0.085.', step: '0.001' },
-      { key: 'payment_gateway_fee_pct', label: 'Payment Gateway Fee (%)', type: 'number', hint: 'Razorpay/Stripe fee on coin purchases, subtracted from platform revenue. Typically ~2%.', step: '0.1' },
+      { key: 'payment_gateway_fee_pct', label: 'Payment Gateway Fee (%)', type: 'number', hint: 'Razorpay/Stripe fee on coin purchases, subtracted from platform revenue. Typically ~2%. (Coin purchase/payout ₹ values are in Coin Economy above.)', step: '0.1' },
       { key: 'video_max_resolution', label: 'Video Max Resolution', type: 'text', hint: '720p = Agora HD tier ($3.99/1k min, RECOMMENDED). 1080p = Full-HD tier ($8.99/1k min). Clients cap capture to this.' },
       { key: 'agora_audio_usd_per_1000', label: 'Agora Audio Cost ($/1000 min)', type: 'number', hint: 'Agora list price for audio, per participant. Default $0.99.', step: '0.01' },
       { key: 'agora_video_hd_usd_per_1000', label: 'Agora Video HD Cost ($/1000 min)', type: 'number', hint: 'Agora list price for HD (≤720p) video, per participant. Default $3.99.', step: '0.01' },
@@ -114,14 +113,56 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [calcCoins, setCalcCoins] = useState('1000');
+  const [calcInr, setCalcInr] = useState('100');
+  // ── Real-time sync ────────────────────────────────────────────────────────
+  // `dirty` = fields the admin is editing (protected from background sync so a
+  // live refresh never clobbers unsaved edits). `lastSynced` drives the "live"
+  // indicator. Sync pulls every 12s + on window focus, so the FX cron's rate
+  // updates AND other admins' saves appear here automatically. On save, the
+  // backend already broadcasts app_settings_update over WebSocket, so the user
+  // + host apps pick up new rates/coin value instantly (no app refresh).
+  const [dirty, setDirty] = useState<Record<string, boolean>>({});
+  const [lastSynced, setLastSynced] = useState(0);
+  const [now, setNow] = useState(Date.now());
+  const dirtyRef = useRef<Record<string, boolean>>({});
+  useEffect(() => { dirtyRef.current = dirty; }, [dirty]);
+
+  const syncFromServer = useCallback(async (initial = false) => {
+    try {
+      const d = await api.settings();
+      setSettings((prev) => {
+        const next: Record<string, string> = { ...DEFAULTS, ...prev };
+        // Merge server values, but NEVER overwrite a field being edited.
+        for (const [k, v] of Object.entries(d)) {
+          if (!dirtyRef.current[k]) next[k] = String(v);
+        }
+        return next;
+      });
+      setLastSynced(Date.now());
+    } catch {
+      if (initial) toast.error('Failed to load settings');
+    } finally {
+      if (initial) setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    api.settings()
-      // Preserve any keys not shown on this page (round-tripped on save).
-      .then((d) => setSettings({ ...DEFAULTS, ...d }))
-      .catch(() => toast.error('Failed to load settings'))
-      .finally(() => setLoading(false));
-  }, []);
+    syncFromServer(true);
+    const sync = setInterval(() => syncFromServer(false), 12_000);
+    // Tick every second so the "synced Xs ago" label stays live.
+    const tick = setInterval(() => setNow(Date.now()), 1000);
+    const onFocus = () => syncFromServer(false);
+    window.addEventListener('focus', onFocus);
+    return () => { clearInterval(sync); clearInterval(tick); window.removeEventListener('focus', onFocus); };
+  }, [syncFromServer]);
+
+  const setField = (key: string, value: string) => {
+    setSettings((prev) => ({ ...prev, [key]: value }));
+    setDirty((prev) => (prev[key] ? prev : { ...prev, [key]: true }));
+  };
+
+  const dirtyCount = Object.keys(dirty).length;
+  const syncedAgo = lastSynced ? Math.max(0, Math.round((now - lastSynced) / 1000)) : null;
 
   const save = async () => {
     setSaving(true);
@@ -129,7 +170,9 @@ export default function SettingsPage() {
       await api.updateSettings(settings);
       const fresh = await api.settings();
       setSettings({ ...DEFAULTS, ...fresh });
-      toast.success('Settings saved successfully');
+      setDirty({});
+      setLastSynced(Date.now());
+      toast.success('Saved — pushed live to all apps');
     } catch (e: any) {
       toast.error(e?.message || 'Failed to save settings');
     } finally {
@@ -138,7 +181,9 @@ export default function SettingsPage() {
   };
 
   const inrRate = inrPerUsd(settings);
-  const coinValueInr = parseFloat(settings.coin_value_inr || '0.085');
+  const coinValueInr = parseFloat(settings.coin_value_inr || '0.085');   // host payout ₹/coin
+  const coinPurchaseInr = parseFloat(settings.coin_purchase_inr || '0.20'); // user buy ₹/coin
+  const hostShare = parseFloat(settings.host_revenue_share || '0.70');
   const fxLastUpdated = settings.fx_rates_last_updated
     ? new Date(parseInt(settings.fx_rates_last_updated) * 1000).toLocaleString()
     : 'Not yet fetched';
@@ -161,16 +206,26 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-6 max-w-3xl">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h2 className="font-bold text-lg">Call & Economy Settings</h2>
           <p className="text-sm text-muted-foreground">Agora calling, coin economy, pricing &amp; margins</p>
         </div>
-        <button onClick={save} disabled={saving}
-          className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-xl text-sm font-semibold hover:opacity-90 disabled:opacity-50 shadow-sm">
-          {saving ? <RefreshCw size={14} className="animate-spin" /> : <Save size={15} />}
-          {saving ? 'Saving...' : 'Save Changes'}
-        </button>
+        <div className="flex items-center gap-3">
+          {/* Live sync indicator — the page auto-pulls the server every 12s. */}
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground" title="Live — auto-syncs from the server; other admins' changes + FX rate updates appear here automatically">
+            <Wifi size={13} className="text-green-500" />
+            <span className="inline-flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+              {syncedAgo === null ? 'Live' : syncedAgo < 3 ? 'Synced just now' : `Synced ${syncedAgo}s ago`}
+            </span>
+          </div>
+          <button onClick={save} disabled={saving || dirtyCount === 0}
+            className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-xl text-sm font-semibold hover:opacity-90 disabled:opacity-50 shadow-sm">
+            {saving ? <RefreshCw size={14} className="animate-spin" /> : <Save size={15} />}
+            {saving ? 'Saving...' : dirtyCount > 0 ? `Save ${dirtyCount} change${dirtyCount > 1 ? 's' : ''}` : 'Saved'}
+          </button>
+        </div>
       </div>
 
       {settingGroups.map(group => (
@@ -182,7 +237,10 @@ export default function SettingsPage() {
             {group.settings.map(s => (
               <div key={s.key} className="px-5 py-4 flex flex-col sm:flex-row sm:items-center gap-3">
                 <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-sm">{s.label}</p>
+                  <p className="font-semibold text-sm flex items-center gap-1.5">
+                    {s.label}
+                    {dirty[s.key] && <span className="w-1.5 h-1.5 rounded-full bg-amber-500" title="Unsaved change" />}
+                  </p>
                   {s.hint && (
                     <div className="flex items-start gap-1 mt-0.5">
                       <Info size={11} className="text-muted-foreground mt-0.5 flex-shrink-0" />
@@ -193,8 +251,8 @@ export default function SettingsPage() {
                 <input
                   type={s.type} step={(s as any).step}
                   value={settings[s.key] ?? ''}
-                  onChange={e => setSettings(prev => ({ ...prev, [s.key]: e.target.value }))}
-                  className="w-full sm:w-48 border border-border rounded-xl px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  onChange={e => setField(s.key, e.target.value)}
+                  className={`w-full sm:w-48 border rounded-xl px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30 ${dirty[s.key] ? 'border-amber-400' : 'border-border'}`}
                 />
               </div>
             ))}
@@ -209,10 +267,17 @@ export default function SettingsPage() {
                 </div>
                 <span className="text-muted-foreground">Updated: {fxLastUpdated}</span>
               </div>
-              <div className="mt-2 text-xs text-muted-foreground">
-                <strong>1 coin = ₹{coinValueInr > 0 ? coinValueInr.toFixed(coinValueInr < 0.01 ? 4 : 3) : '—'}</strong>
-                <span className="ml-1">= ${coinRate.toFixed(6)}/coin</span>
-                &nbsp;·&nbsp; 100 coins = ₹{(coinValueInr * 100).toFixed(2)}
+              <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                <div className="rounded-lg bg-white/60 dark:bg-black/20 px-3 py-2">
+                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground">User buys</p>
+                  <p className="font-bold text-green-600">1 coin = ₹{coinPurchaseInr > 0 ? coinPurchaseInr.toFixed(coinPurchaseInr < 0.01 ? 4 : 2) : '—'}</p>
+                  <p className="text-[10px] text-muted-foreground">₹1 = {coinPurchaseInr > 0 ? Math.round(1 / coinPurchaseInr) : '—'} coins · 100 coins = ₹{(coinPurchaseInr * 100).toFixed(0)}</p>
+                </div>
+                <div className="rounded-lg bg-white/60 dark:bg-black/20 px-3 py-2">
+                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Host redeems (payout)</p>
+                  <p className="font-bold text-amber-600">1 coin = ₹{coinValueInr > 0 ? coinValueInr.toFixed(coinValueInr < 0.01 ? 4 : 3) : '—'}</p>
+                  <p className="text-[10px] text-muted-foreground">= ${coinRate.toFixed(6)}/coin · 100 coins = ₹{(coinValueInr * 100).toFixed(2)}</p>
+                </div>
               </div>
             </div>
           )}
@@ -220,21 +285,25 @@ export default function SettingsPage() {
       ))}
 
 
-      {/* Quick coin calculator (live, unsaved-aware) */}
-      <div className="bg-card border border-border rounded-2xl p-5">
-        <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5 mb-3">
-          <Calculator size={13} /> Quick calculator
-        </label>
+      {/* Coin ↔ INR calculator — bidirectional, live (reacts to unsaved edits) */}
+      <div className="bg-card border border-border rounded-2xl p-5 space-y-4">
+        <div className="flex items-center gap-1.5">
+          <Calculator size={14} className="text-violet-600" />
+          <h3 className="font-bold text-sm">Coin ↔ INR Calculator</h3>
+          <span className="inline-flex items-center gap-1 text-[11px] text-green-600 ml-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" /> Live
+          </span>
+        </div>
+
+        {/* Coins → INR */}
         <div className="flex flex-col sm:flex-row sm:items-center gap-3">
           <div className="flex items-center gap-2">
             <input type="number" min="0" value={calcCoins} onChange={e => setCalcCoins(e.target.value)}
-              className="w-32 px-3 py-2 border border-border rounded-xl text-sm font-bold bg-background focus:outline-none focus:ring-2 focus:ring-primary/30" />
-            <span className="text-sm text-muted-foreground">coins =</span>
+              className="w-28 px-3 py-2 border border-border rounded-xl text-sm font-bold bg-background focus:outline-none focus:ring-2 focus:ring-primary/30" />
+            <span className="text-sm text-muted-foreground whitespace-nowrap">coins =</span>
           </div>
           {(() => {
             const coins = parseFloat(calcCoins) || 0;
-            const share = parseFloat(settings.host_revenue_share || '0.70');
-            const purchase = parseFloat(settings.coin_purchase_inr || '0.20');
             const Chip = ({ label, value, color }: { label: string; value: string; color: string }) => (
               <div className="flex-1 min-w-[110px] rounded-xl border border-border bg-background px-3 py-2">
                 <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
@@ -243,13 +312,64 @@ export default function SettingsPage() {
             );
             return (
               <div className="flex flex-1 flex-wrap gap-2">
-                <Chip label="User buy value" value={`₹${(coins * purchase).toFixed(2)}`} color="text-green-600" />
-                <Chip label={`Host cash (${Math.round(share * 100)}%)`} value={`₹${(coins * share * coinValueInr).toFixed(2)}`} color="text-amber-600" />
+                <Chip label="User pays" value={`₹${(coins * coinPurchaseInr).toFixed(2)}`} color="text-green-600" />
+                <Chip label={`Host gets (${Math.round(hostShare * 100)}%)`} value={`₹${(coins * hostShare * coinValueInr).toFixed(2)}`} color="text-amber-600" />
                 <Chip label="In USD" value={`$${(coins * coinRate).toFixed(4)}`} color="text-blue-600" />
               </div>
             );
           })()}
         </div>
+
+        {/* INR → Coins */}
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">₹</span>
+            <input type="number" min="0" value={calcInr} onChange={e => setCalcInr(e.target.value)}
+              className="w-28 px-3 py-2 border border-border rounded-xl text-sm font-bold bg-background focus:outline-none focus:ring-2 focus:ring-primary/30" />
+            <span className="text-sm text-muted-foreground whitespace-nowrap">=</span>
+          </div>
+          {(() => {
+            const inr = parseFloat(calcInr) || 0;
+            const Chip = ({ label, value, color }: { label: string; value: string; color: string }) => (
+              <div className="flex-1 min-w-[130px] rounded-xl border border-border bg-background px-3 py-2">
+                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
+                <p className={`font-bold text-base ${color}`}>{value}</p>
+              </div>
+            );
+            return (
+              <div className="flex flex-1 flex-wrap gap-2">
+                <Chip label="Coins user gets" value={`${coinPurchaseInr > 0 ? Math.round(inr / coinPurchaseInr).toLocaleString() : '—'} coins`} color="text-green-600" />
+                <Chip label="Coins for host payout" value={`${coinValueInr > 0 ? Math.round(inr / coinValueInr).toLocaleString() : '—'} coins`} color="text-amber-600" />
+              </div>
+            );
+          })()}
+        </div>
+
+        {/* Quick conversion table */}
+        <div className="rounded-xl border border-border overflow-hidden">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-left text-muted-foreground bg-secondary/40">
+                <th className="py-2 px-3 font-semibold">Coins</th>
+                <th className="py-2 px-3 font-semibold text-green-600">User pays (₹)</th>
+                <th className="py-2 px-3 font-semibold text-amber-600">Host payout (₹)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[10, 50, 100, 500, 1000, 5000].map((c) => (
+                <tr key={c} className="border-t border-border/50">
+                  <td className="py-1.5 px-3 font-semibold">{c.toLocaleString()}</td>
+                  <td className="py-1.5 px-3 text-green-600">₹{(c * coinPurchaseInr).toFixed(2)}</td>
+                  <td className="py-1.5 px-3 text-amber-600">₹{(c * coinValueInr).toFixed(2)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="text-[11px] text-muted-foreground">
+          Updates live as you edit <strong>Coin Purchase Value</strong> (user buys) and <strong>Coin Payout Value</strong> (host redeems) above.
+          The gap between them is the platform's coin spread.
+        </p>
       </div>
 
       {/* Agora cost + per-minute margin preview */}
@@ -257,6 +377,19 @@ export default function SettingsPage() {
 
       {/* Database maintenance */}
       <MigrationsCard />
+
+      {/* Sticky unsaved-changes bar — appears only when there are edits. */}
+      {dirtyCount > 0 && (
+        <div className="sticky bottom-4 flex justify-center z-10">
+          <div className="bg-foreground text-background text-sm px-5 py-3 rounded-full shadow-xl flex items-center gap-3">
+            <span>{dirtyCount} unsaved change{dirtyCount > 1 ? 's' : ''}</span>
+            <button onClick={save} disabled={saving}
+              className="bg-white text-black px-4 py-1.5 rounded-full text-xs font-bold hover:opacity-90 disabled:opacity-50">
+              {saving ? 'Saving…' : 'Save & push live'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -279,7 +412,7 @@ function MarginPreview({ settings, inrRate }: { settings: Record<string, string>
     participants: num('call_participants', 2),
     gatewayPct: num('payment_gateway_fee_pct', 2),
     purchase: num('coin_purchase_inr', 0.20),
-    payout: num('coin_payout_inr', num('coin_value_inr', 0.085)),
+    payout: num('coin_value_inr', num('coin_payout_inr', 0.085)),
     maxShare: Math.min(0.95, num('floor_max_host_share', 0.80)),
     safety: num('call_floor_safety_multiplier', 1.5),
     res: settings.video_max_resolution === '1080p' ? '1080p' : '720p',

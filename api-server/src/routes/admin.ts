@@ -631,6 +631,8 @@ admin.patch('/settings', async (c) => {
   const coinValueChanged = changedKeys.includes('coin_to_usd_rate');
   const callRatesChanged = changedKeys.includes('default_audio_rate') || 
                            changedKeys.includes('default_video_rate') ||
+                           changedKeys.includes('default_video_fhd_rate') ||
+                           changedKeys.includes('min_coins_for_call') ||
                            changedKeys.includes('random_call_audio_rate') ||
                            changedKeys.includes('random_call_video_rate');
   
