@@ -75,13 +75,6 @@
           "photosPermission": "VoxLink needs access to your photos to upload profile pictures and KYC documents.",
           "cameraPermission": "VoxLink needs camera access to take profile photos."
         }
-      ],
-      [
-        "@cloudflare/react-native-webrtc",
-        {
-          "cameraPermission": "VoxLink needs camera access for video calls so the other person can see you.",
-          "microphonePermission": "VoxLink needs microphone access for audio and video calls."
-        }
       ]
     ],
     "assetBundlePatterns": [
