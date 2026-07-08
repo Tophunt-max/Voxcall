@@ -10,6 +10,7 @@ import {
   Dimensions,
   RefreshControl,
   ActivityIndicator,
+  Modal,
   Platform,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
@@ -18,6 +19,7 @@ import { router } from "expo-router";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { useCall } from "@/context/CallContext";
+import { useLanguage } from "@/context/LanguageContext";
 import { API, resolveMediaUrl } from "@/services/api";
 import { showErrorToast } from "@/components/Toast";
 import { InsufficientCoinsPopup } from "@/components/InsufficientCoinsPopup";
@@ -41,6 +43,10 @@ const COUNTRY_TABS: { key: string; label: string; code: string | null }[] = [
   { key: "PK", label: "Pakistan", code: "PK" },
   { key: "US", label: "America", code: "US" },
 ];
+
+// Secondary filters (client-side): host language + what they talk about.
+const LANGUAGES = ["All", "English", "Hindi", "Urdu", "Mandarin", "Spanish", "French", "Arabic"];
+const TOPICS = ["All", "Life Coaching", "Career", "Wellness", "Relationships", "Meditation", "Finance", "Education"];
 
 // Compact fallback name map (covers the India-first audience) — used only when
 // Intl.DisplayNames is unavailable on the runtime.
@@ -77,6 +83,7 @@ function mapApiHost(h: any) {
     coinsPerMinute: Number(h.audio_coins_per_minute ?? h.coins_per_minute) || 1,
     videoCoinsPerMinute: Number(h.video_coins_per_minute ?? h.coins_per_minute) || 1,
     isOnline: !!h.is_online,
+    languages: Array.isArray(h.languages) ? h.languages : (() => { try { return JSON.parse(h.languages || "[]"); } catch { return []; } })(),
     specialties: Array.isArray(h.specialties) ? h.specialties : (() => { try { return JSON.parse(h.specialties || "[]"); } catch { return []; } })(),
     country: (h.country || "").toString().trim(),
   };
@@ -178,15 +185,61 @@ function HostGridCard({ host, colors, onPress, onVideoCall }: { host: UIHost; co
   );
 }
 
+// ─── Language / Talk-about filter chip ───────────────────────────────────────
+function FilterChip({ icon, iconTint, label, active, colors, onPress }: { icon: any; iconTint: string; label: string; active: boolean; colors: Colors; onPress: () => void }) {
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.85}
+      style={[
+        styles.filterChip,
+        { backgroundColor: active ? colors.accentLight : colors.card, borderColor: active ? colors.accentBorder : colors.border },
+      ]}
+    >
+      <Image source={icon} style={styles.filterChipIcon} tintColor={active ? colors.accent : iconTint} resizeMode="contain" />
+      <Text style={[styles.filterChipText, { color: active ? colors.accent : colors.text }]} numberOfLines={1}>{label}</Text>
+      <Image source={require("@/assets/icons/ic_back.png")} style={styles.filterChipArrow} tintColor={colors.mutedForeground} resizeMode="contain" />
+    </TouchableOpacity>
+  );
+}
+
+// ─── Bottom-sheet option picker (themed) ─────────────────────────────────────
+function FilterModal({ visible, title, options, selected, colors, onSelect, onClose }: { visible: boolean; title: string; options: string[]; selected: string; colors: Colors; onSelect: (v: string) => void; onClose: () => void }) {
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={onClose}>
+        <View style={[styles.modalSheet, { backgroundColor: colors.card }]}>
+          <View style={[styles.modalHandle, { backgroundColor: colors.border }]} />
+          <Text style={[styles.modalTitle, { color: colors.text }]}>{title}</Text>
+          {options.map((opt) => {
+            const isSel = selected === opt;
+            return (
+              <TouchableOpacity key={opt} onPress={() => { onSelect(opt); onClose(); }} style={[styles.modalOpt, { borderBottomColor: colors.border }]}>
+                <Text style={[styles.modalOptText, { color: isSel ? colors.accent : colors.text, fontFamily: isSel ? "Poppins_600SemiBold" : "Poppins_400Regular" }]}>{opt}</Text>
+                {isSel && <View style={[styles.modalCheck, { backgroundColor: colors.accent }]} />}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </TouchableOpacity>
+    </Modal>
+  );
+}
+
 export default function SearchScreen() {
   const insets = useSafeAreaInsets();
   const colors = useColors();
+  const { t } = useLanguage();
   const { user } = useAuth();
   const { initiateCall } = useCall();
 
   const [activeTab, setActiveTab] = useState("GLOBAL");
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchText, setSearchText] = useState("");
+  const [selectedLang, setSelectedLang] = useState("All");
+  const [selectedTopic, setSelectedTopic] = useState("All");
+  const [showLangModal, setShowLangModal] = useState(false);
+  const [showTopicModal, setShowTopicModal] = useState(false);
   const [hosts, setHosts] = useState<UIHost[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -234,12 +287,16 @@ export default function SearchScreen() {
   const filtered = useMemo(() => {
     const tab = COUNTRY_TABS.find((t) => t.key === activeTab);
     const q = searchText.trim().toLowerCase();
+    const lang = selectedLang.toLowerCase();
+    const topic = selectedTopic.toLowerCase();
     return hosts.filter((h) => {
       if (tab?.code && h.country.toUpperCase() !== tab.code) return false;
       if (q && !h.name.toLowerCase().includes(q)) return false;
+      if (selectedLang !== "All" && !h.languages.some((l: string) => l.toLowerCase() === lang)) return false;
+      if (selectedTopic !== "All" && !h.specialties.some((s: string) => s.toLowerCase().includes(topic))) return false;
       return true;
     });
-  }, [hosts, activeTab, searchText]);
+  }, [hosts, activeTab, searchText, selectedLang, selectedTopic]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -286,6 +343,26 @@ export default function SearchScreen() {
         </View>
       )}
 
+      {/* Language + Talk-about filters */}
+      <View style={styles.filterRow}>
+        <FilterChip
+          icon={require("@/assets/icons/ic_language.png")}
+          iconTint="#FF8C00"
+          label={selectedLang === "All" ? t.listener.language : selectedLang}
+          active={selectedLang !== "All"}
+          colors={colors}
+          onPress={() => setShowLangModal(true)}
+        />
+        <FilterChip
+          icon={require("@/assets/icons/ic_chat.png")}
+          iconTint="#1499F1"
+          label={selectedTopic === "All" ? t.listener.talkAbout : selectedTopic}
+          active={selectedTopic !== "All"}
+          colors={colors}
+          onPress={() => setShowTopicModal(true)}
+        />
+      </View>
+
       {loading ? (
         <View style={styles.centerWrap}>
           <ActivityIndicator size="large" color={colors.accent} />
@@ -315,6 +392,25 @@ export default function SearchScreen() {
           )}
         />
       )}
+
+      <FilterModal
+        visible={showLangModal}
+        title={t.listener.selectLanguage}
+        options={LANGUAGES}
+        selected={selectedLang}
+        colors={colors}
+        onSelect={setSelectedLang}
+        onClose={() => setShowLangModal(false)}
+      />
+      <FilterModal
+        visible={showTopicModal}
+        title={t.listener.talkAbout}
+        options={TOPICS}
+        selected={selectedTopic}
+        colors={colors}
+        onSelect={setSelectedTopic}
+        onClose={() => setShowTopicModal(false)}
+      />
 
       <InsufficientCoinsPopup
         visible={coinPopup}
@@ -362,6 +458,25 @@ const styles = StyleSheet.create({
   searchInputIcon: { width: 18, height: 18 },
   searchInput: { flex: 1, fontSize: 14, fontFamily: "Poppins_400Regular", padding: 0 },
   searchClear: { fontSize: 16, paddingHorizontal: 4 },
+
+  // Language / Talk-about filter row
+  filterRow: { flexDirection: "row", gap: 10, paddingHorizontal: H_PADDING, paddingBottom: 10 },
+  filterChip: {
+    flex: 1, flexDirection: "row", alignItems: "center", gap: 8,
+    paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12, borderWidth: 1,
+  },
+  filterChipIcon: { width: 18, height: 18 },
+  filterChipText: { flex: 1, fontSize: 13, fontFamily: "Poppins_500Medium" },
+  filterChipArrow: { width: 11, height: 11, transform: [{ rotate: "-90deg" }] },
+
+  // Filter bottom sheet
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
+  modalSheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 20, paddingTop: 12, paddingBottom: 40 },
+  modalHandle: { width: 40, height: 4, borderRadius: 2, alignSelf: "center", marginBottom: 14 },
+  modalTitle: { fontSize: 18, fontFamily: "Poppins_700Bold", marginBottom: 8 },
+  modalOpt: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 14, borderBottomWidth: 1 },
+  modalOptText: { fontSize: 15 },
+  modalCheck: { width: 10, height: 10, borderRadius: 5 },
 
   // Grid card
   card: {
