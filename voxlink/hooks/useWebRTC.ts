@@ -1,4 +1,5 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
+import { Platform } from 'react-native';
 import { AgoraService, isAgoraAvailable } from '@/services/agora';
 import { API } from '@/services/api';
 import { socketService } from '@/services/SocketService';
@@ -84,7 +85,21 @@ export function useWebRTC(options: UseWebRTCOptions): UseWebRTCReturn {
   }, []);
 
   useEffect(() => {
-    if (!enabled || !sessionId || startedRef.current || !available) return;
+    if (!enabled || !sessionId || startedRef.current) return;
+    // The Agora SDK failed to load: on web the agora-rtc-sdk-ng module could
+    // not be initialised (blocked script, ad-blocker, unsupported browser, or
+    // an insecure/non-HTTPS context where WebRTC is disabled); on native the
+    // module is missing from the build (pre-rebuild). Previously this returned
+    // silently, leaving the call stuck on "Connecting…" forever with no error
+    // and no log. Surface it so the user gets feedback and it shows in logs.
+    if (!available) {
+      console.error('[useWebRTC] Agora RTC engine unavailable — cannot start call', {
+        platform: Platform.OS,
+        secureContext: typeof window !== 'undefined' ? (window as any).isSecureContext : undefined,
+      });
+      setError('Calling engine could not start. Please use a supported browser over HTTPS, disable blockers, and refresh.');
+      return;
+    }
     startedRef.current = true;
     setError(null);
 
