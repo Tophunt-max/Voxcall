@@ -75,14 +75,33 @@ export interface AgoraJoinConfig {
 // They only need to be truthy; RtcVideoView renders by uid, not by stream.
 const NATIVE_LOCAL_MARKER = { __agora: true, kind: 'local' as const };
 
-// Cap local video to the Agora HD tier (≤720p) so a call NEVER bills at the
-// pricier Full-HD rate ($8.99 vs $3.99 / 1,000 min). 360×640 is plenty for a
-// 1:1 mobile call and also saves the user's mobile data. To enable a Full-HD
-// premium tier later, raise these AND the FHD coin rate + video_max_resolution.
-const NATIVE_VIDEO_WIDTH = 360;
-const NATIVE_VIDEO_HEIGHT = 640;
-const NATIVE_VIDEO_FPS = 15;
-const WEB_VIDEO_ENCODER = '480p_1'; // agora-rtc-sdk-ng preset, 640×480 (HD tier)
+// ── Adaptive video-quality tiers ─────────────────────────────────────────────
+// Auto-quality steps the local encoder DOWN when the UPLINK is congested (so
+// the call stays smooth instead of freezing) and back UP once it recovers.
+// EVERY tier stays within Agora's HD billing tier (≤720p) so a call NEVER bills
+// at the pricier Full-HD rate ($8.99 vs $3.99 / 1,000 min). Aspect ratio is
+// kept constant per platform so a tier switch never re-frames the picture.
+type QualityTier = 'high' | 'medium' | 'low';
+
+const TIER_RANK: Record<QualityTier, number> = { low: 0, medium: 1, high: 2 };
+
+// Native (react-native-agora) — 9:16 portrait to match a phone selfie.
+const NATIVE_TIERS: Record<QualityTier, { width: number; height: number; frameRate: number; bitrate: number }> = {
+  high:   { width: 360, height: 640, frameRate: 24, bitrate: 800 },
+  medium: { width: 270, height: 480, frameRate: 20, bitrate: 450 },
+  low:    { width: 180, height: 320, frameRate: 15, bitrate: 200 },
+};
+
+// Web (agora-rtc-sdk-ng) — 4:3, typical webcam capture.
+const WEB_TIERS: Record<QualityTier, { width: number; height: number; frameRate: number; bitrateMin: number; bitrateMax: number }> = {
+  high:   { width: 640, height: 480, frameRate: 24, bitrateMin: 350, bitrateMax: 900 },
+  medium: { width: 480, height: 360, frameRate: 20, bitrateMin: 200, bitrateMax: 550 },
+  low:    { width: 320, height: 240, frameRate: 15, bitrateMin: 100, bitrateMax: 280 },
+};
+
+// After ANY tier change, wait this long before UPGRADING again so a single good
+// network sample cannot cause the quality to flap. Downgrades are immediate.
+const QUALITY_UPGRADE_COOLDOWN_MS = 12000;
 
 // If the RTC session has not reached "connected" within this window after the
 // initial join, assume the network is blocking Agora's direct media path and
@@ -155,6 +174,11 @@ export class AgoraService {
   private proxyRetried = false;
   private cameraFailed = false;
   private connectWatchdog: ReturnType<typeof setTimeout> | null = null;
+
+  // Adaptive auto-quality state — starts at the top tier and follows the live
+  // uplink network quality.
+  private currentTier: QualityTier = 'high';
+  private lastTierChangeAt = 0;
 
   constructor(sessionId: string, isVideo: boolean, callbacks: AgoraCallbacks, config: AgoraJoinConfig) {
     this.sessionId = sessionId;
@@ -282,14 +306,19 @@ export class AgoraService {
         console.info('[Agora][native] connection-state:', state, '→', mapped);
         this._emitConnState(mapped);
       },
-      onNetworkQuality: (_conn: any, uid: number, _tx: number, rx: number) => {
+      onNetworkQuality: (_conn: any, uid: number, tx: number, rx: number) => {
         // uid 0 = local user's own uplink/downlink stats.
         if (uid !== 0) return;
+        // Signal bars reflect DOWNLINK (how good the video we RECEIVE is).
         const q = mapQuality(rx);
         if (q !== this.currentQuality && q !== 'unknown') {
           this.currentQuality = q;
           this.callbacks.onQualityChange?.(q);
         }
+        // Auto-quality follows UPLINK (how much WE can send) so we scale our
+        // OWN outgoing video to keep it smooth on a congested uplink.
+        const up = mapQuality(tx);
+        if (up !== 'unknown') this._maybeAdaptQuality(up);
       },
       onError: (err: number, msg: string) => {
         console.error('[Agora][native] error', err, msg ?? '');
@@ -300,15 +329,10 @@ export class AgoraService {
     engine.enableAudio();
     if (this.isVideo) {
       engine.enableVideo();
-      // Cap the local encoder to the HD tier (≤720p) so Agora never bills the
-      // Full-HD rate. OrientationModeAdaptive lets portrait selfies render right.
-      try {
-        engine.setVideoEncoderConfiguration({
-          dimensions: { width: NATIVE_VIDEO_WIDTH, height: NATIVE_VIDEO_HEIGHT },
-          frameRate: NATIVE_VIDEO_FPS,
-          orientationMode: AgoraNative.OrientationMode?.OrientationModeAdaptive,
-        });
-      } catch (e) { console.warn('[Agora] setVideoEncoderConfiguration failed:', e); }
+      // Apply the initial (high) encoder tier. Auto-quality re-encodes live via
+      // _maybeAdaptQuality() as the uplink network quality changes. All tiers
+      // stay within Agora's HD billing tier (≤720p).
+      this._applyVideoTier(this.currentTier);
       engine.startPreview();
       this.callbacks.onLocalVideo?.(true);
     } else {
@@ -341,6 +365,65 @@ export class AgoraService {
       console.warn('[Agora][native] cloud proxy enabled after stalled connection');
     } catch (e) {
       console.warn('[Agora][native] setCloudProxy failed:', e);
+    }
+  }
+
+  // ── Adaptive auto-quality ────────────────────────────────────────────────
+  // Which tier a given uplink quality should map to. 'unknown' keeps the
+  // current tier (no data → no change).
+  private _targetTierFor(uplink: ConnectionQuality): QualityTier {
+    switch (uplink) {
+      case 'excellent':
+      case 'good': return 'high';
+      case 'poor': return 'medium';
+      case 'lost': return 'low';
+      default: return this.currentTier;
+    }
+  }
+
+  // Called on every uplink network-quality sample. Downgrades IMMEDIATELY when
+  // the uplink weakens (react to congestion fast so the picture doesn't freeze)
+  // and upgrades only after a cooldown (so one good sample can't cause flapping).
+  private _maybeAdaptQuality(uplink: ConnectionQuality): void {
+    if (this.destroyed || !this.isVideo || this.localCameraOff) return;
+    const target = this._targetTierFor(uplink);
+    if (target === this.currentTier) return;
+    const now = Date.now();
+    const goingUp = TIER_RANK[target] > TIER_RANK[this.currentTier];
+    if (goingUp && now - this.lastTierChangeAt < QUALITY_UPGRADE_COOLDOWN_MS) return;
+    this.currentTier = target;
+    this.lastTierChangeAt = now;
+    this._applyVideoTier(target);
+  }
+
+  // Re-encode the local video to the given tier (live, mid-call).
+  private _applyVideoTier(tier: QualityTier): void {
+    if (!this.isVideo) return;
+    try {
+      if (Platform.OS === 'web') {
+        if (!this.webLocalVideo) return;
+        const cfg = WEB_TIERS[tier];
+        const p = this.webLocalVideo.setEncoderConfiguration?.(cfg);
+        if (p && typeof p.catch === 'function') {
+          p.catch((e: any) => console.warn('[Agora][web] setEncoderConfiguration failed:', e));
+        }
+        console.info('[Agora][web] video quality →', tier, cfg);
+      } else {
+        if (!this.engine) return;
+        const cfg = NATIVE_TIERS[tier];
+        this.engine.setVideoEncoderConfiguration?.({
+          dimensions: { width: cfg.width, height: cfg.height },
+          frameRate: cfg.frameRate,
+          bitrate: cfg.bitrate,
+          orientationMode: AgoraNative?.OrientationMode?.OrientationModeAdaptive,
+          // Balance resolution vs framerate when Agora itself has to degrade on
+          // top of our tiering.
+          degradationPreference: AgoraNative?.DegradationPreference?.MaintainBalanced,
+        });
+        console.info('[Agora][native] video quality →', tier, cfg);
+      }
+    } catch (e) {
+      console.warn('[Agora] applyVideoTier failed:', e);
     }
   }
 
@@ -402,11 +485,15 @@ export class AgoraService {
     });
 
     client.on('network-quality', (stats: any) => {
+      // Signal bars reflect DOWNLINK (received) quality.
       const q = mapQuality(stats?.downlinkNetworkQuality ?? 0);
       if (q !== this.currentQuality && q !== 'unknown') {
         this.currentQuality = q;
         this.callbacks.onQualityChange?.(q);
       }
+      // Auto-quality follows UPLINK (sent) quality.
+      const up = mapQuality(stats?.uplinkNetworkQuality ?? 0);
+      if (up !== 'unknown') this._maybeAdaptQuality(up);
     });
   }
 
@@ -419,9 +506,10 @@ export class AgoraService {
     }
     if (this.isVideo && !this.webLocalVideo && !this.cameraFailed) {
       try {
-        // encoderConfig caps web capture to the HD tier (≤720p) — same cost
-        // guard as native so browser calls never bill at the Full-HD rate.
-        this.webLocalVideo = await AgoraWeb.createCameraVideoTrack({ encoderConfig: WEB_VIDEO_ENCODER });
+        // Start at the HIGH tier; auto-quality re-encodes live via
+        // _maybeAdaptQuality() based on uplink quality. All tiers stay within
+        // Agora's HD tier (≤720p) so browser calls never bill at Full-HD.
+        this.webLocalVideo = await AgoraWeb.createCameraVideoTrack({ encoderConfig: WEB_TIERS[this.currentTier] });
       } catch (e: any) {
         // Camera busy / blocked / unreadable — continue as an audio-only call
         // instead of stalling forever on "Starting camera…".
