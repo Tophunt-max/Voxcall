@@ -117,7 +117,7 @@ pub.get('/payment-gateways', async (c) => {
   return cachedJson(data);
 });
 
-// GET /api/banners?position=home|wallet — cached: active promotional banners
+// GET /api/banners?position=home|wallet|search — cached: active promotional banners
 pub.get('/banners', async (c) => {
   const position = c.req.query('position') ?? 'all';
   const KEY = `banners:${position}`;
@@ -130,6 +130,8 @@ pub.get('/banners', async (c) => {
     query = "SELECT * FROM banners WHERE active = 1 AND (position LIKE 'home_%' OR position IS NULL OR position = '') ORDER BY created_at DESC LIMIT 10";
   } else if (position === 'wallet') {
     query = "SELECT * FROM banners WHERE active = 1 AND position = 'wallet' ORDER BY created_at DESC LIMIT 10";
+  } else if (position === 'search') {
+    query = "SELECT * FROM banners WHERE active = 1 AND position LIKE 'search%' ORDER BY created_at DESC LIMIT 10";
   } else {
     query = 'SELECT * FROM banners WHERE active = 1 ORDER BY created_at DESC LIMIT 10';
   }
