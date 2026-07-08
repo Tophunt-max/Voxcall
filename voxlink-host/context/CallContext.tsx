@@ -147,6 +147,11 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
   const endCall = useCallback(async (autoEnded = false, reason?: CallEndReason) => {
     const call = activeCallRef.current;
+    // Re-entrancy guard: both the incoming screen and the call screen wire
+    // CALL_END listeners, so a remote hang-up can invoke endCall twice. The
+    // second call (activeCall already null) must be a no-op — otherwise its
+    // fallback navigation could pop the summary screen we just navigated to.
+    if (!call) return;
     const wasActive = !!(call?.startTime);
     let duration = wasActive ? Math.floor((Date.now() - call!.startTime!) / 1000) : 0;
     updateCall(null);
@@ -211,8 +216,8 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
 
     if (call) {
       const endReason: CallEndReason = reason ?? (autoEnded ? "remote" : "user");
-      router.replace({
-        pathname: "/calls/summary",
+      const summaryTarget = {
+        pathname: "/calls/summary" as const,
         params: {
           duration: String(duration),
           type: call.type,
@@ -223,7 +228,19 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           autoEnded: autoEnded ? "1" : "0",
           endReason,
         },
-      });
+      };
+      // FIX (incoming screen reappears after call end): acceptCall pushes the
+      // call screen ON TOP of the incoming modal (push, not replace, to dodge a
+      // web fullScreenModal glitch), so the incoming screen is still on the
+      // stack beneath the call. Dismiss ALL stacked call modals (incoming +
+      // call screen) before showing the summary so the incoming screen can
+      // never re-surface — neither right after end nor when leaving the summary.
+      let dismissed = false;
+      try {
+        if (router.canDismiss?.()) { router.dismissAll(); dismissed = true; }
+      } catch (e) { console.warn('[CallContext] dismissAll before summary failed:', e); }
+      if (dismissed) router.push(summaryTarget);
+      else router.replace(summaryTarget);
     } else {
       try { router.back(); } catch (e) { console.warn('[CallContext] router.back failed:', e); }
     }

@@ -26,19 +26,34 @@ export default function IncomingCallScreen() {
   // Agar status "active" ho gaya (accept hua) to back mat lo — audio/video screen open ho raha hai
   const hasMounted = useRef(false);
   const hadCall = useRef(false);
+  // FIX (incoming screen reappears after call end): track whether this call was
+  // ever ACCEPTED (status → "active"). acceptCall pushes the call screen ON TOP
+  // of this incoming screen (kept as push to avoid a web fullScreenModal
+  // replace() glitch), so this screen stays mounted underneath. When the call
+  // later ends, activeCall goes null and — without this guard — the block below
+  // called router.back(), which popped the call/summary screen and briefly
+  // re-revealed this now-stale incoming screen (with its ringtone). Once the
+  // call has been accepted, the call screen + endCall own navigation (→ summary,
+  // which also dismisses these call modals), so this screen must NOT navigate.
+  const wasAcceptedRef = useRef(false);
   useEffect(() => {
     if (!hasMounted.current) {
       hasMounted.current = true;
       if (activeCall) hadCall.current = true;
+      if (activeCall?.status === "active") wasAcceptedRef.current = true;
       return;
     }
     if (activeCall) {
       hadCall.current = true;
       // Accept hone ke baad status "active" hota hai — yahan kuch mat karo
+      if (activeCall.status === "active") wasAcceptedRef.current = true;
       return;
     }
-    // activeCall null hua — call cancel/decline/end hua
-    if (hadCall.current) {
+    // activeCall null hua — call cancel/decline/end hua.
+    // Sirf tab back lo jab call kabhi accept NAHI hui (abhi ring ho rahi thi →
+    // ye screen stack ke top pe hai). Accept ho chuki thi to endCall summary pe
+    // le jaata hai + call modals dismiss karta hai — yahan back() mat karo.
+    if (hadCall.current && !wasAcceptedRef.current) {
       try { router.back(); } catch (e) { console.warn('[IncomingCall] router.back failed:', e); }
     }
   }, [activeCall]);
