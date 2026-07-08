@@ -404,27 +404,44 @@ function FiltersSheet({
   );
 }
 
-// ─── Full-width Invite Friends promo card ────────────────────────────────────
-// Hardcoded to match the reference design's red-orange gradient banner. Tapping
-// the banner routes to the referral hub so the promo is actionable.
-function InviteFriendsBanner() {
+// ─── Admin-managed banner shape (from `/api/banners?position=search`) ────────
+type Banner = {
+  id: string;
+  title: string;
+  subtitle?: string;
+  image_url?: string;
+  bg_color?: string;
+  cta_text?: string;
+  cta_link?: string;
+};
+
+// Rows for the vertical grid: a "pair" holds up to 2 host cards (a single card
+// on the last odd row); "promo" is the unified admin-managed banner slot
+// injected mid-grid (which falls back to the built-in Invite Friends card).
+type ListRow =
+  | { kind: "pair"; key: string; items: UIHost[] }
+  | { kind: "promo"; key: string };
+
+// ─── Built-in "Invite Friends" fallback slide ────────────────────────────────
+// Rendered inside the promo slider when no admin banner is configured, so the
+// UX always shows a promo and admins can override it any time from the panel.
+function InviteFriendsSlide() {
   return (
     <TouchableOpacity
       activeOpacity={0.9}
       onPress={() => router.push("/user/referral" as any)}
       accessibilityRole="button"
       accessibilityLabel="Invite friends — earn up to 10k coins per invite"
-      style={styles.inviteWrap}
+      style={styles.promoSlide}
     >
       <LinearGradient
         colors={DESIGN.inviteGradient as any}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0.5 }}
-        style={styles.inviteGrad}
+        style={styles.promoGrad}
       >
         <View style={styles.inviteTextCol}>
-          <Text style={styles.inviteTitle}>Invite</Text>
-          <Text style={styles.inviteTitle}>Friends</Text>
+          <Text style={styles.inviteTitle}>Invite Friends</Text>
           <View style={styles.inviteBadge}>
             <Image source={require("@/assets/icons/ic_coin.png")} style={styles.inviteCoinIcon} resizeMode="contain" />
             <Text style={styles.inviteBadgeText}>Up to 10k per invite</Text>
@@ -440,66 +457,16 @@ function InviteFriendsBanner() {
   );
 }
 
-// ─── Admin-managed banner (kept optional, styled to match design) ────────────
-type Banner = {
-  id: string;
-  title: string;
-  subtitle?: string;
-  image_url?: string;
-  bg_color?: string;
-  cta_text?: string;
-  cta_link?: string;
-};
-
-// Rows for the vertical grid: a "pair" holds up to 2 host cards (a single card
-// on the last odd row), "invite" is the hardcoded referral banner, and "admin"
-// is an admin-managed promo strip.
-type ListRow =
-  | { kind: "pair"; key: string; items: UIHost[] }
-  | { kind: "invite"; key: string }
-  | { kind: "admin"; key: string };
-
-function AdminBannerSlider({ banners }: { banners: Banner[] }) {
-  const [activeIdx, setActiveIdx] = useState(0);
-  const listRef = useRef<FlatList<Banner>>(null);
-  const currentIdx = useRef(0);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const goTo = useCallback((idx: number) => {
-    if (!listRef.current || banners.length === 0) return;
-    const safe = Math.max(0, Math.min(idx, banners.length - 1));
-    listRef.current.scrollToIndex({ index: safe, animated: true });
-    currentIdx.current = safe;
-    setActiveIdx(safe);
-  }, [banners.length]);
-
-  const restart = useCallback(() => {
-    if (timerRef.current) clearInterval(timerRef.current);
-    if (banners.length <= 1) return;
-    timerRef.current = setInterval(() => {
-      goTo((currentIdx.current + 1) % banners.length);
-    }, BANNER_AUTO_SLIDE_MS);
-  }, [banners.length, goTo]);
-
-  useEffect(() => {
-    restart();
-    return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [restart]);
-
-  const onMomentumEnd = useCallback((e: any) => {
-    const idx = Math.round(e.nativeEvent.contentOffset.x / BANNER_W);
-    currentIdx.current = idx;
-    setActiveIdx(idx);
-    restart();
-  }, [restart]);
-
-  if (banners.length === 0) return null;
-
-  const renderSlide = ({ item }: { item: Banner }) => (
+// ─── Admin-managed banner slide (title / subtitle / CTA / image / bg) ────────
+function AdminBannerSlide({ item }: { item: Banner }) {
+  const bg = item.bg_color?.trim() || "#8A2BD8";
+  return (
     <TouchableOpacity
       activeOpacity={0.9}
       onPress={() => { if (item.cta_link) router.push(item.cta_link as any); }}
-      style={[styles.adminBanner, { backgroundColor: item.bg_color || "#8A2BD8" }]}
+      accessibilityRole="button"
+      accessibilityLabel={item.title}
+      style={[styles.promoSlide, { backgroundColor: bg }]}
     >
       <View style={styles.adminBannerTextCol}>
         <Text style={styles.adminBannerTitle} numberOfLines={2}>{item.title}</Text>
@@ -515,16 +482,71 @@ function AdminBannerSlider({ banners }: { banners: Banner[] }) {
       ) : null}
     </TouchableOpacity>
   );
+}
+
+// ─── Unified promo slot ──────────────────────────────────────────────────────
+// One slot, one slider. Admin-managed banners come first (in creation order),
+// and the built-in Invite Friends slide is always appended as the last slide
+// so users see the referral offer at least once even when the admin panel is
+// empty. When there is a single slide (admin OR fallback), the pagination
+// dots are hidden and auto-slide disabled.
+function PromoSlider({ banners }: { banners: Banner[] }) {
+  // Total slide count = admin banners + 1 (built-in fallback / invite slide).
+  const total = banners.length + 1;
+
+  const [activeIdx, setActiveIdx] = useState(0);
+  const listRef = useRef<FlatList<number>>(null);
+  const currentIdx = useRef(0);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const goTo = useCallback((idx: number) => {
+    if (!listRef.current || total === 0) return;
+    const safe = Math.max(0, Math.min(idx, total - 1));
+    listRef.current.scrollToIndex({ index: safe, animated: true });
+    currentIdx.current = safe;
+    setActiveIdx(safe);
+  }, [total]);
+
+  const restart = useCallback(() => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    if (total <= 1) return;
+    timerRef.current = setInterval(() => {
+      goTo((currentIdx.current + 1) % total);
+    }, BANNER_AUTO_SLIDE_MS);
+  }, [total, goTo]);
+
+  useEffect(() => {
+    restart();
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [restart]);
+
+  const onMomentumEnd = useCallback((e: any) => {
+    const idx = Math.round(e.nativeEvent.contentOffset.x / BANNER_W);
+    currentIdx.current = idx;
+    setActiveIdx(idx);
+    restart();
+  }, [restart]);
+
+  // `data` is a numeric index array — actual slide content is chosen by
+  // `renderItem` (admin banner if it exists at that index, otherwise the
+  // built-in Invite Friends fallback on the last index).
+  const data = useMemo(() => Array.from({ length: total }, (_, i) => i), [total]);
+
+  const renderSlide = ({ item: idx }: { item: number }) => (
+    <View style={{ width: BANNER_W }}>
+      {idx < banners.length ? <AdminBannerSlide item={banners[idx]} /> : <InviteFriendsSlide />}
+    </View>
+  );
 
   return (
-    <View style={styles.adminBannerWrap}>
+    <View style={styles.promoWrap}>
       <FlatList
         ref={listRef}
-        data={banners}
+        data={data}
         horizontal
         pagingEnabled={Platform.OS !== "web"}
         showsHorizontalScrollIndicator={false}
-        keyExtractor={(b) => b.id}
+        keyExtractor={(i) => `slide-${i}`}
         renderItem={renderSlide}
         onMomentumScrollEnd={onMomentumEnd}
         snapToInterval={BANNER_W}
@@ -535,10 +557,10 @@ function AdminBannerSlider({ banners }: { banners: Banner[] }) {
         }}
         style={{ width: BANNER_W }}
       />
-      {banners.length > 1 && (
+      {total > 1 && (
         <View style={styles.bannerDots}>
-          {banners.map((_, i) => (
-            <TouchableOpacity key={i} onPress={() => goTo(i)} activeOpacity={0.7}>
+          {data.map((i) => (
+            <TouchableOpacity key={i} onPress={() => goTo(i)} activeOpacity={0.7} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
               <View style={[styles.bannerDot, activeIdx === i && styles.bannerDotActive]} />
             </TouchableOpacity>
           ))}
@@ -669,25 +691,20 @@ export default function SearchScreen() {
   }, [hosts, activeCountry, searchText, selectedLang, selectedTopic, activeCategory, favIds]);
 
   // Build the vertical list rows: hosts are chunked into pairs (2 columns) and
-  // the promo banners (built-in Invite + optional admin) are injected as full-
-  // width rows mid-grid.
+  // a SINGLE unified promo row (admin banners + built-in Invite fallback) is
+  // injected mid-grid. The admin panel controls what plays in that slot;
+  // if nothing is configured, the Invite Friends slide is shown by default.
   const rows = useMemo(() => {
     const out: ListRow[] = [];
     for (let i = 0; i < filtered.length; i += 2) {
       out.push({ kind: "pair", key: `pair-${filtered[i].id}`, items: filtered.slice(i, i + 2) });
     }
-    // Insert Invite banner (design) after N host rows; admin banner (if any)
-    // goes 2 rows later so both stay visible without stacking.
     if (out.length > 0) {
       const insertAt = Math.min(BANNER_AFTER_ROWS, out.length);
-      out.splice(insertAt, 0, { kind: "invite", key: "invite-row" });
-      if (banners.length > 0) {
-        const secondAt = Math.min(insertAt + 3, out.length);
-        out.splice(secondAt, 0, { kind: "admin", key: "admin-row" });
-      }
+      out.splice(insertAt, 0, { kind: "promo", key: "promo-row" });
     }
     return out;
-  }, [filtered, banners]);
+  }, [filtered]);
 
   return (
     <LinearGradient
@@ -822,8 +839,7 @@ export default function SearchScreen() {
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
           renderItem={({ item }) => {
-            if (item.kind === "invite") return <InviteFriendsBanner />;
-            if (item.kind === "admin") return <AdminBannerSlider banners={banners} />;
+            if (item.kind === "promo") return <PromoSlider banners={banners} />;
             return (
               <View style={styles.gridRow}>
                 {item.items.map((h) => (
@@ -987,7 +1003,10 @@ const styles = StyleSheet.create({
   // ── Host card ────────────────────────────────────────────────────────────
   card: {
     width: CARD_W,
-    aspectRatio: 0.78, // taller than the current 0.68 → matches the reference proportions
+    // Taller card grid — lower aspect ratio = taller cards. Bumped from 0.78
+    // → 0.72 so photos have more vertical breathing room and the bottom name
+    // overlay is more prominent (closer to the reference proportions).
+    aspectRatio: 0.72,
     borderRadius: 18,
     overflow: "hidden",
     backgroundColor: "#DDE6EF",
@@ -1052,30 +1071,41 @@ const styles = StyleSheet.create({
   },
   cardFlag: { width: 22, height: 16, borderRadius: 3, backgroundColor: "rgba(255,255,255,0.15)" },
 
-  // ── Invite Friends banner ────────────────────────────────────────────────
-  inviteWrap: {
+  // ── Unified promo slot (admin banners + Invite Friends fallback) ─────────
+  // The slot is a horizontally-paged slider; each slide is one full-width
+  // banner card. Height is intentionally compact so it doesn't push the host
+  // grid too far down (~30% shorter than before).
+  promoWrap: {
+    alignItems: "center",
     marginBottom: GRID_GAP,
+  },
+  promoSlide: {
+    width: BANNER_W,
+    minHeight: 108,
     borderRadius: 18,
     overflow: "hidden",
     ...Platform.select({
-      ios: { shadowColor: "#E43535", shadowOpacity: 0.35, shadowRadius: 14, shadowOffset: { width: 0, height: 6 } },
-      android: { elevation: 6 },
-      web: { boxShadow: "0 6px 16px rgba(228,53,53,0.30)" } as any,
+      ios: { shadowColor: "#0B1A2B", shadowOpacity: 0.14, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } },
+      android: { elevation: 4 },
+      web: { boxShadow: "0 4px 12px rgba(11,26,43,0.18)" } as any,
     }),
   },
-  inviteGrad: {
-    minHeight: 130,
+  promoGrad: {
+    flex: 1,
+    minHeight: 108,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingLeft: 20,
-    paddingRight: 10,
-    paddingVertical: 16,
+    paddingLeft: 18,
+    paddingRight: 8,
+    paddingVertical: 12,
   },
+
+  // Invite Friends (built-in fallback slide) text + image
   inviteTextCol: { flex: 1, gap: 2 },
   inviteTitle: {
-    fontSize: 30,
-    lineHeight: 34,
+    fontSize: 24,
+    lineHeight: 28,
     fontFamily: "Poppins_700Bold",
     color: "#fff",
     textShadowColor: "rgba(0,0,0,0.25)",
@@ -1083,46 +1113,44 @@ const styles = StyleSheet.create({
     textShadowRadius: 4,
   },
   inviteBadge: {
-    marginTop: 10,
+    marginTop: 6,
     alignSelf: "flex-start",
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 22,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 20,
     backgroundColor: "rgba(0,0,0,0.28)",
   },
-  inviteCoinIcon: { width: 16, height: 16 },
-  inviteBadgeText: { color: "#fff", fontSize: 12, fontFamily: "Poppins_600SemiBold" },
-  inviteImage: { width: 130, height: 130, marginLeft: 6 },
+  inviteCoinIcon: { width: 14, height: 14 },
+  inviteBadgeText: { color: "#fff", fontSize: 11.5, fontFamily: "Poppins_600SemiBold" },
+  inviteImage: { width: 88, height: 88, marginLeft: 4 },
 
-  // ── Admin banner (optional) ──────────────────────────────────────────────
-  adminBannerWrap: { alignItems: "center", marginBottom: GRID_GAP },
-  adminBanner: {
-    width: BANNER_W,
-    borderRadius: 18,
-    padding: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    overflow: "hidden",
-    minHeight: 110,
+  // Admin banner slide text + image
+  adminBannerTextCol: {
+    flex: 1,
+    gap: 4,
+    paddingVertical: 12,
+    paddingLeft: 16,
+    paddingRight: 8,
+    justifyContent: "center",
   },
-  adminBannerTextCol: { flex: 1, gap: 6 },
-  adminBannerTitle: { fontSize: 18, fontFamily: "Poppins_700Bold", color: "#fff" },
-  adminBannerSub: { fontSize: 12, fontFamily: "Poppins_400Regular", color: "rgba(255,255,255,0.85)" },
+  adminBannerTitle: { fontSize: 16, lineHeight: 20, fontFamily: "Poppins_700Bold", color: "#fff" },
+  adminBannerSub: { fontSize: 11.5, lineHeight: 15, fontFamily: "Poppins_400Regular", color: "rgba(255,255,255,0.9)" },
   adminBannerCta: {
     alignSelf: "flex-start",
     backgroundColor: "rgba(255,255,255,0.25)",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 18,
     marginTop: 4,
   },
-  adminBannerCtaText: { fontSize: 12, fontFamily: "Poppins_600SemiBold", color: "#fff" },
-  adminBannerImage: { width: 80, height: 80, marginLeft: 10 },
-  bannerDots: { flexDirection: "row", justifyContent: "center", gap: 6, marginTop: 10 },
+  adminBannerCtaText: { fontSize: 11, fontFamily: "Poppins_600SemiBold", color: "#fff" },
+  adminBannerImage: { width: 76, height: 76, marginRight: 8 },
+
+  // Pagination dots under the slider
+  bannerDots: { flexDirection: "row", justifyContent: "center", gap: 6, marginTop: 8 },
   bannerDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "rgba(0,0,0,0.15)" },
   bannerDotActive: { width: 20, borderRadius: 3, backgroundColor: DESIGN.categoryUnderline },
 
