@@ -858,7 +858,19 @@ export default function VideoCallScreen() {
           {webrtc.error && !showLowCoinWarning && (
             <View style={styles.warningBanner}>
               <SvgIcon name="wifi-off" size={13} color="#FF6B6B" />
-              <Text style={styles.warningText}>{t.videoCallScreen.connectionIssue}</Text>
+              {/* FIX: surface the ACTUAL failure reason (camera busy, network
+                  blocked, service unavailable, …) instead of a generic
+                  "Connection issue" so hosts and support can tell calls apart. */}
+              <Text style={styles.warningText} numberOfLines={2}>{webrtc.error || t.videoCallScreen.connectionIssue}</Text>
+            </View>
+          )}
+
+          {/* Non-fatal status: shown while the Agora Cloud Proxy fallback
+              re-establishes a stalled connection on restrictive networks. */}
+          {!webrtc.error && webrtc.notice && !showLowCoinWarning && (
+            <View style={styles.warningBanner}>
+              <SvgIcon name="alert-triangle" size={13} color="#FFD166" />
+              <Text style={styles.warningText} numberOfLines={2}>{webrtc.notice}</Text>
             </View>
           )}
 

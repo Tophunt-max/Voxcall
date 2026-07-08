@@ -26,6 +26,10 @@ export interface UseWebRTCReturn {
   isConnected: boolean;
   isAvailable: boolean;
   error: string | null;
+  // Transient, non-fatal status (e.g. "Weak connection — reconnecting…" while
+  // the Agora Cloud Proxy fallback kicks in). Cleared automatically once the
+  // call connects. Unlike `error`, this never triggers the auto-end paths.
+  notice: string | null;
   provider: RtcProvider;
   // Agora native render target: the remote user's uid (rendered via
   // <RtcVideoView>). Null until a remote participant joins. On web this stays
@@ -58,6 +62,7 @@ export function useWebRTC(options: UseWebRTCOptions): UseWebRTCReturn {
   const [connectionState, setConnectionState] = useState('new');
   const [connectionQuality, setConnectionQuality] = useState<string>('unknown');
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const serviceRef = useRef<AgoraService | null>(null);
   const startedRef = useRef(false);
 
@@ -82,6 +87,7 @@ export function useWebRTC(options: UseWebRTCOptions): UseWebRTCReturn {
     setRemoteMuted(false);
     setConnectionState('closed');
     setConnectionQuality('unknown');
+    setNotice(null);
   }, []);
 
   useEffect(() => {
@@ -107,7 +113,12 @@ export function useWebRTC(options: UseWebRTCOptions): UseWebRTCReturn {
 
     const callbacks = {
       onRemoteStream: (stream: any) => { if (!cancelled) setRemoteStream(stream); },
-      onConnectionStateChange: (state: string) => { if (!cancelled) setConnectionState(state); },
+      onConnectionStateChange: (state: string) => {
+        if (cancelled) return;
+        setConnectionState(state);
+        // Once we actually connect, drop any transient "reconnecting" notice.
+        if (state === 'connected') setNotice(null);
+      },
       onError: (err: Error) => {
         if (cancelled) return;
         setError(err.message);
@@ -118,6 +129,9 @@ export function useWebRTC(options: UseWebRTCOptions): UseWebRTCReturn {
       onRemoteAudioMuted: (muted: boolean) => { if (!cancelled) setRemoteMuted(muted); },
       onLocalVideo: (has: boolean) => { if (!cancelled) setLocalHasVideoSig(has); },
       onRemoteUid: (uid: number | null) => { if (!cancelled) setAgoraRemoteUid(uid); },
+      // Direct media path stalled → Agora Cloud Proxy fallback engaged. Surface
+      // a gentle, non-fatal notice while it reconnects.
+      onProxyRetry: () => { if (!cancelled) setNotice('Weak connection — reconnecting…'); },
     };
 
     (async () => {
@@ -212,6 +226,7 @@ export function useWebRTC(options: UseWebRTCOptions): UseWebRTCReturn {
     isConnected: connectionState === 'connected',
     isAvailable: available,
     error,
+    notice,
     provider,
     agoraRemoteUid,
     toggleMute,
