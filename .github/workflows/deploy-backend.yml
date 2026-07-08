@@ -1,5 +1,24 @@
 name: Deploy Backend (Cloudflare Workers)
 
+# Deploys the api-server Worker (voxlink-api), applies D1 migrations against the
+# production database, and syncs runtime secrets — including the Agora RTC
+# credentials that power all audio/video calls.
+#
+# AGORA MIGRATION NOTE: calls run exclusively on Agora RTC now. The Cloudflare
+# Realtime SFU + TURN path was removed, so this workflow no longer sets the
+# obsolete CF_CALLS_APP_ID / CF_CALLS_APP_SECRET / TURN_KEY_ID / TURN_KEY_TOKEN
+# secrets. Instead it sets AGORA_APP_ID + AGORA_APP_CERTIFICATE, which the
+# backend uses to mint per-call join tokens at GET /api/calls/:id/agora-token.
+#
+# Required GitHub secrets / variables (Settings -> Secrets and variables):
+#   - secrets.CLOUDFLARE_API_TOKEN     Workers + D1 + Pages: Edit scope.
+#   - secrets.AGORA_APP_ID             Agora project App ID (required for calls).
+#   - secrets.AGORA_APP_CERTIFICATE    Agora primary certificate (signs tokens).
+#   - secrets.JWT_SECRET               JWT signing secret.
+#   - secrets.FIREBASE_SERVICE_ACCOUNT Firebase service-account JSON (FCM v1).
+# Secrets are only pushed when present, so a partially-configured repo still
+# deploys the Worker code without wiping existing secrets.
+
 on:
   push:
     branches:
@@ -7,10 +26,13 @@ on:
     paths:
       - 'api-server/**'
       - 'pnpm-lock.yaml'
-      - 'package.json'
       - 'pnpm-workspace.yaml'
       - '.github/workflows/deploy-backend.yml'
   workflow_dispatch:
+
+concurrency:
+  group: deploy-backend
+  cancel-in-progress: false
 
 jobs:
   deploy:
@@ -18,11 +40,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      CF_CALLS_SECRET: ${{ secrets.CF_CALLS_APP_SECRET }}
-      CF_CALLS_APP_ID_VALUE: ${{ secrets.CF_CALLS_APP_ID || vars.CF_CALLS_APP_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      AGORA_APP_ID_VALUE: ${{ secrets.AGORA_APP_ID }}
+      AGORA_APP_CERTIFICATE_VALUE: ${{ secrets.AGORA_APP_CERTIFICATE }}
       JWT_SECRET_VALUE: ${{ secrets.JWT_SECRET }}
-      TURN_KEY_ID_VALUE: ${{ secrets.TURN_KEY_ID }}
-      TURN_KEY_TOKEN_VALUE: ${{ secrets.TURN_KEY_TOKEN }}
+      FIREBASE_SERVICE_ACCOUNT_VALUE: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
 
     steps:
       - name: Checkout code
@@ -30,75 +52,58 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        # Read pnpm version from `packageManager` in root package.json.
-        # Specifying `version` here AND in package.json makes
-        # pnpm/action-setup@v4 refuse to install with
-        # `ERR_PNPM_BAD_PM_VERSION`. Removing the inline `with: version`
-        # makes packageManager the single source of truth.
+        # Version comes from `packageManager` in root package.json.
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'pnpm'
 
       - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --frozen-lockfile --filter '@workspace/api-server...'
 
-      - name: Apply D1 Migrations
+      - name: Apply D1 migrations (production)
         working-directory: api-server
-        # FIX #8: `--remote` targets the PRODUCTION D1 database. Without it,
-        # `wrangler d1 migrations apply` runs against the LOCAL dev DB and the
-        # production schema silently drifts (the root cause the runtime
-        # ensureUsersSchema hack was papering over).
+        # --remote targets the PRODUCTION D1 database. Without it, migrations
+        # run against the local dev DB and prod schema silently drifts. The
+        # Worker also self-applies pending migrations on cold start (autoMigrate)
+        # as a safety net if this step is skipped or hits a transient error.
         run: pnpm exec wrangler d1 migrations apply voxlink-db --remote
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
-      - name: Deploy to Cloudflare Workers
+      - name: Deploy Worker
         working-directory: api-server
         run: pnpm exec wrangler deploy
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
-      - name: Set JWT_SECRET on Worker
+      # ── Runtime secrets (only pushed when the GitHub secret is present) ──────
+      - name: Set AGORA_APP_ID
+        if: ${{ env.AGORA_APP_ID_VALUE != '' }}
+        working-directory: api-server
+        run: printf '%s' "$AGORA_APP_ID_VALUE" | pnpm exec wrangler secret put AGORA_APP_ID
+
+      - name: Set AGORA_APP_CERTIFICATE
+        if: ${{ env.AGORA_APP_CERTIFICATE_VALUE != '' }}
+        working-directory: api-server
+        run: printf '%s' "$AGORA_APP_CERTIFICATE_VALUE" | pnpm exec wrangler secret put AGORA_APP_CERTIFICATE
+
+      - name: Set JWT_SECRET
         if: ${{ env.JWT_SECRET_VALUE != '' }}
         working-directory: api-server
         run: printf '%s' "$JWT_SECRET_VALUE" | pnpm exec wrangler secret put JWT_SECRET
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
-      - name: Set CF_CALLS_APP_SECRET on Worker
-        if: ${{ env.CF_CALLS_SECRET != '' }}
+      - name: Set FIREBASE_SERVICE_ACCOUNT
+        if: ${{ env.FIREBASE_SERVICE_ACCOUNT_VALUE != '' }}
         working-directory: api-server
-        run: printf '%s' "$CF_CALLS_SECRET" | pnpm exec wrangler secret put CF_CALLS_APP_SECRET
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: printf '%s' "$FIREBASE_SERVICE_ACCOUNT_VALUE" | pnpm exec wrangler secret put FIREBASE_SERVICE_ACCOUNT
 
-      # The SFU App ID pairs with the App Secret above. Previously this was NOT
-      # wired, so even with the secret set the Worker stayed unconfigured
-      # ("CF Calls not configured"). Set it from secrets.CF_CALLS_APP_ID or the
-      # vars.CF_CALLS_APP_ID repository variable.
-      - name: Set CF_CALLS_APP_ID on Worker
-        if: ${{ env.CF_CALLS_APP_ID_VALUE != '' }}
-        working-directory: api-server
-        run: printf '%s' "$CF_CALLS_APP_ID_VALUE" | pnpm exec wrangler secret put CF_CALLS_APP_ID
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-
-      # Cloudflare Realtime TURN credentials. Optional — when present,
-      # /api/calls/ice-config mints short-lived TURN credentials so clients on
-      # UDP-blocked networks can still reach the SFU.
-      - name: Set TURN_KEY_ID on Worker
-        if: ${{ env.TURN_KEY_ID_VALUE != '' }}
-        working-directory: api-server
-        run: printf '%s' "$TURN_KEY_ID_VALUE" | pnpm exec wrangler secret put TURN_KEY_ID
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-
-      - name: Set TURN_KEY_TOKEN on Worker
-        if: ${{ env.TURN_KEY_TOKEN_VALUE != '' }}
-        working-directory: api-server
-        run: printf '%s' "$TURN_KEY_TOKEN_VALUE" | pnpm exec wrangler secret put TURN_KEY_TOKEN
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      - name: Verify Agora configuration
+        # Post-deploy sanity check: the unauthenticated diagnostic endpoint
+        # reports whether the Worker has the Agora credentials set. Non-fatal —
+        # logs a warning so a missing-secret misconfig is visible in the run.
+        run: |
+          echo "Checking calls config status..."
+          STATUS=$(curl -s -m 20 https://voxlink-api.ssunilkumarmohanta3.workers.dev/api/calls-config-status || echo '{}')
+          echo "$STATUS"
+          echo "$STATUS" | grep -q '"calling_ready":true' \
+            && echo "::notice::Agora is configured — calling is ready." \
+            || echo "::warning::Agora not fully configured. Set AGORA_APP_ID + AGORA_APP_CERTIFICATE repo secrets."
