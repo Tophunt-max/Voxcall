@@ -1,0 +1,83 @@
+name: Deploy Web App (Cloudflare Pages)
+
+# CI for the Cloudflare Pages deployment of the USER web app (voxlink →
+# voxcall.pages.dev).
+#
+# WHY THIS EXISTS: the backend, admin panel, and mobile apps all had deploy
+# automation, but the user web app did NOT. After the calling system was
+# migrated from Cloudflare Realtime (WebRTC + /api/calls/ice-config) to Agora
+# RTC, the backend was redeployed but the web bundle was never rebuilt — so the
+# live site kept shipping the OLD Cloudflare client, which called the now-removed
+# /api/calls/ice-config endpoint (404) and could never connect a call. This
+# workflow keeps the web frontend in lock-step with the backend so that class
+# of drift cannot happen again.
+#
+# Required GitHub secrets / variables (Settings → Secrets and variables):
+#   - secrets.CLOUDFLARE_API_TOKEN  Workers + Pages: Edit scope (same token the
+#     admin-panel + backend workflows use).
+#   - vars.CF_ACCOUNT_ID            Cloudflare account ID.
+#   - vars.EXPO_PUBLIC_API_URL      (optional) API base URL. Defaults in code to
+#     the production Worker URL, so this is only needed to override it.
+#   - vars.EXPO_PUBLIC_SITE_URL     (optional) public site origin used by
+#     expo-router (defaults to https://voxcall.pages.dev/).
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'voxlink/**'
+      - 'lib/**'
+      - 'packages/**'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - '.github/workflows/deploy-web.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Build & Deploy to Cloudflare Pages
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      deployments: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        # pnpm version comes from `packageManager` in root package.json — do not
+        # also pin it here (pnpm/action-setup@v4 errors with ERR_PNPM_BAD_PM_VERSION).
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Web App
+        working-directory: voxlink
+        # `pnpm build` = expo export --platform web --output-dir static-build.
+        # EXPO_PUBLIC_* are baked into the static bundle at build time. Both have
+        # safe in-code defaults (production Worker URL + voxcall.pages.dev), so
+        # the vars below only override when explicitly set in repo settings.
+        run: pnpm build
+        env:
+          NODE_ENV: production
+          EXPO_PUBLIC_API_URL: ${{ vars.EXPO_PUBLIC_API_URL }}
+          EXPO_PUBLIC_SITE_URL: ${{ vars.EXPO_PUBLIC_SITE_URL }}
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ vars.CF_ACCOUNT_ID }}
+          # --branch=main marks this a PRODUCTION deployment (voxcall.pages.dev).
+          # project-name must match the existing Cloudflare Pages project.
+          command: pages deploy voxlink/static-build --project-name=voxcall --branch=main
