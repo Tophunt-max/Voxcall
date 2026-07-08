@@ -252,7 +252,10 @@ host.get('/', async (c) => {
   const config = await getLevelConfig(c.env.DB);
   const rb = rankBoostCase(config);
 
-  let query = `SELECT h.*, u.name, u.avatar_url, u.gender, u.bio FROM hosts h
+  // FIX (search screen): also select u.country so the client can show the
+  // host's country flag + name on the grid cards. It lives on the users table
+  // (populated from CF-IPCountry), so h.* does not include it — add it explicitly.
+  let query = `SELECT h.*, u.name, u.avatar_url, u.gender, u.bio, u.country FROM hosts h
     JOIN users u ON u.id = h.user_id WHERE h.is_active = 1`;
   const params: any[] = [];
 

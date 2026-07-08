@@ -1,196 +1,207 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   TouchableOpacity,
   Image,
   FlatList,
-  Modal,
-  Platform,
+  TextInput,
+  Dimensions,
   RefreshControl,
   ActivityIndicator,
 } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
-import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { useCall } from "@/context/CallContext";
-import { useLanguage } from "@/context/LanguageContext";
 import { API, resolveMediaUrl } from "@/services/api";
 import { showErrorToast } from "@/components/Toast";
 import { InsufficientCoinsPopup } from "@/components/InsufficientCoinsPopup";
+
+// ─── Dark palette (this screen is intentionally a fixed dark "discover" view,
+// independent of the app light theme — mirrors the reference design). ─────────
+const BG_TOP = "#3A2A63";
+const BG_BOTTOM = "#140F29";
+const CARD_BG = "#2A2048";
+const CARD_BORDER = "rgba(255,255,255,0.08)";
+const TEXT = "#FFFFFF";
+const MUTED = "rgba(255,255,255,0.65)";
+const LIVE_GREEN = "#22C55E";
+const OFFLINE_RED = "#EF4444";
+
+const SCREEN_W = Dimensions.get("window").width;
+const H_PADDING = 14;
+const GRID_GAP = 12;
+const CARD_W = (SCREEN_W - H_PADDING * 2 - GRID_GAP) / 2;
+
+// Region filter tabs. `code` is the ISO alpha-2 matched against the host's
+// country; GLOBAL means no filter. India-first ordering.
+const COUNTRY_TABS: { key: string; label: string; code: string | null }[] = [
+  { key: "GLOBAL", label: "Global", code: null },
+  { key: "IN", label: "India", code: "IN" },
+  { key: "PK", label: "Pakistan", code: "PK" },
+  { key: "US", label: "America", code: "US" },
+];
+
+// Compact fallback name map (covers the India-first audience) — used only when
+// Intl.DisplayNames is unavailable on the runtime.
+const COUNTRY_NAMES: Record<string, string> = {
+  IN: "India", PK: "Pakistan", US: "United States", GB: "United Kingdom",
+  AE: "UAE", SA: "Saudi Arabia", BD: "Bangladesh", NP: "Nepal", LK: "Sri Lanka",
+  RU: "Russia", FR: "France", ES: "Spain", CN: "China", PH: "Philippines",
+  ID: "Indonesia", NG: "Nigeria", EG: "Egypt", TR: "Turkey", CA: "Canada",
+  AU: "Australia", DE: "Germany", IT: "Italy", BR: "Brazil", MY: "Malaysia",
+};
+
+function countryName(code?: string): string {
+  if (!code) return "";
+  const cc = code.trim().toUpperCase();
+  try {
+    const dn = new (Intl as any).DisplayNames(["en"], { type: "region" });
+    const n = dn?.of?.(cc);
+    if (n && n !== cc) return n;
+  } catch { /* Intl.DisplayNames unavailable — fall through */ }
+  return COUNTRY_NAMES[cc] ?? cc;
+}
+
+// flagcdn provides reliable flag IMAGES on every platform. (Emoji flags do NOT
+// render on most Android devices, so images are the safe choice.)
+function flagUrl(code: string, w: 40 | 80 = 40): string {
+  return `https://flagcdn.com/w${w}/${code.trim().toLowerCase()}.png`;
+}
 
 function mapApiHost(h: any) {
   return {
     id: h.id,
     name: h.display_name || h.name || "Host",
     avatar: resolveMediaUrl(h.avatar_url) || `https://api.dicebear.com/7.x/avataaars/png?seed=${h.id}`,
-    bio: h.bio || "",
-    rating: Number(h.rating) || 0,
-    reviewCount: Number(h.review_count) || 0,
-    languages: Array.isArray(h.languages) ? h.languages : (() => { try { return JSON.parse(h.languages || "[]"); } catch { return []; } })(),
-    specialties: Array.isArray(h.specialties) ? h.specialties : (() => { try { return JSON.parse(h.specialties || "[]"); } catch { return []; } })(),
-    coinsPerMinute: Number(h.coins_per_minute) || 1,
-    totalMinutes: Number(h.total_minutes) || 0,
+    coinsPerMinute: Number(h.audio_coins_per_minute ?? h.coins_per_minute) || 1,
+    videoCoinsPerMinute: Number(h.video_coins_per_minute ?? h.coins_per_minute) || 1,
     isOnline: !!h.is_online,
-    isTopRated: !!h.is_top_rated,
-    gender: h.gender || "male",
-    country: h.country || "",
+    specialties: Array.isArray(h.specialties) ? h.specialties : (() => { try { return JSON.parse(h.specialties || "[]"); } catch { return []; } })(),
+    country: (h.country || "").toString().trim(),
   };
 }
+type UIHost = ReturnType<typeof mapApiHost>;
 
-const LIGHT_PURPLE = "#F3E4FF";
-const ACCENT = "#A00EE7";
-const DARK = "#111329";
-const GREY = "#757396";
-
-const LANGUAGES = ["All", "English", "Mandarin", "Hindi", "Spanish", "French", "Arabic"];
-const TOPICS = ["All", "Life Coaching", "Career", "Wellness", "Relationships", "Meditation", "Finance", "Education"];
-
-function StatusBadge({ isOnline }: { isOnline: boolean }) {
-  const { t: tr } = useLanguage();
+// ─── Live / Offline status pill (top-right of each card) ─────────────────────
+function StatusPill({ online }: { online: boolean }) {
   return (
-    <View style={[styles.statusBadge, { backgroundColor: isOnline ? "#E6F9EA" : "#F2F2F2" }]}>
-      <View style={[styles.statusDot, { backgroundColor: isOnline ? "#0BAF23" : "#A9A9A9" }]} />
-      <Text style={[styles.statusText, { color: isOnline ? "#0BAF23" : "#A9A9A9" }]}>
-        {isOnline ? tr.listener.available : tr.listener.offline}
+    <View style={styles.statusPill}>
+      {online ? (
+        <View style={styles.bars}>
+          {[6, 9, 12].map((h, i) => (
+            <View key={i} style={[styles.bar, { height: h, backgroundColor: LIVE_GREEN }]} />
+          ))}
+        </View>
+      ) : (
+        <View style={[styles.statusDot, { backgroundColor: OFFLINE_RED }]} />
+      )}
+      <Text style={[styles.statusText, { color: online ? LIVE_GREEN : "rgba(255,255,255,0.85)" }]}>
+        {online ? "Live" : "Offline"}
       </Text>
     </View>
   );
 }
 
-function ListenerCard({ host, onPress, onAudioCall, onVideoCall }: { host: ReturnType<typeof mapApiHost>; onPress: () => void; onAudioCall?: () => void; onVideoCall?: () => void }) {
-  const colors = useColors();
-  const { t: tr } = useLanguage();
+// ─── Country tab pill ────────────────────────────────────────────────────────
+function CountryTab({ tab, active, onPress }: { tab: typeof COUNTRY_TABS[number]; active: boolean; onPress: () => void }) {
+  const inner = (
+    <View style={styles.tabInner}>
+      {tab.code ? (
+        <Image source={{ uri: flagUrl(tab.code, 80) }} style={styles.tabFlag} resizeMode="cover" />
+      ) : (
+        <Text style={styles.tabGlobe}>🌐</Text>
+      )}
+      <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>{tab.label}</Text>
+    </View>
+  );
   return (
-    <TouchableOpacity style={[styles.card, { backgroundColor: colors.card }]} onPress={onPress} activeOpacity={0.88}>
-      <View style={styles.cardContent}>
-        <View style={[styles.avatarWrap, { backgroundColor: colors.muted }]}>
-          <Image
-            source={{ uri: host.avatar }}
-            style={styles.avatar}
-            resizeMode="cover"
-          />
-        </View>
-        <View style={styles.info}>
-          <View style={styles.nameRow}>
-            <Text style={[styles.name, { color: colors.text }]} numberOfLines={1}>{host.name}</Text>
-            <StatusBadge isOnline={host.isOnline} />
-          </View>
-          <View style={styles.langRow}>
-            <Image source={require("@/assets/icons/ic_language.png")} style={styles.smallIcon} tintColor={colors.mutedForeground} resizeMode="contain" />
-            <Text style={[styles.langText, { color: colors.mutedForeground }]}>{host.languages.join(", ")}</Text>
-          </View>
-          <View style={styles.topicsRow}>
-            {host.specialties.slice(0, 2).map((t: string) => (
-              <View key={t} style={styles.topicChip}>
-                <Text style={styles.topicChipText} numberOfLines={1}>{t}</Text>
-              </View>
-            ))}
-          </View>
-          <View style={styles.statsRow}>
-            <Image source={require("@/assets/icons/ic_coin.png")} style={styles.coinIcon} resizeMode="contain" />
-            <Text style={styles.coinText}>{host.coinsPerMinute}{tr.listener.perMin}</Text>
-            <View style={styles.callCountWrap}>
-              <Image source={require("@/assets/icons/ic_call.png")} style={styles.smallIcon} tintColor={colors.mutedForeground} resizeMode="contain" />
-              <Text style={[styles.callCountText, { color: colors.mutedForeground }]}>{(host.totalMinutes / 60).toFixed(0)} {tr.listener.hrs}</Text>
+    <TouchableOpacity onPress={onPress} activeOpacity={0.85} style={styles.tabTouch}>
+      {active ? (
+        <LinearGradient
+          colors={["#F250C9", "#8A3FE8"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={styles.tabActive}
+        >
+          {inner}
+        </LinearGradient>
+      ) : (
+        <View style={styles.tabIdle}>{inner}</View>
+      )}
+    </TouchableOpacity>
+  );
+}
+
+// ─── Host grid card ──────────────────────────────────────────────────────────
+function HostGridCard({ host, onPress, onVideoCall }: { host: UIHost; onPress: () => void; onVideoCall: () => void }) {
+  return (
+    <TouchableOpacity style={styles.card} activeOpacity={0.9} onPress={onPress}>
+      <Image source={{ uri: host.avatar }} style={styles.cardAvatar} resizeMode="cover" />
+      <LinearGradient
+        colors={["transparent", "rgba(10,6,24,0.15)", "rgba(10,6,24,0.92)"]}
+        style={styles.cardOverlay}
+        pointerEvents="none"
+      />
+
+      <StatusPill online={host.isOnline} />
+
+      <View style={styles.cardBottom} pointerEvents="box-none">
+        <View style={styles.cardTextCol}>
+          <Text style={styles.cardName} numberOfLines={1}>{host.name}</Text>
+          {host.country ? (
+            <View style={styles.cardCountryRow}>
+              <Image source={{ uri: flagUrl(host.country, 40) }} style={styles.cardFlag} resizeMode="cover" />
+              <Text style={styles.cardCountry} numberOfLines={1}>{countryName(host.country)}</Text>
             </View>
-          </View>
+          ) : null}
         </View>
-      </View>
-      <View style={[styles.cardActions, { borderTopColor: colors.border }]}>
-        <TouchableOpacity onPress={onPress} style={styles.viewProfileBtn}>
-          <Text style={[styles.viewProfileText, { color: colors.mutedForeground }]}>{tr.hosts.viewProfile}</Text>
+
+        <TouchableOpacity
+          onPress={onVideoCall}
+          style={styles.videoBtn}
+          activeOpacity={0.85}
+          accessibilityRole="button"
+          accessibilityLabel={`Video call ${host.name}`}
+        >
+          <Image source={require("@/assets/icons/ic_video.png")} style={styles.videoIcon} tintColor="#fff" resizeMode="contain" />
         </TouchableOpacity>
-        {host.isOnline && (
-          <View style={[styles.callBtnsRow, { borderLeftColor: colors.border }]}>
-            <TouchableOpacity onPress={onAudioCall} style={styles.audioCallBtn}>
-              <Image source={require("@/assets/icons/ic_call.png")} style={styles.talkNowIcon} tintColor="#fff" resizeMode="contain" />
-              <Text style={styles.callBtnTxt}>{tr.listener.audio}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={onVideoCall} style={styles.videoCallBtn}>
-              <Image source={require("@/assets/icons/ic_video.png")} style={styles.talkNowIcon} tintColor="#fff" resizeMode="contain" />
-              <Text style={styles.callBtnTxt}>{tr.listener.video}</Text>
-            </TouchableOpacity>
-          </View>
-        )}
       </View>
     </TouchableOpacity>
   );
 }
 
-function FilterModal({ title, options, selected, onSelect, onClose, visible }: { title: string; options: string[]; selected: string; onSelect: (v: string) => void; onClose: () => void; visible: boolean }) {
-  const colors = useColors();
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={onClose}>
-        <View style={[styles.modalSheet, { backgroundColor: colors.card }]}>
-          <Text style={[styles.modalTitle, { color: colors.text }]}>{title}</Text>
-          {options.map((opt) => (
-            <TouchableOpacity key={opt} onPress={() => { onSelect(opt); onClose(); }} style={[styles.modalOpt, { borderBottomColor: colors.border }]}>
-              <Text style={[styles.modalOptText, { color: colors.text }, selected === opt && { color: ACCENT, fontFamily: "Poppins_600SemiBold" }]}>{opt}</Text>
-              {selected === opt && <View style={styles.modalCheck} />}
-            </TouchableOpacity>
-          ))}
-        </View>
-      </TouchableOpacity>
-    </Modal>
-  );
-}
-
-export default function ListenerScreen() {
+export default function SearchScreen() {
   const insets = useSafeAreaInsets();
-  const colors = useColors();
   const { user } = useAuth();
   const { initiateCall } = useCall();
-  const { t: tr } = useLanguage();
-  const [selectedLang, setSelectedLang] = useState("All");
-  const [selectedTopic, setSelectedTopic] = useState("All");
-  const [showLangModal, setShowLangModal] = useState(false);
-  const [showTopicModal, setShowTopicModal] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
+
+  const [activeTab, setActiveTab] = useState("GLOBAL");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchText, setSearchText] = useState("");
+  const [hosts, setHosts] = useState<UIHost[]>([]);
   const [loading, setLoading] = useState(true);
-  const [hosts, setHosts] = useState<ReturnType<typeof mapApiHost>[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
   const [coinPopup, setCoinPopup] = useState(false);
   const [coinPopupRequired, setCoinPopupRequired] = useState(0);
 
-  const startCall = useCallback((host: ReturnType<typeof mapApiHost>, type: "audio" | "video") => {
-    const rate = host.coinsPerMinute || 1;
-    const required = rate * 2;
-    if ((user?.coins ?? 0) < required) {
-      setCoinPopupRequired(required);
-      setCoinPopup(true);
-      return;
-    }
-    initiateCall({ id: host.id, name: host.name, avatar: host.avatar, role: "host" }, type, rate);
-    router.push({ pathname: "/user/call/outgoing", params: { hostId: host.id, callType: type, hostName: host.name, hostAvatar: host.avatar, specialty: host.specialties?.[0] ?? "" } });
-  }, [user?.coins, initiateCall]);
-
   const loadHosts = useCallback(async () => {
     try {
-      const params: any = { limit: 100 };
-      if (selectedTopic !== "All") params.topic = selectedTopic;
-      // FIX: API.getHosts returns { hosts, nextCursor } — read .hosts before mapping
-      const res = await API.getHosts(params);
+      const res = await API.getHosts({ limit: 100 });
       setHosts((res?.hosts ?? []).map(mapApiHost));
     } catch {
       setHosts([]);
-      showErrorToast(tr.listener.failedLoad);
+      showErrorToast("Failed to load hosts");
     }
-  }, [selectedTopic, tr.listener.failedLoad]);
+  }, []);
 
-  // Show a spinner on first load instead of flashing the "no listeners found"
-  // empty state before the request resolves.
   useEffect(() => {
     setLoading(true);
     loadHosts().finally(() => setLoading(false));
   }, [loadHosts]);
-
-  const filtered = hosts.filter((h) => {
-    return selectedLang === "All" || h.languages.includes(selectedLang);
-  });
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -198,49 +209,108 @@ export default function ListenerScreen() {
     setRefreshing(false);
   }, [loadHosts]);
 
+  const startVideoCall = useCallback((host: UIHost) => {
+    // Offline hosts can't be called — open their profile instead.
+    if (!host.isOnline) {
+      router.push(`/user/hosts/${host.id}`);
+      return;
+    }
+    const rate = host.videoCoinsPerMinute || host.coinsPerMinute || 1;
+    const required = rate * 2;
+    if ((user?.coins ?? 0) < required) {
+      setCoinPopupRequired(required);
+      setCoinPopup(true);
+      return;
+    }
+    initiateCall({ id: host.id, name: host.name, avatar: host.avatar, role: "host" }, "video", rate);
+    router.push({ pathname: "/user/call/outgoing", params: { hostId: host.id, callType: "video", hostName: host.name, hostAvatar: host.avatar, specialty: host.specialties?.[0] ?? "" } });
+  }, [user?.coins, initiateCall]);
+
+  const filtered = useMemo(() => {
+    const tab = COUNTRY_TABS.find((t) => t.key === activeTab);
+    const q = searchText.trim().toLowerCase();
+    return hosts.filter((h) => {
+      if (tab?.code && h.country.toUpperCase() !== tab.code) return false;
+      if (q && !h.name.toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [hosts, activeTab, searchText]);
+
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={[styles.header, { paddingTop: insets.top + 16, backgroundColor: colors.background }]}>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>{tr.listener.allListeners}</Text>
-      </View>
+    <View style={styles.container}>
+      <LinearGradient colors={[BG_TOP, BG_BOTTOM]} style={StyleSheet.absoluteFill} />
 
-      <View style={[styles.filterRow, { backgroundColor: colors.background }]}>
-        <TouchableOpacity style={[styles.filterBtn, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={() => setShowLangModal(true)} activeOpacity={0.8}>
-          <Image source={require("@/assets/icons/ic_language.png")} style={styles.filterIcon} tintColor="#FF8C00" resizeMode="contain" />
-          <Text style={[styles.filterBtnText, { color: colors.text }]}>{selectedLang === "All" ? tr.listener.language : selectedLang}</Text>
-          <Image source={require("@/assets/icons/ic_back.png")} style={styles.filterArrow} tintColor={colors.mutedForeground} resizeMode="contain" />
-        </TouchableOpacity>
-        <TouchableOpacity style={[styles.filterBtn, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={() => setShowTopicModal(true)} activeOpacity={0.8}>
-          <Image source={require("@/assets/icons/ic_chat.png")} style={styles.filterIcon} tintColor="#1499F1" resizeMode="contain" />
-          <Text style={[styles.filterBtnText, { color: colors.text }]}>{selectedTopic === "All" ? tr.listener.talkAbout : selectedTopic}</Text>
-          <Image source={require("@/assets/icons/ic_back.png")} style={styles.filterArrow} tintColor={colors.mutedForeground} resizeMode="contain" />
-        </TouchableOpacity>
-      </View>
-
-      {loading && filtered.length === 0 ? (
-        <View style={styles.emptyWrap}>
-          <ActivityIndicator size="large" color={ACCENT} />
-        </View>
-      ) : filtered.length === 0 ? (
-        <View style={styles.emptyWrap}>
-          <Image source={require("@/assets/images/empty_hosts.png")} style={styles.emptyImg} resizeMode="contain" />
-          <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>{tr.listener.noListenersFound}</Text>
-        </View>
-      ) : (
-        <ScrollView
-          contentContainerStyle={styles.list}
-          showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={ACCENT} />}
+      {/* Top bar: country tabs + globe-search button */}
+      <View style={[styles.topBar, { paddingTop: insets.top + 10 }]}>
+        <FlatList
+          data={COUNTRY_TABS}
+          horizontal
+          keyExtractor={(t) => t.key}
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.tabsRow}
+          renderItem={({ item }) => (
+            <CountryTab tab={item} active={activeTab === item.key} onPress={() => setActiveTab(item.key)} />
+          )}
+        />
+        <TouchableOpacity
+          onPress={() => setSearchOpen((s) => !s)}
+          style={styles.globeBtn}
+          activeOpacity={0.85}
+          accessibilityRole="button"
+          accessibilityLabel="Search hosts"
         >
-          {filtered.map((host) => (
-            <ListenerCard key={host.id} host={host} onPress={() => router.push(`/user/hosts/${host.id}`)} onAudioCall={() => startCall(host, "audio")} onVideoCall={() => startCall(host, "video")} />
-          ))}
-          <View style={{ height: insets.bottom + 100 }} />
-        </ScrollView>
+          <Image source={require("@/assets/icons/ic_search.png")} style={styles.globeIcon} tintColor="#fff" resizeMode="contain" />
+        </TouchableOpacity>
+      </View>
+
+      {searchOpen && (
+        <View style={styles.searchWrap}>
+          <Image source={require("@/assets/icons/ic_search.png")} style={styles.searchInputIcon} tintColor={MUTED} resizeMode="contain" />
+          <TextInput
+            value={searchText}
+            onChangeText={setSearchText}
+            placeholder="Search by name…"
+            placeholderTextColor={MUTED}
+            style={styles.searchInput}
+            autoFocus
+            returnKeyType="search"
+          />
+          {searchText.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchText("")} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <Text style={styles.searchClear}>✕</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       )}
 
-      <FilterModal title={tr.listener.selectLanguage} options={LANGUAGES} selected={selectedLang} onSelect={setSelectedLang} onClose={() => setShowLangModal(false)} visible={showLangModal} />
-      <FilterModal title={tr.listener.talkAbout} options={TOPICS} selected={selectedTopic} onSelect={setSelectedTopic} onClose={() => setShowTopicModal(false)} visible={showTopicModal} />
+      {loading ? (
+        <View style={styles.centerWrap}>
+          <ActivityIndicator size="large" color="#fff" />
+        </View>
+      ) : filtered.length === 0 ? (
+        <View style={styles.centerWrap}>
+          <Text style={styles.emptyEmoji}>🔍</Text>
+          <Text style={styles.emptyText}>No hosts found</Text>
+          <Text style={styles.emptySub}>Try a different region or search.</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={filtered}
+          keyExtractor={(h) => h.id}
+          numColumns={2}
+          columnWrapperStyle={{ gap: GRID_GAP, paddingHorizontal: H_PADDING }}
+          contentContainerStyle={{ paddingTop: 8, paddingBottom: insets.bottom + 100 }}
+          showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#fff" />}
+          renderItem={({ item }) => (
+            <HostGridCard
+              host={item}
+              onPress={() => router.push(`/user/hosts/${item.id}`)}
+              onVideoCall={() => startVideoCall(item)}
+            />
+          )}
+        />
+      )}
 
       <InsufficientCoinsPopup
         visible={coinPopup}
@@ -253,92 +323,97 @@ export default function ListenerScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: LIGHT_PURPLE },
-  header: { backgroundColor: LIGHT_PURPLE, paddingHorizontal: 20, paddingBottom: 16 },
-  headerTitle: { fontSize: 22, fontFamily: "Poppins_700Bold", color: DARK, textAlign: "center" },
+  container: { flex: 1, backgroundColor: BG_BOTTOM },
 
-  filterRow: { flexDirection: "row", gap: 12, paddingHorizontal: 16, paddingVertical: 12, backgroundColor: LIGHT_PURPLE },
-  filterBtn: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: "#fff",
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderWidth: 1,
-    borderColor: "#E5E5E5",
+  // Top bar
+  topBar: { flexDirection: "row", alignItems: "center", paddingRight: 12, paddingBottom: 12, gap: 8 },
+  tabsRow: { paddingHorizontal: 12, gap: 10, alignItems: "center" },
+  tabTouch: { borderRadius: 24 },
+  tabActive: { borderRadius: 24, paddingHorizontal: 4, paddingVertical: 4 },
+  tabIdle: {
+    borderRadius: 24, paddingHorizontal: 4, paddingVertical: 4,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.12)",
   },
-  filterIcon: { width: 20, height: 20 },
-  filterBtnText: { flex: 1, fontSize: 13, fontFamily: "Poppins_500Medium", color: DARK, marginHorizontal: 8 },
-  filterArrow: { width: 12, height: 12, transform: [{ rotate: "-90deg" }] },
+  tabInner: { flexDirection: "row", alignItems: "center", gap: 8, paddingRight: 14 },
+  tabFlag: { width: 30, height: 30, borderRadius: 15, backgroundColor: "rgba(255,255,255,0.15)" },
+  tabGlobe: { fontSize: 22, width: 30, height: 30, textAlign: "center", lineHeight: 30 },
+  tabLabel: { fontSize: 14, fontFamily: "Poppins_500Medium", color: "rgba(255,255,255,0.75)" },
+  tabLabelActive: { color: "#fff", fontFamily: "Poppins_700Bold" },
 
-  list: { paddingHorizontal: 14, paddingTop: 4 },
+  globeBtn: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: "rgba(255,255,255,0.10)",
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.14)",
+    alignItems: "center", justifyContent: "center",
+  },
+  globeIcon: { width: 20, height: 20 },
+
+  // Search input
+  searchWrap: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    marginHorizontal: H_PADDING, marginBottom: 10,
+    backgroundColor: "rgba(255,255,255,0.10)",
+    borderRadius: 14, paddingHorizontal: 12, height: 46,
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.12)",
+  },
+  searchInputIcon: { width: 18, height: 18 },
+  searchInput: { flex: 1, color: "#fff", fontSize: 14, fontFamily: "Poppins_400Regular", padding: 0 },
+  searchClear: { color: MUTED, fontSize: 16, paddingHorizontal: 4 },
+
+  // Grid card
   card: {
-    backgroundColor: "#fff",
-    borderRadius: 14,
-    marginBottom: 12,
+    width: CARD_W,
+    aspectRatio: 0.86,
+    borderRadius: 18,
+    marginBottom: GRID_GAP,
     overflow: "hidden",
-    ...Platform.select({
-      ios: { shadowColor: "#000", shadowOpacity: 0.08, shadowRadius: 12, shadowOffset: { width: 0, height: 2 } },
-      android: { elevation: 3 },
-      web: { boxShadow: "0 2px 12px rgba(0,0,0,0.08)" } as any,
-    }),
+    backgroundColor: CARD_BG,
+    borderWidth: 1,
+    borderColor: CARD_BORDER,
   },
-  cardContent: { flexDirection: "row", padding: 10, gap: 10 },
-  avatarWrap: { width: 88, height: 88, borderRadius: 10, overflow: "hidden", backgroundColor: "#F0F0F0" },
-  avatar: { width: "100%", height: "100%" },
-  info: { flex: 1, gap: 4, justifyContent: "center" },
-  nameRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  name: { fontSize: 14, fontFamily: "Poppins_700Bold", color: DARK, flex: 1, marginRight: 6 },
-  statusBadge: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20 },
-  statusDot: { width: 7, height: 7, borderRadius: 4 },
-  statusText: { fontSize: 10, fontFamily: "Poppins_500Medium" },
-  langRow: { flexDirection: "row", alignItems: "center", gap: 4 },
-  smallIcon: { width: 14, height: 14 },
-  langText: { fontSize: 11, fontFamily: "Poppins_400Regular", color: GREY },
-  topicsRow: { flexDirection: "row", flexWrap: "wrap", gap: 4 },
-  topicChip: { backgroundColor: "#F3E4FF", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
-  topicChipText: { fontSize: 10, fontFamily: "Poppins_500Medium", color: ACCENT },
-  statsRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-  coinIcon: { width: 14, height: 14 },
-  coinText: { fontSize: 11, fontFamily: "Poppins_600SemiBold", color: "#FFA100" },
-  callCountWrap: { flexDirection: "row", alignItems: "center", gap: 3 },
-  callCountText: { fontSize: 11, fontFamily: "Poppins_400Regular", color: GREY },
-  cardActions: { flexDirection: "row", borderTopWidth: 1, borderTopColor: "#F0F0F0" },
-  viewProfileBtn: { flex: 1, paddingVertical: 12, alignItems: "center" },
-  viewProfileText: { fontSize: 13, fontFamily: "Poppins_600SemiBold", color: GREY },
-  callBtnsRow: {
-    flexDirection: "row",
-    flex: 1,
-    borderLeftWidth: 1,
-    borderLeftColor: "#F0F0F0",
-  },
-  audioCallBtn: {
-    flex: 1, paddingVertical: 10, alignItems: "center", justifyContent: "center",
-    flexDirection: "row", gap: 4, backgroundColor: ACCENT,
-  },
-  videoCallBtn: {
-    flex: 1, paddingVertical: 10, alignItems: "center", justifyContent: "center",
-    flexDirection: "row", gap: 4, backgroundColor: "#111329",
-    borderBottomRightRadius: 16,
-  },
-  talkNowIcon: { width: 14, height: 14 },
-  callBtnTxt: { fontSize: 12, fontFamily: "Poppins_600SemiBold", color: "#fff" },
+  cardAvatar: { ...StyleSheet.absoluteFillObject, width: "100%", height: "100%" },
+  cardOverlay: { position: "absolute", left: 0, right: 0, bottom: 0, height: "60%" },
 
-  emptyWrap: { flex: 1, alignItems: "center", justifyContent: "center" },
-  emptyImg: { width: 180, height: 140 },
-  emptyText: { fontSize: 14, fontFamily: "Poppins_400Regular", color: GREY, marginTop: 10 },
+  statusPill: {
+    position: "absolute", top: 10, right: 10,
+    flexDirection: "row", alignItems: "center", gap: 5,
+    backgroundColor: "rgba(10,6,24,0.55)",
+    paddingHorizontal: 9, paddingVertical: 5, borderRadius: 20,
+  },
+  bars: { flexDirection: "row", alignItems: "flex-end", gap: 2, height: 12 },
+  bar: { width: 3, borderRadius: 1.5 },
+  statusDot: { width: 8, height: 8, borderRadius: 4 },
+  statusText: { fontSize: 11, fontFamily: "Poppins_600SemiBold" },
 
-  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
-  modalSheet: { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 20, paddingTop: 20, paddingBottom: 40 },
-  modalTitle: { fontSize: 18, fontFamily: "Poppins_700Bold", color: DARK, marginBottom: 16 },
-  modalOpt: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: "#F0F0F0" },
-  modalOptText: { fontSize: 15, fontFamily: "Poppins_500Medium", color: DARK },
-  modalCheck: { width: 10, height: 10, borderRadius: 5, backgroundColor: ACCENT },
+  cardBottom: {
+    position: "absolute", left: 0, right: 0, bottom: 0,
+    flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between",
+    padding: 10, gap: 8,
+  },
+  cardTextCol: { flex: 1, gap: 3 },
+  cardName: {
+    color: TEXT, fontSize: 16, fontFamily: "Poppins_700Bold",
+    textShadowColor: "rgba(0,0,0,0.6)", textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4,
+  },
+  cardCountryRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  cardFlag: { width: 18, height: 13, borderRadius: 2, backgroundColor: "rgba(255,255,255,0.15)" },
+  cardCountry: { flex: 1, color: MUTED, fontSize: 12, fontFamily: "Poppins_400Regular", textTransform: "lowercase" },
+
+  videoBtn: {
+    width: 46, height: 46, borderRadius: 23,
+    backgroundColor: "rgba(255,255,255,0.22)",
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.3)",
+    alignItems: "center", justifyContent: "center",
+  },
+  videoIcon: { width: 22, height: 22 },
+
+  // States
+  centerWrap: { flex: 1, alignItems: "center", justifyContent: "center", gap: 8, paddingBottom: 80 },
+  emptyEmoji: { fontSize: 44 },
+  emptyText: { color: "#fff", fontSize: 16, fontFamily: "Poppins_600SemiBold" },
+  emptySub: { color: MUTED, fontSize: 13, fontFamily: "Poppins_400Regular" },
 });
-
 
 // Per-screen error boundary — contains a render crash to this screen
 // (retry / go back) instead of blanking the whole app. See components/RouteErrorBoundary.
