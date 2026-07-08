@@ -10,6 +10,11 @@ const POSITIONS = [
   { id: 'home_middle', label: 'Home — Middle Card' },
   { id: 'home_bottom', label: 'Home — Bottom Strip' },
   { id: 'search_top', label: 'Search Page — Top' },
+  // `search_middle` targets the unified promo slot embedded mid-grid on the
+  // user search screen. The API matches any position starting with "search",
+  // so all three search positions surface in the same in-app slider.
+  { id: 'search_middle', label: 'Search Page — Middle Promo' },
+  { id: 'search_bottom', label: 'Search Page — Bottom' },
   { id: 'wallet', label: 'Wallet Page' },
 ];
 
