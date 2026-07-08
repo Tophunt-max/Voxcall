@@ -28,8 +28,10 @@
  * i.e. every 1–60s bucket = exactly one billed minute. A non-positive /
  * non-finite duration bills 0 (a pending call that never connected is free).
  *
- * This is the ONLY granularity the platform bills at — per-second billing is
- * intentionally NOT used (see MIN_BILLING_GRANULARITY_SEC + billedUnits).
+ * This is the DEFAULT granularity the platform bills at. A different bucket
+ * size can be selected at runtime via `app_settings.billing_granularity_sec`
+ * (see MIN_BILLING_GRANULARITY_SEC + billedUnits); when it stays at 60 the
+ * math here and in billedUnits are identical.
  */
 export function billedMinutes(durationSec: number): number {
   if (!Number.isFinite(durationSec) || durationSec <= 0) return 0;
@@ -37,13 +39,11 @@ export function billedMinutes(durationSec: number): number {
 }
 
 /**
- * Minimum (and effectively the only) billing granularity in seconds. The call
- * settle paths bill PER MINUTE with a 1-minute round-up floor, so any call from
- * 1–60 seconds costs one full minute. `billedUnits` clamps the requested
- * granularity up to this value, which means even if `app_settings
- * .billing_granularity_sec` is (mis)set below 60, billing can NEVER drop to
- * sub-minute precision. To change the product rule you must change THIS
- * constant — not a runtime setting.
+ * DEFAULT billing granularity in seconds. The call settle paths bill PER MINUTE
+ * with a 1-minute round-up floor unless `app_settings.billing_granularity_sec`
+ * selects a different bucket. This value is the fallback used by `billedUnits`
+ * and `rateForGranularity` whenever the requested granularity is missing or
+ * invalid (0 / negative / NaN), so billing always has a sane per-minute default.
  */
 export const MIN_BILLING_GRANULARITY_SEC = 60;
 
@@ -67,12 +67,11 @@ export const MIN_BILLING_GRANULARITY_SEC = 60;
  */
 export function billedUnits(durationSec: number, granularitySec: number): number {
   if (!Number.isFinite(durationSec) || durationSec <= 0) return 0;
-  // PRODUCT RULE: never bill below per-minute. Clamp the requested granularity
-  // UP to MIN_BILLING_GRANULARITY_SEC (60) so a 2-second call is always one
-  // full minute — even if the app_settings value was set lower.
-  const requested = Number.isFinite(granularitySec) && granularitySec > 0 ? granularitySec : MIN_BILLING_GRANULARITY_SEC;
-  const g = Math.max(MIN_BILLING_GRANULARITY_SEC, requested);
-  // Floor at 1 unit so any connected call costs at least one minute.
+  // Honour the requested granularity. Fall back to the per-minute default only
+  // when the value is missing or invalid (0 / negative / NaN) so a misconfigured
+  // setting degrades to the safe per-minute rule instead of dividing by zero.
+  const g = Number.isFinite(granularitySec) && granularitySec > 0 ? granularitySec : MIN_BILLING_GRANULARITY_SEC;
+  // Floor at 1 unit so any connected call costs at least one billing unit.
   return Math.max(1, Math.ceil(durationSec / g));
 }
 
@@ -87,10 +86,10 @@ export function billedUnits(durationSec: number, granularitySec: number): number
  */
 export function rateForGranularity(ratePerMinute: number, granularitySec: number): number {
   if (!Number.isFinite(ratePerMinute) || ratePerMinute <= 0) return 0;
-  // Clamp to the per-minute floor (see billedUnits) so the per-unit rate always
-  // matches the clamped billing unit. With g === 60 this is just ratePerMinute.
-  const requested = Number.isFinite(granularitySec) && granularitySec > 0 ? granularitySec : MIN_BILLING_GRANULARITY_SEC;
-  const g = Math.max(MIN_BILLING_GRANULARITY_SEC, requested);
+  // Use the same granularity resolution as billedUnits so the per-unit rate
+  // always matches the billing unit. With g === 60 this is just ratePerMinute;
+  // an invalid granularity falls back to the per-minute default.
+  const g = Number.isFinite(granularitySec) && granularitySec > 0 ? granularitySec : MIN_BILLING_GRANULARITY_SEC;
   return (ratePerMinute * g) / 60;
 }
 
