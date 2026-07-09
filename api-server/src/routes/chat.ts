@@ -1,7 +1,20 @@
 import { Hono } from 'hono';
 import { authMiddleware } from '../middleware/auth';
 import { sendFCMPush } from '../lib/fcm';
+import { checkRateLimit } from '../lib/rateLimit';
 import type { Env, JWTPayload } from '../types';
+
+// Fire-and-forget relay of a real-time event to a user's NotificationHub.
+// Used for live message delivery + read receipts (mirrors the typing relay).
+async function relayToUser(env: Env, userId: string, payload: Record<string, unknown>): Promise<void> {
+  if (!userId) return;
+  try {
+    const stub = env.NOTIFICATION_HUB.get(env.NOTIFICATION_HUB.idFromName(userId));
+    await stub.fetch('https://dummy/notify', { method: 'POST', body: JSON.stringify(payload) });
+  } catch (e) {
+    console.warn('[chat] hub relay failed:', e);
+  }
+}
 
 const chat = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
 chat.use('*', authMiddleware);
@@ -26,14 +39,19 @@ chat.get('/rooms', async (c) => {
       CASE WHEN cr.user_id = ? THEN h.user_id ELSE cr.user_id END as other_user_id,
       CASE WHEN cr.user_id = ? THEN COALESCE(h.is_online, 0) ELSE 0 END as other_is_online,
       h.user_id as host_user_id,
-      COALESCE(h.is_online, 0) as host_is_online
+      COALESCE(h.is_online, 0) as host_is_online,
+      -- Unread = messages in this room NOT sent by the caller and not yet read.
+      -- Drives the conversation-list badge + app icon count (source of truth =
+      -- messages.is_read, so it can't drift from a separate counter).
+      (SELECT COUNT(*) FROM messages m
+        WHERE m.room_id = cr.id AND m.sender_id != ? AND m.is_read = 0) as unread_count
      FROM chat_rooms cr
      JOIN users cu ON cu.id = cr.user_id
      JOIN hosts h ON h.id = cr.host_id
      JOIN users hu ON hu.id = h.user_id
      WHERE cr.user_id = ? OR h.user_id = ?
      ORDER BY cr.last_message_at DESC LIMIT 50`
-  ).bind(sub, sub, sub, sub, sub, sub).all();
+  ).bind(sub, sub, sub, sub, sub, sub, sub).all();
   return c.json(result.results);
 });
 
@@ -93,6 +111,12 @@ chat.post('/rooms/:id/messages', async (c) => {
   const { content, media_url, media_type } = await c.req.json();
   const db = c.env.DB;
 
+  // Anti-spam: cap message sends per user (fail-open if rate_limits is missing).
+  const rl = await checkRateLimit(db, `chat-send:${sub}`, 20, 10);
+  if (rl.limited) {
+    return c.json({ error: 'Too many messages. Please slow down.', code: 'RATE_LIMITED' }, 429);
+  }
+
   // SECURITY FIX: Verify the authenticated user is a participant of this room
   // Without this check, any user can send messages to any room by guessing the ID
   const roomAccess = await db.prepare(
@@ -141,6 +165,23 @@ chat.post('/rooms/:id/messages', async (c) => {
       .first<{ user_id: string; host_user_id: string }>();
     if (room) {
       const recipientId = room.user_id === sub ? room.host_user_id : room.user_id;
+
+      // LIVE in-app delivery: push the full message to the recipient's
+      // NotificationHub so an open chat thread renders it instantly (the
+      // client maps type 'chat_message' -> MESSAGE_RECEIVED). This is what
+      // makes the chat real-time instead of "push + reload".
+      await relayToUser(c.env, recipientId, {
+        type: 'chat_message',
+        room_id: id,
+        id: msgId,
+        sender_id: sub,
+        sender_name: senderName || 'User',
+        content: content ?? null,
+        media_url: media_url ?? null,
+        media_type: media_type ?? null,
+        created_at: now,
+      });
+
       const recipient = await db
         .prepare('SELECT fcm_token FROM users WHERE id = ?')
         .bind(recipientId)
@@ -212,6 +253,77 @@ chat.post('/rooms/:id/typing', async (c) => {
       console.warn('[chat/typing] relay failed:', e);
     }
   }
+
+  return c.json({ success: true });
+});
+
+// POST /api/chat/rooms/:id/read — mark the OTHER party's messages as read.
+//
+// Sets messages.is_read=1 for every message in the room NOT sent by the
+// caller, then relays a `chat_read` receipt to the other party so their sent
+// bubbles flip to "Seen" in real time. Read state is the single source of
+// truth for the conversation unread badge.
+chat.post('/rooms/:id/read', async (c) => {
+  const { sub } = c.get('user');
+  const { id } = c.req.param();
+  const db = c.env.DB;
+
+  const room = await db.prepare(
+    `SELECT cr.user_id as user_id, h.user_id as host_user_id
+     FROM chat_rooms cr JOIN hosts h ON h.id = cr.host_id
+     WHERE cr.id = ? AND (cr.user_id = ? OR h.user_id = ?)`
+  ).bind(id, sub, sub).first<{ user_id: string; host_user_id: string }>();
+  if (!room) return c.json({ error: 'Room not found or access denied' }, 403);
+
+  const res = await db.prepare(
+    'UPDATE messages SET is_read = 1 WHERE room_id = ? AND sender_id != ? AND is_read = 0'
+  ).bind(id, sub).run();
+  const marked = res.meta?.changes ?? 0;
+
+  if (marked > 0) {
+    const otherId = room.user_id === sub ? room.host_user_id : room.user_id;
+    if (otherId && otherId !== sub) {
+      await relayToUser(c.env, otherId, { type: 'chat_read', room_id: id, reader_id: sub });
+    }
+  }
+  return c.json({ success: true, marked });
+});
+
+// POST /api/chat/rooms/:id/messages/:msgId/report — report an abusive message.
+//
+// Files into the shared content_reports queue (same one the admin panel's
+// Content Moderation page + pending-count badge read), so chat abuse is
+// actioned through the existing moderation workflow.
+chat.post('/rooms/:id/messages/:msgId/report', async (c) => {
+  const { sub, name: reporterName } = c.get('user');
+  const { id, msgId } = c.req.param();
+  const body = await c.req.json().catch(() => ({})) as { reason?: string; category?: string };
+  const db = c.env.DB;
+
+  const room = await db.prepare(
+    `SELECT cr.id FROM chat_rooms cr JOIN hosts h ON h.id = cr.host_id
+     WHERE cr.id = ? AND (cr.user_id = ? OR h.user_id = ?)`
+  ).bind(id, sub, sub).first<any>();
+  if (!room) return c.json({ error: 'Room not found or access denied' }, 403);
+
+  const msg = await db.prepare(
+    'SELECT id, sender_id, content, media_url FROM messages WHERE id = ? AND room_id = ?'
+  ).bind(msgId, id).first<{ id: string; sender_id: string; content: string | null; media_url: string | null }>();
+  if (!msg) return c.json({ error: 'Message not found' }, 404);
+  if (msg.sender_id === sub) return c.json({ error: 'You cannot report your own message' }, 400);
+
+  const evidence = JSON.stringify({
+    room_id: id, message_id: msgId, content: msg.content ?? null, media_url: msg.media_url ?? null,
+  });
+  await db.prepare(
+    `INSERT INTO content_reports (id, reporter_id, reporter_name, reported_user_id, reported_type, reason, category, evidence)
+     VALUES (?, ?, ?, ?, 'chat_message', ?, ?, ?)`
+  ).bind(
+    crypto.randomUUID(), sub, reporterName ?? null, msg.sender_id,
+    (body.reason ?? 'Inappropriate message').slice(0, 500),
+    (body.category ?? 'harassment').slice(0, 50),
+    evidence,
+  ).run();
 
   return c.json({ success: true });
 });

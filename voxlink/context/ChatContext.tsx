@@ -148,10 +148,60 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     const offTypingStart = socketService.on(SocketEvents.MESSAGE_TYPING, (d) => handleTyping(d, true));
     const offTypingStop = socketService.on(SocketEvents.MESSAGE_TYPING_STOP, (d) => handleTyping(d, false));
 
+    // ─── Realtime: inbound message ───────────────────────────────────────
+    // A new message from the OTHER party — append it live to the matching
+    // conversation, bump the preview + unread badge. Deduped by id so a
+    // double-delivery (or our own echo) never doubles a bubble.
+    const offMessage = socketService.on(SocketEvents.MESSAGE_RECEIVED, (data: any) => {
+      const roomId: string | undefined = data?.chatId ?? data?.roomId ?? data?.room_id;
+      if (!roomId) return;
+      const mediaType = data?.mediaType as MessageType | null | undefined;
+      const type: MessageType = mediaType ? mediaType : "text";
+      const incoming: Message = {
+        id: data.id,
+        senderId: data.senderId ?? "other",
+        receiverId: "",
+        content: type === "text" ? (data.text ?? "") : (data.mediaUrl ?? data.text ?? ""),
+        type,
+        timestamp: data.timestamp ?? Date.now(),
+        isRead: false,
+      };
+      const preview = type === "text" ? incoming.content : (type === "image" ? "📷 Photo" : "🎤 Voice");
+      setConversations((prev) =>
+        prev.map((c) => {
+          if (c.id !== roomId && c.roomId !== roomId) return c;
+          if (c.messages.some((m) => m.id === incoming.id)) return c; // dedupe
+          return {
+            ...c,
+            messages: [...c.messages, incoming],
+            lastMessage: preview,
+            lastMessageTime: incoming.timestamp,
+            unreadCount: c.unreadCount + 1,
+          };
+        }),
+      );
+    });
+
+    // ─── Realtime: read receipt ──────────────────────────────────────────
+    // The other party read the thread → mark our sent bubbles "Seen".
+    const offRead = socketService.on(SocketEvents.MESSAGE_READ, (data: any) => {
+      const roomId: string | undefined = data?.roomId ?? data?.room_id;
+      if (!roomId) return;
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === roomId || c.roomId === roomId
+            ? { ...c, messages: c.messages.map((m) => ({ ...m, isRead: true })) }
+            : c,
+        ),
+      );
+    });
+
     return () => {
       offPresence();
       offTypingStart();
       offTypingStop();
+      offMessage();
+      offRead();
       typingClearTimers.current.forEach((t) => clearTimeout(t));
       typingClearTimers.current.clear();
     };
@@ -200,7 +250,9 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           content: mtype === "text" ? (m.content ?? "") : (m.media_url ?? m.content ?? ""),
           type: mtype,
           timestamp: (m.created_at ?? 0) * 1000,
-          isRead: true,
+          // is_read reflects whether the recipient has read it — for OUR sent
+          // messages this drives the "Seen" indicator.
+          isRead: !!m.is_read,
         };
       });
       setConversations((prev) => {
@@ -333,14 +385,20 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   }, [conversations]);
 
   const markRead = useCallback((conversationId: string) => {
+    const convo = conversations.find((c) => c.id === conversationId || c.roomId === conversationId);
+    const roomId = convo?.roomId ?? conversationId;
+    // Only reset the unread badge here — we must NOT flip our own messages'
+    // isRead (that flag means "seen by the other party" and is driven solely
+    // by the chat_read receipt).
     setConversations((prev) =>
       prev.map((c) =>
-        c.id === conversationId
-          ? { ...c, unreadCount: 0, messages: c.messages.map((m) => ({ ...m, isRead: true })) }
-          : c
-      )
+        c.id === conversationId || c.roomId === conversationId ? { ...c, unreadCount: 0 } : c,
+      ),
     );
-  }, []);
+    // Persist to the server (best-effort): clears unread cross-device and
+    // fires the read receipt so the sender sees "Seen".
+    if (roomId) API.markChatRead(roomId).catch(() => {});
+  }, [conversations]);
 
   const getOrCreateConversation = useCallback((
     participantId: string,

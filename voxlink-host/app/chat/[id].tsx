@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity, Image, Platform, KeyboardAvoidingView, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity, Image, Platform, KeyboardAvoidingView, ActivityIndicator, Alert } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SvgIcon } from "@/components/SvgIcon";
@@ -7,7 +7,7 @@ import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { useChat, Message } from "@/context/ChatContext";
 import { API } from "@/services/api";
-import { showErrorToast } from "@/components/Toast";
+import { showErrorToast, showSuccessToast } from "@/components/Toast";
 import * as Haptics from "expo-haptics";
 import { useLanguage } from "@/context/LanguageContext";
 import { WEB_INPUT_RESET } from "@workspace/shared-ui/utils";
@@ -52,6 +52,36 @@ export default function ChatScreen() {
 
   const messages = convo?.messages ?? [];
 
+  // Keep the thread marked read as live messages arrive while it's open.
+  useEffect(() => {
+    if (convo && messages.length > 0) markRead(convo.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages.length]);
+
+  // Long-press a received message to report it to moderation.
+  const reportMessage = (item: Message) => {
+    if (!roomId || item.senderId === "me" || item.senderId === user?.id) return;
+    const doReport = async () => {
+      try {
+        await API.reportMessage(roomId, item.id, "Reported from chat");
+        showSuccessToast("Reported. Our team will review it.");
+      } catch {
+        showErrorToast("Couldn't report. Please try again.");
+      }
+    };
+    // Alert.alert works on native (the host app's primary surface); fall back
+    // to window.confirm on web (same pattern as gallery.tsx).
+    if (Platform.OS === "web") {
+      // eslint-disable-next-line no-alert
+      if (typeof window !== "undefined" && window.confirm("Report this message to moderation?")) void doReport();
+    } else {
+      Alert.alert("Report message?", "This message will be sent to our moderation team for review.", [
+        { text: "Cancel", style: "cancel" },
+        { text: "Report", style: "destructive", onPress: () => void doReport() },
+      ]);
+    }
+  };
+
   const handleSend = async () => {
     if (!text.trim() || !id) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -66,15 +96,31 @@ export default function ChatScreen() {
     return (
       <View style={[styles.msgRow, isMe && styles.msgRowMe]}>
         {!isMe && <Image source={{ uri: participantAvatar }} style={styles.msgAvatar} />}
-        <View style={[
-          styles.bubble,
-          isMe ? { backgroundColor: colors.primary } : { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }
-        ]}>
-          <Text style={[styles.bubbleText, { color: isMe ? "#fff" : colors.foreground }]}>{item.content}</Text>
-          <Text style={[styles.bubbleTime, { color: isMe ? "rgba(255,255,255,0.6)" : colors.mutedForeground }]}>
-            {item.failed ? t.chatThreadScreen.notSent : formatTime(item.timestamp)}
-          </Text>
-        </View>
+        <TouchableOpacity
+          activeOpacity={0.9}
+          onLongPress={() => reportMessage(item)}
+          delayLongPress={350}
+          disabled={isMe}
+          style={[
+            styles.bubble,
+            isMe ? { backgroundColor: colors.primary } : { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }
+          ]}>
+          {item.type === "image" ? (
+            <Image source={{ uri: item.content }} style={styles.bubbleImage} resizeMode="cover" />
+          ) : (
+            <Text style={[styles.bubbleText, { color: isMe ? "#fff" : colors.foreground }]}>{item.content}</Text>
+          )}
+          <View style={styles.bubbleMetaRow}>
+            <Text style={[styles.bubbleTime, { color: isMe ? "rgba(255,255,255,0.6)" : colors.mutedForeground }]}>
+              {item.failed ? t.chatThreadScreen.notSent : formatTime(item.timestamp)}
+            </Text>
+            {isMe && !item.failed && (
+              <Text style={[styles.bubbleStatus, { color: "rgba(255,255,255,0.7)" }]}>
+                {item.isRead ? "Seen" : "Sent"}
+              </Text>
+            )}
+          </View>
+        </TouchableOpacity>
       </View>
     );
   };
@@ -163,7 +209,10 @@ const styles = StyleSheet.create({
   msgAvatar: { width: 28, height: 28, borderRadius: 14 },
   bubble: { maxWidth: "72%", padding: 12, borderRadius: 18, gap: 4 },
   bubbleText: { fontSize: 14, fontFamily: "Poppins_400Regular", lineHeight: 20 },
+  bubbleImage: { width: 200, height: 200, borderRadius: 12, marginBottom: 2 },
+  bubbleMetaRow: { flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 6 },
   bubbleTime: { fontSize: 10, fontFamily: "Poppins_400Regular", alignSelf: "flex-end" },
+  bubbleStatus: { fontSize: 10, fontFamily: "Poppins_500Medium" },
   inputBar: { flexDirection: "row", padding: 12, gap: 8, alignItems: "flex-end", borderTopWidth: StyleSheet.hairlineWidth },
   iconBtn: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
   inputWrap: { flex: 1, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 10, maxHeight: 100 },

@@ -8,9 +8,9 @@ import { useChat, Message } from "@/context/ChatContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { API, resolveMediaUrl } from "@/services/api";
 import { appendFileToFormData } from "@/utils/fileUpload";
-import { alertDialog } from "@/utils/dialog";
+import { alertDialog, confirmDialog } from "@/utils/dialog";
 import * as ImagePicker from "expo-image-picker";
-import { showErrorToast } from "@/components/Toast";
+import { showErrorToast, showSuccessToast } from "@/components/Toast";
 import * as Haptics from "expo-haptics";
 import { WEB_INPUT_RESET } from "@workspace/shared-ui/utils";
 
@@ -69,6 +69,33 @@ export default function ChatScreen() {
 
   const messages = convo?.messages ?? [];
   const reversedMessages = useMemo(() => [...messages].reverse(), [messages]);
+
+  // Mark the thread read whenever the message list grows while it's open (a
+  // live inbound message arriving on-screen), so the unread badge + the
+  // sender's "Seen" receipt stay accurate without leaving + re-entering.
+  useEffect(() => {
+    if (convo && messages.length > 0) markRead(convo.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages.length]);
+
+  // Long-press a received message to report it to moderation.
+  const reportMessage = (item: Message) => {
+    if (!roomId || item.senderId === "me" || item.senderId === user?.id) return;
+    confirmDialog({
+      title: "Report message?",
+      message: "This message will be sent to our moderation team for review.",
+      confirmText: "Report",
+      destructive: true,
+      onConfirm: async () => {
+        try {
+          await API.reportMessage(roomId, item.id, "Reported from chat");
+          showSuccessToast("Reported. Our team will review it.");
+        } catch {
+          showErrorToast("Couldn't report. Please try again.");
+        }
+      },
+    });
+  };
 
   // Best-effort "stop typing" cleanup — fire whenever we leave a typing-
   // active state (sent message, navigated away, app crashed, etc.) so the
@@ -158,10 +185,15 @@ export default function ChatScreen() {
     return (
       <View style={[styles.msgRow, isMe && styles.msgRowMe]}>
         {!isMe && <Image source={{ uri: participantAvatar }} style={styles.msgAvatar} />}
-        <View style={[
-          styles.bubble,
-          isMe ? { backgroundColor: colors.primary } : { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }
-        ]}>
+        <TouchableOpacity
+          activeOpacity={0.9}
+          onLongPress={() => reportMessage(item)}
+          delayLongPress={350}
+          disabled={isMe}
+          style={[
+            styles.bubble,
+            isMe ? { backgroundColor: colors.primary } : { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }
+          ]}>
           {item.type === "image" ? (
             <Image
               source={{ uri: item.content }}
@@ -189,8 +221,14 @@ export default function ChatScreen() {
                 <Text style={[styles.bubbleStatus, { color: "#FFD2D2", textDecorationLine: "underline" }]}>{t.chatScreen.tapToRetry}</Text>
               </TouchableOpacity>
             )}
+            {/* Delivery / read receipt for our own delivered messages. */}
+            {isMe && item.status !== "sending" && item.status !== "failed" && (
+              <Text style={[styles.bubbleStatus, { color: "rgba(255,255,255,0.7)" }]}>
+                {item.isRead ? "Seen" : "Sent"}
+              </Text>
+            )}
           </View>
-        </View>
+        </TouchableOpacity>
       </View>
     );
   };

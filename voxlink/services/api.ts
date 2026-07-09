@@ -407,6 +407,13 @@ export const API = {
   // other room participant via NotificationHub. Caller should debounce.
   sendChatTyping: (room_id: string, is_typing: boolean) =>
     apiRequest<{ success: boolean }>('POST', `/api/chat/rooms/${room_id}/typing`, { is_typing }),
+  // Mark all of the other party's messages in this room as read. Clears the
+  // unread badge and sends a read receipt so the sender sees "Seen".
+  markChatRead: (room_id: string) =>
+    apiRequest<{ success: boolean; marked: number }>('POST', `/api/chat/rooms/${room_id}/read`),
+  // Report an abusive message into the admin moderation queue.
+  reportMessage: (room_id: string, message_id: string, reason?: string, category?: string) =>
+    apiRequest<{ success: boolean }>('POST', `/api/chat/rooms/${room_id}/messages/${message_id}/report`, { reason, category }),
   getChatStatus: (host_id: string) =>
     apiRequest<{ unlocked: boolean; reason: string }>('GET', `/api/hosts/${host_id}/chat-status`),
 

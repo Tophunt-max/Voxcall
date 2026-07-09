@@ -223,9 +223,19 @@ class SocketService {
         this.emit(SocketEvents.MESSAGE_RECEIVED, {
           chatId: msg.room_id ?? msg.chat_id,
           id: msg.id ?? `msg_${Date.now()}`,
+          senderId: msg.sender_id,
           senderName: msg.sender_name ?? "User",
           text: msg.content ?? msg.text ?? "",
-          timestamp: msg.timestamp ?? Date.now(),
+          mediaUrl: msg.media_url ?? null,
+          mediaType: msg.media_type ?? null,
+          timestamp: msg.created_at ? msg.created_at * 1000 : (msg.timestamp ?? Date.now()),
+        });
+        break;
+      case "chat_read":
+        this.emit(SocketEvents.MESSAGE_READ, {
+          roomId: msg.room_id,
+          readerId: msg.reader_id,
+          timestamp: Date.now(),
         });
         break;
       case "coin_update":

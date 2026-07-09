@@ -1,5 +1,7 @@
-import React, { createContext, useContext, useState, useCallback, useRef } from "react";
+import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from "react";
 import { API } from "@/services/api";
+import socketService from "@/services/SocketService";
+import { SocketEvents } from "@/constants/events";
 import { showErrorToast } from "@/components/Toast";
 
 export type MessageType = "text" | "image" | "audio";
@@ -45,6 +47,55 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
   const totalUnread = conversations.reduce((sum, c) => sum + c.unreadCount, 0);
 
+  // ─── Realtime: inbound messages + read receipts ────────────────────────
+  // Mounted for the whole session so the chat list badge updates even when
+  // the host isn't on a thread screen.
+  useEffect(() => {
+    const offMessage = socketService.on(SocketEvents.MESSAGE_RECEIVED, (data: any) => {
+      const roomId: string | undefined = data?.chatId ?? data?.roomId ?? data?.room_id;
+      if (!roomId) return;
+      const mediaType = data?.mediaType as MessageType | null | undefined;
+      const type: MessageType = mediaType ? mediaType : "text";
+      const incoming: Message = {
+        id: data.id,
+        senderId: data.senderId ?? "other",
+        receiverId: "",
+        content: type === "text" ? (data.text ?? "") : (data.mediaUrl ?? data.text ?? ""),
+        type,
+        timestamp: data.timestamp ?? Date.now(),
+        isRead: false,
+      };
+      const preview = type === "text" ? incoming.content : (type === "image" ? "📷 Photo" : "🎤 Voice");
+      setConversations((prev) =>
+        prev.map((c) => {
+          if (c.id !== roomId && c.roomId !== roomId) return c;
+          if (c.messages.some((m) => m.id === incoming.id)) return c; // dedupe
+          return {
+            ...c,
+            messages: [...c.messages, incoming],
+            lastMessage: preview,
+            lastMessageTime: incoming.timestamp,
+            unreadCount: c.unreadCount + 1,
+          };
+        }),
+      );
+    });
+
+    const offRead = socketService.on(SocketEvents.MESSAGE_READ, (data: any) => {
+      const roomId: string | undefined = data?.roomId ?? data?.room_id;
+      if (!roomId) return;
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === roomId || c.roomId === roomId
+            ? { ...c, messages: c.messages.map((m) => ({ ...m, isRead: true })) }
+            : c,
+        ),
+      );
+    });
+
+    return () => { offMessage(); offRead(); };
+  }, []);
+
   const loadConversations = useCallback(async (_userId: string) => {
     try {
       const rooms = await API.getChatRooms();
@@ -56,7 +107,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           participantAvatar: r.other_avatar ?? undefined,
           lastMessage: r.last_message ?? "",
           lastMessageTime: r.last_message_at ? r.last_message_at * 1000 : Date.now(),
-          unreadCount: 0,
+          unreadCount: r.unread_count ?? 0,
           messages: [],
           roomId: r.id,
         }));
@@ -74,10 +125,10 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         id: m.id,
         senderId: m.sender_id,
         receiverId: "",
-        content: m.content ?? "",
+        content: m.media_type ? (m.media_url ?? m.content ?? "") : (m.content ?? ""),
         type: (m.media_type as MessageType) ?? "text",
         timestamp: (m.created_at ?? 0) * 1000,
-        isRead: true,
+        isRead: !!m.is_read,
       }));
       setConversations((prev) => {
         const exists = prev.some((c) => c.id === conversationId || c.roomId === conversationId);
@@ -161,14 +212,17 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   }, [conversations]);
 
   const markRead = useCallback((conversationId: string) => {
+    const convo = conversations.find((c) => c.id === conversationId || c.roomId === conversationId);
+    const roomId = convo?.roomId ?? conversationId;
+    // Reset the unread badge only — own messages' isRead ("seen") is driven by
+    // the chat_read receipt, never here.
     setConversations((prev) =>
       prev.map((c) =>
-        c.id === conversationId
-          ? { ...c, unreadCount: 0, messages: c.messages.map((m) => ({ ...m, isRead: true })) }
-          : c
-      )
+        c.id === conversationId || c.roomId === conversationId ? { ...c, unreadCount: 0 } : c,
+      ),
     );
-  }, []);
+    if (roomId) API.markChatRead(roomId).catch(() => {});
+  }, [conversations]);
 
   const getOrCreateConversation = useCallback((participantId: string, participantName: string, avatar?: string, roomId?: string): Conversation => {
     const existing = conversations.find((c) => c.participantId === participantId || c.id === participantId || (roomId && c.roomId === roomId));

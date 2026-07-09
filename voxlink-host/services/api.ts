@@ -314,6 +314,12 @@ export const API = {
     apiRequest<any[]>('GET', `/api/chat/rooms/${room_id}/messages${before ? `?before=${before}` : ''}`),
   sendMessage: (room_id: string, content: string, media_url?: string, media_type?: string) =>
     apiRequest<{ id?: string; sender_id?: string; content?: string; created_at?: number }>('POST', `/api/chat/rooms/${room_id}/messages`, { content, media_url, media_type }),
+  // Mark the other party's messages as read + send a read receipt.
+  markChatRead: (room_id: string) =>
+    apiRequest<{ success: boolean; marked: number }>('POST', `/api/chat/rooms/${room_id}/read`),
+  // Report an abusive message into the admin moderation queue.
+  reportMessage: (room_id: string, message_id: string, reason?: string, category?: string) =>
+    apiRequest<{ success: boolean }>('POST', `/api/chat/rooms/${room_id}/messages/${message_id}/report`, { reason, category }),
   getChatStatus: (host_id: string) =>
     apiRequest<{ unlocked: boolean; reason: string }>('GET', `/api/hosts/${host_id}/chat-status`),
 
