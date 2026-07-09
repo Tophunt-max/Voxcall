@@ -200,6 +200,47 @@ function budgetIncrementStmt(db: D1Database, coins: number) {
 }
 
 /**
+ * Read a user's lifetime cumulative counter for a trigger_type.
+ * Returns 0 if no counter row exists yet.
+ */
+async function readTriggerCounter(
+  db: D1Database,
+  userId: string,
+  triggerType: string,
+): Promise<number> {
+  try {
+    const row = await db
+      .prepare('SELECT count FROM user_trigger_counters WHERE user_id = ? AND trigger_type = ?')
+      .bind(userId, triggerType)
+      .first<{ count: number }>();
+    return Number(row?.count ?? 0);
+  } catch (err) {
+    console.warn('[rewards] readTriggerCounter failed:', err);
+    return 0;
+  }
+}
+
+/**
+ * Return a Map of ALL trigger counters for a user (single query — used by
+ * the GET /rewards endpoint to hydrate achievement progress in one shot).
+ */
+async function readAllTriggerCounters(db: D1Database, userId: string): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  try {
+    const res = await db
+      .prepare('SELECT trigger_type, count FROM user_trigger_counters WHERE user_id = ?')
+      .bind(userId)
+      .all<{ trigger_type: string; count: number }>();
+    for (const r of res.results ?? []) {
+      out.set(r.trigger_type, Number(r.count));
+    }
+  } catch (err) {
+    console.warn('[rewards] readAllTriggerCounters failed:', err);
+  }
+  return out;
+}
+
+/**
  * After progress is bumped for a user + trigger_type, unlock any achievement
  * whose threshold is now crossed. Best-effort — a failure here doesn't
  * corrupt the ledger; the caller has already credited the *task* reward.
@@ -434,9 +475,17 @@ rewards.get('/', async (c) => {
     };
   }
 
-  // Achievements
+  // Achievements — hydrate with per-achievement PROGRESS from the trigger
+  // counters. That lets the client show a real progress bar ("27/50 calls")
+  // instead of just locked/unlocked binary state.
   const achEnabled = await readSetting(db, 'reward_achievements_enabled', true, parseBool);
-  let achievements: Array<{ id: string; code: string; title: string; description: string; icon: string; tier: string; trigger_threshold: number; coins_reward: number; unlocked: boolean; unlocked_at: number | null }> = [];
+  let achievements: Array<{
+    id: string; code: string; title: string; description: string;
+    icon: string; tier: string; trigger_type: string;
+    trigger_threshold: number; coins_reward: number;
+    current_progress: number; progress_pct: number;
+    unlocked: boolean; unlocked_at: number | null;
+  }> = [];
   if (achEnabled) {
     const achRes = await db
       .prepare(
@@ -448,14 +497,26 @@ rewards.get('/', async (c) => {
       )
       .bind(sub)
       .all<AchievementRow & { unlocked_at: number | null }>();
-    achievements = (achRes.results ?? []).map((r) => ({
-      id: r.id, code: r.code, title: r.title, description: r.description,
-      icon: r.icon, tier: r.tier,
-      trigger_threshold: Number(r.trigger_threshold),
-      coins_reward: Number(r.coins_reward),
-      unlocked: r.unlocked_at != null,
-      unlocked_at: r.unlocked_at != null ? Number(r.unlocked_at) : null,
-    }));
+
+    // One query fetches every counter this user has — cheaper than per-row.
+    const counters = await readAllTriggerCounters(db, sub);
+
+    achievements = (achRes.results ?? []).map((r) => {
+      const threshold = Number(r.trigger_threshold);
+      const raw = counters.get(r.trigger_type) ?? 0;
+      const progress = Math.min(raw, threshold);
+      const pct = threshold > 0 ? Math.min(100, Math.round((raw / threshold) * 100)) : 0;
+      return {
+        id: r.id, code: r.code, title: r.title, description: r.description,
+        icon: r.icon, tier: r.tier, trigger_type: r.trigger_type,
+        trigger_threshold: threshold,
+        coins_reward: Number(r.coins_reward),
+        current_progress: progress,
+        progress_pct: pct,
+        unlocked: r.unlocked_at != null,
+        unlocked_at: r.unlocked_at != null ? Number(r.unlocked_at) : null,
+      };
+    });
   }
 
   return c.json({
@@ -721,60 +782,69 @@ export default rewards;
 export async function bumpRewardProgress(
   db: D1Database,
   userId: string,
-  taskType: string,
+  triggerType: string,
   delta = 1,
 ): Promise<number> {
-  if (!userId || !taskType || !Number.isFinite(delta) || delta <= 0) return 0;
-
-  let tasks: { id: string }[] = [];
-  try {
-    const res = await db.prepare('SELECT id FROM reward_tasks WHERE task_type = ? AND active = 1').bind(taskType).all<{ id: string }>();
-    tasks = res.results ?? [];
-  } catch (err) {
-    console.warn('[rewards] bumpRewardProgress: task lookup failed', err);
-    return 0;
-  }
+  if (!userId || !triggerType || !Number.isFinite(delta) || delta <= 0) return 0;
 
   const now = Math.floor(Date.now() / 1000);
   const deltaInt = Math.floor(delta);
-  const taskOps = tasks.map((t) =>
-    db
+
+  // 1) Upsert the lifetime trigger counter — the single source of truth for
+  //    both task progress and achievement progress. This runs unconditionally,
+  //    even when no reward_task exists for this trigger_type, so achievements
+  //    tied to an event that has no matching task still accumulate progress.
+  try {
+    await db
       .prepare(
-        `INSERT INTO user_reward_progress (user_id, task_id, current_count, updated_at)
+        `INSERT INTO user_trigger_counters (user_id, trigger_type, count, updated_at)
          VALUES (?, ?, ?, ?)
-         ON CONFLICT(user_id, task_id) DO UPDATE SET current_count = current_count + ?, updated_at = ?`,
+         ON CONFLICT(user_id, trigger_type) DO UPDATE SET
+           count = count + ?, updated_at = ?`,
       )
-      .bind(userId, t.id, deltaInt, now, deltaInt, now),
-  );
-  if (taskOps.length) {
+      .bind(userId, triggerType, deltaInt, now, deltaInt, now)
+      .run();
+  } catch (err) {
+    console.warn('[rewards] trigger counter upsert failed:', err);
+  }
+
+  // 2) Bump matching active task rows so task cards update in real-time.
+  let tasks: { id: string }[] = [];
+  try {
+    const res = await db
+      .prepare('SELECT id FROM reward_tasks WHERE task_type = ? AND active = 1')
+      .bind(triggerType)
+      .all<{ id: string }>();
+    tasks = res.results ?? [];
+  } catch (err) {
+    console.warn('[rewards] bumpRewardProgress: task lookup failed', err);
+  }
+
+  if (tasks.length) {
+    const taskOps = tasks.map((t) =>
+      db
+        .prepare(
+          `INSERT INTO user_reward_progress (user_id, task_id, current_count, updated_at)
+           VALUES (?, ?, ?, ?)
+           ON CONFLICT(user_id, task_id) DO UPDATE SET current_count = current_count + ?, updated_at = ?`,
+        )
+        .bind(userId, t.id, deltaInt, now, deltaInt, now),
+    );
     try { await db.batch(taskOps); }
     catch (err) { console.warn('[rewards] bumpRewardProgress: task batch failed', err); }
   }
 
-  // After tasks are updated, evaluate achievements. We need the user's
-  // cumulative count across ALL tasks of this trigger type. The
-  // `user_reward_progress` table records per-task counts, so we sum them —
-  // but for daily_checkin the count resets on claim; for lifetime-cumulative
-  // types (complete_calls, spend_coins, refer_friend) it accumulates. Since
-  // achievement thresholds are lifetime, we prefer summing over non-recurring
-  // task rows.
+  // 3) Achievement check — read the fresh lifetime counter and unlock anything
+  //    whose threshold has just been crossed. Reads the counter we just wrote,
+  //    NOT a sum over per-task rows, so achievements decoupled from tasks work.
   try {
-    const cumRow = await db
-      .prepare(
-        `SELECT SUM(p.current_count + COALESCE((p.claim_count * t.target_count), 0)) AS total
-           FROM user_reward_progress p
-           INNER JOIN reward_tasks t ON t.id = p.task_id
-          WHERE p.user_id = ? AND t.task_type = ?`,
-      )
-      .bind(userId, taskType)
-      .first<{ total: number }>();
-    const total = Number(cumRow?.total ?? 0);
+    const total = await readTriggerCounter(db, userId, triggerType);
     if (total > 0) {
-      await checkAndUnlockAchievements(db, userId, taskType, total);
+      await checkAndUnlockAchievements(db, userId, triggerType, total);
     }
   } catch (err) {
     console.warn('[rewards] achievement check failed:', err);
   }
 
-  return taskOps.length;
+  return tasks.length;
 }

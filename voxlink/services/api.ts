@@ -527,8 +527,11 @@ export const API = {
         description: string;
         icon: string;
         tier: string;
+        trigger_type: string;
         trigger_threshold: number;
         coins_reward: number;
+        current_progress: number;
+        progress_pct: number;
         unlocked: boolean;
         unlocked_at: number | null;
       }>;

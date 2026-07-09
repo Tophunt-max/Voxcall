@@ -451,11 +451,17 @@ call.post('/end', async (c) => {
     }
     await db.batch(txs);
 
-    // Reward progress — call-based tasks (complete_calls, spend_coins) tick
-    // forward for the CALLER after successful settlement. Best-effort: any
-    // failure is logged inside the helper and never surfaces to the client.
+    // Reward progress — call-based tasks (complete_calls, spend_coins,
+    // talk_minutes) tick forward for the CALLER after successful settlement.
+    // Best-effort: any failure is logged inside the helper and never surfaces
+    // to the client.
     if (durationSec > 0) {
       await bumpRewardProgress(db, session.caller_id, 'complete_calls', 1);
+      // Talk minutes are rounded down — a 90-second call counts as 1 minute.
+      const minutes = Math.floor(durationSec / 60);
+      if (minutes > 0) {
+        await bumpRewardProgress(db, session.caller_id, 'talk_minutes', minutes);
+      }
     }
     if (actualCoinsCharged > 0) {
       await bumpRewardProgress(db, session.caller_id, 'spend_coins', actualCoinsCharged);
@@ -826,10 +832,14 @@ call.post('/:id/end', async (c) => {
 
     await db.batch(batchOps);
 
-    // Reward progress — tick the caller's complete_calls / spend_coins tasks
+    // Reward progress — tick complete_calls, talk_minutes, spend_coins
     // (mirrors the main /end path). Best-effort, never blocks the response.
     if (durationSec > 0) {
       await bumpRewardProgress(db, session.caller_id, 'complete_calls', 1);
+      const minutes = Math.floor(durationSec / 60);
+      if (minutes > 0) {
+        await bumpRewardProgress(db, session.caller_id, 'talk_minutes', minutes);
+      }
     }
     if (actualCoinsCharged > 0) {
       await bumpRewardProgress(db, session.caller_id, 'spend_coins', actualCoinsCharged);

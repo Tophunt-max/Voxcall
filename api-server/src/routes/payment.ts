@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { Env, JWTPayload } from '../types';
 import { authMiddleware } from '../middleware/auth';
 import { timingSafeEqual } from '../lib/hash';
+import { bumpRewardProgress } from './rewards';
 import {
   verifyRazorpaySignature,
   verifyStripeSignature,
@@ -177,6 +178,13 @@ async function approveDeposit(db: D1Database, purchaseId: string, source: string
       crypto.randomUUID(), purchase.user_id, 'purchase', totalCoins, note || `Auto-matched via ${source}`, purchaseId
     ),
   ]);
+
+  // Reward progress — top-up-based achievements unlock here. Best-effort:
+  // any failure inside the helper is swallowed and never surfaces to the
+  // gateway webhook (we've already credited the coins by this point).
+  // `coin_topup` = lifetime coins purchased; `coin_topup_count` = # of txns.
+  await bumpRewardProgress(db, purchase.user_id, 'coin_topup', totalCoins);
+  await bumpRewardProgress(db, purchase.user_id, 'coin_topup_count', 1);
   return { ok: true, coins: totalCoins };
 }
 

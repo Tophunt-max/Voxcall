@@ -88,6 +88,7 @@ import m_0039 from '../../migrations/0039_host_gallery.sql';
 import m_0042 from '../../migrations/0042_coin_economy_consistency.sql';
 import m_0043 from '../../migrations/0043_reward_tasks.sql';
 import m_0044 from '../../migrations/0044_reward_dopamine.sql';
+import m_0045 from '../../migrations/0045_reward_trigger_counters.sql';
 
 interface Migration {
   /**
@@ -142,6 +143,7 @@ const MIGRATIONS: ReadonlyArray<Migration> = [
   { name: '0042_coin_economy_consistency.sql',      sql: m_0042 },
   { name: '0043_reward_tasks.sql',                  sql: m_0043 },
   { name: '0044_reward_dopamine.sql',               sql: m_0044 },
+  { name: '0045_reward_trigger_counters.sql',       sql: m_0045 },
 ];
 
 /**

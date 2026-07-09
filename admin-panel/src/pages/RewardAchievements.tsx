@@ -39,13 +39,16 @@ const TIERS: { id: Tier; label: string; color: string }[] = [
   { id: 'platinum', label: 'Platinum', color: '#8B5CF6' },
 ];
 
-const TRIGGER_TYPES: { id: string; label: string; verb: string }[] = [
-  { id: 'complete_calls', label: 'Complete calls',    verb: 'Complete' },
-  { id: 'spend_coins',    label: 'Spend coins',       verb: 'Spend' },
-  { id: 'refer_friend',   label: 'Invite friends',    verb: 'Invite' },
-  { id: 'daily_checkin',  label: 'Daily check-ins',   verb: 'Check in' },
-  { id: 'watch_ad',       label: 'Watch rewarded ads',verb: 'Watch' },
-  { id: 'share_app',      label: 'Share the app',     verb: 'Share' },
+const TRIGGER_TYPES: { id: string; label: string; verb: string; unit?: string }[] = [
+  { id: 'complete_calls',   label: 'Complete calls',       verb: 'Complete',  unit: 'calls' },
+  { id: 'talk_minutes',     label: 'Talk minutes',         verb: 'Talk for',  unit: 'minutes' },
+  { id: 'spend_coins',      label: 'Spend coins on calls', verb: 'Spend',     unit: 'coins' },
+  { id: 'coin_topup',       label: 'Purchased coins',      verb: 'Purchase',  unit: 'coins' },
+  { id: 'coin_topup_count', label: 'Number of purchases',  verb: 'Complete',  unit: 'purchases' },
+  { id: 'refer_friend',     label: 'Invite friends',       verb: 'Invite',    unit: 'friends' },
+  { id: 'daily_checkin',    label: 'Daily check-ins',      verb: 'Check in',  unit: 'days' },
+  { id: 'watch_ad',         label: 'Watch rewarded ads',   verb: 'Watch',     unit: 'ads' },
+  { id: 'share_app',        label: 'Share the app',        verb: 'Share',     unit: 'times' },
 ];
 
 function tierColor(t: string): string {
@@ -55,8 +58,8 @@ function tierColor(t: string): string {
 function triggerLabel(type: string, threshold: number): string {
   const t = TRIGGER_TYPES.find((x) => x.id === type);
   if (!t) return `${type} ${threshold}`;
-  const noun = t.label.replace(/^\w+\s/, '').toLowerCase();
-  return `${t.verb} ${threshold.toLocaleString()} ${noun}`;
+  const unit = t.unit ?? t.label.replace(/^\w+\s/, '').toLowerCase();
+  return `${t.verb} ${threshold.toLocaleString()} ${unit}`;
 }
 
 type Form = {

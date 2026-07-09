@@ -84,6 +84,14 @@ function setupDb(): FakeD1 {
       coins_paid INTEGER NOT NULL DEFAULT 0,
       updated_at INTEGER
     );
+    -- Migration 0045: single-source-of-truth counter for trigger progress
+    CREATE TABLE user_trigger_counters (
+      user_id TEXT NOT NULL,
+      trigger_type TEXT NOT NULL,
+      count INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      PRIMARY KEY (user_id, trigger_type)
+    );
   `);
   return db;
 }

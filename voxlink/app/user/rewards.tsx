@@ -455,41 +455,90 @@ export default function RewardsScreen() {
           ))}
 
           {/* ── Achievements ────────────────────────────────────────────── */}
-          {data?.achievements && data.achievements.length > 0 && (
-            <View style={styles.section}>
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>Achievements</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingRight: 14 }}>
-                {data.achievements.map((a) => (
-                  <View
-                    key={a.id}
-                    style={[
-                      styles.achCard,
-                      { backgroundColor: colors.card, borderColor: colors.border },
-                      a.unlocked && { borderColor: TIER_COLORS[a.tier] ?? "#F59E0B" },
-                    ]}
-                  >
-                    <View style={[styles.achIconBox, { backgroundColor: (TIER_COLORS[a.tier] ?? "#F59E0B") + "20" }]}>
-                      <Text style={[styles.achIconEmoji, !a.unlocked && { opacity: 0.4 }]}>
-                        {ICON_EMOJI[a.icon] ?? "🏆"}
-                      </Text>
-                    </View>
-                    <Text style={[styles.achTitle, { color: colors.text }]} numberOfLines={2}>{a.title}</Text>
-                    <View style={styles.achTierRow}>
-                      <View style={[styles.achTierPill, { backgroundColor: TIER_COLORS[a.tier] ?? "#F59E0B" }]}>
-                        <Text style={styles.achTierText}>{a.tier.toUpperCase()}</Text>
+          {data?.achievements && data.achievements.length > 0 && (() => {
+            // Sort: newly-unlocked first, then in-progress (highest % first),
+            // then not-started. Gives users a clear "you're close!" signal.
+            const sorted = [...data.achievements].sort((a, b) => {
+              if (a.unlocked !== b.unlocked) return a.unlocked ? -1 : 1;
+              if (!a.unlocked && !b.unlocked) return b.progress_pct - a.progress_pct;
+              return (b.unlocked_at ?? 0) - (a.unlocked_at ?? 0);
+            });
+            const unlocked = data.achievements.filter((a) => a.unlocked).length;
+            const total = data.achievements.length;
+            const totalEarnedFromAch = data.achievements
+              .filter((a) => a.unlocked)
+              .reduce((s, a) => s + a.coins_reward, 0);
+
+            return (
+              <View style={styles.section}>
+                {/* Header + summary strip */}
+                <View style={styles.achHeaderRow}>
+                  <Text style={[styles.sectionTitle, { color: colors.text, marginBottom: 0 }]}>Achievements</Text>
+                  <Text style={[styles.achHeaderMeta, { color: colors.subText }]}>
+                    {unlocked}/{total} unlocked  ·  +{totalEarnedFromAch.toLocaleString()} coins earned
+                  </Text>
+                </View>
+
+                {/* 2-column grid — each card shows icon, title, progress bar, reward */}
+                <View style={styles.achGrid}>
+                  {sorted.map((a) => {
+                    const tierColor = TIER_COLORS[a.tier] ?? "#F59E0B";
+                    return (
+                      <View
+                        key={a.id}
+                        style={[
+                          styles.achCardV2,
+                          { backgroundColor: colors.card, borderColor: a.unlocked ? tierColor : colors.border },
+                          a.unlocked && styles.achCardV2Unlocked,
+                        ]}
+                      >
+                        <View style={styles.achTopRow}>
+                          <View style={[styles.achIconBox, { backgroundColor: tierColor + "22" }]}>
+                            <Text style={[styles.achIconEmoji, !a.unlocked && styles.achIconLocked]}>
+                              {ICON_EMOJI[a.icon] ?? "🏆"}
+                            </Text>
+                          </View>
+                          <View style={[styles.achTierPill, { backgroundColor: tierColor }]}>
+                            <Text style={styles.achTierText}>{a.tier.toUpperCase()}</Text>
+                          </View>
+                        </View>
+
+                        <Text style={[styles.achTitleV2, { color: colors.text }]} numberOfLines={2}>{a.title}</Text>
+                        <Text style={[styles.achDescV2, { color: colors.subText }]} numberOfLines={2}>{a.description}</Text>
+
+                        {/* Progress row — full bar for unlocked, live bar for in-progress. */}
+                        <View style={styles.achProgressRow}>
+                          <View style={styles.achProgressTrack}>
+                            <View
+                              style={[
+                                styles.achProgressFill,
+                                { width: `${a.unlocked ? 100 : a.progress_pct}%`, backgroundColor: tierColor },
+                              ]}
+                            />
+                          </View>
+                          <Text style={[styles.achProgressLabel, { color: colors.subText }]}>
+                            {a.unlocked
+                              ? "✓ Complete"
+                              : `${a.current_progress.toLocaleString()} / ${a.trigger_threshold.toLocaleString()}`}
+                          </Text>
+                        </View>
+
+                        {/* Reward chip — gold when unlocked, muted when still locked. */}
+                        <View style={styles.achRewardRow}>
+                          <View style={[styles.achRewardChip, a.unlocked ? styles.achRewardChipUnlocked : styles.achRewardChipLocked]}>
+                            <Image source={require("@/assets/icons/ic_coin.png")} style={styles.achRewardCoin} resizeMode="contain" />
+                            <Text style={[styles.achRewardText, !a.unlocked && { color: colors.subText }]}>
+                              +{a.coins_reward}
+                            </Text>
+                          </View>
+                        </View>
                       </View>
-                      {a.unlocked && (
-                        <Text style={[styles.achStatus, { color: TIER_COLORS[a.tier] ?? "#F59E0B" }]}>✓</Text>
-                      )}
-                    </View>
-                    {!a.unlocked && (
-                      <Text style={[styles.achReward, { color: colors.subText }]}>+{a.coins_reward} coins</Text>
-                    )}
-                  </View>
-                ))}
-              </ScrollView>
-            </View>
-          )}
+                    );
+                  })}
+                </View>
+              </View>
+            );
+          })()}
         </ScrollView>
       )}
     </View>
@@ -576,18 +625,60 @@ const styles = StyleSheet.create({
   actionBtnDisabled: { backgroundColor: "rgba(148,163,184,0.15)" },
   actionBtnSecondaryText: { fontSize: 13, fontFamily: "Poppins_600SemiBold" },
 
-  // Achievements strip
-  achCard: {
-    width: 130, borderRadius: 14, borderWidth: 1.5, padding: 10, alignItems: "flex-start", gap: 4,
+  // Achievements — header + 2-column grid
+  achHeaderRow: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    flexWrap: "wrap", marginBottom: 10, gap: 6,
   },
-  achIconBox: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center" },
-  achIconEmoji: { fontSize: 20 },
-  achTitle: { fontSize: 12, fontFamily: "Poppins_700Bold" },
-  achTierRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-  achTierPill: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
-  achTierText: { color: "#fff", fontSize: 8.5, fontFamily: "Poppins_700Bold", letterSpacing: 0.5 },
-  achStatus: { fontSize: 14, fontFamily: "Poppins_700Bold" },
-  achReward: { fontSize: 10, fontFamily: "Poppins_500Medium" },
+  achHeaderMeta: { fontSize: 11.5, fontFamily: "Poppins_500Medium" },
+
+  achGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  achCardV2: {
+    // 2 columns → each card width = (containerWidth - gap) / 2. Using `48%`
+    // avoids computing at runtime — RN honours percentages on flex children.
+    width: "48%",
+    borderRadius: 14,
+    borderWidth: 1.5,
+    padding: 12,
+    gap: 6,
+    ...Platform.select({
+      ios: { shadowColor: "#0B1A2B", shadowOpacity: 0.05, shadowRadius: 4, shadowOffset: { width: 0, height: 1 } },
+      android: { elevation: 1 },
+      web: { boxShadow: "0 1px 3px rgba(11,26,43,0.05)" } as any,
+    }),
+  },
+  achCardV2Unlocked: {
+    // A subtle glow around unlocked cards to celebrate the tier colour.
+    ...Platform.select({
+      ios: { shadowColor: "#F59E0B", shadowOpacity: 0.25, shadowRadius: 6, shadowOffset: { width: 0, height: 2 } },
+      android: { elevation: 2 },
+      web: { boxShadow: "0 2px 6px rgba(245,158,11,0.25)" } as any,
+    }),
+  },
+  achTopRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  achIconBox: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
+  achIconEmoji: { fontSize: 22 },
+  achIconLocked: { opacity: 0.35 },       // grayscale-ish effect for locked
+  achTierPill: { paddingHorizontal: 7, paddingVertical: 2.5, borderRadius: 7 },
+  achTierText: { color: "#fff", fontSize: 9, fontFamily: "Poppins_700Bold", letterSpacing: 0.6 },
+
+  achTitleV2: { fontSize: 13, fontFamily: "Poppins_700Bold" },
+  achDescV2: { fontSize: 11, fontFamily: "Poppins_400Regular", lineHeight: 14, minHeight: 28 },
+
+  achProgressRow: { marginTop: 4, gap: 4 },
+  achProgressTrack: { height: 5, borderRadius: 3, backgroundColor: "rgba(148,163,184,0.2)", overflow: "hidden" },
+  achProgressFill: { height: "100%", borderRadius: 3 },
+  achProgressLabel: { fontSize: 10, fontFamily: "Poppins_600SemiBold" },
+
+  achRewardRow: { flexDirection: "row" },
+  achRewardChip: {
+    flexDirection: "row", alignItems: "center", gap: 3,
+    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 12,
+  },
+  achRewardChipUnlocked: { backgroundColor: "#FFB800" },
+  achRewardChipLocked: { backgroundColor: "rgba(148,163,184,0.18)" },
+  achRewardCoin: { width: 12, height: 12 },
+  achRewardText: { color: "#5A2B00", fontSize: 11, fontFamily: "Poppins_700Bold" },
 
   centerWrap: { flex: 1, alignItems: "center", justifyContent: "center", gap: 8, padding: 24 },
 });
