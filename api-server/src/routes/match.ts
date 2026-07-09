@@ -42,6 +42,7 @@ import {
   type LevelDef,
 } from '../lib/levels';
 import { checkRateLimit } from '../lib/rateLimit';
+import { isWithinAvailability } from '../lib/availability';
 import {
   computeMatchWeight,
   weightedSample,
@@ -338,6 +339,10 @@ async function pickRandomHost(
         )
         .bind(...f.params, offset)
         .first<any>();
+      // Skip hosts currently outside their availability window. The host row
+      // is `h.*` so it carries the schedule columns when they exist; when they
+      // don't, isWithinAvailability defaults to "available" (safe no-op).
+      if (host && !isWithinAvailability(host)) continue;
       if (host) return { host, totalOnline };
     }
     return { host: null, totalOnline };
@@ -406,7 +411,9 @@ async function pickWeightedHost(
       )
       .bind(...f.params, poolSize)
       .all<any>();
-    const rows = pool.results ?? [];
+    // Drop hosts outside their availability window before weighting. Safe
+    // no-op when the schedule columns are absent (defaults to "available").
+    const rows = (pool.results ?? []).filter((r) => isWithinAvailability(r));
     if (!rows.length) return { host: null, totalOnline };
 
     // Recent-match counts for demand balancing — best-effort.

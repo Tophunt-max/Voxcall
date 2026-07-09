@@ -75,7 +75,7 @@ stateDiagram-v2
     approved --> [*]
 ```
 
-> ⚠️ **Gap:** `under_review` exists in the schema and in the host-app UI timeline, but **no endpoint ever writes it** — the admin review only sets `approved`/`rejected`. Either add an "under review" action in the admin panel or remove the state (see checklist §5).
+> ✅ **Resolved:** the admin review endpoint (`PATCH /host-applications/:id/review`) now accepts `action=under_review`, and the admin panel has a **"Mark as Under Review"** button on pending applications. The host app's status timeline already renders this state.
 
 **On approval** (`PATCH /api/admin/host-applications/:id/review` with `action=approve`):
 1. `host_applications.status = approved`, stamps `reviewed_by` / `reviewed_at`.
@@ -112,7 +112,7 @@ Editable profile fields: display_name, specialties (≤10), languages (≤10), a
 Going online **requires a `hosts` row** — returns `404 HOST_NOT_FOUND` ("complete your KYC") otherwise. Logout auto-sets `is_online=false`.
 
 > ⚠️ **Gap:** Presence broadcast only reaches ~100 recent users (`LIMIT 100`); does not scale to all users in real time.
-> ⚠️ **Gap:** The availability schedule window (`available_from/to`) is stored but **not enforced** in call routing — a host outside their window can still receive calls.
+> ✅ **Resolved:** the availability schedule window (`available_from/to`, `timezone`) is now **enforced** — `lib/availability.ts::isWithinAvailability` is checked at `POST /api/calls/initiate` (the universal call chokepoint, covering direct **and** random-match calls) and random matching filters out hosts outside their window. Enforcement is a safe no-op when the schedule columns/values are absent.
 
 ---
 
@@ -298,10 +298,10 @@ erDiagram
 
 These are the gaps to close before / right after launch (ordered by risk):
 
-- [ ] **Coin→money rate:** explicitly set `app_settings.coin_to_usd_rate` (and INR value) — remove the divergent `0.001024` fallback in `coin.ts`. **(payout correctness)**
-- [ ] **Secrets configured:** `AGORA_APP_ID`, `AGORA_APP_CERTIFICATE`, `FIREBASE_SERVICE_ACCOUNT`, payment webhook secrets — calls/push/deposits fail silently without them.
-- [ ] **`under_review` state:** either add an admin "mark under review" action, or drop the state from schema + host UI so it isn't dead.
-- [ ] **Availability window enforcement:** enforce `available_from/to` in `/initiate` + `/match/find`, or clearly label it cosmetic.
+- [x] **`under_review` state** — admin review endpoint accepts `action=under_review` + "Mark as Under Review" button in the panel; host-app timeline already renders it. ✅
+- [x] **Availability window enforcement** — `lib/availability.ts` enforced at `/api/calls/initiate` (universal chokepoint) and filtered in `/api/match/find`; safe no-op when unset. ✅
+- [x] **Coin→money rate** — verified already consolidated: `coin_value_inr` is the source of truth, the FX cron pins `coin_to_usd_rate` from it, and there is an explicit guard against the legacy `0.01`. No divergent live path. ✅
+- [ ] **Secrets configured:** `AGORA_APP_ID`, `AGORA_APP_CERTIFICATE`, `FIREBASE_SERVICE_ACCOUNT`, payment webhook secrets — calls/push/deposits fail silently without them. *(deployment config, not code)*
 - [ ] **Presence at scale:** the `LIMIT 100` fan-out won't notify all users; consider topic-based / on-demand presence for large user bases.
 - [ ] **Call cleanup:** verify the heartbeat force-end + cron reaper reliably close sessions when a client dies mid-call (no client `/end`).
 - [ ] **Payout `paid` audit:** confirm `admin_note` (txn reference) is mandatory on `paid`/`completed` (it is) and shown in audit logs.

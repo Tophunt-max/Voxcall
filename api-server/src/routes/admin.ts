@@ -966,18 +966,19 @@ admin.get('/host-applications/:id', async (c) => {
 // PATCH /api/admin/host-applications/:id/review — approve or reject
 admin.patch('/host-applications/:id/review', async (c) => {
   const { id } = c.req.param();
-  const { action, rejection_reason } = await c.req.json<{ action: 'approve' | 'reject'; rejection_reason?: string }>();
+  const { action, rejection_reason } = await c.req.json<{ action: 'approve' | 'reject' | 'under_review'; rejection_reason?: string }>();
   const { sub } = c.get('user');
   const d = db(c);
 
-  if (!['approve', 'reject'].includes(action)) {
-    return c.json({ error: 'action must be approve or reject' }, 400);
+  if (!['approve', 'reject', 'under_review'].includes(action)) {
+    return c.json({ error: 'action must be approve, reject or under_review' }, 400);
   }
 
   const app = await d.prepare('SELECT * FROM host_applications WHERE id = ?').bind(id).first<any>();
   if (!app) return c.json({ error: 'Application not found' }, 404);
 
-  const newStatus = action === 'approve' ? 'approved' : 'rejected';
+  const newStatus =
+    action === 'approve' ? 'approved' : action === 'reject' ? 'rejected' : 'under_review';
   await d.prepare(
     `UPDATE host_applications SET status=?, rejection_reason=?, reviewed_by=?, reviewed_at=unixepoch(), updated_at=unixepoch() WHERE id=?`
   ).bind(newStatus, rejection_reason ?? null, sub, id).run();

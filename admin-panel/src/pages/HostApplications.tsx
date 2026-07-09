@@ -86,7 +86,7 @@ export default function HostApplicationsPage() {
 
   useEffect(() => { fetchApps(); }, [fetchApps]);
 
-  const handleReview = async (action: "approve" | "reject") => {
+  const handleReview = async (action: "approve" | "reject" | "under_review") => {
     if (!selected) return;
     if (action === "reject" && !rejectReason.trim()) {
       toast.success("Please enter a rejection reason.");
@@ -98,7 +98,13 @@ export default function HostApplicationsPage() {
         action,
         rejection_reason: action === "reject" ? rejectReason.trim() : undefined,
       });
-      toast.success(action === "approve" ? "Application approved!" : "Application rejected.");
+      toast.success(
+        action === "approve"
+          ? "Application approved!"
+          : action === "reject"
+          ? "Application rejected."
+          : "Marked as under review."
+      );
       setSelected(null);
       setRejectReason("");
       setShowRejectInput(false);
@@ -361,6 +367,17 @@ export default function HostApplicationsPage() {
                     </button>
                   )}
                 </div>
+                {/* Mark as under review — parks a pending application in a
+                    "being verified" state without approving or rejecting it. */}
+                {selected.status === "pending" && !showRejectInput && (
+                  <button
+                    onClick={() => handleReview("under_review")}
+                    disabled={reviewing}
+                    className="w-full flex items-center justify-center gap-1.5 border border-blue-300 text-blue-600 rounded-xl py-2.5 text-sm font-semibold hover:bg-blue-50 disabled:opacity-50 transition-colors"
+                  >
+                    <Clock size={15} /> {reviewing ? "Processing..." : "Mark as Under Review"}
+                  </button>
+                )}
               </div>
             )}
 

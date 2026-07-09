@@ -11,6 +11,7 @@ import { billedMinutes, coinsForCall, chargeCallerWithFreePool, affordableCallSe
 import { registerHit } from '../lib/rateLimit';
 import { apiError, ErrorCode } from '../lib/errors';
 import { isEmergencyOn, emergencyBlockedBody } from '../lib/emergencyFlags';
+import { isWithinAvailability } from '../lib/availability';
 import { bumpRewardProgress } from './rewards';
 import type { Env, JWTPayload, HostRow, CallSessionRow, CallerData, HostData } from '../types';
 
@@ -80,6 +81,25 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
   } catch (e: any) {
     if (!/no such table/i.test(String(e?.message || ''))) {
       console.warn('[initiate] block check failed:', e);
+    }
+  }
+
+  // Availability window check — enforce the host's configured schedule.
+  // This is the single call chokepoint (direct AND random-match calls all
+  // land here), so enforcing once guarantees a host outside their window
+  // never receives a call. Best-effort: the schedule columns only exist
+  // after the migration, so a "no such column" error skips enforcement
+  // rather than blocking calls.
+  try {
+    const sched = await db.prepare(
+      'SELECT available_from, available_to, timezone FROM hosts WHERE id = ?'
+    ).bind(body.host_id).first<any>();
+    if (sched && !isWithinAvailability(sched)) {
+      return apiError(c, ErrorCode.HOST_UNAVAILABLE, 404, 'Host is not available right now');
+    }
+  } catch (e: any) {
+    if (!/no such column/i.test(String(e?.message || ''))) {
+      console.warn('[initiate] availability check failed:', e);
     }
   }
 
