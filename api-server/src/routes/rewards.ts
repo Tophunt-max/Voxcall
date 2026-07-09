@@ -96,6 +96,9 @@ interface AchievementRow {
   active: number;
   // 0 = evergreen; N > 0 = rolling N-day quest window from first progress.
   duration_days: number;
+  // Admin-driven display order. Ties are broken by this value inside every
+  // urgency bucket produced by the /rewards response sort.
+  sort_order: number;
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -555,7 +558,8 @@ rewards.get('/', async (c) => {
   const achEnabled = await readSetting(db, 'reward_achievements_enabled', true, parseBool);
   let achievements: Array<{
     id: string; code: string; title: string; description: string;
-    icon: string; tier: string; trigger_type: string;
+    icon: string; tier: string; trigger_type: string; sort_order: number;
+    expiring_soon: boolean;
     trigger_threshold: number; coins_reward: number;
     duration_days: number;
     current_progress: number; progress_pct: number;
@@ -621,7 +625,50 @@ rewards.get('/', async (c) => {
         window_expired: windowExpired,
         unlocked: r.unlocked_at != null,
         unlocked_at: r.unlocked_at != null ? Number(r.unlocked_at) : null,
+        // Client-facing urgency flag — "expiring within 24 hours". Lets the
+        // rewards page slap a red pill on time-bound quests about to run
+        // out, without every consumer duplicating the math.
+        expiring_soon: secondsRemaining != null && secondsRemaining > 0 && secondsRemaining <= 86400,
+        // `sort_order` from the DB — surfaced so any client that wants to
+        // fall back to admin ordering can (server default is urgency).
+        sort_order: Number(r.sort_order) || 100,
       };
+    });
+
+    // ── Client-facing sort: URGENCY-FIRST, not admin sort_order.
+    // A user with a "5 days left" quest and a "10 minutes left" quest
+    // needs to see the 10-minute one first, otherwise the whole rolling-
+    // window mechanic is invisible. Priority buckets, top → bottom:
+    //   1. Already unlocked (celebration UI — pin to top)
+    //   2. In-progress AND expiring within 24 h (red, act now)
+    //   3. In-progress, more than 24 h left (normal quest state)
+    //   4. Not started yet (fresh quests, no timer)
+    //   5. Window expired without unlock (reset queue, low priority)
+    // Within a bucket we defer to admin sort_order so admins keep some
+    // control over layout.
+    const bucket = (a: typeof achievements[number]): number => {
+      if (a.unlocked) return 1;
+      if (a.window_expired) return 5;
+      if (a.expiring_soon) return 2;
+      if (a.started_at != null) return 3;
+      return 4;
+    };
+    achievements.sort((a, b) => {
+      const ba = bucket(a), bb = bucket(b);
+      if (ba !== bb) return ba - bb;
+      // Within "expiring soon" bucket, LEAST time-remaining first.
+      if (ba === 2) {
+        const sa = a.seconds_remaining ?? Number.MAX_SAFE_INTEGER;
+        const sb = b.seconds_remaining ?? Number.MAX_SAFE_INTEGER;
+        if (sa !== sb) return sa - sb;
+      }
+      // Within "unlocked" bucket, most recently unlocked first (feels like
+      // a fresh trophy shelf every time the user opens the page).
+      if (ba === 1) {
+        const ua = a.unlocked_at ?? 0, ub = b.unlocked_at ?? 0;
+        if (ua !== ub) return ub - ua;
+      }
+      return a.sort_order - b.sort_order;
     });
   }
 

@@ -539,6 +539,12 @@ export const API = {
         window_expired: boolean;
         unlocked: boolean;
         unlocked_at: number | null;
+        // Server-computed urgency flag — true when the quest has <= 24h
+        // remaining. Client should render a red "Expires in Xh" badge.
+        expiring_soon: boolean;
+        // Admin ordering — surfaced so callers can override the server's
+        // urgency-first sort if they need a stable position.
+        sort_order: number;
       }>;
       server_time: number;
     }>('GET', '/api/user/rewards'),

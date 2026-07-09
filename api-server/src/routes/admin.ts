@@ -1886,13 +1886,46 @@ admin.patch('/reward-achievements/:id', async (c) => {
   if (body.active !== undefined) { sets.push('active = ?'); vals.push(body.active ? 1 : 0); }
   if (!sets.length) return c.json({ error: 'Nothing to update' }, 400);
   vals.push(id);
-  await db(c).prepare(`UPDATE reward_achievements SET ${sets.join(', ')} WHERE id = ?`).bind(...vals).run();
-  return c.json({ success: true });
+
+  // If the admin changed the trigger_type OR raised the trigger_threshold,
+  // any per-user progress row we already have was counted against a
+  // DIFFERENT set of events and carries the wrong semantics. Reset the
+  // rolling-window counters so users start fresh under the new rule. We
+  // deliberately leave user_achievements (the unlock ledger) untouched
+  // — badges already granted stay granted, we don't want to claw them
+  // back on an admin edit.
+  const resetProgress =
+    body.trigger_type !== undefined ||
+    (body.trigger_threshold !== undefined && Number(body.trigger_threshold) > 0);
+
+  const stmts = [db(c).prepare(`UPDATE reward_achievements SET ${sets.join(', ')} WHERE id = ?`).bind(...vals)];
+  if (resetProgress) {
+    stmts.push(
+      db(c).prepare(
+        `UPDATE user_achievement_progress
+            SET current_count = 0,
+                started_at    = NULL,
+                updated_at    = unixepoch()
+          WHERE achievement_id = ?`,
+      ).bind(id),
+    );
+  }
+  await db(c).batch(stmts);
+  return c.json({ success: true, progress_reset: resetProgress });
 });
 
 admin.delete('/reward-achievements/:id', async (c) => {
   const { id } = c.req.param();
+  // Full orphan cleanup: three tables reference an achievement by id and
+  // ALL of them must be purged. Missing any one leaves stale rows that
+  // the /rewards endpoint will happily join against zombie achievement
+  // rows if a new achievement is later inserted with the same id.
+  //
+  //   user_achievements          — unlock ledger (badge + coins credited)
+  //   user_achievement_progress  — per-user rolling-window counters (0046)
+  //   reward_achievements        — the achievement definition itself
   await db(c).batch([
+    db(c).prepare('DELETE FROM user_achievement_progress WHERE achievement_id = ?').bind(id),
     db(c).prepare('DELETE FROM user_achievements WHERE achievement_id = ?').bind(id),
     db(c).prepare('DELETE FROM reward_achievements WHERE id = ?').bind(id),
   ]);
