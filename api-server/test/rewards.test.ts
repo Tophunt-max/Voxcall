@@ -14,6 +14,10 @@ import { bumpRewardProgress } from '../src/routes/rewards';
 function setupDb(): FakeD1 {
   const db = createTestDb();
   db.applySchema(`
+    CREATE TABLE app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+    INSERT INTO app_settings VALUES
+      ('reward_daily_budget_cap','0'),
+      ('reward_achievements_enabled','true');
     CREATE TABLE users (
       id TEXT PRIMARY KEY,
       coins INTEGER NOT NULL DEFAULT 0,
@@ -53,6 +57,32 @@ function setupDb(): FakeD1 {
       total_earned INTEGER NOT NULL DEFAULT 0,
       updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
       PRIMARY KEY (user_id, task_id)
+    );
+    -- Tables added in migration 0044 that bumpRewardProgress touches.
+    CREATE TABLE reward_achievements (
+      id TEXT PRIMARY KEY,
+      code TEXT NOT NULL UNIQUE,
+      title TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      icon TEXT NOT NULL DEFAULT 'trophy',
+      tier TEXT NOT NULL DEFAULT 'bronze',
+      trigger_type TEXT NOT NULL,
+      trigger_threshold INTEGER NOT NULL,
+      coins_reward INTEGER NOT NULL DEFAULT 0,
+      active INTEGER NOT NULL DEFAULT 1,
+      sort_order INTEGER NOT NULL DEFAULT 100
+    );
+    CREATE TABLE user_achievements (
+      user_id TEXT NOT NULL,
+      achievement_id TEXT NOT NULL,
+      unlocked_at INTEGER NOT NULL,
+      coins_awarded INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (user_id, achievement_id)
+    );
+    CREATE TABLE reward_budget_daily (
+      day_key TEXT PRIMARY KEY,
+      coins_paid INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER
     );
   `);
   return db;

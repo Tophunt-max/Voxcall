@@ -1559,6 +1559,357 @@ admin.delete('/reward-tasks/:id', async (c) => {
   return c.json({ success: true });
 });
 
+// ─── Reward Spin Wheel (single-row config) ────────────────────────────────────
+// GET returns the current wheel config PLUS aggregate stats so admins can
+// see total spins, coins paid, and the win distribution across segments.
+admin.get('/reward-spin', async (c) => {
+  const d = db(c);
+  const config = await d.prepare('SELECT * FROM reward_spin_config WHERE id = ?').bind('default').first<any>();
+  const stats = await d.prepare(
+    `SELECT COUNT(*) AS total_spins,
+            COUNT(DISTINCT user_id) AS unique_spinners,
+            COALESCE(SUM(coins_won), 0) AS coins_paid,
+            COALESCE(AVG(coins_won), 0) AS avg_win
+       FROM reward_spin_history`,
+  ).first<any>();
+  const dist = await d.prepare(
+    `SELECT segment_label, COUNT(*) AS count, SUM(coins_won) AS coins
+       FROM reward_spin_history
+      GROUP BY segment_label
+      ORDER BY count DESC`,
+  ).all<any>();
+  return c.json({ config, stats, distribution: dist.results ?? [] });
+});
+
+admin.patch('/reward-spin', async (c) => {
+  const body = (await c.req.json()) as Record<string, unknown>;
+  const sets: string[] = [];
+  const vals: unknown[] = [];
+  if (body.enabled !== undefined) {
+    sets.push('enabled = ?');
+    vals.push(body.enabled ? 1 : 0);
+  }
+  if (body.daily_free_spins !== undefined) {
+    const n = Math.max(0, Number(body.daily_free_spins));
+    sets.push('daily_free_spins = ?');
+    vals.push(n);
+  }
+  if (body.segments !== undefined) {
+    // Validate: must be a non-empty array of { label, coins, weight, color?, emoji? }
+    let segs: unknown = body.segments;
+    if (typeof segs === 'string') {
+      try { segs = JSON.parse(segs); } catch { return c.json({ error: 'segments must be valid JSON' }, 400); }
+    }
+    if (!Array.isArray(segs) || segs.length === 0) {
+      return c.json({ error: 'segments must be a non-empty array' }, 400);
+    }
+    for (const s of segs) {
+      if (!s || typeof s !== 'object') return c.json({ error: 'each segment must be an object' }, 400);
+      const seg = s as Record<string, unknown>;
+      if (typeof seg.label !== 'string' || !seg.label.trim()) return c.json({ error: 'each segment needs a non-empty label' }, 400);
+      if (!Number.isFinite(Number(seg.coins)) || Number(seg.coins) < 0) return c.json({ error: 'coins must be >= 0' }, 400);
+      if (!Number.isFinite(Number(seg.weight)) || Number(seg.weight) <= 0) return c.json({ error: 'weight must be > 0' }, 400);
+    }
+    sets.push('segments = ?');
+    vals.push(JSON.stringify(segs));
+  }
+  if (!sets.length) return c.json({ error: 'Nothing to update' }, 400);
+  sets.push('updated_at = unixepoch()');
+  vals.push('default');
+  await db(c).prepare(`UPDATE reward_spin_config SET ${sets.join(', ')} WHERE id = ?`).bind(...vals).run();
+  return c.json({ success: true });
+});
+
+// ─── Reward Campaigns CRUD ────────────────────────────────────────────────────
+admin.get('/reward-campaigns', async (c) => {
+  const now = Math.floor(Date.now() / 1000);
+  const res = await db(c)
+    .prepare('SELECT * FROM reward_campaigns ORDER BY starts_at DESC')
+    .all<any>();
+  const rows = (res.results ?? []).map((r) => ({
+    ...r,
+    active_now: r.active === 1 && Number(r.starts_at) <= now && Number(r.ends_at) >= now,
+  }));
+  return c.json(rows);
+});
+
+admin.post('/reward-campaigns', async (c) => {
+  const body = (await c.req.json()) as Record<string, unknown>;
+  if (!body.code || !body.title || body.starts_at == null || body.ends_at == null || body.multiplier == null) {
+    return c.json({ error: 'code, title, starts_at, ends_at, multiplier are required' }, 400);
+  }
+  const startsAt = Number(body.starts_at);
+  const endsAt = Number(body.ends_at);
+  const mult = Number(body.multiplier);
+  if (!Number.isFinite(startsAt) || !Number.isFinite(endsAt) || endsAt <= startsAt) {
+    return c.json({ error: 'ends_at must be after starts_at' }, 400);
+  }
+  if (!Number.isFinite(mult) || mult < 1 || mult > 20) {
+    return c.json({ error: 'multiplier must be between 1 and 20' }, 400);
+  }
+  const id = `rc_${crypto.randomUUID().slice(0, 12)}`;
+  try {
+    await db(c).prepare(
+      `INSERT INTO reward_campaigns
+         (id, code, title, description, banner_image_url, starts_at, ends_at, multiplier, applies_to_task_types, applies_to_spin, active)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).bind(
+      id,
+      String(body.code).slice(0, 40),
+      String(body.title).slice(0, 100),
+      String(body.description ?? '').slice(0, 500),
+      String(body.banner_image_url ?? ''),
+      startsAt,
+      endsAt,
+      mult,
+      String(body.applies_to_task_types ?? ''),
+      body.applies_to_spin === false ? 0 : 1,
+      body.active === false ? 0 : 1,
+    ).run();
+    return c.json({ id, success: true }, 201);
+  } catch (e: unknown) {
+    const msg = (e as { message?: string })?.message ?? '';
+    if (msg.includes('UNIQUE')) return c.json({ error: 'A campaign with this code already exists' }, 409);
+    console.warn('[admin] campaign create failed:', e);
+    return c.json({ error: 'Could not create campaign' }, 500);
+  }
+});
+
+admin.patch('/reward-campaigns/:id', async (c) => {
+  const { id } = c.req.param();
+  const body = (await c.req.json()) as Record<string, unknown>;
+  const sets: string[] = [];
+  const vals: unknown[] = [];
+  const stringFields = ['code', 'title', 'description', 'banner_image_url', 'applies_to_task_types'];
+  const numberFields = ['starts_at', 'ends_at', 'multiplier'];
+  for (const f of stringFields) {
+    if (body[f] !== undefined) { sets.push(`${f} = ?`); vals.push(String(body[f])); }
+  }
+  for (const f of numberFields) {
+    if (body[f] !== undefined) {
+      const n = Number(body[f]);
+      if (!Number.isFinite(n)) return c.json({ error: `${f} must be a number` }, 400);
+      sets.push(`${f} = ?`); vals.push(n);
+    }
+  }
+  if (body.applies_to_spin !== undefined) { sets.push('applies_to_spin = ?'); vals.push(body.applies_to_spin ? 1 : 0); }
+  if (body.active !== undefined) { sets.push('active = ?'); vals.push(body.active ? 1 : 0); }
+  if (!sets.length) return c.json({ error: 'Nothing to update' }, 400);
+  vals.push(id);
+  await db(c).prepare(`UPDATE reward_campaigns SET ${sets.join(', ')} WHERE id = ?`).bind(...vals).run();
+  return c.json({ success: true });
+});
+
+admin.delete('/reward-campaigns/:id', async (c) => {
+  const { id } = c.req.param();
+  await db(c).prepare('DELETE FROM reward_campaigns WHERE id = ?').bind(id).run();
+  return c.json({ success: true });
+});
+
+// ─── Reward Coupons CRUD (single + bulk generation) ───────────────────────────
+admin.get('/reward-coupons', async (c) => {
+  const res = await db(c).prepare('SELECT * FROM reward_coupons ORDER BY created_at DESC').all<any>();
+  return c.json(res.results ?? []);
+});
+
+admin.post('/reward-coupons', async (c) => {
+  const body = (await c.req.json()) as Record<string, unknown>;
+  if (!body.coins_reward) return c.json({ error: 'coins_reward is required' }, 400);
+  const coins = Math.max(0, Number(body.coins_reward));
+  const maxUses = body.max_uses == null || body.max_uses === '' ? null : Math.max(1, Number(body.max_uses));
+  const perUserLimit = Math.max(1, Number(body.per_user_limit ?? 1));
+  const expiresAt = body.expires_at == null || body.expires_at === '' ? null : Number(body.expires_at);
+
+  // Bulk generation: if `count` and `prefix` are supplied, generate N unique
+  // codes. Otherwise take the provided `code` field verbatim.
+  const bulk = Number(body.count ?? 0);
+  const prefix = String(body.prefix ?? '').toUpperCase().replace(/[^A-Z0-9_-]/g, '');
+  const created: string[] = [];
+
+  if (bulk > 1) {
+    if (bulk > 500) return c.json({ error: 'count must be <= 500' }, 400);
+    for (let i = 0; i < bulk; i++) {
+      // 8-char random suffix — 32 chars in [A-Z0-9] → ~10^12 combos.
+      const suffix = Array.from({ length: 8 }, () => 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 31)]).join('');
+      const code = (prefix ? `${prefix}-${suffix}` : suffix).slice(0, 40);
+      try {
+        await db(c).prepare(
+          `INSERT INTO reward_coupons (id, code, coins_reward, max_uses, per_user_limit, expires_at, active, note)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        ).bind(`co_${crypto.randomUUID().slice(0, 12)}`, code, coins, maxUses, perUserLimit, expiresAt, body.active === false ? 0 : 1, String(body.note ?? '')).run();
+        created.push(code);
+      } catch {
+        // duplicate — skip
+      }
+    }
+    return c.json({ success: true, created, count: created.length }, 201);
+  }
+
+  const code = String(body.code ?? '').toUpperCase().replace(/[^A-Z0-9_-]/g, '');
+  if (!code || code.length < 3) return c.json({ error: 'code must be at least 3 chars (A-Z0-9_-)' }, 400);
+  try {
+    const id = `co_${crypto.randomUUID().slice(0, 12)}`;
+    await db(c).prepare(
+      `INSERT INTO reward_coupons (id, code, coins_reward, max_uses, per_user_limit, expires_at, active, note)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).bind(id, code, coins, maxUses, perUserLimit, expiresAt, body.active === false ? 0 : 1, String(body.note ?? '')).run();
+    return c.json({ id, code, success: true }, 201);
+  } catch (e: unknown) {
+    const msg = (e as { message?: string })?.message ?? '';
+    if (msg.includes('UNIQUE')) return c.json({ error: 'Code already exists' }, 409);
+    console.warn('[admin] coupon create failed:', e);
+    return c.json({ error: 'Could not create coupon' }, 500);
+  }
+});
+
+admin.patch('/reward-coupons/:id', async (c) => {
+  const { id } = c.req.param();
+  const body = (await c.req.json()) as Record<string, unknown>;
+  const sets: string[] = [];
+  const vals: unknown[] = [];
+  if (body.coins_reward !== undefined) { sets.push('coins_reward = ?'); vals.push(Math.max(0, Number(body.coins_reward))); }
+  if (body.max_uses !== undefined) { sets.push('max_uses = ?'); vals.push(body.max_uses == null || body.max_uses === '' ? null : Math.max(1, Number(body.max_uses))); }
+  if (body.per_user_limit !== undefined) { sets.push('per_user_limit = ?'); vals.push(Math.max(1, Number(body.per_user_limit))); }
+  if (body.expires_at !== undefined) { sets.push('expires_at = ?'); vals.push(body.expires_at == null || body.expires_at === '' ? null : Number(body.expires_at)); }
+  if (body.active !== undefined) { sets.push('active = ?'); vals.push(body.active ? 1 : 0); }
+  if (body.note !== undefined) { sets.push('note = ?'); vals.push(String(body.note)); }
+  if (!sets.length) return c.json({ error: 'Nothing to update' }, 400);
+  vals.push(id);
+  await db(c).prepare(`UPDATE reward_coupons SET ${sets.join(', ')} WHERE id = ?`).bind(...vals).run();
+  return c.json({ success: true });
+});
+
+admin.delete('/reward-coupons/:id', async (c) => {
+  const { id } = c.req.param();
+  await db(c).batch([
+    db(c).prepare('DELETE FROM user_coupon_redemptions WHERE coupon_id = ?').bind(id),
+    db(c).prepare('DELETE FROM reward_coupons WHERE id = ?').bind(id),
+  ]);
+  return c.json({ success: true });
+});
+
+// ─── Reward Achievements CRUD ─────────────────────────────────────────────────
+admin.get('/reward-achievements', async (c) => {
+  const res = await db(c).prepare('SELECT * FROM reward_achievements ORDER BY sort_order ASC').all<any>();
+  const stats = await db(c).prepare(
+    `SELECT achievement_id, COUNT(*) AS unlocked_count, COALESCE(SUM(coins_awarded), 0) AS coins_paid
+       FROM user_achievements GROUP BY achievement_id`,
+  ).all<{ achievement_id: string; unlocked_count: number; coins_paid: number }>();
+  const byId = new Map((stats.results ?? []).map((r) => [r.achievement_id, r]));
+  return c.json((res.results ?? []).map((r: any) => ({
+    ...r,
+    unlocked_count: Number(byId.get(r.id)?.unlocked_count ?? 0),
+    coins_paid: Number(byId.get(r.id)?.coins_paid ?? 0),
+  })));
+});
+
+admin.post('/reward-achievements', async (c) => {
+  const body = (await c.req.json()) as Record<string, unknown>;
+  if (!body.code || !body.title || !body.trigger_type || body.trigger_threshold == null) {
+    return c.json({ error: 'code, title, trigger_type, trigger_threshold required' }, 400);
+  }
+  const id = `ach_${crypto.randomUUID().slice(0, 12)}`;
+  try {
+    await db(c).prepare(
+      `INSERT INTO reward_achievements
+         (id, code, title, description, icon, tier, trigger_type, trigger_threshold, coins_reward, active, sort_order)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).bind(
+      id,
+      String(body.code).slice(0, 40),
+      String(body.title).slice(0, 100),
+      String(body.description ?? '').slice(0, 300),
+      String(body.icon ?? 'trophy'),
+      String(body.tier ?? 'bronze'),
+      String(body.trigger_type),
+      Math.max(1, Number(body.trigger_threshold)),
+      Math.max(0, Number(body.coins_reward ?? 0)),
+      body.active === false ? 0 : 1,
+      Number(body.sort_order ?? 100),
+    ).run();
+    return c.json({ id, success: true }, 201);
+  } catch (e: unknown) {
+    const msg = (e as { message?: string })?.message ?? '';
+    if (msg.includes('UNIQUE')) return c.json({ error: 'Code already exists' }, 409);
+    return c.json({ error: 'Could not create achievement' }, 500);
+  }
+});
+
+admin.patch('/reward-achievements/:id', async (c) => {
+  const { id } = c.req.param();
+  const body = (await c.req.json()) as Record<string, unknown>;
+  const sets: string[] = [];
+  const vals: unknown[] = [];
+  const stringFields = ['code', 'title', 'description', 'icon', 'tier', 'trigger_type'];
+  const numberFields = ['trigger_threshold', 'coins_reward', 'sort_order'];
+  for (const f of stringFields) {
+    if (body[f] !== undefined) { sets.push(`${f} = ?`); vals.push(String(body[f])); }
+  }
+  for (const f of numberFields) {
+    if (body[f] !== undefined) {
+      const n = Number(body[f]);
+      if (!Number.isFinite(n)) return c.json({ error: `${f} must be a number` }, 400);
+      sets.push(`${f} = ?`); vals.push(n);
+    }
+  }
+  if (body.active !== undefined) { sets.push('active = ?'); vals.push(body.active ? 1 : 0); }
+  if (!sets.length) return c.json({ error: 'Nothing to update' }, 400);
+  vals.push(id);
+  await db(c).prepare(`UPDATE reward_achievements SET ${sets.join(', ')} WHERE id = ?`).bind(...vals).run();
+  return c.json({ success: true });
+});
+
+admin.delete('/reward-achievements/:id', async (c) => {
+  const { id } = c.req.param();
+  await db(c).batch([
+    db(c).prepare('DELETE FROM user_achievements WHERE achievement_id = ?').bind(id),
+    db(c).prepare('DELETE FROM reward_achievements WHERE id = ?').bind(id),
+  ]);
+  return c.json({ success: true });
+});
+
+// ─── Rewards analytics (dashboard summary) ────────────────────────────────────
+admin.get('/reward-analytics', async (c) => {
+  const now = Math.floor(Date.now() / 1000);
+  const day = now - 86400;
+  const week = now - 7 * 86400;
+  const [today, weekPaid, taskTop, campActive, couponActive] = await Promise.all([
+    db(c).prepare(
+      `SELECT COALESCE(SUM(amount), 0) AS paid, COUNT(*) AS n
+         FROM coin_transactions
+        WHERE type = 'bonus' AND rowid >= (SELECT MIN(rowid) FROM coin_transactions WHERE rowid >= 1)`,
+    ).first<any>(),
+    db(c).prepare(
+      `SELECT day_key, coins_paid FROM reward_budget_daily ORDER BY day_key DESC LIMIT 14`,
+    ).all<any>(),
+    db(c).prepare(
+      `SELECT t.title, t.code, SUM(p.total_earned) AS coins_paid, SUM(p.claim_count) AS claims
+         FROM user_reward_progress p INNER JOIN reward_tasks t ON t.id = p.task_id
+        GROUP BY t.id
+        ORDER BY coins_paid DESC LIMIT 10`,
+    ).all<any>(),
+    db(c).prepare(
+      `SELECT id, code, title, multiplier, starts_at, ends_at
+         FROM reward_campaigns
+        WHERE active = 1 AND starts_at <= ? AND ends_at >= ?
+        ORDER BY created_at DESC`,
+    ).bind(now, now).all<any>(),
+    db(c).prepare(
+      `SELECT COUNT(*) AS n FROM reward_coupons WHERE active = 1`,
+    ).first<any>(),
+  ]);
+  return c.json({
+    today,
+    daily_series: weekPaid.results ?? [],
+    top_tasks: taskTop.results ?? [],
+    active_campaigns: campActive.results ?? [],
+    active_coupons: Number(couponActive?.n ?? 0),
+    server_time: now,
+    since_day: day,
+    since_week: week,
+  });
+});
+
 // ─── Referrals ────────────────────────────────────────────────────────────────
 admin.get('/referrals', async (c) => {
   const topRows = await db(c).prepare(`

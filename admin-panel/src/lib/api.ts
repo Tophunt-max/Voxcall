@@ -148,6 +148,31 @@ export const api = {
   createRewardTask: (data: any) => req<any>('POST', '/admin/reward-tasks', data),
   updateRewardTask: (id: string, data: any) => req('PATCH', `/admin/reward-tasks/${id}`, data),
   deleteRewardTask: (id: string) => req('DELETE', `/admin/reward-tasks/${id}`),
+
+  // Lucky Spin config
+  rewardSpin: () => req<{ config: any; stats: any; distribution: any[] }>('GET', '/admin/reward-spin'),
+  updateRewardSpin: (data: any) => req('PATCH', '/admin/reward-spin', data),
+
+  // Campaigns
+  rewardCampaigns: () => req<any[]>('GET', '/admin/reward-campaigns'),
+  createRewardCampaign: (data: any) => req<any>('POST', '/admin/reward-campaigns', data),
+  updateRewardCampaign: (id: string, data: any) => req('PATCH', `/admin/reward-campaigns/${id}`, data),
+  deleteRewardCampaign: (id: string) => req('DELETE', `/admin/reward-campaigns/${id}`),
+
+  // Coupons
+  rewardCoupons: () => req<any[]>('GET', '/admin/reward-coupons'),
+  createRewardCoupon: (data: any) => req<any>('POST', '/admin/reward-coupons', data),
+  updateRewardCoupon: (id: string, data: any) => req('PATCH', `/admin/reward-coupons/${id}`, data),
+  deleteRewardCoupon: (id: string) => req('DELETE', `/admin/reward-coupons/${id}`),
+
+  // Achievements
+  rewardAchievements: () => req<any[]>('GET', '/admin/reward-achievements'),
+  createRewardAchievement: (data: any) => req<any>('POST', '/admin/reward-achievements', data),
+  updateRewardAchievement: (id: string, data: any) => req('PATCH', `/admin/reward-achievements/${id}`, data),
+  deleteRewardAchievement: (id: string) => req('DELETE', `/admin/reward-achievements/${id}`),
+
+  // Analytics
+  rewardAnalytics: () => req<any>('GET', '/admin/reward-analytics'),
   referrals: () => req<any>('GET', '/admin/referrals'),
   referralConfig: () => req<any>('GET', '/admin/referral-config'),
   updateReferralConfig: (data: any) => req('PUT', '/admin/referral-config', data),

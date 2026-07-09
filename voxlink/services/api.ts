@@ -499,6 +499,39 @@ export const API = {
       }>;
       total_earned: number;
       claimable_count: number;
+      campaigns: Array<{
+        id: string;
+        code: string;
+        title: string;
+        description: string;
+        banner_image_url: string;
+        starts_at: number;
+        ends_at: number;
+        multiplier: number;
+        applies_to_task_types: string[];
+        applies_to_spin: boolean;
+        ends_in_sec: number;
+      }>;
+      spin: null | {
+        enabled: boolean;
+        free_spins_remaining: number;
+        earned_spins_remaining: number;
+        total_spins: number;
+        total_coins_won: number;
+        segments: Array<{ label: string; coins: number; weight: number; color: string; emoji: string }>;
+      };
+      achievements: Array<{
+        id: string;
+        code: string;
+        title: string;
+        description: string;
+        icon: string;
+        tier: string;
+        trigger_threshold: number;
+        coins_reward: number;
+        unlocked: boolean;
+        unlocked_at: number | null;
+      }>;
       server_time: number;
     }>('GET', '/api/user/rewards'),
 
@@ -508,6 +541,9 @@ export const API = {
       task_id: string;
       task_code: string;
       coins_awarded: number;
+      base_reward: number;
+      multiplier: number;
+      campaign_code: string | null;
       new_balance: number;
       next_cooldown_sec: number;
     }>('POST', '/api/user/rewards/claim', { task_id }),
@@ -518,6 +554,32 @@ export const API = {
       '/api/user/rewards/track',
       { event },
     ),
+
+  // Lucky Spin — POSTs a spin action. The backend picks a weighted-random
+  // segment server-side (never trust the client) and credits coins atomically.
+  spinReward: () =>
+    apiRequest<{
+      ok: true;
+      segment_index: number;
+      segment_label: string;
+      base_coins: number;
+      coins_won: number;
+      multiplier: number;
+      campaign_code: string | null;
+      used_free: boolean;
+      free_spins_remaining: number;
+      earned_spins_remaining: number;
+      new_balance: number;
+    }>('POST', '/api/user/rewards/spin'),
+
+  // Coupon codes — redeem a code (normalised to uppercase server-side).
+  redeemCoupon: (code: string) =>
+    apiRequest<{
+      ok: true;
+      code: string;
+      coins_awarded: number;
+      new_balance: number;
+    }>('POST', '/api/user/rewards/redeem-coupon', { code }),
 
   // Payment Gateways (public)
   getPaymentGateways: () =>

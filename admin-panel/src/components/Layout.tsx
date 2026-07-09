@@ -6,7 +6,8 @@ import {
   Menu, X, ChevronRight, HelpCircle, Phone, Bell, Star,
   Hash, ArrowRightLeft, Trophy, ShieldCheck, TrendingUp, Tag,
   IndianRupee, MessageSquare, Flag, ShieldOff, Megaphone,
-  ScrollText, Image, Gift, Radio, Sliders, CreditCard
+  ScrollText, Image, Gift, Radio, Sliders, CreditCard,
+  CircleDollarSign, Zap, Ticket, Medal
 } from 'lucide-react';
 
 const nav = [
@@ -32,6 +33,10 @@ const nav = [
   { href: '/bulk-notifications', label: 'Bulk Notifications', icon: Megaphone, section: 'content' },
   { href: '/banners', label: 'Banners', icon: Image, section: 'content' },
   { href: '/reward-tasks', label: 'Reward Tasks', icon: Gift, section: 'content' },
+  { href: '/reward-spin', label: 'Lucky Spin', icon: CircleDollarSign, section: 'content' },
+  { href: '/reward-campaigns', label: 'Campaigns', icon: Zap, section: 'content' },
+  { href: '/reward-coupons', label: 'Coupons', icon: Ticket, section: 'content' },
+  { href: '/reward-achievements', label: 'Achievements', icon: Medal, section: 'content' },
   { href: '/notifications', label: 'Notifications', icon: Bell, section: 'content' },
   { href: '/talk-topics', label: 'Talk Topics', icon: Hash, section: 'content' },
   { href: '/faqs', label: 'FAQs', icon: HelpCircle, section: 'content' },
