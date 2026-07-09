@@ -8,6 +8,7 @@ import { sendEmail, otpEmailHtml } from '../lib/email';
 import { detectCountryFromRequest, currencyForCountry } from '../lib/currency';
 import { verifyFirebaseIdToken, projectIdFromServiceAccount, decodeJwtPayloadUnsafe } from '../lib/firebaseVerify';
 import { registerHit } from '../lib/rateLimit';
+import { isEmergencyOn, emergencyBlockedBody } from '../lib/emergencyFlags';
 import type { Env } from '../types';
 import { authMiddleware } from '../middleware/auth';
 import { bumpRewardProgress } from './rewards';
@@ -142,6 +143,13 @@ auth.post('/register', rateLimit, zValidator('json', registerSchema), async (c) 
   const { name, password, gender, phone, referral_code } = c.req.valid('json');
   const email = c.req.valid('json').email.trim().toLowerCase();
   const db = c.env.DB;
+  // Emergency kill switch — admin can pause NEW account creation from the
+  // dashboard when the platform is under abuse pressure or maintenance.
+  // Existing-user login paths (verify-otp on existing accounts, google-login
+  // on returning users) stay open so current users are not locked out.
+  if (await isEmergencyOn(db, 'registrations_paused')) {
+    return c.json(emergencyBlockedBody('registrations_paused'), 503);
+  }
   const existing = await db.prepare(
     'SELECT id, name, email, password_hash, role, coins FROM users WHERE email = ?'
   ).bind(email).first<any>();

@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { authMiddleware } from '../middleware/auth';
 import { USD_TO_FOREIGN, currencyForCountry, convertCurrency, convertFromUSD, detectCountryFromRequest } from '../lib/currency';
+import { isEmergencyOn, emergencyBlockedBody } from '../lib/emergencyFlags';
 import type { Env, JWTPayload } from '../types';
 
 const coin = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
@@ -340,6 +341,13 @@ coin.post('/withdraw', async (c) => {
     return c.json({ error: 'Invalid coins amount' }, 400);
   }
   const coinsReq = Math.floor(Number(coins_requested));
+
+  // Emergency kill switch — admin can freeze all payouts from the dashboard
+  // (Settings → Emergency Switches). Returns 503 so mobile clients treat it
+  // as a temporary outage, not a permanent error. Fails OPEN on DB blip.
+  if (await isEmergencyOn(db, 'payouts_frozen')) {
+    return c.json(emergencyBlockedBody('payouts_frozen'), 503);
+  }
 
   const settings = await db.prepare("SELECT value FROM app_settings WHERE key = 'min_withdrawal_coins'").first<any>();
   const minCoins = parseInt(settings?.value ?? '100');

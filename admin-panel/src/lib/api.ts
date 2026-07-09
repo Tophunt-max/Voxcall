@@ -92,6 +92,22 @@ export async function req<T>(method: string, path: string, body?: unknown): Prom
 export const api = {
   login: (email: string, password: string) => req<{ token: string; user: any }>('POST', '/auth/login', { email, password, role: 'admin' }),
   dashboard: () => req<any>('GET', '/admin/dashboard'),
+  // ── New production-grade dashboard endpoints ─────────────────────────
+  // Bundled financial + pending + live + recent + leaderboards +
+  // call-type split + admin actions + anomalies. Called every 20 s from
+  // the redesigned Dashboard.
+  dashboardSummary: () => req<any>('GET', '/admin/dashboard/summary'),
+  // SLA & data-integrity signals — API errors, FX freshness, coin
+  // reconciliation, migration state, reward-budget fill, security counters.
+  monitoringHealth: () => req<any>('GET', '/admin/monitoring/health'),
+  // Kill-switch state for the emergency-switches card on the dashboard.
+  emergencyFlags: () =>
+    req<{ payouts_frozen: boolean; registrations_paused: boolean; new_calls_paused: boolean }>(
+      'GET',
+      '/admin/emergency-flags',
+    ),
+  setEmergencyFlag: (flag: 'payouts_frozen' | 'registrations_paused' | 'new_calls_paused', on: boolean) =>
+    req<{ success: boolean; flag: string; on: boolean }>('PATCH', '/admin/emergency-flags', { flag, on }),
   users: (p?: string, s?: string) => req<any[]>('GET', `/admin/users?page=${p||1}&limit=21${s ? '&search='+encodeURIComponent(s) : ''}`),
   updateUser: (id: string, data: any) => req('PATCH', `/admin/users/${id}`, data),
   hosts: (page = 1, limit = 50) => req<any[]>('GET', `/admin/hosts?page=${page}&limit=${limit}`),

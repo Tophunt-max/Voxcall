@@ -10,6 +10,7 @@ import { applyLevelUp } from '../lib/levelService';
 import { billedMinutes, coinsForCall, chargeCallerWithFreePool, affordableCallSeconds, isPrepaidHoldEnabled, placeCallHold, releaseCallHold } from '../lib/billing';
 import { registerHit } from '../lib/rateLimit';
 import { apiError, ErrorCode } from '../lib/errors';
+import { isEmergencyOn, emergencyBlockedBody } from '../lib/emergencyFlags';
 import { bumpRewardProgress } from './rewards';
 import type { Env, JWTPayload, HostRow, CallSessionRow, CallerData, HostData } from '../types';
 
@@ -32,6 +33,13 @@ const rateSchema = z.object({
 call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
   const { sub } = c.get('user');
   const db = c.env.DB;
+
+  // Emergency kill switch — admin can pause new-call creation platform-wide
+  // from the dashboard (e.g. during an Agora outage or coin-ledger incident).
+  // In-flight calls are not affected — only NEW initiations return 503.
+  if (await isEmergencyOn(db, 'new_calls_paused')) {
+    return c.json(emergencyBlockedBody('new_calls_paused'), 503);
+  }
 
   // Rate limit: max 5 call initiations per user per minute to prevent host spam
   const rlKey = `rl:initiate:${sub}:${Math.floor(Date.now() / 60000)}`;

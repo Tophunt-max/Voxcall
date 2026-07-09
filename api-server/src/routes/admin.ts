@@ -3,6 +3,12 @@ import { authMiddleware, adminMiddleware } from '../middleware/auth';
 import { sendFCMPush, getFCMTokens } from '../lib/fcm';
 import { buildAgoraRtcToken, isAgoraConfigured } from '../lib/agoraToken';
 import { getCallEconomicsConfig, agoraCostPerMinInr } from '../lib/callEconomics';
+import {
+  readAllEmergencyFlags,
+  setEmergencyFlag,
+  type EmergencyFlagKey,
+} from '../lib/emergencyFlags';
+import { listMigrationStatus as listMigrationStatusForHealth } from '../lib/autoMigrate';
 import { getLevelConfig, normalizeLevelConfig, getDefaultCallRates, getEarningShare, MIN_LEVELS, MAX_LEVELS } from '../lib/levels';
 import { recalcAllHostLevels } from '../lib/levelService';
 import { approveDeposit, validatePromoInput } from './payment';
@@ -2916,6 +2922,478 @@ admin.get('/coin-reconciliation', async (c) => {
     ledger_by_type: byType ?? [],
     top_drifters: drifters ?? [],
     note: 'Drift is expected for accounts whose welcome/legacy bonuses predate the ledger fix. Large unexplained drift on recent activity is the signal to investigate.',
+  });
+});
+
+// ============================================================================
+//  PRODUCTION DASHBOARD ENDPOINTS
+// ============================================================================
+//
+// Three endpoints power the redesigned admin dashboard:
+//
+//   GET /admin/dashboard/summary   Bundled: financial KPIs + pending
+//                                  counters + live ops + recent activity +
+//                                  leaderboards + call-type split +
+//                                  admin action log + anomalies.
+//                                  Called every 20 s from the dashboard.
+//
+//   GET /admin/monitoring/health   SLA & data-integrity signals: API
+//                                  errors, FX freshness, coin
+//                                  reconciliation, migration state,
+//                                  reward-budget fill, security counters.
+//                                  Called every 30 s.
+//
+//   GET/PATCH /admin/emergency-flags
+//                                  Read/write the platform kill switches
+//                                  (payouts_frozen / registrations_paused
+//                                  / new_calls_paused). PATCH stamps an
+//                                  audit_log entry for compliance.
+//
+// Bundling avoids ~10 parallel useQuery requests every 20 s.
+// All queries are read-only + independent → parallelised with Promise.all
+// so worker latency stays flat regardless of table cardinality.
+// ============================================================================
+
+// ─── GET /admin/emergency-flags ────────────────────────────────────────────
+admin.get('/emergency-flags', async (c) => {
+  const flags = await readAllEmergencyFlags(c.env.DB);
+  return c.json(flags);
+});
+
+// ─── PATCH /admin/emergency-flags ──────────────────────────────────────────
+// Body: { flag: 'payouts_frozen' | 'registrations_paused' | 'new_calls_paused',
+//         on:   boolean }
+// Audit-logs every change so we always know WHO paused WHAT and WHEN.
+admin.patch('/emergency-flags', async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+  const flag = body.flag as EmergencyFlagKey;
+  const on = Boolean(body.on);
+  const allowed: EmergencyFlagKey[] = ['payouts_frozen', 'registrations_paused', 'new_calls_paused'];
+  if (!allowed.includes(flag)) {
+    return c.json({ error: 'flag must be one of payouts_frozen / registrations_paused / new_calls_paused' }, 400);
+  }
+  await setEmergencyFlag(c.env.DB, flag, on);
+  const u = c.get('user');
+  await auditLog(
+    c.env.DB,
+    u.sub,
+    u.email || 'Admin',
+    u.email || '',
+    on ? 'emergency_flag_on' : 'emergency_flag_off',
+    'setting',
+    flag,
+    `Admin ${on ? 'ENABLED' : 'DISABLED'} emergency flag: ${flag}`,
+    c.req.header('CF-Connecting-IP') ?? '',
+  );
+  return c.json({ success: true, flag, on });
+});
+
+// ─── GET /admin/dashboard/summary ──────────────────────────────────────────
+admin.get('/dashboard/summary', async (c) => {
+  const dbA = c.env.DB;
+  const cfg = await getCallEconomicsConfig(dbA);
+  const now = Math.floor(Date.now() / 1000);
+  const day = 86400;
+  const startOfTodayUtc = Math.floor(now / day) * day;
+  const startOfWeek = now - 7 * day;
+  const startOfPrevWeek = now - 14 * day;
+  const startOfMonth = Math.floor(
+    new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime() / 1000,
+  );
+
+  // Fire every read in parallel — each is a small aggregate against an
+  // indexed column, so this whole endpoint returns in a single-digit ms
+  // once D1 is warm.
+  const [
+    // Financial aggregates
+    revToday, revWeek, revPrevWeek, revMonth, hostPayoutMonth, hostPayoutToday,
+    monthMinutes, pendingPayouts,
+    // Pending counters
+    pKyc, pWith, pDep, pTickets, pReports, errHour,
+    // Live calls
+    liveCallsCount, liveCalls,
+    // Recent activity
+    recentSignups, recentApps, recentBigTx,
+    // Leaderboards
+    topHosts, topUsers,
+    // Call-type split (7d)
+    callSplit,
+    // Admin action log
+    adminActions,
+    // Anomaly baseline (7 day avg vs today)
+    callsToday, avgDailyCalls,
+  ] = await Promise.all([
+    dbA.prepare('SELECT COALESCE(SUM(coins_charged),0) AS coins FROM call_sessions WHERE status = ? AND created_at >= ?').bind('ended', startOfTodayUtc).first<{ coins: number }>(),
+    dbA.prepare('SELECT COALESCE(SUM(coins_charged),0) AS coins FROM call_sessions WHERE status = ? AND created_at >= ?').bind('ended', startOfWeek).first<{ coins: number }>(),
+    dbA.prepare('SELECT COALESCE(SUM(coins_charged),0) AS coins FROM call_sessions WHERE status = ? AND created_at >= ? AND created_at < ?').bind('ended', startOfPrevWeek, startOfWeek).first<{ coins: number }>(),
+    dbA.prepare('SELECT COALESCE(SUM(coins_charged),0) AS coins FROM call_sessions WHERE status = ? AND created_at >= ?').bind('ended', startOfMonth).first<{ coins: number }>(),
+    dbA.prepare(
+      `SELECT COALESCE(SUM(ct.amount),0) AS host_coins
+         FROM coin_transactions ct
+         JOIN call_sessions cs ON cs.id = ct.ref_id
+        WHERE ct.type = ? AND cs.status = ? AND cs.created_at >= ?`,
+    ).bind('bonus', 'ended', startOfMonth).first<{ host_coins: number }>().catch(() => ({ host_coins: 0 })),
+    // Actual host bonus coins credited today (from the ledger). Multiplied
+    // by coin_payout_inr for the real ₹ outflow. Falls back to 0 if the
+    // JOIN fails on an old schema.
+    dbA.prepare(
+      `SELECT COALESCE(SUM(ct.amount),0) AS host_coins
+         FROM coin_transactions ct
+         JOIN call_sessions cs ON cs.id = ct.ref_id
+        WHERE ct.type = ? AND cs.status = ? AND cs.created_at >= ?`,
+    ).bind('bonus', 'ended', startOfTodayUtc).first<{ host_coins: number }>().catch(() => ({ host_coins: 0 })),
+    dbA.prepare(
+      `SELECT
+         COALESCE(SUM(CASE WHEN type='video' THEN (duration_seconds + 59) / 60 ELSE 0 END),0) AS video_min,
+         COALESCE(SUM(CASE WHEN type!='video' THEN (duration_seconds + 59) / 60 ELSE 0 END),0) AS audio_min
+       FROM call_sessions
+      WHERE status = ? AND created_at >= ? AND duration_seconds > 0`,
+    ).bind('ended', startOfMonth).first<{ video_min: number; audio_min: number }>(),
+    dbA.prepare('SELECT COALESCE(SUM(amount),0) AS amt FROM withdrawal_requests WHERE status = ?').bind('pending').first<{ amt: number }>(),
+
+    // Pending counters — one COUNT each, indexed by status
+    dbA.prepare('SELECT COUNT(*) AS n FROM host_applications WHERE status = ?').bind('pending').first<{ n: number }>().catch(() => ({ n: 0 })),
+    dbA.prepare('SELECT COUNT(*) AS n FROM withdrawal_requests WHERE status = ?').bind('pending').first<{ n: number }>().catch(() => ({ n: 0 })),
+    dbA.prepare('SELECT COUNT(*) AS n FROM coin_purchases WHERE status = ?').bind('pending').first<{ n: number }>().catch(() => ({ n: 0 })),
+    dbA.prepare('SELECT COUNT(*) AS n FROM support_tickets WHERE status = ?').bind('open').first<{ n: number }>().catch(() => ({ n: 0 })),
+    dbA.prepare('SELECT COUNT(*) AS n FROM content_reports WHERE status = ?').bind('pending').first<{ n: number }>().catch(() => ({ n: 0 })),
+    dbA.prepare('SELECT COUNT(*) AS n FROM app_errors WHERE created_at > ?').bind(now - 3600).first<{ n: number }>().catch(() => ({ n: 0 })),
+
+    // Live ops — active calls right now
+    dbA.prepare('SELECT COUNT(*) AS n FROM call_sessions WHERE status = ?').bind('active').first<{ n: number }>(),
+    dbA.prepare(
+      `SELECT cs.id, cs.type, cs.created_at, cs.coins_per_minute,
+              caller.name AS caller_name, host_u.name AS host_name
+         FROM call_sessions cs
+         LEFT JOIN users caller ON caller.id = cs.caller_id
+         LEFT JOIN hosts h ON h.id = cs.host_id
+         LEFT JOIN users host_u ON host_u.id = h.user_id
+        WHERE cs.status = ?
+        ORDER BY cs.created_at DESC LIMIT 5`,
+    ).bind('active').all<{
+      id: string; type: string; created_at: number; coins_per_minute: number;
+      caller_name: string | null; host_name: string | null;
+    }>(),
+
+    // Recent signups (users only, exclude admins)
+    dbA.prepare(
+      `SELECT id, name, email, avatar_url, country, created_at
+         FROM users
+        WHERE role = ?
+        ORDER BY created_at DESC LIMIT 5`,
+    ).bind('user').all<{ id: string; name: string; email: string; avatar_url: string | null; country: string | null; created_at: number }>(),
+    dbA.prepare(
+      `SELECT ha.id, ha.status, ha.submitted_at, ha.display_name, u.name AS user_name, u.email
+         FROM host_applications ha
+         LEFT JOIN users u ON u.id = ha.user_id
+        WHERE ha.status = ?
+        ORDER BY ha.submitted_at DESC LIMIT 5`,
+    ).bind('pending').all<{ id: string; status: string; submitted_at: number; display_name: string; user_name: string | null; email: string | null }>().catch(() => ({ results: [] })),
+    dbA.prepare(
+      `SELECT cp.id, cp.coins, cp.status, cp.created_at, u.name AS user_name
+         FROM coin_purchases cp
+         LEFT JOIN users u ON u.id = cp.user_id
+        WHERE cp.status = ? AND cp.coins > ?
+        ORDER BY cp.created_at DESC LIMIT 5`,
+    ).bind('completed', 1000).all<{ id: string; coins: number; status: string; created_at: number; user_name: string | null }>().catch(() => ({ results: [] })),
+
+    // Leaderboards (7 d) — top hosts by coins earned + top users by coins spent
+    dbA.prepare(
+      `SELECT h.id AS host_id, u.name AS host_name, COALESCE(SUM(cs.coins_charged),0) AS coins
+         FROM call_sessions cs
+         JOIN hosts h ON h.id = cs.host_id
+         JOIN users u ON u.id = h.user_id
+        WHERE cs.status = ? AND cs.created_at >= ?
+        GROUP BY h.id
+        ORDER BY coins DESC LIMIT 5`,
+    ).bind('ended', startOfWeek).all<{ host_id: string; host_name: string; coins: number }>(),
+    dbA.prepare(
+      `SELECT caller_id, u.name AS user_name, COALESCE(SUM(cs.coins_charged),0) AS coins
+         FROM call_sessions cs
+         JOIN users u ON u.id = cs.caller_id
+        WHERE cs.status = ? AND cs.created_at >= ?
+        GROUP BY caller_id
+        ORDER BY coins DESC LIMIT 5`,
+    ).bind('ended', startOfWeek).all<{ caller_id: string; user_name: string; coins: number }>(),
+
+    // Call-type split for the 7-day donut on the dashboard
+    dbA.prepare(
+      `SELECT type, COUNT(*) AS calls, COALESCE(SUM(coins_charged),0) AS coins
+         FROM call_sessions
+        WHERE status = ? AND created_at >= ?
+        GROUP BY type`,
+    ).bind('ended', startOfWeek).all<{ type: string; calls: number; coins: number }>(),
+
+    // Admin action log — WHO did WHAT recently
+    dbA.prepare(
+      `SELECT id, admin_name, admin_email, action, target_type, target, detail, created_at
+         FROM audit_logs
+        ORDER BY created_at DESC LIMIT 10`,
+    ).all<{ id: string; admin_name: string; admin_email: string; action: string; target_type: string; target: string; detail: string; created_at: number }>().catch(() => ({ results: [] })),
+
+    // Anomaly detection — today's calls vs 30-day average
+    dbA.prepare('SELECT COUNT(*) AS n FROM call_sessions WHERE created_at >= ?').bind(startOfTodayUtc).first<{ n: number }>(),
+    dbA.prepare(
+      `SELECT COALESCE(AVG(daily), 0) AS avg_daily FROM (
+         SELECT COUNT(*) AS daily, DATE(created_at, 'unixepoch') AS day
+           FROM call_sessions
+          WHERE created_at >= ?
+          GROUP BY day
+       )`,
+    ).bind(now - 30 * day).first<{ avg_daily: number }>(),
+  ]);
+
+  // ── Derive ₹ figures using live economics config ─────────────────────
+  const revenueTodayInr = Number(revToday?.coins ?? 0) * cfg.coinPurchaseInr;
+  const revenueMonthInr = Number(revMonth?.coins ?? 0) * cfg.coinPurchaseInr;
+  const revenueWeekCoins = Number(revWeek?.coins ?? 0);
+  const revenuePrevWeekCoins = Number(revPrevWeek?.coins ?? 0);
+  const revenueWowPct = revenuePrevWeekCoins > 0
+    ? ((revenueWeekCoins - revenuePrevWeekCoins) / revenuePrevWeekCoins) * 100
+    : (revenueWeekCoins > 0 ? 100 : 0);
+
+  // Platform net + margin — same math as /analytics/margins so numbers line up.
+  const audioMin = Number(monthMinutes?.audio_min ?? 0);
+  const videoMin = Number(monthMinutes?.video_min ?? 0);
+  const agoraCostMonthInr =
+    audioMin * agoraCostPerMinInr('audio', cfg) + videoMin * agoraCostPerMinInr('video', cfg);
+  const agoraCostMonthUsd = cfg.fxInrPerUsd > 0 ? agoraCostMonthInr / cfg.fxInrPerUsd : 0;
+
+  // Today's platform net — same shape as /analytics/margins:
+  //   net = revenue − gateway_fee − actual_host_payout − daily_agora_share
+  // Using ACTUAL host payout coins (from the ledger) instead of share ×
+  // revenue keeps the number honest — it matches what the host wallet
+  // sums to, and doesn't drift when per-level shares differ from the
+  // default `host_revenue_share` config knob.
+  const gatewayPct = cfg.gatewayFeePct;
+  const hostPayoutTodayInr = Number(hostPayoutToday?.host_coins ?? 0) * cfg.coinPayoutInr;
+  const gatewayFeeTodayInr = revenueTodayInr * (gatewayPct / 100);
+  // Rough per-day Agora cost = full-month / days-elapsed; keeps the today
+  // number meaningful without adding another SQL round-trip.
+  const dayOfMonth = new Date().getUTCDate() || 1;
+  const agoraCostTodayInr = agoraCostMonthInr / dayOfMonth;
+  const platformNetTodayInr =
+    revenueTodayInr - hostPayoutTodayInr - gatewayFeeTodayInr - agoraCostTodayInr;
+  const marginTodayPct = revenueTodayInr > 0 ? (platformNetTodayInr / revenueTodayInr) * 100 : 0;
+
+  const pendingPayoutsInr = Number(pendingPayouts?.amt ?? 0);
+
+  // Live-call burn rate — sum of coins_per_minute across all active calls,
+  // converted to ₹/min using the purchase rate.
+  const liveList = (liveCalls.results ?? []);
+  const burnRateInrPerMin = liveList.reduce((s, r) => s + (Number(r.coins_per_minute) || 0), 0) * cfg.coinPurchaseInr;
+
+  // Anomaly signal — "calls today" vs "30-day daily avg". Emitted when
+  // the deviation exceeds 30%.
+  const todayCalls = Number(callsToday?.n ?? 0);
+  const avgDaily = Number(avgDailyCalls?.avg_daily ?? 0);
+  const anomalies: Array<{ tone: 'warn' | 'bad'; msg: string }> = [];
+  if (avgDaily > 5) {
+    const deviationPct = ((todayCalls - avgDaily) / avgDaily) * 100;
+    if (deviationPct < -30) {
+      anomalies.push({
+        tone: 'bad',
+        msg: `Calls today are ${Math.abs(deviationPct).toFixed(0)}% below the 30-day average (${todayCalls} vs ~${Math.round(avgDaily)}).`,
+      });
+    } else if (deviationPct > 100) {
+      anomalies.push({
+        tone: 'warn',
+        msg: `Calls today are ${deviationPct.toFixed(0)}% above the 30-day average (${todayCalls} vs ~${Math.round(avgDaily)}). Confirm this is expected traffic, not abuse.`,
+      });
+    }
+  }
+  if (revenueWowPct < -25) {
+    anomalies.push({
+      tone: 'bad',
+      msg: `Weekly revenue is down ${Math.abs(revenueWowPct).toFixed(0)}% vs last week.`,
+    });
+  }
+  if (marginTodayPct < 10 && revenueTodayInr > 0) {
+    anomalies.push({
+      tone: 'warn',
+      msg: `Today's margin is ${marginTodayPct.toFixed(0)}% — below the 10% healthy threshold.`,
+    });
+  }
+
+  return c.json({
+    financial: {
+      revenue_today_inr: Math.round(revenueTodayInr * 100) / 100,
+      revenue_month_inr: Math.round(revenueMonthInr * 100) / 100,
+      revenue_wow_pct: Math.round(revenueWowPct * 10) / 10,
+      platform_net_today_inr: Math.round(platformNetTodayInr * 100) / 100,
+      margin_today_pct: Math.round(marginTodayPct * 10) / 10,
+      agora_cost_month_inr: Math.round(agoraCostMonthInr * 100) / 100,
+      agora_cost_month_usd: Math.round(agoraCostMonthUsd * 100) / 100,
+      pending_payouts_inr: Math.round(pendingPayoutsInr * 100) / 100,
+      revenue_today_coins: Number(revToday?.coins ?? 0),
+      host_payout_today_inr: Math.round(hostPayoutTodayInr * 100) / 100,
+    },
+    pending: {
+      kyc: Number(pKyc?.n ?? 0),
+      withdrawals: Number(pWith?.n ?? 0),
+      deposits: Number(pDep?.n ?? 0),
+      support_tickets: Number(pTickets?.n ?? 0),
+      content_reports: Number(pReports?.n ?? 0),
+      server_errors_hour: Number(errHour?.n ?? 0),
+    },
+    live: {
+      active_calls: Number(liveCallsCount?.n ?? 0),
+      burn_rate_inr_per_min: Math.round(burnRateInrPerMin * 100) / 100,
+      top_calls: liveList.map((c) => ({
+        id: c.id,
+        type: c.type,
+        caller_name: c.caller_name ?? '—',
+        host_name: c.host_name ?? '—',
+        coins_per_minute: Number(c.coins_per_minute) || 0,
+        started_ago_sec: Math.max(0, now - Number(c.created_at ?? now)),
+      })),
+    },
+    recent: {
+      signups: recentSignups.results ?? [],
+      host_applications: recentApps.results ?? [],
+      big_deposits: recentBigTx.results ?? [],
+    },
+    leaderboards: {
+      top_hosts_7d: (topHosts.results ?? []).map((h) => ({
+        host_id: h.host_id,
+        name: h.host_name,
+        coins: Number(h.coins),
+        revenue_inr: Math.round(Number(h.coins) * cfg.coinPurchaseInr * 100) / 100,
+      })),
+      top_users_7d: (topUsers.results ?? []).map((u) => ({
+        user_id: u.caller_id,
+        name: u.user_name,
+        coins: Number(u.coins),
+        spent_inr: Math.round(Number(u.coins) * cfg.coinPurchaseInr * 100) / 100,
+      })),
+    },
+    call_type_split_7d: (callSplit.results ?? []).map((r) => ({
+      type: r.type,
+      calls: Number(r.calls),
+      coins: Number(r.coins),
+    })),
+    admin_actions_recent: adminActions.results ?? [],
+    anomalies,
+    server_time: now,
+  });
+});
+
+// ─── GET /admin/monitoring/health ──────────────────────────────────────────
+admin.get('/monitoring/health', async (c) => {
+  const dbA = c.env.DB;
+  const now = Math.floor(Date.now() / 1000);
+  const hour = 3600;
+
+  const [
+    apiErrors, apiRequestsHint, fxRow,
+    coinsIssued, coinsInWallets, coinsBurned,
+    migrationState, budgetRow, budgetCapRow,
+    failedLogins, rateLimitedHits, bannedTotal,
+  ] = await Promise.all([
+    dbA.prepare('SELECT COUNT(*) AS n FROM app_errors WHERE created_at > ?').bind(now - hour).first<{ n: number }>().catch(() => ({ n: 0 })),
+    // We don't have a canonical request-count metric — use call_sessions
+    // as a proxy for activity in the past hour so the ratio at least tells
+    // us "many requests + few errors" vs "no traffic".
+    dbA.prepare('SELECT COUNT(*) AS n FROM call_sessions WHERE created_at > ?').bind(now - hour).first<{ n: number }>().catch(() => ({ n: 0 })),
+    dbA.prepare("SELECT value FROM app_settings WHERE key = 'fx_rates_last_updated'").first<{ value: string }>().catch(() => null),
+
+    // Coin reconciliation — issued (bonus + purchase) − burned (call + withdrawal) = in_wallets ± tolerance
+    dbA.prepare("SELECT COALESCE(SUM(amount),0) AS n FROM coin_transactions WHERE type IN ('bonus','purchase','reward','refund')").first<{ n: number }>().catch(() => ({ n: 0 })),
+    dbA.prepare('SELECT COALESCE(SUM(coins),0) AS n FROM users').first<{ n: number }>().catch(() => ({ n: 0 })),
+    dbA.prepare("SELECT COALESCE(SUM(amount),0) AS n FROM coin_transactions WHERE type IN ('call','withdrawal','tip','gift')").first<{ n: number }>().catch(() => ({ n: 0 })),
+
+    listMigrationStatusForHealth(dbA).catch(() => ({ total: 0, applied: [], pending: [] })),
+
+    dbA.prepare("SELECT coins_paid FROM reward_budget_daily WHERE day_key = ?").bind(
+      (() => { const d = new Date(now * 1000); return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`; })(),
+    ).first<{ coins_paid: number }>().catch(() => null),
+    dbA.prepare("SELECT value FROM app_settings WHERE key = 'reward_daily_budget_cap'").first<{ value: string }>().catch(() => null),
+
+    // Security signals — best-effort, table may not exist on very old DBs.
+    dbA.prepare("SELECT COUNT(*) AS n FROM rate_limits WHERE id LIKE 'rl:auth_login:%' AND updated_at > ?").bind(now - hour).first<{ n: number }>().catch(() => ({ n: 0 })),
+    dbA.prepare('SELECT COALESCE(SUM(attempts),0) AS n FROM rate_limits WHERE updated_at > ?').bind(now - hour).first<{ n: number }>().catch(() => ({ n: 0 })),
+    dbA.prepare("SELECT COUNT(*) AS n FROM users WHERE status = 'banned'").first<{ n: number }>().catch(() => ({ n: 0 })),
+  ]);
+
+  // ── API health ────────────────────────────────────────────────────────
+  const errCount = Number(apiErrors?.n ?? 0);
+  const reqCount = Number(apiRequestsHint?.n ?? 0);
+  // We can't compute a real error rate without a request counter; the tone
+  // is set by an absolute error count. Fine-tune later if we add a metrics
+  // table.
+  const apiTone: 'ok' | 'warn' | 'bad' =
+    errCount > 100 ? 'bad' : errCount > 20 ? 'warn' : 'ok';
+
+  // ── FX freshness ──────────────────────────────────────────────────────
+  const fxUpdatedAt = fxRow?.value ? parseInt(fxRow.value) : 0;
+  const fxAgeSec = fxUpdatedAt > 0 ? Math.max(0, now - fxUpdatedAt) : Number.MAX_SAFE_INTEGER;
+  const fxTone: 'ok' | 'warn' | 'bad' =
+    fxAgeSec > 24 * hour ? 'bad' : fxAgeSec > 6 * hour ? 'warn' : 'ok';
+
+  // ── Coin reconciliation ───────────────────────────────────────────────
+  // Perfect balance: issued − burned = in_wallets. Small drift is expected
+  // (welcome bonuses that predate the ledger fix, active call holds).
+  const issued = Number(coinsIssued?.n ?? 0);
+  const inWallets = Number(coinsInWallets?.n ?? 0);
+  const burned = Number(coinsBurned?.n ?? 0);
+  const reconciliationDelta = issued - burned - inWallets;
+  const reconTolerancePct = issued > 0 ? Math.abs(reconciliationDelta) / issued * 100 : 0;
+  const reconTone: 'ok' | 'warn' | 'bad' =
+    reconTolerancePct > 2 ? 'bad' : reconTolerancePct > 0.5 ? 'warn' : 'ok';
+
+  // ── Migrations ────────────────────────────────────────────────────────
+  const migTotal = migrationState.total;
+  const migAppliedCount = migrationState.applied.length;
+  const migPendingCount = migrationState.pending.length;
+  const migTone: 'ok' | 'warn' | 'bad' =
+    migPendingCount > 0 ? 'warn' : (migAppliedCount === 0 && migTotal > 0) ? 'bad' : 'ok';
+
+  // ── Reward budget ─────────────────────────────────────────────────────
+  const budgetPaid = Number(budgetRow?.coins_paid ?? 0);
+  const budgetCap = parseInt(budgetCapRow?.value ?? '0') || 0;
+  const budgetPct = budgetCap > 0 ? (budgetPaid / budgetCap) * 100 : 0;
+  const budgetTone: 'ok' | 'warn' | 'bad' =
+    budgetCap > 0 && budgetPct >= 100 ? 'bad' :
+    budgetCap > 0 && budgetPct >= 80 ? 'warn' : 'ok';
+
+  return c.json({
+    api: {
+      tone: apiTone,
+      error_count_hour: errCount,
+      calls_hour: reqCount,
+    },
+    fx: {
+      tone: fxTone,
+      last_updated_sec_ago: fxAgeSec === Number.MAX_SAFE_INTEGER ? null : fxAgeSec,
+      last_updated_at: fxUpdatedAt || null,
+    },
+    coins: {
+      tone: reconTone,
+      issued,
+      in_wallets: inWallets,
+      burned,
+      reconciliation_delta: reconciliationDelta,
+      tolerance_pct: Math.round(reconTolerancePct * 100) / 100,
+    },
+    migrations: {
+      tone: migTone,
+      total: migTotal,
+      applied: migAppliedCount,
+      pending: migPendingCount,
+      pending_names: migrationState.pending,
+    },
+    reward_budget: {
+      tone: budgetTone,
+      cap: budgetCap,
+      paid_today: budgetPaid,
+      pct_used: Math.round(budgetPct * 10) / 10,
+    },
+    security: {
+      failed_logins_hour: Number(failedLogins?.n ?? 0),
+      rate_limit_hits_hour: Number(rateLimitedHits?.n ?? 0),
+      banned_users_total: Number(bannedTotal?.n ?? 0),
+    },
+    server_time: now,
   });
 });
 
