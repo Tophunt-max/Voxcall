@@ -99,20 +99,23 @@ function arcPath(cx: number, cy: number, r: number, startDeg: number, endDeg: nu
 }
 
 // Small SVG live preview of the wheel — updates instantly as admin edits.
+//
+// The wheel visually always shows EQUAL slice widths (this matches the user
+// wheel — see rewards-spin.tsx `computeSlices`). The actual win probability
+// per segment is set independently by the Chance column and is visualised
+// separately as a horizontal bar chart, NOT as slice size. That way admins
+// can tune odds however they want without users being able to "read" the
+// probability off the wheel.
 function WheelPreview({ segments, size = 140 }: { segments: Segment[]; size?: number }) {
-  const chances = computeChances(segments);
+  const share = 360 / Math.max(1, segments.length);
   const cx = size / 2;
   const cy = size / 2;
   const r = size / 2 - 4;
-  let acc = 0;
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
       {segments.map((s, i) => {
-        const pct = chances[i];
-        const start = acc;
-        const end = acc + (pct / 100) * 360;
-        acc = end;
-        if (end <= start) return null;
+        const start = i * share;
+        const end = start + share;
         return (
           <path
             key={i}
@@ -127,6 +130,38 @@ function WheelPreview({ segments, size = 140 }: { segments: Segment[]; size?: nu
       <circle cx={cx} cy={cy} r={size * 0.16} fill="#fff" stroke="#F59E0B" strokeWidth={size * 0.02} />
       <circle cx={cx} cy={cy} r={size * 0.07} fill="#F59E0B" />
     </svg>
+  );
+}
+
+// Separate bar-chart visualisation of the ACTUAL win probability per segment.
+// Rendered alongside the wheel preview so admins can see "wheel looks fair,
+// odds are actually X/Y/Z" at a glance. Not shown to users.
+function ChanceBreakdown({ segments }: { segments: Segment[] }) {
+  const chances = computeChances(segments);
+  const max = Math.max(1, ...chances);
+  return (
+    <div className="space-y-1.5">
+      {segments.map((s, i) => {
+        const pct = chances[i] ?? 0;
+        const barWidth = (pct / max) * 100;
+        const color = /^#[0-9A-Fa-f]{6}$/.test(s.color) ? s.color : '#8B5CF6';
+        return (
+          <div key={i} className="flex items-center gap-2 text-[11px]">
+            <div className="w-4 h-4 rounded" style={{ backgroundColor: color }} />
+            <div className="flex-1 min-w-0 truncate font-medium">{s.label}</div>
+            <div className="flex-[2] h-2 bg-secondary rounded-full overflow-hidden">
+              <div
+                className="h-full rounded-full transition-all"
+                style={{ width: `${Math.max(2, barWidth)}%`, backgroundColor: color }}
+              />
+            </div>
+            <div className="w-12 text-right font-semibold text-foreground">
+              {pct.toFixed(1)}%
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -272,7 +307,9 @@ export default function RewardSpin() {
               <div>
                 <h3 className="font-bold text-sm">Segments &amp; win chances</h3>
                 <p className="text-[11px] text-muted-foreground mt-0.5">
-                  Each row's <strong>Chance</strong> is the probability that segment lands.
+                  Every segment shows as an <strong>equal slice</strong> on the user wheel.
+                  The <strong>Chance</strong> column controls the actual win probability —
+                  hidden from users, tuned freely here.
                   Use "Normalize to 100%" to make the values read as clean percentages.
                 </p>
               </div>
@@ -300,22 +337,45 @@ export default function RewardSpin() {
               </div>
             </div>
 
-            {/* Live wheel preview — updates in real time as admin edits. */}
+            {/* Live preview: wheel (equal slices — what the user sees) AND a
+                hidden chance breakdown (what actually happens under the hood).
+                Kept side-by-side so admins can instantly verify the split
+                between "how it looks" and "how it plays". */}
             {segments.length > 0 && (
-              <div className="flex items-center gap-4 mb-4 p-3 bg-secondary/40 rounded-xl">
-                <WheelPreview segments={segments} size={130} />
-                <div className="flex-1 space-y-1">
-                  <div className="text-xs font-bold text-muted-foreground uppercase tracking-wide">Live preview</div>
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    Slice widths match each segment's chance %. Colours match the wheel users see.
-                  </p>
-                  <div className="flex items-center gap-3 mt-2 text-[11px]">
-                    <span>Segments: <strong className="text-foreground">{segments.length}</strong></span>
-                    <span>Total weight: <strong className="text-foreground">{totalWeight.toFixed(1)}</strong></span>
-                    <span>Sum of chances: <strong className="text-foreground">
-                      {computeChances(segments).reduce((s, x) => s + x, 0).toFixed(1)}%
-                    </strong></span>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 p-3 bg-secondary/40 rounded-xl">
+                {/* Wheel — equal slices */}
+                <div className="flex items-center gap-4">
+                  <WheelPreview segments={segments} size={130} />
+                  <div className="flex-1 space-y-1">
+                    <div className="text-xs font-bold text-muted-foreground uppercase tracking-wide">
+                      Wheel preview
+                    </div>
+                    <p className="text-[11px] text-muted-foreground leading-relaxed">
+                      Every segment gets an <strong>equal slice</strong> — 1/{segments.length} of the wheel.
+                      Users cannot read the odds off the wheel.
+                    </p>
+                    <div className="flex flex-col gap-1 mt-2 text-[11px]">
+                      <span>Segments: <strong className="text-foreground">{segments.length}</strong></span>
+                      <span>Slice size: <strong className="text-foreground">
+                        {(360 / segments.length).toFixed(1)}° each
+                      </strong></span>
+                    </div>
                   </div>
+                </div>
+
+                {/* Hidden chance breakdown */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs font-bold text-muted-foreground uppercase tracking-wide">
+                      Real win chances (hidden from users)
+                    </div>
+                    <div className="text-[10px] text-muted-foreground">
+                      Sum: <strong className="text-foreground">
+                        {computeChances(segments).reduce((s, x) => s + x, 0).toFixed(1)}%
+                      </strong>
+                    </div>
+                  </div>
+                  <ChanceBreakdown segments={segments} />
                 </div>
               </div>
             )}

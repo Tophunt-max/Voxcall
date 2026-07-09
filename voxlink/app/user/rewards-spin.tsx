@@ -74,11 +74,20 @@ function formatHMS(sec: number): string {
 // the arrow exactly on the winning slice. Angles are 0..360 clockwise from
 // the top (12 o'clock). We also include the segment's mid-angle for the
 // text placement.
+//
+// ── Visual vs. probabilistic separation ──
+// The wheel ALWAYS renders equal slice widths — every segment occupies
+// exactly 360/N degrees. The actual win probability per segment is set by
+// the admin (via `weight`) on the server side and is **completely
+// independent** of slice size. This is the standard "hidden odds" pattern:
+// the wheel LOOKS fair to the user (every prize appears equally reachable)
+// while the server's weighted RNG concentrates hits on the smaller rewards.
+// A segment with weight=1 shares the exact same visual real estate as a
+// segment with weight=100 — only the win rate differs.
 function computeSlices(segments: Segment[]) {
-  const total = segments.reduce((s, seg) => s + Math.max(0, seg.weight), 0) || 1;
+  const share = 360 / Math.max(1, segments.length);
   let acc = 0;
   return segments.map((seg) => {
-    const share = (Math.max(0, seg.weight) / total) * 360;
     const start = acc;
     const end = acc + share;
     const mid = (start + end) / 2;
