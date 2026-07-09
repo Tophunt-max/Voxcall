@@ -85,6 +85,8 @@ import m_0036 from '../../migrations/0036_user_blocks.sql';
 import m_0037 from '../../migrations/0037_notification_preferences.sql';
 import m_0038 from '../../migrations/0038_tips_and_gifts.sql';
 import m_0039 from '../../migrations/0039_host_gallery.sql';
+import m_0040 from '../../migrations/0040_call_heartbeat_freshness.sql';
+import m_0041 from '../../migrations/0041_withdrawal_currency.sql';
 import m_0042 from '../../migrations/0042_coin_economy_consistency.sql';
 import m_0043 from '../../migrations/0043_reward_tasks.sql';
 import m_0044 from '../../migrations/0044_reward_dopamine.sql';
@@ -141,6 +143,8 @@ const MIGRATIONS: ReadonlyArray<Migration> = [
   { name: '0037_notification_preferences.sql',      sql: m_0037 },
   { name: '0038_tips_and_gifts.sql',                sql: m_0038 },
   { name: '0039_host_gallery.sql',                  sql: m_0039 },
+  { name: '0040_call_heartbeat_freshness.sql',      sql: m_0040 },
+  { name: '0041_withdrawal_currency.sql',           sql: m_0041 },
   { name: '0042_coin_economy_consistency.sql',      sql: m_0042 },
   { name: '0043_reward_tasks.sql',                  sql: m_0043 },
   { name: '0044_reward_dopamine.sql',               sql: m_0044 },

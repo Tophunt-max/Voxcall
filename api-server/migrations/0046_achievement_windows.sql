@@ -31,8 +31,16 @@
 -- treats it as a no-op (already-migrated). See autoMigrate for that logic.
 ALTER TABLE reward_achievements ADD COLUMN duration_days INTEGER NOT NULL DEFAULT 0;
 
--- Every previously-seeded achievement becomes a 7-day quest by default.
-UPDATE reward_achievements SET duration_days = 7 WHERE duration_days = 0;
+-- NOTE: earlier revisions of this migration ran
+--   UPDATE reward_achievements SET duration_days = 7 WHERE duration_days = 0;
+-- to convert every pre-existing seeded achievement into a 7-day quest.
+-- That statement was REMOVED because it silently reset any admin who
+-- deliberately set an achievement to evergreen (duration_days = 0) back
+-- to 7 days on the next re-run of this migration (which is possible on
+-- hand-applied schemas that later go through autoMigrate). The admin
+-- panel now defaults NEW achievements to duration_days = 7 on the client
+-- side, so fresh installs get the same UX without the destructive UPDATE.
+-- Existing evergreen achievements stay evergreen.
 
 -- ── 2. Per-user per-achievement progress + rolling window ────────────────
 CREATE TABLE IF NOT EXISTS user_achievement_progress (

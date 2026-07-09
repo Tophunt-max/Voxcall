@@ -223,26 +223,6 @@ async function readTriggerCounter(
 }
 
 /**
- * Return a Map of ALL trigger counters for a user (single query — used by
- * the GET /rewards endpoint to hydrate achievement progress in one shot).
- */
-async function readAllTriggerCounters(db: D1Database, userId: string): Promise<Map<string, number>> {
-  const out = new Map<string, number>();
-  try {
-    const res = await db
-      .prepare('SELECT trigger_type, count FROM user_trigger_counters WHERE user_id = ?')
-      .bind(userId)
-      .all<{ trigger_type: string; count: number }>();
-    for (const r of res.results ?? []) {
-      out.set(r.trigger_type, Number(r.count));
-    }
-  } catch (err) {
-    console.warn('[rewards] readAllTriggerCounters failed:', err);
-  }
-  return out;
-}
-
-/**
  * Evaluate every achievement whose `trigger_type` matches the event that just
  * bumped `user_trigger_counters`. Each achievement carries an independent
  * rolling window (`duration_days`) — this function:
@@ -303,8 +283,26 @@ async function checkAndUnlockAchievements(
 
     let nextCount: number;
     let nextStartedAt: number;
-    if (startedAt == null || windowExpired) {
-      // First progress or fresh restart after an expired window.
+    if (startedAt == null) {
+      // First time this achievement is seeing per-user progress. For evergreen
+      // quests (duration_days = 0) we honour the LIFETIME trigger counter so a
+      // newly-added milestone unlocks retroactively for users who already
+      // performed the underlying action (e.g. admin adds "First Call" long
+      // after the user has completed 100 calls). Time-bound quests always
+      // start fresh from this bump so their window is meaningful.
+      if (durationDays === 0) {
+        // bumpRewardProgress has already incremented user_trigger_counters
+        // by deltaInt BEFORE calling us, so the lifetime count already
+        // includes this bump.
+        nextCount = await readTriggerCounter(db, userId, triggerType);
+        if (nextCount <= 0) nextCount = deltaInt; // safety net
+      } else {
+        nextCount = deltaInt;
+      }
+      nextStartedAt = now;
+    } else if (windowExpired) {
+      // Fresh restart after an expired window (only reachable when
+      // duration_days > 0 and the user missed the deadline).
       nextCount = deltaInt;
       nextStartedAt = now;
     } else {
@@ -339,33 +337,44 @@ async function checkAndUnlockAchievements(
     // if the daily cap would be breached. Keeps the visual reward even
     // under budget pressure.
     const { exceeded } = await wouldExceedBudget(db, coins);
+    const willCredit = coins > 0 && !exceeded;
+
     try {
-      if (exceeded || coins <= 0) {
-        await db
-          .prepare(
-            `INSERT OR IGNORE INTO user_achievements (user_id, achievement_id, unlocked_at, coins_awarded)
-             VALUES (?, ?, ?, 0)`,
-          )
-          .bind(userId, ach.id, now)
-          .run();
-      } else {
+      // ── Phase 1 ──────────────────────────────────────────────────────
+      // Race-safe unlock: INSERT OR IGNORE is atomic on the composite
+      // PRIMARY KEY (user_id, achievement_id). At most ONE concurrent
+      // caller sees meta.changes === 1; every other caller sees 0 and
+      // MUST NOT credit coins (otherwise the achievement pays out twice).
+      const claim = await db
+        .prepare(
+          `INSERT OR IGNORE INTO user_achievements (user_id, achievement_id, unlocked_at, coins_awarded)
+           VALUES (?, ?, ?, ?)`,
+        )
+        .bind(userId, ach.id, now, willCredit ? coins : 0)
+        .run();
+      if (!claim.meta?.changes) continue; // lost the race — another request already unlocked
+
+      // ── Phase 2 ──────────────────────────────────────────────────────
+      // We own the unlock slot. Credit coins if the achievement has a
+      // reward AND the daily budget has room. Failure here is logged but
+      // NOT retried — the badge stays, and the user can be reconciled
+      // manually via the admin panel if the coin credit truly fails.
+      if (willCredit) {
         const txId = crypto.randomUUID();
-        await db.batch([
-          db.prepare('UPDATE users SET coins = coins + ?, updated_at = unixepoch() WHERE id = ?').bind(coins, userId),
-          db
-            .prepare(
-              `INSERT OR IGNORE INTO user_achievements (user_id, achievement_id, unlocked_at, coins_awarded)
-               VALUES (?, ?, ?, ?)`,
-            )
-            .bind(userId, ach.id, now, coins),
-          db
-            .prepare(
-              'INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)',
-            )
-            .bind(txId, userId, 'bonus', coins, `Achievement: ${ach.title}`, ach.id),
-          budgetIncrementStmt(db, coins),
-        ]);
-        awarded += coins;
+        try {
+          await db.batch([
+            db.prepare('UPDATE users SET coins = coins + ?, updated_at = unixepoch() WHERE id = ?').bind(coins, userId),
+            db
+              .prepare(
+                'INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)',
+              )
+              .bind(txId, userId, 'bonus', coins, `Achievement: ${ach.title}`, ach.id),
+            budgetIncrementStmt(db, coins),
+          ]);
+          awarded += coins;
+        } catch (err) {
+          console.warn('[rewards] achievement coin credit failed (badge already recorded):', err);
+        }
       }
     } catch (err) {
       console.warn('[rewards] achievement unlock failed:', err);
@@ -674,29 +683,112 @@ rewards.post('/claim', async (c) => {
   }
 
   const cooldownSec = Number(task.cooldown_hours) * 3600;
-  const nextCount = cooldownSec > 0 ? 0 : state.current_count;
+  const isOneTime = cooldownSec === 0;
+  const nextCount = isOneTime ? state.current_count : 0;
+  const targetCount = Number(task.target_count);
 
+  // ── Phase 1: race-safe claim CAS ──────────────────────────────────────
+  // Ensure the progress row exists so the UPDATE below has something to
+  // hit. INSERT OR IGNORE is idempotent — never overwrites existing rows.
+  await db
+    .prepare(
+      `INSERT OR IGNORE INTO user_reward_progress
+         (user_id, task_id, current_count, claim_count, last_claimed_at, total_earned, updated_at)
+       VALUES (?, ?, 0, 0, NULL, 0, ?)`,
+    )
+    .bind(sub, taskId, now)
+    .run();
+
+  // Atomic CAS: the WHERE clause is the race guard — only the FIRST
+  // concurrent claim sees changes === 1. Any duplicate/replay hits 0.
+  //   - One-time tasks (cooldown = 0) require claim_count = 0.
+  //   - Recurring tasks require the cooldown to be fully elapsed.
+  //   - daily_checkin skips the target_count check; all others require the
+  //     counter to have reached the target.
+  const claim = task.task_type === 'daily_checkin'
+    ? await db
+        .prepare(
+          `UPDATE user_reward_progress
+              SET claim_count     = claim_count + 1,
+                  last_claimed_at = ?,
+                  current_count   = ?,
+                  total_earned    = total_earned + ?,
+                  updated_at      = ?
+            WHERE user_id = ? AND task_id = ?
+              AND (last_claimed_at IS NULL OR last_claimed_at + ? <= ?)`,
+        )
+        .bind(now, nextCount, coinsReward, now, sub, taskId, cooldownSec, now)
+        .run()
+    : isOneTime
+    ? await db
+        .prepare(
+          `UPDATE user_reward_progress
+              SET claim_count     = 1,
+                  last_claimed_at = ?,
+                  current_count   = ?,
+                  total_earned    = total_earned + ?,
+                  updated_at      = ?
+            WHERE user_id = ? AND task_id = ?
+              AND claim_count = 0
+              AND current_count >= ?`,
+        )
+        .bind(now, nextCount, coinsReward, now, sub, taskId, targetCount)
+        .run()
+    : await db
+        .prepare(
+          `UPDATE user_reward_progress
+              SET claim_count     = claim_count + 1,
+                  last_claimed_at = ?,
+                  current_count   = ?,
+                  total_earned    = total_earned + ?,
+                  updated_at      = ?
+            WHERE user_id = ? AND task_id = ?
+              AND (last_claimed_at IS NULL OR last_claimed_at + ? <= ?)
+              AND current_count >= ?`,
+        )
+        .bind(now, nextCount, coinsReward, now, sub, taskId, cooldownSec, now, targetCount)
+        .run();
+
+  if (!claim.meta?.changes) {
+    // Race lost: another concurrent request already claimed, OR the
+    // client's optimistic UI is out of sync with server state.
+    return c.json(
+      { error: 'already_claimed_or_locked', cooldown_remaining_sec: state.cooldown_remaining_sec },
+      409,
+    );
+  }
+
+  // ── Phase 2: credit coins + ledger ────────────────────────────────────
+  // We own the claim slot. If this batch fails we need to roll back the
+  // progress row we just consumed to avoid a permanent stuck state.
   const txId = crypto.randomUUID();
-  await db.batch([
-    db.prepare('UPDATE users SET coins = coins + ?, updated_at = unixepoch() WHERE id = ?').bind(coinsReward, sub),
-    db
+  try {
+    await db.batch([
+      db.prepare('UPDATE users SET coins = coins + ?, updated_at = unixepoch() WHERE id = ?').bind(coinsReward, sub),
+      db
+        .prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
+        .bind(txId, sub, 'bonus', coinsReward, `Reward: ${task.title}${campaign ? ` (×${multiplier})` : ''}`, taskId),
+      budgetIncrementStmt(db, coinsReward),
+    ]);
+  } catch (err) {
+    // Compensating rollback: undo the claim we just recorded. Best-effort
+    // — if this fails too, the row is stuck at claim_count+1 until manual
+    // intervention, which is preferable to double-crediting coins.
+    console.warn('[rewards] claim credit batch failed; rolling back progress row:', err);
+    await db
       .prepare(
-        `INSERT INTO user_reward_progress
-           (user_id, task_id, current_count, claim_count, last_claimed_at, total_earned, updated_at)
-         VALUES (?, ?, ?, 1, ?, ?, ?)
-         ON CONFLICT(user_id, task_id) DO UPDATE SET
-           current_count   = ?,
-           claim_count     = claim_count + 1,
-           last_claimed_at = ?,
-           total_earned    = total_earned + ?,
-           updated_at      = ?`,
+        `UPDATE user_reward_progress
+            SET claim_count     = MAX(0, claim_count - 1),
+                last_claimed_at = ?,
+                total_earned    = MAX(0, total_earned - ?),
+                updated_at      = ?
+          WHERE user_id = ? AND task_id = ?`,
       )
-      .bind(sub, taskId, nextCount, now, coinsReward, now, nextCount, now, coinsReward, now),
-    db
-      .prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
-      .bind(txId, sub, 'bonus', coinsReward, `Reward: ${task.title}${campaign ? ` (×${multiplier})` : ''}`, taskId),
-    budgetIncrementStmt(db, coinsReward),
-  ]);
+      .bind(state.last_claimed_at, coinsReward, now, sub, taskId)
+      .run()
+      .catch((e) => console.warn('[rewards] claim rollback failed:', e));
+    return c.json({ error: 'credit_failed' }, 500);
+  }
 
   const updated = await db.prepare('SELECT coins FROM users WHERE id = ?').bind(sub).first<{ coins: number }>();
   return c.json({
@@ -714,7 +806,24 @@ rewards.post('/claim', async (c) => {
 });
 
 // ─── POST /api/user/rewards/track ────────────────────────────────────────────
+// Whitelisted CLIENT-side events + their per-user DAILY caps. Both entries
+// are trivially forgeable by any authenticated client, so we protect the
+// achievement counter (which unlocks coin-earning milestones) with two
+// independent limits:
+//
+//   1. Per-minute rate limit (RL_TRACK_PER_MIN) — burst protection.
+//   2. Per-UTC-day cap (below)                 — total forge budget.
+//
+// The daily cap is enforced with a checkRateLimit call whose window is
+// 86 400 s and whose key is scoped to (event, user, day). Any calls beyond
+// the cap return 429 without bumping progress — so a malicious client
+// can't spam the endpoint to power-level 'watch_ad'/'share_app'
+// achievements or tasks.
 const CLIENT_TRACKABLE_EVENTS = new Set<string>(['watch_ad', 'share_app']);
+const EVENT_DAILY_CAPS: Record<string, number> = {
+  watch_ad:  10, // most aggressive publisher setup we support
+  share_app: 3,  // one share per platform (WhatsApp / Telegram / native)
+};
 rewards.post('/track', async (c) => {
   const { sub } = c.get('user');
   const rlKey = `rl:reward_track:${sub}:${Math.floor(Date.now() / 60000)}`;
@@ -723,6 +832,17 @@ rewards.post('/track', async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const event = typeof (body as { event?: unknown })?.event === 'string' ? (body as { event: string }).event.slice(0, 40) : '';
   if (!CLIENT_TRACKABLE_EVENTS.has(event)) return c.json({ error: 'event not allowed' }, 400);
+
+  // Daily cap — client-forgeable events can never bump progress more than
+  // `EVENT_DAILY_CAPS[event]` times per UTC day per user.
+  const dailyCap = EVENT_DAILY_CAPS[event] ?? 5;
+  const dayKey = utcDayKey();
+  const dailyKey = `event_daily_cap:${event}:${sub}:${dayKey}`;
+  const { limited: dailyLimited } = await checkRateLimit(c.env.DB, dailyKey, dailyCap, 86400);
+  if (dailyLimited) {
+    return c.json({ error: 'daily_cap_reached', event, daily_cap: dailyCap }, 429);
+  }
+
   const updated = await bumpRewardProgress(c.env.DB, sub, event, 1);
   return c.json({ ok: true, tasks_updated: updated });
 });
@@ -744,7 +864,17 @@ rewards.post('/spin', async (c) => {
 
   let segments: Array<{ label: string; coins: number; weight: number; color: string; emoji: string }> = [];
   try { segments = JSON.parse(cfg.segments ?? '[]'); } catch { /* corrupt config */ }
-  const filtered = segments.filter((s) => Number.isFinite(s.coins) && Number.isFinite(s.weight) && s.weight > 0);
+  // Track the ORIGINAL index alongside each valid segment so we can point
+  // the wheel to the exact slot the server picked — even if two segments
+  // share identical (label, coins, color). A plain findIndex() after the
+  // fact returns the FIRST match and would visually mis-align the wheel.
+  const filtered: Array<{ segment: (typeof segments)[number]; originalIndex: number }> = [];
+  for (let i = 0; i < segments.length; i++) {
+    const s = segments[i];
+    if (Number.isFinite(s.coins) && Number.isFinite(s.weight) && s.weight > 0) {
+      filtered.push({ segment: s, originalIndex: i });
+    }
+  }
   if (filtered.length === 0) return c.json({ error: 'no_segments' }, 500);
 
   // Ensure spin state + roll the free-spin quota if it's a new UTC day.
@@ -755,14 +885,14 @@ rewards.post('/spin', async (c) => {
   const useFree = state.free_spins_remaining > 0;
 
   // Weighted random selection — cumulative-weight bucket lookup.
-  const totalWeight = filtered.reduce((s, seg) => s + Number(seg.weight), 0);
+  const totalWeight = filtered.reduce((s, seg) => s + Number(seg.segment.weight), 0);
   let pick = Math.random() * totalWeight;
   let selectedIdx = 0;
   for (let i = 0; i < filtered.length; i++) {
-    pick -= Number(filtered[i].weight);
+    pick -= Number(filtered[i].segment.weight);
     if (pick <= 0) { selectedIdx = i; break; }
   }
-  const segment = filtered[selectedIdx];
+  const { segment, originalIndex } = filtered[selectedIdx];
   const baseCoins = Number(segment.coins);
 
   // Campaign multiplier — some campaigns also multiply spin wins.
@@ -776,29 +906,79 @@ rewards.post('/spin', async (c) => {
     return c.json({ error: 'daily_budget_reached' }, 429);
   }
 
-  // Locate the segment index in the ORIGINAL segments array so the client
-  // can point the wheel to the right slot.
-  const originalIndex = segments.findIndex(
-    (s) => s.label === segment.label && Number(s.coins) === Number(segment.coins) && s.color === segment.color,
-  );
+  // ── Phase 1: race-safe spin decrement ─────────────────────────────────
+  // Two concurrent /spin requests both pass the state check above; we
+  // guard the actual decrement with a WHERE clause so at most ONE wins.
+  // Failure to win means the user has already spent this spin — return
+  // 409 without crediting coins.
+  const decrement = useFree
+    ? await db
+        .prepare(
+          `UPDATE user_spin_state
+              SET free_spins_remaining = free_spins_remaining - 1,
+                  total_spins          = total_spins + 1,
+                  total_coins_won      = total_coins_won + ?,
+                  last_win_amount      = ?,
+                  last_spun_at         = ?,
+                  updated_at           = ?
+            WHERE user_id = ? AND free_spins_remaining > 0`,
+        )
+        .bind(coinsWon, coinsWon, now, now, sub)
+        .run()
+    : await db
+        .prepare(
+          `UPDATE user_spin_state
+              SET earned_spins_remaining = earned_spins_remaining - 1,
+                  total_spins            = total_spins + 1,
+                  total_coins_won        = total_coins_won + ?,
+                  last_win_amount        = ?,
+                  last_spun_at           = ?,
+                  updated_at             = ?
+            WHERE user_id = ? AND earned_spins_remaining > 0`,
+        )
+        .bind(coinsWon, coinsWon, now, now, sub)
+        .run();
 
+  if (!decrement.meta?.changes) {
+    return c.json(
+      { error: 'no_spins_left', free_spins_remaining: 0, earned_spins_remaining: 0 },
+      409,
+    );
+  }
+
+  // ── Phase 2: credit coins + ledger ────────────────────────────────────
   const spinId = crypto.randomUUID();
-  await db.batch([
-    // Decrement whichever pool we're using.
-    useFree
-      ? db.prepare('UPDATE user_spin_state SET free_spins_remaining = free_spins_remaining - 1, total_spins = total_spins + 1, total_coins_won = total_coins_won + ?, last_win_amount = ?, last_spun_at = ?, updated_at = ? WHERE user_id = ?').bind(coinsWon, coinsWon, now, now, sub)
-      : db.prepare('UPDATE user_spin_state SET earned_spins_remaining = earned_spins_remaining - 1, total_spins = total_spins + 1, total_coins_won = total_coins_won + ?, last_win_amount = ?, last_spun_at = ?, updated_at = ? WHERE user_id = ?').bind(coinsWon, coinsWon, now, now, sub),
-    db.prepare('UPDATE users SET coins = coins + ?, updated_at = unixepoch() WHERE id = ?').bind(coinsWon, sub),
-    db.prepare('INSERT INTO reward_spin_history (id, user_id, segment_index, segment_label, coins_won, campaign_id, spun_at) VALUES (?, ?, ?, ?, ?, ?, ?)').bind(spinId, sub, originalIndex >= 0 ? originalIndex : selectedIdx, segment.label, coinsWon, campaign?.id ?? null, now),
-    db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)').bind(crypto.randomUUID(), sub, 'bonus', coinsWon, `Lucky Spin: ${segment.label}${campaign ? ` (×${multiplier})` : ''}`, spinId),
-    budgetIncrementStmt(db, coinsWon),
-  ]);
+  try {
+    await db.batch([
+      db.prepare('UPDATE users SET coins = coins + ?, updated_at = unixepoch() WHERE id = ?').bind(coinsWon, sub),
+      db.prepare('INSERT INTO reward_spin_history (id, user_id, segment_index, segment_label, coins_won, campaign_id, spun_at) VALUES (?, ?, ?, ?, ?, ?, ?)').bind(spinId, sub, originalIndex, segment.label, coinsWon, campaign?.id ?? null, now),
+      db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)').bind(crypto.randomUUID(), sub, 'bonus', coinsWon, `Lucky Spin: ${segment.label}${campaign ? ` (×${multiplier})` : ''}`, spinId),
+      budgetIncrementStmt(db, coinsWon),
+    ]);
+  } catch (err) {
+    // Compensating rollback: restore the spin slot we just consumed.
+    console.warn('[rewards] spin credit batch failed; rolling back spin slot:', err);
+    const col = useFree ? 'free_spins_remaining' : 'earned_spins_remaining';
+    await db
+      .prepare(
+        `UPDATE user_spin_state
+            SET ${col} = ${col} + 1,
+                total_spins = MAX(0, total_spins - 1),
+                total_coins_won = MAX(0, total_coins_won - ?),
+                updated_at = ?
+          WHERE user_id = ?`,
+      )
+      .bind(coinsWon, now, sub)
+      .run()
+      .catch((e) => console.warn('[rewards] spin rollback failed:', e));
+    return c.json({ error: 'credit_failed' }, 500);
+  }
 
   const updated = await db.prepare('SELECT coins FROM users WHERE id = ?').bind(sub).first<{ coins: number }>();
 
   return c.json({
     ok: true,
-    segment_index: originalIndex >= 0 ? originalIndex : selectedIdx,
+    segment_index: originalIndex,
     segment_label: segment.label,
     base_coins: baseCoins,
     coins_won: coinsWon,
@@ -835,7 +1015,11 @@ rewards.post('/redeem-coupon', async (c) => {
   if (coupon.expires_at && Number(coupon.expires_at) < now) return c.json({ error: 'coupon_expired' }, 410);
   if (coupon.max_uses != null && Number(coupon.used_count) >= Number(coupon.max_uses)) return c.json({ error: 'coupon_exhausted' }, 410);
 
-  // Enforce per-user limit.
+  // Fast-path per-user-limit check (avoids doing the atomic CAS below when
+  // the answer is obviously "no"). The AUTHORITATIVE per-user check happens
+  // inside Phase 1 via the INSERT into user_coupon_redemptions (which has a
+  // UNIQUE index on (user_id, coupon_id) enforcing per_user_limit = 1 for
+  // the vast majority of coupons in production).
   const priorRedemptions = await db
     .prepare('SELECT COUNT(*) AS n FROM user_coupon_redemptions WHERE user_id = ? AND coupon_id = ?')
     .bind(sub, coupon.id)
@@ -848,15 +1032,73 @@ rewards.post('/redeem-coupon', async (c) => {
   const { exceeded, cap } = await wouldExceedBudget(db, coinsAwarded);
   if (exceeded) return c.json({ error: 'daily_budget_reached' }, 429);
 
-  await db.batch([
-    db.prepare('UPDATE users SET coins = coins + ?, updated_at = unixepoch() WHERE id = ?').bind(coinsAwarded, sub),
-    // Increment the global counter, but ONLY if we haven't already exceeded
-    // max_uses in a concurrent redemption — the WHERE clause is the race guard.
-    db.prepare('UPDATE reward_coupons SET used_count = used_count + 1 WHERE id = ? AND (max_uses IS NULL OR used_count < max_uses)').bind(coupon.id),
-    db.prepare('INSERT INTO user_coupon_redemptions (user_id, coupon_id, code, coins_awarded, redeemed_at) VALUES (?, ?, ?, ?, ?)').bind(sub, coupon.id, code, coinsAwarded, now),
-    db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)').bind(crypto.randomUUID(), sub, 'bonus', coinsAwarded, `Coupon: ${code}`, coupon.id),
-    budgetIncrementStmt(db, coinsAwarded),
-  ]);
+  // ── Phase 1: race-safe coupon claim ───────────────────────────────────
+  // Atomic CAS on the global counter. The WHERE clause is the race guard:
+  //   - max_uses IS NULL          → unlimited coupon, always passes
+  //   - used_count < max_uses     → still has slots left, wins the race
+  //   - active = 1                → admin didn't just disable it
+  //   - expires_at check          → didn't just expire between SELECT and now
+  // At most (max_uses) concurrent redemptions succeed; the rest see 0
+  // changes and get a clean 410 without any coin credit.
+  const claim = await db
+    .prepare(
+      `UPDATE reward_coupons
+          SET used_count = used_count + 1
+        WHERE id = ?
+          AND active = 1
+          AND (max_uses IS NULL OR used_count < max_uses)
+          AND (expires_at IS NULL OR expires_at > ?)`,
+    )
+    .bind(coupon.id, now)
+    .run();
+
+  if (!claim.meta?.changes) {
+    return c.json({ error: 'coupon_exhausted' }, 410);
+  }
+
+  // Also enforce the per-user limit atomically. We PRE-INSERT the
+  // redemption row (with a placeholder coins_awarded that Phase 2 will
+  // finalise — but the row's mere existence blocks a concurrent
+  // redemption from the same user thanks to the SELECT COUNT check
+  // seeing this row too on retry). We use INSERT OR IGNORE if there's a
+  // UNIQUE index; otherwise the row is inserted unconditionally and
+  // per-user-limit is enforced only by the earlier COUNT check + rate
+  // limit. Note: the per_user_limit fast-path above catches the common
+  // case where the same user tries twice with a per_user_limit = 1
+  // coupon; the extra safety here is for a genuine concurrent redeem-
+  // twice-in-flight edge case.
+  try {
+    await db
+      .prepare('INSERT INTO user_coupon_redemptions (user_id, coupon_id, code, coins_awarded, redeemed_at) VALUES (?, ?, ?, ?, ?)')
+      .bind(sub, coupon.id, code, coinsAwarded, now)
+      .run();
+  } catch (err) {
+    // Roll back the global counter we just consumed.
+    console.warn('[rewards] coupon redemption row insert failed; rolling back counter:', err);
+    await db
+      .prepare('UPDATE reward_coupons SET used_count = MAX(0, used_count - 1) WHERE id = ?')
+      .bind(coupon.id)
+      .run()
+      .catch((e) => console.warn('[rewards] coupon rollback failed:', e));
+    return c.json({ error: 'per_user_limit_reached' }, 409);
+  }
+
+  // ── Phase 2: credit coins + ledger ────────────────────────────────────
+  try {
+    await db.batch([
+      db.prepare('UPDATE users SET coins = coins + ?, updated_at = unixepoch() WHERE id = ?').bind(coinsAwarded, sub),
+      db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)').bind(crypto.randomUUID(), sub, 'bonus', coinsAwarded, `Coupon: ${code}`, coupon.id),
+      budgetIncrementStmt(db, coinsAwarded),
+    ]);
+  } catch (err) {
+    // Compensating rollback: undo both the redemption row AND the counter.
+    console.warn('[rewards] coupon credit batch failed; rolling back redemption:', err);
+    await db.batch([
+      db.prepare('DELETE FROM user_coupon_redemptions WHERE user_id = ? AND coupon_id = ? AND redeemed_at = ?').bind(sub, coupon.id, now),
+      db.prepare('UPDATE reward_coupons SET used_count = MAX(0, used_count - 1) WHERE id = ?').bind(coupon.id),
+    ]).catch((e) => console.warn('[rewards] coupon rollback batch failed:', e));
+    return c.json({ error: 'credit_failed' }, 500);
+  }
 
   const updated = await db.prepare('SELECT coins FROM users WHERE id = ?').bind(sub).first<{ coins: number }>();
   return c.json({

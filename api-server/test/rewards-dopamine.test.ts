@@ -342,3 +342,248 @@ describe('budget cap', () => {
     expect(paid + proposal > cap).toBe(true);
   });
 });
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Race-condition regressions.
+// ─────────────────────────────────────────────────────────────────────────────
+// These tests exercise the atomic CAS guards added to /claim, /spin,
+// /redeem-coupon, and checkAndUnlockAchievements. Each test runs the exact
+// SQL statement the route uses TWICE in sequence — simulating two concurrent
+// requests that both passed the initial read-side check but only ONE of
+// which is allowed to commit the mutation. The second call must observe
+// meta.changes === 0 and the caller must NOT credit coins.
+
+describe('race-condition regressions', () => {
+  let db: FakeD1;
+  beforeEach(() => {
+    db = setupDb();
+  });
+
+  it('coupon max_uses CAS: two concurrent redemptions on a max_uses=1 coupon credit only once', async () => {
+    const now = Math.floor(Date.now() / 1000);
+    await db.prepare(
+      `INSERT INTO reward_coupons (id, code, coins_reward, max_uses, used_count, per_user_limit, expires_at, active)
+       VALUES ('co1', 'ONESHOT', 100, 1, 0, 1, NULL, 1)`,
+    ).run();
+
+    // Both callers observe used_count=0 in the initial SELECT. They race
+    // into the atomic UPDATE; the WHERE guard is the arbitrator.
+    const claim1 = await db.prepare(
+      `UPDATE reward_coupons
+          SET used_count = used_count + 1
+        WHERE id = ?
+          AND active = 1
+          AND (max_uses IS NULL OR used_count < max_uses)
+          AND (expires_at IS NULL OR expires_at > ?)`,
+    ).bind('co1', now).run();
+    const claim2 = await db.prepare(
+      `UPDATE reward_coupons
+          SET used_count = used_count + 1
+        WHERE id = ?
+          AND active = 1
+          AND (max_uses IS NULL OR used_count < max_uses)
+          AND (expires_at IS NULL OR expires_at > ?)`,
+    ).bind('co1', now).run();
+
+    expect(claim1.meta?.changes).toBe(1);
+    expect(claim2.meta?.changes).toBe(0);
+
+    const row = await db
+      .prepare('SELECT used_count FROM reward_coupons WHERE id = ?')
+      .bind('co1')
+      .first<{ used_count: number }>();
+    expect(row?.used_count).toBe(1); // never exceeds max_uses
+  });
+
+  it('coupon max_uses CAS: N concurrent redemptions on a max_uses=3 coupon credit exactly 3', async () => {
+    const now = Math.floor(Date.now() / 1000);
+    await db.prepare(
+      `INSERT INTO reward_coupons (id, code, coins_reward, max_uses, used_count, per_user_limit, expires_at, active)
+       VALUES ('co3', 'THREESHOT', 100, 3, 0, 1, NULL, 1)`,
+    ).run();
+
+    let wins = 0;
+    for (let i = 0; i < 10; i++) {
+      const r = await db.prepare(
+        `UPDATE reward_coupons
+            SET used_count = used_count + 1
+          WHERE id = ? AND active = 1
+            AND (max_uses IS NULL OR used_count < max_uses)
+            AND (expires_at IS NULL OR expires_at > ?)`,
+      ).bind('co3', now).run();
+      if (r.meta?.changes === 1) wins++;
+    }
+    expect(wins).toBe(3);
+
+    const row = await db
+      .prepare('SELECT used_count FROM reward_coupons WHERE id = ?')
+      .bind('co3')
+      .first<{ used_count: number }>();
+    expect(row?.used_count).toBe(3);
+  });
+
+  it('claim CAS: two concurrent claims on a one-time task only credit once', async () => {
+    const now = Math.floor(Date.now() / 1000);
+    // Seed: user has completed a target=1 task; progress row exists with
+    // current_count=1, claim_count=0.
+    await db.prepare(
+      `INSERT INTO reward_tasks (id, code, title, task_type, target_count, coins_reward, cooldown_hours, active)
+       VALUES ('rt_race', 'race', 'Race', 'complete_calls', 1, 100, 0, 1)`,
+    ).run();
+    await db.prepare(
+      `INSERT INTO user_reward_progress (user_id, task_id, current_count, claim_count, last_claimed_at, total_earned)
+       VALUES ('u1', 'rt_race', 1, 0, NULL, 0)`,
+    ).run();
+
+    // Simulated: both concurrent claims pass the read-side deriveState()
+    // check because both see claim_count=0. The atomic UPDATE is the
+    // arbitrator.
+    const claim1 = await db.prepare(
+      `UPDATE user_reward_progress
+          SET claim_count     = 1,
+              last_claimed_at = ?,
+              current_count   = ?,
+              total_earned    = total_earned + ?,
+              updated_at      = ?
+        WHERE user_id = ? AND task_id = ?
+          AND claim_count = 0
+          AND current_count >= ?`,
+    ).bind(now, 1, 100, now, 'u1', 'rt_race', 1).run();
+    const claim2 = await db.prepare(
+      `UPDATE user_reward_progress
+          SET claim_count     = 1,
+              last_claimed_at = ?,
+              current_count   = ?,
+              total_earned    = total_earned + ?,
+              updated_at      = ?
+        WHERE user_id = ? AND task_id = ?
+          AND claim_count = 0
+          AND current_count >= ?`,
+    ).bind(now, 1, 100, now, 'u1', 'rt_race', 1).run();
+
+    expect(claim1.meta?.changes).toBe(1);
+    expect(claim2.meta?.changes).toBe(0);
+
+    const row = await db
+      .prepare('SELECT claim_count, total_earned FROM user_reward_progress WHERE user_id = ? AND task_id = ?')
+      .bind('u1', 'rt_race')
+      .first<{ claim_count: number; total_earned: number }>();
+    expect(row?.claim_count).toBe(1);
+    expect(row?.total_earned).toBe(100); // credited exactly once
+  });
+
+  it('claim CAS: recurring task with cooldown blocks a second claim within the window', async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const cooldownSec = 3600; // 1 hour
+    // User just claimed 5 minutes ago — cooldown NOT elapsed.
+    await db.prepare(
+      `INSERT INTO reward_tasks (id, code, title, task_type, target_count, coins_reward, cooldown_hours, active)
+       VALUES ('rt_cd', 'cd', 'Cooldown', 'daily_checkin', 1, 50, 1, 1)`,
+    ).run();
+    await db.prepare(
+      `INSERT INTO user_reward_progress (user_id, task_id, current_count, claim_count, last_claimed_at, total_earned)
+       VALUES ('u1', 'rt_cd', 0, 1, ?, 50)`,
+    ).bind(now - 300).run(); // 5 min ago
+
+    const attempt = await db.prepare(
+      `UPDATE user_reward_progress
+          SET claim_count     = claim_count + 1,
+              last_claimed_at = ?,
+              current_count   = 0,
+              total_earned    = total_earned + ?,
+              updated_at      = ?
+        WHERE user_id = ? AND task_id = ?
+          AND (last_claimed_at IS NULL OR last_claimed_at + ? <= ?)`,
+    ).bind(now, 50, now, 'u1', 'rt_cd', cooldownSec, now).run();
+
+    expect(attempt.meta?.changes).toBe(0); // cooldown guard held
+
+    const row = await db
+      .prepare('SELECT claim_count, total_earned FROM user_reward_progress WHERE user_id = ? AND task_id = ?')
+      .bind('u1', 'rt_cd')
+      .first<{ claim_count: number; total_earned: number }>();
+    expect(row?.claim_count).toBe(1); // unchanged
+    expect(row?.total_earned).toBe(50); // unchanged
+  });
+
+  it('spin CAS: concurrent spins on 1 remaining free spin decrement exactly once', async () => {
+    const now = Math.floor(Date.now() / 1000);
+    // Seed spin state with a single free spin remaining.
+    db.applySchema(`
+      CREATE TABLE user_spin_state (
+        user_id TEXT PRIMARY KEY,
+        free_spins_remaining INTEGER NOT NULL DEFAULT 0,
+        earned_spins_remaining INTEGER NOT NULL DEFAULT 0,
+        last_free_reset_day TEXT NOT NULL DEFAULT '',
+        total_spins INTEGER NOT NULL DEFAULT 0,
+        total_coins_won INTEGER NOT NULL DEFAULT 0,
+        last_win_amount INTEGER,
+        last_spun_at INTEGER,
+        updated_at INTEGER
+      );
+      INSERT INTO user_spin_state (user_id, free_spins_remaining, earned_spins_remaining, last_free_reset_day)
+      VALUES ('u1', 1, 0, '2026-01-01');
+    `);
+
+    // Two concurrent /spin calls both observe free_spins_remaining=1.
+    const decr1 = await db.prepare(
+      `UPDATE user_spin_state
+          SET free_spins_remaining = free_spins_remaining - 1,
+              total_spins          = total_spins + 1,
+              total_coins_won      = total_coins_won + ?,
+              last_win_amount      = ?,
+              last_spun_at         = ?,
+              updated_at           = ?
+        WHERE user_id = ? AND free_spins_remaining > 0`,
+    ).bind(100, 100, now, now, 'u1').run();
+    const decr2 = await db.prepare(
+      `UPDATE user_spin_state
+          SET free_spins_remaining = free_spins_remaining - 1,
+              total_spins          = total_spins + 1,
+              total_coins_won      = total_coins_won + ?,
+              last_win_amount      = ?,
+              last_spun_at         = ?,
+              updated_at           = ?
+        WHERE user_id = ? AND free_spins_remaining > 0`,
+    ).bind(100, 100, now, now, 'u1').run();
+
+    expect(decr1.meta?.changes).toBe(1);
+    expect(decr2.meta?.changes).toBe(0);
+
+    const row = await db
+      .prepare('SELECT free_spins_remaining, total_spins, total_coins_won FROM user_spin_state WHERE user_id = ?')
+      .bind('u1')
+      .first<{ free_spins_remaining: number; total_spins: number; total_coins_won: number }>();
+    expect(row?.free_spins_remaining).toBe(0); // never goes negative
+    expect(row?.total_spins).toBe(1); // credited once
+    expect(row?.total_coins_won).toBe(100); // credited once
+  });
+
+  it('achievement INSERT OR IGNORE: concurrent unlocks credit exactly once', async () => {
+    const now = Math.floor(Date.now() / 1000);
+    await db.prepare(
+      `INSERT INTO reward_achievements (id, code, title, trigger_type, trigger_threshold, coins_reward, active)
+       VALUES ('ach1', 'first_call', 'First Call', 'complete_calls', 1, 25, 1)`,
+    ).run();
+
+    const ins1 = await db.prepare(
+      `INSERT OR IGNORE INTO user_achievements (user_id, achievement_id, unlocked_at, coins_awarded)
+       VALUES (?, ?, ?, ?)`,
+    ).bind('u1', 'ach1', now, 25).run();
+    const ins2 = await db.prepare(
+      `INSERT OR IGNORE INTO user_achievements (user_id, achievement_id, unlocked_at, coins_awarded)
+       VALUES (?, ?, ?, ?)`,
+    ).bind('u1', 'ach1', now, 25).run();
+
+    expect(ins1.meta?.changes).toBe(1); // first caller wins
+    expect(ins2.meta?.changes).toBe(0); // second caller sees no-op — MUST NOT credit
+
+    const row = await db
+      .prepare('SELECT COUNT(*) AS n, MAX(coins_awarded) AS coins FROM user_achievements WHERE user_id = ? AND achievement_id = ?')
+      .bind('u1', 'ach1')
+      .first<{ n: number; coins: number }>();
+    expect(row?.n).toBe(1); // exactly one row
+    expect(row?.coins).toBe(25); // exactly one credit's worth
+  });
+});

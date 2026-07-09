@@ -1529,8 +1529,17 @@ admin.patch('/reward-tasks/:id', async (c) => {
     if (['target_count', 'coins_reward', 'cooldown_hours', 'sort_order', 'active'].includes(f)) {
       const n = Number(body[f]);
       if (!Number.isFinite(n)) return c.json({ error: `${f} must be a number` }, 400);
+      // CLAMP: money-affecting numeric fields must never go negative (would
+      // debit users instead of crediting them). target_count/cooldown_hours
+      // must be >= 0. `sort_order` and `active` are unbounded / boolean.
+      const clamped =
+        f === 'active'
+          ? (n ? 1 : 0)
+          : ['coins_reward', 'target_count', 'cooldown_hours'].includes(f)
+          ? Math.max(0, Math.floor(n))
+          : n;
       sets.push(`${f} = ?`);
-      vals.push(f === 'active' ? (n ? 1 : 0) : n);
+      vals.push(clamped);
     } else {
       sets.push(`${f} = ?`);
       vals.push(String(body[f] ?? ''));
@@ -1689,7 +1698,20 @@ admin.patch('/reward-campaigns/:id', async (c) => {
     if (body[f] !== undefined) {
       const n = Number(body[f]);
       if (!Number.isFinite(n)) return c.json({ error: `${f} must be a number` }, 400);
-      sets.push(`${f} = ?`); vals.push(n);
+      // CLAMP: multiplier must stay in the same [1, 20] window POST enforces,
+      // otherwise a stealth PATCH can turn a normal task into an infinite
+      // coin printer (multiplier=999) or debit users (multiplier=-1).
+      // Timestamps stay unclamped (they're free-form epoch seconds).
+      const clamped = f === 'multiplier' ? Math.min(20, Math.max(1, n)) : n;
+      sets.push(`${f} = ?`); vals.push(clamped);
+    }
+  }
+  // Cross-field sanity: if BOTH starts_at and ends_at were supplied, they
+  // must obey starts_at < ends_at (same rule POST enforces).
+  if (body.starts_at !== undefined && body.ends_at !== undefined) {
+    const s = Number(body.starts_at), e = Number(body.ends_at);
+    if (Number.isFinite(s) && Number.isFinite(e) && e <= s) {
+      return c.json({ error: 'ends_at must be after starts_at' }, 400);
     }
   }
   if (body.applies_to_spin !== undefined) { sets.push('applies_to_spin = ?'); vals.push(body.applies_to_spin ? 1 : 0); }
@@ -1850,7 +1872,15 @@ admin.patch('/reward-achievements/:id', async (c) => {
     if (body[f] !== undefined) {
       const n = Number(body[f]);
       if (!Number.isFinite(n)) return c.json({ error: `${f} must be a number` }, 400);
-      sets.push(`${f} = ?`); vals.push(n);
+      // CLAMP: match the POST endpoint's guarantees exactly so a stealth
+      // PATCH can't create pathological achievement configs (negative
+      // coins → debit; threshold=0 → unlock on first bump; duration=-1).
+      const clamped =
+        f === 'trigger_threshold' ? Math.max(1, Math.floor(n)) :
+        f === 'coins_reward'      ? Math.max(0, Math.floor(n)) :
+        f === 'duration_days'     ? Math.max(0, Math.floor(n)) :
+        Math.floor(n); // sort_order — unbounded but must be integer
+      sets.push(`${f} = ?`); vals.push(clamped);
     }
   }
   if (body.active !== undefined) { sets.push('active = ?'); vals.push(body.active ? 1 : 0); }
@@ -1874,12 +1904,19 @@ admin.get('/reward-analytics', async (c) => {
   const now = Math.floor(Date.now() / 1000);
   const day = now - 86400;
   const week = now - 7 * 86400;
+  // Today's coin payout — read from reward_budget_daily, which is the
+  // authoritative per-UTC-day counter the reward payout batch UPDATEs on
+  // every credit. Uses the same utcDayKey format the reward code writes.
+  const utcDay = (() => {
+    const d = new Date(now * 1000);
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+  })();
   const [today, weekPaid, taskTop, campActive, couponActive] = await Promise.all([
     db(c).prepare(
-      `SELECT COALESCE(SUM(amount), 0) AS paid, COUNT(*) AS n
-         FROM coin_transactions
-        WHERE type = 'bonus' AND rowid >= (SELECT MIN(rowid) FROM coin_transactions WHERE rowid >= 1)`,
-    ).first<any>(),
+      `SELECT COALESCE(coins_paid, 0) AS paid, 0 AS n
+         FROM reward_budget_daily
+        WHERE day_key = ?`,
+    ).bind(utcDay).first<any>(),
     db(c).prepare(
       `SELECT day_key, coins_paid FROM reward_budget_daily ORDER BY day_key DESC LIMIT 14`,
     ).all<any>(),

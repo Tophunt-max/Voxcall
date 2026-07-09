@@ -554,6 +554,10 @@ export const API = {
       campaign_code: string | null;
       new_balance: number;
       next_cooldown_sec: number;
+      // Daily coin budget cap (0 = unlimited). Returned by every payout
+      // endpoint so the client can render a "daily budget almost full"
+      // hint when the cap approaches — helps avoid frustrating 429s.
+      budget_cap: number;
     }>('POST', '/api/user/rewards/claim', { task_id }),
 
   trackReward: (event: 'watch_ad' | 'share_app') =>
@@ -578,6 +582,7 @@ export const API = {
       free_spins_remaining: number;
       earned_spins_remaining: number;
       new_balance: number;
+      budget_cap: number;
     }>('POST', '/api/user/rewards/spin'),
 
   // Coupon codes — redeem a code (normalised to uppercase server-side).
@@ -587,6 +592,7 @@ export const API = {
       code: string;
       coins_awarded: number;
       new_balance: number;
+      budget_cap: number;
     }>('POST', '/api/user/rewards/redeem-coupon', { code }),
 
   // Payment Gateways (public)

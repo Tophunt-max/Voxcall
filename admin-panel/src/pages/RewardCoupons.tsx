@@ -497,6 +497,10 @@ function extractCodes(res: unknown, previous: Coupon[]): string[] {
   }
   if (typeof res === 'object') {
     const r = res as Record<string, unknown>;
+    // The current backend returns `{ success, created: string[], count }`
+    // for bulk generation. Older API branches used `codes` / `coupons`;
+    // support all three for forwards/backwards compatibility.
+    if (Array.isArray(r.created)) return (r.created as unknown[]).map((c) => String(c)).filter(Boolean);
     if (Array.isArray(r.codes)) return (r.codes as unknown[]).map((c) => String(c)).filter(Boolean);
     if (Array.isArray(r.coupons)) {
       return (r.coupons as unknown[])

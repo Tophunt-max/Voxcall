@@ -199,7 +199,17 @@ export default function RewardSpin() {
   };
 
   const addSegment = () => setSegments((prev) => [...prev, { ...DEFAULT_SEGMENT }]);
-  const removeSegment = (idx: number) => setSegments((prev) => prev.filter((_, i) => i !== idx));
+  const removeSegment = (idx: number) => {
+    // Removing a segment permanently deletes it from the wheel config on
+    // the next save — and the wheel MUST have at least one active segment
+    // to function. Confirm before nuking to prevent accidental clicks.
+    if (segments.length <= 1) {
+      alert('The wheel must have at least one segment. Add a new segment before removing this one.');
+      return;
+    }
+    if (!confirm(`Remove segment "${segments[idx]?.label ?? idx + 1}"?`)) return;
+    setSegments((prev) => prev.filter((_, i) => i !== idx));
+  };
 
   const save = async () => {
     if (segments.length === 0) {
