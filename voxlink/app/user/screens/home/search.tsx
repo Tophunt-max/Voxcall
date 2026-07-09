@@ -242,26 +242,22 @@ function CountryTab({ tab, active, onPress }: { tab: typeof COUNTRY_TABS[number]
 }
 
 // ─── Host grid card (photo-background style) ─────────────────────────────────
-function HostGridCard({ host, mode, viewers, onPress, onAudioCall }: {
+function HostGridCard({ host, mode, viewers, onlineLabel, offlineLabel, onPress, onAudioCall, onVideoCall }: {
   host: UIHost;
   mode: CardMode;
   viewers: number;
+  onlineLabel: string;
+  offlineLabel: string;
   onPress: () => void;
   onAudioCall: () => void;
-  /** Reserved for a future secondary gesture — the reference design shows no
-   *  video button on the card itself, so this hook is intentionally not wired
-   *  here. Kept in the parent's startCall path only. */
-  onVideoCall?: () => void;
+  onVideoCall: () => void;
 }) {
-  // Tap card = open profile; long-press = start audio call. We keep the
-  // audio/video call handlers wired so parent screen can trigger them from
-  // any long-press / secondary gesture (existing behavior preserved).
+  // Tap card = open profile; audio / video icon buttons kick off a call.
   return (
     <TouchableOpacity
       style={styles.card}
       activeOpacity={0.92}
       onPress={onPress}
-      onLongPress={host.isOnline ? onAudioCall : undefined}
       accessibilityLabel={`${host.name} — ${host.isOnline ? "online" : "offline"}`}
     >
       <Image source={{ uri: host.avatar }} style={styles.cardAvatar} resizeMode="cover" />
@@ -272,36 +268,96 @@ function HostGridCard({ host, mode, viewers, onPress, onAudioCall }: {
       {/* Bottom-to-top dark gradient keeps the name / handle / flag legible over
           any photo, independent of theme. */}
       <LinearGradient
-        colors={["transparent", "rgba(10,6,24,0.15)", "rgba(10,6,24,0.85)"]}
+        colors={["transparent", "rgba(10,6,24,0.15)", "rgba(10,6,24,0.9)"]}
         style={styles.cardOverlay}
         pointerEvents="none"
       />
 
       {/* Top-left: viewer/listener count pill with sound-wave icon. */}
-      <View style={styles.viewersPill}>
+      <View style={styles.viewersPill} pointerEvents="none">
         <Image source={require("@/assets/icons/ic_speaking.png")} style={styles.viewersIcon} tintColor="#fff" resizeMode="contain" />
         <Text style={styles.viewersText}>{viewers}</Text>
       </View>
 
       {/* Top-right: mode/status badge (Audio Live / Pk Battle / …). */}
-      <View style={styles.modeBadgeWrap}>
+      <View style={styles.modeBadgeWrap} pointerEvents="none">
         <ModeBadge mode={mode} />
       </View>
 
-      {/* Bottom: small round avatar + name/handle, and country flag on the right. */}
-      <View style={styles.cardBottom} pointerEvents="none">
-        <View style={styles.cardBottomLeft}>
+      {/* Coin rate chip (below mode badge on the right) — shows the audio
+          per-minute rate so users see the price before starting a call. */}
+      <View style={styles.rateChipWrap} pointerEvents="none">
+        <View style={styles.rateChip}>
+          <Image source={require("@/assets/icons/ic_coin.png")} style={styles.rateChipIcon} resizeMode="contain" />
+          <Text style={styles.rateChipText}>{host.coinsPerMinute}</Text>
+          <Text style={styles.rateChipUnit}>/min</Text>
+        </View>
+      </View>
+
+      {/* Bottom overlay: name/handle on the left, action row on the right.
+          `box-none` lets the call buttons receive taps while the surrounding
+          area falls through to the card's onPress (open profile). */}
+      <View style={styles.cardBottom} pointerEvents="box-none">
+        <View style={styles.cardBottomLeft} pointerEvents="none">
           <View style={styles.smallAvatarRing}>
             <Image source={{ uri: host.avatar }} style={styles.smallAvatar} resizeMode="cover" />
+            {/* Online / offline dot on the avatar rim. */}
+            <View style={[styles.presenceDot, host.isOnline ? styles.presenceDotOnline : styles.presenceDotOffline]} />
           </View>
           <View style={styles.cardNameCol}>
-            <Text style={styles.cardName} numberOfLines={1}>{host.name}</Text>
-            <Text style={styles.cardHandle} numberOfLines={1}>@{host.handle}</Text>
+            <View style={styles.cardNameRow}>
+              <Text style={styles.cardName} numberOfLines={1}>{host.name}</Text>
+              {host.country ? (
+                <Image source={{ uri: flagUrl(host.country, 40) }} style={styles.cardNameFlag} resizeMode="cover" />
+              ) : null}
+            </View>
+            <View style={styles.cardStatusRow}>
+              <View style={[styles.statusDot, host.isOnline ? styles.presenceDotOnline : styles.presenceDotOffline]} />
+              <Text style={styles.cardStatusText} numberOfLines={1}>
+                {host.isOnline ? onlineLabel : offlineLabel}
+              </Text>
+            </View>
           </View>
         </View>
-        {host.country ? (
-          <Image source={{ uri: flagUrl(host.country, 40) }} style={styles.cardFlag} resizeMode="cover" />
-        ) : null}
+
+        {/* Action buttons: audio + video call. Disabled visually when offline
+            (tap still opens profile via bubbling to the card handler). */}
+        <View style={styles.actionCol} pointerEvents="box-none">
+          <TouchableOpacity
+            onPress={onAudioCall}
+            activeOpacity={0.8}
+            style={[styles.actionBtn, !host.isOnline && styles.actionBtnDisabled]}
+            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+            accessibilityRole="button"
+            accessibilityLabel={`Audio call ${host.name}`}
+          >
+            <LinearGradient
+              colors={host.isOnline ? (["#4ADE80", "#16A34A"] as const) : (["#9AA6B2", "#6B7684"] as const)}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.actionBtnGrad}
+            >
+              <Image source={require("@/assets/icons/ic_call.png")} style={styles.actionBtnIcon} tintColor="#fff" resizeMode="contain" />
+            </LinearGradient>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={onVideoCall}
+            activeOpacity={0.8}
+            style={[styles.actionBtn, !host.isOnline && styles.actionBtnDisabled]}
+            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+            accessibilityRole="button"
+            accessibilityLabel={`Video call ${host.name}`}
+          >
+            <LinearGradient
+              colors={host.isOnline ? DESIGN.goLiveGradient as any : (["#9AA6B2", "#6B7684"] as const)}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.actionBtnGrad}
+            >
+              <Image source={require("@/assets/icons/ic_video.png")} style={styles.actionBtnIcon} tintColor="#fff" resizeMode="contain" />
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
       </View>
     </TouchableOpacity>
   );
@@ -795,11 +851,11 @@ export default function SearchScreen() {
         </TouchableOpacity>
 
         <TouchableOpacity
-          onPress={() => router.push("/user/hosts/all" as any)}
+          onPress={() => router.push("/user/referral" as any)}
           style={[styles.trophyBtn, { backgroundColor: DESIGN.trophyBg }]}
           activeOpacity={0.8}
           accessibilityRole="button"
-          accessibilityLabel="Leaderboard"
+          accessibilityLabel="Rewards"
         >
           {/* Emoji trophy is safe in the header — it isn't the flag emoji case
               that breaks on Android; the trophy renders cross-platform. */}
@@ -882,6 +938,30 @@ export default function SearchScreen() {
           <Text style={styles.emptyEmoji}>🔍</Text>
           <Text style={[styles.emptyText, { color: DESIGN.categoryActive }]}>No hosts found</Text>
           <Text style={[styles.emptySub, { color: DESIGN.categoryInactive }]}>Try another category, country, or search.</Text>
+          {(activeCategory !== "Explore" || activeCountry !== "ALL" || searchText.length > 0 || selectedLang !== "All" || selectedTopic !== "All") && (
+            <TouchableOpacity
+              onPress={() => {
+                setActiveCategory("Explore");
+                setActiveCountry("ALL");
+                setSearchText("");
+                setSelectedLang("All");
+                setSelectedTopic("All");
+              }}
+              activeOpacity={0.85}
+              style={styles.emptyResetWrap}
+              accessibilityRole="button"
+              accessibilityLabel="Clear all filters"
+            >
+              <LinearGradient
+                colors={DESIGN.pillActiveGradient as any}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.emptyResetBtn}
+              >
+                <Text style={styles.emptyResetText}>Clear all filters</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          )}
         </View>
       ) : (
         <FlatList
@@ -902,6 +982,8 @@ export default function SearchScreen() {
                     host={h}
                     mode={pickMode(h.id, h.isOnline)}
                     viewers={pseudoViewerCount(h.id, h.isOnline)}
+                    onlineLabel={t.hosts.online}
+                    offlineLabel={t.hosts.offline}
                     onPress={() => router.push(`/user/hosts/${h.id}` as any)}
                     onAudioCall={() => startCall(h, "audio")}
                     onVideoCall={() => startCall(h, "video")}
@@ -1042,16 +1124,36 @@ const styles = StyleSheet.create({
     borderColor: "#fff",
   },
 
-  // Search input (revealed on tap)
+  // Search input (revealed on tap). Border made distinctly visible with the
+  // brand accent so it reads as an interactive control (previously white-on-
+  // white → the box looked borderless / floating).
   searchWrap: {
     flexDirection: "row", alignItems: "center", gap: 8,
     marginHorizontal: H_PADDING, marginBottom: 10,
-    borderRadius: 14, paddingHorizontal: 12, height: 44,
-    backgroundColor: "rgba(255,255,255,0.75)",
-    borderWidth: 1, borderColor: "rgba(255,255,255,0.9)",
+    borderRadius: 22, paddingHorizontal: 14, height: 44,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1.5,
+    borderColor: DESIGN.pillActiveGradient[0], // #C64BE8 accent purple
+    ...Platform.select({
+      ios: { shadowColor: "#8A2BD8", shadowOpacity: 0.12, shadowRadius: 6, shadowOffset: { width: 0, height: 2 } },
+      android: { elevation: 2 },
+      web: { boxShadow: "0 2px 8px rgba(138,43,216,0.12)" } as any,
+    }),
   },
   searchInputIcon: { width: 18, height: 18 },
-  searchInput: { flex: 1, fontSize: 14, fontFamily: "Poppins_400Regular", padding: 0 },
+  // `padding: 0` + `textAlignVertical: 'center'` keeps the caret perfectly
+  // centered inside the 44px tall wrap on Android (default vertical padding
+  // otherwise pushes the text up).
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    fontFamily: "Poppins_400Regular",
+    padding: 0,
+    margin: 0,
+    height: "100%",
+    textAlignVertical: "center",
+    includeFontPadding: false,
+  },
   searchClear: { fontSize: 16, paddingHorizontal: 4 },
 
   // Grid row (2 columns of host cards)
@@ -1104,29 +1206,80 @@ const styles = StyleSheet.create({
   },
   pkChipText: { color: "#7A2A08", fontSize: 9, fontFamily: "Poppins_700Bold", letterSpacing: 0.3 },
 
-  // Bottom row (avatar + name/handle + flag)
+  // Bottom row (avatar + name / status on the left, call buttons on the right)
   cardBottom: {
     position: "absolute", left: 0, right: 0, bottom: 0,
     padding: 10,
     flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between",
+    gap: 8,
   },
-  cardBottomLeft: { flexDirection: "row", alignItems: "center", gap: 8, flex: 1 },
+  cardBottomLeft: { flexDirection: "row", alignItems: "center", gap: 8, flex: 1, minWidth: 0 },
+
+  // Small avatar with online/offline presence dot.
   smallAvatarRing: {
-    width: 32, height: 32, borderRadius: 16,
-    borderWidth: 2, borderColor: "rgba(255,255,255,0.9)",
-    overflow: "hidden", backgroundColor: "rgba(255,255,255,0.2)",
+    width: 34, height: 34, borderRadius: 17,
+    borderWidth: 2, borderColor: "rgba(255,255,255,0.95)",
+    overflow: "visible", backgroundColor: "rgba(255,255,255,0.2)",
+    position: "relative",
   },
-  smallAvatar: { width: "100%", height: "100%" },
+  smallAvatar: { width: "100%", height: "100%", borderRadius: 15 },
+  presenceDot: {
+    position: "absolute",
+    right: -1, bottom: -1,
+    width: 11, height: 11, borderRadius: 6,
+    borderWidth: 2, borderColor: "#fff",
+  },
+  presenceDotOnline: { backgroundColor: "#22C55E" }, // green
+  presenceDotOffline: { backgroundColor: "#94A3B8" }, // slate gray
+
   cardNameCol: { flex: 1, minWidth: 0 },
+  cardNameRow: { flexDirection: "row", alignItems: "center", gap: 5 },
   cardName: {
     color: "#fff", fontSize: 13, fontFamily: "Poppins_700Bold",
     textShadowColor: "rgba(0,0,0,0.6)", textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3,
+    flexShrink: 1,
   },
-  cardHandle: {
-    color: "rgba(255,255,255,0.85)", fontSize: 10.5, fontFamily: "Poppins_400Regular",
+  cardNameFlag: { width: 16, height: 12, borderRadius: 2, backgroundColor: "rgba(255,255,255,0.15)" },
+  // Online / Offline text row below the name.
+  cardStatusRow: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 1 },
+  statusDot: { width: 6, height: 6, borderRadius: 3 },
+  cardStatusText: {
+    color: "rgba(255,255,255,0.9)", fontSize: 10, fontFamily: "Poppins_500Medium",
     textShadowColor: "rgba(0,0,0,0.5)", textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3,
   },
-  cardFlag: { width: 22, height: 16, borderRadius: 3, backgroundColor: "rgba(255,255,255,0.15)" },
+
+  // Coin-rate chip (positioned just below the mode badge, top-right).
+  rateChipWrap: { position: "absolute", top: 40, right: 10 },
+  rateChip: {
+    flexDirection: "row", alignItems: "center", gap: 3,
+    paddingHorizontal: 7, paddingVertical: 3,
+    backgroundColor: "rgba(255, 184, 0, 0.95)", // gold
+    borderRadius: 12,
+    ...Platform.select({
+      ios: { shadowColor: "#000", shadowOpacity: 0.2, shadowRadius: 3, shadowOffset: { width: 0, height: 1 } },
+      android: { elevation: 2 },
+      web: { boxShadow: "0 1px 3px rgba(0,0,0,0.2)" } as any,
+    }),
+  },
+  rateChipIcon: { width: 11, height: 11 },
+  rateChipText: { color: "#5A2B00", fontSize: 10.5, fontFamily: "Poppins_700Bold" },
+  rateChipUnit: { color: "#7A3E00", fontSize: 9, fontFamily: "Poppins_500Medium" },
+
+  // Action buttons column (audio + video call) on the bottom-right.
+  actionCol: { flexDirection: "row", alignItems: "center", gap: 6 },
+  actionBtn: {
+    width: 34, height: 34,
+    borderRadius: 17,
+    overflow: "hidden",
+    ...Platform.select({
+      ios: { shadowColor: "#000", shadowOpacity: 0.25, shadowRadius: 4, shadowOffset: { width: 0, height: 2 } },
+      android: { elevation: 3 },
+      web: { boxShadow: "0 2px 4px rgba(0,0,0,0.25)" } as any,
+    }),
+  },
+  actionBtnDisabled: { opacity: 0.7 },
+  actionBtnGrad: { flex: 1, alignItems: "center", justifyContent: "center" },
+  actionBtnIcon: { width: 16, height: 16 },
 
   // ── Unified promo slot (admin banners + Invite Friends fallback) ─────────
   // The slot is a horizontally-paged slider; each slide is one full-width
@@ -1289,10 +1442,22 @@ const styles = StyleSheet.create({
   sheetApplyText: { color: "#fff", fontSize: 14, fontFamily: "Poppins_700Bold" },
 
   // Empty / loading states
-  centerWrap: { flex: 1, alignItems: "center", justifyContent: "center", gap: 8, paddingBottom: 80 },
+  centerWrap: { flex: 1, alignItems: "center", justifyContent: "center", gap: 8, paddingBottom: 80, paddingHorizontal: 24 },
   emptyEmoji: { fontSize: 44 },
   emptyText: { fontSize: 16, fontFamily: "Poppins_600SemiBold" },
-  emptySub: { fontSize: 13, fontFamily: "Poppins_400Regular" },
+  emptySub: { fontSize: 13, fontFamily: "Poppins_400Regular", textAlign: "center" },
+  emptyResetWrap: {
+    marginTop: 14,
+    borderRadius: 22,
+    overflow: "hidden",
+    ...Platform.select({
+      ios: { shadowColor: "#8A2BD8", shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } },
+      android: { elevation: 4 },
+      web: { boxShadow: "0 3px 10px rgba(138,43,216,0.25)" } as any,
+    }),
+  },
+  emptyResetBtn: { paddingHorizontal: 22, paddingVertical: 11, alignItems: "center", justifyContent: "center" },
+  emptyResetText: { color: "#fff", fontSize: 13.5, fontFamily: "Poppins_700Bold" },
 });
 
 // Per-screen error boundary — a render crash on the search screen stays
