@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
-import { Plus, Trash2, Save, RotateCw, TrendingUp, Users, Coins, Trophy } from 'lucide-react';
+import { Plus, Trash2, Save, RotateCw, TrendingUp, Users, Coins, Trophy, Percent, Scale } from 'lucide-react';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Lucky Spin Wheel admin
@@ -48,6 +48,86 @@ function parseSegments(raw: unknown): Segment[] {
     } catch { /* fall through */ }
   }
   return [];
+}
+
+// ─── Chance-management helpers ─────────────────────────────────────────────
+//
+// The wheel algorithm is a cumulative-weight bucket lookup (see the /spin
+// route). Weights are RELATIVE — a segment with weight 30 wins twice as often
+// as a segment with weight 15. The admin has two natural mental models:
+//
+//   • "chance %"  → they want a segment to win X% of the time
+//   • "weight"    → they want a segment to hit twice as often as some other
+//
+// We store weights server-side (fewer floating-point round-trips + simpler
+// migrations) but let the admin edit either. `normalizeToPct` rescales the
+// current weights so their sum equals 100 — after that, weight === chance %.
+// `setEqualChances` distributes equal weight to every segment.
+function normalizeToPct(segments: Segment[]): Segment[] {
+  const total = segments.reduce((s, x) => s + Math.max(0, Number(x.weight) || 0), 0);
+  if (total <= 0) return segments;
+  return segments.map((s) => ({
+    ...s,
+    // Round to 1 decimal so admins see clean values in the input field.
+    weight: Math.max(0.1, Math.round((Number(s.weight) / total) * 1000) / 10),
+  }));
+}
+
+function setEqualChances(segments: Segment[]): Segment[] {
+  if (segments.length === 0) return segments;
+  const share = Math.round((100 / segments.length) * 10) / 10;
+  return segments.map((s) => ({ ...s, weight: share }));
+}
+
+// Compute the currently-displayed chance % for each segment (relative to
+// the total weight). Returned as an array parallel to `segments`.
+function computeChances(segments: Segment[]): number[] {
+  const total = segments.reduce((s, x) => s + Math.max(0, Number(x.weight) || 0), 0);
+  if (total <= 0) return segments.map(() => 0);
+  return segments.map((s) => (Math.max(0, Number(s.weight) || 0) / total) * 100);
+}
+
+// SVG arc path for the mini live-preview donut (same math as the user wheel).
+function arcPath(cx: number, cy: number, r: number, startDeg: number, endDeg: number): string {
+  const toRad = (deg: number) => ((deg - 90) * Math.PI) / 180;
+  const x1 = cx + r * Math.cos(toRad(startDeg));
+  const y1 = cy + r * Math.sin(toRad(startDeg));
+  const x2 = cx + r * Math.cos(toRad(endDeg));
+  const y2 = cy + r * Math.sin(toRad(endDeg));
+  const largeArc = endDeg - startDeg > 180 ? 1 : 0;
+  return `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} Z`;
+}
+
+// Small SVG live preview of the wheel — updates instantly as admin edits.
+function WheelPreview({ segments, size = 140 }: { segments: Segment[]; size?: number }) {
+  const chances = computeChances(segments);
+  const cx = size / 2;
+  const cy = size / 2;
+  const r = size / 2 - 4;
+  let acc = 0;
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+      {segments.map((s, i) => {
+        const pct = chances[i];
+        const start = acc;
+        const end = acc + (pct / 100) * 360;
+        acc = end;
+        if (end <= start) return null;
+        return (
+          <path
+            key={i}
+            d={arcPath(cx, cy, r, start, end)}
+            fill={/^#[0-9A-Fa-f]{6}$/.test(s.color) ? s.color : '#8B5CF6'}
+            stroke="#fff"
+            strokeWidth={1.5}
+          />
+        );
+      })}
+      {/* Hub */}
+      <circle cx={cx} cy={cy} r={size * 0.16} fill="#fff" stroke="#F59E0B" strokeWidth={size * 0.02} />
+      <circle cx={cx} cy={cy} r={size * 0.07} fill="#F59E0B" />
+    </svg>
+  );
 }
 
 export default function RewardSpin() {
@@ -186,20 +266,59 @@ export default function RewardSpin() {
             </div>
           </div>
 
-          {/* Segments editor */}
+          {/* Segments editor + live preview + chance controls */}
           <div className="bg-card border border-border rounded-2xl p-5">
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
               <div>
-                <h3 className="font-bold text-sm">Segments</h3>
+                <h3 className="font-bold text-sm">Segments &amp; win chances</h3>
                 <p className="text-[11px] text-muted-foreground mt-0.5">
-                  Weights are relative. A segment with weight=10 is picked twice as often as weight=5.
+                  Each row's <strong>Chance</strong> is the probability that segment lands.
+                  Use "Normalize to 100%" to make the values read as clean percentages.
                 </p>
               </div>
-              <button onClick={addSegment}
-                className="flex items-center gap-1.5 border border-border px-3 py-1.5 rounded-xl text-xs font-semibold hover:bg-secondary">
-                <Plus size={13} /> Add segment
-              </button>
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={() => setSegments((s) => normalizeToPct(s))}
+                  disabled={segments.length === 0}
+                  className="flex items-center gap-1.5 border border-border px-3 py-1.5 rounded-xl text-xs font-semibold hover:bg-secondary disabled:opacity-40"
+                  title="Rescale weights so they sum to 100 — after this the Chance column reads as pure %"
+                >
+                  <Percent size={13} /> Normalize to 100%
+                </button>
+                <button
+                  onClick={() => setSegments((s) => setEqualChances(s))}
+                  disabled={segments.length === 0}
+                  className="flex items-center gap-1.5 border border-border px-3 py-1.5 rounded-xl text-xs font-semibold hover:bg-secondary disabled:opacity-40"
+                  title="Set every segment to the same chance"
+                >
+                  <Scale size={13} /> Equal chances
+                </button>
+                <button onClick={addSegment}
+                  className="flex items-center gap-1.5 border border-border px-3 py-1.5 rounded-xl text-xs font-semibold hover:bg-secondary">
+                  <Plus size={13} /> Add segment
+                </button>
+              </div>
             </div>
+
+            {/* Live wheel preview — updates in real time as admin edits. */}
+            {segments.length > 0 && (
+              <div className="flex items-center gap-4 mb-4 p-3 bg-secondary/40 rounded-xl">
+                <WheelPreview segments={segments} size={130} />
+                <div className="flex-1 space-y-1">
+                  <div className="text-xs font-bold text-muted-foreground uppercase tracking-wide">Live preview</div>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    Slice widths match each segment's chance %. Colours match the wheel users see.
+                  </p>
+                  <div className="flex items-center gap-3 mt-2 text-[11px]">
+                    <span>Segments: <strong className="text-foreground">{segments.length}</strong></span>
+                    <span>Total weight: <strong className="text-foreground">{totalWeight.toFixed(1)}</strong></span>
+                    <span>Sum of chances: <strong className="text-foreground">
+                      {computeChances(segments).reduce((s, x) => s + x, 0).toFixed(1)}%
+                    </strong></span>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {segments.length === 0 ? (
               <div className="py-8 text-center text-sm text-muted-foreground">No segments yet — click "Add segment" to start.</div>
@@ -209,8 +328,8 @@ export default function RewardSpin() {
                   <div className="col-span-3">Label</div>
                   <div className="col-span-1">Emoji</div>
                   <div className="col-span-2">Coins</div>
-                  <div className="col-span-2">Weight</div>
-                  <div className="col-span-1">Odds</div>
+                  <div className="col-span-2">Chance</div>
+                  <div className="col-span-1">Actual %</div>
                   <div className="col-span-2">Color</div>
                   <div className="col-span-1 text-right">Actions</div>
                 </div>
@@ -228,11 +347,12 @@ export default function RewardSpin() {
                         className="md:col-span-2 px-2.5 py-2 border border-border rounded-lg text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/30"
                         value={s.coins}
                         onChange={(e) => updateSegment(idx, { coins: Math.max(0, Number(e.target.value)) })} />
-                      <input type="number" min={1}
+                      <input type="number" min={0.1} step={0.1}
                         className="md:col-span-2 px-2.5 py-2 border border-border rounded-lg text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/30"
                         value={s.weight}
-                        onChange={(e) => updateSegment(idx, { weight: Math.max(1, Number(e.target.value)) })} />
-                      <div className="md:col-span-1 text-[11px] font-semibold text-muted-foreground">
+                        onChange={(e) => updateSegment(idx, { weight: Math.max(0.1, Number(e.target.value) || 0.1) })}
+                        title="This segment's chance. Absolute value doesn't matter — only its ratio to the other segments." />
+                      <div className="md:col-span-1 text-[11px] font-semibold text-primary">
                         {odds.toFixed(1)}%
                       </div>
                       <div className="md:col-span-2 flex items-center gap-1.5">

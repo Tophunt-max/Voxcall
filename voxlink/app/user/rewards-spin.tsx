@@ -40,11 +40,35 @@ import { showErrorToast, showSuccessToast } from "@/components/Toast";
 // win.
 
 const { width: SCREEN_W } = Dimensions.get("window");
-const WHEEL_SIZE = Math.min(SCREEN_W - 40, 340);
-const RADIUS = WHEEL_SIZE / 2;
-const CENTER = RADIUS;
+
+// Wheel scales down when the user has no spins available. This makes room for
+// the "come back tomorrow" state without pushing content off-screen, and
+// visually signals to the user that the surface is temporarily inactive
+// (still there — you'll be back — just smaller).
+const FULL_WHEEL_SIZE = Math.min(SCREEN_W - 40, 300);
+const COMPACT_WHEEL_SIZE = Math.min(SCREEN_W - 120, 200);
 
 type Segment = { label: string; coins: number; weight: number; color: string; emoji: string };
+
+// Seconds until the next UTC 00:00 — that's when the daily free spin resets
+// (mirrors the backend's `ensureSpinState` behaviour in routes/rewards.ts).
+function secondsUntilUTCMidnight(): number {
+  const now = new Date();
+  const nextUtcMidnightMs = Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate() + 1,
+    0, 0, 0,
+  );
+  return Math.max(0, Math.floor((nextUtcMidnightMs - Date.now()) / 1000));
+}
+
+function formatHMS(sec: number): string {
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = Math.floor(sec % 60);
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
 
 // Compute cumulative-angle bounds for each segment so the animator can land
 // the arrow exactly on the winning slice. Angles are 0..360 clockwise from
@@ -116,7 +140,23 @@ export default function RewardsSpinScreen() {
   }, [load]);
 
   const slices = useMemo(() => computeSlices(segments), [segments]);
-  const canSpin = !spinning && (freeSpins > 0 || earnedSpins > 0) && segments.length > 0;
+  const hasSpins = freeSpins > 0 || earnedSpins > 0;
+  const canSpin = !spinning && hasSpins && segments.length > 0;
+
+  // Wheel shrinks when the user has no spins to use — makes room for the
+  // "come back tomorrow" card and visually signals inactive state.
+  const wheelSize = hasSpins ? FULL_WHEEL_SIZE : COMPACT_WHEEL_SIZE;
+  const radius = wheelSize / 2;
+  const center = radius;
+
+  // Live-tick every second so the "next spin in HH:MM:SS" countdown moves.
+  // Only ticks in the "no spins" state — otherwise it's a no-op every render.
+  const [nextSpinIn, setNextSpinIn] = useState(() => secondsUntilUTCMidnight());
+  useEffect(() => {
+    if (hasSpins) return;
+    const t = setInterval(() => setNextSpinIn(secondsUntilUTCMidnight()), 1000);
+    return () => clearInterval(t);
+  }, [hasSpins]);
 
   // ── Spin action ──────────────────────────────────────────────────────────
   const spin = useCallback(async () => {
@@ -208,16 +248,17 @@ export default function RewardsSpinScreen() {
         </View>
       </LinearGradient>
 
-      {/* Wheel */}
-      <View style={styles.wheelWrap}>
+      {/* Wheel — dimensions are dynamic; when the user has no spins the wheel
+          shrinks to a compact size and the surrounding padding tightens. */}
+      <View style={[styles.wheelWrap, !hasSpins && styles.wheelWrapCompact]}>
         {/* Arrow pointer at the top */}
         <View style={styles.pointer} pointerEvents="none">
           <View style={styles.pointerBase} />
           <View style={styles.pointerTip} />
         </View>
 
-        <Animated.View style={{ transform: [{ rotate: spinDeg }] }}>
-          <Svg width={WHEEL_SIZE} height={WHEEL_SIZE} viewBox={`0 0 ${WHEEL_SIZE} ${WHEEL_SIZE}`}>
+        <Animated.View style={[{ transform: [{ rotate: spinDeg }] }, !hasSpins && { opacity: 0.65 }]}>
+          <Svg width={wheelSize} height={wheelSize} viewBox={`0 0 ${wheelSize} ${wheelSize}`}>
             <Defs>
               <RadialGradient id="wheelShadow" cx="50%" cy="50%" r="50%">
                 <Stop offset="0%" stopColor="rgba(0,0,0,0)" />
@@ -226,29 +267,30 @@ export default function RewardsSpinScreen() {
               </RadialGradient>
             </Defs>
             {/* Outer glow */}
-            <Circle cx={CENTER} cy={CENTER} r={RADIUS} fill="url(#wheelShadow)" />
+            <Circle cx={center} cy={center} r={radius} fill="url(#wheelShadow)" />
             {/* Slices */}
             <G>
               {slices.map((s, i) => (
                 <G key={i}>
                   <Path
-                    d={arcPath(CENTER, CENTER, RADIUS - 6, s.start, s.end)}
+                    d={arcPath(center, center, radius - 6, s.start, s.end)}
                     fill={s.color}
                     stroke="#fff"
                     strokeWidth={2}
                   />
-                  {/* Label pill placed at 65% radius along the mid-angle */}
+                  {/* Label pill placed at 65% radius along the mid-angle. Font
+                      scales down in compact mode so it stays readable. */}
                   {(() => {
                     const rad = ((s.mid - 90) * Math.PI) / 180;
-                    const tx = CENTER + Math.cos(rad) * (RADIUS * 0.62);
-                    const ty = CENTER + Math.sin(rad) * (RADIUS * 0.62);
+                    const tx = center + Math.cos(rad) * (radius * 0.62);
+                    const ty = center + Math.sin(rad) * (radius * 0.62);
                     return (
                       <G>
                         <SvgText
                           x={tx}
                           y={ty}
                           fill="#fff"
-                          fontSize={14}
+                          fontSize={hasSpins ? 14 : 10}
                           fontWeight="bold"
                           textAnchor="middle"
                           alignmentBaseline="middle"
@@ -262,12 +304,27 @@ export default function RewardsSpinScreen() {
                 </G>
               ))}
             </G>
-            {/* Hub */}
-            <Circle cx={CENTER} cy={CENTER} r={28} fill="#fff" stroke="#F59E0B" strokeWidth={4} />
-            <Circle cx={CENTER} cy={CENTER} r={12} fill="#F59E0B" />
+            {/* Hub — also scales with the wheel */}
+            <Circle cx={center} cy={center} r={hasSpins ? 28 : 20} fill="#fff" stroke="#F59E0B" strokeWidth={hasSpins ? 4 : 3} />
+            <Circle cx={center} cy={center} r={hasSpins ? 12 : 8} fill="#F59E0B" />
           </Svg>
         </Animated.View>
       </View>
+
+      {/* No-spins-left card with a live countdown to the next free spin.
+          Only visible when the user is out of spins — otherwise this space is
+          taken by the (soon-to-appear) win banner. */}
+      {!hasSpins && !lastWin && (
+        <View style={styles.noSpinsCard}>
+          <View style={styles.noSpinsCountdown}>
+            <Text style={styles.noSpinsCountdownLabel}>NEXT FREE SPIN IN</Text>
+            <Text style={styles.noSpinsCountdownValue}>{formatHMS(nextSpinIn)}</Text>
+          </View>
+          <Text style={styles.noSpinsHint}>
+            Complete reward tasks to earn extra spins before the daily reset.
+          </Text>
+        </View>
+      )}
 
       {/* Last-win banner */}
       {lastWin && (
@@ -338,6 +395,7 @@ const styles = StyleSheet.create({
   summaryValue: { color: "#fff", fontSize: 18, fontFamily: "Poppins_700Bold", marginTop: 4 },
 
   wheelWrap: { alignItems: "center", justifyContent: "center", paddingVertical: 20 },
+  wheelWrapCompact: { paddingVertical: 12 },  // tighter padding when the wheel is compact
   pointer: { position: "absolute", top: 6, zIndex: 10, alignItems: "center" },
   pointerBase: { width: 24, height: 24, borderRadius: 12, backgroundColor: "#F59E0B", borderWidth: 3, borderColor: "#fff", ...Platform.select({ ios: { shadowColor: "#000", shadowOpacity: 0.25, shadowRadius: 4, shadowOffset: { width: 0, height: 2 } }, android: { elevation: 3 }, web: { boxShadow: "0 2px 6px rgba(0,0,0,0.25)" } as any }) },
   pointerTip: { width: 0, height: 0, borderLeftWidth: 10, borderRightWidth: 10, borderTopWidth: 18, borderLeftColor: "transparent", borderRightColor: "transparent", borderTopColor: "#F59E0B", marginTop: -2 },
@@ -352,6 +410,40 @@ const styles = StyleSheet.create({
     backgroundColor: "#FDF3C4",
     borderWidth: 1,
     borderColor: "#F59E0B",
+  },
+
+  // No-spins-left card (compact-mode companion under the shrunk wheel)
+  noSpinsCard: {
+    marginHorizontal: 20,
+    padding: 16,
+    borderRadius: 16,
+    backgroundColor: "#FEF2F2",
+    borderWidth: 1,
+    borderColor: "#FCA5A5",
+    alignItems: "center",
+    gap: 8,
+  },
+  noSpinsCountdown: { alignItems: "center", gap: 2 },
+  noSpinsCountdownLabel: {
+    fontSize: 10,
+    fontFamily: "Poppins_700Bold",
+    color: "#B91C1C",
+    letterSpacing: 1,
+  },
+  noSpinsCountdownValue: {
+    fontSize: 32,
+    fontFamily: "Poppins_700Bold",
+    color: "#7F1D1D",
+    letterSpacing: 2,
+    // Web-safe monospace fallback so ticks don't jitter horizontally.
+    fontVariant: ["tabular-nums"],
+  },
+  noSpinsHint: {
+    fontSize: 12,
+    fontFamily: "Poppins_400Regular",
+    color: "#7F1D1D",
+    textAlign: "center",
+    lineHeight: 17,
   },
   winBannerEmoji: { fontSize: 30 },
   winBannerTitle: { fontSize: 15, fontFamily: "Poppins_700Bold", color: "#7A3E00" },
