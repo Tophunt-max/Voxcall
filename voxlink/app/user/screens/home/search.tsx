@@ -1072,6 +1072,17 @@ const styles = StyleSheet.create({
     height: "100%",
     textAlignVertical: "center",
     includeFontPadding: false,
+    // Web: React Native Web renders TextInput as <input>, which shows the
+    // browser's default focus outline (usually a black rectangle). We strip
+    // that here since our purple border on the wrap already conveys focus.
+    ...Platform.select({
+      web: {
+        outlineWidth: 0,
+        outlineStyle: "none",
+        outlineColor: "transparent",
+        borderWidth: 0,
+      } as any,
+    }),
   },
   searchClear: { fontSize: 16, paddingHorizontal: 4 },
 
