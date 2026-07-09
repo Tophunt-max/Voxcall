@@ -25,6 +25,14 @@ import { Save, Info, Calculator, TrendingUp, RefreshCw, Wifi } from 'lucide-reac
 //                          ₹ user-cost + ₹ host-payout equivalents
 //   • coins_per_min      → treats value as coins/min for a call and shows
 //                          ₹/min user cost, ₹/min host earns, ₹/hour host
+//   • usd_per_1000_min   → Agora cost fields; shows $/min, ₹/min per user,
+//                          and total ₹/min including all billed participants
+//   • pct_of_purchase    → gateway fee %; shows ₹ fee for common purchase
+//                          amounts (₹100 / ₹500 / ₹1000)
+//   • share_ratio        → 0–1 ratio; shows both sides as percentages
+//                          (e.g. host 70% / platform 30%)
+//   • floor_multiplier   → headroom multiplier; shows "+X% above break-even"
+//   • participants_count → integer; shows "1:1 = 2 · 1:2 = 3 · group = N"
 const settingGroups: Array<{
   group: string;
   settings: Array<{
@@ -33,7 +41,16 @@ const settingGroups: Array<{
     type: string;
     hint?: string;
     step?: string;
-    preview?: 'inr_per_coin_user' | 'inr_per_coin_host' | 'coins_absolute' | 'coins_per_min';
+    preview?:
+      | 'inr_per_coin_user'
+      | 'inr_per_coin_host'
+      | 'coins_absolute'
+      | 'coins_per_min'
+      | 'usd_per_1000_min'
+      | 'pct_of_purchase'
+      | 'share_ratio'
+      | 'floor_multiplier'
+      | 'participants_count';
   }>;
 }> = [
   {
@@ -48,7 +65,7 @@ const settingGroups: Array<{
     settings: [
       { key: 'coin_purchase_inr', label: '💰 Coin Purchase Value (₹ per coin) — user buys', type: 'number', hint: 'What a user pays to BUY 1 coin. RECOMMENDED ₹0.20 (so ₹1 = 5 coins, 100 coins = ₹20). This is the revenue side — see the live calculator below.', step: '0.01', preview: 'inr_per_coin_user' },
       { key: 'coin_value_inr', label: '💸 Coin Payout Value (₹ per coin) — host redeems', type: 'number', hint: 'What a host redeems 1 coin for on withdrawal (host cash payout). RECOMMENDED ₹0.085. The gap vs the purchase value is the platform spread. Backend auto-converts to each host\'s currency.', step: '0.001', preview: 'inr_per_coin_host' },
-      { key: 'host_revenue_share', label: 'Host Revenue Share', type: 'number', hint: '0.70 means hosts receive 70% of coins charged per call. Platform keeps the rest. Per-level overrides live in Level System Configuration.', step: '0.01' },
+      { key: 'host_revenue_share', label: 'Host Revenue Share', type: 'number', hint: '0.70 means hosts receive 70% of coins charged per call. Platform keeps the rest. Per-level overrides live in Level System Configuration.', step: '0.01', preview: 'share_ratio' },
       { key: 'min_withdrawal_coins', label: 'Minimum Withdrawal (Coins)', type: 'number', hint: 'Minimum coins a host must have to request a payout.', step: '1', preview: 'coins_absolute' },
     ],
   },
@@ -64,14 +81,14 @@ const settingGroups: Array<{
   {
     group: 'Agora Cost & Margins',
     settings: [
-      { key: 'payment_gateway_fee_pct', label: 'Payment Gateway Fee (%)', type: 'number', hint: 'Razorpay/Stripe fee on coin purchases, subtracted from platform revenue. Typically ~2%. (Coin purchase/payout ₹ values are in Coin Economy above.)', step: '0.1' },
+      { key: 'payment_gateway_fee_pct', label: 'Payment Gateway Fee (%)', type: 'number', hint: 'Razorpay/Stripe fee on coin purchases, subtracted from platform revenue. Typically ~2%. (Coin purchase/payout ₹ values are in Coin Economy above.)', step: '0.1', preview: 'pct_of_purchase' },
       { key: 'video_max_resolution', label: 'Video Max Resolution', type: 'text', hint: '720p = Agora HD tier ($3.99/1k min, RECOMMENDED). 1080p = Full-HD tier ($8.99/1k min). Clients cap capture to this.' },
-      { key: 'agora_audio_usd_per_1000', label: 'Agora Audio Cost ($/1000 min)', type: 'number', hint: 'Agora list price for audio, per participant. Default $0.99.', step: '0.01' },
-      { key: 'agora_video_hd_usd_per_1000', label: 'Agora Video HD Cost ($/1000 min)', type: 'number', hint: 'Agora list price for HD (≤720p) video, per participant. Default $3.99.', step: '0.01' },
-      { key: 'agora_video_fhd_usd_per_1000', label: 'Agora Video FHD Cost ($/1000 min)', type: 'number', hint: 'Agora list price for Full-HD (1080p) video, per participant. Default $8.99.', step: '0.01' },
-      { key: 'call_participants', label: 'Billed Participants per Call', type: 'number', hint: 'Agora bills per participant. A 1:1 call = 2. Used for cost + margin math.', step: '1' },
-      { key: 'floor_max_host_share', label: 'Floor: Max Host Share', type: 'number', hint: 'Worst-case host share (top level) used to compute the loss-proof rate floor. Default 0.80.', step: '0.01' },
-      { key: 'call_floor_safety_multiplier', label: 'Floor: Safety Multiplier', type: 'number', hint: 'Headroom above raw break-even for the minimum enforced rate. 1.5 = floor is 50% above break-even.', step: '0.1' },
+      { key: 'agora_audio_usd_per_1000', label: 'Agora Audio Cost ($/1000 min)', type: 'number', hint: 'Agora list price for audio, per participant. Default $0.99.', step: '0.01', preview: 'usd_per_1000_min' },
+      { key: 'agora_video_hd_usd_per_1000', label: 'Agora Video HD Cost ($/1000 min)', type: 'number', hint: 'Agora list price for HD (≤720p) video, per participant. Default $3.99.', step: '0.01', preview: 'usd_per_1000_min' },
+      { key: 'agora_video_fhd_usd_per_1000', label: 'Agora Video FHD Cost ($/1000 min)', type: 'number', hint: 'Agora list price for Full-HD (1080p) video, per participant. Default $8.99.', step: '0.01', preview: 'usd_per_1000_min' },
+      { key: 'call_participants', label: 'Billed Participants per Call', type: 'number', hint: 'Agora bills per participant. A 1:1 call = 2. Used for cost + margin math.', step: '1', preview: 'participants_count' },
+      { key: 'floor_max_host_share', label: 'Floor: Max Host Share', type: 'number', hint: 'Worst-case host share (top level) used to compute the loss-proof rate floor. Default 0.80.', step: '0.01', preview: 'share_ratio' },
+      { key: 'call_floor_safety_multiplier', label: 'Floor: Safety Multiplier', type: 'number', hint: 'Headroom above raw break-even for the minimum enforced rate. 1.5 = floor is 50% above break-even.', step: '0.1', preview: 'floor_multiplier' },
     ],
   },
   {
@@ -289,6 +306,8 @@ export default function SettingsPage() {
                       coinPurchaseInr={coinPurchaseInr}
                       coinValueInr={coinValueInr}
                       hostShare={hostShare}
+                      inrRate={inrRate}
+                      callParticipants={parseFloat(settings.call_participants || '2') || 2}
                     />
                   )}
                 </div>
@@ -461,13 +480,24 @@ export default function SettingsPage() {
 // panel below, so updates to any dependency (coin_purchase_inr,
 // coin_value_inr, host_revenue_share) propagate instantly.
 function CoinChips({
-  kind, rawValue, coinPurchaseInr, coinValueInr, hostShare,
+  kind, rawValue, coinPurchaseInr, coinValueInr, hostShare, inrRate, callParticipants,
 }: {
-  kind: 'inr_per_coin_user' | 'inr_per_coin_host' | 'coins_absolute' | 'coins_per_min';
+  kind:
+    | 'inr_per_coin_user'
+    | 'inr_per_coin_host'
+    | 'coins_absolute'
+    | 'coins_per_min'
+    | 'usd_per_1000_min'
+    | 'pct_of_purchase'
+    | 'share_ratio'
+    | 'floor_multiplier'
+    | 'participants_count';
   rawValue: string;
   coinPurchaseInr: number;
   coinValueInr: number;
   hostShare: number;
+  inrRate: number;
+  callParticipants: number;
 }) {
   const raw = parseFloat(String(rawValue ?? '0'));
   const val = Number.isFinite(raw) && raw > 0 ? raw : 0;
@@ -528,28 +558,139 @@ function CoinChips({
     );
   }
 
-  // coins_per_min — the call-rate case. val is coins/min charged to the
-  // caller. Host actually receives coins × hostShare × coinValueInr per
-  // minute (revenue share applied then payout ₹ conversion).
-  const perMinUser = val * coinPurchaseInr;
-  const perMinHost = val * hostShare * coinValueInr;
-  const perHourHost = perMinHost * 60;
+  if (kind === 'coins_per_min') {
+    // coins_per_min — the call-rate case. val is coins/min charged to the
+    // caller. Host actually receives coins × hostShare × coinValueInr per
+    // minute (revenue share applied then payout ₹ conversion).
+    const perMinUser = val * coinPurchaseInr;
+    const perMinHost = val * hostShare * coinValueInr;
+    const perHourHost = perMinHost * 60;
+    return (
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className={chipGreen}>
+          <span className={dim}>User </span>
+          <span className={green}>{val > 0 ? inrCompact(perMinUser) : '—'}</span>
+          <span className={dim}>/min</span>
+        </span>
+        <span className={chipAmber}>
+          <span className={dim}>Host </span>
+          <span className={amber}>{val > 0 ? inrCompact(perMinHost) : '—'}</span>
+          <span className={dim}>/min</span>
+        </span>
+        <span className={chipNeutral}>
+          <span className={dim}>Host </span>
+          <span className={blue}>{val > 0 ? inrCompact(perHourHost) : '—'}</span>
+          <span className={dim}>/hr</span>
+        </span>
+      </div>
+    );
+  }
+
+  if (kind === 'usd_per_1000_min') {
+    // Agora list prices are quoted as $/1000 min per PARTICIPANT. A 1:1
+    // voice call bills 2 participants → double the cost. The chip strip
+    // makes the real per-minute economics visible: $/min, ₹/min per
+    // participant, and the full call-level ₹/min for the default
+    // participant count so admin sees Agora's actual bite of a minute.
+    const usdPerMin = val / 1000;
+    const inrPerMinPerPart = usdPerMin * inrRate;
+    const inrPerMinCall = inrPerMinPerPart * callParticipants;
+    return (
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className={chipNeutral}>
+          <span className={dim}>$/min </span>
+          <span className={blue}>{val > 0 ? `$${usdPerMin.toFixed(5)}` : '—'}</span>
+        </span>
+        <span className={chipNeutral}>
+          <span className={dim}>₹/min </span>
+          <span className={blue}>{val > 0 ? inrCompact(inrPerMinPerPart) : '—'}</span>
+        </span>
+        <span className={chipAmber}>
+          <span className={dim}>Full call ({callParticipants}p) </span>
+          <span className={amber}>{val > 0 ? inrCompact(inrPerMinCall) : '—'}</span>
+          <span className={dim}>/min</span>
+        </span>
+      </div>
+    );
+  }
+
+  if (kind === 'pct_of_purchase') {
+    // Gateway fee lives as a percentage but its impact is felt as a rupee
+    // subtraction from the platform's revenue. Show what the fee costs
+    // on common purchase amounts so admin sees the real drag.
+    const feeOn = (amount: number) => (amount * val) / 100;
+    return (
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className={chipNeutral}>
+          <span className={dim}>₹100 → </span>
+          <span className={amber}>{val > 0 ? inr(feeOn(100), 2) : '—'}</span>
+          <span className={dim}> fee</span>
+        </span>
+        <span className={chipNeutral}>
+          <span className={dim}>₹500 → </span>
+          <span className={amber}>{val > 0 ? inr(feeOn(500), 2) : '—'}</span>
+        </span>
+        <span className={chipNeutral}>
+          <span className={dim}>₹1000 → </span>
+          <span className={amber}>{val > 0 ? inr(feeOn(1000), 0) : '—'}</span>
+        </span>
+      </div>
+    );
+  }
+
+  if (kind === 'share_ratio') {
+    // Ratio 0–1. Show both sides as percentages so admin never has to
+    // do the "1 − 0.7" math in their head. Also flags out-of-range
+    // values so a fat-fingered 7.0 → 700% is obvious at a glance.
+    const isValid = val > 0 && val <= 1;
+    const hostPct = val * 100;
+    const platformPct = (1 - val) * 100;
+    return (
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className={chipAmber}>
+          <span className={dim}>Host </span>
+          <span className={amber}>{isValid ? `${hostPct.toFixed(0)}%` : '—'}</span>
+        </span>
+        <span className={chipGreen}>
+          <span className={dim}>Platform </span>
+          <span className={green}>{isValid ? `${platformPct.toFixed(0)}%` : '—'}</span>
+        </span>
+        {val > 1 && (
+          <span className={`${chip} border-red-200 bg-red-50 dark:border-red-900/50 dark:bg-red-950/20 text-red-600 dark:text-red-400 font-semibold`}>
+            must be ≤ 1
+          </span>
+        )}
+      </div>
+    );
+  }
+
+  if (kind === 'floor_multiplier') {
+    // 1.0 = no headroom, 1.5 = +50%, 2.0 = +100%. Rendered as the
+    // percentage cushion above break-even because that's how the
+    // finance mental model works ("we want 50% margin over cost").
+    const headroom = (val - 1) * 100;
+    return (
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className={chipNeutral}>
+          <span className={dim}>= </span>
+          <span className={blue}>{val > 0 ? `${headroom >= 0 ? '+' : ''}${headroom.toFixed(0)}%` : '—'}</span>
+          <span className={dim}> above break-even</span>
+        </span>
+      </div>
+    );
+  }
+
+  // participants_count — small integer, only meaningful as a label.
+  const rounded = Math.max(1, Math.round(val));
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      <span className={chipGreen}>
-        <span className={dim}>User </span>
-        <span className={green}>{val > 0 ? inrCompact(perMinUser) : '—'}</span>
-        <span className={dim}>/min</span>
-      </span>
-      <span className={chipAmber}>
-        <span className={dim}>Host </span>
-        <span className={amber}>{val > 0 ? inrCompact(perMinHost) : '—'}</span>
-        <span className={dim}>/min</span>
-      </span>
       <span className={chipNeutral}>
-        <span className={dim}>Host </span>
-        <span className={blue}>{val > 0 ? inrCompact(perHourHost) : '—'}</span>
-        <span className={dim}>/hr</span>
+        <span className={dim}>= </span>
+        <span className={blue}>
+          {val > 0
+            ? rounded === 2 ? '1:1 call' : rounded === 3 ? '1:2 call' : `group of ${rounded}`
+            : '—'}
+        </span>
       </span>
     </div>
   );
