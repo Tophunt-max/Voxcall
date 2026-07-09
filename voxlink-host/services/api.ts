@@ -314,12 +314,21 @@ export const API = {
     apiRequest<any[]>('GET', `/api/chat/rooms/${room_id}/messages${before ? `?before=${before}` : ''}`),
   sendMessage: (room_id: string, content: string, media_url?: string, media_type?: string) =>
     apiRequest<{ id?: string; sender_id?: string; content?: string; created_at?: number }>('POST', `/api/chat/rooms/${room_id}/messages`, { content, media_url, media_type }),
+  // Typing indicator — server relays chat_typing to the other participant.
+  sendChatTyping: (room_id: string, is_typing: boolean) =>
+    apiRequest<{ success: boolean }>('POST', `/api/chat/rooms/${room_id}/typing`, { is_typing }),
   // Mark the other party's messages as read + send a read receipt.
   markChatRead: (room_id: string) =>
     apiRequest<{ success: boolean; marked: number }>('POST', `/api/chat/rooms/${room_id}/read`),
   // Report an abusive message into the admin moderation queue.
   reportMessage: (room_id: string, message_id: string, reason?: string, category?: string) =>
     apiRequest<{ success: boolean }>('POST', `/api/chat/rooms/${room_id}/messages/${message_id}/report`, { reason, category }),
+  // Edit your own text message (15-min window; relays a live edit event).
+  editMessage: (room_id: string, message_id: string, content: string) =>
+    apiRequest<{ success: boolean; edited_at?: number }>('PATCH', `/api/chat/rooms/${room_id}/messages/${message_id}`, { content }),
+  // Soft-delete your own message for everyone (relays a live delete event).
+  deleteMessage: (room_id: string, message_id: string) =>
+    apiRequest<{ success: boolean }>('DELETE', `/api/chat/rooms/${room_id}/messages/${message_id}`),
   getChatStatus: (host_id: string) =>
     apiRequest<{ unlocked: boolean; reason: string }>('GET', `/api/hosts/${host_id}/chat-status`),
 

@@ -94,6 +94,8 @@ CREATE TABLE IF NOT EXISTS messages (
   media_url TEXT,
   media_type TEXT CHECK(media_type IN ('image','audio','video',NULL)),
   is_read INTEGER DEFAULT 0,
+  edited_at INTEGER,
+  is_deleted INTEGER DEFAULT 0,
   created_at INTEGER DEFAULT (unixepoch())
 );
 

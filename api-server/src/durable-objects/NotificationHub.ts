@@ -67,6 +67,15 @@ export class NotificationHub {
     // Attach userId so we can identify which user disconnected on close.
     // serializeAttachment survives DO hibernation alongside the WS.
     server.serializeAttachment({ userId });
+
+    // Chat presence: on the user's FIRST live socket, tell their chat partners
+    // they're online. Fire-and-forget so the WS handshake isn't delayed. This
+    // is a no-op for hosts (whose presence is driven by the explicit online
+    // toggle, not socket connectivity) — see broadcastUserPresence.
+    if (userId && this.state.getWebSockets().length === 1) {
+      this.broadcastUserPresence(userId, true).catch((e) =>
+        console.warn('[NotificationHub] connect presence failed:', e));
+    }
     const subprotocol = negotiateWsSubprotocol(request);
     const init: ResponseInit & { webSocket: WebSocket } = { status: 101, webSocket: client };
     if (subprotocol) init.headers = { 'Sec-WebSocket-Protocol': subprotocol };
@@ -96,6 +105,34 @@ export class NotificationHub {
     await this.handleDisconnect(ws);
   }
 
+  // Broadcast a regular user's chat presence (online/offline) to the hosts they
+  // have chat rooms with, so the host app's chat header updates in real time.
+  //
+  // Only regular users produce socket-driven presence: the query looks up rooms
+  // where this user is the `user_id` (i.e. the customer side). For a host caller
+  // that returns zero rows → no-op, so host presence stays toggle-driven.
+  private async broadcastUserPresence(userId: string, isOnline: boolean): Promise<void> {
+    const rows = await this.env.DB.prepare(
+      `SELECT h.user_id AS partner
+       FROM chat_rooms cr JOIN hosts h ON h.id = cr.host_id
+       WHERE cr.user_id = ? LIMIT 200`
+    ).bind(userId).all<{ partner: string }>();
+    const partners = (rows.results ?? []).map((r) => r.partner).filter((p) => p && p !== userId);
+    if (partners.length === 0) return;
+
+    const msg = JSON.stringify({ type: 'presence', user_id: userId, is_online: isOnline });
+    await Promise.allSettled(
+      partners.map(async (p) => {
+        try {
+          const stub = this.env.NOTIFICATION_HUB.get(this.env.NOTIFICATION_HUB.idFromName(p));
+          await stub.fetch('https://dummy/notify', { method: 'POST', body: msg });
+        } catch {
+          /* one partner's hub failure must not abort the rest */
+        }
+      })
+    );
+  }
+
   // FIX: Mark host offline & broadcast presence when their WebSocket disconnects
   // (browser close, network drop, app crash). Without this, hosts.is_online
   // stays at 1 forever and users keep seeing them as "Online".
@@ -113,6 +150,11 @@ export class NotificationHub {
     // The closing WS may still appear in getWebSockets(), so filter it out.
     const remaining = this.state.getWebSockets().filter((w) => w !== ws);
     if (remaining.length > 0) return;
+
+    // Chat presence: last socket closed → tell this user's chat partners they
+    // went offline (no-op for hosts; their offline is handled just below).
+    await this.broadcastUserPresence(userId, false).catch((e) =>
+      console.warn('[NotificationHub] disconnect presence failed:', e));
 
     try {
       const host = await this.env.DB.prepare(

@@ -16,6 +16,10 @@ export interface Message {
   isRead: boolean;
   /** Set when the optimistic send failed at the API so the UI can flag it. */
   failed?: boolean;
+  /** Sender edited this message after sending. */
+  edited?: boolean;
+  /** Sender deleted this message for everyone — render a placeholder. */
+  deleted?: boolean;
 }
 
 export interface Conversation {
@@ -23,6 +27,12 @@ export interface Conversation {
   participantId: string;
   participantName: string;
   participantAvatar?: string;
+  /** The other party's users.id — used to match presence:update events. */
+  participantUserId?: string;
+  /** Live online/offline state, kept fresh by PRESENCE_UPDATE events. */
+  participantIsOnline: boolean;
+  /** True when the other party is currently typing in this room. */
+  isTyping: boolean;
   lastMessage?: string;
   lastMessageTime?: number;
   unreadCount: number;
@@ -33,24 +43,86 @@ export interface Conversation {
 interface ChatContextValue {
   conversations: Conversation[];
   sendMessage: (conversationId: string, content: string, type?: MessageType) => Promise<void>;
+  editMessage: (conversationId: string, messageId: string, content: string) => Promise<void>;
+  deleteMessage: (conversationId: string, messageId: string) => Promise<void>;
   markRead: (conversationId: string) => void;
   loadConversations: (userId: string) => Promise<void>;
   loadMessages: (conversationId: string, roomId: string) => Promise<void>;
   getOrCreateConversation: (participantId: string, participantName: string, avatar?: string, roomId?: string) => Conversation;
+  sendTyping: (conversationId: string, isTyping: boolean) => void;
   totalUnread: number;
 }
 
 const ChatContext = createContext<ChatContextValue | null>(null);
 
+/** Safety timeout to clear a stuck "typing…" if the stop event is dropped. */
+const TYPING_AUTO_CLEAR_MS = 5000;
+
 export function ChatProvider({ children }: { children: React.ReactNode }) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const typingClearTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   const totalUnread = conversations.reduce((sum, c) => sum + c.unreadCount, 0);
 
-  // ─── Realtime: inbound messages + read receipts ────────────────────────
-  // Mounted for the whole session so the chat list badge updates even when
-  // the host isn't on a thread screen.
+  const setIsTyping = useCallback((roomOrConvoId: string, isTyping: boolean) => {
+    setConversations((prev) =>
+      prev.map((c) => (c.id === roomOrConvoId || c.roomId === roomOrConvoId ? { ...c, isTyping } : c)),
+    );
+  }, []);
+
+  // ─── Realtime: messages, receipts, presence, typing, edit/delete ───────
+  // Mounted for the whole session so the chat list badge + header update even
+  // when the host isn't on a thread screen.
   useEffect(() => {
+    // Presence — the customer opened/closed the app. Match by users.id.
+    const offPresence = socketService.on(SocketEvents.PRESENCE_UPDATE, (data: any) => {
+      const userId: string | undefined = data?.userId ?? data?.user_id;
+      const isOnline = !!(data?.isOnline ?? data?.is_online);
+      if (!userId) return;
+      setConversations((prev) =>
+        prev.map((c) => (c.participantUserId === userId ? { ...c, participantIsOnline: isOnline } : c)),
+      );
+    });
+
+    // Typing — customer is typing in a room. Auto-clear if the stop is dropped.
+    const handleTyping = (d: any, isTyping: boolean) => {
+      const roomId: string | undefined = d?.roomId ?? d?.room_id;
+      if (!roomId) return;
+      setIsTyping(roomId, isTyping);
+      const existing = typingClearTimers.current.get(roomId);
+      if (existing) { clearTimeout(existing); typingClearTimers.current.delete(roomId); }
+      if (isTyping) {
+        const t = setTimeout(() => { setIsTyping(roomId, false); typingClearTimers.current.delete(roomId); }, TYPING_AUTO_CLEAR_MS);
+        typingClearTimers.current.set(roomId, t);
+      }
+    };
+    const offTypingStart = socketService.on(SocketEvents.MESSAGE_TYPING, (d) => handleTyping(d, true));
+    const offTypingStop = socketService.on(SocketEvents.MESSAGE_TYPING_STOP, (d) => handleTyping(d, false));
+
+    // Edited / deleted by the other party.
+    const offEdited = socketService.on(SocketEvents.MESSAGE_EDITED, (data: any) => {
+      const roomId: string | undefined = data?.roomId ?? data?.room_id;
+      if (!roomId || !data?.id) return;
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === roomId || c.roomId === roomId
+            ? { ...c, messages: c.messages.map((m) => (m.id === data.id ? { ...m, content: data.content ?? "", edited: true } : m)) }
+            : c,
+        ),
+      );
+    });
+    const offDeleted = socketService.on(SocketEvents.MESSAGE_DELETED, (data: any) => {
+      const roomId: string | undefined = data?.roomId ?? data?.room_id;
+      if (!roomId || !data?.id) return;
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === roomId || c.roomId === roomId
+            ? { ...c, messages: c.messages.map((m) => (m.id === data.id ? { ...m, content: "", type: "text" as MessageType, deleted: true } : m)) }
+            : c,
+        ),
+      );
+    });
+
     const offMessage = socketService.on(SocketEvents.MESSAGE_RECEIVED, (data: any) => {
       const roomId: string | undefined = data?.chatId ?? data?.roomId ?? data?.room_id;
       if (!roomId) return;
@@ -93,8 +165,18 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       );
     });
 
-    return () => { offMessage(); offRead(); };
-  }, []);
+    return () => {
+      offPresence();
+      offTypingStart();
+      offTypingStop();
+      offEdited();
+      offDeleted();
+      offMessage();
+      offRead();
+      typingClearTimers.current.forEach((t) => clearTimeout(t));
+      typingClearTimers.current.clear();
+    };
+  }, [setIsTyping]);
 
   const loadConversations = useCallback(async (_userId: string) => {
     try {
@@ -105,6 +187,9 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           participantId: r.host_id ?? r.user_id,
           participantName: r.other_name ?? "Host",
           participantAvatar: r.other_avatar ?? undefined,
+          participantUserId: r.other_user_id ?? undefined,
+          participantIsOnline: !!(r.other_is_online),
+          isTyping: false,
           lastMessage: r.last_message ?? "",
           lastMessageTime: r.last_message_at ? r.last_message_at * 1000 : Date.now(),
           unreadCount: r.unread_count ?? 0,
@@ -129,6 +214,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         type: (m.media_type as MessageType) ?? "text",
         timestamp: (m.created_at ?? 0) * 1000,
         isRead: !!m.is_read,
+        edited: !!m.edited_at,
+        deleted: !!m.is_deleted,
       }));
       setConversations((prev) => {
         const exists = prev.some((c) => c.id === conversationId || c.roomId === conversationId);
@@ -143,6 +230,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           id: conversationId,
           participantId: conversationId,
           participantName: "Chat",
+          participantIsOnline: false,
+          isTyping: false,
           lastMessage: mapped.length > 0 ? mapped[mapped.length - 1].content : "",
           lastMessageTime: mapped.length > 0 ? mapped[mapped.length - 1].timestamp : Date.now(),
           unreadCount: 0,
@@ -211,6 +300,44 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     }
   }, [conversations]);
 
+  const sendTyping = useCallback((conversationId: string, isTyping: boolean) => {
+    const convo = conversations.find((c) => c.id === conversationId || c.roomId === conversationId);
+    const roomId = convo?.roomId ?? conversationId;
+    if (!roomId) return;
+    API.sendChatTyping(roomId, isTyping).catch(() => {});
+  }, [conversations]);
+
+  const editMessage = useCallback(async (conversationId: string, messageId: string, content: string) => {
+    const convo = conversations.find((c) => c.id === conversationId || c.roomId === conversationId);
+    const roomId = convo?.roomId ?? conversationId;
+    const trimmed = content.trim();
+    if (!roomId || !trimmed) return;
+    setConversations((prev) =>
+      prev.map((c) =>
+        c.id === convo?.id || c.roomId === roomId
+          ? { ...c, messages: c.messages.map((m) => (m.id === messageId ? { ...m, content: trimmed, edited: true } : m)) }
+          : c,
+      ),
+    );
+    try { await API.editMessage(roomId, messageId, trimmed); }
+    catch { showErrorToast("Couldn't edit message. Please try again."); }
+  }, [conversations]);
+
+  const deleteMessage = useCallback(async (conversationId: string, messageId: string) => {
+    const convo = conversations.find((c) => c.id === conversationId || c.roomId === conversationId);
+    const roomId = convo?.roomId ?? conversationId;
+    if (!roomId) return;
+    setConversations((prev) =>
+      prev.map((c) =>
+        c.id === convo?.id || c.roomId === roomId
+          ? { ...c, messages: c.messages.map((m) => (m.id === messageId ? { ...m, content: "", type: "text" as MessageType, deleted: true } : m)) }
+          : c,
+      ),
+    );
+    try { await API.deleteMessage(roomId, messageId); }
+    catch { showErrorToast("Couldn't delete message. Please try again."); }
+  }, [conversations]);
+
   const markRead = useCallback((conversationId: string) => {
     const convo = conversations.find((c) => c.id === conversationId || c.roomId === conversationId);
     const roomId = convo?.roomId ?? conversationId;
@@ -238,6 +365,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       participantId,
       participantName,
       participantAvatar: avatar,
+      participantIsOnline: false,
+      isTyping: false,
       lastMessage: "",
       lastMessageTime: Date.now(),
       unreadCount: 0,
@@ -249,7 +378,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   }, [conversations]);
 
   return (
-    <ChatContext.Provider value={{ conversations, sendMessage, markRead, loadConversations, loadMessages, getOrCreateConversation, totalUnread }}>
+    <ChatContext.Provider value={{ conversations, sendMessage, editMessage, deleteMessage, markRead, loadConversations, loadMessages, getOrCreateConversation, sendTyping, totalUnread }}>
       {children}
     </ChatContext.Provider>
   );

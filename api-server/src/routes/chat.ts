@@ -28,6 +28,13 @@ chat.use('*', authMiddleware);
 // caused the fake "Online" bug for offline hosts.
 chat.get('/rooms', async (c) => {
   const { sub } = c.get('user');
+  // Cursor pagination: ?before=<last_message_at> returns older rooms; ?limit caps size.
+  const { before, limit } = c.req.query();
+  const lim = Math.min(Math.max(parseInt(limit || '50', 10) || 50, 1), 100);
+  const cursorClause = before ? ' AND cr.last_message_at < ?' : '';
+  const params: any[] = [sub, sub, sub, sub, sub, sub, sub];
+  if (before) params.push(parseInt(before, 10) || 0);
+  params.push(lim);
   const result = await c.env.DB.prepare(
     `SELECT cr.*,
       CASE WHEN cr.user_id = ? THEN hu.name ELSE cu.name END as other_name,
@@ -49,9 +56,9 @@ chat.get('/rooms', async (c) => {
      JOIN users cu ON cu.id = cr.user_id
      JOIN hosts h ON h.id = cr.host_id
      JOIN users hu ON hu.id = h.user_id
-     WHERE cr.user_id = ? OR h.user_id = ?
-     ORDER BY cr.last_message_at DESC LIMIT 50`
-  ).bind(sub, sub, sub, sub, sub, sub, sub).all();
+     WHERE (cr.user_id = ? OR h.user_id = ?)${cursorClause}
+     ORDER BY cr.last_message_at DESC LIMIT ?`
+  ).bind(...params).all();
   return c.json(result.results);
 });
 
@@ -325,6 +332,68 @@ chat.post('/rooms/:id/messages/:msgId/report', async (c) => {
     evidence,
   ).run();
 
+  return c.json({ success: true });
+});
+
+// PATCH /api/chat/rooms/:id/messages/:msgId — edit your own text message.
+// Allowed within a 15-minute window, text only (media can't be edited).
+chat.patch('/rooms/:id/messages/:msgId', async (c) => {
+  const { sub } = c.get('user');
+  const { id, msgId } = c.req.param();
+  const body = await c.req.json().catch(() => ({})) as { content?: string };
+  const content = (body.content ?? '').trim();
+  const db = c.env.DB;
+
+  if (!content) return c.json({ error: 'Message content is required' }, 400);
+  if (content.length > 5000) return c.json({ error: 'Message too long (max 5000 chars)' }, 400);
+
+  const msg = await db.prepare(
+    `SELECT m.sender_id, m.media_url, m.is_deleted, m.created_at, cr.user_id, h.user_id as host_user_id
+     FROM messages m JOIN chat_rooms cr ON cr.id = m.room_id JOIN hosts h ON h.id = cr.host_id
+     WHERE m.id = ? AND m.room_id = ?`
+  ).bind(msgId, id).first<any>();
+  if (!msg) return c.json({ error: 'Message not found' }, 404);
+  if (msg.sender_id !== sub) return c.json({ error: 'You can only edit your own messages' }, 403);
+  if (msg.is_deleted) return c.json({ error: 'Cannot edit a deleted message' }, 400);
+  if (msg.media_url) return c.json({ error: 'Media messages cannot be edited' }, 400);
+
+  const now = Math.floor(Date.now() / 1000);
+  if (now - (Number(msg.created_at) || now) > 15 * 60) {
+    return c.json({ error: 'Edit window has passed', code: 'EDIT_WINDOW' }, 400);
+  }
+
+  await db.prepare('UPDATE messages SET content = ?, edited_at = ? WHERE id = ?')
+    .bind(content, now, msgId).run();
+
+  const otherId = msg.user_id === sub ? msg.host_user_id : msg.user_id;
+  await relayToUser(c.env, otherId, {
+    type: 'chat_message_edited', room_id: id, id: msgId, content, edited_at: now,
+  });
+  return c.json({ success: true, edited_at: now });
+});
+
+// DELETE /api/chat/rooms/:id/messages/:msgId — soft-delete your own message
+// ("delete for everyone"). The row is kept (content blanked) so the client can
+// render a "This message was deleted" placeholder in both threads.
+chat.delete('/rooms/:id/messages/:msgId', async (c) => {
+  const { sub } = c.get('user');
+  const { id, msgId } = c.req.param();
+  const db = c.env.DB;
+
+  const msg = await db.prepare(
+    `SELECT m.sender_id, cr.user_id, h.user_id as host_user_id
+     FROM messages m JOIN chat_rooms cr ON cr.id = m.room_id JOIN hosts h ON h.id = cr.host_id
+     WHERE m.id = ? AND m.room_id = ?`
+  ).bind(msgId, id).first<any>();
+  if (!msg) return c.json({ error: 'Message not found' }, 404);
+  if (msg.sender_id !== sub) return c.json({ error: 'You can only delete your own messages' }, 403);
+
+  await db.prepare(
+    "UPDATE messages SET is_deleted = 1, content = '', media_url = NULL, media_type = NULL WHERE id = ?"
+  ).bind(msgId).run();
+
+  const otherId = msg.user_id === sub ? msg.host_user_id : msg.user_id;
+  await relayToUser(c.env, otherId, { type: 'chat_message_deleted', room_id: id, id: msgId });
   return c.json({ success: true });
 });
 

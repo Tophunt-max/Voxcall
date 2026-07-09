@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity, Image, Platform, KeyboardAvoidingView, ActivityIndicator, Alert } from "react-native";
+import { View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity, Image, Platform, KeyboardAvoidingView, ActivityIndicator, Alert, Modal } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SvgIcon } from "@/components/SvgIcon";
@@ -24,15 +24,26 @@ export default function ChatScreen() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user } = useAuth();
-  const { conversations, sendMessage, markRead, loadMessages } = useChat();
+  const { conversations, sendMessage, editMessage, deleteMessage, markRead, loadMessages, sendTyping } = useChat();
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
+  const [actionMsg, setActionMsg] = useState<Message | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [participantName, setParticipantName] = useState(t.chatThreadScreen.defaultName);
   const [participantAvatar, setParticipantAvatar] = useState(`https://api.dicebear.com/7.x/avataaars/png?seed=${id}`);
   const listRef = useRef<FlatList>(null);
+  const typingStateRef = useRef<{ active: boolean }>({ active: false });
+  const typingStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const convo = conversations.find((c) => c.id === id || c.roomId === id);
   const roomId = convo?.roomId ?? id ?? "";
+  const convoKey = convo?.id ?? id ?? "";
+  // Header status: typing > online > offline (no more hardcoded "Online").
+  const headerStatus = convo?.isTyping
+    ? { text: "typing…", color: colors.primary }
+    : convo?.participantIsOnline
+      ? { text: t.chatThreadScreen.online, color: colors.online }
+      : { text: "Offline", color: colors.mutedForeground };
 
   useEffect(() => {
     if (!id) return;
@@ -82,11 +93,57 @@ export default function ChatScreen() {
     }
   };
 
+  // ─── Typing indicator (debounced) ───────────────────────────────────────
+  const stopTyping = (notifyServer = true) => {
+    if (typingStopTimer.current) { clearTimeout(typingStopTimer.current); typingStopTimer.current = null; }
+    if (typingStateRef.current.active) {
+      typingStateRef.current.active = false;
+      if (notifyServer && convoKey) sendTyping(convoKey, false);
+    }
+  };
+  useEffect(() => {
+    return () => stopTyping();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [convoKey]);
+  const handleChangeText = (next: string) => {
+    setText(next);
+    if (!convoKey || editingId) return; // don't emit typing while editing
+    if (next.trim().length === 0) { stopTyping(); return; }
+    if (!typingStateRef.current.active) { typingStateRef.current.active = true; sendTyping(convoKey, true); }
+    if (typingStopTimer.current) clearTimeout(typingStopTimer.current);
+    typingStopTimer.current = setTimeout(() => stopTyping(), 2500);
+  };
+
+  // ─── Long-press actions (edit/delete own; report others) ─────────────────
+  const openActions = (item: Message) => { if (!item.deleted) setActionMsg(item); };
+  const startEdit = (item: Message) => { setActionMsg(null); setEditingId(item.id); setText(item.content); };
+  const cancelEdit = () => { setEditingId(null); setText(""); };
+  const confirmDelete = (item: Message) => {
+    setActionMsg(null);
+    const doDelete = () => { void deleteMessage(convo?.id ?? (id as string), item.id); };
+    if (Platform.OS === "web") {
+      // eslint-disable-next-line no-alert
+      if (typeof window !== "undefined" && window.confirm("Delete this message for everyone?")) doDelete();
+    } else {
+      Alert.alert("Delete message?", "This message will be removed for everyone.", [
+        { text: "Cancel", style: "cancel" },
+        { text: "Delete", style: "destructive", onPress: doDelete },
+      ]);
+    }
+  };
+
   const handleSend = async () => {
     if (!text.trim() || !id) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const msg = text.trim();
     setText("");
+    stopTyping();
+    if (editingId) {
+      const eid = editingId;
+      setEditingId(null);
+      await editMessage(convo?.id ?? id, eid, msg);
+      return;
+    }
     await sendMessage(convo?.id ?? id, msg);
     setTimeout(() => listRef.current?.scrollToOffset({ offset: 0, animated: true }), 100);
   };
@@ -98,23 +155,29 @@ export default function ChatScreen() {
         {!isMe && <Image source={{ uri: participantAvatar }} style={styles.msgAvatar} />}
         <TouchableOpacity
           activeOpacity={0.9}
-          onLongPress={() => reportMessage(item)}
+          onLongPress={() => openActions(item)}
           delayLongPress={350}
-          disabled={isMe}
           style={[
             styles.bubble,
             isMe ? { backgroundColor: colors.primary } : { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }
           ]}>
-          {item.type === "image" ? (
+          {item.deleted ? (
+            <Text style={[styles.bubbleText, { fontStyle: "italic", color: isMe ? "rgba(255,255,255,0.7)" : colors.mutedForeground }]}>
+              🚫 This message was deleted
+            </Text>
+          ) : item.type === "image" ? (
             <Image source={{ uri: item.content }} style={styles.bubbleImage} resizeMode="cover" />
           ) : (
             <Text style={[styles.bubbleText, { color: isMe ? "#fff" : colors.foreground }]}>{item.content}</Text>
           )}
           <View style={styles.bubbleMetaRow}>
+            {item.edited && !item.deleted && (
+              <Text style={[styles.bubbleStatus, { color: isMe ? "rgba(255,255,255,0.6)" : colors.mutedForeground, fontStyle: "italic" }]}>edited</Text>
+            )}
             <Text style={[styles.bubbleTime, { color: isMe ? "rgba(255,255,255,0.6)" : colors.mutedForeground }]}>
               {item.failed ? t.chatThreadScreen.notSent : formatTime(item.timestamp)}
             </Text>
-            {isMe && !item.failed && (
+            {isMe && !item.failed && !item.deleted && (
               <Text style={[styles.bubbleStatus, { color: "rgba(255,255,255,0.7)" }]}>
                 {item.isRead ? "Seen" : "Sent"}
               </Text>
@@ -134,7 +197,7 @@ export default function ChatScreen() {
         <Image source={{ uri: participantAvatar }} style={styles.headerAvatar} />
         <View style={styles.headerInfo}>
           <Text style={[styles.headerName, { color: colors.foreground }]} numberOfLines={1}>{participantName}</Text>
-          <Text style={[styles.headerStatus, { color: colors.online }]}>{t.chatThreadScreen.online}</Text>
+          <Text style={[styles.headerStatus, { color: headerStatus.color, fontStyle: convo?.isTyping ? "italic" : "normal" }]} accessibilityLiveRegion="polite">{headerStatus.text}</Text>
         </View>
         <SvgIcon name="info" size={20} color={colors.mutedForeground} />
       </View>
@@ -162,6 +225,15 @@ export default function ChatScreen() {
           />
         )}
 
+        {editingId && (
+          <View style={[styles.editBanner, { backgroundColor: colors.muted, borderTopColor: colors.border }]}>
+            <Text style={[styles.editBannerText, { color: colors.foreground }]} numberOfLines={1}>Editing message</Text>
+            <TouchableOpacity onPress={cancelEdit} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Text style={{ color: colors.primary, fontFamily: "Poppins_600SemiBold", fontSize: 13 }}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         <View style={[styles.inputBar, { borderTopColor: colors.border, backgroundColor: colors.background, paddingBottom: insets.bottom + 8 }]}>
           <TouchableOpacity style={[styles.iconBtn, { backgroundColor: colors.muted }]}>
             <Image source={require("@/assets/icons/ic_photo.png")} style={styles.inputIcon} tintColor={colors.mutedForeground} resizeMode="contain" />
@@ -169,7 +241,7 @@ export default function ChatScreen() {
           <View style={[styles.inputWrap, { backgroundColor: colors.muted }]}>
             <TextInput
               value={text}
-              onChangeText={setText}
+              onChangeText={handleChangeText}
               placeholder={t.chatThreadScreen.typePlaceholder}
               placeholderTextColor={colors.mutedForeground}
               style={[styles.input, { color: colors.foreground }]}
@@ -189,6 +261,33 @@ export default function ChatScreen() {
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
+
+      {/* Long-press action sheet */}
+      <Modal visible={!!actionMsg} transparent animationType="fade" onRequestClose={() => setActionMsg(null)}>
+        <TouchableOpacity style={styles.sheetBackdrop} activeOpacity={1} onPress={() => setActionMsg(null)}>
+          <View style={[styles.sheet, { backgroundColor: colors.card, paddingBottom: insets.bottom + 8 }]}>
+            {actionMsg && (actionMsg.senderId === "me" || actionMsg.senderId === user?.id) ? (
+              <>
+                {actionMsg.type !== "image" && (
+                  <TouchableOpacity style={styles.sheetBtn} onPress={() => startEdit(actionMsg)}>
+                    <Text style={[styles.sheetBtnText, { color: colors.foreground }]}>Edit</Text>
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity style={styles.sheetBtn} onPress={() => confirmDelete(actionMsg)}>
+                  <Text style={[styles.sheetBtnText, { color: "#E5484D" }]}>Delete</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <TouchableOpacity style={styles.sheetBtn} onPress={() => { const m = actionMsg; setActionMsg(null); if (m) reportMessage(m); }}>
+                <Text style={[styles.sheetBtnText, { color: "#E5484D" }]}>Report</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity style={styles.sheetBtn} onPress={() => setActionMsg(null)}>
+              <Text style={[styles.sheetBtnText, { color: colors.mutedForeground }]}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -213,6 +312,12 @@ const styles = StyleSheet.create({
   bubbleMetaRow: { flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 6 },
   bubbleTime: { fontSize: 10, fontFamily: "Poppins_400Regular", alignSelf: "flex-end" },
   bubbleStatus: { fontSize: 10, fontFamily: "Poppins_500Medium" },
+  editBanner: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 8, borderTopWidth: StyleSheet.hairlineWidth },
+  editBannerText: { flex: 1, fontSize: 12, fontFamily: "Poppins_500Medium" },
+  sheetBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.35)", justifyContent: "flex-end" },
+  sheet: { paddingTop: 8, borderTopLeftRadius: 20, borderTopRightRadius: 20 },
+  sheetBtn: { paddingVertical: 16, alignItems: "center" },
+  sheetBtnText: { fontSize: 15, fontFamily: "Poppins_600SemiBold" },
   inputBar: { flexDirection: "row", padding: 12, gap: 8, alignItems: "flex-end", borderTopWidth: StyleSheet.hairlineWidth },
   iconBtn: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
   inputWrap: { flex: 1, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 10, maxHeight: 100 },

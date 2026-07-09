@@ -18,6 +18,10 @@ export interface Message {
   /** Delivery status for optimistic outgoing messages. Undefined == delivered
    *  (e.g. messages loaded from the server). */
   status?: MessageStatus;
+  /** Sender edited this message after sending. */
+  edited?: boolean;
+  /** Sender deleted this message ("deleted for everyone") — render a placeholder. */
+  deleted?: boolean;
 }
 
 export interface Conversation {
@@ -51,6 +55,8 @@ interface ChatContextValue {
   conversations: Conversation[];
   sendMessage: (conversationId: string, content: string, type?: MessageType) => Promise<void>;
   retryMessage: (conversationId: string, messageId: string) => Promise<void>;
+  editMessage: (conversationId: string, messageId: string, content: string) => Promise<void>;
+  deleteMessage: (conversationId: string, messageId: string) => Promise<void>;
   markRead: (conversationId: string) => void;
   loadConversations: (userId: string) => Promise<void>;
   loadMessages: (conversationId: string, roomId: string) => Promise<void>;
@@ -196,12 +202,38 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       );
     });
 
+    // ─── Realtime: message edited / deleted by the other party ───────────
+    const offEdited = socketService.on(SocketEvents.MESSAGE_EDITED, (data: any) => {
+      const roomId: string | undefined = data?.roomId ?? data?.room_id;
+      if (!roomId || !data?.id) return;
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === roomId || c.roomId === roomId
+            ? { ...c, messages: c.messages.map((m) => (m.id === data.id ? { ...m, content: data.content ?? "", edited: true } : m)) }
+            : c,
+        ),
+      );
+    });
+    const offDeleted = socketService.on(SocketEvents.MESSAGE_DELETED, (data: any) => {
+      const roomId: string | undefined = data?.roomId ?? data?.room_id;
+      if (!roomId || !data?.id) return;
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === roomId || c.roomId === roomId
+            ? { ...c, messages: c.messages.map((m) => (m.id === data.id ? { ...m, content: "", type: "text" as MessageType, deleted: true } : m)) }
+            : c,
+        ),
+      );
+    });
+
     return () => {
       offPresence();
       offTypingStart();
       offTypingStop();
       offMessage();
       offRead();
+      offEdited();
+      offDeleted();
       typingClearTimers.current.forEach((t) => clearTimeout(t));
       typingClearTimers.current.clear();
     };
@@ -253,6 +285,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           // is_read reflects whether the recipient has read it — for OUR sent
           // messages this drives the "Seen" indicator.
           isRead: !!m.is_read,
+          edited: !!m.edited_at,
+          deleted: !!m.is_deleted,
         };
       });
       setConversations((prev) => {
@@ -384,6 +418,43 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     }
   }, [conversations]);
 
+  const editMessage = useCallback(async (conversationId: string, messageId: string, content: string) => {
+    const convo = conversations.find((c) => c.id === conversationId || c.roomId === conversationId);
+    const roomId = convo?.roomId ?? conversationId;
+    const trimmed = content.trim();
+    if (!roomId || !trimmed) return;
+    setConversations((prev) =>
+      prev.map((c) =>
+        c.id === convo?.id || c.roomId === roomId
+          ? { ...c, messages: c.messages.map((m) => (m.id === messageId ? { ...m, content: trimmed, edited: true } : m)) }
+          : c,
+      ),
+    );
+    try {
+      await API.editMessage(roomId, messageId, trimmed);
+    } catch {
+      showErrorToast("Couldn't edit message. Please try again.");
+    }
+  }, [conversations]);
+
+  const deleteMessage = useCallback(async (conversationId: string, messageId: string) => {
+    const convo = conversations.find((c) => c.id === conversationId || c.roomId === conversationId);
+    const roomId = convo?.roomId ?? conversationId;
+    if (!roomId) return;
+    setConversations((prev) =>
+      prev.map((c) =>
+        c.id === convo?.id || c.roomId === roomId
+          ? { ...c, messages: c.messages.map((m) => (m.id === messageId ? { ...m, content: "", type: "text" as MessageType, deleted: true } : m)) }
+          : c,
+      ),
+    );
+    try {
+      await API.deleteMessage(roomId, messageId);
+    } catch {
+      showErrorToast("Couldn't delete message. Please try again.");
+    }
+  }, [conversations]);
+
   const markRead = useCallback((conversationId: string) => {
     const convo = conversations.find((c) => c.id === conversationId || c.roomId === conversationId);
     const roomId = convo?.roomId ?? conversationId;
@@ -466,6 +537,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         conversations,
         sendMessage,
         retryMessage,
+        editMessage,
+        deleteMessage,
         markRead,
         loadConversations,
         loadMessages,

@@ -234,6 +234,20 @@ class SocketService {
           timestamp: Date.now(),
         });
         break;
+      case "chat_message_edited":
+        this.emit(SocketEvents.MESSAGE_EDITED, {
+          roomId: msg.room_id,
+          id: msg.id,
+          content: msg.content ?? "",
+          editedAt: msg.edited_at ? msg.edited_at * 1000 : Date.now(),
+        });
+        break;
+      case "chat_message_deleted":
+        this.emit(SocketEvents.MESSAGE_DELETED, {
+          roomId: msg.room_id,
+          id: msg.id,
+        });
+        break;
       case "coin_update":
         this.emit(SocketEvents.COIN_DEDUCTED, {
           amount: msg.amount ?? 0,

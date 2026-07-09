@@ -414,6 +414,12 @@ export const API = {
   // Report an abusive message into the admin moderation queue.
   reportMessage: (room_id: string, message_id: string, reason?: string, category?: string) =>
     apiRequest<{ success: boolean }>('POST', `/api/chat/rooms/${room_id}/messages/${message_id}/report`, { reason, category }),
+  // Edit your own text message (15-min window; relays a live edit event).
+  editMessage: (room_id: string, message_id: string, content: string) =>
+    apiRequest<{ success: boolean; edited_at?: number }>('PATCH', `/api/chat/rooms/${room_id}/messages/${message_id}`, { content }),
+  // Soft-delete your own message for everyone (relays a live delete event).
+  deleteMessage: (room_id: string, message_id: string) =>
+    apiRequest<{ success: boolean }>('DELETE', `/api/chat/rooms/${room_id}/messages/${message_id}`),
   getChatStatus: (host_id: string) =>
     apiRequest<{ unlocked: boolean; reason: string }>('GET', `/api/hosts/${host_id}/chat-status`),
 

@@ -45,6 +45,8 @@ export const SocketEvents = {
   MESSAGE_READ: "message:read",
   MESSAGE_TYPING: "message:typing",
   MESSAGE_TYPING_STOP: "message:typing_stop",
+  MESSAGE_EDITED: "message:edited",
+  MESSAGE_DELETED: "message:deleted",
   CHAT_HISTORY: "chat:history",
 
   // Notification Events
