@@ -241,7 +241,8 @@ export default function HostDetailScreen() {
   const { data: serverIsFavorite = false } = useQuery({
     queryKey: ['favorite-status', id],
     queryFn: async () => {
-      try { const favs = await API.getFavorites(); return (favs ?? []).some((f: any) => (f.host_id ?? f.id) === id); }
+      // Lightweight single-row check — no longer downloads the whole list.
+      try { const r = await API.isFavorite(id); return !!r?.favorite; }
       catch { return false; }
     },
     enabled: !!id,

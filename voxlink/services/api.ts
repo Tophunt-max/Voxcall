@@ -290,12 +290,25 @@ export const API = {
 
   // Favorited hosts for the "Your favorites" home rail. Rows expose host_id
   // (the hosts.id) + display fields; the caller maps host_id -> id.
-  getFavorites: () => apiRequest<any[]>('GET', '/api/user/favorites'),
+  // Server returns them online-first and hides banned/deleted hosts.
+  getFavorites: (limit = 100) =>
+    apiRequest<any[]>('GET', `/api/user/favorites?limit=${limit}`),
+  // Lightweight: just the favorited host_ids — mark hearts across lists/grids
+  // without downloading full host objects.
+  getFavoriteIds: () => apiRequest<{ ids: string[] }>('GET', '/api/user/favorites/ids'),
+  // Single-host favorite status — cheap check for the host profile heart.
+  isFavorite: (hostId: string) =>
+    apiRequest<{ favorite: boolean }>('GET', `/api/user/favorites/status/${hostId}`),
   // Add / remove a host from the user's favorites (hostId = hosts.id).
+  // Responses carry the resulting favorite state + total count.
   addFavorite: (hostId: string) =>
-    apiRequest<{ success: boolean }>('POST', `/api/user/favorites/${hostId}`),
+    apiRequest<{ success: boolean; added?: boolean; favorite?: boolean; count?: number }>(
+      'POST', `/api/user/favorites/${hostId}`
+    ),
   removeFavorite: (hostId: string) =>
-    apiRequest<{ success: boolean }>('DELETE', `/api/user/favorites/${hostId}`),
+    apiRequest<{ success: boolean; removed?: boolean; favorite?: boolean; count?: number }>(
+      'DELETE', `/api/user/favorites/${hostId}`
+    ),
 
   // ─── User Blocking ──────────────────────────────────────────────────────────
   // Block/unblock users. Blocked users cannot call or message the blocker.

@@ -124,17 +124,28 @@ user.get('/coin-history', async (c) => {
   return c.json(result.results);
 });
 
-// GET /api/user/favorites — get favorite hosts
+// Max hosts a single user may favorite. Prevents unbounded table growth /
+// abuse while being far above any realistic real-world usage.
+const MAX_FAVORITES = 500;
+
+// GET /api/user/favorites — get favorite hosts (paginated, online-first)
 user.get('/favorites', async (c) => {
   const { sub } = c.get('user');
+  // Bounded response so the list stays cheap as favorites grow.
+  const limit = Math.min(Math.max(parseInt(c.req.query('limit') || '100', 10) || 100, 1), 200);
   const result = await c.env.DB.prepare(
-    `SELECT uf.*, h.id as host_id, h.display_name, h.rating, h.coins_per_minute, h.is_online, h.specialties, h.languages,
+    `SELECT uf.id, uf.created_at, h.id as host_id, h.display_name, h.rating, h.review_count,
+            h.coins_per_minute, h.audio_coins_per_minute, h.video_coins_per_minute,
+            h.is_online, h.specialties, h.languages,
             u.name, u.avatar_url, u.gender
      FROM user_favorites uf
      JOIN hosts h ON h.id = uf.host_id
      JOIN users u ON u.id = h.user_id
-     WHERE uf.user_id = ? ORDER BY uf.created_at DESC`
-  ).bind(sub).all();
+     WHERE uf.user_id = ?
+       AND COALESCE(u.status, 'active') NOT IN ('banned', 'deleted')
+     ORDER BY h.is_online DESC, uf.created_at DESC
+     LIMIT ?`
+  ).bind(sub, limit).all();
   return c.json(result.results.map((r: any) => ({
     ...r,
     specialties: JSON.parse(r.specialties || '[]'),
@@ -142,24 +153,72 @@ user.get('/favorites', async (c) => {
   })));
 });
 
-// POST /api/user/favorites/:hostId — add favorite
+// GET /api/user/favorites/ids — lightweight: just the favorited host_ids.
+// Lets the app mark hearts across any list/grid without downloading full
+// host objects. Cheap enough to poll / cache client-side.
+user.get('/favorites/ids', async (c) => {
+  const { sub } = c.get('user');
+  const result = await c.env.DB.prepare(
+    'SELECT host_id FROM user_favorites WHERE user_id = ?'
+  ).bind(sub).all<{ host_id: string }>();
+  return c.json({ ids: (result.results ?? []).map((r) => r.host_id) });
+});
+
+// GET /api/user/favorites/status/:hostId — is THIS host favorited?
+// Single-row check so the host profile no longer downloads the whole list
+// just to toggle one heart.
+user.get('/favorites/status/:hostId', async (c) => {
+  const { sub } = c.get('user');
+  const { hostId } = c.req.param();
+  const row = await c.env.DB.prepare(
+    'SELECT 1 as ok FROM user_favorites WHERE user_id = ? AND host_id = ? LIMIT 1'
+  ).bind(sub, hostId).first<{ ok: number }>();
+  return c.json({ favorite: !!row });
+});
+
+// POST /api/user/favorites/:hostId — add favorite (guarded + idempotent)
 user.post('/favorites/:hostId', async (c) => {
   const { sub } = c.get('user');
   const { hostId } = c.req.param();
   const db = c.env.DB;
-  const host = await db.prepare('SELECT id FROM hosts WHERE id = ?').bind(hostId).first();
-  if (!host) return c.json({ error: 'Host not found' }, 404);
-  await db.prepare('INSERT OR IGNORE INTO user_favorites (id, user_id, host_id) VALUES (?, ?, ?)')
-    .bind(crypto.randomUUID(), sub, hostId).run();
-  return c.json({ success: true });
+
+  // Only active hosts can be favorited; also surfaces the host's own user_id
+  // so we can block self-favoriting.
+  const host = await db.prepare('SELECT id, user_id FROM hosts WHERE id = ? AND is_active = 1')
+    .bind(hostId).first<{ id: string; user_id: string }>();
+  if (!host) return c.json({ error: 'Host not found or unavailable' }, 404);
+  if (host.user_id === sub) return c.json({ error: 'You cannot favorite yourself' }, 400);
+
+  const already = await db.prepare(
+    'SELECT 1 as ok FROM user_favorites WHERE user_id = ? AND host_id = ? LIMIT 1'
+  ).bind(sub, hostId).first<{ ok: number }>();
+
+  if (!already) {
+    const cntRow = await db.prepare('SELECT COUNT(*) as cnt FROM user_favorites WHERE user_id = ?')
+      .bind(sub).first<{ cnt: number }>();
+    if ((Number(cntRow?.cnt) || 0) >= MAX_FAVORITES) {
+      return c.json({ error: `You can favorite up to ${MAX_FAVORITES} hosts`, code: 'FAVORITES_LIMIT' }, 409);
+    }
+    await db.prepare('INSERT OR IGNORE INTO user_favorites (id, user_id, host_id) VALUES (?, ?, ?)')
+      .bind(crypto.randomUUID(), sub, hostId).run();
+  }
+
+  const total = await db.prepare('SELECT COUNT(*) as cnt FROM user_favorites WHERE user_id = ?')
+    .bind(sub).first<{ cnt: number }>();
+  return c.json({ success: true, added: !already, favorite: true, count: Number(total?.cnt) || 0 });
 });
 
 // DELETE /api/user/favorites/:hostId — remove favorite
 user.delete('/favorites/:hostId', async (c) => {
   const { sub } = c.get('user');
   const { hostId } = c.req.param();
-  await c.env.DB.prepare('DELETE FROM user_favorites WHERE user_id = ? AND host_id = ?').bind(sub, hostId).run();
-  return c.json({ success: true });
+  const db = c.env.DB;
+  const res = await db.prepare('DELETE FROM user_favorites WHERE user_id = ? AND host_id = ?')
+    .bind(sub, hostId).run();
+  const removed = (res.meta?.changes ?? 0) > 0;
+  const total = await db.prepare('SELECT COUNT(*) as cnt FROM user_favorites WHERE user_id = ?')
+    .bind(sub).first<{ cnt: number }>();
+  return c.json({ success: true, removed, favorite: false, count: Number(total?.cnt) || 0 });
 });
 
 // PATCH /api/user/notifications/:id/read — mark single notification read
