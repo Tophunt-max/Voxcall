@@ -7,14 +7,14 @@ import {
   TouchableOpacity,
   Image,
   Platform,
-  Switch,
   ActivityIndicator,
   RefreshControl,
   Linking,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { crossShare, appendFileToFormData } from "@/utils/fileUpload";
-import { confirmDialog, alertDialog } from "@/utils/dialog";
+import { alertDialog } from "@/utils/dialog";
 import * as ClipboardModule from "expo-clipboard";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
@@ -26,114 +26,23 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { PermissionDialog, PERMISSION_CONFIGS } from "@/components/PermissionDialog";
 import { ConfirmModal } from "@/components/ConfirmModal";
 import { useLanguage } from "@/context/LanguageContext";
-import { LANGUAGES } from "@/localization";
 import { API, resolveMediaUrl } from "@/services/api";
 import { showSuccessToast, showErrorToast } from "@/components/Toast";
 
-interface MenuItemProps {
-  iconSource?: any;
-  iconName?: string;
-  label: string;
-  onPress: () => void;
-  value?: string;
-  isSwitch?: boolean;
-  switchValue?: boolean;
-  onSwitchChange?: (v: boolean) => void;
-  danger?: boolean;
-  subLabel?: string;
-}
-
-function MenuItem({
-  iconSource,
-  iconName,
-  label,
-  onPress,
-  value,
-  isSwitch,
-  switchValue,
-  onSwitchChange,
-  danger,
-  subLabel,
-}: MenuItemProps) {
-  const colors = useColors();
-  return (
-    <TouchableOpacity
-      onPress={isSwitch ? undefined : onPress}
-      style={[styles.menuItem, { borderBottomColor: colors.border }]}
-      activeOpacity={0.75}
-    >
-      <View
-        style={[
-          styles.menuIcon,
-          {
-            backgroundColor: danger ? colors.destructive + "15" : colors.surface,
-          },
-        ]}
-      >
-        {iconSource ? (
-          <Image
-            source={iconSource}
-            style={styles.menuIconImg}
-            tintColor={danger ? colors.destructive : colors.text}
-            resizeMode="contain"
-          />
-        ) : iconName ? (
-          <Feather
-            name={iconName as any}
-            size={18}
-            color={danger ? colors.destructive : colors.text}
-          />
-        ) : null}
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text
-          style={[
-            styles.menuLabel,
-            { color: danger ? colors.destructive : colors.text },
-          ]}
-        >
-          {label}
-        </Text>
-        {subLabel ? (
-          <Text style={[styles.menuSubLabel, { color: colors.mutedForeground }]}>
-            {subLabel}
-          </Text>
-        ) : null}
-      </View>
-      {isSwitch ? (
-        <Switch
-          value={switchValue}
-          onValueChange={onSwitchChange}
-          trackColor={{ false: colors.border, true: "#0BAF23" }}
-          thumbColor="#fff"
-        />
-      ) : (
-        <View style={styles.menuRight}>
-          {value ? (
-            <Text style={[styles.menuValue, { color: colors.mutedForeground }]}>
-              {value}
-            </Text>
-          ) : null}
-          <Image source={require("@/assets/icons/ic_back.png")} style={{ width: 16, height: 16, tintColor: colors.mutedForeground, transform: [{ rotate: "180deg" }] }} resizeMode="contain" />
-        </View>
-      )}
-    </TouchableOpacity>
-  );
-}
+type FeatherName = keyof typeof Feather.glyphMap;
 
 export default function ProfileScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { user, logout, updateProfile, refreshBalance } = useAuth();
-  const { permissions, requestNotifications, requestMediaLibrary, openSettings } = usePermissions();
-  const { language, t } = useLanguage();
-  const currentLangLabel = LANGUAGES.find((l) => l.code === language)?.name ?? "English";
+  const { permissions, requestMediaLibrary, openSettings } = usePermissions();
+  const { t } = useLanguage();
 
-  const [showNotifDialog, setShowNotifDialog] = useState(false);
   const [showMediaDialog, setShowMediaDialog] = useState(false);
   const [avatarUri, setAvatarUri] = useState<string | null>(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
-  const [callCount, setCallCount] = useState<number>(0);
+  const [callCount, setCallCount] = useState(0);
+  const [favCount, setFavCount] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [showLogout, setShowLogout] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
@@ -143,42 +52,36 @@ export default function ProfileScreen() {
   const uniqueId = user?.id?.slice(0, 8).toUpperCase() ?? "00000000";
   const appVersion = Application.nativeApplicationVersion ?? "1.0.0";
 
-  const notificationsGranted = permissions.notifications.status === "granted";
-  const notifBlocked =
-    permissions.notifications.status === "blocked" ||
-    (permissions.notifications.status === "denied" &&
-      !permissions.notifications.canAskAgain);
-
   const mediaBlocked =
     permissions.mediaLibrary.status === "blocked" ||
-    (permissions.mediaLibrary.status === "denied" &&
-      !permissions.mediaLibrary.canAskAgain);
+    (permissions.mediaLibrary.status === "denied" && !permissions.mediaLibrary.canAskAgain);
 
-  const loadCallCount = useCallback(async () => {
+  // Only counts that this app actually tracks (calls + favourited hosts).
+  const loadCounts = useCallback(async () => {
     try {
-      const history = await API.getCallHistory();
+      const [history, favs] = await Promise.all([
+        API.getCallHistory().catch(() => [] as any[]),
+        API.getFavoriteIds().catch(() => ({ ids: [] as string[] })),
+      ]);
       setCallCount(Array.isArray(history) ? history.length : 0);
+      setFavCount(favs?.ids?.length ?? 0);
     } catch {
-      setCallCount(0);
+      /* keep last known */
     }
   }, []);
 
   useEffect(() => {
-    loadCallCount();
-  }, [loadCallCount]);
+    loadCounts();
+  }, [loadCounts]);
 
-  // Pull-to-refresh: coins (from the server, not the possibly-stale cached
-  // user) and the call count, so the stats row reflects reality.
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      await Promise.all([refreshBalance().catch(() => {}), loadCallCount()]);
+      await Promise.all([refreshBalance().catch(() => {}), loadCounts()]);
     } finally {
       setRefreshing(false);
     }
-  }, [refreshBalance, loadCallCount]);
-
-  const handleLogout = () => setShowLogout(true);
+  }, [refreshBalance, loadCounts]);
 
   const doLogout = async () => {
     setLoggingOut(true);
@@ -200,9 +103,6 @@ export default function ProfileScreen() {
     }
   };
 
-  // "Rate the App" — actually open the store now (was a no-op alert button).
-  // Android deep-links to the Play listing; iOS/web fall back to the site
-  // since we don't have the numeric App Store id here.
   const handleRate = async () => {
     const pkg = "com.voxlink.app";
     try {
@@ -227,7 +127,7 @@ export default function ProfileScreen() {
         url: "https://voxlink.app",
       });
     } catch {
-      // user dismissed the share sheet or it failed — non-fatal
+      /* dismissed */
     }
   };
 
@@ -246,11 +146,9 @@ export default function ProfileScreen() {
       aspect: [1, 1],
       quality: 0.85,
     });
-
     if (result.canceled) return;
     const asset = result.assets[0];
     setAvatarUri(asset.uri);
-
     try {
       setUploadingAvatar(true);
       const formData = new FormData();
@@ -258,9 +156,6 @@ export default function ProfileScreen() {
       const fileName = `avatar_${user?.id ?? "user"}.${ext}`;
       await appendFileToFormData(formData, "file", asset.uri, fileName, `image/${ext}`);
       formData.append("path", `avatars/${user?.id ?? "user"}/avatar.${ext}`);
-      // Use the dedicated avatar endpoint (NOT uploadFile → /api/upload/media):
-      // it stores under avatars/, sets avatar_url server-side, and deletes the
-      // previous avatar blob. uploadFile would orphan every old avatar in R2.
       const uploadData = await API.updateAvatar(formData);
       if (uploadData?.url) {
         await updateProfile({ avatar: resolveMediaUrl(uploadData.url) || uploadData.url });
@@ -273,30 +168,41 @@ export default function ProfileScreen() {
     }
   };
 
-  const handleNotifToggle = async (value: boolean) => {
-    if (value) {
-      if (notifBlocked) {
-        setShowNotifDialog(true);
-      } else if (!notificationsGranted) {
-        setShowNotifDialog(true);
-      }
-    } else {
-      confirmDialog({
-        title: "Turn Off Notifications",
-        message: "To disable notifications, go to your phone's Settings and turn off notifications for VoxLink.",
-        confirmText: "Open Settings",
-        onConfirm: openSettings,
-      });
-    }
-  };
-
   const resolvedAvatar =
     avatarUri ??
-    (user?.avatar?.startsWith('http') || user?.avatar?.startsWith('file') || user?.avatar?.startsWith('asset')
+    (user?.avatar?.startsWith("http") || user?.avatar?.startsWith("file") || user?.avatar?.startsWith("asset")
       ? user.avatar
-      : resolveMediaUrl(user?.avatar)
-    ) ??
+      : resolveMediaUrl(user?.avatar)) ??
     `https://api.dicebear.com/7.x/avataaars/png?seed=${user?.id ?? "me"}`;
+
+  const gender = user?.gender;
+  const genderPill =
+    gender === "male"
+      ? { symbol: "♂", bg: "#DCE4FF", fg: "#3B5BDB" }
+      : gender === "female"
+      ? { symbol: "♀", bg: "#FCE0EF", fg: "#D6336C" }
+      : null;
+
+  // ─── Only features that exist in THIS app ──────────────────────────────
+  const quickActions: { icon: FeatherName; label: string; color: string; bg: string; onPress: () => void }[] = [
+    { icon: "gift", label: "Referral", color: "#7C3AED", bg: "#EDE7FB", onPress: () => router.push("/user/referral") },
+    { icon: "award", label: "Rewards", color: "#F97316", bg: "#FFE8D6", onPress: () => router.push("/user/rewards") },
+    { icon: "target", label: "Lucky Spin", color: "#DB2777", bg: "#FCE0EF", onPress: () => router.push("/user/rewards-spin") },
+    { icon: "credit-card", label: "Coin Trading", color: "#059669", bg: "#D7F5E6", onPress: () => router.push("/user/coin-history") },
+  ];
+
+  const menuActions: { icon: FeatherName; label: string; onPress: () => void }[] = [
+    { icon: "edit-2", label: t.profile.editProfile, onPress: () => router.push("/user/profile/edit") },
+    { icon: "clock", label: t.profile.callHistory, onPress: () => router.push("/user/call/history") },
+    { icon: "bell", label: t.settings.notifications, onPress: () => router.push("/user/notifications") },
+    { icon: "globe", label: t.profile.language, onPress: () => router.push("/user/language") },
+    { icon: "help-circle", label: t.profile.helpCenter, onPress: () => router.push("/user/help-center") },
+    { icon: "shield", label: t.profile.privacy, onPress: () => router.push("/user/privacy") },
+    { icon: "info", label: t.profile.about, onPress: () => router.push("/user/about") },
+    { icon: "star", label: t.profile.rateApp, onPress: handleRate },
+    { icon: "share-2", label: t.profile.shareApp, onPress: handleShareApp },
+    { icon: "settings", label: t.profile.settings, onPress: () => router.push("/user/settings") },
+  ];
 
   return (
     <ScrollView
@@ -304,12 +210,7 @@ export default function ProfileScreen() {
       contentContainerStyle={{ paddingBottom: bottomPad + 90 }}
       showsVerticalScrollIndicator={false}
       refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={onRefresh}
-          tintColor={colors.primary}
-          colors={[colors.primary]}
-        />
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />
       }
     >
       <ConfirmModal
@@ -323,20 +224,6 @@ export default function ProfileScreen() {
         loading={loggingOut}
         onConfirm={doLogout}
         onCancel={() => setShowLogout(false)}
-      />
-
-      <PermissionDialog
-        visible={showNotifDialog}
-        config={{ ...PERMISSION_CONFIGS.notifications, isBlocked: notifBlocked }}
-        onAllow={async () => {
-          if (notifBlocked) {
-            openSettings();
-          } else {
-            await requestNotifications();
-          }
-          setShowNotifDialog(false);
-        }}
-        onDeny={() => setShowNotifDialog(false)}
       />
 
       <PermissionDialog
@@ -355,337 +242,203 @@ export default function ProfileScreen() {
         onDeny={() => setShowMediaDialog(false)}
       />
 
-      {/* Header */}
+      {/* Title */}
       <View style={[styles.header, { paddingTop: topPad + 12 }]}>
         <Text style={[styles.title, { color: colors.text }]}>{t.profile.myProfile}</Text>
-        <TouchableOpacity
-          onPress={() => router.push("/user/profile/edit")}
-          style={[styles.editBtn, { backgroundColor: colors.surface }]}
-          accessibilityRole="button"
-          accessibilityLabel="Edit profile"
-        >
-          <Image
-            source={require("@/assets/icons/ic_edit.png")}
-            style={styles.editIcon}
-            tintColor={colors.primary}
-            resizeMode="contain"
-          />
+      </View>
+
+      {/* Profile row */}
+      <View style={[styles.profileCard, cardShadow(colors)]}>
+        <TouchableOpacity onPress={handleAvatarPress} activeOpacity={0.85} style={styles.avatarOuter} accessibilityRole="button" accessibilityLabel="Change profile photo">
+          <View style={[styles.dottedBorder, { borderColor: colors.primary }]}>
+            <Image source={{ uri: resolvedAvatar }} style={styles.avatar} />
+          </View>
+          <View style={[styles.avatarEditBadge, { backgroundColor: colors.primary }]}>
+            {uploadingAvatar ? (
+              <ActivityIndicator size={10} color="#fff" />
+            ) : (
+              <Feather name="camera" size={10} color="#fff" />
+            )}
+          </View>
+        </TouchableOpacity>
+
+        <View style={styles.profileInfo}>
+          <View style={styles.nameRow}>
+            <Text style={[styles.name, { color: colors.text }]} numberOfLines={1}>{user?.name}</Text>
+            {genderPill && (
+              <View style={[styles.genderPill, { backgroundColor: genderPill.bg }]}>
+                <Text style={[styles.genderText, { color: genderPill.fg }]}>{genderPill.symbol}</Text>
+              </View>
+            )}
+            {user?.role === "host" && (
+              <View style={[styles.hostChip, { backgroundColor: colors.primary + "1A" }]}>
+                <Text style={[styles.hostChipText, { color: colors.primary }]}>HOST</Text>
+              </View>
+            )}
+          </View>
+          <TouchableOpacity onPress={copyId} style={styles.idRow} accessibilityRole="button" accessibilityLabel={`Copy your ID ${uniqueId}`}>
+            <Text style={[styles.idText, { color: colors.mutedForeground }]}>ID : {uniqueId}</Text>
+            <Feather name="copy" size={12} color={colors.mutedForeground} />
+          </TouchableOpacity>
+        </View>
+
+        <TouchableOpacity onPress={() => router.push("/user/profile/edit")} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <Feather name="chevron-right" size={24} color={colors.mutedForeground} />
         </TouchableOpacity>
       </View>
 
-      {/* Profile card */}
-      <View
-        style={[
-          styles.profileCard,
-          {
-            backgroundColor: colors.card,
-            ...Platform.select({
-              ios: { shadowColor: "#000", shadowOpacity: 0.07, shadowRadius: 12, shadowOffset: { width: 0, height: 2 } },
-              android: { elevation: 3 },
-              web: { boxShadow: "0 2px 12px rgba(0,0,0,0.07)" } as any,
-            }),
-          },
-        ]}
-      >
-        {/* Avatar with edit overlay */}
-        <TouchableOpacity
-          onPress={handleAvatarPress}
-          activeOpacity={0.85}
-          style={styles.avatarOuter}
-          accessibilityRole="button"
-          accessibilityLabel="Change profile photo"
-        >
-          <View style={[styles.dottedBorder, { borderColor: colors.primary }]}>
-            <Image
-              source={{ uri: resolvedAvatar }}
-              style={styles.avatar}
-            />
-          </View>
-          {/* Edit overlay */}
-          <View style={[styles.avatarEditBadge, { backgroundColor: colors.primary }]}>
-            {uploadingAvatar ? (
-              <ActivityIndicator size={12} color="#fff" />
-            ) : (
-              <Image source={require("@/assets/icons/ic_photo.png")} style={{ width: 11, height: 11, tintColor: "#fff" }} resizeMode="contain" />
-            )}
-          </View>
-          {user?.role === "host" && (
-            <View style={[styles.hostBadge, { backgroundColor: colors.primary }]}>
-              <Image
-                source={require("@/assets/icons/ic_available.png")}
-                style={styles.hostBadgeIcon}
-                tintColor="#fff"
-                resizeMode="contain"
-              />
-            </View>
-          )}
-        </TouchableOpacity>
-
-        <Text style={[styles.name, { color: colors.text }]}>{user?.name}</Text>
-        <Text style={[styles.email, { color: colors.mutedForeground }]}>{user?.email}</Text>
-
-        {/* Unique ID badge */}
-        <TouchableOpacity
-          onPress={copyId}
-          style={[styles.idBadge, { backgroundColor: "#F0E4F8" }]}
-          accessibilityRole="button"
-          accessibilityLabel={`Copy your ID ${uniqueId}`}
-        >
-          <Image
-            source={require("@/assets/icons/ic_id_badge.png")}
-            style={styles.idIcon}
-            tintColor="#9D82B6"
-            resizeMode="contain"
-          />
-          <Text style={[styles.idText, { color: "#9D82B6" }]}>ID: {uniqueId}</Text>
-          <Image
-            source={require("@/assets/icons/ic_copy.png")}
-            style={styles.idIcon}
-            tintColor="#9D82B6"
-            resizeMode="contain"
-          />
-        </TouchableOpacity>
-
-        {/* Stats row */}
-        <View style={[styles.statsRow, { borderTopColor: colors.border }]}>
-          <TouchableOpacity
-            style={styles.stat}
-            onPress={() => router.push("/user/payment/checkout")}
-            accessibilityRole="button"
-            accessibilityLabel="Buy coins"
-            activeOpacity={0.7}
-          >
-            <View style={styles.statValueRow}>
-              <Image
-                source={require("@/assets/icons/ic_coin.png")}
-                style={styles.statCoinIcon}
-                resizeMode="contain"
-              />
-              <Text style={[styles.statValue, { color: colors.coinGoldText }]}>
-                {(user?.coins ?? 0).toLocaleString()}
-              </Text>
-            </View>
-            <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>{t.wallet.coins}</Text>
-          </TouchableOpacity>
-          <View style={[styles.statDiv, { backgroundColor: colors.border }]} />
-          <View style={styles.stat}>
-            <Text style={[styles.statValue, { color: colors.text }]}>{callCount}</Text>
-            <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>Calls</Text>
-          </View>
-          <View style={[styles.statDiv, { backgroundColor: colors.border }]} />
-          <View style={styles.stat}>
-            <Text style={[styles.statValue, { color: colors.text }]}>
-              {user?.role === "host" ? "Host" : "User"}
-            </Text>
-            <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>Role</Text>
-          </View>
+      {/* Stats — only the metrics this app actually has */}
+      <View style={[styles.statsCard, cardShadow(colors)]}>
+        <View style={styles.stat}>
+          <Text style={[styles.statValue, { color: colors.text }]}>{callCount}</Text>
+          <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>{t.profile.callHistory}</Text>
+        </View>
+        <View style={[styles.statDiv, { backgroundColor: colors.border }]} />
+        <View style={styles.stat}>
+          <Text style={[styles.statValue, { color: colors.text }]}>{favCount}</Text>
+          <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>Favourites</Text>
+        </View>
+        <View style={[styles.statDiv, { backgroundColor: colors.border }]} />
+        <View style={styles.stat}>
+          <Text style={[styles.statValue, { color: colors.text }]}>{user?.role === "host" ? "Host" : "User"}</Text>
+          <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>Role</Text>
         </View>
       </View>
 
-      {/* Account section */}
-      <View style={[styles.section, { backgroundColor: colors.card }]}>
-        <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>{t.settings.account}</Text>
-        <MenuItem
-          iconSource={require("@/assets/icons/ic_edit.png")}
-          label={t.profile.editProfile}
-          onPress={() => router.push("/user/profile/edit")}
-        />
-        <MenuItem
-          iconSource={require("@/assets/icons/ic_wallet.png")}
-          label={t.wallet.wallet}
-          value={`${(user?.coins ?? 0).toLocaleString()} ${t.wallet.coins.toLowerCase()}`}
-          onPress={() => router.push("/user/payment/checkout")}
-        />
-        <MenuItem
-          iconName="credit-card"
-          label={t.wallet.coinHistory}
-          onPress={() => router.push("/user/coin-history")}
-        />
-        {notifBlocked ? (
-          <MenuItem
-            iconName="bell"
-            label={t.settings.notifications}
-            value="Blocked"
-            onPress={() => setShowNotifDialog(true)}
-          />
-        ) : (
-          <MenuItem
-            iconName="bell"
-            label={t.settings.notifications}
-            isSwitch
-            switchValue={notificationsGranted}
-            onSwitchChange={handleNotifToggle}
-            onPress={() => handleNotifToggle(!notificationsGranted)}
-          />
-        )}
-        <MenuItem
-          iconSource={require("@/assets/icons/ic_language.png")}
-          label={t.profile.language}
-          value={currentLangLabel}
-          onPress={() => router.push("/user/language")}
-        />
-        <MenuItem
-          iconName="settings"
-          label={t.profile.settings}
-          onPress={() => router.push("/user/settings")}
-        />
+      {/* Coins banner → buy coins */}
+      <TouchableOpacity activeOpacity={0.9} onPress={() => router.push("/user/payment/checkout")} style={styles.coinWrap}>
+        <LinearGradient colors={["#FBAF3A", "#F97316"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.coinBanner}>
+          <View style={styles.coinBadge}>
+            <Image source={require("@/assets/icons/ic_coin.png")} style={{ width: 30, height: 30 }} resizeMode="contain" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.coinBannerLabel}>Available My Coins</Text>
+            <Text style={styles.coinBannerValue}>
+              {(user?.coins ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </Text>
+          </View>
+          <Feather name="chevrons-right" size={26} color="#fff" />
+        </LinearGradient>
+      </TouchableOpacity>
+
+      {/* Quick actions (coloured) */}
+      <View style={[styles.card, { backgroundColor: colors.card }, cardShadow(colors)]}>
+        <View style={styles.quickRow}>
+          {quickActions.map((a) => (
+            <TouchableOpacity key={a.label} style={styles.quickTile} onPress={a.onPress} activeOpacity={0.8}>
+              <View style={[styles.quickIcon, { backgroundColor: a.bg }]}>
+                <Feather name={a.icon} size={22} color={a.color} />
+              </View>
+              <Text style={[styles.quickLabel, { color: colors.text }]} numberOfLines={1}>{a.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
       </View>
 
-      {/* More section */}
-      <View style={[styles.section, { backgroundColor: colors.card }]}>
-        <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>{t.common.more}</Text>
-        <MenuItem
-          iconName="gift"
-          label="Refer Friends & Earn"
-          subLabel="Share your code, earn free coins"
-          onPress={() => router.push("/user/referral")}
-        />
-        <MenuItem
-          iconName="clock"
-          label={t.profile.callHistory}
-          onPress={() => router.push("/user/call/history")}
-        />
-        <MenuItem
-          iconName="help-circle"
-          label={t.profile.helpCenter}
-          onPress={() => router.push("/user/help-center")}
-        />
-        <MenuItem
-          iconName="shield"
-          label={t.profile.privacy}
-          onPress={() => router.push("/user/privacy")}
-        />
-        <MenuItem
-          iconName="info"
-          label={t.profile.about}
-          onPress={() => router.push("/user/about")}
-        />
-        <MenuItem
-          iconName="star"
-          label={t.profile.rateApp}
-          onPress={handleRate}
-        />
-        <MenuItem
-          iconSource={require("@/assets/images/icon_share.png")}
-          label={t.profile.shareApp}
-          onPress={handleShareApp}
-        />
+      {/* Menu grid */}
+      <View style={[styles.card, { backgroundColor: colors.card }, cardShadow(colors)]}>
+        <View style={styles.menuGrid}>
+          {menuActions.map((a) => (
+            <TouchableOpacity key={a.label} style={styles.gridTile} onPress={a.onPress} activeOpacity={0.7}>
+              <View style={[styles.gridIcon, { backgroundColor: colors.surface }]}>
+                <Feather name={a.icon} size={20} color={colors.text} />
+              </View>
+              <Text style={[styles.gridLabel, { color: colors.mutedForeground }]} numberOfLines={2}>{a.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
       </View>
 
       {/* Sign out */}
-      <View style={[styles.section, { backgroundColor: colors.card }]}>
-        <MenuItem
-          iconSource={require("@/assets/images/icon_logout.png")}
-          label={t.profile.logout}
-          onPress={handleLogout}
-          danger
-        />
-      </View>
+      <TouchableOpacity
+        onPress={() => setShowLogout(true)}
+        style={[styles.logoutBtn, { backgroundColor: colors.card, borderColor: colors.destructive + "33" }]}
+        activeOpacity={0.75}
+      >
+        <Feather name="log-out" size={18} color={colors.destructive} />
+        <Text style={[styles.logoutText, { color: colors.destructive }]}>{t.profile.logout}</Text>
+      </TouchableOpacity>
 
-      {/* App version */}
-      <Text style={[styles.versionText, { color: colors.mutedForeground }]}>
-        VoxLink v{appVersion}
-      </Text>
+      <Text style={[styles.versionText, { color: colors.mutedForeground }]}>VoxLink v{appVersion}</Text>
     </ScrollView>
   );
 }
 
+function cardShadow(colors: any) {
+  return Platform.select({
+    ios: { shadowColor: "#000", shadowOpacity: 0.06, shadowRadius: 12, shadowOffset: { width: 0, height: 3 } },
+    android: { elevation: 2 },
+    web: { boxShadow: "0 3px 14px rgba(0,0,0,0.06)" } as any,
+  });
+}
+
 const styles = StyleSheet.create({
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-  },
-  title: { fontSize: 20, fontFamily: "Poppins_700Bold" },
-  editBtn: {
-    width: 36, height: 36, borderRadius: 18,
-    alignItems: "center", justifyContent: "center",
-  },
-  editIcon: { width: 18, height: 18 },
+  header: { paddingHorizontal: 16, paddingBottom: 10 },
+  title: { fontSize: 22, fontFamily: "Poppins_700Bold" },
 
   profileCard: {
-    marginHorizontal: 16, borderRadius: 20,
-    padding: 20, alignItems: "center",
-    gap: 8, marginBottom: 16,
+    marginHorizontal: 16,
+    borderRadius: 20,
+    padding: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "transparent",
   },
   avatarOuter: { position: "relative" },
-  dottedBorder: {
-    borderWidth: 1.5, borderRadius: 50,
-    borderStyle: "dashed" as any, padding: 3,
-  },
-  avatar: { width: 80, height: 80, borderRadius: 40 },
+  dottedBorder: { borderWidth: 1.5, borderRadius: 50, borderStyle: "dashed" as any, padding: 3 },
+  avatar: { width: 64, height: 64, borderRadius: 32 },
   avatarEditBadge: {
-    position: "absolute",
-    right: 2,
-    bottom: 2,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 2,
-    borderColor: "#fff",
+    position: "absolute", right: 0, bottom: 0, width: 20, height: 20, borderRadius: 10,
+    alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: "#fff",
   },
-  hostBadge: {
-    position: "absolute",
-    left: 2,
-    bottom: 2,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  hostBadgeIcon: { width: 12, height: 12 },
-  name: { fontSize: 18, fontFamily: "Poppins_700Bold", marginTop: 4 },
-  email: { fontSize: 12, fontFamily: "Poppins_400Regular" },
-  idBadge: {
-    flexDirection: "row", alignItems: "center",
-    gap: 5, paddingHorizontal: 12,
-    paddingVertical: 5, borderRadius: 20, marginTop: 4,
-  },
-  idIcon: { width: 12, height: 12 },
-  idText: { fontSize: 11, fontFamily: "Poppins_500Medium" },
+  profileInfo: { flex: 1, marginLeft: 14, gap: 6 },
+  nameRow: { flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" },
+  name: { fontSize: 18, fontFamily: "Poppins_700Bold", maxWidth: "70%" },
+  genderPill: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, minWidth: 26, alignItems: "center" },
+  genderText: { fontSize: 12, fontFamily: "Poppins_600SemiBold" },
+  hostChip: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
+  hostChipText: { fontSize: 10, fontFamily: "Poppins_700Bold", letterSpacing: 0.5 },
+  idRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  idText: { fontSize: 12, fontFamily: "Poppins_400Regular" },
 
-  statsRow: {
-    flexDirection: "row", gap: 24, marginTop: 12,
-    paddingTop: 14, borderTopWidth: StyleSheet.hairlineWidth,
-    width: "100%", justifyContent: "center", alignItems: "center",
+  statsCard: {
+    marginHorizontal: 16, marginTop: 12, borderRadius: 16, paddingVertical: 16,
+    flexDirection: "row", alignItems: "center", justifyContent: "space-around",
+    backgroundColor: "#ECE9F7",
   },
-  stat: { alignItems: "center", gap: 4 },
-  statValueRow: { flexDirection: "row", alignItems: "center", gap: 4 },
-  statCoinIcon: { width: 16, height: 16 },
-  statValue: { fontSize: 16, fontFamily: "Poppins_700Bold" },
+  stat: { alignItems: "center", gap: 4, flex: 1 },
+  statValue: { fontSize: 17, fontFamily: "Poppins_700Bold" },
   statLabel: { fontSize: 11, fontFamily: "Poppins_400Regular" },
-  statDiv: { width: 1, height: 28 },
+  statDiv: { width: 1, height: 26 },
 
-  section: {
-    marginHorizontal: 16, borderRadius: 16,
-    overflow: "hidden", marginBottom: 12,
-    paddingHorizontal: 16,
-  },
-  sectionLabel: {
-    fontSize: 11, fontFamily: "Poppins_500Medium",
-    textTransform: "uppercase", letterSpacing: 1,
-    paddingTop: 14, paddingBottom: 8,
-  },
-  menuItem: {
-    flexDirection: "row", alignItems: "center",
-    gap: 14, paddingVertical: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  menuIcon: {
-    width: 36, height: 36, borderRadius: 10,
+  coinWrap: { marginHorizontal: 16, marginTop: 14, borderRadius: 18, overflow: "hidden" },
+  coinBanner: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 16 },
+  coinBadge: {
+    width: 44, height: 44, borderRadius: 22, backgroundColor: "rgba(255,255,255,0.25)",
     alignItems: "center", justifyContent: "center",
   },
-  menuIconImg: { width: 18, height: 18 },
-  menuLabel: { fontSize: 14, fontFamily: "Poppins_400Regular" },
-  menuSubLabel: { fontSize: 11, fontFamily: "Poppins_400Regular", marginTop: 1 },
-  menuRight: { flexDirection: "row", alignItems: "center", gap: 4 },
-  menuValue: { fontSize: 12, fontFamily: "Poppins_400Regular" },
-  versionText: { textAlign: "center", fontSize: 11, fontFamily: "Poppins_400Regular", marginTop: 2 },
+  coinBannerLabel: { fontSize: 12, fontFamily: "Poppins_500Medium", color: "rgba(255,255,255,0.9)", textDecorationLine: "underline" },
+  coinBannerValue: { fontSize: 20, fontFamily: "Poppins_700Bold", color: "#fff", marginTop: 2 },
+
+  card: { marginHorizontal: 16, marginTop: 14, borderRadius: 18, padding: 16 },
+  quickRow: { flexDirection: "row", justifyContent: "space-between" },
+  quickTile: { alignItems: "center", gap: 8, flex: 1 },
+  quickIcon: { width: 52, height: 52, borderRadius: 16, alignItems: "center", justifyContent: "center" },
+  quickLabel: { fontSize: 12, fontFamily: "Poppins_500Medium" },
+
+  menuGrid: { flexDirection: "row", flexWrap: "wrap" },
+  gridTile: { width: "25%", alignItems: "center", gap: 6, paddingVertical: 12 },
+  gridIcon: { width: 48, height: 48, borderRadius: 14, alignItems: "center", justifyContent: "center" },
+  gridLabel: { fontSize: 11, fontFamily: "Poppins_400Regular", textAlign: "center", paddingHorizontal: 2 },
+
+  logoutBtn: {
+    marginHorizontal: 16, marginTop: 16, borderRadius: 14, borderWidth: 1,
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 14,
+  },
+  logoutText: { fontSize: 14, fontFamily: "Poppins_600SemiBold" },
+
+  versionText: { textAlign: "center", fontSize: 11, fontFamily: "Poppins_400Regular", marginTop: 14 },
 });
 
 
