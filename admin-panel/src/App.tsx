@@ -7,6 +7,7 @@ import { AuthProvider, useAuth } from '@/lib/auth';
 import { Layout } from '@/components/Layout';
 import { Toaster } from '@/components/ui/sonner';
 import { ConfirmProvider } from '@/components/ConfirmDialog';
+import { PendingAlertsProvider } from '@/lib/pendingAlerts';
 import Login from '@/pages/Login';
 
 const Dashboard = lazy(() => import('@/pages/Dashboard'));
@@ -70,6 +71,7 @@ function ProtectedApp() {
   if (!user) return <Login />;
 
   return (
+    <PendingAlertsProvider>
     <Layout>
       <Suspense fallback={<PageLoader />}>
         <Switch>
@@ -111,6 +113,7 @@ function ProtectedApp() {
         </Switch>
       </Suspense>
     </Layout>
+    </PendingAlertsProvider>
   );
 }
 

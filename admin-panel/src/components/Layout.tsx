@@ -1,9 +1,10 @@
 import { ReactNode, useState } from 'react';
 import { Link, useLocation } from 'wouter';
 import { useAuth } from '@/lib/auth';
+import { usePendingAlerts } from '@/lib/pendingAlerts';
 import {
   LayoutDashboard, Users, Mic2, Wallet, Coins, Settings, LogOut,
-  Menu, X, ChevronRight, HelpCircle, Phone, Bell, Star,
+  Menu, X, ChevronRight, HelpCircle, Phone, Bell, BellOff, Star,
   Hash, ArrowRightLeft, Trophy, ShieldCheck, TrendingUp, Tag,
   IndianRupee, MessageSquare, Flag, ShieldOff, Megaphone,
   ScrollText, Image, Gift, Radio, Sliders, CreditCard,
@@ -56,7 +57,8 @@ const sections: Record<string, string> = {
   system: 'SYSTEM',
 };
 
-function NavItem({ href, label, icon: Icon, active, onClick }: any) {
+function NavItem({ href, label, icon: Icon, active, onClick, badge }: any) {
+  const showBadge = typeof badge === 'number' && badge > 0;
   return (
     <Link href={href} onClick={onClick}>
       <div className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 cursor-pointer group ${
@@ -64,11 +66,20 @@ function NavItem({ href, label, icon: Icon, active, onClick }: any) {
           ? 'bg-white/10 text-white shadow-sm'
           : 'text-white/50 hover:bg-white/5 hover:text-white/80'
       }`}>
-        <div className={`p-1.5 rounded-lg transition-colors ${active ? 'bg-violet-500' : 'group-hover:bg-white/10'}`}>
+        <div className={`relative p-1.5 rounded-lg transition-colors ${active ? 'bg-violet-500' : 'group-hover:bg-white/10'}`}>
           <Icon size={15} className={active ? 'text-white' : ''} />
+          {showBadge && (
+            <span className="absolute -top-1.5 -right-1.5 w-2.5 h-2.5 rounded-full bg-red-500 ring-2 ring-[#1a1625] animate-pulse" />
+          )}
         </div>
         <span className="text-sm font-medium">{label}</span>
-        {active && <ChevronRight size={14} className="ml-auto text-white/60" />}
+        {showBadge ? (
+          <span className="ml-auto min-w-[20px] h-5 px-1.5 flex items-center justify-center rounded-full bg-red-500 text-white text-[11px] font-bold leading-none">
+            {badge > 99 ? '99+' : badge}
+          </span>
+        ) : (
+          active && <ChevronRight size={14} className="ml-auto text-white/60" />
+        )}
       </div>
     </Link>
   );
@@ -77,6 +88,11 @@ function NavItem({ href, label, icon: Icon, active, onClick }: any) {
 function Sidebar({ onClose }: { onClose?: () => void }) {
   const [loc] = useLocation();
   const { user, logout } = useAuth();
+  const { withdrawals, deposits } = usePendingAlerts();
+  const badges: Record<string, number> = {
+    '/withdrawals': withdrawals,
+    '/deposits': deposits,
+  };
   let lastSection = '';
 
   return (
@@ -112,7 +128,7 @@ function Sidebar({ onClose }: { onClose?: () => void }) {
                   {sections[item.section]}
                 </p>
               )}
-              <NavItem {...item} active={active} onClick={onClose} />
+              <NavItem {...item} active={active} onClick={onClose} badge={badges[item.href]} />
             </div>
           );
         })}
@@ -145,6 +161,13 @@ export function Layout({ children }: { children: ReactNode }) {
   const [loc] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const currentPage = nav.find(n => loc.startsWith(n.href));
+  const { withdrawals, deposits, total, soundEnabled, setSoundEnabled, testRing } = usePendingAlerts();
+
+  const toggleSound = () => {
+    const next = !soundEnabled;
+    setSoundEnabled(next);
+    if (next) testRing(); // audible confirmation + unlocks the AudioContext via user gesture
+  };
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
@@ -169,17 +192,44 @@ export function Layout({ children }: { children: ReactNode }) {
         <header className="h-16 bg-card border-b border-border flex items-center px-5 gap-4 flex-shrink-0">
           <button
             onClick={() => setMobileOpen(true)}
-            className="lg:hidden p-2 rounded-lg hover:bg-secondary transition-colors"
+            className="lg:hidden relative p-2 rounded-lg hover:bg-secondary transition-colors"
           >
             <Menu size={18} />
+            {total > 0 && (
+              <span className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-red-500 ring-2 ring-card animate-pulse" />
+            )}
           </button>
           <div className="flex-1 min-w-0">
             <h1 className="font-bold text-base text-foreground">{currentPage?.label || 'Dashboard'}</h1>
             <p className="text-xs text-muted-foreground hidden sm:block">VoxLink Admin Console</p>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-            <span className="text-xs text-muted-foreground hidden sm:block">System Operational</span>
+          <div className="flex items-center gap-2 sm:gap-3">
+            {/* Pending action queue pill */}
+            {total > 0 && (
+              <Link href={withdrawals >= deposits ? '/withdrawals' : '/deposits'}>
+                <div
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-red-500/10 text-red-600 border border-red-500/20 cursor-pointer hover:bg-red-500/15 transition-colors"
+                  title={`${withdrawals} pending withdrawals, ${deposits} pending deposits`}
+                >
+                  <Bell size={14} className="animate-pulse" />
+                  <span className="text-xs font-bold">{total} pending</span>
+                </div>
+              </Link>
+            )}
+            {/* Sound alert toggle */}
+            <button
+              onClick={toggleSound}
+              title={soundEnabled ? 'Alert sound on — click to mute' : 'Alert sound off — click to enable'}
+              className={`p-2 rounded-lg transition-colors ${
+                soundEnabled ? 'text-violet-600 hover:bg-secondary' : 'text-muted-foreground hover:bg-secondary'
+              }`}
+            >
+              {soundEnabled ? <Bell size={16} /> : <BellOff size={16} />}
+            </button>
+            <div className="hidden sm:flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+              <span className="text-xs text-muted-foreground">System Operational</span>
+            </div>
           </div>
         </header>
 
