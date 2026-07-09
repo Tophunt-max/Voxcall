@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
-import { Save, Info, Calculator, TrendingUp, RefreshCw, Wifi } from 'lucide-react';
+import { Save, Info, Calculator, TrendingUp, RefreshCw, Wifi, AlertTriangle, Activity } from 'lucide-react';
 
 // ============================================================================
 // Settings — focused on the Agora calling economy.
@@ -267,6 +267,10 @@ export default function SettingsPage() {
         </div>
       </div>
 
+      {/* Live platform-economics dashboard — sits at the top so admin sees
+        the money impact of every knob BEFORE scrolling to change one. */}
+      <PlatformEconomicsDashboard settings={settings} inrRate={inrRate} />
+
       {settingGroups.map(group => (
         <div key={group.group} className="bg-card border border-border rounded-2xl overflow-hidden">
           <div className="px-5 py-4 border-b border-border bg-secondary/30">
@@ -428,9 +432,6 @@ export default function SettingsPage() {
           The gap between them is the platform's coin spread.
         </p>
       </div>
-
-      {/* Agora cost + per-minute margin preview */}
-      <MarginPreview settings={settings} inrRate={inrRate} />
 
       {/* Database maintenance */}
       <MigrationsCard />
@@ -696,8 +697,325 @@ function CoinChips({
   );
 }
 
-// per-minute P&L (user pays, host cash, Agora cost, gateway fee, platform net,
-// margin %) + the loss-proof floor rate — live, as they edit rates above.
+// ─── PlatformEconomicsDashboard ──────────────────────────────────────────
+// Top-of-page live P&L dashboard. Mirrors api-server/src/lib/callEconomics.ts
+// so the admin sees the EXACT per-minute economics the backend will enforce.
+//
+// Sections (top → bottom):
+//   1. Header bar
+//        • Title + Live indicator
+//        • HEALTH PILL (right): PROFITABLE / MARGINAL / LOSING MONEY
+//          Aggregated verdict — one glance tells the admin whether their
+//          current settings are safe to save.
+//
+//   2. Per-call P&L cards (grid of 3: Audio / Video HD / Video FHD)
+//        For each call type shows:
+//          User pays  −  Host cash  −  Agora  −  Gateway = Platform net
+//          Margin %                                      Floor status pill
+//        Cards are colour-graded by margin: red < 0, amber < 10 %, green ≥ 10 %.
+//
+//   3. Economics strip — 5 one-liners on a single row:
+//        Coin spread ₹ (spread %)  |  Take rate %  |  Free-trial cost ₹/signup
+//        |  Min withdrawal ₹  |  Break-even audio (seconds)
+//
+//   4. Conditional warning banners
+//        Rendered only when a real problem is detected — silent when healthy
+//        so the page doesn't cry wolf. Handles:
+//          • Any call type net < 0
+//          • Any rate < loss-proof floor
+//          • host_revenue_share > 1
+//          • Any margin < 10 %
+//          • Free-trial cost > ₹100/signup (soft threshold, marked amber)
+//
+// Everything reads directly from the `settings` state map — so as soon as
+// admin edits ANY dependent input above, this whole dashboard recomputes
+// in the same render tick. No debounce, no manual "recalculate" button.
+function PlatformEconomicsDashboard({ settings, inrRate }: { settings: Record<string, string>; inrRate: number }) {
+  const num = (k: string, d: number) => {
+    const n = parseFloat(settings[k] ?? '');
+    return Number.isFinite(n) && n > 0 ? n : d;
+  };
+  const fx = Number.isFinite(inrRate) && inrRate > 0 ? inrRate : 88;
+  const cfg = {
+    audioUsd: num('agora_audio_usd_per_1000', 0.99),
+    hdUsd: num('agora_video_hd_usd_per_1000', 3.99),
+    fhdUsd: num('agora_video_fhd_usd_per_1000', 8.99),
+    participants: num('call_participants', 2),
+    gatewayPct: num('payment_gateway_fee_pct', 2),
+    purchase: num('coin_purchase_inr', 0.20),
+    payout: num('coin_value_inr', num('coin_payout_inr', 0.085)),
+    maxShare: Math.min(0.95, num('floor_max_host_share', 0.80)),
+    safety: num('call_floor_safety_multiplier', 1.5),
+    // hostShare is a ratio — we DON'T clamp with num() (which would coerce
+    // 1.2 back to 0.7 because it's "invalid"), we let it through raw so the
+    // warning banner below can flag it.
+    hostShareRaw: parseFloat(settings.host_revenue_share || '0.70'),
+    audioRate: num('default_audio_rate', 30),
+    videoRate: num('default_video_rate', 50),
+    videoFhdRate: num('default_video_fhd_rate', 80),
+    // Downstream inputs used only in the economics strip
+    minWithdraw: num('min_withdrawal_coins', 100),
+    freeMinutes: parseFloat(settings.first_call_free_minutes || '0'),
+  };
+  const hostShare = Math.min(0.95, Math.max(0, cfg.hostShareRaw));
+
+  // Per-participant → full-call ₹/min Agora cost.
+  const agoraCostPerMin = (usdPer1000: number) =>
+    (usdPer1000 / 1000) * cfg.participants * fx;
+
+  // Loss-proof floor — the minimum coin rate the backend WILL charge.
+  // Derived from the platform's per-coin margin (after gateway) minus the
+  // worst-case host cut, then scaled by the safety multiplier for headroom.
+  const floorRate = (usdPer1000: number) => {
+    const marginPerCoin = cfg.purchase * (1 - cfg.gatewayPct / 100) - cfg.maxShare * cfg.payout;
+    if (marginPerCoin <= 0) return 0;
+    return Math.ceil((agoraCostPerMin(usdPer1000) / marginPerCoin) * cfg.safety);
+  };
+
+  const estimate = (rate: number, usdPer1000: number) => {
+    const userPays = rate * cfg.purchase;
+    // Host is paid in coins, so the payout ₹ is floor(rate × host_share)
+    // × payout — matches the backend integer coin accounting.
+    const hostPayout = Math.floor(rate * hostShare) * cfg.payout;
+    const gatewayFee = userPays * (cfg.gatewayPct / 100);
+    const agoraCost = agoraCostPerMin(usdPer1000);
+    const net = userPays - gatewayFee - hostPayout - agoraCost;
+    const margin = userPays > 0 ? (net / userPays) * 100 : 0;
+    const floor = floorRate(usdPer1000);
+    return { userPays, hostPayout, agoraCost, gatewayFee, net, margin, floor };
+  };
+
+  const calls = [
+    { key: 'audio', label: 'Audio',       rate: cfg.audioRate,    usd: cfg.audioUsd },
+    { key: 'hd',    label: 'Video (HD)',  rate: cfg.videoRate,    usd: cfg.hdUsd    },
+    { key: 'fhd',   label: 'Video (FHD)', rate: cfg.videoFhdRate, usd: cfg.fhdUsd   },
+  ] as const;
+  const rows = calls.map((c) => ({ ...c, est: estimate(c.rate, c.usd) }));
+
+  // ── Economics-strip figures ───────────────────────────────────────────
+  const coinSpread = cfg.purchase - cfg.payout;
+  const spreadPct = cfg.purchase > 0 ? (coinSpread / cfg.purchase) * 100 : 0;
+  // Take rate = platform's share of every ₹ a user spends, after paying
+  // gateway AND the host their cut of the coins burned in a call. It's
+  // a synthetic-but-directional number computed from the AUDIO baseline.
+  const audioTakeRate = rows[0].est.userPays > 0
+    ? (rows[0].est.net / rows[0].est.userPays) * 100
+    : 0;
+  // Free-trial cost = free minutes × host payout ₹/min (host is paid in
+  // full, platform absorbs). Uses default audio rate as the benchmark.
+  const freeTrialCost = cfg.freeMinutes > 0 ? cfg.freeMinutes * rows[0].est.hostPayout : 0;
+  const minWithdrawInr = cfg.minWithdraw * cfg.payout;
+  // Break-even seconds for audio — how long a call must run before the
+  // platform recovers gateway+Agora costs on the caller's first minute.
+  const audioBreakEvenSec = rows[0].est.userPays > 0
+    ? Math.max(0, Math.min(60, Math.round((rows[0].est.gatewayFee + rows[0].est.agoraCost) / (rows[0].est.userPays / 60))))
+    : 0;
+
+  // ── Health aggregator ─────────────────────────────────────────────────
+  const belowFloor  = rows.some((r) => r.rate < r.est.floor);
+  const anyLoss     = rows.some((r) => r.est.net < 0);
+  const anyMarginal = rows.some((r) => r.est.margin < 10);
+  const hostShareInvalid = cfg.hostShareRaw > 1 || cfg.hostShareRaw <= 0;
+  const health: { tone: 'ok' | 'warn' | 'bad'; label: string } =
+    anyLoss || hostShareInvalid
+      ? { tone: 'bad',  label: 'LOSING MONEY' }
+      : belowFloor || anyMarginal
+      ? { tone: 'warn', label: 'MARGINAL' }
+      : { tone: 'ok',   label: 'PROFITABLE' };
+
+  const healthClass = {
+    ok:   'border-green-200 bg-green-50 text-green-700 dark:border-green-900/50 dark:bg-green-950/30 dark:text-green-400',
+    warn: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-400',
+    bad:  'border-red-200 bg-red-50 text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-400',
+  }[health.tone];
+
+  const marginColour = (m: number, net: number) =>
+    net < 0 ? 'text-red-600 dark:text-red-400' :
+    m < 10  ? 'text-amber-600 dark:text-amber-400' :
+              'text-green-600 dark:text-green-400';
+
+  // ── Warnings list ─────────────────────────────────────────────────────
+  const warnings: Array<{ tone: 'bad' | 'warn'; msg: string }> = [];
+  if (hostShareInvalid) {
+    warnings.push({
+      tone: 'bad',
+      msg: `Host Revenue Share is ${cfg.hostShareRaw} — must be between 0 and 1. Above 1 means hosts earn more than callers pay.`,
+    });
+  }
+  rows.forEach((r) => {
+    if (r.est.net < 0) {
+      warnings.push({
+        tone: 'bad',
+        msg: `${r.label} loses ₹${Math.abs(r.est.net).toFixed(2)}/min at ${r.rate} coins/min — the current rate is a net platform LOSS.`,
+      });
+    } else if (r.rate < r.est.floor) {
+      warnings.push({
+        tone: 'bad',
+        msg: `${r.label} rate ${r.rate} coins/min is BELOW the loss-proof floor of ${r.est.floor} coins/min. Calls will be auto-raised at start.`,
+      });
+    } else if (r.est.margin < 10) {
+      warnings.push({
+        tone: 'warn',
+        msg: `${r.label} margin is only ${r.est.margin.toFixed(0)}% — recommend raising the rate or lowering the host share.`,
+      });
+    }
+  });
+  if (freeTrialCost > 100) {
+    warnings.push({
+      tone: 'warn',
+      msg: `Free-trial cost is ₹${freeTrialCost.toFixed(0)} per signup — expensive at scale. 1000 new signups = ₹${(freeTrialCost * 1000).toFixed(0)}.`,
+    });
+  }
+
+  const StatChip = ({ label, value, tone }: { label: string; value: string; tone: 'green' | 'amber' | 'blue' | 'neutral' }) => {
+    const bg = tone === 'green' ? 'bg-green-50 border-green-200 dark:bg-green-950/20 dark:border-green-900/50' :
+               tone === 'amber' ? 'bg-amber-50 border-amber-200 dark:bg-amber-950/20 dark:border-amber-900/50' :
+               tone === 'blue'  ? 'bg-blue-50 border-blue-200 dark:bg-blue-950/20 dark:border-blue-900/50' :
+                                  'bg-secondary/40 border-border';
+    const fg = tone === 'green' ? 'text-green-700 dark:text-green-400' :
+               tone === 'amber' ? 'text-amber-700 dark:text-amber-400' :
+               tone === 'blue'  ? 'text-blue-700 dark:text-blue-400' :
+                                  'text-foreground';
+    return (
+      <div className={`rounded-xl border px-3 py-2 ${bg}`}>
+        <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">{label}</p>
+        <p className={`font-bold text-sm ${fg}`}>{value}</p>
+      </div>
+    );
+  };
+
+  return (
+    <div className="bg-card border border-border rounded-2xl overflow-hidden">
+      {/* ── Header bar ────────────────────────────────────────────────── */}
+      <div className="px-5 py-4 border-b border-border bg-gradient-to-br from-slate-50 to-blue-50/40 dark:from-slate-900/50 dark:to-blue-950/20 flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-950/40 flex items-center justify-center">
+            <Activity size={15} className="text-blue-600 dark:text-blue-400" />
+          </div>
+          <div>
+            <h3 className="font-bold text-sm">Platform Economics — Live</h3>
+            <p className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+              Real-time P&amp;L — recomputes as you edit any setting below
+              <span className="inline-flex items-center gap-1 text-green-600">
+                <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" /> Live
+              </span>
+            </p>
+          </div>
+        </div>
+        {/* Health pill — the one number an admin needs before hitting Save. */}
+        <div className={`rounded-full border px-3 py-1.5 text-xs font-bold tracking-wide ${healthClass}`}>
+          {health.tone === 'ok' ? '🟢' : health.tone === 'warn' ? '🟡' : '🔴'} {health.label}
+        </div>
+      </div>
+
+      {/* ── Per-call P&L cards ────────────────────────────────────────── */}
+      <div className="p-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {rows.map((r) => {
+          const belowFloorCard = r.rate < r.est.floor;
+          const netColour = marginColour(r.est.margin, r.est.net);
+          const marginPill = r.est.net < 0
+            ? 'bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400'
+            : r.est.margin < 10
+            ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400'
+            : 'bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-400';
+          return (
+            <div key={r.key} className="rounded-xl border border-border bg-background p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-semibold text-sm">{r.label}</p>
+                  <p className="text-[11px] text-muted-foreground">{r.rate} coins/min</p>
+                </div>
+                <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${marginPill}`}>
+                  {r.est.margin.toFixed(0)}%
+                </span>
+              </div>
+              <div className="text-[11px] space-y-0.5 font-mono">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">User pays</span>
+                  <span className="text-green-600 dark:text-green-400">+₹{r.est.userPays.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Host cash</span>
+                  <span className="text-amber-600 dark:text-amber-400">−₹{r.est.hostPayout.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Agora</span>
+                  <span className="text-muted-foreground">−₹{r.est.agoraCost.toFixed(3)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Gateway</span>
+                  <span className="text-muted-foreground">−₹{r.est.gatewayFee.toFixed(2)}</span>
+                </div>
+                <div className="border-t border-border pt-1 mt-1 flex justify-between font-bold">
+                  <span>Platform net</span>
+                  <span className={netColour}>₹{r.est.net.toFixed(2)}/min</span>
+                </div>
+              </div>
+              <div className="flex items-center justify-between text-[10px]">
+                <span className="text-muted-foreground">Floor</span>
+                <span className={belowFloorCard ? 'text-red-600 dark:text-red-400 font-bold' : 'text-green-600 dark:text-green-400 font-semibold'}>
+                  {belowFloorCard ? `⚠ Below (${r.est.floor})` : `✓ ≥ ${r.est.floor} c/min`}
+                </span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ── Economics strip ──────────────────────────────────────────── */}
+      <div className="px-4 py-3 border-t border-border bg-secondary/20 grid grid-cols-2 sm:grid-cols-5 gap-2">
+        <StatChip
+          label="Coin spread"
+          value={`₹${coinSpread.toFixed(3)} (${spreadPct.toFixed(0)}%)`}
+          tone="blue"
+        />
+        <StatChip
+          label="Take rate (audio)"
+          value={`${audioTakeRate.toFixed(0)}%`}
+          tone={audioTakeRate < 0 ? 'amber' : 'green'}
+        />
+        <StatChip
+          label="Free-trial cost"
+          value={cfg.freeMinutes > 0 ? `₹${freeTrialCost.toFixed(2)}/user` : '—'}
+          tone={freeTrialCost > 100 ? 'amber' : 'neutral'}
+        />
+        <StatChip
+          label="Min withdrawal"
+          value={`₹${minWithdrawInr.toFixed(2)}`}
+          tone="neutral"
+        />
+        <StatChip
+          label="Audio break-even"
+          value={audioBreakEvenSec > 0 ? `${audioBreakEvenSec}s` : '—'}
+          tone="neutral"
+        />
+      </div>
+
+      {/* ── Warning banners (only when there's a real problem) ───────── */}
+      {warnings.length > 0 && (
+        <div className="px-4 py-3 border-t border-border space-y-2 bg-red-50/30 dark:bg-red-950/10">
+          {warnings.map((w, i) => {
+            const tone = w.tone === 'bad'
+              ? 'border-red-200 bg-red-50 text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-400'
+              : 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-400';
+            return (
+              <div key={i} className={`flex items-start gap-2 rounded-xl border px-3 py-2 text-xs ${tone}`}>
+                <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
+                <p>{w.msg}</p>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Legacy MarginPreview (kept below for reference — NOT rendered) ──────
+// The PlatformEconomicsDashboard above is its live-updated superset. Kept
+// here purely for git-history continuity; if you're touching this file to
+// simplify, deleting this whole function is safe.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function MarginPreview({ settings, inrRate }: { settings: Record<string, string>; inrRate: number }) {
   const num = (k: string, d: number) => {
     const n = parseFloat(settings[k] ?? '');
