@@ -13,6 +13,9 @@ import {
   Modal,
   Platform,
   ScrollView,
+  Animated,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -29,6 +32,14 @@ const SCREEN_W = Dimensions.get("window").width;
 const H_PADDING = 12;
 const GRID_GAP = 10;
 const CARD_W = (SCREEN_W - H_PADDING * 2 - GRID_GAP) / 2;
+// Fixed height for the country pill row so it can animate collapse cleanly.
+const COUNTRY_ROW_H = 42;
+// Scroll deltas below this are ignored — prevents jitter from tiny finger
+// movements while the list is essentially at rest.
+const SCROLL_HIDE_THRESHOLD = 4;
+// Scroll offset above which "scrolling down" is considered a hide trigger.
+// Below this the row is always shown (near the top of the list).
+const SCROLL_HIDE_MIN_OFFSET = 20;
 // Full-width promo banner (spans both grid columns), embedded between host rows.
 const BANNER_W = SCREEN_W - H_PADDING * 2;
 const BANNER_AUTO_SLIDE_MS = 3500;
@@ -593,6 +604,36 @@ export default function SearchScreen() {
   const [coinPopup, setCoinPopup] = useState(false);
   const [coinPopupRequired, setCoinPopupRequired] = useState(0);
 
+  // Country-row hide-on-scroll animation.
+  //   1 = fully visible, 0 = fully collapsed. Height animation forces
+  //   useNativeDriver: false, but the interpolated view is small enough that
+  //   the JS-thread cost is negligible.
+  const countryAnim = useRef(new Animated.Value(1)).current;
+  const lastScrollY = useRef(0);
+  const isHidden = useRef(false);
+
+  const onGridScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const y = e.nativeEvent.contentOffset.y;
+    const dy = y - lastScrollY.current;
+    lastScrollY.current = y;
+
+    // Ignore micro-scrolls to avoid flip-flopping the row.
+    if (Math.abs(dy) < SCROLL_HIDE_THRESHOLD) return;
+
+    // Down + past threshold  → hide.
+    // Up OR back near top    → show.
+    const shouldHide = dy > 0 && y > SCROLL_HIDE_MIN_OFFSET;
+    const shouldShow = dy < 0 || y <= 5;
+
+    if (shouldHide && !isHidden.current) {
+      isHidden.current = true;
+      Animated.timing(countryAnim, { toValue: 0, duration: 180, useNativeDriver: false }).start();
+    } else if (shouldShow && isHidden.current) {
+      isHidden.current = false;
+      Animated.timing(countryAnim, { toValue: 1, duration: 200, useNativeDriver: false }).start();
+    }
+  }, [countryAnim]);
+
   const loadHosts = useCallback(async () => {
     try {
       const res = await API.getHosts({ limit: 100 });
@@ -767,33 +808,44 @@ export default function SearchScreen() {
       </View>
 
       {/* ── Country pill row + list icon ────────────────────────────────── */}
-      <View style={styles.countryRow}>
-        <FlatList
-          data={COUNTRY_TABS}
-          horizontal
-          keyExtractor={(c) => c.key}
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.countryList}
-          renderItem={({ item }) => (
-            <CountryTab tab={item} active={activeCountry === item.key} onPress={() => setActiveCountry(item.key)} />
-          )}
-        />
-        <TouchableOpacity
-          onPress={() => setShowFiltersSheet(true)}
-          style={styles.listIconBtn}
-          activeOpacity={0.8}
-          accessibilityRole="button"
-          accessibilityLabel="Open language and topic filters"
-        >
-          <View style={styles.listIconLine} />
-          <View style={[styles.listIconLine, { width: 14 }]} />
-          <View style={[styles.listIconLine, { width: 10 }]} />
-          {/* Small dot indicates one or more filters are active. */}
-          {(selectedLang !== "All" || selectedTopic !== "All") && (
-            <View style={styles.listIconDot} pointerEvents="none" />
-          )}
-        </TouchableOpacity>
-      </View>
+      {/* Wrapped in Animated.View so it collapses when the user scrolls down
+          and re-expands when they scroll back up (or reach the top). Height
+          + opacity are interpolated from the same 0→1 progress value. */}
+      <Animated.View
+        style={{
+          height: countryAnim.interpolate({ inputRange: [0, 1], outputRange: [0, COUNTRY_ROW_H] }),
+          opacity: countryAnim,
+          overflow: "hidden",
+        }}
+      >
+        <View style={styles.countryRow}>
+          <FlatList
+            data={COUNTRY_TABS}
+            horizontal
+            keyExtractor={(c) => c.key}
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.countryList}
+            renderItem={({ item }) => (
+              <CountryTab tab={item} active={activeCountry === item.key} onPress={() => setActiveCountry(item.key)} />
+            )}
+          />
+          <TouchableOpacity
+            onPress={() => setShowFiltersSheet(true)}
+            style={styles.listIconBtn}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="Open language and topic filters"
+          >
+            <View style={styles.listIconLine} />
+            <View style={[styles.listIconLine, { width: 12 }]} />
+            <View style={[styles.listIconLine, { width: 8 }]} />
+            {/* Small dot indicates one or more filters are active. */}
+            {(selectedLang !== "All" || selectedTopic !== "All") && (
+              <View style={styles.listIconDot} pointerEvents="none" />
+            )}
+          </TouchableOpacity>
+        </View>
+      </Animated.View>
 
       {/* ── Search field (revealed when the search icon is tapped) ──────── */}
       {searchOpen && (
@@ -837,6 +889,8 @@ export default function SearchScreen() {
           keyExtractor={(r) => r.key}
           contentContainerStyle={{ paddingTop: 10, paddingBottom: insets.bottom + 130, paddingHorizontal: H_PADDING }}
           showsVerticalScrollIndicator={false}
+          onScroll={onGridScroll}
+          scrollEventThrottle={16}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
           renderItem={({ item }) => {
             if (item.kind === "promo") return <PromoSlider banners={banners} />;
@@ -941,37 +995,40 @@ const styles = StyleSheet.create({
   },
   trophyEmoji: { fontSize: 20 },
 
-  // Country pill row
+  // Country pill row — slimmer than the original (paddings, pill height,
+  // flag radius, and font all reduced) so it takes less vertical space,
+  // which is also what makes the hide-on-scroll collapse feel snappy.
   countryRow: {
     flexDirection: "row",
     alignItems: "center",
     paddingLeft: H_PADDING,
     paddingRight: 8,
-    paddingBottom: 10,
+    paddingBottom: 6,
     gap: 6,
+    height: COUNTRY_ROW_H,
   },
-  countryList: { alignItems: "center", gap: 8, paddingRight: 4 },
-  tabTouch: { borderRadius: 22 },
+  countryList: { alignItems: "center", gap: 6, paddingRight: 4 },
+  tabTouch: { borderRadius: 18 },
   tabPill: {
-    borderRadius: 22,
+    borderRadius: 18,
     paddingLeft: 4,
-    paddingRight: 14,
-    paddingVertical: 4,
-    minHeight: 34,
+    paddingRight: 12,
+    paddingVertical: 2,
+    minHeight: 28,
     justifyContent: "center",
   },
-  tabInner: { flexDirection: "row", alignItems: "center", gap: 8 },
-  tabFlag: { width: 26, height: 26, borderRadius: 13, backgroundColor: "rgba(255,255,255,0.5)" },
-  tabLabel: { fontSize: 13.5, fontFamily: "Poppins_500Medium" },
+  tabInner: { flexDirection: "row", alignItems: "center", gap: 6 },
+  tabFlag: { width: 22, height: 22, borderRadius: 11, backgroundColor: "rgba(255,255,255,0.5)" },
+  tabLabel: { fontSize: 12.5, fontFamily: "Poppins_500Medium" },
   tabLabelActive: { fontFamily: "Poppins_700Bold" },
   listIconBtn: {
-    width: 34, height: 34, borderRadius: 8,
+    width: 30, height: 30, borderRadius: 8,
     alignItems: "flex-end", justifyContent: "center",
     paddingHorizontal: 6,
     gap: 3,
   },
   listIconLine: {
-    height: 2, width: 18, backgroundColor: DESIGN.iconDark, borderRadius: 1,
+    height: 2, width: 16, backgroundColor: DESIGN.iconDark, borderRadius: 1,
   },
   listIconDot: {
     position: "absolute",
