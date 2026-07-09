@@ -118,6 +118,12 @@ export const api = {
   createCoinPlan: (data: any) => req<any>('POST', '/admin/coin-plans', data),
   updateCoinPlan: (id: string, data: any) => req('PATCH', `/admin/coin-plans/${id}`, data),
   deleteCoinPlan: (id: string) => req('DELETE', `/admin/coin-plans/${id}`),
+  // VIP plans (perks fully admin-managed)
+  vipPlans: () => req<any[]>('GET', '/admin/vip-plans'),
+  createVipPlan: (data: any) => req<any>('POST', '/admin/vip-plans', data),
+  updateVipPlan: (id: string, data: any) => req('PATCH', `/admin/vip-plans/${id}`, data),
+  deleteVipPlan: (id: string) => req('DELETE', `/admin/vip-plans/${id}`),
+  vipSubscribers: () => req<any[]>('GET', '/admin/vip-subscribers'),
   settings: () => req<Record<string, string>>('GET', '/admin/settings'),
   updateSettings: (data: any) => req('PATCH', '/admin/settings', data),
   callSessions: () => req<any[]>('GET', '/admin/calls'),

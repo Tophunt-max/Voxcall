@@ -8,7 +8,7 @@ import {
   Hash, ArrowRightLeft, Trophy, ShieldCheck, TrendingUp, Tag,
   IndianRupee, MessageSquare, Flag, ShieldOff, Megaphone,
   ScrollText, Image, Gift, Radio, Sliders, CreditCard,
-  CircleDollarSign, Zap, Ticket, Medal
+  CircleDollarSign, Zap, Ticket, Medal, Crown
 } from 'lucide-react';
 
 const nav = [
@@ -24,6 +24,7 @@ const nav = [
   { href: '/withdrawals', label: 'Withdrawals', icon: Wallet, section: 'finance' },
   { href: '/payout-management', label: 'Payout Management', icon: IndianRupee, section: 'finance' },
   { href: '/coin-plans', label: 'Coin Plans', icon: Coins, section: 'finance' },
+  { href: '/vip-plans', label: 'VIP Plans', icon: Crown, section: 'finance' },
   { href: '/deposits', label: 'Deposits', icon: TrendingUp, section: 'finance' },
   { href: '/transactions', label: 'Transactions', icon: ArrowRightLeft, section: 'finance' },
   { href: '/promo-codes', label: 'Promo Codes', icon: Tag, section: 'finance' },

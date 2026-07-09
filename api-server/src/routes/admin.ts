@@ -547,6 +547,101 @@ admin.delete('/coin-plans/:id', async (c) => {
   return c.json({ success: true });
 });
 
+// ─── VIP Plans (admin-managed) ────────────────────────────────────────────────
+function normalizePerks(raw: any): string {
+  const arr = Array.isArray(raw) ? raw : [];
+  return JSON.stringify(arr.map((p) => String(p).slice(0, 120)).filter(Boolean).slice(0, 20));
+}
+
+// GET /api/admin/vip-plans — all plans (active + inactive)
+admin.get('/vip-plans', async (c) => {
+  const r = await db(c).prepare('SELECT * FROM vip_plans ORDER BY sort_order ASC, price_coins ASC').all();
+  return c.json(r.results);
+});
+
+// POST /api/admin/vip-plans — create a plan
+admin.post('/vip-plans', async (c) => {
+  const b = await c.req.json() as any;
+  const tier = String(b.tier ?? '').trim().toLowerCase();
+  const name = String(b.name ?? '').trim();
+  if (!tier) return c.json({ error: 'Tier is required' }, 400);
+  if (!/^[a-z0-9_-]{2,20}$/.test(tier)) return c.json({ error: 'Tier must be 2-20 lowercase letters/numbers (no spaces)' }, 400);
+  if (!name) return c.json({ error: 'Name is required' }, 400);
+  const id = crypto.randomUUID();
+  try {
+    await db(c).prepare(
+      `INSERT INTO vip_plans (id, tier, name, price_coins, duration_days, call_discount_pct, daily_bonus_coins, chat_unlock, badge, color, perks, is_active, sort_order)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`
+    ).bind(
+      id, tier, name,
+      Math.max(0, parseInt(b.price_coins) || 0),
+      Math.max(1, parseInt(b.duration_days) || 30),
+      Math.max(0, Math.min(90, parseInt(b.call_discount_pct) || 0)),
+      Math.max(0, parseInt(b.daily_bonus_coins) || 0),
+      b.chat_unlock ? 1 : 0,
+      b.badge ?? null, b.color ?? null,
+      normalizePerks(b.perks),
+      b.is_active === 0 || b.is_active === false ? 0 : 1,
+      parseInt(b.sort_order) || 0,
+    ).run();
+  } catch (e: any) {
+    if (/UNIQUE/i.test(String(e?.message || ''))) return c.json({ error: 'A plan with this tier already exists' }, 409);
+    throw e;
+  }
+  return c.json({ id, success: true }, 201);
+});
+
+// PATCH /api/admin/vip-plans/:id — update (tier is immutable — it links active subscribers to perks)
+admin.patch('/vip-plans/:id', async (c) => {
+  const { id } = c.req.param();
+  const b = await c.req.json() as any;
+  const sets: string[] = []; const vals: any[] = [];
+  const add = (col: string, v: any) => { sets.push(`${col} = ?`); vals.push(v); };
+  if (b.name !== undefined) add('name', String(b.name).trim());
+  if (b.price_coins !== undefined) add('price_coins', Math.max(0, parseInt(b.price_coins) || 0));
+  if (b.duration_days !== undefined) add('duration_days', Math.max(1, parseInt(b.duration_days) || 30));
+  if (b.call_discount_pct !== undefined) add('call_discount_pct', Math.max(0, Math.min(90, parseInt(b.call_discount_pct) || 0)));
+  if (b.daily_bonus_coins !== undefined) add('daily_bonus_coins', Math.max(0, parseInt(b.daily_bonus_coins) || 0));
+  if (b.chat_unlock !== undefined) add('chat_unlock', b.chat_unlock ? 1 : 0);
+  if (b.badge !== undefined) add('badge', b.badge ?? null);
+  if (b.color !== undefined) add('color', b.color ?? null);
+  if (b.perks !== undefined) add('perks', normalizePerks(b.perks));
+  if (b.is_active !== undefined) add('is_active', b.is_active ? 1 : 0);
+  if (b.sort_order !== undefined) add('sort_order', parseInt(b.sort_order) || 0);
+  if (!sets.length) return c.json({ error: 'Nothing to update' }, 400);
+  vals.push(id);
+  const res = await db(c).prepare(`UPDATE vip_plans SET ${sets.join(', ')} WHERE id = ?`).bind(...vals).run();
+  if (!res.meta?.changes) return c.json({ error: 'Plan not found' }, 404);
+  return c.json({ success: true });
+});
+
+// DELETE /api/admin/vip-plans/:id — blocked while it has active subscribers
+admin.delete('/vip-plans/:id', async (c) => {
+  const { id } = c.req.param();
+  const plan = await db(c).prepare('SELECT tier FROM vip_plans WHERE id = ?').bind(id).first<{ tier: string }>();
+  if (!plan) return c.json({ error: 'Plan not found' }, 404);
+  const now = Math.floor(Date.now() / 1000);
+  const active = await db(c).prepare('SELECT COUNT(*) as cnt FROM users WHERE vip_tier = ? AND vip_expires_at > ?')
+    .bind(plan.tier, now).first<{ cnt: number }>();
+  if (active && active.cnt > 0) {
+    return c.json({ error: `Cannot delete — ${active.cnt} active subscriber(s). Deactivate the plan instead.`, code: 'HAS_SUBSCRIBERS' }, 409);
+  }
+  await db(c).prepare('DELETE FROM vip_plans WHERE id = ?').bind(id).run();
+  return c.json({ success: true });
+});
+
+// GET /api/admin/vip-subscribers — current active VIP members
+admin.get('/vip-subscribers', async (c) => {
+  const now = Math.floor(Date.now() / 1000);
+  const rows = await db(c).prepare(
+    `SELECT u.id, u.name, u.email, u.vip_tier, u.vip_expires_at, p.name as plan_name
+     FROM users u LEFT JOIN vip_plans p ON p.tier = u.vip_tier
+     WHERE u.vip_expires_at IS NOT NULL AND u.vip_expires_at > ?
+     ORDER BY u.vip_expires_at DESC LIMIT 500`
+  ).bind(now).all();
+  return c.json(rows.results);
+});
+
 // GET/PATCH app settings
 admin.get('/settings', async (c) => {
   const result = await db(c).prepare('SELECT * FROM app_settings').all();

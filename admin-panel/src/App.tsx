@@ -15,6 +15,7 @@ const Users = lazy(() => import('@/pages/Users'));
 const Hosts = lazy(() => import('@/pages/Hosts'));
 const Withdrawals = lazy(() => import('@/pages/Withdrawals'));
 const CoinPlans = lazy(() => import('@/pages/CoinPlans'));
+const VipPlans = lazy(() => import('@/pages/VipPlans'));
 const CallSessions = lazy(() => import('@/pages/CallSessions'));
 const FAQs = lazy(() => import('@/pages/FAQs'));
 const TalkTopics = lazy(() => import('@/pages/TalkTopics'));
@@ -83,6 +84,7 @@ function ProtectedApp() {
         <Route path="/ratings" component={Ratings} />
         <Route path="/withdrawals" component={Withdrawals} />
         <Route path="/coin-plans" component={CoinPlans} />
+        <Route path="/vip-plans" component={VipPlans} />
         <Route path="/transactions" component={CoinTransactions} />
         <Route path="/notifications" component={Notifications} />
         <Route path="/talk-topics" component={TalkTopics} />
