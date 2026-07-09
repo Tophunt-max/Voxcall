@@ -40,6 +40,9 @@ export interface Conversation {
   /** Live online/offline state — driven by /chat/rooms initially and then
    *  kept fresh by PRESENCE_UPDATE events from the WebSocket. */
   participantIsOnline: boolean;
+  /** Whether the other party is an active VIP + their tier (for a chat badge). */
+  isVip?: boolean;
+  vipTier?: string | null;
   /** True when the OTHER party is currently typing in this room. Set by
    *  MESSAGE_TYPING events and cleared either by MESSAGE_TYPING_STOP or by
    *  a safety timeout (in case the stop event is dropped). */
@@ -255,6 +258,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           participantAvatar: r.other_avatar ?? undefined,
           participantUserId: r.other_user_id ?? r.host_user_id ?? undefined,
           participantIsOnline: !!(r.other_is_online ?? r.host_is_online),
+          isVip: !!r.other_is_vip,
+          vipTier: r.other_vip_tier ?? undefined,
           isTyping: false,
           lastMessage: r.last_message ?? "",
           lastMessageTime: r.last_message_at ? r.last_message_at * 1000 : Date.now(),

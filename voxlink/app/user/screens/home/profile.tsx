@@ -43,7 +43,7 @@ export default function ProfileScreen() {
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [callCount, setCallCount] = useState(0);
   const [favCount, setFavCount] = useState(0);
-  const [vip, setVip] = useState<{ is_vip: boolean; plan_name: string | null; days_left: number } | null>(null);
+  const [vip, setVip] = useState<{ is_vip: boolean; plan_name: string | null; days_left: number; tier?: string | null; badge?: string | null; color?: string | null } | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [showLogout, setShowLogout] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
@@ -315,15 +315,18 @@ export default function ProfileScreen() {
 
         {/* VIP banner → VIP membership */}
         <TouchableOpacity activeOpacity={0.9} onPress={() => router.push("/user/vip")} style={[styles.vipWrap, vipShadow()]}>
-          <LinearGradient colors={["#7B2FF7", "#A855F7"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.vipBanner}>
+          <LinearGradient colors={vipGradient(vip)} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.vipBanner}>
             <View style={styles.vipDeco} pointerEvents="none" />
             <View style={styles.vipBadge}>
-              <Text style={{ fontSize: 22 }}>👑</Text>
+              <Text style={{ fontSize: 22 }}>{vip?.is_vip ? (vip.badge || "👑") : "👑"}</Text>
             </View>
             <View style={{ flex: 1 }}>
               {vip?.is_vip ? (
                 <>
-                  <Text style={styles.vipTitle}>{vip.plan_name ?? "VIP"} Member</Text>
+                  <View style={styles.vipTitleRow}>
+                    <Text style={styles.vipTitle} numberOfLines={1}>{vip.plan_name ?? "VIP"}</Text>
+                    <View style={styles.vipActiveChip}><Text style={styles.vipActiveChipText}>ACTIVE</Text></View>
+                  </View>
                   <Text style={styles.vipSub}>{vip.days_left} day{vip.days_left === 1 ? "" : "s"} left · tap to manage</Text>
                 </>
               ) : (
@@ -334,8 +337,8 @@ export default function ProfileScreen() {
               )}
             </View>
             <View style={styles.vipCta}>
-              <Text style={styles.vipCtaText}>{vip?.is_vip ? "Manage" : "Upgrade"}</Text>
-              <Feather name="chevron-right" size={14} color="#7B2FF7" />
+              <Text style={[styles.vipCtaText, { color: vipGradient(vip)[0] }]}>{vip?.is_vip ? "Manage" : "Upgrade"}</Text>
+              <Feather name="chevron-right" size={14} color={vipGradient(vip)[0]} />
             </View>
           </LinearGradient>
         </TouchableOpacity>
@@ -420,6 +423,19 @@ function coinShadow() {
     web: { boxShadow: "0 6px 18px rgba(249,115,22,0.32)" } as any,
   });
 }
+// Tier-aware banner gradient — active VIPs get a colour matched to their plan;
+// non-VIPs get the standard purple "upgrade" look. Unknown admin tiers fall
+// back to the plan's own accent colour.
+function vipGradient(vip: { is_vip: boolean; tier?: string | null; color?: string | null } | null): readonly [string, string] {
+  if (!vip?.is_vip) return ["#7B2FF7", "#A855F7"];
+  switch (vip.tier) {
+    case "platinum": return ["#7C3AED", "#A855F7"];
+    case "gold": return ["#D97706", "#F59E0B"];
+    case "silver": return ["#6B7280", "#9CA3AF"];
+    case "weekly": return ["#2563EB", "#38BDF8"];
+    default: return [vip.color || "#7C3AED", vip.color || "#A855F7"];
+  }
+}
 function vipShadow() {
   return Platform.select({
     ios: { shadowColor: "#7B2FF7", shadowOpacity: 0.35, shadowRadius: 14, shadowOffset: { width: 0, height: 6 } },
@@ -473,6 +489,9 @@ const styles = StyleSheet.create({
   vipSub: { fontSize: 11.5, fontFamily: "Poppins_400Regular", color: "rgba(255,255,255,0.9)", marginTop: 2 },
   vipCta: { flexDirection: "row", alignItems: "center", gap: 2, backgroundColor: "#fff", paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20 },
   vipCtaText: { fontSize: 12, fontFamily: "Poppins_600SemiBold", color: "#7B2FF7" },
+  vipTitleRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  vipActiveChip: { backgroundColor: "rgba(255,255,255,0.28)", paddingHorizontal: 7, paddingVertical: 2, borderRadius: 8 },
+  vipActiveChipText: { fontSize: 9, fontFamily: "Poppins_700Bold", color: "#fff", letterSpacing: 0.5 },
 
   coinWrap: { marginHorizontal: 16, marginTop: 16, borderRadius: 20, overflow: "hidden" },
   coinBanner: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 18, overflow: "hidden" },

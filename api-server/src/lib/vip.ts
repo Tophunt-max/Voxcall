@@ -22,6 +22,9 @@ export interface VipStatus {
   dailyBonusCoins: number;
   /** Whether VIP can DM any host without a prior call (bypasses call_first). */
   chatUnlock: boolean;
+  /** Plan badge emoji + accent colour (for tier-styled UI). */
+  badge: string | null;
+  color: string | null;
 }
 
 export const NO_VIP: VipStatus = {
@@ -32,6 +35,8 @@ export const NO_VIP: VipStatus = {
   callDiscountPct: 0,
   dailyBonusCoins: 0,
   chatUnlock: false,
+  badge: null,
+  color: null,
 };
 
 /** Resolve a user's live VIP status + perks. Never throws. */
@@ -41,7 +46,8 @@ export async function getVipStatus(db: D1Database, userId: string): Promise<VipS
     const row = await db
       .prepare(
         `SELECT u.vip_tier AS tier, u.vip_expires_at AS expires_at,
-                p.name AS plan_name, p.call_discount_pct, p.daily_bonus_coins, p.chat_unlock
+                p.name AS plan_name, p.call_discount_pct, p.daily_bonus_coins, p.chat_unlock,
+                p.badge, p.color
          FROM users u
          LEFT JOIN vip_plans p ON p.tier = u.vip_tier
          WHERE u.id = ?`
@@ -59,6 +65,8 @@ export async function getVipStatus(db: D1Database, userId: string): Promise<VipS
       callDiscountPct: Math.max(0, Math.min(90, Number(row.call_discount_pct) || 0)),
       dailyBonusCoins: Math.max(0, Number(row.daily_bonus_coins) || 0),
       chatUnlock: row.chat_unlock === null || row.chat_unlock === undefined ? true : !!Number(row.chat_unlock),
+      badge: row.badge ?? null,
+      color: row.color ?? null,
     };
   } catch {
     return NO_VIP;

@@ -31,6 +31,9 @@ export interface Conversation {
   participantUserId?: string;
   /** Live online/offline state, kept fresh by PRESENCE_UPDATE events. */
   participantIsOnline: boolean;
+  /** Whether the other party (the caller) is an active VIP + their tier. */
+  isVip?: boolean;
+  vipTier?: string | null;
   /** True when the other party is currently typing in this room. */
   isTyping: boolean;
   lastMessage?: string;
@@ -189,6 +192,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           participantAvatar: r.other_avatar ?? undefined,
           participantUserId: r.other_user_id ?? undefined,
           participantIsOnline: !!(r.other_is_online),
+          isVip: !!r.other_is_vip,
+          vipTier: r.other_vip_tier ?? undefined,
           isTyping: false,
           lastMessage: r.last_message ?? "",
           lastMessageTime: r.last_message_at ? r.last_message_at * 1000 : Date.now(),

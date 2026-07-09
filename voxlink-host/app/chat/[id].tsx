@@ -18,6 +18,16 @@ function formatTime(ts: number) {
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+function vipTierEmoji(tier?: string | null): string {
+  switch (tier) {
+    case "platinum": return "💎";
+    case "gold": return "👑";
+    case "silver": return "⭐";
+    case "weekly": return "🎫";
+    default: return "👑";
+  }
+}
+
 export default function ChatScreen() {
   const { t } = useLanguage();
   const colors = useColors();
@@ -196,7 +206,14 @@ export default function ChatScreen() {
         </TouchableOpacity>
         <Image source={{ uri: participantAvatar }} style={styles.headerAvatar} />
         <View style={styles.headerInfo}>
-          <Text style={[styles.headerName, { color: colors.foreground }]} numberOfLines={1}>{participantName}</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+            <Text style={[styles.headerName, { color: colors.foreground }]} numberOfLines={1}>{participantName}</Text>
+            {convo?.isVip && (
+              <View style={styles.vipChip}>
+                <Text style={styles.vipChipText}>{vipTierEmoji(convo.vipTier)} VIP</Text>
+              </View>
+            )}
+          </View>
           <Text style={[styles.headerStatus, { color: headerStatus.color, fontStyle: convo?.isTyping ? "italic" : "normal" }]} accessibilityLiveRegion="polite">{headerStatus.text}</Text>
         </View>
         <SvgIcon name="info" size={20} color={colors.mutedForeground} />
@@ -299,6 +316,8 @@ const styles = StyleSheet.create({
   headerInfo: { flex: 1, gap: 1 },
   headerName: { fontSize: 15, fontFamily: "Poppins_600SemiBold" },
   headerStatus: { fontSize: 12, fontFamily: "Poppins_400Regular" },
+  vipChip: { backgroundColor: "#F5E8FF", borderColor: "#E2C2FF", borderWidth: 1, paddingHorizontal: 6, paddingVertical: 1, borderRadius: 8 },
+  vipChipText: { fontSize: 9, fontFamily: "Poppins_700Bold", color: "#A00EE7" },
   empty: { flex: 1, alignItems: "center", justifyContent: "center", gap: 10, padding: 40 },
   emptyAvatar: { width: 72, height: 72, borderRadius: 36 },
   emptyName: { fontSize: 18, fontFamily: "Poppins_600SemiBold" },

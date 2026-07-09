@@ -66,6 +66,8 @@ vip.get('/status', async (c) => {
     call_discount_pct: status.callDiscountPct,
     daily_bonus_coins: status.dailyBonusCoins,
     chat_unlock: status.chatUnlock,
+    badge: status.badge,
+    color: status.color,
     daily_available: dailyAvailable,
     next_daily_at: status.dailyBonusCoins > 0 ? lastClaim + DAILY_COOLDOWN_SEC : null,
     coins: Number(u?.coins) || 0,
