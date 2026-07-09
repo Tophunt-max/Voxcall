@@ -26,6 +26,8 @@ function serializePlan(p: any) {
     duration_days: Number(p.duration_days) || 30,
     call_discount_pct: Number(p.call_discount_pct) || 0,
     daily_bonus_coins: Number(p.daily_bonus_coins) || 0,
+    signup_bonus_coins: Number(p.signup_bonus_coins) || 0,
+    daily_free_minutes: Number(p.daily_free_minutes) || 0,
     chat_unlock: !!Number(p.chat_unlock),
     badge: p.badge ?? null,
     color: p.color ?? null,
@@ -111,6 +113,14 @@ vip.post('/subscribe', async (c) => {
       .bind(crypto.randomUUID(), sub, 'spend', -price, `${plan.name} (${durationDays} days)`, subId),
   ]).catch((e) => console.warn('[vip/subscribe] ledger write failed (non-fatal):', e));
 
+  // One-time signup/renewal bonus coins (0 if the plan/column has none).
+  const signupBonus = Math.max(0, Number(plan.signup_bonus_coins) || 0);
+  if (signupBonus > 0) {
+    await db.prepare('UPDATE users SET coins = coins + ? WHERE id = ?').bind(signupBonus, sub).run().catch(() => {});
+    await db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
+      .bind(crypto.randomUUID(), sub, 'bonus', signupBonus, `${plan.name} signup bonus`, subId).run().catch(() => {});
+  }
+
   const after = await db.prepare('SELECT coins FROM users WHERE id = ?').bind(sub).first<{ coins: number }>();
   return c.json({
     success: true,
@@ -118,6 +128,7 @@ vip.post('/subscribe', async (c) => {
     plan_name: plan.name,
     expires_at: newExpiry,
     days_left: Math.max(0, Math.ceil((newExpiry - now) / 86400)),
+    signup_bonus: signupBonus,
     coins: Number(after?.coins) || 0,
   });
 });
@@ -155,8 +166,23 @@ vip.post('/claim-daily', async (c) => {
     .run()
     .catch(() => {});
 
+  // Also top up the plan's daily free call minutes (guarded: column added by a
+  // later migration, and free_call_minutes exists from migration 0028).
+  let freeMinutes = 0;
+  try {
+    const planRow = await db.prepare('SELECT daily_free_minutes FROM vip_plans WHERE tier = ?')
+      .bind(status.tier).first<{ daily_free_minutes: number }>();
+    freeMinutes = Math.max(0, Number(planRow?.daily_free_minutes) || 0);
+    if (freeMinutes > 0) {
+      await db.prepare('UPDATE users SET free_call_minutes = COALESCE(free_call_minutes, 0) + ? WHERE id = ?')
+        .bind(freeMinutes, sub).run();
+    }
+  } catch {
+    freeMinutes = 0; // column/table absent — skip minutes, coins already granted
+  }
+
   const after = await db.prepare('SELECT coins FROM users WHERE id = ?').bind(sub).first<{ coins: number }>();
-  return c.json({ success: true, granted: bonus, coins: Number(after?.coins) || 0, next_daily_at: now + DAILY_COOLDOWN_SEC });
+  return c.json({ success: true, granted: bonus, free_minutes: freeMinutes, coins: Number(after?.coins) || 0, next_daily_at: now + DAILY_COOLDOWN_SEC });
 });
 
 export default vip;

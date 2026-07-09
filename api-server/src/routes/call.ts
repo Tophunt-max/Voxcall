@@ -336,7 +336,7 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
     const notifStub = c.env.NOTIFICATION_HUB.get(notifId);
     await notifStub.fetch('https://dummy/notify', {
       method: 'POST',
-      body: JSON.stringify({ type: 'incoming_call', session_id: sessionId, caller_id: sub, call_type: callType, caller_name: caller.name ?? 'Caller', rate_per_minute: ratePerMin, max_seconds: maxSeconds }),
+      body: JSON.stringify({ type: 'incoming_call', session_id: sessionId, caller_id: sub, call_type: callType, caller_name: caller.name ?? 'Caller', rate_per_minute: ratePerMin, max_seconds: maxSeconds, caller_is_vip: vipStatus.isVip, caller_vip_tier: vipStatus.tier }),
     });
   } catch (e) {
     // BUG #8 FIX: Log notification failures instead of silently swallowing

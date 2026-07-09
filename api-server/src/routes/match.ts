@@ -49,6 +49,7 @@ import {
   normalizeMatchWeights,
   type MatchWeights,
 } from '../lib/matchWeight';
+import { getVipStatus } from '../lib/vip';
 import type { Env, JWTPayload } from '../types';
 
 const match = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
@@ -165,6 +166,7 @@ interface AbuseCheckResult {
 async function checkAbuseGuards(
   db: D1Database,
   userId: string,
+  isVip = false,
 ): Promise<AbuseCheckResult> {
   try {
     const [dailyLimit, cooldownCount, cooldownMin] = await Promise.all([
@@ -173,8 +175,10 @@ async function checkAbuseGuards(
       readIntSetting(db, 'random_decline_cooldown_min', 5),
     ]);
 
+    // VIP perk: no daily match cap. The decline-cooldown (anti-grief) still
+    // applies so VIPs can't spam-decline hosts either.
     // Daily cap — count successful matches (matched/accepted) in the last 24h.
-    if (dailyLimit > 0) {
+    if (dailyLimit > 0 && !isVip) {
       const since = Math.floor(Date.now() / 1000) - 24 * 3600;
       const row = await db
         .prepare(
@@ -533,8 +537,11 @@ match.post('/find', async (c) => {
       ? Math.min(5, body.min_rating)
       : undefined;
 
+  // VIP status — unlocks priority matching (no daily cap + quality boost).
+  const vip = await getVipStatus(db, sub);
+
   // 3. Anti-abuse guards (daily cap + decline cooldown)
-  const abuse = await checkAbuseGuards(db, sub);
+  const abuse = await checkAbuseGuards(db, sub, vip.isVip);
   if (!abuse.ok) {
     return c.json(
       {
@@ -647,6 +654,16 @@ match.post('/find', async (c) => {
     matchWeights = normalizeMatchWeights(matchWeightsRaw ? JSON.parse(matchWeightsRaw) : undefined);
   } catch {
     matchWeights = normalizeMatchWeights(undefined);
+  }
+  // VIP priority: bias the weighted pick toward higher-quality hosts so VIPs
+  // are matched with better-rated / higher-level / more-popular listeners.
+  if (vip.isVip) {
+    matchWeights = {
+      ...matchWeights,
+      rating: matchWeights.rating * 1.6,
+      rank_boost: matchWeights.rank_boost * 1.6,
+      popularity: matchWeights.popularity * 1.4,
+    };
   }
 
   // Kick off the online-count query concurrently with the host pick.

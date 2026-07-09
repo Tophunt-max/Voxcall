@@ -709,6 +709,49 @@ async function maybeSendStreakReminders(env: Env): Promise<void> {
   }
 }
 
+// VIP expiry reminders — push a "renew" nudge to members whose VIP ends within
+// 48h. Hourly gate (so the per-minute cron doesn't re-scan constantly) + a
+// per-user 24h dedupe via users.vip_reminder_at. Entirely best-effort.
+async function maybeSendVipReminders(env: Env): Promise<void> {
+  try {
+    const now = Math.floor(Date.now() / 1000);
+    const row = await env.DB.prepare("SELECT value FROM app_settings WHERE key = 'last_vip_reminder_run'").first<{ value: string }>();
+    const last = row?.value ? parseInt(row.value, 10) || 0 : 0;
+    if (now - last < 3600) return; // at most once/hour
+    await env.DB.prepare(
+      "INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('last_vip_reminder_run', ?, unixepoch())"
+    ).bind(String(now)).run();
+
+    const soon = now + 48 * 3600;
+    const dedupeBefore = now - 24 * 3600;
+    const users = await env.DB.prepare(
+      `SELECT u.id, u.fcm_token, u.vip_expires_at, p.name as plan_name
+       FROM users u LEFT JOIN vip_plans p ON p.tier = u.vip_tier
+       WHERE u.vip_expires_at IS NOT NULL AND u.vip_expires_at > ? AND u.vip_expires_at <= ?
+         AND u.fcm_token IS NOT NULL
+         AND (u.vip_reminder_at IS NULL OR u.vip_reminder_at < ?)
+       LIMIT 200`
+    ).bind(now, soon, dedupeBefore).all<any>();
+
+    for (const u of (users.results ?? [])) {
+      const hrsLeft = Math.max(1, Math.ceil((Number(u.vip_expires_at) - now) / 3600));
+      const label = hrsLeft <= 24
+        ? `${hrsLeft} hour${hrsLeft === 1 ? '' : 's'}`
+        : `${Math.ceil(hrsLeft / 24)} day${Math.ceil(hrsLeft / 24) === 1 ? '' : 's'}`;
+      await sendFCMPush(
+        env.FIREBASE_SERVICE_ACCOUNT, u.fcm_token,
+        `${u.plan_name ?? 'VIP'} expiring soon`,
+        `Your VIP ends in ${label}. Renew now to keep your perks.`,
+        { type: 'vip_expiring' },
+      ).catch(() => {});
+      await env.DB.prepare('UPDATE users SET vip_reminder_at = ? WHERE id = ?').bind(now, u.id).run().catch(() => {});
+    }
+    if (users.results?.length) console.log(`[Cron] Sent ${users.results.length} VIP expiry reminder(s)`);
+  } catch (err) {
+    console.warn('[Cron] VIP reminder task error:', err);
+  }
+}
+
 export default {
   fetch: app.fetch,
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
@@ -718,6 +761,7 @@ export default {
     ctx.waitUntil(maybeRefreshFxRates(env));
     ctx.waitUntil(maybeRunReengagement(env));
     ctx.waitUntil(maybeSendStreakReminders(env));
+    ctx.waitUntil(maybeSendVipReminders(env));
     ctx.waitUntil(maybeRollupEngagement(env));
   },
 };

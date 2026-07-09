@@ -570,14 +570,16 @@ admin.post('/vip-plans', async (c) => {
   const id = crypto.randomUUID();
   try {
     await db(c).prepare(
-      `INSERT INTO vip_plans (id, tier, name, price_coins, duration_days, call_discount_pct, daily_bonus_coins, chat_unlock, badge, color, perks, is_active, sort_order)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`
+      `INSERT INTO vip_plans (id, tier, name, price_coins, duration_days, call_discount_pct, daily_bonus_coins, signup_bonus_coins, daily_free_minutes, chat_unlock, badge, color, perks, is_active, sort_order)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
     ).bind(
       id, tier, name,
       Math.max(0, parseInt(b.price_coins) || 0),
       Math.max(1, parseInt(b.duration_days) || 30),
       Math.max(0, Math.min(90, parseInt(b.call_discount_pct) || 0)),
       Math.max(0, parseInt(b.daily_bonus_coins) || 0),
+      Math.max(0, parseInt(b.signup_bonus_coins) || 0),
+      Math.max(0, parseInt(b.daily_free_minutes) || 0),
       b.chat_unlock ? 1 : 0,
       b.badge ?? null, b.color ?? null,
       normalizePerks(b.perks),
@@ -602,6 +604,8 @@ admin.patch('/vip-plans/:id', async (c) => {
   if (b.duration_days !== undefined) add('duration_days', Math.max(1, parseInt(b.duration_days) || 30));
   if (b.call_discount_pct !== undefined) add('call_discount_pct', Math.max(0, Math.min(90, parseInt(b.call_discount_pct) || 0)));
   if (b.daily_bonus_coins !== undefined) add('daily_bonus_coins', Math.max(0, parseInt(b.daily_bonus_coins) || 0));
+  if (b.signup_bonus_coins !== undefined) add('signup_bonus_coins', Math.max(0, parseInt(b.signup_bonus_coins) || 0));
+  if (b.daily_free_minutes !== undefined) add('daily_free_minutes', Math.max(0, parseInt(b.daily_free_minutes) || 0));
   if (b.chat_unlock !== undefined) add('chat_unlock', b.chat_unlock ? 1 : 0);
   if (b.badge !== undefined) add('badge', b.badge ?? null);
   if (b.color !== undefined) add('color', b.color ?? null);

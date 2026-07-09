@@ -32,35 +32,46 @@ chat.get('/rooms', async (c) => {
   // Cursor pagination: ?before=<last_message_at> returns older rooms; ?limit caps size.
   const { before, limit } = c.req.query();
   const lim = Math.min(Math.max(parseInt(limit || '50', 10) || 50, 1), 100);
-  const cursorClause = before ? ' AND cr.last_message_at < ?' : '';
-  const params: any[] = [sub, sub, sub, sub, sub, sub, sub];
-  if (before) params.push(parseInt(before, 10) || 0);
-  params.push(lim);
-  const result = await c.env.DB.prepare(
-    `SELECT cr.*,
-      CASE WHEN cr.user_id = ? THEN hu.name ELSE cu.name END as other_name,
-      CASE WHEN cr.user_id = ? THEN hu.avatar_url ELSE cu.avatar_url END as other_avatar,
-      -- The "other" party's user_id (users.id). Used by the chat header to
-      -- match presence:update events from the WebSocket. Only hosts have an
-      -- is_online column; for host-side rows (caller is the host) the other
-      -- party is a regular user and we surface 0 since users don't track it.
-      CASE WHEN cr.user_id = ? THEN h.user_id ELSE cr.user_id END as other_user_id,
-      CASE WHEN cr.user_id = ? THEN COALESCE(h.is_online, 0) ELSE 0 END as other_is_online,
+  const beforeVal = before ? (parseInt(before, 10) || 0) : null;
+
+  // ?1 = caller id (reused everywhere), ?2 = limit, ?3 = before cursor (if any).
+  // `withVip` adds the other party's VIP tier/expiry so the chat list can show a
+  // VIP badge; on a pre-migration DB (no vip columns) we retry without them.
+  const buildSql = (withVip: boolean) => `
+    SELECT cr.*,
+      CASE WHEN cr.user_id = ?1 THEN hu.name ELSE cu.name END as other_name,
+      CASE WHEN cr.user_id = ?1 THEN hu.avatar_url ELSE cu.avatar_url END as other_avatar,
+      CASE WHEN cr.user_id = ?1 THEN h.user_id ELSE cr.user_id END as other_user_id,
+      CASE WHEN cr.user_id = ?1 THEN COALESCE(h.is_online, 0) ELSE 0 END as other_is_online,
+      ${withVip ? `CASE WHEN cr.user_id = ?1 THEN hu.vip_tier ELSE cu.vip_tier END as other_vip_tier,
+      CASE WHEN cr.user_id = ?1 THEN hu.vip_expires_at ELSE cu.vip_expires_at END as other_vip_expires_at,` : ''}
       h.user_id as host_user_id,
       COALESCE(h.is_online, 0) as host_is_online,
-      -- Unread = messages in this room NOT sent by the caller and not yet read.
-      -- Drives the conversation-list badge + app icon count (source of truth =
-      -- messages.is_read, so it can't drift from a separate counter).
       (SELECT COUNT(*) FROM messages m
-        WHERE m.room_id = cr.id AND m.sender_id != ? AND m.is_read = 0) as unread_count
+        WHERE m.room_id = cr.id AND m.sender_id != ?1 AND m.is_read = 0) as unread_count
      FROM chat_rooms cr
      JOIN users cu ON cu.id = cr.user_id
      JOIN hosts h ON h.id = cr.host_id
      JOIN users hu ON hu.id = h.user_id
-     WHERE (cr.user_id = ? OR h.user_id = ?)${cursorClause}
-     ORDER BY cr.last_message_at DESC LIMIT ?`
-  ).bind(...params).all();
-  return c.json(result.results);
+     WHERE (cr.user_id = ?1 OR h.user_id = ?1)${beforeVal !== null ? ' AND cr.last_message_at < ?3' : ''}
+     ORDER BY cr.last_message_at DESC LIMIT ?2`;
+  const params: any[] = beforeVal !== null ? [sub, lim, beforeVal] : [sub, lim];
+
+  let rows: any[];
+  try {
+    rows = (await c.env.DB.prepare(buildSql(true)).bind(...params).all()).results ?? [];
+  } catch (e: any) {
+    if (/no such column/i.test(String(e?.message || ''))) {
+      rows = (await c.env.DB.prepare(buildSql(false)).bind(...params).all()).results ?? [];
+    } else {
+      throw e;
+    }
+  }
+  const now = Math.floor(Date.now() / 1000);
+  return c.json(rows.map((r: any) => ({
+    ...r,
+    other_is_vip: !!(r.other_vip_expires_at && Number(r.other_vip_expires_at) > now),
+  })));
 });
 
 // POST /api/chat/rooms — create or get existing room (enforces call_first unlock)
