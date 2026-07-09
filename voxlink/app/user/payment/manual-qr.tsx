@@ -20,6 +20,7 @@ import { API } from "@/services/api";
 import { showSuccessToast, showErrorToast } from "@/components/Toast";
 import { formatLocalAmount } from "@/utils/currency";
 import * as Haptics from "expo-haptics";
+import { WEB_INPUT_RESET } from "@workspace/shared-ui/utils";
 
 interface ManualQR {
   id: string;
@@ -489,7 +490,7 @@ const s = StyleSheet.create({
   // UTR Input
   utrHint: { fontSize: 12, fontFamily: "Poppins_400Regular", lineHeight: 18 },
   inputContainer: { flexDirection: "row", alignItems: "center", borderWidth: 1.5, borderRadius: 14, paddingHorizontal: 16, height: 56 },
-  input: { flex: 1, fontSize: 16, fontFamily: "Poppins_600SemiBold", letterSpacing: 1.5 },
+  input: { flex: 1, fontSize: 16, fontFamily: "Poppins_600SemiBold", letterSpacing: 1.5, ...(WEB_INPUT_RESET as any) },
   checkMark: { width: 28, height: 28, borderRadius: 14, backgroundColor: "#E8F5E9", alignItems: "center", justifyContent: "center" },
 
   hintCard: { borderRadius: 12, padding: 12, gap: 4 },

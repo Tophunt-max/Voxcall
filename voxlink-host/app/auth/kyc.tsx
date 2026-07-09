@@ -17,6 +17,7 @@ import { PermissionDialog, PERMISSION_CONFIGS } from "@/components/PermissionDia
 import { PrimaryButton } from "@/components/PrimaryButton";
 import { SvgIcon } from "@/components/SvgIcon";
 import { API } from "@/services/api";
+import { WEB_INPUT_RESET } from "@workspace/shared-ui/utils";
 
 const BG     = "#0A0B1E";
 const DARK   = "#111329";
@@ -300,7 +301,7 @@ const s = StyleSheet.create({
   noticeIcon: { width: 18, height: 18, marginTop: 1 },
   noticeTxt: { flex: 1, fontSize: 12, fontFamily: "Poppins_400Regular", color: DARK, lineHeight: 18 },
   fieldLabel: { fontSize: 13, fontFamily: "Poppins_600SemiBold", color: DARK, marginBottom: 6 },
-  dobInput: { borderWidth: 1, borderColor: "#E8EAF0", borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, fontFamily: "Poppins_400Regular", color: DARK, backgroundColor: "#F8F9FC" },
+  dobInput: { borderWidth: 1, borderColor: "#E8EAF0", borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, fontFamily: "Poppins_400Regular", color: DARK, backgroundColor: "#F8F9FC", ...(WEB_INPUT_RESET as any) },
   dobReview: { flexDirection: "row", alignItems: "center", gap: 10, borderRadius: 12, borderWidth: 1, borderColor: "#D1F0DA", backgroundColor: "#F0FDF4", paddingHorizontal: 14, paddingVertical: 12 },
   dobIcon: { width: 18, height: 18 },
   dobReviewTxt: { flex: 1, fontSize: 14, fontFamily: "Poppins_500Medium", color: DARK },

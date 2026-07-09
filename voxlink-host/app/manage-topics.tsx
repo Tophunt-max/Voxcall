@@ -15,6 +15,7 @@ import { useColors } from "@/hooks/useColors";
 import { useLanguage } from "@/context/LanguageContext";
 import { API } from "@/services/api";
 import { showErrorToast, showSuccessToast } from "@/components/Toast";
+import { WEB_INPUT_RESET } from "@workspace/shared-ui/utils";
 
 const MAX_TOPICS = 10;
 
@@ -233,6 +234,7 @@ const styles = StyleSheet.create({
     flex: 1, borderWidth: 1, borderRadius: 12,
     paddingHorizontal: 14, paddingVertical: Platform.OS === "ios" ? 12 : 10,
     fontSize: 14, fontFamily: "Poppins_400Regular",
+    ...(WEB_INPUT_RESET as any),
   },
   addBtn: { paddingHorizontal: 20, borderRadius: 12, alignItems: "center", justifyContent: "center" },
   addBtnText: { color: "#fff", fontSize: 14, fontFamily: "Poppins_600SemiBold" },

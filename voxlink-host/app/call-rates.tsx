@@ -15,6 +15,7 @@ import { useColors } from "@/hooks/useColors";
 import { useLanguage } from "@/context/LanguageContext";
 import { API } from "@/services/api";
 import { showErrorToast, showSuccessToast } from "@/components/Toast";
+import { WEB_INPUT_RESET } from "@workspace/shared-ui/utils";
 
 const MIN_RATE = 1;
 const ABS_MAX_RATE = 500;
@@ -317,7 +318,7 @@ const styles = StyleSheet.create({
     flex: 1, height: 48, borderRadius: 12, borderWidth: 1,
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
   },
-  valueInput: { fontSize: 18, fontFamily: "Poppins_700Bold", minWidth: 36, padding: 0 },
+  valueInput: { fontSize: 18, fontFamily: "Poppins_700Bold", minWidth: 36, padding: 0, ...(WEB_INPUT_RESET as any) },
   valueUnit: { fontSize: 12, fontFamily: "Poppins_400Regular" },
   capHint: { fontSize: 11, fontFamily: "Poppins_500Medium", marginTop: 8 },
   estBox: { marginHorizontal: 16, marginTop: 8, borderRadius: 14, padding: 16, gap: 4 },

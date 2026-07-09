@@ -22,3 +22,4 @@ export {
   updateInArray,
 } from "./storage";
 export type { StorageKey } from "./storage";
+export { WEB_INPUT_RESET, webInputReset } from "./webInputReset";

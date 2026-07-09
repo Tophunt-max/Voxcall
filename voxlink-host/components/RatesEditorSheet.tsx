@@ -11,6 +11,7 @@ import BottomSheet from "@/components/BottomSheet";
 import { useColors } from "@/hooks/useColors";
 import { API } from "@/services/api";
 import { showErrorToast, showSuccessToast } from "@/components/Toast";
+import { WEB_INPUT_RESET } from "@workspace/shared-ui/utils";
 
 const MIN_RATE = 1;
 const ABS_MAX_RATE = 500;
@@ -245,7 +246,7 @@ const styles = StyleSheet.create({
   stepBtn: { width: 46, height: 46, borderRadius: 12, borderWidth: 1, alignItems: "center", justifyContent: "center" },
   stepBtnText: { fontSize: 22, fontFamily: "Poppins_600SemiBold", lineHeight: 26 },
   valueBox: { flex: 1, height: 46, borderRadius: 12, borderWidth: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6 },
-  valueInput: { fontSize: 18, fontFamily: "Poppins_700Bold", minWidth: 36, padding: 0 },
+  valueInput: { fontSize: 18, fontFamily: "Poppins_700Bold", minWidth: 36, padding: 0, ...(WEB_INPUT_RESET as any) },
   valueUnit: { fontSize: 12, fontFamily: "Poppins_400Regular" },
   capHint: { fontSize: 11, fontFamily: "Poppins_500Medium", marginTop: 4 },
   estBox: { borderRadius: 14, padding: 14, gap: 4 },

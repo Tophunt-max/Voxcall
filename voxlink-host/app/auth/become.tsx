@@ -12,6 +12,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { PrimaryButton } from "@/components/PrimaryButton";
 import { SvgIcon } from "@/components/SvgIcon";
 import { useLanguage } from "@/context/LanguageContext";
+import { WEB_INPUT_RESET } from "@workspace/shared-ui/utils";
 
 const BG     = "#0A0B1E";
 const DARK   = "#111329";
@@ -257,7 +258,7 @@ const s = StyleSheet.create({
   rateIcon: { width: 20, height: 20 },
   rateLabel: { fontSize: 12, fontFamily: "Poppins_500Medium", color: "#84889F" },
   rateInputWrap: { flexDirection: "row", alignItems: "center", gap: 6 },
-  rateInput: { fontSize: 20, fontFamily: "Poppins_700Bold", color: DARK, padding: 0, minWidth: 40 },
+  rateInput: { fontSize: 20, fontFamily: "Poppins_700Bold", color: DARK, padding: 0, minWidth: 40, ...(WEB_INPUT_RESET as any) },
   rateSuffix: { fontSize: 11, fontFamily: "Poppins_400Regular", color: "#84889F" },
   noteBanner: { flexDirection: "row", alignItems: "flex-start", gap: 8, backgroundColor: "#FFF8E7", borderRadius: 10, padding: 12 },
   noteTxt: { flex: 1, fontSize: 12, fontFamily: "Poppins_400Regular", color: "#84889F" },

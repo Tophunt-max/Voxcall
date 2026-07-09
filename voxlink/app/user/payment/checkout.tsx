@@ -25,6 +25,7 @@ import { notifyPurchaseSuccess } from "@/services/NotificationService";
 import LoadingOverlay from "@/components/LoadingOverlay";
 import { showSuccessToast, showErrorToast } from "@/components/Toast";
 import { formatPrice, formatLocalAmount, getCurrencyCode, deriveCoinBuyValueInr } from "@/utils/currency";
+import { WEB_INPUT_RESET } from "@workspace/shared-ui/utils";
 
 const SCREEN_W = Dimensions.get("window").width;
 const WALLET_BANNER_W = SCREEN_W - 40;
@@ -495,7 +496,7 @@ const mStyles = StyleSheet.create({
 
   utrHint: { fontSize: 12, fontFamily: "Poppins_400Regular" },
   inputWrap: { borderWidth: 1.5, borderRadius: 14, paddingHorizontal: 16, height: 56, justifyContent: "center" },
-  input: { fontSize: 15, fontFamily: "Poppins_500Medium", letterSpacing: 1 },
+  input: { fontSize: 15, fontFamily: "Poppins_500Medium", letterSpacing: 1, ...(WEB_INPUT_RESET as any) },
 
   noteCard: { borderRadius: 14, padding: 14, gap: 4, borderWidth: 1 },
   noteTitle: { fontSize: 13, fontFamily: "Poppins_700Bold" },
@@ -867,7 +868,7 @@ const styles = StyleSheet.create({
   manualNote: { borderRadius: 12, padding: 12, marginBottom: 8, borderWidth: 1 },
   manualNoteText: { fontSize: 12, fontFamily: "Poppins_400Regular", lineHeight: 18 },
   promoRow: { flexDirection: "row", alignItems: "center", borderRadius: 14, borderWidth: 1.5, marginBottom: 8, overflow: "hidden" },
-  promoInput: { flex: 1, paddingHorizontal: 14, paddingVertical: 14, fontSize: 14, fontFamily: "Poppins_500Medium", letterSpacing: 1 },
+  promoInput: { flex: 1, paddingHorizontal: 14, paddingVertical: 14, fontSize: 14, fontFamily: "Poppins_500Medium", letterSpacing: 1, ...(WEB_INPUT_RESET as any) },
   promoBtn: { paddingHorizontal: 18, paddingVertical: 14, alignItems: "center", justifyContent: "center" },
   promoBtnText: { color: "#fff", fontSize: 13, fontFamily: "Poppins_600SemiBold" },
   promoError: { fontSize: 12, fontFamily: "Poppins_400Regular", marginBottom: 8 },

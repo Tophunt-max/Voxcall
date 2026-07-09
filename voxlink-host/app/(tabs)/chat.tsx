@@ -11,6 +11,7 @@ import { useChat } from "@/context/ChatContext";
 import { useAuth } from "@/context/AuthContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { resolveMediaUrl } from "@/services/api";
+import { WEB_INPUT_RESET } from "@workspace/shared-ui/utils";
 
 function formatTime(ts?: number): string {
   if (!ts) return "";
@@ -133,7 +134,7 @@ const styles = StyleSheet.create({
   header: { paddingHorizontal: 16, paddingBottom: 12 },
   title: { fontSize: 20, fontFamily: "Poppins_700Bold" },
   searchWrap: { flexDirection: "row", alignItems: "center", gap: 10, marginHorizontal: 16, borderRadius: 14, borderWidth: 1.5, paddingHorizontal: 14, height: 46, marginBottom: 8 },
-  searchInput: { flex: 1, fontSize: 14, fontFamily: "Poppins_400Regular", backgroundColor: "transparent", borderWidth: 0 },
+  searchInput: { flex: 1, fontSize: 14, fontFamily: "Poppins_400Regular", backgroundColor: "transparent", borderWidth: 0, ...(WEB_INPUT_RESET as any) },
   chatRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 14, borderBottomWidth: StyleSheet.hairlineWidth },
   avatar: { width: 48, height: 48, borderRadius: 24 },
   chatName: { fontSize: 15, fontFamily: "Poppins_600SemiBold" },

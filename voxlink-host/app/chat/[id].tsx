@@ -10,6 +10,7 @@ import { API } from "@/services/api";
 import { showErrorToast } from "@/components/Toast";
 import * as Haptics from "expo-haptics";
 import { useLanguage } from "@/context/LanguageContext";
+import { WEB_INPUT_RESET } from "@workspace/shared-ui/utils";
 
 function formatTime(ts: number) {
   if (!ts) return "";
@@ -166,7 +167,7 @@ const styles = StyleSheet.create({
   inputBar: { flexDirection: "row", padding: 12, gap: 8, alignItems: "flex-end", borderTopWidth: StyleSheet.hairlineWidth },
   iconBtn: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
   inputWrap: { flex: 1, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 10, maxHeight: 100 },
-  input: { fontSize: 14, fontFamily: "Poppins_400Regular", padding: 0 },
+  input: { fontSize: 14, fontFamily: "Poppins_400Regular", padding: 0, ...(WEB_INPUT_RESET as any) },
   sendBtn: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
   inputIcon: { width: 18, height: 18 },
 });

@@ -16,6 +16,7 @@ import { useColors } from "@/hooks/useColors";
 import { useLanguage } from "@/context/LanguageContext";
 import { API } from "@/services/api";
 import { showErrorToast, showSuccessToast } from "@/components/Toast";
+import { WEB_INPUT_RESET } from "@workspace/shared-ui/utils";
 
 type Method = "bank" | "upi" | "paytm" | "phonepe";
 
@@ -276,6 +277,7 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderRadius: 10,
     paddingHorizontal: 14, paddingVertical: Platform.OS === "ios" ? 12 : 10,
     fontSize: 14, fontFamily: "Poppins_400Regular",
+    ...(WEB_INPUT_RESET as any),
   },
   footer: {
     position: "absolute", left: 0, right: 0, bottom: 0,

@@ -2,6 +2,7 @@ import React from "react";
 import { View, TextInput, StyleSheet, TouchableOpacity } from "react-native";
 import { IconView } from "@/components/IconView";
 import { useColors } from "@/hooks/useColors";
+import { WEB_INPUT_RESET } from "@workspace/shared-ui/utils";
 
 interface Props {
   value: string;
@@ -35,5 +36,5 @@ export function SearchBar({ value, onChange, placeholder = "Search hosts...", on
 
 const styles = StyleSheet.create({
   wrapper: { flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingVertical: 10, gap: 10 },
-  input: { flex: 1, fontSize: 15, fontFamily: "Poppins_400Regular", padding: 0 },
+  input: { flex: 1, fontSize: 15, fontFamily: "Poppins_400Regular", padding: 0, ...(WEB_INPUT_RESET as any) },
 });

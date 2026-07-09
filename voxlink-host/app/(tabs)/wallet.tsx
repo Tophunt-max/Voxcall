@@ -14,6 +14,7 @@ import { SocketEvents } from "@/constants/events";
 import { showSuccessToast, showErrorToast, showWarningToast } from "@/components/Toast";
 import { USD_TO_FOREIGN, coinsToLocalCurrency } from "@/utils/currency";
 import { useAppConfig } from "@/hooks/useAppConfig";
+import { WEB_INPUT_RESET } from "@workspace/shared-ui/utils";
 
 const WITHDRAW_OPTIONS = [100, 200, 500, 1000];
 
@@ -554,7 +555,7 @@ const styles = StyleSheet.create({
   payoutSetup: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderWidth: 1.5, borderRadius: 14, height: 54, borderStyle: "dashed" },
   payoutSetupText: { fontSize: 14, fontFamily: "Poppins_600SemiBold" },
   inputIcon: { width: 20, height: 20 },
-  input: { flex: 1, fontSize: 15, fontFamily: "Poppins_400Regular", backgroundColor: "transparent", borderWidth: 0 },
+  input: { flex: 1, fontSize: 15, fontFamily: "Poppins_400Regular", backgroundColor: "transparent", borderWidth: 0, ...(WEB_INPUT_RESET as any) },
   withdrawBtn: { height: 54, borderRadius: 14, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 10 },
   withdrawIcon: { width: 20, height: 20 },
   withdrawBtnText: { color: "#fff", fontSize: 16, fontFamily: "Poppins_600SemiBold" },

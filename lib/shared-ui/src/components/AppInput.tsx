@@ -137,8 +137,16 @@ const styles = StyleSheet.create({
     margin: 0,
     backgroundColor: "transparent",
     borderWidth: 0,
+    // Strip the browser's user-agent focus outline on web. The wrap already
+    // shows focus via a purple border, so the double outline reads as broken.
+    // (No effect on iOS / Android.)
     ...Platform.select({
-      web: { outlineStyle: "none" as any },
+      web: {
+        outlineWidth: 0,
+        outlineStyle: "none" as any,
+        outlineColor: "transparent",
+        boxShadow: "none" as any,
+      },
     }),
   },
   rightWrap: { justifyContent: "center" },

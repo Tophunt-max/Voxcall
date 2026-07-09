@@ -10,6 +10,7 @@ import { appendFileToFormData } from "@/utils/fileUpload";
 import { useColors } from "@/hooks/useColors";
 import { API, resolveMediaUrl } from "@/services/api";
 import { showSuccessToast, showErrorToast } from "@/components/Toast";
+import { WEB_INPUT_RESET } from "@workspace/shared-ui/utils";
 
 const MAX_ITEMS = 6;
 
@@ -178,7 +179,7 @@ const st = StyleSheet.create({
   addPlus: { fontSize: 26, fontFamily: "Poppins_700Bold" },
   addLabel: { fontSize: 10, fontFamily: "Poppins_500Medium", textAlign: "center" },
   sectionLabel: { fontSize: 15, fontFamily: "Poppins_600SemiBold" },
-  input: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, fontFamily: "Poppins_400Regular" },
+  input: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, fontFamily: "Poppins_400Regular", ...(WEB_INPUT_RESET as any) },
   saveBtn: { paddingVertical: 13, borderRadius: 12, alignItems: "center", marginTop: 2 },
   saveTxt: { color: "#fff", fontSize: 15, fontFamily: "Poppins_600SemiBold" },
 });
