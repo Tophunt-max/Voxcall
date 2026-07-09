@@ -45,11 +45,20 @@ function setupDb(): FakeD1 {
       description TEXT NOT NULL DEFAULT '', icon TEXT NOT NULL DEFAULT 'trophy',
       tier TEXT NOT NULL DEFAULT 'bronze', trigger_type TEXT NOT NULL,
       trigger_threshold INTEGER NOT NULL, coins_reward INTEGER NOT NULL DEFAULT 0,
-      active INTEGER NOT NULL DEFAULT 1, sort_order INTEGER NOT NULL DEFAULT 100
+      active INTEGER NOT NULL DEFAULT 1, sort_order INTEGER NOT NULL DEFAULT 100,
+      duration_days INTEGER NOT NULL DEFAULT 0
     );
     CREATE TABLE user_achievements (
       user_id TEXT NOT NULL, achievement_id TEXT NOT NULL,
       unlocked_at INTEGER NOT NULL, coins_awarded INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (user_id, achievement_id)
+    );
+    CREATE TABLE user_achievement_progress (
+      user_id TEXT NOT NULL,
+      achievement_id TEXT NOT NULL,
+      current_count INTEGER NOT NULL DEFAULT 0,
+      started_at INTEGER,
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
       PRIMARY KEY (user_id, achievement_id)
     );
     CREATE TABLE reward_budget_daily (
@@ -148,6 +157,65 @@ describe('achievement progress read from counter (not from tasks)', () => {
     expect(Number(rows?.n ?? 0)).toBe(1);
     const u = await db.prepare('SELECT coins FROM users WHERE id = ?').bind('u1').first<{ coins: number }>();
     expect(u?.coins).toBe(15); // credited exactly once
+  });
+
+  it('resets the per-achievement window when duration_days has elapsed', async () => {
+    // 7-day quest: complete 100 calls. User makes some progress, misses the
+    // window, then bumps again — the second bump should CREATE A FRESH
+    // window and NOT sum against the stale progress.
+    await db.prepare(
+      "INSERT INTO reward_achievements (id, code, title, trigger_type, trigger_threshold, coins_reward, duration_days) VALUES ('quest1','weekly_calls','Weekly Calls','complete_calls',10,500,7)",
+    ).run();
+    // Simulate progress 8 days ago — window row inserted manually to fake
+    // the elapsed time.
+    const now = Math.floor(Date.now() / 1000);
+    const eightDaysAgo = now - 8 * 86400;
+    await db.prepare(
+      "INSERT INTO user_achievement_progress (user_id, achievement_id, current_count, started_at, updated_at) VALUES ('u1','quest1',7,?,?)",
+    ).bind(eightDaysAgo, eightDaysAgo).run();
+    // User is at 7/10 but the window is 1 day expired. A new bump of 5
+    // should NOT push to 12 (which would unlock) — it should reset the row
+    // to count=5 with a fresh started_at, keeping the quest incomplete.
+    await bumpRewardProgress(db as any, 'u1', 'complete_calls', 5);
+
+    const row = await db.prepare('SELECT current_count, started_at FROM user_achievement_progress WHERE user_id = ? AND achievement_id = ?').bind('u1', 'quest1').first<{ current_count: number; started_at: number }>();
+    expect(Number(row?.current_count)).toBe(5);   // reset, NOT 12
+    expect(Number(row?.started_at)).toBeGreaterThan(eightDaysAgo);
+
+    // Achievement should still be locked.
+    const ua = await db.prepare('SELECT * FROM user_achievements WHERE user_id = ? AND achievement_id = ?').bind('u1', 'quest1').first<any>();
+    expect(ua).toBeNull();
+  });
+
+  it('accumulates within the active window and unlocks on time', async () => {
+    // 7-day quest: complete 5 calls. Two bumps close together should sum
+    // and unlock without triggering a window reset.
+    await db.prepare(
+      "INSERT INTO reward_achievements (id, code, title, trigger_type, trigger_threshold, coins_reward, duration_days) VALUES ('quest2','five_calls','Five Calls','complete_calls',5,100,7)",
+    ).run();
+    await bumpRewardProgress(db as any, 'u1', 'complete_calls', 3);
+    await bumpRewardProgress(db as any, 'u1', 'complete_calls', 2);
+    const ua = await db.prepare('SELECT coins_awarded FROM user_achievements WHERE user_id = ? AND achievement_id = ?').bind('u1', 'quest2').first<{ coins_awarded: number }>();
+    expect(ua).toBeTruthy();
+    expect(Number(ua?.coins_awarded)).toBe(100);
+  });
+
+  it('evergreen achievements (duration_days = 0) never reset', async () => {
+    // duration_days = 0 → no window pressure. Even if we manually stamp
+    // started_at very far in the past, the next bump should ADD to the
+    // existing count.
+    await db.prepare(
+      "INSERT INTO reward_achievements (id, code, title, trigger_type, trigger_threshold, coins_reward, duration_days) VALUES ('ever','forever','Forever','complete_calls',10,50,0)",
+    ).run();
+    const now = Math.floor(Date.now() / 1000);
+    const yearAgo = now - 365 * 86400;
+    await db.prepare(
+      "INSERT INTO user_achievement_progress (user_id, achievement_id, current_count, started_at, updated_at) VALUES ('u1','ever',7,?,?)",
+    ).bind(yearAgo, yearAgo).run();
+    await bumpRewardProgress(db as any, 'u1', 'complete_calls', 3);
+    const ua = await db.prepare('SELECT coins_awarded FROM user_achievements WHERE user_id = ? AND achievement_id = ?').bind('u1', 'ever').first<any>();
+    expect(ua).toBeTruthy();  // 7 + 3 = 10 → unlocks
+    expect(Number(ua?.coins_awarded)).toBe(50);
   });
 
   it('spans multiple threshold tiers when a single bump crosses several', async () => {

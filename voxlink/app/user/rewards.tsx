@@ -506,6 +506,33 @@ export default function RewardsScreen() {
                         <Text style={[styles.achTitleV2, { color: colors.text }]} numberOfLines={2}>{a.title}</Text>
                         <Text style={[styles.achDescV2, { color: colors.subText }]} numberOfLines={2}>{a.description}</Text>
 
+                        {/* Duration chip — only for time-bound quests that
+                            have been started AND aren't yet unlocked. Live-
+                            ticks against `serverOffsetMs` so the countdown
+                            is accurate even if the device clock drifts. */}
+                        {!a.unlocked && a.duration_days > 0 && a.started_at != null && (() => {
+                          const remainingSec = Math.max(0, (a.expires_at ?? 0) - now);
+                          const days = Math.floor(remainingSec / 86400);
+                          const hours = Math.floor((remainingSec % 86400) / 3600);
+                          const label = remainingSec === 0
+                            ? "⏱ Expired · resets on next progress"
+                            : days > 0
+                              ? `⏱ ${days}d ${hours}h left`
+                              : `⏱ ${hours}h left`;
+                          const isUrgent = remainingSec > 0 && remainingSec < 86400;
+                          return (
+                            <View style={[styles.achDurationChip, isUrgent && styles.achDurationChipUrgent]}>
+                              <Text style={[styles.achDurationText, isUrgent && styles.achDurationTextUrgent]}>{label}</Text>
+                            </View>
+                          );
+                        })()}
+                        {/* Duration hint for NOT-YET-STARTED time-bound quests. */}
+                        {!a.unlocked && a.duration_days > 0 && a.started_at == null && (
+                          <View style={styles.achDurationChip}>
+                            <Text style={styles.achDurationText}>⏱ {a.duration_days}-day quest — starts on first progress</Text>
+                          </View>
+                        )}
+
                         {/* Progress row — full bar for unlocked, live bar for in-progress. */}
                         <View style={styles.achProgressRow}>
                           <View style={styles.achProgressTrack}>
@@ -664,6 +691,18 @@ const styles = StyleSheet.create({
 
   achTitleV2: { fontSize: 13, fontFamily: "Poppins_700Bold" },
   achDescV2: { fontSize: 11, fontFamily: "Poppins_400Regular", lineHeight: 14, minHeight: 28 },
+
+  achDurationChip: {
+    alignSelf: "flex-start",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    backgroundColor: "rgba(59,130,246,0.12)",
+    marginTop: 2,
+  },
+  achDurationChipUrgent: { backgroundColor: "rgba(239,68,68,0.14)" },
+  achDurationText: { fontSize: 10, fontFamily: "Poppins_600SemiBold", color: "#2563EB" },
+  achDurationTextUrgent: { color: "#DC2626" },
 
   achProgressRow: { marginTop: 4, gap: 4 },
   achProgressTrack: { height: 5, borderRadius: 3, backgroundColor: "rgba(148,163,184,0.2)", overflow: "hidden" },

@@ -530,8 +530,13 @@ export const API = {
         trigger_type: string;
         trigger_threshold: number;
         coins_reward: number;
+        duration_days: number;
         current_progress: number;
         progress_pct: number;
+        started_at: number | null;
+        expires_at: number | null;
+        seconds_remaining: number | null;
+        window_expired: boolean;
         unlocked: boolean;
         unlocked_at: number | null;
       }>;

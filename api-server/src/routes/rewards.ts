@@ -94,6 +94,8 @@ interface AchievementRow {
   trigger_threshold: number;
   coins_reward: number;
   active: number;
+  // 0 = evergreen; N > 0 = rolling N-day quest window from first progress.
+  duration_days: number;
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -241,38 +243,101 @@ async function readAllTriggerCounters(db: D1Database, userId: string): Promise<M
 }
 
 /**
- * After progress is bumped for a user + trigger_type, unlock any achievement
- * whose threshold is now crossed. Best-effort — a failure here doesn't
- * corrupt the ledger; the caller has already credited the *task* reward.
+ * Evaluate every achievement whose `trigger_type` matches the event that just
+ * bumped `user_trigger_counters`. Each achievement carries an independent
+ * rolling window (`duration_days`) — this function:
  *
- * Returns the coins awarded from newly-unlocked achievements (used by
- * bumpRewardProgress callers for logging).
+ *   1. Loads the user's per-achievement progress row (creates it lazily).
+ *   2. If the window has expired without an unlock, RESETS the counter and
+ *      starts a fresh window (the user gets to try the quest again).
+ *   3. Increments the counter by `delta` and stamps `started_at` on the
+ *      first hit.
+ *   4. If the counter has just crossed the threshold, unlocks the
+ *      achievement (records `user_achievements` + credits coins).
+ *
+ * Best-effort — any failure is swallowed and logged; the caller has already
+ * committed the coin credit for the underlying task/spin/coupon.
  */
 async function checkAndUnlockAchievements(
   db: D1Database,
   userId: string,
   triggerType: string,
-  newCount: number,
+  delta: number,
 ): Promise<number> {
   const enabled = await readSetting(db, 'reward_achievements_enabled', true, parseBool);
   if (!enabled) return 0;
 
+  // All still-locked, active achievements matching this trigger. The LEFT
+  // JOIN filters out any the user has already unlocked so we don't waste a
+  // window row on completed quests.
   const list = await db
     .prepare(
-      `SELECT a.* FROM reward_achievements a
-        LEFT JOIN user_achievements ua ON ua.achievement_id = a.id AND ua.user_id = ?
-        WHERE a.active = 1 AND a.trigger_type = ? AND a.trigger_threshold <= ? AND ua.user_id IS NULL`,
+      `SELECT a.*, up.current_count AS up_count, up.started_at AS up_started_at
+         FROM reward_achievements a
+         LEFT JOIN user_achievements ua
+                ON ua.achievement_id = a.id AND ua.user_id = ?
+         LEFT JOIN user_achievement_progress up
+                ON up.achievement_id = a.id AND up.user_id = ?
+        WHERE a.active = 1 AND a.trigger_type = ? AND ua.user_id IS NULL`,
     )
-    .bind(userId, triggerType, newCount)
-    .all<AchievementRow>();
+    .bind(userId, userId, triggerType)
+    .all<AchievementRow & { up_count: number | null; up_started_at: number | null }>();
 
   let awarded = 0;
   const now = Math.floor(Date.now() / 1000);
+  const deltaInt = Math.floor(delta);
+
   for (const ach of list.results ?? []) {
+    const durationDays = Number(ach.duration_days) || 0;
+    const threshold = Number(ach.trigger_threshold) || 0;
+    const priorCount = Number(ach.up_count ?? 0);
+    const startedAt = ach.up_started_at != null ? Number(ach.up_started_at) : null;
+
+    // Decide whether the current window is still valid. Evergreen quests
+    // (duration_days = 0) never expire; time-bound ones expire once
+    // `started_at + duration_days*86400` is in the past.
+    const windowExpired =
+      durationDays > 0 &&
+      startedAt != null &&
+      now >= startedAt + durationDays * 86400;
+
+    let nextCount: number;
+    let nextStartedAt: number;
+    if (startedAt == null || windowExpired) {
+      // First progress or fresh restart after an expired window.
+      nextCount = deltaInt;
+      nextStartedAt = now;
+    } else {
+      nextCount = priorCount + deltaInt;
+      nextStartedAt = startedAt;
+    }
+
+    // Persist the updated window state.
+    try {
+      await db
+        .prepare(
+          `INSERT INTO user_achievement_progress
+             (user_id, achievement_id, current_count, started_at, updated_at)
+           VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(user_id, achievement_id) DO UPDATE SET
+             current_count = ?,
+             started_at    = ?,
+             updated_at    = ?`,
+        )
+        .bind(userId, ach.id, nextCount, nextStartedAt, now, nextCount, nextStartedAt, now)
+        .run();
+    } catch (err) {
+      console.warn('[rewards] user_achievement_progress upsert failed:', err);
+      continue;
+    }
+
+    // Threshold check — only unlock if the fresh count meets or exceeds it.
+    if (threshold > 0 && nextCount < threshold) continue;
+
     const coins = Number(ach.coins_reward) || 0;
-    // Budget cap short-circuit — if the daily cap is at risk we still record
-    // the unlock (badge) but skip the coin credit. Keeps the visual reward
-    // even under budget pressure.
+    // Budget cap short-circuit — record the badge without the coin credit
+    // if the daily cap would be breached. Keeps the visual reward even
+    // under budget pressure.
     const { exceeded } = await wouldExceedBudget(db, coins);
     try {
       if (exceeded || coins <= 0) {
@@ -475,44 +540,76 @@ rewards.get('/', async (c) => {
     };
   }
 
-  // Achievements — hydrate with per-achievement PROGRESS from the trigger
-  // counters. That lets the client show a real progress bar ("27/50 calls")
-  // instead of just locked/unlocked binary state.
+  // Achievements — hydrate with per-achievement PROGRESS + WINDOW state so
+  // the client can render a live '27/50' progress bar AND an accurate
+  // 'X days left' quest countdown for time-bound achievements.
   const achEnabled = await readSetting(db, 'reward_achievements_enabled', true, parseBool);
   let achievements: Array<{
     id: string; code: string; title: string; description: string;
     icon: string; tier: string; trigger_type: string;
     trigger_threshold: number; coins_reward: number;
+    duration_days: number;
     current_progress: number; progress_pct: number;
+    started_at: number | null;
+    expires_at: number | null;
+    seconds_remaining: number | null;
+    window_expired: boolean;
     unlocked: boolean; unlocked_at: number | null;
   }> = [];
   if (achEnabled) {
+    // Joined single query: achievement config + unlock state + rolling window
+    // state. Every locked achievement reports its per-user progress if it has
+    // been touched at least once; untouched ones report 0/threshold.
     const achRes = await db
       .prepare(
-        `SELECT a.*, ua.unlocked_at
+        `SELECT a.*,
+                ua.unlocked_at,
+                up.current_count AS up_count,
+                up.started_at    AS up_started_at
            FROM reward_achievements a
-           LEFT JOIN user_achievements ua ON ua.achievement_id = a.id AND ua.user_id = ?
+           LEFT JOIN user_achievements ua
+                  ON ua.achievement_id = a.id AND ua.user_id = ?
+           LEFT JOIN user_achievement_progress up
+                  ON up.achievement_id = a.id AND up.user_id = ?
           WHERE a.active = 1
           ORDER BY a.sort_order ASC`,
       )
-      .bind(sub)
-      .all<AchievementRow & { unlocked_at: number | null }>();
-
-    // One query fetches every counter this user has — cheaper than per-row.
-    const counters = await readAllTriggerCounters(db, sub);
+      .bind(sub, sub)
+      .all<AchievementRow & {
+        unlocked_at: number | null;
+        up_count: number | null;
+        up_started_at: number | null;
+      }>();
 
     achievements = (achRes.results ?? []).map((r) => {
-      const threshold = Number(r.trigger_threshold);
-      const raw = counters.get(r.trigger_type) ?? 0;
-      const progress = Math.min(raw, threshold);
-      const pct = threshold > 0 ? Math.min(100, Math.round((raw / threshold) * 100)) : 0;
+      const threshold = Number(r.trigger_threshold) || 0;
+      const durationDays = Number(r.duration_days) || 0;
+      const startedAt = r.up_started_at != null ? Number(r.up_started_at) : null;
+      const expiresAt = durationDays > 0 && startedAt != null
+        ? startedAt + durationDays * 86400
+        : null;
+      const secondsRemaining = expiresAt != null ? Math.max(0, expiresAt - now) : null;
+      const windowExpired = expiresAt != null && secondsRemaining === 0 && r.unlocked_at == null;
+
+      // If the window has expired without an unlock, the count effectively
+      // resets to 0 (it'll be re-stamped on the next bump). Reflect that in
+      // the response so the UI doesn't show a stale progress bar.
+      const rawCount = windowExpired ? 0 : Number(r.up_count ?? 0);
+      const progress = threshold > 0 ? Math.min(rawCount, threshold) : rawCount;
+      const pct = threshold > 0 ? Math.min(100, Math.round((rawCount / threshold) * 100)) : 0;
+
       return {
         id: r.id, code: r.code, title: r.title, description: r.description,
         icon: r.icon, tier: r.tier, trigger_type: r.trigger_type,
         trigger_threshold: threshold,
         coins_reward: Number(r.coins_reward),
+        duration_days: durationDays,
         current_progress: progress,
         progress_pct: pct,
+        started_at: startedAt,
+        expires_at: expiresAt,
+        seconds_remaining: secondsRemaining,
+        window_expired: windowExpired,
         unlocked: r.unlocked_at != null,
         unlocked_at: r.unlocked_at != null ? Number(r.unlocked_at) : null,
       };
@@ -834,14 +931,12 @@ export async function bumpRewardProgress(
     catch (err) { console.warn('[rewards] bumpRewardProgress: task batch failed', err); }
   }
 
-  // 3) Achievement check — read the fresh lifetime counter and unlock anything
-  //    whose threshold has just been crossed. Reads the counter we just wrote,
-  //    NOT a sum over per-task rows, so achievements decoupled from tasks work.
+  // 3) Achievement check — pass THIS bump's delta so the per-achievement
+  //    rolling window logic can decide whether to append or reset. The old
+  //    "read lifetime counter and compare to threshold" flow is gone;
+  //    duration_days-aware bookkeeping lives inside checkAndUnlockAchievements.
   try {
-    const total = await readTriggerCounter(db, userId, triggerType);
-    if (total > 0) {
-      await checkAndUnlockAchievements(db, userId, triggerType, total);
-    }
+    await checkAndUnlockAchievements(db, userId, triggerType, deltaInt);
   } catch (err) {
     console.warn('[rewards] achievement check failed:', err);
   }

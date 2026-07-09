@@ -26,6 +26,7 @@ type Achievement = {
   coins_reward: number;
   active: number | boolean;
   sort_order: number;
+  duration_days?: number;
   unlocked_count?: number;
   coins_paid?: number;
 };
@@ -73,6 +74,9 @@ type Form = {
   coins_reward: number;
   active: boolean;
   sort_order: number;
+  // Rolling-window duration. 0 = evergreen (never expires).
+  // Default 7 for new achievements so they behave as weekly quests.
+  duration_days: number;
 };
 
 function blank(): Form {
@@ -87,6 +91,7 @@ function blank(): Form {
     coins_reward: 100,
     active: true,
     sort_order: 100,
+    duration_days: 7,
   };
 }
 
@@ -175,6 +180,7 @@ export default function RewardAchievements() {
       coins_reward: Number(a.coins_reward ?? 0),
       active: !!a.active,
       sort_order: Number(a.sort_order ?? 100),
+      duration_days: Math.max(0, Number(a.duration_days ?? 7)),
     });
   };
 
@@ -249,6 +255,18 @@ export default function RewardAchievements() {
             value={form.coins_reward}
             onChange={(e) => setForm({ ...form, coins_reward: Math.max(0, Number(e.target.value) || 0) })} />
         </div>
+      </div>
+
+      <div>
+        <label className="text-sm font-semibold block mb-1.5">Duration (days)</label>
+        <input type="number" min={0} max={365}
+          className="w-full px-3 py-2.5 border border-border rounded-xl text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
+          value={form.duration_days}
+          onChange={(e) => setForm({ ...form, duration_days: Math.max(0, Math.min(365, Number(e.target.value) || 0)) })} />
+        <p className="text-[10px] text-muted-foreground mt-1">
+          Rolling window from a user's first progress. <strong>7</strong> = weekly quest (default).
+          <strong>0</strong> = evergreen (no expiry).
+        </p>
       </div>
 
       <label className="flex items-center gap-2 text-sm cursor-pointer">
@@ -339,6 +357,9 @@ export default function RewardAchievements() {
                     <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground flex-wrap">
                       <span>Trigger: <strong className="text-foreground">{triggerLabel(a.trigger_type, Number(a.trigger_threshold))}</strong></span>
                       <span>Reward: <strong className="text-foreground">+{Number(a.coins_reward)} coins</strong></span>
+                      <span>Duration: <strong className="text-foreground">
+                        {Number(a.duration_days ?? 0) > 0 ? `${a.duration_days} days` : 'Evergreen'}
+                      </strong></span>
                       <span>Unlocked: <strong className="text-foreground">{Number(a.unlocked_count ?? 0).toLocaleString()}</strong></span>
                       <span>Paid: <strong className="text-foreground">{Number(a.coins_paid ?? 0).toLocaleString()}</strong></span>
                       <span className="text-muted-foreground/60">code: <code>{a.code}</code></span>

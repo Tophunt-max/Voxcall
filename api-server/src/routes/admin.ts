@@ -1812,8 +1812,8 @@ admin.post('/reward-achievements', async (c) => {
   try {
     await db(c).prepare(
       `INSERT INTO reward_achievements
-         (id, code, title, description, icon, tier, trigger_type, trigger_threshold, coins_reward, active, sort_order)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (id, code, title, description, icon, tier, trigger_type, trigger_threshold, coins_reward, active, sort_order, duration_days)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).bind(
       id,
       String(body.code).slice(0, 40),
@@ -1826,6 +1826,7 @@ admin.post('/reward-achievements', async (c) => {
       Math.max(0, Number(body.coins_reward ?? 0)),
       body.active === false ? 0 : 1,
       Number(body.sort_order ?? 100),
+      Math.max(0, Number(body.duration_days ?? 7)),
     ).run();
     return c.json({ id, success: true }, 201);
   } catch (e: unknown) {
@@ -1841,7 +1842,7 @@ admin.patch('/reward-achievements/:id', async (c) => {
   const sets: string[] = [];
   const vals: unknown[] = [];
   const stringFields = ['code', 'title', 'description', 'icon', 'tier', 'trigger_type'];
-  const numberFields = ['trigger_threshold', 'coins_reward', 'sort_order'];
+  const numberFields = ['trigger_threshold', 'coins_reward', 'sort_order', 'duration_days'];
   for (const f of stringFields) {
     if (body[f] !== undefined) { sets.push(`${f} = ?`); vals.push(String(body[f])); }
   }

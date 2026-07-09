@@ -58,7 +58,7 @@ function setupDb(): FakeD1 {
       updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
       PRIMARY KEY (user_id, task_id)
     );
-    -- Tables added in migration 0044 that bumpRewardProgress touches.
+    -- Tables added in migrations 0044 + 0046 that bumpRewardProgress touches.
     CREATE TABLE reward_achievements (
       id TEXT PRIMARY KEY,
       code TEXT NOT NULL UNIQUE,
@@ -70,13 +70,22 @@ function setupDb(): FakeD1 {
       trigger_threshold INTEGER NOT NULL,
       coins_reward INTEGER NOT NULL DEFAULT 0,
       active INTEGER NOT NULL DEFAULT 1,
-      sort_order INTEGER NOT NULL DEFAULT 100
+      sort_order INTEGER NOT NULL DEFAULT 100,
+      duration_days INTEGER NOT NULL DEFAULT 0
     );
     CREATE TABLE user_achievements (
       user_id TEXT NOT NULL,
       achievement_id TEXT NOT NULL,
       unlocked_at INTEGER NOT NULL,
       coins_awarded INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (user_id, achievement_id)
+    );
+    CREATE TABLE user_achievement_progress (
+      user_id TEXT NOT NULL,
+      achievement_id TEXT NOT NULL,
+      current_count INTEGER NOT NULL DEFAULT 0,
+      started_at INTEGER,
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
       PRIMARY KEY (user_id, achievement_id)
     );
     CREATE TABLE reward_budget_daily (
