@@ -472,6 +472,53 @@ export const API = {
   getBanners: (position?: 'home' | 'wallet' | 'search') =>
     apiRequest<any[]>('GET', position ? `/api/banners?position=${position}` : '/api/banners', undefined, false),
 
+  // ── Rewards Hub ───────────────────────────────────────────────────────
+  // Reward tasks that let the user earn coins by completing in-app actions.
+  // Task state is per-user; call getRewards() to refresh after any claim.
+  getRewards: () =>
+    apiRequest<{
+      tasks: Array<{
+        id: string;
+        code: string;
+        title: string;
+        description: string;
+        icon: string;
+        category: string;
+        task_type: string;
+        target_count: number;
+        current_count: number;
+        coins_reward: number;
+        cooldown_hours: number;
+        cta_link: string;
+        claim_count: number;
+        last_claimed_at: number | null;
+        total_earned: number;
+        cooldown_remaining_sec: number;
+        claimable: boolean;
+        already_claimed: boolean;
+      }>;
+      total_earned: number;
+      claimable_count: number;
+      server_time: number;
+    }>('GET', '/api/user/rewards'),
+
+  claimReward: (task_id: string) =>
+    apiRequest<{
+      ok: true;
+      task_id: string;
+      task_code: string;
+      coins_awarded: number;
+      new_balance: number;
+      next_cooldown_sec: number;
+    }>('POST', '/api/user/rewards/claim', { task_id }),
+
+  trackReward: (event: 'watch_ad' | 'share_app') =>
+    apiRequest<{ ok: true; tasks_updated: number }>(
+      'POST',
+      '/api/user/rewards/track',
+      { event },
+    ),
+
   // Payment Gateways (public)
   getPaymentGateways: () =>
     apiRequest<any[]>('GET', '/api/payment-gateways', undefined, false),

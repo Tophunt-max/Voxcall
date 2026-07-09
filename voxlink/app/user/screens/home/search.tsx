@@ -72,12 +72,15 @@ const DESIGN = {
 // Category tabs across the top (design-driven; not backed by separate APIs).
 // - Explore: default (all hosts)
 // - New:     newer / lower-review hosts surfaced first
-// - Pk:      hosts flagged as "Pk Battle" mode (deterministic assignment)
 // - Follow:  hosts the current user has favorited
+//
+// The "Pk" tab from earlier iterations was removed alongside the fake mode
+// badges on the host cards — there's no Pk-battle data on the backend yet, so
+// a filter tab dependent on synthesized data would only ever show placeholder
+// results. It'll come back once the backend exposes a real live-mode field.
 const CATEGORY_TABS = [
   { key: "Explore", label: "Explore" },
   { key: "New", label: "New" },
-  { key: "Pk", label: "Pk" },
   { key: "Follow", label: "Follow" },
 ] as const;
 type CategoryKey = typeof CATEGORY_TABS[number]["key"];
@@ -123,35 +126,6 @@ const COUNTRY_TABS: { key: string; label: string; code: string | null }[] = [
 const LANGUAGES = ["All", "English", "Hindi", "Urdu", "Mandarin", "Spanish", "French", "Arabic"];
 const TOPICS = ["All", "Life Coaching", "Career", "Wellness", "Relationships", "Meditation", "Finance", "Education"];
 
-// Card status modes (top-right badge on each card). Reference design shows
-// a mix of "Audio Live", "Pk Battle", "Live", and "Multi Live". Our voice-call
-// app does not carry these modes on the backend today, so we derive them
-// deterministically from the host id so each card keeps a stable badge but the
-// grid looks varied (matches the reference visually).
-type CardMode = "audio_live" | "pk_battle" | "live" | "multi_live";
-const MODE_BUCKETS: CardMode[] = ["audio_live", "pk_battle", "live", "multi_live"];
-
-// FNV-1a hash → stable 32-bit int for a host id.
-function stableHash(s: string): number {
-  let h = 2166136261;
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return h >>> 0;
-}
-
-function pickMode(hostId: string, isOnline: boolean): CardMode {
-  if (!isOnline) return "audio_live"; // still needs a base to render offline visually similar
-  return MODE_BUCKETS[stableHash(hostId) % MODE_BUCKETS.length];
-}
-
-// Deterministic small viewer count so cards don't all show 0. Range 0–99.
-function pseudoViewerCount(hostId: string, isOnline: boolean): number {
-  if (!isOnline) return 0;
-  return stableHash(hostId + "v") % 100;
-}
-
 // flagcdn provides reliable flag IMAGES on every platform. (Emoji flags do NOT
 // render on most Android devices, so images are the safe choice.)
 function flagUrl(code: string, w: 40 | 80 = 40): string {
@@ -174,45 +148,6 @@ function mapApiHost(h: any) {
   };
 }
 type UIHost = ReturnType<typeof mapApiHost>;
-
-// ─── Card status badge (top-right) ───────────────────────────────────────────
-function ModeBadge({ mode }: { mode: CardMode }) {
-  if (mode === "pk_battle") {
-    // Pk Battle: dark pill with a small yellow/orange "PK" chip on the left,
-    // matching the design's distinctive purple/red PK stream indicator.
-    return (
-      <View style={styles.modeBadge}>
-        <View style={styles.pkChip}>
-          <Text style={styles.pkChipText}>PK</Text>
-        </View>
-        <Text style={styles.modeText}>Pk Battle</Text>
-      </View>
-    );
-  }
-  if (mode === "audio_live") {
-    return (
-      <View style={styles.modeBadge}>
-        <Image source={require("@/assets/icons/ic_mic.png")} style={styles.modeIcon} tintColor="#fff" resizeMode="contain" />
-        <Text style={styles.modeText}>Audio Live</Text>
-      </View>
-    );
-  }
-  if (mode === "multi_live") {
-    return (
-      <View style={styles.modeBadge}>
-        <Image source={require("@/assets/icons/ic_users.png")} style={styles.modeIcon} tintColor="#fff" resizeMode="contain" />
-        <Text style={styles.modeText}>Multi Live</Text>
-      </View>
-    );
-  }
-  // "live"
-  return (
-    <View style={styles.modeBadge}>
-      <Image source={require("@/assets/icons/ic_speaking.png")} style={styles.modeIcon} tintColor="#fff" resizeMode="contain" />
-      <Text style={styles.modeText}>Live</Text>
-    </View>
-  );
-}
 
 // ─── Country tab pill ────────────────────────────────────────────────────────
 function CountryTab({ tab, active, onPress }: { tab: typeof COUNTRY_TABS[number]; active: boolean; onPress: () => void }) {
@@ -242,10 +177,8 @@ function CountryTab({ tab, active, onPress }: { tab: typeof COUNTRY_TABS[number]
 }
 
 // ─── Host grid card (photo-background style) ─────────────────────────────────
-function HostGridCard({ host, mode, viewers, onlineLabel, offlineLabel, onPress, onAudioCall, onVideoCall }: {
+function HostGridCard({ host, onlineLabel, offlineLabel, onPress, onAudioCall, onVideoCall }: {
   host: UIHost;
-  mode: CardMode;
-  viewers: number;
   onlineLabel: string;
   offlineLabel: string;
   onPress: () => void;
@@ -273,19 +206,11 @@ function HostGridCard({ host, mode, viewers, onlineLabel, offlineLabel, onPress,
         pointerEvents="none"
       />
 
-      {/* Top-left: viewer/listener count pill with sound-wave icon. */}
-      <View style={styles.viewersPill} pointerEvents="none">
-        <Image source={require("@/assets/icons/ic_speaking.png")} style={styles.viewersIcon} tintColor="#fff" resizeMode="contain" />
-        <Text style={styles.viewersText}>{viewers}</Text>
-      </View>
-
-      {/* Top-right: mode/status badge (Audio Live / Pk Battle / …). */}
-      <View style={styles.modeBadgeWrap} pointerEvents="none">
-        <ModeBadge mode={mode} />
-      </View>
-
-      {/* Coin rate chip (below mode badge on the right) — shows the audio
-          per-minute rate so users see the price before starting a call. */}
+      {/* Coin rate chip (top-right) — shows the audio per-minute rate so
+          users see the price before starting a call. The old mock "Audio
+          Live / Pk Battle / Multi Live / Live" mode badges and viewer counts
+          have been removed since they were derived from a deterministic hash,
+          not real backend data. */}
       <View style={styles.rateChipWrap} pointerEvents="none">
         <View style={styles.rateChip}>
           <Image source={require("@/assets/icons/ic_coin.png")} style={styles.rateChipIcon} resizeMode="contain" />
@@ -773,10 +698,6 @@ export default function SearchScreen() {
         // Newer hosts surface first: proxy for "new" = fewer reviews.
         list = [...list].sort((a, b) => a.reviewCount - b.reviewCount);
         break;
-      case "Pk":
-        // Only hosts whose deterministic mode is Pk Battle.
-        list = list.filter((h) => pickMode(h.id, h.isOnline) === "pk_battle");
-        break;
       case "Follow":
         list = list.filter((h) => favIds.has(h.id));
         break;
@@ -851,7 +772,7 @@ export default function SearchScreen() {
         </TouchableOpacity>
 
         <TouchableOpacity
-          onPress={() => router.push("/user/referral" as any)}
+          onPress={() => router.push("/user/rewards" as any)}
           style={[styles.trophyBtn, { backgroundColor: DESIGN.trophyBg }]}
           activeOpacity={0.8}
           accessibilityRole="button"
@@ -980,8 +901,6 @@ export default function SearchScreen() {
                   <HostGridCard
                     key={h.id}
                     host={h}
-                    mode={pickMode(h.id, h.isOnline)}
-                    viewers={pseudoViewerCount(h.id, h.isOnline)}
                     onlineLabel={t.hosts.online}
                     offlineLabel={t.hosts.offline}
                     onPress={() => router.push(`/user/hosts/${h.id}` as any)}
@@ -1179,33 +1098,6 @@ const styles = StyleSheet.create({
   cardOverlay: { position: "absolute", left: 0, right: 0, bottom: 0, height: "60%" },
   offlineDim: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(10,6,24,0.38)" },
 
-  // Viewer/listener pill (top-left)
-  viewersPill: {
-    position: "absolute", top: 10, left: 10,
-    flexDirection: "row", alignItems: "center", gap: 5,
-    backgroundColor: DESIGN.cardBadgeBg,
-    paddingHorizontal: 8, paddingVertical: 4, borderRadius: 20,
-  },
-  viewersIcon: { width: 12, height: 12 },
-  viewersText: { color: "#fff", fontSize: 11, fontFamily: "Poppins_600SemiBold" },
-
-  // Mode/status badge (top-right)
-  modeBadgeWrap: { position: "absolute", top: 10, right: 10 },
-  modeBadge: {
-    flexDirection: "row", alignItems: "center", gap: 5,
-    backgroundColor: DESIGN.cardBadgeBg,
-    paddingHorizontal: 8, paddingVertical: 4, borderRadius: 20,
-  },
-  modeIcon: { width: 12, height: 12 },
-  modeText: { color: "#fff", fontSize: 10.5, fontFamily: "Poppins_600SemiBold" },
-  pkChip: {
-    backgroundColor: "#FFB800",
-    paddingHorizontal: 4,
-    paddingVertical: 1,
-    borderRadius: 8,
-  },
-  pkChipText: { color: "#7A2A08", fontSize: 9, fontFamily: "Poppins_700Bold", letterSpacing: 0.3 },
-
   // Bottom row (avatar + name / status on the left, call buttons on the right)
   cardBottom: {
     position: "absolute", left: 0, right: 0, bottom: 0,
@@ -1248,8 +1140,8 @@ const styles = StyleSheet.create({
     textShadowColor: "rgba(0,0,0,0.5)", textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3,
   },
 
-  // Coin-rate chip (positioned just below the mode badge, top-right).
-  rateChipWrap: { position: "absolute", top: 40, right: 10 },
+  // Coin-rate chip (top-right corner of the card).
+  rateChipWrap: { position: "absolute", top: 10, right: 10 },
   rateChip: {
     flexDirection: "row", alignItems: "center", gap: 3,
     paddingHorizontal: 7, paddingVertical: 3,

@@ -32,6 +32,7 @@ const BanManagement = lazy(() => import('@/pages/BanManagement'));
 const BulkNotifications = lazy(() => import('@/pages/BulkNotifications'));
 const AuditLogs = lazy(() => import('@/pages/AuditLogs'));
 const Banners = lazy(() => import('@/pages/Banners'));
+const RewardTasks = lazy(() => import('@/pages/RewardTasks'));
 const ReferralSystem = lazy(() => import('@/pages/ReferralSystem'));
 const LiveCalls = lazy(() => import('@/pages/LiveCalls'));
 const AppConfig = lazy(() => import('@/pages/AppConfig'));
@@ -92,6 +93,7 @@ function ProtectedApp() {
         <Route path="/support-tickets" component={SupportTickets} />
         <Route path="/bulk-notifications" component={BulkNotifications} />
         <Route path="/banners" component={Banners} />
+        <Route path="/reward-tasks" component={RewardTasks} />
         <Route path="/audit-logs" component={AuditLogs} />
         <Route path="/app-config" component={AppConfig} />
         <Route path="/deposits" component={Deposits} />

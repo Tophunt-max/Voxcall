@@ -143,6 +143,11 @@ export const api = {
   createBanner: (data: any) => req<any>('POST', '/admin/banners', data),
   updateBanner: (id: string, data: any) => req('PATCH', `/admin/banners/${id}`, data),
   deleteBanner: (id: string) => req('DELETE', `/admin/banners/${id}`),
+  // Reward tasks: the catalog powering the user Rewards page.
+  rewardTasks: () => req<any[]>('GET', '/admin/reward-tasks'),
+  createRewardTask: (data: any) => req<any>('POST', '/admin/reward-tasks', data),
+  updateRewardTask: (id: string, data: any) => req('PATCH', `/admin/reward-tasks/${id}`, data),
+  deleteRewardTask: (id: string) => req('DELETE', `/admin/reward-tasks/${id}`),
   referrals: () => req<any>('GET', '/admin/referrals'),
   referralConfig: () => req<any>('GET', '/admin/referral-config'),
   updateReferralConfig: (data: any) => req('PUT', '/admin/referral-config', data),

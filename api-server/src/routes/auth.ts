@@ -10,6 +10,7 @@ import { verifyFirebaseIdToken, projectIdFromServiceAccount, decodeJwtPayloadUns
 import { registerHit } from '../lib/rateLimit';
 import type { Env } from '../types';
 import { authMiddleware } from '../middleware/auth';
+import { bumpRewardProgress } from './rewards';
 
 const auth = new Hono<{ Bindings: Env }>();
 
@@ -313,6 +314,8 @@ auth.post('/verify-otp', strictRateLimit, async (c) => {
       // Ledger rows for both sides of the referral.
       await writeCoinLedger(db, user.id, 'bonus', newUserReward, 'Referral signup bonus');
       await writeCoinLedger(db, pendingReferral.referrer_id, 'bonus', referrerReward, 'Referral reward (invited a friend)');
+      // Reward progress — bump the REFERRER's refer_friend tasks (Rewards Hub).
+      await bumpRewardProgress(db, pendingReferral.referrer_id, 'refer_friend', 1);
       return c.json({ success: true, bonus_coins: welcomeBonus + newUserReward });
     }
   }

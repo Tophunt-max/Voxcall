@@ -31,6 +31,7 @@ const nav = [
   { href: '/support-tickets', label: 'Support Tickets', icon: MessageSquare, section: 'moderation' },
   { href: '/bulk-notifications', label: 'Bulk Notifications', icon: Megaphone, section: 'content' },
   { href: '/banners', label: 'Banners', icon: Image, section: 'content' },
+  { href: '/reward-tasks', label: 'Reward Tasks', icon: Gift, section: 'content' },
   { href: '/notifications', label: 'Notifications', icon: Bell, section: 'content' },
   { href: '/talk-topics', label: 'Talk Topics', icon: Hash, section: 'content' },
   { href: '/faqs', label: 'FAQs', icon: HelpCircle, section: 'content' },

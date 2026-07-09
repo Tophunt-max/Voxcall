@@ -10,6 +10,7 @@ import { applyLevelUp } from '../lib/levelService';
 import { billedMinutes, coinsForCall, chargeCallerWithFreePool, affordableCallSeconds, isPrepaidHoldEnabled, placeCallHold, releaseCallHold } from '../lib/billing';
 import { registerHit } from '../lib/rateLimit';
 import { apiError, ErrorCode } from '../lib/errors';
+import { bumpRewardProgress } from './rewards';
 import type { Env, JWTPayload, HostRow, CallSessionRow, CallerData, HostData } from '../types';
 
 const call = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
@@ -450,6 +451,16 @@ call.post('/end', async (c) => {
     }
     await db.batch(txs);
 
+    // Reward progress — call-based tasks (complete_calls, spend_coins) tick
+    // forward for the CALLER after successful settlement. Best-effort: any
+    // failure is logged inside the helper and never surfaces to the client.
+    if (durationSec > 0) {
+      await bumpRewardProgress(db, session.caller_id, 'complete_calls', 1);
+    }
+    if (actualCoinsCharged > 0) {
+      await bumpRewardProgress(db, session.caller_id, 'spend_coins', actualCoinsCharged);
+    }
+
     // Best-effort: stamp the estimated Agora media cost (₹) for margin
     // analytics. Observability only — never affects the settlement above.
     try {
@@ -814,6 +825,15 @@ call.post('/:id/end', async (c) => {
     }
 
     await db.batch(batchOps);
+
+    // Reward progress — tick the caller's complete_calls / spend_coins tasks
+    // (mirrors the main /end path). Best-effort, never blocks the response.
+    if (durationSec > 0) {
+      await bumpRewardProgress(db, session.caller_id, 'complete_calls', 1);
+    }
+    if (actualCoinsCharged > 0) {
+      await bumpRewardProgress(db, session.caller_id, 'spend_coins', actualCoinsCharged);
+    }
 
     // Best-effort: stamp the estimated Agora media cost (₹) for margin analytics.
     try {

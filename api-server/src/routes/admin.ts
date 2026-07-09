@@ -1448,6 +1448,117 @@ admin.delete('/banners/:id', async (c) => {
   return c.json({ success: true });
 });
 
+// ─── Reward Tasks CRUD ────────────────────────────────────────────────────────
+// Admin-managed catalog of tasks users can complete inside the Rewards page.
+// See migration 0043_reward_tasks.sql for the schema + task_type semantics.
+const REWARD_TASK_FIELDS = [
+  'code', 'title', 'description', 'icon', 'category', 'task_type',
+  'target_count', 'coins_reward', 'cooldown_hours', 'cta_link', 'active', 'sort_order',
+];
+
+admin.get('/reward-tasks', async (c) => {
+  const result = await db(c)
+    .prepare('SELECT * FROM reward_tasks ORDER BY sort_order ASC, created_at ASC')
+    .all();
+  // Enrich each row with lifetime aggregate stats so admins can see engagement.
+  const stats = await db(c).prepare(
+    `SELECT task_id, COUNT(*) AS user_count, SUM(claim_count) AS claim_count,
+            SUM(total_earned) AS coins_paid
+       FROM user_reward_progress
+      GROUP BY task_id`,
+  ).all<{ task_id: string; user_count: number; claim_count: number; coins_paid: number }>();
+  const statsByTask = new Map((stats.results ?? []).map((r) => [r.task_id, r]));
+  const enriched = (result.results as Record<string, unknown>[] | undefined ?? []).map((row) => {
+    const s = statsByTask.get(String(row.id));
+    return {
+      ...row,
+      user_count: Number(s?.user_count ?? 0),
+      claim_count: Number(s?.claim_count ?? 0),
+      coins_paid: Number(s?.coins_paid ?? 0),
+    };
+  });
+  return c.json(enriched);
+});
+
+admin.post('/reward-tasks', async (c) => {
+  const body = (await c.req.json()) as Record<string, unknown>;
+  if (!body.code || !body.title || !body.task_type || body.coins_reward == null) {
+    return c.json({ error: 'code, title, task_type, coins_reward are required' }, 400);
+  }
+  const id = `rt_${crypto.randomUUID().slice(0, 12)}`;
+  try {
+    await db(c).prepare(
+      `INSERT INTO reward_tasks
+         (id, code, title, description, icon, category, task_type,
+          target_count, coins_reward, cooldown_hours, cta_link, active, sort_order)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).bind(
+      id,
+      String(body.code),
+      String(body.title),
+      String(body.description ?? ''),
+      String(body.icon ?? 'gift'),
+      String(body.category ?? 'ongoing'),
+      String(body.task_type),
+      Math.max(1, Number(body.target_count ?? 1)),
+      Math.max(0, Number(body.coins_reward)),
+      Math.max(0, Number(body.cooldown_hours ?? 0)),
+      String(body.cta_link ?? ''),
+      body.active === false ? 0 : 1,
+      Number(body.sort_order ?? 100),
+    ).run();
+    return c.json({ id, success: true }, 201);
+  } catch (e: unknown) {
+    const msg = (e as { message?: string })?.message ?? '';
+    if (msg.includes('UNIQUE') && msg.includes('code')) {
+      return c.json({ error: 'A task with this code already exists' }, 409);
+    }
+    console.warn('[admin] reward-tasks create failed:', e);
+    return c.json({ error: 'Could not create reward task' }, 500);
+  }
+});
+
+admin.patch('/reward-tasks/:id', async (c) => {
+  const { id } = c.req.param();
+  const body = (await c.req.json()) as Record<string, unknown>;
+  const sets: string[] = [];
+  const vals: unknown[] = [];
+  for (const f of REWARD_TASK_FIELDS) {
+    if (body[f] === undefined) continue;
+    // Coerce numeric fields to numbers so bad client input can't corrupt the row.
+    if (['target_count', 'coins_reward', 'cooldown_hours', 'sort_order', 'active'].includes(f)) {
+      const n = Number(body[f]);
+      if (!Number.isFinite(n)) return c.json({ error: `${f} must be a number` }, 400);
+      sets.push(`${f} = ?`);
+      vals.push(f === 'active' ? (n ? 1 : 0) : n);
+    } else {
+      sets.push(`${f} = ?`);
+      vals.push(String(body[f] ?? ''));
+    }
+  }
+  if (!sets.length) return c.json({ error: 'Nothing to update' }, 400);
+  sets.push('updated_at = unixepoch()');
+  vals.push(id);
+  await db(c)
+    .prepare(`UPDATE reward_tasks SET ${sets.join(', ')} WHERE id = ?`)
+    .bind(...vals)
+    .run();
+  return c.json({ success: true });
+});
+
+admin.delete('/reward-tasks/:id', async (c) => {
+  const { id } = c.req.param();
+  // Physical delete: the progress rows for this task become orphaned (their
+  // task_id no longer resolves) but are harmless — the /rewards endpoint only
+  // returns joined rows. If you want to preserve history, set `active = 0`
+  // instead of deleting.
+  await db(c).batch([
+    db(c).prepare('DELETE FROM user_reward_progress WHERE task_id = ?').bind(id),
+    db(c).prepare('DELETE FROM reward_tasks WHERE id = ?').bind(id),
+  ]);
+  return c.json({ success: true });
+});
+
 // ─── Referrals ────────────────────────────────────────────────────────────────
 admin.get('/referrals', async (c) => {
   const topRows = await db(c).prepare(`
