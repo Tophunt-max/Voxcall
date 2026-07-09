@@ -13,7 +13,29 @@ import { Save, Info, Calculator, TrendingUp, RefreshCw, Wifi } from 'lucide-reac
 // DB are preserved untouched (this page round-trips unknown keys on save).
 // ============================================================================
 
-const settingGroups = [
+// ── Live-preview kinds ────────────────────────────────────────────────────
+// `preview` on a setting tells the row renderer which chip layout to attach
+// beside the input. See the CoinChips component further down for how each
+// kind is rendered. Keeping this as string metadata (rather than key-matching
+// inside the renderer) makes it obvious at a glance which fields have live
+// price hints — and easy to extend when new coin-linked knobs are added.
+//   • inr_per_coin_user  → "1 coin = ₹X · 100 = ₹Y · 1000 = ₹Z" (green)
+//   • inr_per_coin_host  → same layout, amber (host payout side)
+//   • coins_absolute     → treats value as a raw coin count and shows the
+//                          ₹ user-cost + ₹ host-payout equivalents
+//   • coins_per_min      → treats value as coins/min for a call and shows
+//                          ₹/min user cost, ₹/min host earns, ₹/hour host
+const settingGroups: Array<{
+  group: string;
+  settings: Array<{
+    key: string;
+    label: string;
+    type: string;
+    hint?: string;
+    step?: string;
+    preview?: 'inr_per_coin_user' | 'inr_per_coin_host' | 'coins_absolute' | 'coins_per_min';
+  }>;
+}> = [
   {
     group: 'General',
     settings: [
@@ -24,18 +46,18 @@ const settingGroups = [
   {
     group: 'Coin Economy',
     settings: [
-      { key: 'coin_purchase_inr', label: '💰 Coin Purchase Value (₹ per coin) — user buys', type: 'number', hint: 'What a user pays to BUY 1 coin. RECOMMENDED ₹0.20 (so ₹1 = 5 coins, 100 coins = ₹20). This is the revenue side — see the live calculator below.', step: '0.01' },
-      { key: 'coin_value_inr', label: '💸 Coin Payout Value (₹ per coin) — host redeems', type: 'number', hint: 'What a host redeems 1 coin for on withdrawal (host cash payout). RECOMMENDED ₹0.085. The gap vs the purchase value is the platform spread. Backend auto-converts to each host\'s currency.', step: '0.001' },
+      { key: 'coin_purchase_inr', label: '💰 Coin Purchase Value (₹ per coin) — user buys', type: 'number', hint: 'What a user pays to BUY 1 coin. RECOMMENDED ₹0.20 (so ₹1 = 5 coins, 100 coins = ₹20). This is the revenue side — see the live calculator below.', step: '0.01', preview: 'inr_per_coin_user' },
+      { key: 'coin_value_inr', label: '💸 Coin Payout Value (₹ per coin) — host redeems', type: 'number', hint: 'What a host redeems 1 coin for on withdrawal (host cash payout). RECOMMENDED ₹0.085. The gap vs the purchase value is the platform spread. Backend auto-converts to each host\'s currency.', step: '0.001', preview: 'inr_per_coin_host' },
       { key: 'host_revenue_share', label: 'Host Revenue Share', type: 'number', hint: '0.70 means hosts receive 70% of coins charged per call. Platform keeps the rest. Per-level overrides live in Level System Configuration.', step: '0.01' },
-      { key: 'min_withdrawal_coins', label: 'Minimum Withdrawal (Coins)', type: 'number', hint: 'Minimum coins a host must have to request a payout.', step: '1' },
+      { key: 'min_withdrawal_coins', label: 'Minimum Withdrawal (Coins)', type: 'number', hint: 'Minimum coins a host must have to request a payout.', step: '1', preview: 'coins_absolute' },
     ],
   },
   {
     group: 'Call Rates (Agora)',
     settings: [
-      { key: 'default_audio_rate', label: 'Default Audio Rate (Coins/min)', type: 'number', hint: 'Per-minute price for a VOICE call when a host has no explicit rate. RECOMMENDED 30 coins ≈ ₹6/min. A loss-proof floor is always enforced.', step: '1' },
-      { key: 'default_video_rate', label: 'Default Video (HD) Rate (Coins/min)', type: 'number', hint: 'Per-minute price for an HD (≤720p) VIDEO call. RECOMMENDED 50 coins ≈ ₹10/min. Video is capped at 720p on clients so it always bills at Agora\'s cheaper HD tier.', step: '1' },
-      { key: 'default_video_fhd_rate', label: 'Default Video (Full-HD) Rate (Coins/min)', type: 'number', hint: 'Premium per-minute price for Full-HD (1080p) video. RECOMMENDED 80 coins ≈ ₹16/min. Only used if Video Max Resolution = 1080p.', step: '1' },
+      { key: 'default_audio_rate', label: 'Default Audio Rate (Coins/min)', type: 'number', hint: 'Per-minute price for a VOICE call when a host has no explicit rate. RECOMMENDED 30 coins ≈ ₹6/min. A loss-proof floor is always enforced.', step: '1', preview: 'coins_per_min' },
+      { key: 'default_video_rate', label: 'Default Video (HD) Rate (Coins/min)', type: 'number', hint: 'Per-minute price for an HD (≤720p) VIDEO call. RECOMMENDED 50 coins ≈ ₹10/min. Video is capped at 720p on clients so it always bills at Agora\'s cheaper HD tier.', step: '1', preview: 'coins_per_min' },
+      { key: 'default_video_fhd_rate', label: 'Default Video (Full-HD) Rate (Coins/min)', type: 'number', hint: 'Premium per-minute price for Full-HD (1080p) video. RECOMMENDED 80 coins ≈ ₹16/min. Only used if Video Max Resolution = 1080p.', step: '1', preview: 'coins_per_min' },
     ],
   },
 
@@ -255,32 +277,20 @@ export default function SettingsPage() {
                     onChange={e => setField(s.key, e.target.value)}
                     className={`w-full sm:w-32 border rounded-xl px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30 ${dirty[s.key] ? 'border-amber-400' : 'border-border'}`}
                   />
-                  {/* Inline live preview — shows the coin-to-₹ mapping RIGHT next
-                    to the input so admin sees the effective price while typing,
-                    without scrolling down to the summary panel. Updates live off
-                    the same state the summary uses. */}
-                  {(s.key === 'coin_purchase_inr' || s.key === 'coin_value_inr') && (() => {
-                    const raw = parseFloat(String(settings[s.key] ?? '0'));
-                    const val = Number.isFinite(raw) && raw > 0 ? raw : 0;
-                    const isPurchase = s.key === 'coin_purchase_inr';
-                    const accent = isPurchase ? 'text-green-600 dark:text-green-400' : 'text-amber-600 dark:text-amber-400';
-                    return (
-                      <div className="flex flex-wrap items-center gap-1.5 whitespace-nowrap">
-                        <span className={`rounded-lg border px-2 py-1 text-[11px] font-semibold ${isPurchase ? 'border-green-200 bg-green-50 dark:border-green-900/50 dark:bg-green-950/20' : 'border-amber-200 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-950/20'}`}>
-                          <span className="text-muted-foreground font-normal">1 coin = </span>
-                          <span className={accent}>₹{val > 0 ? val.toFixed(val < 0.01 ? 4 : isPurchase ? 2 : 3) : '—'}</span>
-                        </span>
-                        <span className="rounded-lg border border-border bg-secondary/40 px-2 py-1 text-[11px]">
-                          <span className="text-muted-foreground">100 = </span>
-                          <span className={`font-semibold ${accent}`}>₹{(val * 100).toFixed(isPurchase ? 0 : 2)}</span>
-                        </span>
-                        <span className="rounded-lg border border-border bg-secondary/40 px-2 py-1 text-[11px]">
-                          <span className="text-muted-foreground">1000 = </span>
-                          <span className={`font-semibold ${accent}`}>₹{(val * 1000).toFixed(isPurchase ? 0 : 2)}</span>
-                        </span>
-                      </div>
-                    );
-                  })()}
+                  {/* Inline live preview — shows the ₹ equivalent right next to
+                    the input so admin sees the money impact while typing (no
+                    scrolling to the summary panel). All variants react live to
+                    the coin_purchase_inr / coin_value_inr / host_revenue_share
+                    fields, so editing one field updates every dependent chip. */}
+                  {s.preview && (
+                    <CoinChips
+                      kind={s.preview}
+                      rawValue={settings[s.key] ?? ''}
+                      coinPurchaseInr={coinPurchaseInr}
+                      coinValueInr={coinValueInr}
+                      hostShare={hostShare}
+                    />
+                  )}
                 </div>
               </div>
             ))}
@@ -425,6 +435,126 @@ export default function SettingsPage() {
 
 // ─── Agora cost + margin preview ─────────────────────────────────────────────
 // Mirrors api-server/src/lib/callEconomics.ts so the admin sees the exact
+// ─── CoinChips ────────────────────────────────────────────────────────────
+// Compact ₹-preview chips rendered next to any coin-linked setting input.
+// Four preview kinds are supported (see SettingGroup `preview` metadata):
+//
+//   inr_per_coin_user  1 coin = ₹X · 100 = ₹Y · 1000 = ₹Z          (green)
+//     Used for `coin_purchase_inr` — the user-facing coin price.
+//     Shows how many rupees a caller pays for common coin amounts.
+//
+//   inr_per_coin_host  1 coin = ₹X · 100 = ₹Y · 1000 = ₹Z          (amber)
+//     Used for `coin_value_inr` — the host redemption value.
+//     Shows how many rupees a host cashes out for common coin amounts.
+//
+//   coins_absolute     = ₹Y user pays · ₹Z host receives           (both)
+//     Used for raw coin counts (e.g. min_withdrawal_coins). Shows the
+//     ₹ equivalent from BOTH sides so admin can see the revenue and
+//     the payout footprint of the threshold at a glance.
+//
+//   coins_per_min      = ₹A/min user · ₹B/min host · ₹C/hr host    (green+amber+blue)
+//     Used for call-rate coin/min fields. The most business-relevant chip:
+//     it factors in host_revenue_share so admin sees the real host take
+//     home per minute AND per hour, alongside the user-side revenue.
+//
+// All chips read from the same live-computed values used by the summary
+// panel below, so updates to any dependency (coin_purchase_inr,
+// coin_value_inr, host_revenue_share) propagate instantly.
+function CoinChips({
+  kind, rawValue, coinPurchaseInr, coinValueInr, hostShare,
+}: {
+  kind: 'inr_per_coin_user' | 'inr_per_coin_host' | 'coins_absolute' | 'coins_per_min';
+  rawValue: string;
+  coinPurchaseInr: number;
+  coinValueInr: number;
+  hostShare: number;
+}) {
+  const raw = parseFloat(String(rawValue ?? '0'));
+  const val = Number.isFinite(raw) && raw > 0 ? raw : 0;
+
+  // Semantic colour classes — matched to the summary panel so the whole
+  // page speaks one visual language for user-revenue (green) vs
+  // host-payout (amber) vs pure-info (neutral) numbers.
+  const chip = 'rounded-lg border px-2 py-1 text-[11px] whitespace-nowrap';
+  const chipGreen = `${chip} border-green-200 bg-green-50 dark:border-green-900/50 dark:bg-green-950/20`;
+  const chipAmber = `${chip} border-amber-200 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-950/20`;
+  const chipNeutral = `${chip} border-border bg-secondary/40`;
+  const green = 'text-green-600 dark:text-green-400 font-semibold';
+  const amber = 'text-amber-600 dark:text-amber-400 font-semibold';
+  const blue = 'text-blue-600 dark:text-blue-400 font-semibold';
+  const dim = 'text-muted-foreground';
+
+  const inr = (n: number, decimals = 2) => `₹${n.toFixed(decimals)}`;
+  const inrCompact = (n: number) => (n < 1 ? inr(n, n < 0.01 ? 4 : 2) : inr(n, n < 10 ? 2 : 0));
+
+  if (kind === 'inr_per_coin_user' || kind === 'inr_per_coin_host') {
+    const isHost = kind === 'inr_per_coin_host';
+    const primaryChip = isHost ? chipAmber : chipGreen;
+    const accent = isHost ? amber : green;
+    return (
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className={primaryChip}>
+          <span className={dim}>1 coin = </span>
+          <span className={accent}>{val > 0 ? inrCompact(val) : '—'}</span>
+        </span>
+        <span className={chipNeutral}>
+          <span className={dim}>100 = </span>
+          <span className={accent}>{val > 0 ? inr(val * 100, isHost ? 2 : 0) : '—'}</span>
+        </span>
+        <span className={chipNeutral}>
+          <span className={dim}>1000 = </span>
+          <span className={accent}>{val > 0 ? inr(val * 1000, isHost ? 2 : 0) : '—'}</span>
+        </span>
+      </div>
+    );
+  }
+
+  if (kind === 'coins_absolute') {
+    // val is a raw coin count. Show both sides so admin sees "at this
+    // threshold, user spent ₹X to buy the coins and host will receive ₹Y".
+    const userCost = val * coinPurchaseInr;
+    const hostPayout = val * coinValueInr;
+    return (
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className={chipGreen}>
+          <span className={dim}>User cost </span>
+          <span className={green}>{val > 0 ? inrCompact(userCost) : '—'}</span>
+        </span>
+        <span className={chipAmber}>
+          <span className={dim}>Host payout </span>
+          <span className={amber}>{val > 0 ? inrCompact(hostPayout) : '—'}</span>
+        </span>
+      </div>
+    );
+  }
+
+  // coins_per_min — the call-rate case. val is coins/min charged to the
+  // caller. Host actually receives coins × hostShare × coinValueInr per
+  // minute (revenue share applied then payout ₹ conversion).
+  const perMinUser = val * coinPurchaseInr;
+  const perMinHost = val * hostShare * coinValueInr;
+  const perHourHost = perMinHost * 60;
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <span className={chipGreen}>
+        <span className={dim}>User </span>
+        <span className={green}>{val > 0 ? inrCompact(perMinUser) : '—'}</span>
+        <span className={dim}>/min</span>
+      </span>
+      <span className={chipAmber}>
+        <span className={dim}>Host </span>
+        <span className={amber}>{val > 0 ? inrCompact(perMinHost) : '—'}</span>
+        <span className={dim}>/min</span>
+      </span>
+      <span className={chipNeutral}>
+        <span className={dim}>Host </span>
+        <span className={blue}>{val > 0 ? inrCompact(perHourHost) : '—'}</span>
+        <span className={dim}>/hr</span>
+      </span>
+    </div>
+  );
+}
+
 // per-minute P&L (user pays, host cash, Agora cost, gateway fee, platform net,
 // margin %) + the loss-proof floor rate — live, as they edit rates above.
 function MarginPreview({ settings, inrRate }: { settings: Record<string, string>; inrRate: number }) {
