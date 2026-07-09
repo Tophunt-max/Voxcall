@@ -170,28 +170,58 @@ export function PendingAlertsProvider({ children }: { children: ReactNode }) {
     unackedRef.current = false;
   }, []);
 
+  // Prefer the single aggregated endpoint; if it isn't available (older
+  // backend not yet deployed) we permanently fall back to the 5 list calls.
+  const useSingleEndpoint = useRef(true);
+
+  // Legacy path: derive counts from the individual list endpoints.
+  const fetchCountsLegacy = useCallback(async (): Promise<PendingCounts | null> => {
+    const [wRows, dRows, tRows, kRows, cRows] = await Promise.all([
+      api.withdrawals().catch(() => [] as any[]),
+      api.deposits().catch(() => [] as any[]),
+      api.supportTickets().catch(() => [] as any[]),
+      req<any[]>('GET', '/admin/host-applications').catch(() => [] as any[]),
+      api.contentReports().catch(() => [] as any[]),
+    ]);
+    return {
+      withdrawals: (wRows || []).filter((r: any) => r.status === 'pending').length,
+      deposits: (dRows || []).filter((r: any) => r.status === 'pending').length,
+      supportTickets: (tRows || []).filter((r: any) => r.status === 'open').length,
+      kycApplications: (kRows || []).filter(
+        (r: any) => r.status === 'pending' || r.status === 'under_review',
+      ).length,
+      contentReports: (cRows || []).filter((r: any) => r.status === 'pending').length,
+    };
+  }, []);
+
+  const fetchCounts = useCallback(async (): Promise<PendingCounts | null> => {
+    if (useSingleEndpoint.current) {
+      try {
+        const r = await api.pendingCounts();
+        return {
+          withdrawals: r.withdrawals || 0,
+          deposits: r.deposits || 0,
+          supportTickets: r.support_tickets || 0,
+          kycApplications: r.kyc_applications || 0,
+          contentReports: r.content_reports || 0,
+        };
+      } catch {
+        // Endpoint missing/unreachable — switch to the legacy multi-call path
+        // for the rest of the session.
+        useSingleEndpoint.current = false;
+      }
+    }
+    try {
+      return await fetchCountsLegacy();
+    } catch {
+      return null;
+    }
+  }, [fetchCountsLegacy]);
+
   const poll = useCallback(async () => {
     try {
-      const [wRows, dRows, tRows, kRows, cRows] = await Promise.all([
-        api.withdrawals().catch(() => [] as any[]),
-        api.deposits().catch(() => [] as any[]),
-        api.supportTickets().catch(() => [] as any[]),
-        req<any[]>('GET', '/admin/host-applications').catch(() => [] as any[]),
-        api.contentReports().catch(() => [] as any[]),
-      ]);
-
-      const next: PendingCounts = {
-        withdrawals: (wRows || []).filter((r: any) => r.status === 'pending').length,
-        // Manual-UTR deposits sit in `pending` awaiting an admin to verify the
-        // UTR — auto gateways settle themselves.
-        deposits: (dRows || []).filter((r: any) => r.status === 'pending').length,
-        // "Open" tickets are the ones that need a first response.
-        supportTickets: (tRows || []).filter((r: any) => r.status === 'open').length,
-        kycApplications: (kRows || []).filter(
-          (r: any) => r.status === 'pending' || r.status === 'under_review',
-        ).length,
-        contentReports: (cRows || []).filter((r: any) => r.status === 'pending').length,
-      };
+      const next = await fetchCounts();
+      if (!next) return; // total failure — keep last known counts
 
       setCounts(next);
 
@@ -217,7 +247,7 @@ export function PendingAlertsProvider({ children }: { children: ReactNode }) {
     } catch {
       /* network hiccup — keep last known counts */
     }
-  }, []);
+  }, [fetchCounts]);
 
   // ─── Poll loop ────────────────────────────────────────────────────────────
   useEffect(() => {

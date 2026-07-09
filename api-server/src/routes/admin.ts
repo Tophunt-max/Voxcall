@@ -258,6 +258,56 @@ admin.get('/users', async (c) => {
 
 function db(c: any) { return c.env.DB as D1Database; }
 
+// ─── Pending action-queue counts ───────────────────────────────────────────
+// GET /api/admin/pending-counts
+// One lightweight endpoint the admin panel polls (every ~15s) to render the
+// sidebar badges and drive ring alerts. It aggregates every actionable queue
+// in a SINGLE DB round-trip (scalar sub-queries) so the client makes ONE
+// request instead of five.
+admin.get('/pending-counts', async (c) => {
+  const d = db(c);
+  try {
+    const row = await d.prepare(
+      `SELECT
+        (SELECT COUNT(*) FROM withdrawal_requests WHERE status = 'pending') AS withdrawals,
+        (SELECT COUNT(*) FROM coin_purchases WHERE status = 'pending') AS deposits,
+        (SELECT COUNT(*) FROM support_tickets WHERE status = 'open') AS support_tickets,
+        (SELECT COUNT(*) FROM host_applications WHERE status IN ('pending','under_review')) AS kyc_applications,
+        (SELECT COUNT(*) FROM content_reports WHERE status = 'pending') AS content_reports`
+    ).first<any>();
+    const counts = {
+      withdrawals: Number(row?.withdrawals) || 0,
+      deposits: Number(row?.deposits) || 0,
+      support_tickets: Number(row?.support_tickets) || 0,
+      kyc_applications: Number(row?.kyc_applications) || 0,
+      content_reports: Number(row?.content_reports) || 0,
+    };
+    return c.json({
+      ...counts,
+      total:
+        counts.withdrawals + counts.deposits + counts.support_tickets +
+        counts.kyc_applications + counts.content_reports,
+    });
+  } catch {
+    // Fall back to independent counts so a single missing/locked table doesn't
+    // zero out every badge.
+    const safe = async (sql: string) => {
+      try { const r = await d.prepare(sql).first<any>(); return Number(r?.n) || 0; } catch { return 0; }
+    };
+    const [withdrawals, deposits, support_tickets, kyc_applications, content_reports] = await Promise.all([
+      safe(`SELECT COUNT(*) AS n FROM withdrawal_requests WHERE status = 'pending'`),
+      safe(`SELECT COUNT(*) AS n FROM coin_purchases WHERE status = 'pending'`),
+      safe(`SELECT COUNT(*) AS n FROM support_tickets WHERE status = 'open'`),
+      safe(`SELECT COUNT(*) AS n FROM host_applications WHERE status IN ('pending','under_review')`),
+      safe(`SELECT COUNT(*) AS n FROM content_reports WHERE status = 'pending'`),
+    ]);
+    return c.json({
+      withdrawals, deposits, support_tickets, kyc_applications, content_reports,
+      total: withdrawals + deposits + support_tickets + kyc_applications + content_reports,
+    });
+  }
+});
+
 // PATCH /api/admin/users/:id
 admin.patch('/users/:id', async (c) => {
   const { id } = c.req.param();

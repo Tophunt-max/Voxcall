@@ -151,6 +151,16 @@ export const api = {
   replySupportTicket: (id: string, data: any) => req('POST', `/admin/support-tickets/${id}/reply`, data),
   contentReports: () => req<any[]>('GET', '/admin/content-reports'),
   updateContentReport: (id: string, data: any) => req('PATCH', `/admin/content-reports/${id}`, data),
+  // Single lightweight call that returns all actionable-queue pending counts.
+  // Polled by the sidebar badges / ring alerts instead of hitting 5 endpoints.
+  pendingCounts: () => req<{
+    withdrawals: number;
+    deposits: number;
+    support_tickets: number;
+    kyc_applications: number;
+    content_reports: number;
+    total: number;
+  }>('GET', '/admin/pending-counts'),
   bannedUsers: (page = 1, limit = 50) => req<any[]>('GET', `/admin/bans?page=${page}&limit=${limit}`),
   banUser: (data: any) => req<any>('POST', '/admin/bans', data),
   unbanUser: (id: string) => req('DELETE', `/admin/bans/${id}`),
