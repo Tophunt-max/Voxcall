@@ -260,8 +260,12 @@ export default function HostDetailScreen() {
       // Keep the home "Your favorites" rail + this screen's status in sync.
       queryClient.invalidateQueries({ queryKey: ['favorite-hosts'] });
       queryClient.invalidateQueries({ queryKey: ['favorite-status', id] });
-    } catch {
+    } catch (e: any) {
       setIsFavorite(!next); // revert on failure — the reverted heart is the feedback
+      // Surface actionable server errors (favorites cap / rate limit) when
+      // ADDING. Transient network blips stay silent — the reverted heart says it.
+      const msg = String(e?.message || '');
+      if (next && /favorite up to|too many/i.test(msg)) showErrorToast(msg);
     }
   }, [id, isFavorite, queryClient]);
 

@@ -3,6 +3,7 @@ import { authMiddleware } from '../middleware/auth';
 import { verifyPassword } from '../lib/hash';
 import { getStreakStatus, claimDailyStreak, repairStreak } from '../lib/streak';
 import { getDefaultCallRates } from '../lib/levels';
+import { checkRateLimit } from '../lib/rateLimit';
 import type { Env, JWTPayload } from '../types';
 
 const user = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
@@ -182,6 +183,12 @@ user.post('/favorites/:hostId', async (c) => {
   const { hostId } = c.req.param();
   const db = c.env.DB;
 
+  // Throttle rapid toggling (fail-open if the rate_limits table is missing).
+  const rl = await checkRateLimit(db, `fav-toggle:${sub}`, 30, 60);
+  if (rl.limited) {
+    return c.json({ error: 'Too many requests. Please slow down.', code: 'RATE_LIMITED' }, 429);
+  }
+
   // Only active hosts can be favorited; also surfaces the host's own user_id
   // so we can block self-favoriting.
   const host = await db.prepare('SELECT id, user_id FROM hosts WHERE id = ? AND is_active = 1')
@@ -213,6 +220,13 @@ user.delete('/favorites/:hostId', async (c) => {
   const { sub } = c.get('user');
   const { hostId } = c.req.param();
   const db = c.env.DB;
+
+  // Same throttle as add — prevents rapid favorite/unfavorite flapping.
+  const rl = await checkRateLimit(db, `fav-toggle:${sub}`, 30, 60);
+  if (rl.limited) {
+    return c.json({ error: 'Too many requests. Please slow down.', code: 'RATE_LIMITED' }, 429);
+  }
+
   const res = await db.prepare('DELETE FROM user_favorites WHERE user_id = ? AND host_id = ?')
     .bind(sub, hostId).run();
   const removed = (res.meta?.changes ?? 0) > 0;

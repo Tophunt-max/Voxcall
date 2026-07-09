@@ -627,12 +627,17 @@ export default function SearchScreen() {
 
   const loadFavorites = useCallback(async () => {
     try {
-      const rows = await (API as any).getFavorites?.();
-      if (Array.isArray(rows)) {
-        setFavIds(new Set(rows.map((r: any) => (r.host_id ?? r.id) as string)));
+      // Lightweight id-only fetch — we just need the Set to mark hearts, not
+      // full host objects. Falls back to the legacy list endpoint on older backends.
+      const res = await (API as any).getFavoriteIds?.();
+      if (res && Array.isArray(res.ids)) {
+        setFavIds(new Set<string>(res.ids));
+      } else {
+        const rows = await (API as any).getFavorites?.();
+        setFavIds(new Set<string>(Array.isArray(rows) ? rows.map((r: any) => (r.host_id ?? r.id) as string) : []));
       }
     } catch {
-      // Older backend or unauthed — Follow tab just shows nothing gracefully.
+      // Older backend or unauthed — grid just shows no hearts gracefully.
       setFavIds(new Set());
     }
   }, []);
