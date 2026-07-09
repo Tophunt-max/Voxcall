@@ -4,6 +4,7 @@ import { verifyPassword } from '../lib/hash';
 import { getStreakStatus, claimDailyStreak, repairStreak } from '../lib/streak';
 import { getDefaultCallRates } from '../lib/levels';
 import { checkRateLimit } from '../lib/rateLimit';
+import { getVipStatus } from '../lib/vip';
 import type { Env, JWTPayload } from '../types';
 
 const user = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
@@ -30,7 +31,15 @@ user.get('/me', async (c) => {
       .bind(sub).first<{ free_call_minutes: number }>();
     free_call_minutes = Number(row?.free_call_minutes ?? 0) || 0;
   } catch { /* column absent on legacy DB — treat as 0 */ }
-  return c.json({ ...me, free_call_minutes });
+  // VIP membership (best-effort; getVipStatus is safe on un-migrated DBs).
+  const vip = await getVipStatus(c.env.DB, sub);
+  return c.json({
+    ...me,
+    free_call_minutes,
+    is_vip: vip.isVip,
+    vip_tier: vip.tier,
+    vip_expires_at: vip.expiresAt,
+  });
 });
 
 // PATCH /api/user/me

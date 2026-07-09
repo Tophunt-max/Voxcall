@@ -43,6 +43,7 @@ export default function ProfileScreen() {
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [callCount, setCallCount] = useState(0);
   const [favCount, setFavCount] = useState(0);
+  const [vip, setVip] = useState<{ is_vip: boolean; plan_name: string | null; days_left: number } | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [showLogout, setShowLogout] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
@@ -58,12 +59,14 @@ export default function ProfileScreen() {
 
   const loadCounts = useCallback(async () => {
     try {
-      const [history, favs] = await Promise.all([
+      const [history, favs, vipStatus] = await Promise.all([
         API.getCallHistory().catch(() => [] as any[]),
         API.getFavoriteIds().catch(() => ({ ids: [] as string[] })),
+        API.getVipStatus().catch(() => null),
       ]);
       setCallCount(Array.isArray(history) ? history.length : 0);
       setFavCount(favs?.ids?.length ?? 0);
+      setVip(vipStatus);
     } catch {
       /* keep last known */
     }
@@ -310,6 +313,33 @@ export default function ProfileScreen() {
           </View>
         </View>
 
+        {/* VIP banner → VIP membership */}
+        <TouchableOpacity activeOpacity={0.9} onPress={() => router.push("/user/vip")} style={[styles.vipWrap, vipShadow()]}>
+          <LinearGradient colors={["#7B2FF7", "#A855F7"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.vipBanner}>
+            <View style={styles.vipDeco} pointerEvents="none" />
+            <View style={styles.vipBadge}>
+              <Text style={{ fontSize: 22 }}>👑</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              {vip?.is_vip ? (
+                <>
+                  <Text style={styles.vipTitle}>{vip.plan_name ?? "VIP"} Member</Text>
+                  <Text style={styles.vipSub}>{vip.days_left} day{vip.days_left === 1 ? "" : "s"} left · tap to manage</Text>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.vipTitle}>Become a VIP</Text>
+                  <Text style={styles.vipSub}>Cheaper calls · daily coins · unlock chat</Text>
+                </>
+              )}
+            </View>
+            <View style={styles.vipCta}>
+              <Text style={styles.vipCtaText}>{vip?.is_vip ? "Manage" : "Upgrade"}</Text>
+              <Feather name="chevron-right" size={14} color="#7B2FF7" />
+            </View>
+          </LinearGradient>
+        </TouchableOpacity>
+
         {/* Coins banner → buy coins */}
         <TouchableOpacity activeOpacity={0.9} onPress={() => router.push("/user/payment/checkout")} style={[styles.coinWrap, coinShadow()]}>
           <LinearGradient colors={["#FFB347", "#F97316"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.coinBanner}>
@@ -390,6 +420,13 @@ function coinShadow() {
     web: { boxShadow: "0 6px 18px rgba(249,115,22,0.32)" } as any,
   });
 }
+function vipShadow() {
+  return Platform.select({
+    ios: { shadowColor: "#7B2FF7", shadowOpacity: 0.35, shadowRadius: 14, shadowOffset: { width: 0, height: 6 } },
+    android: { elevation: 5 },
+    web: { boxShadow: "0 6px 18px rgba(123,47,247,0.32)" } as any,
+  });
+}
 
 const styles = StyleSheet.create({
   backdrop: { position: "absolute", top: 0, left: 0, right: 0, borderBottomLeftRadius: 28, borderBottomRightRadius: 28 },
@@ -427,6 +464,15 @@ const styles = StyleSheet.create({
   statValue: { fontSize: 18, fontFamily: "Poppins_700Bold" },
   statLabel: { fontSize: 11, fontFamily: "Poppins_400Regular" },
   statDiv: { width: 1, height: 26 },
+
+  vipWrap: { marginHorizontal: 16, marginTop: 16, borderRadius: 20, overflow: "hidden" },
+  vipBanner: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 16, overflow: "hidden" },
+  vipDeco: { position: "absolute", right: -24, top: -30, width: 110, height: 110, borderRadius: 55, backgroundColor: "rgba(255,255,255,0.14)" },
+  vipBadge: { width: 44, height: 44, borderRadius: 22, backgroundColor: "rgba(255,255,255,0.25)", alignItems: "center", justifyContent: "center" },
+  vipTitle: { fontSize: 16, fontFamily: "Poppins_700Bold", color: "#fff" },
+  vipSub: { fontSize: 11.5, fontFamily: "Poppins_400Regular", color: "rgba(255,255,255,0.9)", marginTop: 2 },
+  vipCta: { flexDirection: "row", alignItems: "center", gap: 2, backgroundColor: "#fff", paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20 },
+  vipCtaText: { fontSize: 12, fontFamily: "Poppins_600SemiBold", color: "#7B2FF7" },
 
   coinWrap: { marginHorizontal: 16, marginTop: 16, borderRadius: 20, overflow: "hidden" },
   coinBanner: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 18, overflow: "hidden" },

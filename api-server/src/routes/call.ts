@@ -12,6 +12,7 @@ import { registerHit } from '../lib/rateLimit';
 import { apiError, ErrorCode } from '../lib/errors';
 import { isEmergencyOn, emergencyBlockedBody } from '../lib/emergencyFlags';
 import { isWithinAvailability } from '../lib/availability';
+import { getVipStatus, applyVipCallDiscount } from '../lib/vip';
 import { bumpRewardProgress } from './rewards';
 import type { Env, JWTPayload, HostRow, CallSessionRow, CallerData, HostData } from '../types';
 
@@ -195,7 +196,10 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
   // rate slipped through. Only ever RAISES the rate; a healthy rate is untouched.
   const econCfg = await getCallEconomicsConfig(db);
   const floorRate = floorRatePerMinCoins(callType === 'video' ? 'video' : 'audio', econCfg);
-  const ratePerMin = Math.max(baseRate, floorRate);
+  // VIP perk: discounted per-minute rate, clamped so it can NEVER drop below the
+  // loss-proof floor (platform never loses money on a VIP call).
+  const vipStatus = await getVipStatus(db, sub);
+  const ratePerMin = applyVipCallDiscount(baseRate, vipStatus.callDiscountPct, floorRate);
 
   // Read coins + free-minute pool. The free pool is consumed before coins at
   // settlement, so it counts toward affordability. COALESCE handles a legacy

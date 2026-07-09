@@ -420,6 +420,18 @@ export const API = {
   // Soft-delete your own message for everyone (relays a live delete event).
   deleteMessage: (room_id: string, message_id: string) =>
     apiRequest<{ success: boolean }>('DELETE', `/api/chat/rooms/${room_id}/messages/${message_id}`),
+
+  // ─── VIP subscription ─────────────────────────────────────────────────────
+  getVipPlans: () =>
+    apiRequest<any[]>('GET', '/api/vip/plans'),
+  getVipStatus: () =>
+    apiRequest<any>('GET', '/api/vip/status'),
+  subscribeVip: (plan_id: string) =>
+    apiRequest<{ success: boolean; tier: string; plan_name: string; expires_at: number; days_left: number; coins: number }>(
+      'POST', '/api/vip/subscribe', { plan_id }
+    ),
+  claimVipDaily: () =>
+    apiRequest<{ success: boolean; granted: number; coins: number; next_daily_at: number }>('POST', '/api/vip/claim-daily'),
   getChatStatus: (host_id: string) =>
     apiRequest<{ unlocked: boolean; reason: string }>('GET', `/api/hosts/${host_id}/chat-status`),
 

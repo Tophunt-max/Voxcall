@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { authMiddleware } from '../middleware/auth';
 import { sendFCMPush } from '../lib/fcm';
 import { checkRateLimit } from '../lib/rateLimit';
+import { getVipStatus } from '../lib/vip';
 import type { Env, JWTPayload } from '../types';
 
 // Fire-and-forget relay of a real-time event to a user's NotificationHub.
@@ -78,7 +79,11 @@ chat.post('/rooms', async (c) => {
       `SELECT id FROM call_sessions WHERE caller_id = ? AND host_id = ? AND status = 'ended' LIMIT 1`
     ).bind(sub, host_id).first<any>();
     if (!prevCall) {
-      return c.json({ error: 'Chat locked. Call this host first to unlock chat.', code: 'CHAT_LOCKED' }, 403);
+      // VIP perk: active VIPs with chat_unlock can DM any host without calling first.
+      const vip = await getVipStatus(db, sub);
+      if (!vip.chatUnlock) {
+        return c.json({ error: 'Chat locked. Call this host first to unlock chat.', code: 'CHAT_LOCKED' }, 403);
+      }
     }
   }
 
