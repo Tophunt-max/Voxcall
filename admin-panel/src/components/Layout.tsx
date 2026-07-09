@@ -1,7 +1,7 @@
-import { ReactNode, useState } from 'react';
+import { ReactNode, useState, useEffect } from 'react';
 import { Link, useLocation } from 'wouter';
 import { useAuth } from '@/lib/auth';
-import { usePendingAlerts } from '@/lib/pendingAlerts';
+import { usePendingAlerts, QUEUES } from '@/lib/pendingAlerts';
 import {
   LayoutDashboard, Users, Mic2, Wallet, Coins, Settings, LogOut,
   Menu, X, ChevronRight, HelpCircle, Phone, Bell, BellOff, Star,
@@ -88,11 +88,10 @@ function NavItem({ href, label, icon: Icon, active, onClick, badge }: any) {
 function Sidebar({ onClose }: { onClose?: () => void }) {
   const [loc] = useLocation();
   const { user, logout } = useAuth();
-  const { withdrawals, deposits } = usePendingAlerts();
-  const badges: Record<string, number> = {
-    '/withdrawals': withdrawals,
-    '/deposits': deposits,
-  };
+  const { counts } = usePendingAlerts();
+  const badges: Record<string, number> = Object.fromEntries(
+    QUEUES.map((q) => [q.route, counts[q.key]]),
+  );
   let lastSection = '';
 
   return (
@@ -161,7 +160,18 @@ export function Layout({ children }: { children: ReactNode }) {
   const [loc] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const currentPage = nav.find(n => loc.startsWith(n.href));
-  const { withdrawals, deposits, total, soundEnabled, setSoundEnabled, testRing } = usePendingAlerts();
+  const { counts, total, soundEnabled, setSoundEnabled, testRing, acknowledge } = usePendingAlerts();
+
+  // The queue with the most pending items — the header pill links here.
+  const busiestQueue = QUEUES.reduce(
+    (best, q) => (counts[q.key] > counts[best.key] ? q : best),
+    QUEUES[0],
+  );
+
+  // Opening any actionable queue silences the repeating ring.
+  useEffect(() => {
+    if (QUEUES.some((q) => loc.startsWith(q.route))) acknowledge();
+  }, [loc, acknowledge]);
 
   const toggleSound = () => {
     const next = !soundEnabled;
@@ -206,10 +216,10 @@ export function Layout({ children }: { children: ReactNode }) {
           <div className="flex items-center gap-2 sm:gap-3">
             {/* Pending action queue pill */}
             {total > 0 && (
-              <Link href={withdrawals >= deposits ? '/withdrawals' : '/deposits'}>
+              <Link href={busiestQueue.route}>
                 <div
                   className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-red-500/10 text-red-600 border border-red-500/20 cursor-pointer hover:bg-red-500/15 transition-colors"
-                  title={`${withdrawals} pending withdrawals, ${deposits} pending deposits`}
+                  title={QUEUES.filter((q) => counts[q.key] > 0).map((q) => `${counts[q.key]} ${q.label}${counts[q.key] > 1 ? 's' : ''}`).join(', ')}
                 >
                   <Bell size={14} className="animate-pulse" />
                   <span className="text-xs font-bold">{total} pending</span>

@@ -1,14 +1,26 @@
 // ============================================================================
 // PendingAlertsProvider — global polling for actionable admin queues.
 // ============================================================================
-// Polls the pending WITHDRAWAL requests and pending (manual UTR) DEPOSITS
-// every POLL_MS and exposes the counts to the whole app via context so the
-// sidebar can render badge numbers.
+// Polls every actionable admin queue on an interval and exposes the pending
+// counts to the whole app via context so the sidebar can render badge numbers.
 //
-// When a NEW pending item appears (count increases vs. the previous poll) it:
+// Queues tracked:
+//   • withdrawals        — payout requests awaiting review     (status=pending)
+//   • deposits           — manual-UTR deposits awaiting verify  (status=pending)
+//   • supportTickets     — open support tickets                (status=open)
+//   • kycApplications    — host KYC applications to review      (pending / under_review)
+//   • contentReports     — content moderation reports           (status=pending)
+//
+// When a NEW pending item appears (a queue's count increases vs. the previous
+// poll) it:
 //   1. plays a short "ring" chime (Web Audio API — no asset needed),
 //   2. shows an in-app toast,
-//   3. fires a desktop/browser notification (if the admin granted permission).
+//   3. fires a desktop/browser notification (if permission was granted),
+//   4. flags the backlog as UNACKNOWLEDGED so the ring keeps repeating on an
+//      interval until the admin actually opens one of the queues.
+//
+// It also mirrors the total pending count into the browser tab title, e.g.
+// "(3) VoxLink Admin", so the admin sees it even from another tab.
 //
 // The very first poll only establishes a baseline — it never rings, so the
 // admin isn't blasted with sound on login for the existing backlog.
@@ -16,28 +28,64 @@
 
 import { createContext, useContext, useEffect, useRef, useState, ReactNode, useCallback } from 'react';
 import { toast } from 'sonner';
-import { api } from '@/lib/api';
+import { api, req } from '@/lib/api';
 
-const POLL_MS = 15_000;
+const POLL_MS = 15_000;      // how often we re-check the queues
+const REPEAT_MS = 30_000;    // how often the ring repeats while unacknowledged
 const SOUND_KEY = 'voxlink_admin_alert_sound';
 
+// The set of queues we track, in the order used to pick the "busiest" one.
+export type QueueKey =
+  | 'withdrawals'
+  | 'deposits'
+  | 'supportTickets'
+  | 'kycApplications'
+  | 'contentReports';
+
+export interface QueueMeta {
+  key: QueueKey;
+  label: string;   // human label used in toasts / notifications
+  route: string;   // sidebar route the badge lives on
+}
+
+// Single source of truth so the sidebar, header pill and acknowledge logic
+// all agree on which routes are "actionable queues".
+export const QUEUES: QueueMeta[] = [
+  { key: 'withdrawals', label: 'withdrawal request', route: '/withdrawals' },
+  { key: 'deposits', label: 'deposit (UTR)', route: '/deposits' },
+  { key: 'supportTickets', label: 'support ticket', route: '/support-tickets' },
+  { key: 'kycApplications', label: 'KYC application', route: '/host-applications' },
+  { key: 'contentReports', label: 'content report', route: '/content-moderation' },
+];
+
+export type PendingCounts = Record<QueueKey, number>;
+
+const ZERO: PendingCounts = {
+  withdrawals: 0,
+  deposits: 0,
+  supportTickets: 0,
+  kycApplications: 0,
+  contentReports: 0,
+};
+
 interface PendingAlertsValue {
-  withdrawals: number;
-  deposits: number;
+  counts: PendingCounts;
   total: number;
   soundEnabled: boolean;
   setSoundEnabled: (on: boolean) => void;
-  /** Manually re-play the ring (used when toggling sound on, as a test). */
+  /** Re-play the ring on demand (used when toggling sound on, as a test). */
   testRing: () => void;
+  /** Stop the repeating ring — call this when the admin opens a queue. */
+  acknowledge: () => void;
 }
 
 const PendingAlertsContext = createContext<PendingAlertsValue>({
-  withdrawals: 0,
-  deposits: 0,
+  counts: ZERO,
   total: 0,
   soundEnabled: true,
   setSoundEnabled: () => {},
   testRing: () => {},
+  acknowledge: () => {},
 });
 
 export const usePendingAlerts = () => useContext(PendingAlertsContext);
@@ -64,7 +112,6 @@ function playRing() {
       osc.start(t);
       osc.stop(t + 0.55);
     });
-    // Free the context shortly after the sound finishes.
     setTimeout(() => ctx.close().catch(() => {}), 1500);
   } catch {
     /* ignore — audio is best-effort */
@@ -82,77 +129,98 @@ function notifyDesktop(title: string, body: string) {
   }
 }
 
+function requestNotifyPermission() {
+  try {
+    if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+      Notification.requestPermission().catch(() => {});
+    }
+  } catch { /* ignore */ }
+}
+
+// Capture the base tab title once so we can prefix/restore the pending count.
+const BASE_TITLE = typeof document !== 'undefined' ? (document.title || 'VoxLink Admin') : 'VoxLink Admin';
+
 export function PendingAlertsProvider({ children }: { children: ReactNode }) {
-  const [withdrawals, setWithdrawals] = useState(0);
-  const [deposits, setDeposits] = useState(0);
+  const [counts, setCounts] = useState<PendingCounts>(ZERO);
   const [soundEnabled, setSoundEnabledState] = useState<boolean>(() => {
     return localStorage.getItem(SOUND_KEY) !== 'off';
   });
 
-  // Refs so the polling closure always reads the latest values without
-  // re-subscribing the interval on every state change.
-  const prev = useRef<{ w: number; d: number } | null>(null);
+  const total = QUEUES.reduce((sum, q) => sum + (counts[q.key] || 0), 0);
+
+  // Refs so timers/closures always read the latest values without
+  // re-subscribing on every state change.
+  const prev = useRef<PendingCounts | null>(null);
   const soundRef = useRef(soundEnabled);
   soundRef.current = soundEnabled;
+  const totalRef = useRef(total);
+  totalRef.current = total;
+  // Backlog the admin hasn't looked at yet → drives the repeating ring.
+  const unackedRef = useRef(false);
 
   const setSoundEnabled = useCallback((on: boolean) => {
     setSoundEnabledState(on);
     localStorage.setItem(SOUND_KEY, on ? 'on' : 'off');
-    if (on) {
-      // Ask for desktop-notification permission the moment sound is enabled.
-      try {
-        if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
-          Notification.requestPermission().catch(() => {});
-        }
-      } catch { /* ignore */ }
-    }
+    if (on) requestNotifyPermission();
   }, []);
 
   const testRing = useCallback(() => playRing(), []);
 
+  const acknowledge = useCallback(() => {
+    unackedRef.current = false;
+  }, []);
+
   const poll = useCallback(async () => {
     try {
-      const [wRows, dRows] = await Promise.all([
+      const [wRows, dRows, tRows, kRows, cRows] = await Promise.all([
         api.withdrawals().catch(() => [] as any[]),
         api.deposits().catch(() => [] as any[]),
+        api.supportTickets().catch(() => [] as any[]),
+        req<any[]>('GET', '/admin/host-applications').catch(() => [] as any[]),
+        api.contentReports().catch(() => [] as any[]),
       ]);
 
-      const wCount = (wRows || []).filter((r: any) => r.status === 'pending').length;
-      // "Manual UTR" deposits are the ones sitting in `pending` awaiting an
-      // admin to verify the UTR — auto gateways settle themselves.
-      const dCount = (dRows || []).filter((r: any) => r.status === 'pending').length;
+      const next: PendingCounts = {
+        withdrawals: (wRows || []).filter((r: any) => r.status === 'pending').length,
+        // Manual-UTR deposits sit in `pending` awaiting an admin to verify the
+        // UTR — auto gateways settle themselves.
+        deposits: (dRows || []).filter((r: any) => r.status === 'pending').length,
+        // "Open" tickets are the ones that need a first response.
+        supportTickets: (tRows || []).filter((r: any) => r.status === 'open').length,
+        kycApplications: (kRows || []).filter(
+          (r: any) => r.status === 'pending' || r.status === 'under_review',
+        ).length,
+        contentReports: (cRows || []).filter((r: any) => r.status === 'pending').length,
+      };
 
-      setWithdrawals(wCount);
-      setDeposits(dCount);
+      setCounts(next);
 
       const previous = prev.current;
       if (previous) {
-        const newW = wCount - previous.w;
-        const newD = dCount - previous.d;
-
-        if (newW > 0) {
+        // Collect every queue that grew since the last poll.
+        const grew = QUEUES.filter((q) => next[q.key] - previous[q.key] > 0);
+        if (grew.length > 0) {
+          unackedRef.current = true;
           if (soundRef.current) playRing();
-          const msg = `${newW} new withdrawal request${newW > 1 ? 's' : ''} pending`;
-          toast.warning(msg, { description: `${wCount} total awaiting review` });
-          notifyDesktop('New withdrawal request', msg);
-        }
-        if (newD > 0) {
-          // Avoid a double-ring if both went up in the same tick.
-          if (soundRef.current && newW <= 0) playRing();
-          const msg = `${newD} new deposit${newD > 1 ? 's' : ''} awaiting UTR verification`;
-          toast.warning(msg, { description: `${dCount} total pending` });
-          notifyDesktop('New pending deposit', msg);
+          for (const q of grew) {
+            const delta = next[q.key] - previous[q.key];
+            const msg = `${delta} new ${q.label}${delta > 1 ? 's' : ''} pending`;
+            toast.warning(msg, { description: `${next[q.key]} total in this queue` });
+            notifyDesktop('New pending item', msg);
+          }
         }
       }
 
-      prev.current = { w: wCount, d: dCount };
+      prev.current = next;
+      // If everything is cleared, there's nothing left to nag about.
+      if (QUEUES.every((q) => next[q.key] === 0)) unackedRef.current = false;
     } catch {
       /* network hiccup — keep last known counts */
     }
   }, []);
 
+  // ─── Poll loop ────────────────────────────────────────────────────────────
   useEffect(() => {
-    // Only poll when an admin token is present (i.e. logged in).
     let stopped = false;
     const tick = () => { if (!stopped) void poll(); };
 
@@ -164,6 +232,8 @@ export function PendingAlertsProvider({ children }: { children: ReactNode }) {
     const onVisible = () => { if (document.visibilityState === 'visible') tick(); };
     document.addEventListener('visibilitychange', onVisible);
 
+    requestNotifyPermission();
+
     return () => {
       stopped = true;
       window.clearInterval(id);
@@ -171,16 +241,25 @@ export function PendingAlertsProvider({ children }: { children: ReactNode }) {
     };
   }, [poll]);
 
+  // ─── Repeating ring while a backlog stays unacknowledged ────────────────────
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      if (unackedRef.current && soundRef.current && totalRef.current > 0) {
+        playRing();
+      }
+    }, REPEAT_MS);
+    return () => window.clearInterval(id);
+  }, []);
+
+  // ─── Mirror the pending count into the browser tab title ────────────────────
+  useEffect(() => {
+    document.title = total > 0 ? `(${total}) ${BASE_TITLE}` : BASE_TITLE;
+    return () => { document.title = BASE_TITLE; };
+  }, [total]);
+
   return (
     <PendingAlertsContext.Provider
-      value={{
-        withdrawals,
-        deposits,
-        total: withdrawals + deposits,
-        soundEnabled,
-        setSoundEnabled,
-        testRing,
-      }}
+      value={{ counts, total, soundEnabled, setSoundEnabled, testRing, acknowledge }}
     >
       {children}
     </PendingAlertsContext.Provider>
