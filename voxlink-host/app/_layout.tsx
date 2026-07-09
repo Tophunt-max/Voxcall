@@ -5,6 +5,7 @@ import {
   Poppins_700Bold,
   useFonts,
 } from "@expo-google-fonts/poppins";
+import { Feather } from "@expo/vector-icons";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack, router } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
@@ -316,6 +317,10 @@ export default function RootLayout() {
     Poppins_500Medium,
     Poppins_600SemiBold,
     Poppins_700Bold,
+    // Preload the Feather glyph font so the profile page's vector icons render
+    // reliably (the host app hadn't used @expo/vector-icons before, so the
+    // font was never registered → icons showed blank).
+    ...Feather.font,
   });
 
   // On web skip the font-loading gate entirely — system fallback fonts render
