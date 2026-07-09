@@ -248,12 +248,40 @@ export default function SettingsPage() {
                     </div>
                   )}
                 </div>
-                <input
-                  type={s.type} step={(s as any).step}
-                  value={settings[s.key] ?? ''}
-                  onChange={e => setField(s.key, e.target.value)}
-                  className={`w-full sm:w-48 border rounded-xl px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30 ${dirty[s.key] ? 'border-amber-400' : 'border-border'}`}
-                />
+                <div className="flex flex-col sm:flex-row sm:items-center gap-2 w-full sm:w-auto">
+                  <input
+                    type={s.type} step={(s as any).step}
+                    value={settings[s.key] ?? ''}
+                    onChange={e => setField(s.key, e.target.value)}
+                    className={`w-full sm:w-32 border rounded-xl px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30 ${dirty[s.key] ? 'border-amber-400' : 'border-border'}`}
+                  />
+                  {/* Inline live preview — shows the coin-to-₹ mapping RIGHT next
+                    to the input so admin sees the effective price while typing,
+                    without scrolling down to the summary panel. Updates live off
+                    the same state the summary uses. */}
+                  {(s.key === 'coin_purchase_inr' || s.key === 'coin_value_inr') && (() => {
+                    const raw = parseFloat(String(settings[s.key] ?? '0'));
+                    const val = Number.isFinite(raw) && raw > 0 ? raw : 0;
+                    const isPurchase = s.key === 'coin_purchase_inr';
+                    const accent = isPurchase ? 'text-green-600 dark:text-green-400' : 'text-amber-600 dark:text-amber-400';
+                    return (
+                      <div className="flex flex-wrap items-center gap-1.5 whitespace-nowrap">
+                        <span className={`rounded-lg border px-2 py-1 text-[11px] font-semibold ${isPurchase ? 'border-green-200 bg-green-50 dark:border-green-900/50 dark:bg-green-950/20' : 'border-amber-200 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-950/20'}`}>
+                          <span className="text-muted-foreground font-normal">1 coin = </span>
+                          <span className={accent}>₹{val > 0 ? val.toFixed(val < 0.01 ? 4 : isPurchase ? 2 : 3) : '—'}</span>
+                        </span>
+                        <span className="rounded-lg border border-border bg-secondary/40 px-2 py-1 text-[11px]">
+                          <span className="text-muted-foreground">100 = </span>
+                          <span className={`font-semibold ${accent}`}>₹{(val * 100).toFixed(isPurchase ? 0 : 2)}</span>
+                        </span>
+                        <span className="rounded-lg border border-border bg-secondary/40 px-2 py-1 text-[11px]">
+                          <span className="text-muted-foreground">1000 = </span>
+                          <span className={`font-semibold ${accent}`}>₹{(val * 1000).toFixed(isPurchase ? 0 : 2)}</span>
+                        </span>
+                      </div>
+                    );
+                  })()}
+                </div>
               </div>
             ))}
           </div>
