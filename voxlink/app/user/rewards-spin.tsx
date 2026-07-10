@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSocketEvent } from "@/context/SocketContext";
+import { SocketEvents } from "@/constants/events";
 import {
   View,
   Text,
@@ -147,6 +149,13 @@ export default function RewardsSpinScreen() {
     setLoading(true);
     load().finally(() => setLoading(false));
   }, [load]);
+
+  // Real-time: admin edited the Lucky Spin config — refresh while open.
+  useSocketEvent(
+    SocketEvents.DATA_CHANGED,
+    (d: any) => { if (d?.resource === "rewards") load(); },
+    [load]
+  );
 
   const slices = useMemo(() => computeSlices(segments), [segments]);
   const hasSpins = freeSpins > 0 || earnedSpins > 0;

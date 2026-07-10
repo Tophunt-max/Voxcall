@@ -21,7 +21,7 @@ const RESOURCE_MAP: Record<string, { resource: string; audience: BroadcastAudien
   'coin-plans': { resource: 'coin_plans', audience: 'all' },
   'vip-plans': { resource: 'vip_plans', audience: 'all' },
   'gifts': { resource: 'gifts', audience: 'all' },
-  'talk-topics': { resource: 'talk_topics', audience: 'user' },
+  'talk-topics': { resource: 'talk_topics', audience: 'all' },
   'banners': { resource: 'banners', audience: 'all' },
   'faqs': { resource: 'faqs', audience: 'all' },
   'promo-codes': { resource: 'promo_codes', audience: 'user' },

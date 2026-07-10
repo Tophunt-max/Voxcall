@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
+import { useSocketEvent } from "@/context/SocketContext";
+import { SocketEvents } from "@/constants/events";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Image,
   ActivityIndicator, RefreshControl, Platform,
@@ -84,6 +86,13 @@ export default function VipScreen() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Real-time: admin edited VIP plans — refresh instantly while open.
+  useSocketEvent(
+    SocketEvents.DATA_CHANGED,
+    (d: any) => { if (d?.resource === "vip_plans") load(); },
+    [load]
+  );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);

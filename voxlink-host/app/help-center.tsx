@@ -1,4 +1,6 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
+import { useSocketEvent } from "@/context/SocketContext";
+import { SocketEvents } from "@/constants/events";
 import {
   View, Text, StyleSheet, TouchableOpacity, Image,
   ScrollView, Linking
@@ -56,7 +58,7 @@ export default function HelpCenterScreen() {
   const [faqs, setFaqs] = useState<{ q: string; a: string }[]>(FALLBACK_FAQS);
   const [supportEmail, setSupportEmail] = useState(DEFAULT_SUPPORT_EMAIL);
 
-  useEffect(() => {
+  const loadHelp = useCallback(() => {
     API.getFaqs()
       .then((rows: any[]) => {
         if (Array.isArray(rows) && rows.length > 0) {
@@ -71,6 +73,15 @@ export default function HelpCenterScreen() {
       .then((cfg) => { if (cfg?.support_email) setSupportEmail(cfg.support_email); })
       .catch(() => { /* keep default */ });
   }, []);
+
+  useEffect(() => { loadHelp(); }, [loadHelp]);
+
+  // Real-time: admin edited FAQs — refresh instantly while the screen is open.
+  useSocketEvent(
+    SocketEvents.DATA_CHANGED,
+    (d: any) => { if (d?.resource === "faqs") loadHelp(); },
+    [loadHelp]
+  );
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>

@@ -5,6 +5,8 @@
 // /api/host/me.
 
 import React, { useEffect, useMemo, useState, useCallback } from "react";
+import { useSocketEvent } from "@/context/SocketContext";
+import { SocketEvents } from "@/constants/events";
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
   ActivityIndicator, Image, TextInput, Platform, KeyboardAvoidingView,
@@ -57,6 +59,27 @@ export default function ManageTopicsScreen() {
     })();
     return () => { cancelled = true; };
   }, []);
+
+  // Real-time: admin edited the talk-topics catalog — refresh the chip list
+  // instantly (the host's own selection is preserved).
+  const refreshTopics = useCallback(() => {
+    API.getTalkTopics()
+      .then((topicList: any[]) => {
+        const list: Topic[] = Array.isArray(topicList)
+          ? topicList
+              .map((t: any) => ({ id: String(t.id), name: String(t.name ?? ""), icon: t.icon }))
+              .filter((t) => t.name)
+          : [];
+        setTopics(list);
+      })
+      .catch(() => { /* keep existing catalog */ });
+  }, []);
+
+  useSocketEvent(
+    SocketEvents.DATA_CHANGED,
+    (d: any) => { if (d?.resource === "talk_topics") refreshTopics(); },
+    [refreshTopics]
+  );
 
   // Merge predefined topics with any custom specialties the host already had,
   // so previously-saved custom names still render as removable chips.

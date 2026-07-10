@@ -1,4 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
+import { useSocketEvent } from "@/context/SocketContext";
+import { SocketEvents } from "@/constants/events";
 import { View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity, Image, Platform, KeyboardAvoidingView, ActivityIndicator, Modal } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -222,6 +224,20 @@ export default function ChatScreen() {
       setSendingPhoto(false);
     }
   };
+
+  // Real-time: admin edited the gift catalog — refresh it so the picker shows
+  // the latest gifts immediately (even if already loaded / currently open).
+  useSocketEvent(
+    SocketEvents.DATA_CHANGED,
+    (d: any) => {
+      if (d?.resource === "gifts") {
+        API.getGifts()
+          .then((list) => setGifts(Array.isArray(list) ? list : []))
+          .catch(() => { /* keep existing catalog */ });
+      }
+    },
+    []
+  );
 
   // Open the gift picker, lazily loading the catalog the first time.
   const openGiftPicker = async () => {

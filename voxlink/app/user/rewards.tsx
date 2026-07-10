@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useSocketEvent } from "@/context/SocketContext";
+import { SocketEvents } from "@/constants/events";
 import {
   View,
   Text,
@@ -99,6 +101,14 @@ export default function RewardsScreen() {
     setLoading(true);
     load().finally(() => setLoading(false));
   }, [load]);
+
+  // Real-time: admin edited reward tasks/spin/campaigns/coupons/achievements —
+  // refresh instantly while the screen is open.
+  useSocketEvent(
+    SocketEvents.DATA_CHANGED,
+    (d: any) => { if (d?.resource === "rewards") load(); },
+    [load]
+  );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
