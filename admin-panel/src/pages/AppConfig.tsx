@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { Link } from 'wouter';
 import { api } from '@/lib/api';
-import { Save, Smartphone, AlertTriangle, Mail, RefreshCw, ArrowRight } from 'lucide-react';
+import { Save, Smartphone, AlertTriangle, Mail, RefreshCw, ArrowRight, Flame, Bell } from 'lucide-react';
 
 // IMPORTANT: every key below is one the backend actually persists
 // (api-server admin /settings allowlist) AND consumes:
@@ -28,6 +28,14 @@ const DEFAULTS = {
   maintenance_mode: 'false',
   maintenance_message: 'We are performing scheduled maintenance. Back in 30 minutes.',
   support_email: 'support@voxlink.app',
+  // Host engagement (daily streak) + level-up mystery-box + near-level nudge.
+  host_streak_enabled: '1',
+  host_streak_schedule: '[0,10,15,20,30,50,75]',
+  host_streak_milestones: '{"7":100,"14":250,"30":1000,"60":3000,"100":10000}',
+  level_reward_bonus_max_pct: '50',
+  near_level_nudge_enabled: '1',
+  near_level_nudge_hour_ist: '19',
+  near_level_nudge_threshold: '80',
 };
 
 type Config = typeof DEFAULTS;
@@ -98,13 +106,29 @@ export default function AppConfig() {
   };
 
   const save = async () => {
+    // Validate the JSON-shaped engagement fields before persisting, so a typo
+    // can't silently fall back to defaults on the backend.
+    try {
+      const sched = JSON.parse(config.host_streak_schedule);
+      if (!Array.isArray(sched) || sched.some((n) => typeof n !== 'number' || n < 0)) throw new Error();
+    } catch {
+      toast.error('Streak daily rewards must be a JSON array of numbers, e.g. [0,10,20]');
+      return;
+    }
+    try {
+      const ms = JSON.parse(config.host_streak_milestones);
+      if (typeof ms !== 'object' || ms === null || Array.isArray(ms)) throw new Error();
+    } catch {
+      toast.error('Streak milestones must be a JSON object, e.g. {"7":100,"30":1000}');
+      return;
+    }
     setSaving(true);
     try {
       await api.updateSettings(config);
-      toast.error('Configuration saved successfully');
+      toast.success('Configuration saved successfully');
       setHasChanges(false);
     } catch (e: any) {
-      toast.success(e?.message || 'Failed to save configuration');
+      toast.error(e?.message || 'Failed to save configuration');
     } finally {
       setSaving(false);
     }
@@ -178,6 +202,38 @@ export default function AppConfig() {
             <textarea rows={2} value={config.app_update_recommend_message} onChange={e => update('app_update_recommend_message', e.target.value)}
               className="w-full px-3 py-2.5 border border-border rounded-xl text-sm bg-background focus:outline-none resize-none" />
           </div>
+        </Section>
+
+        <Section title="Host Engagement — Daily Streak & Rewards" icon={Flame}>
+          <Field label="Daily Streak" desc="Reward hosts for coming online each day">
+            <Toggle value={config.host_streak_enabled !== '0'} onChange={v => update('host_streak_enabled', v ? '1' : '0')} />
+          </Field>
+          <div>
+            <label className="text-sm font-semibold block mb-1.5">Daily rewards (cycle)</label>
+            <Input value={config.host_streak_schedule} onChange={v => update('host_streak_schedule', v)} />
+            <p className="text-xs text-muted-foreground mt-1">JSON array of coins per streak day, repeating. e.g. <code>[0,10,15,20,30,50,75]</code></p>
+          </div>
+          <div>
+            <label className="text-sm font-semibold block mb-1.5">Milestone bonuses</label>
+            <textarea rows={2} value={config.host_streak_milestones} onChange={e => update('host_streak_milestones', e.target.value)}
+              className="w-full px-3 py-2.5 border border-border rounded-xl text-sm bg-background focus:outline-none resize-none font-mono" />
+            <p className="text-xs text-muted-foreground mt-1">One-time bonus at streak day → coins. e.g. <code>{'{"7":100,"30":1000}'}</code></p>
+          </div>
+          <Field label="Level-up mystery bonus (max %)" desc="Extra random coins on top of a level's reward (0 = off)">
+            <Input type="number" value={config.level_reward_bonus_max_pct} onChange={v => update('level_reward_bonus_max_pct', v)} />
+          </Field>
+        </Section>
+
+        <Section title="Near-Level Push Nudge" icon={Bell}>
+          <Field label="Enabled" desc="Daily push to hosts close to their next level">
+            <Toggle value={config.near_level_nudge_enabled !== '0'} onChange={v => update('near_level_nudge_enabled', v ? '1' : '0')} />
+          </Field>
+          <Field label="Send hour (IST, 0–23)" desc="Hour of day the nudge is sent">
+            <Input type="number" value={config.near_level_nudge_hour_ist} onChange={v => update('near_level_nudge_hour_ist', v)} />
+          </Field>
+          <Field label="Trigger at progress (%)" desc="Push hosts at or above this % to next level (50–99)">
+            <Input type="number" value={config.near_level_nudge_threshold} onChange={v => update('near_level_nudge_threshold', v)} />
+          </Field>
         </Section>
 
         <Section title="Maintenance & Support" icon={Mail}>
