@@ -152,12 +152,9 @@ function mapApiHost(h: any): Host {
   };
 }
 
-type SlideItem =
-  | { type: "find_more" }
-  | { type: "admin"; id: string; title: string; subtitle?: string; cta_text?: string; cta_link?: string; link_type?: string; bg_color?: string };
+type SlideItem = { type: "admin"; id: string; title: string; subtitle?: string; cta_text?: string; cta_link?: string; link_type?: string; bg_color?: string };
 
 function BannerSlider({ slides }: { slides: SlideItem[] }) {
-  const { t: tr } = useLanguage();
   const [activeIdx, setActiveIdx] = useState(0);
   const flatRef = useRef<FlatList<SlideItem>>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -196,28 +193,6 @@ function BannerSlider({ slides }: { slides: SlideItem[] }) {
   }, [restartAutoSlide]);
 
   const renderSlide = ({ item }: { item: SlideItem }) => {
-    if (item.type === "find_more") {
-      return (
-        <TouchableOpacity
-          onPress={() => router.push("/user/screens/home/random")}
-          activeOpacity={0.9}
-          style={[styles.slide, { backgroundColor: "#A00EE7" }]}
-        >
-          <View style={styles.findMoreLeft}>
-            <Text style={styles.findMoreTitle}>{tr.home.findMore}</Text>
-            <Text style={styles.findMoreSub}>{tr.home.findMoreSub}</Text>
-            <View style={styles.findMoreBtn}>
-              <Text style={styles.findMoreBtnText}>{tr.home.startRandomCall}</Text>
-            </View>
-          </View>
-          <Image
-            source={require("@/assets/images/home_call_person.png")}
-            style={styles.findMoreImage}
-            resizeMode="contain"
-          />
-        </TouchableOpacity>
-      );
-    }
     return (
       <TouchableOpacity
         activeOpacity={0.9}
@@ -252,7 +227,7 @@ function BannerSlider({ slides }: { slides: SlideItem[] }) {
         // smooth paging swipe.
         pagingEnabled={Platform.OS !== "web"}
         showsHorizontalScrollIndicator={false}
-        keyExtractor={(item, i) => item.type === "find_more" ? "find_more" : (item as any).id || String(i)}
+        keyExtractor={(item, i) => (item as any).id || String(i)}
         renderItem={renderSlide}
         onMomentumScrollEnd={onMomentumScrollEnd}
         snapToInterval={BANNER_W}
@@ -417,19 +392,20 @@ export default function HomeScreen() {
     return ["All", ...unique];
   })();
 
-  const slides: SlideItem[] = [
-    ...banners.map((b): SlideItem => ({
-      type: "admin",
-      id: b.id,
-      title: b.title,
-      subtitle: b.subtitle,
-      cta_text: b.cta_text,
-      cta_link: b.cta_link,
-      link_type: b.link_type,
-      bg_color: b.bg_color,
-    })),
-    { type: "find_more" },
-  ];
+  // Purely admin-driven: the carousel shows ONLY active banners configured in
+  // the admin panel. When there are no active banners the slider renders
+  // nothing (see BannerSlider's `slides.length === 0` guard) — there is no
+  // hardcoded fallback slide, so the app always reflects the admin panel.
+  const slides: SlideItem[] = banners.map((b): SlideItem => ({
+    type: "admin",
+    id: b.id,
+    title: b.title,
+    subtitle: b.subtitle,
+    cta_text: b.cta_text,
+    cta_link: b.cta_link,
+    link_type: b.link_type,
+    bg_color: b.bg_color,
+  }));
 
   // "Top Listeners" rail. Prefer hosts the admin flagged as top-rated. If none
   // are flagged, fall back to the highest-scoring online hosts — but only when

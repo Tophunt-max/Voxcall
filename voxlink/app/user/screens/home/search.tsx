@@ -416,41 +416,6 @@ type ListRow =
   | { kind: "pair"; key: string; items: UIHost[] }
   | { kind: "promo"; key: string };
 
-// ─── Built-in "Invite Friends" fallback slide ────────────────────────────────
-// Rendered inside the promo slider when no admin banner is configured, so the
-// UX always shows a promo and admins can override it any time from the panel.
-function InviteFriendsSlide() {
-  return (
-    <TouchableOpacity
-      activeOpacity={0.9}
-      onPress={() => router.push("/user/referral" as any)}
-      accessibilityRole="button"
-      accessibilityLabel="Invite friends — earn up to 10k coins per invite"
-      style={styles.promoSlide}
-    >
-      <LinearGradient
-        colors={DESIGN.inviteGradient as any}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 0.5 }}
-        style={styles.promoGrad}
-      >
-        <View style={styles.inviteTextCol}>
-          <Text style={styles.inviteTitle}>Invite Friends</Text>
-          <View style={styles.inviteBadge}>
-            <Image source={require("@/assets/icons/ic_coin.png")} style={styles.inviteCoinIcon} resizeMode="contain" />
-            <Text style={styles.inviteBadgeText}>Up to 10k per invite</Text>
-          </View>
-        </View>
-        <Image
-          source={require("@/assets/images/coin_large.png")}
-          style={styles.inviteImage}
-          resizeMode="contain"
-        />
-      </LinearGradient>
-    </TouchableOpacity>
-  );
-}
-
 // ─── Admin-managed banner slide (title / subtitle / CTA / image / bg) ────────
 function AdminBannerSlide({ item }: { item: Banner }) {
   const bg = item.bg_color?.trim() || "#8A2BD8";
@@ -485,8 +450,10 @@ function AdminBannerSlide({ item }: { item: Banner }) {
 // empty. When there is a single slide (admin OR fallback), the pagination
 // dots are hidden and auto-slide disabled.
 function PromoSlider({ banners }: { banners: Banner[] }) {
-  // Total slide count = admin banners + 1 (built-in fallback / invite slide).
-  const total = banners.length + 1;
+  // Purely admin-driven: only active banners configured in the admin panel are
+  // shown. No admin banners → the slot renders nothing (see the `total === 0`
+  // guard below). No hardcoded fallback slide.
+  const total = banners.length;
 
   const [activeIdx, setActiveIdx] = useState(0);
   const listRef = useRef<FlatList<number>>(null);
@@ -528,9 +495,13 @@ function PromoSlider({ banners }: { banners: Banner[] }) {
 
   const renderSlide = ({ item: idx }: { item: number }) => (
     <View style={{ width: BANNER_W }}>
-      {idx < banners.length ? <AdminBannerSlide item={banners[idx]} /> : <InviteFriendsSlide />}
+      <AdminBannerSlide item={banners[idx]} />
     </View>
   );
+
+  // After all hooks (never conditionally skipped) — hide the slot entirely when
+  // the admin has no active banners for this position.
+  if (total === 0) return null;
 
   return (
     <View style={styles.promoWrap}>
@@ -716,20 +687,20 @@ export default function SearchScreen() {
   }, [hosts, activeCountry, searchText, selectedLang, selectedTopic, activeCategory, favIds]);
 
   // Build the vertical list rows: hosts are chunked into pairs (2 columns) and
-  // a SINGLE unified promo row (admin banners + built-in Invite fallback) is
-  // injected mid-grid. The admin panel controls what plays in that slot;
-  // if nothing is configured, the Invite Friends slide is shown by default.
+  // a SINGLE admin-managed promo row is injected mid-grid — but ONLY when the
+  // admin has active banners for this position. No banners → no promo row (no
+  // empty slot), so the grid always reflects the admin panel exactly.
   const rows = useMemo(() => {
     const out: ListRow[] = [];
     for (let i = 0; i < filtered.length; i += 2) {
       out.push({ kind: "pair", key: `pair-${filtered[i].id}`, items: filtered.slice(i, i + 2) });
     }
-    if (out.length > 0) {
+    if (out.length > 0 && banners.length > 0) {
       const insertAt = Math.min(BANNER_AFTER_ROWS, out.length);
       out.splice(insertAt, 0, { kind: "promo", key: "promo-row" });
     }
     return out;
-  }, [filtered]);
+  }, [filtered, banners.length]);
 
   return (
     <LinearGradient

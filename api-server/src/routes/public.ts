@@ -57,6 +57,36 @@ async function edgePut(cacheKey: string, data: unknown): Promise<void> {
   }
 }
 
+// ─── Banner cache invalidation ────────────────────────────────────────────────
+// Called by the admin banner CRUD after any create/update/delete so a banner
+// that's toggled off (or edited) disappears/updates in the apps immediately
+// instead of lingering for the full cache TTL. The Cache API can't be
+// enumerated, so we delete every known banner key (audience × position). The
+// in-memory L1 is per-instance; we clear this instance's entries and the rest
+// expire within the 1-minute L1 TTL — the global edge L2 is cleared here.
+const BANNER_CACHE_AUDIENCES = ['user', 'host', 'all'];
+const BANNER_CACHE_POSITIONS = ['home', 'wallet', 'search', 'all'];
+
+export async function invalidateBannerCaches(): Promise<void> {
+  // L1 (this instance): drop every banner entry.
+  for (const key of Array.from(memCache.keys())) {
+    if (key.startsWith('banners:')) memCache.delete(key);
+  }
+  // L2 (global edge): delete each known banner key.
+  try {
+    const cache = (caches as any).default;
+    await Promise.all(
+      BANNER_CACHE_AUDIENCES.flatMap((a) =>
+        BANNER_CACHE_POSITIONS.map((p) =>
+          cache.delete(new Request(`https://voxlink-cache.internal/banners:${a}:${p}`))
+        )
+      )
+    );
+  } catch {
+    // dev environment (no Cache API) — L1 clear above is sufficient there
+  }
+}
+
 const pub = new Hono<{ Bindings: Env }>();
 
 // GET /api/calls-config-status — UNAUTHENTICATED diagnostic. Reports ONLY

@@ -13,6 +13,7 @@ import { getLevelConfig, normalizeLevelConfig, getDefaultCallRates, getEarningSh
 import { recalcAllHostLevels } from '../lib/levelService';
 import { approveDeposit, validatePromoInput } from './payment';
 import { ensureAllMigrations, listMigrationStatus } from '../lib/autoMigrate';
+import { invalidateBannerCaches } from './public';
 import type { Env, JWTPayload } from '../types';
 
 const admin = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
@@ -1652,6 +1653,7 @@ admin.post('/banners', async (c) => {
     endsAt,
     body.active !== false ? 1 : 0,
   ).run();
+  await invalidateBannerCaches().catch(() => {});
   return c.json({ id, success: true }, 201);
 });
 
@@ -1693,12 +1695,14 @@ admin.patch('/banners/:id', async (c) => {
   sets.push('updated_at = unixepoch()');
   vals.push(id);
   await db(c).prepare(`UPDATE banners SET ${sets.join(', ')} WHERE id = ?`).bind(...vals).run();
+  await invalidateBannerCaches().catch(() => {});
   return c.json({ success: true });
 });
 
 admin.delete('/banners/:id', async (c) => {
   const { id } = c.req.param();
   await db(c).prepare('DELETE FROM banners WHERE id = ?').bind(id).run();
+  await invalidateBannerCaches().catch(() => {});
   return c.json({ success: true });
 });
 
