@@ -130,6 +130,15 @@ export default function LevelCard({ data, loading, onPress }: LevelCardProps) {
             <View style={[styles.fill, { width: `${progress_pct}%`, backgroundColor: accent }]} />
           </View>
 
+          {/* Near-level nudge — a dopamine push when the host is almost there. */}
+          {progress_pct >= 80 && next ? (
+            <View style={[styles.nudge, { backgroundColor: hexToRgba(accent, 0.12) }]}>
+              <Text style={[styles.nudgeText, { color: accent }]}>
+                🔥 Almost there — you’re {progress_pct}% to {next.name}!
+              </Text>
+            </View>
+          ) : null}
+
           {/* Requirement pills — all four must be met to level up */}
           <View style={styles.reqRow}>
             <ReqPill
@@ -209,6 +218,8 @@ const styles = StyleSheet.create({
   chevron: { fontSize: 26, fontFamily: "Poppins_400Regular", marginLeft: 4 },
   maxBanner: { borderRadius: 12, padding: 12, alignItems: "center" },
   maxText: { fontSize: 13, fontFamily: "Poppins_600SemiBold" },
+  nudge: { borderRadius: 10, paddingVertical: 7, paddingHorizontal: 10, alignItems: "center" },
+  nudgeText: { fontSize: 12, fontFamily: "Poppins_600SemiBold" },
   progressHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   progressLabel: { fontSize: 12, fontFamily: "Poppins_500Medium" },
   progressPct: { fontSize: 13, fontFamily: "Poppins_700Bold" },

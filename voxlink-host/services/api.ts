@@ -148,6 +148,30 @@ export interface HostLevelResponse {
   };
 }
 
+// ─── Host streak (daily engagement) types ─────────────────────────────────
+export interface HostStreakStatus {
+  enabled: boolean;
+  streak_days: number;
+  streak_max: number;
+  active_today: boolean;
+  next_reward: number;
+  next_reward_base: number;
+  next_reward_milestone: number;
+  seconds_until_reset: number;
+  at_risk: boolean;
+  schedule: number[];
+  milestones: Record<string, number>;
+}
+export interface HostStreakCredit {
+  credited: boolean;
+  streak_days: number;
+  streak_max: number;
+  reward: number;
+  base_reward: number;
+  milestone_bonus: number;
+  new_balance?: number;
+}
+
 export const API = {
   // Auth
   login: (email: string, password: string) =>
@@ -228,7 +252,12 @@ export const API = {
   // the current host record (including payout_method/payout_details) on mount
   // so the form pre-fills with whatever the host saved last time.
   getHostMe: () => apiRequest<any>('GET', '/api/host/me'),
-  setHostOnline: (online: boolean) => apiRequest('PATCH', '/api/host/status', { is_online: online }),
+  // Toggling online is also the host's daily streak "check-in" — the response
+  // includes any streak credited so the home screen can celebrate it.
+  setHostOnline: (online: boolean) =>
+    apiRequest<{ success: boolean; is_online: boolean; streak: HostStreakCredit | null }>('PATCH', '/api/host/status', { is_online: online }),
+  // Current daily-streak status for the dashboard streak card.
+  getHostStreak: () => apiRequest<HostStreakStatus>('GET', '/api/host/streak'),
   // Availability schedule — the daily window (HH:MM) during which the host is
   // shown as available, plus their timezone. Persisted on the hosts row
   // (available_from / available_to / timezone). Pass null to clear a field

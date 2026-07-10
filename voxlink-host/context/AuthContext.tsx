@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState, useCallback, use
 import { AppState } from "react-native";
 import { setItem, getItem, removeItem, StorageKeys } from "@/utils/storage";
 import { apiRequest, API } from "@/services/api";
+import type { HostStreakCredit } from "@/services/api";
 import { registerForPushNotifications } from "@/services/NotificationService";
 import { onTokenRefresh } from "@/services/fcm";
 import { setErrorReporterToken } from "@/services/ErrorReporter";
@@ -50,7 +51,8 @@ interface AuthContextValue extends AuthState {
   updateProfile: (updates: Partial<UserProfile>) => Promise<void>;
   updateEarnings: (newEarnings: number) => void;
   refreshProfile: () => Promise<void>;
-  setOnlineStatus: (online: boolean) => Promise<void>;
+  /** Returns any daily streak credited by going online (for the celebration UI). */
+  setOnlineStatus: (online: boolean) => Promise<HostStreakCredit | null>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -290,7 +292,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return { ...prev, user: updated };
     });
     try {
-      await apiRequest("PATCH", "/api/host/status", { is_online: online });
+      const res = await apiRequest<{ success: boolean; is_online: boolean; streak: HostStreakCredit | null }>(
+        "PATCH", "/api/host/status", { is_online: online },
+      );
+      // Reflect any streak-bonus coins in the local balance immediately.
+      if (res?.streak?.credited && typeof res.streak.new_balance === "number") {
+        setState((prev) => {
+          if (!prev.user) return prev;
+          const updated = { ...prev.user, coins: res.streak!.new_balance as number };
+          setItem(StorageKeys.USER, updated);
+          return { ...prev, user: updated };
+        });
+      }
+      return res?.streak ?? null;
     } catch (e: any) {
       // FIX: surface the actual server error message to the caller so the
       // UI can show specific guidance ("complete your KYC" vs "try again")

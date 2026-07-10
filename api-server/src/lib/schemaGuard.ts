@@ -187,6 +187,65 @@ export function ensureStreakSchema(db: D1Database): Promise<boolean> {
 }
 
 // ============================================================================
+// Host streak schema guard — auto-heal migration 0057 on cold start.
+// ============================================================================
+//
+// Adds the host streak columns on `hosts` and seeds the host_streak_* config
+// defaults. Idempotent — mirrors ensureStreakSchema (the user version).
+
+let hostStreakSchemaReadyPromise: Promise<boolean> | null = null;
+
+const REQUIRED_HOST_STREAK_COLUMNS: ReadonlyArray<{ name: string; ddl: string }> = [
+  { name: 'streak_days',        ddl: 'ALTER TABLE hosts ADD COLUMN streak_days INTEGER DEFAULT 0' },
+  { name: 'last_streak_day_at', ddl: 'ALTER TABLE hosts ADD COLUMN last_streak_day_at INTEGER DEFAULT 0' },
+  { name: 'streak_max',         ddl: 'ALTER TABLE hosts ADD COLUMN streak_max INTEGER DEFAULT 0' },
+];
+
+const HOST_STREAK_DEFAULT_SETTINGS: ReadonlyArray<{ key: string; value: string }> = [
+  { key: 'host_streak_enabled',    value: '1' },
+  { key: 'host_streak_schedule',   value: '[0,10,15,20,30,50,75]' },
+  { key: 'host_streak_milestones', value: '{"7":100,"14":250,"30":1000,"60":3000,"100":10000}' },
+];
+
+export function ensureHostStreakSchema(db: D1Database): Promise<boolean> {
+  if (hostStreakSchemaReadyPromise) return hostStreakSchemaReadyPromise;
+
+  hostStreakSchemaReadyPromise = (async () => {
+    try {
+      const info = await db.prepare('PRAGMA table_info(hosts)').all<{ name: string }>();
+      const cols = new Set((info.results ?? []).map((r) => r.name));
+      for (const col of REQUIRED_HOST_STREAK_COLUMNS) {
+        if (!cols.has(col.name)) {
+          try {
+            await db.prepare(col.ddl).run();
+            console.log(`[schemaGuard] added hosts.${col.name}`);
+          } catch (err) {
+            console.warn(`[schemaGuard] add hosts.${col.name} failed (may be a race):`, err);
+          }
+        }
+      }
+      for (const s of HOST_STREAK_DEFAULT_SETTINGS) {
+        try {
+          await db
+            .prepare("INSERT OR IGNORE INTO app_settings (key, value, updated_at) VALUES (?, ?, unixepoch())")
+            .bind(s.key, s.value)
+            .run();
+        } catch (err) {
+          console.warn(`[schemaGuard] seed app_settings.${s.key} failed:`, err);
+        }
+      }
+      return true;
+    } catch (err) {
+      console.error('[schemaGuard] ensureHostStreakSchema failed:', err);
+      hostStreakSchemaReadyPromise = null;
+      return false;
+    }
+  })();
+
+  return hostStreakSchemaReadyPromise;
+}
+
+// ============================================================================
 // Calling-system observability schema guard — auto-heal migration 0029.
 // ============================================================================
 //

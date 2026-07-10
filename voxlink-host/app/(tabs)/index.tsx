@@ -15,7 +15,8 @@ import { API, resolveMediaUrl } from "@/services/api";
 import type { HostLevelResponse } from "@/services/api";
 import { openBannerLink } from "@/utils/bannerLink";
 import PromoBannerCard from "@/components/PromoBannerCard";
-import { showErrorToast } from "@/components/Toast";
+import { showErrorToast, showSuccessToast } from "@/components/Toast";
+import StreakCard from "@/components/StreakCard";
 import { useSocketEvent } from "@/context/SocketContext";
 import { SocketEvents } from "@/constants/events";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -148,6 +149,14 @@ export default function HostHomeScreen() {
     retry: 1,
   });
 
+  // Daily streak (engagement) — drives the StreakCard + go-online celebration.
+  const { data: streakData } = useQuery({
+    queryKey: ['host-streak'],
+    queryFn: () => API.getHostStreak(),
+    staleTime: 2 * 60_000,
+    retry: 1,
+  });
+
   const audioRate = Number(hostMe?.audio_coins_per_minute ?? hostMe?.coins_per_minute ?? 25);
   const videoRate = Number(hostMe?.video_coins_per_minute ?? (hostMe?.coins_per_minute ? Number(hostMe.coins_per_minute) + 5 : 40));
 
@@ -233,7 +242,15 @@ export default function HostHomeScreen() {
     if (togglingOnline) return;
     setTogglingOnline(true);
     try {
-      await setOnlineStatus(v);
+      const credited = await setOnlineStatus(v);
+      // Going online is the daily streak check-in — celebrate a fresh credit.
+      if (credited?.credited) {
+        queryClient.invalidateQueries({ queryKey: ['host-streak'] });
+        if (credited.reward > 0) {
+          queryClient.invalidateQueries({ queryKey: ['host-earnings'] });
+          showSuccessToast(`Day ${credited.streak_days} streak! +${credited.reward} coins`, "Streak kept 🔥");
+        }
+      }
     } catch (e: any) {
       const msg = String(e?.message || "");
       if (msg.includes("HOST_NOT_FOUND") || msg.toLowerCase().includes("kyc")) {
@@ -254,7 +271,7 @@ export default function HostHomeScreen() {
     } finally {
       setTogglingOnline(false);
     }
-  }, [togglingOnline, setOnlineStatus]);
+  }, [togglingOnline, setOnlineStatus, queryClient]);
 
   return (
     <ScrollView
@@ -330,6 +347,9 @@ export default function HostHomeScreen() {
         loading={levelLoading}
         onPress={() => router.push("/level-benefits")}
       />
+
+      {/* Daily streak (engagement) card */}
+      <StreakCard streak={streakData} />
 
       {/* Stats — OPTIMIZATION #8: skeleton while earnings are loading */}
       {earningsLoading ? (

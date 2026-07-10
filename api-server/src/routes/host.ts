@@ -3,6 +3,7 @@ import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth';
 import { getLevelConfig, computeLevelProgress, getHostAudioRateCeiling, getHostVideoRateCeiling, getRankBoost, buildLevelInfo, rankBoostCaseSql, ABSOLUTE_MAX_RATE, DEFAULT_AUDIO_RATE, DEFAULT_VIDEO_RATE, type LevelDef } from '../lib/levels';
+import { creditHostStreakOnActivity, getHostStreakStatus } from '../lib/hostStreak';
 import { scoreHosts, normalizeWeights, type CandidateHost, type UserAffinity } from '../lib/recommend';
 import type { Env, JWTPayload } from '../types';
 
@@ -509,7 +510,23 @@ hostProtected.patch('/status', zValidator('json', statusSchema), async (c) => {
   const presenceMsg = JSON.stringify({ type: 'presence', user_id: sub, host_id: hostRow.id, is_online });
   c.executionCtx.waitUntil(broadcastPresence(c.env, sub, presenceMsg));
 
-  return c.json({ success: true, is_online });
+  // Engagement: coming online is the daily "check-in" that advances the host's
+  // streak. Credited once per IST day (idempotent). Returned so the app can pop
+  // a celebration ("Day 5 streak 🔥 +30 coins"). Never blocks the toggle.
+  let streak = null;
+  if (is_online) {
+    streak = await creditHostStreakOnActivity(c.env.DB, sub).catch(() => null);
+  }
+
+  return c.json({ success: true, is_online, streak });
+});
+
+// GET /api/host/streak — the host's current daily-streak status (dashboard card).
+hostProtected.get('/streak', async (c) => {
+  const { sub } = c.get('user');
+  const status = await getHostStreakStatus(c.env.DB, sub);
+  if (!status) return c.json({ error: 'Not a host' }, 403);
+  return c.json(status);
 });
 
 // FIX: extracted to a function so it can run via ctx.waitUntil() without

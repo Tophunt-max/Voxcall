@@ -24,7 +24,7 @@ import vipRouter from './routes/vip';
 import giftsRouter from './routes/gifts';
 import { ChatRoom } from './durable-objects/ChatRoom';
 import { NotificationHub } from './durable-objects/NotificationHub';
-import { ensureUsersSchema, ensureRandomCallSchema, ensureStreakSchema, ensureFirstCallFreeSchema, ensureCallObservabilitySchema, ensureEngagementSchema, ensureWithdrawalSchema } from './lib/schemaGuard';
+import { ensureUsersSchema, ensureRandomCallSchema, ensureStreakSchema, ensureHostStreakSchema, ensureFirstCallFreeSchema, ensureCallObservabilitySchema, ensureEngagementSchema, ensureWithdrawalSchema } from './lib/schemaGuard';
 import { ensureAllMigrations } from './lib/autoMigrate';
 import { getLevelConfig, getEarningShare, DEFAULT_AUDIO_RATE } from './lib/levels';
 import { recalcAllHostLevels } from './lib/levelService';
@@ -138,6 +138,7 @@ app.use('/api/*', async (c, next) => {
     ensureUsersSchema(c.env.DB),
     ensureRandomCallSchema(c.env.DB),
     ensureStreakSchema(c.env.DB),
+    ensureHostStreakSchema(c.env.DB),
     ensureFirstCallFreeSchema(c.env.DB),
     ensureCallObservabilitySchema(c.env.DB),
     ensureEngagementSchema(c.env.DB),

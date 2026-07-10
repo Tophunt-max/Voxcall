@@ -747,6 +747,7 @@ admin.patch('/settings', async (c) => {
     'random_decline_cooldown_count', 'random_decline_cooldown_min',
     'random_match_repeat_block_min',
     'daily_streak_enabled', 'daily_streak_schedule', 'daily_streak_milestones',
+    'host_streak_enabled', 'host_streak_schedule', 'host_streak_milestones',
     'first_call_free_minutes',
     'default_audio_rate', 'default_video_rate', 'default_video_fhd_rate',
     'billing_granularity_sec', 'low_balance_warn_seconds',
@@ -2651,6 +2652,8 @@ admin.put('/app-config', async (c) => {
     'random_match_repeat_block_min',
     // Daily-streak engagement layer.
     'daily_streak_enabled', 'daily_streak_schedule', 'daily_streak_milestones',
+    // Host daily-streak engagement layer.
+    'host_streak_enabled', 'host_streak_schedule', 'host_streak_milestones',
     // First-call-free + calling-system observability.
     'first_call_free_minutes',
     'billing_granularity_sec', 'low_balance_warn_seconds',
