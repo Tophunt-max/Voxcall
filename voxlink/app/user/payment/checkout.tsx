@@ -22,6 +22,7 @@ import { useLanguage } from "@/context/LanguageContext";
 import type { Translations } from "@/localization/en";
 import { API } from "@/services/api";
 import { openBannerLink } from "@/utils/bannerLink";
+import PromoBannerCard from "@/components/PromoBannerCard";
 import { notifyPurchaseSuccess } from "@/services/NotificationService";
 import LoadingOverlay from "@/components/LoadingOverlay";
 import { showSuccessToast, showErrorToast } from "@/components/Toast";
@@ -132,16 +133,7 @@ function WalletBannerSlider({ banners }: { banners: any[] }) {
         onMomentumScrollEnd={onMomentumScrollEnd}
         style={{ width: WALLET_BANNER_W }}
         renderItem={({ item }) => (
-          <TouchableOpacity activeOpacity={0.9}
-            onPress={() => openBannerLink(item)}
-            style={[wStyles.slide, { backgroundColor: item.bg_color || "#A00EE7" }]}
-          >
-            <View style={wStyles.textCol}>
-              <Text style={wStyles.title}>{item.title}</Text>
-              {item.subtitle ? <Text style={wStyles.sub}>{item.subtitle}</Text> : null}
-              {item.cta_text ? <View style={wStyles.ctaBtn}><Text style={wStyles.ctaText}>{item.cta_text}</Text></View> : null}
-            </View>
-          </TouchableOpacity>
+          <PromoBannerCard banner={item} width={WALLET_BANNER_W} onPress={() => openBannerLink(item)} />
         )}
       />
       {banners.length > 1 && (

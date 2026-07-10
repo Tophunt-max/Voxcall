@@ -86,6 +86,8 @@ function blank() {
     subtitle: '',
     image_url: '',
     bg_color: '#7C3AED',
+    gradient_to: '',
+    icon: '',
     cta_text: 'Learn More',
     link_type: 'internal',
     cta_link: '',
@@ -206,6 +208,8 @@ export default function Banners() {
       subtitle: b.subtitle || '',
       image_url: b.image_url || '',
       bg_color: b.bg_color || '#7C3AED',
+      gradient_to: b.gradient_to || '',
+      icon: b.icon || '',
       cta_text: b.cta_text || '',
       link_type: b.link_type || (b.cta_link ? (String(b.cta_link).startsWith('http') ? 'external' : 'internal') : 'none'),
       cta_link: b.cta_link || '',
@@ -247,6 +251,8 @@ export default function Banners() {
       subtitle: form.subtitle.trim(),
       image_url: form.image_url,
       bg_color: form.bg_color,
+      gradient_to: form.gradient_to || null,
+      icon: form.icon.trim() || null,
       cta_text: form.cta_text.trim(),
       link_type: form.link_type,
       cta_link: form.link_type === 'none' ? '' : form.cta_link.trim(),
@@ -405,6 +411,26 @@ export default function Banners() {
             </div>
           </div>
 
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-sm font-semibold block mb-1.5">Gradient 2nd color</label>
+              <div className="flex items-center gap-2">
+                <input type="color" value={form.gradient_to || form.bg_color} onChange={e => setForm({ ...form, gradient_to: e.target.value })}
+                  className="w-10 h-[42px] rounded-xl border border-border cursor-pointer" title="Gradient end color" />
+                {form.gradient_to ? (
+                  <button type="button" onClick={() => setForm({ ...form, gradient_to: '' })}
+                    className="text-xs text-muted-foreground hover:text-red-500">Clear</button>
+                ) : <span className="text-xs text-muted-foreground">Auto (darker shade)</span>}
+              </div>
+            </div>
+            <div>
+              <label className="text-sm font-semibold block mb-1.5">Icon (emoji)</label>
+              <input maxLength={4} className="w-full px-3 py-2.5 border border-border rounded-xl text-sm bg-background focus:outline-none"
+                placeholder="🎁" value={form.icon} onChange={e => setForm({ ...form, icon: e.target.value })} />
+              <p className="text-xs text-muted-foreground mt-1">Shown on the right when there's no image.</p>
+            </div>
+          </div>
+
           {/* CTA */}
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -468,16 +494,20 @@ export default function Banners() {
             <span className="text-sm font-medium">Active (visible in the app)</span>
           </label>
 
-          {/* Preview */}
+          {/* Preview — mirrors the app's PromoBannerCard (gradient + icon/image) */}
           <div>
             <label className="text-sm font-semibold block mb-2">Preview</label>
-            <div className="rounded-xl p-4 text-white overflow-hidden relative" style={{ backgroundColor: form.bg_color }}>
+            <div
+              className="rounded-2xl p-4 text-white overflow-hidden relative flex items-center gap-3 min-h-[112px]"
+              style={{ background: `linear-gradient(135deg, ${form.bg_color}, ${form.gradient_to || form.bg_color})` }}
+            >
               {form.image_url ? <img src={resolveUrl(form.image_url)} alt="" className="absolute inset-0 w-full h-full object-cover opacity-40" /> : null}
-              <div className="relative">
-                <p className="font-bold text-sm">{form.title || 'Banner Title'}</p>
-                <p className="text-xs opacity-80 mt-0.5">{form.subtitle || 'Banner subtitle text'}</p>
-                {form.link_type !== 'none' && form.cta_text && <div className="mt-2 inline-block bg-white/20 px-3 py-1 rounded-full text-xs font-semibold">{form.cta_text} →</div>}
+              <div className="relative flex-1">
+                <p className="font-bold text-base leading-tight">{form.title || 'Banner Title'}</p>
+                <p className="text-xs opacity-90 mt-0.5">{form.subtitle || 'Banner subtitle text'}</p>
+                {form.link_type !== 'none' && form.cta_text && <div className="mt-2 inline-block bg-white/25 px-3 py-1 rounded-full text-xs font-semibold">{form.cta_text} ›</div>}
               </div>
+              {!form.image_url && form.icon ? <span className="relative text-4xl">{form.icon}</span> : null}
             </div>
           </div>
 

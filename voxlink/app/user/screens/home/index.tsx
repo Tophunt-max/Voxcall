@@ -25,6 +25,7 @@ import { SkeletonHostCard, SkeletonHostCardCompact } from "@/components/Skeleton
 import { Host } from "@/data/mockData";
 import { API, resolveMediaUrl } from "@/services/api";
 import { openBannerLink } from "@/utils/bannerLink";
+import PromoBannerCard from "@/components/PromoBannerCard";
 import { fetchAppConfig } from "@/hooks/useAppConfig";
 import { logEngagement, logImpressionOnce } from "@/services/engagement";
 import { RefreshControl } from "react-native";
@@ -152,7 +153,7 @@ function mapApiHost(h: any): Host {
   };
 }
 
-type SlideItem = { type: "admin"; id: string; title: string; subtitle?: string; cta_text?: string; cta_link?: string; link_type?: string; bg_color?: string };
+type SlideItem = { type: "admin"; id: string; title: string; subtitle?: string; cta_text?: string; cta_link?: string; link_type?: string; bg_color?: string; gradient_to?: string; icon?: string };
 
 function BannerSlider({ slides }: { slides: SlideItem[] }) {
   const [activeIdx, setActiveIdx] = useState(0);
@@ -192,25 +193,9 @@ function BannerSlider({ slides }: { slides: SlideItem[] }) {
     restartAutoSlide();
   }, [restartAutoSlide]);
 
-  const renderSlide = ({ item }: { item: SlideItem }) => {
-    return (
-      <TouchableOpacity
-        activeOpacity={0.9}
-        onPress={() => openBannerLink(item)}
-        style={[styles.slide, { backgroundColor: item.bg_color || "#A00EE7" }]}
-      >
-        <View style={styles.adminBannerContent}>
-          <Text style={styles.adminBannerTitle}>{item.title}</Text>
-          {item.subtitle ? <Text style={styles.adminBannerSub}>{item.subtitle}</Text> : null}
-          {item.cta_text ? (
-            <View style={styles.adminBannerBtn}>
-              <Text style={styles.adminBannerBtnText}>{item.cta_text}</Text>
-            </View>
-          ) : null}
-        </View>
-      </TouchableOpacity>
-    );
-  };
+  const renderSlide = ({ item }: { item: SlideItem }) => (
+    <PromoBannerCard banner={item} width={BANNER_W} onPress={() => openBannerLink(item)} />
+  );
 
   if (slides.length === 0) return null;
 
@@ -405,6 +390,8 @@ export default function HomeScreen() {
     cta_link: b.cta_link,
     link_type: b.link_type,
     bg_color: b.bg_color,
+    gradient_to: b.gradient_to,
+    icon: b.icon,
   }));
 
   // "Top Listeners" rail. Prefer hosts the admin flagged as top-rated. If none

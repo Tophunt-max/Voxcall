@@ -1635,14 +1635,16 @@ admin.post('/banners', async (c) => {
   const id = crypto.randomUUID();
   await db(c).prepare(
     `INSERT INTO banners
-       (id, title, subtitle, image_url, bg_color, cta_text, cta_link, position, audience, link_type, sort_order, starts_at, ends_at, active)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       (id, title, subtitle, image_url, bg_color, gradient_to, icon, cta_text, cta_link, position, audience, link_type, sort_order, starts_at, ends_at, active)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).bind(
     id,
     title,
     String(body.subtitle || ''),
     String(body.image_url || ''),
     String(body.bg_color || '#7C3AED'),
+    body.gradient_to ? String(body.gradient_to) : null,
+    body.icon ? String(body.icon).slice(0, 8) : null,
     String(body.cta_text || ''),
     linkType === 'none' ? '' : ctaLink,
     String(body.position || 'home_top'),
@@ -1686,6 +1688,8 @@ admin.patch('/banners/:id', async (c) => {
   for (const f of strFields) {
     if (body[f] !== undefined) { sets.push(`${f} = ?`); vals.push(body[f]); }
   }
+  if (body.gradient_to !== undefined) { sets.push('gradient_to = ?'); vals.push(body.gradient_to ? String(body.gradient_to) : null); }
+  if (body.icon !== undefined) { sets.push('icon = ?'); vals.push(body.icon ? String(body.icon).slice(0, 8) : null); }
   if (body.sort_order !== undefined) { sets.push('sort_order = ?'); vals.push(Math.trunc(Number(body.sort_order) || 0)); }
   if (body.starts_at !== undefined) { sets.push('starts_at = ?'); vals.push(toEpochOrNull(body.starts_at)); }
   if (body.ends_at !== undefined) { sets.push('ends_at = ?'); vals.push(toEpochOrNull(body.ends_at)); }

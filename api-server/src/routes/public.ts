@@ -182,7 +182,7 @@ pub.get('/banners', async (c) => {
   }
   binds.push(now, now);
 
-  const cols = 'id, title, subtitle, image_url, bg_color, cta_text, cta_link, link_type, position, audience, sort_order';
+  const cols = 'id, title, subtitle, image_url, bg_color, gradient_to, icon, cta_text, cta_link, link_type, position, audience, sort_order';
   const query =
     `SELECT ${cols} FROM banners
      WHERE active = 1 AND ${positionClause} ${audienceClause}

@@ -26,6 +26,7 @@ import { useCall } from "@/context/CallContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { API, resolveMediaUrl } from "@/services/api";
 import { openBannerLink } from "@/utils/bannerLink";
+import PromoBannerCard from "@/components/PromoBannerCard";
 import { showErrorToast } from "@/components/Toast";
 import { InsufficientCoinsPopup } from "@/components/InsufficientCoinsPopup";
 
@@ -404,6 +405,8 @@ type Banner = {
   subtitle?: string;
   image_url?: string;
   bg_color?: string;
+  gradient_to?: string;
+  icon?: string;
   cta_text?: string;
   cta_link?: string;
   link_type?: string;
@@ -416,31 +419,9 @@ type ListRow =
   | { kind: "pair"; key: string; items: UIHost[] }
   | { kind: "promo"; key: string };
 
-// ─── Admin-managed banner slide (title / subtitle / CTA / image / bg) ────────
+// ─── Admin-managed banner slide — delegates to the shared PromoBannerCard ────
 function AdminBannerSlide({ item }: { item: Banner }) {
-  const bg = item.bg_color?.trim() || "#8A2BD8";
-  return (
-    <TouchableOpacity
-      activeOpacity={0.9}
-      onPress={() => openBannerLink(item)}
-      accessibilityRole="button"
-      accessibilityLabel={item.title}
-      style={[styles.promoSlide, { backgroundColor: bg }]}
-    >
-      <View style={styles.adminBannerTextCol}>
-        <Text style={styles.adminBannerTitle} numberOfLines={2}>{item.title}</Text>
-        {item.subtitle ? <Text style={styles.adminBannerSub} numberOfLines={2}>{item.subtitle}</Text> : null}
-        {item.cta_text ? (
-          <View style={styles.adminBannerCta}>
-            <Text style={styles.adminBannerCtaText}>{item.cta_text}</Text>
-          </View>
-        ) : null}
-      </View>
-      {item.image_url ? (
-        <Image source={{ uri: resolveMediaUrl(item.image_url) }} style={styles.adminBannerImage} resizeMode="contain" />
-      ) : null}
-    </TouchableOpacity>
-  );
+  return <PromoBannerCard banner={item} width={BANNER_W} onPress={() => openBannerLink(item)} />;
 }
 
 // ─── Unified promo slot ──────────────────────────────────────────────────────

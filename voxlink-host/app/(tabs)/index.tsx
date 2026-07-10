@@ -14,6 +14,7 @@ import { useLanguage } from "@/context/LanguageContext";
 import { API, resolveMediaUrl } from "@/services/api";
 import type { HostLevelResponse } from "@/services/api";
 import { openBannerLink } from "@/utils/bannerLink";
+import PromoBannerCard from "@/components/PromoBannerCard";
 import { showErrorToast } from "@/components/Toast";
 import { useSocketEvent } from "@/context/SocketContext";
 import { SocketEvents } from "@/constants/events";
@@ -66,24 +67,9 @@ function HostBanners({ banners }: { banners: any[] }) {
           setActive(i);
         }}
         renderItem={({ item }) => (
-          <TouchableOpacity
-            activeOpacity={item.cta_link ? 0.85 : 1}
-            onPress={() => openBannerLink(item)}
-            style={[hostBannerStyles.card, { width: BANNER_W, backgroundColor: item.bg_color || "#6A00B8" }]}
-          >
-            {item.image_url ? (
-              <Image source={{ uri: resolveMediaUrl(item.image_url) }} style={hostBannerStyles.bg} resizeMode="cover" />
-            ) : null}
-            <View style={hostBannerStyles.textWrap}>
-              {item.title ? <Text style={hostBannerStyles.title} numberOfLines={2}>{item.title}</Text> : null}
-              {item.subtitle ? <Text style={hostBannerStyles.subtitle} numberOfLines={2}>{item.subtitle}</Text> : null}
-              {item.cta_text ? (
-                <View style={hostBannerStyles.ctaPill}>
-                  <Text style={hostBannerStyles.ctaText}>{item.cta_text}</Text>
-                </View>
-              ) : null}
-            </View>
-          </TouchableOpacity>
+          <View style={{ width: BANNER_W }}>
+            <PromoBannerCard banner={item} width={BANNER_W} onPress={() => openBannerLink(item)} />
+          </View>
         )}
       />
       {banners.length > 1 && (
