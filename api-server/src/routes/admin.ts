@@ -15,6 +15,7 @@ import { approveDeposit, validatePromoInput } from './payment';
 import { ensureAllMigrations, listMigrationStatus } from '../lib/autoMigrate';
 import { invalidateBannerCaches } from './public';
 import { findActiveBan } from '../lib/bans';
+import { pushCoinUpdate, notifyUser } from '../lib/realtime';
 import type { Env, JWTPayload } from '../types';
 
 const admin = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
@@ -344,6 +345,11 @@ admin.patch('/users/:id', async (c) => {
   if (status !== undefined) changes.status = status;
   const u = c.get('user');
   await auditLog(db(c), u.sub, u.email || 'Admin', u.email || '', 'update', 'user', id, `User ${id} updated: ${JSON.stringify(changes)}`, c.req.header('CF-Connecting-IP') ?? '');
+  // Real-time: if the admin adjusted this user's coin balance, push the new
+  // balance to their app so the wallet updates instantly (no re-open).
+  if (coins !== undefined) {
+    await pushCoinUpdate(c.env, id);
+  }
   return c.json({ success: true });
 });
 
@@ -487,6 +493,13 @@ admin.patch('/withdrawals/:id', async (c) => {
     ]);
     const ru = c.get('user');
     await auditLog(d, ru.sub, ru.email || 'Admin', ru.email || '', 'update', 'withdrawal', id, `Withdrawal ${id} rejected — ${wr.coins} coins refunded${admin_note ? ` (note: ${admin_note})` : ''}`, c.req.header('CF-Connecting-IP') ?? '');
+    // Real-time: reflect the refunded balance instantly and tell the host why.
+    await pushCoinUpdate(c.env, wr.user_id, wr.coins);
+    c.executionCtx?.waitUntil?.(notifyUser(
+      c.env, wr.user_id, 'Withdrawal rejected',
+      `Your withdrawal was rejected and ${wr.coins} coins were refunded to your balance.${admin_note ? ` Reason: ${admin_note}` : ''}`,
+      'payout',
+    ));
     return c.json({ success: true, refunded_coins: wr.coins });
   }
 
@@ -506,6 +519,14 @@ admin.patch('/withdrawals/:id', async (c) => {
   ).bind(status, admin_note ?? null, id).run();
   const pu = c.get('user');
   await auditLog(d, pu.sub, pu.email || 'Admin', pu.email || '', 'update', 'withdrawal', id, `Withdrawal ${id} marked ${status}${admin_note ? ` (ref: ${admin_note})` : ''}`, c.req.header('CF-Connecting-IP') ?? '');
+  // Real-time: let the host know their payout progressed.
+  const wu = await d.prepare('SELECT h.user_id AS uid, wr.coins AS coins FROM withdrawal_requests wr JOIN hosts h ON h.id = wr.host_id WHERE wr.id = ?').bind(id).first<{ uid: string; coins: number }>();
+  if (wu?.uid) {
+    const msg = status === 'paid' || status === 'completed'
+      ? `Your withdrawal of ${wu.coins} coins has been paid.${admin_note ? ` Ref: ${admin_note}` : ''}`
+      : 'Your withdrawal request has been approved and is being processed.';
+    c.executionCtx?.waitUntil?.(notifyUser(c.env, wu.uid, 'Withdrawal update', msg, 'payout'));
+  }
   return c.json({ success: true });
 });
 
@@ -1116,6 +1137,21 @@ admin.patch('/host-applications/:id/review', async (c) => {
     }
   }
 
+  // Real-time: tell the applicant the outcome. On approval also push a
+  // `data_changed` (resource 'role') so the app can re-fetch profile and switch
+  // to host mode — the auth middleware already reads the fresh role per request.
+  if (app.user_id) {
+    if (action === 'approve') {
+      c.executionCtx?.waitUntil?.(notifyUser(c.env, app.user_id, 'Application approved 🎉', 'Congratulations! Your host application has been approved. You can now go online and start receiving calls.', 'host_application'));
+      try {
+        const stub = c.env.NOTIFICATION_HUB.get(c.env.NOTIFICATION_HUB.idFromName(app.user_id));
+        c.executionCtx?.waitUntil?.(stub.fetch('https://dummy/notify', { method: 'POST', body: JSON.stringify({ type: 'data_changed', resource: 'role', timestamp: Date.now() }) }));
+      } catch { /* best-effort */ }
+    } else if (action === 'reject') {
+      c.executionCtx?.waitUntil?.(notifyUser(c.env, app.user_id, 'Application update', `Your host application was not approved.${rejection_reason ? ` Reason: ${rejection_reason}` : ''}`, 'host_application'));
+    }
+  }
+
   return c.json({ success: true, status: newStatus });
 });
 
@@ -1174,6 +1210,12 @@ admin.patch('/deposits/:id', async (c) => {
     }
     const u = c.get('user');
     await auditLog(db(c), u.sub, u.email || 'Admin', u.email || '', 'update', 'deposit', id, `Deposit ${id} approved`);
+    // Real-time: credit the coins to the buyer's wallet live + notify them.
+    const dep = await db(c).prepare('SELECT user_id FROM coin_purchases WHERE id = ?').bind(id).first<{ user_id: string }>();
+    if (dep?.user_id) {
+      await pushCoinUpdate(c.env, dep.user_id, result.coins);
+      c.executionCtx?.waitUntil?.(notifyUser(c.env, dep.user_id, 'Coins added', `${result.coins} coins have been added to your wallet.`, 'deposit'));
+    }
     return c.json({ success: true, coins: result.coins });
   }
 
@@ -1201,6 +1243,9 @@ admin.patch('/deposits/:id', async (c) => {
         crypto.randomUUID(), purchase.user_id, 'refund', -totalRefund, `Deposit refunded by admin (coins reversed)`, id
       ),
     ]);
+    // Real-time: reflect the reversed balance in the user's wallet + notify.
+    await pushCoinUpdate(c.env, purchase.user_id, -totalRefund);
+    c.executionCtx?.waitUntil?.(notifyUser(c.env, purchase.user_id, 'Deposit refunded', `A deposit was refunded and ${totalRefund} coins were reversed from your wallet.`, 'deposit'));
   } else {
     await db(c).prepare(`UPDATE coin_purchases SET ${sets.join(', ')} WHERE id = ?`).bind(...vals).run();
   }
@@ -1284,12 +1329,16 @@ admin.patch('/support-tickets/:id', async (c) => {
 admin.post('/support-tickets/:id/reply', async (c) => {
   const { id } = c.req.param();
   const { text } = await c.req.json() as any;
-  const ticket = await db(c).prepare('SELECT messages FROM support_tickets WHERE id = ?').bind(id).first<any>();
+  const ticket = await db(c).prepare('SELECT messages, user_id FROM support_tickets WHERE id = ?').bind(id).first<any>();
   if (!ticket) return c.json({ error: 'Not found' }, 404);
   const messages = JSON.parse(ticket.messages || '[]');
   messages.push({ from: 'admin', text, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) });
   await db(c).prepare('UPDATE support_tickets SET messages = ?, status = ?, updated_at = unixepoch() WHERE id = ?')
     .bind(JSON.stringify(messages), 'in_progress', id).run();
+  // Real-time: notify the user that support replied to their ticket.
+  if (ticket.user_id) {
+    c.executionCtx?.waitUntil?.(notifyUser(c.env, ticket.user_id, 'Support replied', String(text ?? '').slice(0, 140) || 'Support has responded to your ticket.', 'support'));
+  }
   return c.json({ success: true, messages });
 });
 

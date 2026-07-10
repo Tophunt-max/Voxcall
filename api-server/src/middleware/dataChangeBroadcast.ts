@@ -18,6 +18,7 @@ type Variables = { user: JWTPayload };
 
 // Admin URL entity segment → { resource token clients invalidate on, audience }.
 const RESOURCE_MAP: Record<string, { resource: string; audience: BroadcastAudience }> = {
+  'hosts': { resource: 'hosts', audience: 'all' },
   'coin-plans': { resource: 'coin_plans', audience: 'all' },
   'vip-plans': { resource: 'vip_plans', audience: 'all' },
   'gifts': { resource: 'gifts', audience: 'all' },

@@ -236,6 +236,10 @@ const CATALOG_QUERY_KEYS: Record<string, (string | number)[][]> = {
   talk_topics: [["talk-topics"]],
   banners: [["banners"]],
   level_config: [["host-level"]],
+  // Admin edited a host (rates / active / verified / level) — refresh the
+  // browse lists and any open host detail. ["host"] prefix also matches
+  // ["host", id]; ["hosts"] matches the paged browse query.
+  hosts: [["hosts"], ["host"], ["recommended-hosts"], ["favorite-hosts"]],
 };
 
 function AppBridge() {

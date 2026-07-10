@@ -147,6 +147,9 @@ function WebNotificationBridge({ seenCallIds, activeCallRef }: { seenCallIds: Re
 const HOST_CATALOG_QUERY_KEYS: Record<string, (string | number)[][]> = {
   banners: [["host-banners"]],
   level_config: [["host-level"]],
+  // Admin edited this host (rates / level / active) — refresh the host's own
+  // profile and level cards so the changes show without a re-open.
+  hosts: [["host-me"], ["host-level"]],
 };
 
 function AppBridge() {
