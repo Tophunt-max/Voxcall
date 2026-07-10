@@ -53,6 +53,15 @@ function Chip({ label, bg, color }: { label: string; bg: string; color: string }
   );
 }
 
+function HeroStat({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.heroStat}>
+      <Text style={styles.heroStatVal} numberOfLines={1}>{value}</Text>
+      <Text style={styles.heroStatLabel}>{label}</Text>
+    </View>
+  );
+}
+
 function LevelRow({
   def,
   currentLevel,
@@ -181,6 +190,17 @@ export default function LevelBenefitsScreen() {
               </View>
             </View>
           )}
+
+          {/* Lifetime stats strip */}
+          <View style={styles.heroStats}>
+            <HeroStat label="Calls" value={(data.stats?.total_calls ?? 0).toLocaleString()} />
+            <View style={styles.heroStatDiv} />
+            <HeroStat label="Hours" value={((data.stats?.total_minutes ?? 0) / 60).toFixed(1)} />
+            <View style={styles.heroStatDiv} />
+            <HeroStat label="Earned" value={(data.stats?.total_earnings ?? 0).toLocaleString()} />
+            <View style={styles.heroStatDiv} />
+            <HeroStat label="Rating" value={(data.stats?.rating ?? 0).toFixed(1)} />
+          </View>
         </>
       ) : (
         <Text style={styles.heroHeaderTitleOnly}>Climb the ladder, earn more</Text>
@@ -244,6 +264,11 @@ const styles = StyleSheet.create({
   heroProgressText: { fontSize: 12.5, fontFamily: "Poppins_600SemiBold", color: "#fff" },
   heroTrack: { height: 10, borderRadius: 5, backgroundColor: "rgba(255,255,255,0.25)", overflow: "hidden" },
   heroFill: { height: 10, borderRadius: 5, backgroundColor: "#fff" },
+  heroStats: { flexDirection: "row", alignItems: "center", marginTop: 16, backgroundColor: "rgba(255,255,255,0.15)", borderRadius: 14, paddingVertical: 10 },
+  heroStat: { flex: 1, alignItems: "center" },
+  heroStatVal: { fontSize: 15, fontFamily: "Poppins_700Bold", color: "#fff" },
+  heroStatLabel: { fontSize: 10.5, fontFamily: "Poppins_400Regular", color: "rgba(255,255,255,0.8)", marginTop: 1 },
+  heroStatDiv: { width: StyleSheet.hairlineWidth, height: 26, backgroundColor: "rgba(255,255,255,0.3)" },
 
   loading: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24, gap: 12 },
   retryHint: { fontSize: 13, fontFamily: "Poppins_400Regular", textAlign: "center" },
