@@ -325,6 +325,14 @@ class SocketService {
           timestamp: Date.now(),
         });
         break;
+      case "notification_new":
+        // A new in-app notification was created for this user — deliver it live
+        // so the notifications list + unread badge update without a refetch.
+        this.emit(SocketEvents.NOTIFICATION_NEW, {
+          notification: msg.notification ?? null,
+          timestamp: Date.now(),
+        });
+        break;
       case "account_banned":
         // Admin banned/suspended this account — raise the blocking ban popup
         // instantly (no logout). Reason + expiry drive the popup text.

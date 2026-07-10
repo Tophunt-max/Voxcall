@@ -363,6 +363,14 @@ class SocketService {
           timestamp: Date.now(),
         });
         break;
+      case "notification_new":
+        // A new in-app notification for this host — deliver live so the list +
+        // unread badge update without a refetch.
+        this.emit(SocketEvents.NOTIFICATION_NEW, {
+          notification: msg.notification ?? null,
+          timestamp: Date.now(),
+        });
+        break;
       case "account_banned":
         // Admin banned/suspended this host — raise the blocking ban popup
         // instantly (no logout).

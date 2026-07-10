@@ -63,8 +63,20 @@ const queryClient = new QueryClient({
 
 // ─── FCM Notification Tap Bridge (Native only) ───────────────────────────────
 // Handles push notification taps using @react-native-firebase/messaging
+// Deep-link map: notification `data.type` → the screen to open on tap.
+const USER_NOTIF_ROUTE: Record<string, string> = {
+  deposit: "/user/coin-history",
+  payout: "/user/coin-history",
+  referral: "/user/referral",
+  support: "/user/help-center",
+  vip_expiring: "/user/vip",
+  host_application: "/user/notifications",
+  system: "/user/notifications",
+};
+
 function FCMNotificationTapBridge() {
   const { receiveCall, activeCall } = useCall();
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     if (!RNMessaging) return;
@@ -84,6 +96,11 @@ function FCMNotificationTapBridge() {
         }
       } else if (data.type === "chat_message" && data.room_id) {
         router.push({ pathname: "/user/chat/[id]", params: { id: String(data.room_id) } });
+      } else {
+        // All other notification types → deep-link to the relevant screen
+        // (falls back to the notifications list for unknown types).
+        const route = USER_NOTIF_ROUTE[String(data.type ?? "")] ?? "/user/notifications";
+        router.push(route as any);
       }
     }
 
@@ -97,11 +114,13 @@ function FCMNotificationTapBridge() {
       if (msg) handleNotificationData(msg?.data ?? {});
     });
 
-    // Foreground message → show local alert / in-app toast handled by AppBridge
+    // Foreground message → the in-app TOAST is shown by AppBridge's
+    // NOTIFICATION_NEW handler (WebSocket), so here we only refresh the unread
+    // badge as a fallback when the socket is momentarily disconnected. No toast
+    // here on purpose — avoids a double toast when both channels deliver.
     const unsubForeground = onForegroundMessage(({ title, body, data }) => {
-      // Foreground call notifications are handled via WebSocket (AppBridge)
-      // Chat messages — could show in-app toast here if needed
       if (__DEV__) console.log("[FCM Foreground]", title, body, data);
+      queryClient.invalidateQueries({ queryKey: ["notif-unread"] });
     });
 
     return () => {
@@ -263,6 +282,17 @@ function AppBridge() {
       if (keys) {
         keys.forEach((queryKey) => queryClient.invalidateQueries({ queryKey }));
       }
+    },
+    [queryClient]
+  );
+
+  // Real-time in-app notification — show a toast + bump the unread badge live.
+  useSocketEvent(
+    SocketEvents.NOTIFICATION_NEW,
+    (data: any) => {
+      const n = data?.notification;
+      if (n?.title) showSuccessToast(n.body ? `${n.title} — ${n.body}` : n.title);
+      queryClient.invalidateQueries({ queryKey: ["notif-unread"] });
     },
     [queryClient]
   );

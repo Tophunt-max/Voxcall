@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { authMiddleware } from '../middleware/auth';
-import { pushToUser } from '../lib/realtime';
+import { pushToUser, notifyUser } from '../lib/realtime';
 import { verifyPassword } from '../lib/hash';
 import { getStreakStatus, claimDailyStreak, repairStreak } from '../lib/streak';
 import { getDefaultCallRates } from '../lib/levels';
@@ -224,6 +224,13 @@ user.post('/favorites/:hostId', async (c) => {
       c.executionCtx?.waitUntil?.(pushToUser(c.env, host.user_id, {
         type: 'favorited', by_name: me?.name ?? 'Someone', timestamp: Date.now(),
       }));
+      // Persist + offline push (realtime:false — favorited socket event already
+      // shows the live toast).
+      c.executionCtx?.waitUntil?.(notifyUser(
+        c.env, host.user_id, 'New favorite ❤️',
+        `${me?.name ?? 'Someone'} added you to favorites`,
+        'favorite', { realtime: false },
+      ));
     } catch { /* best-effort */ }
   }
 

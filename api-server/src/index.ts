@@ -33,6 +33,7 @@ import { billedMinutes, coinsForCall, chargeCallerWithFreePool, releaseCallHold 
 import { runReengagement } from './lib/reengagement';
 import { istContext } from './lib/streak';
 import { getFCMTokens, sendFCMPush } from './lib/fcm';
+import { notifyUser } from './lib/realtime';
 import { USD_TO_FOREIGN } from './lib/currency';
 
 // Re-export Durable Objects (required by wrangler)
@@ -735,7 +736,6 @@ async function maybeSendVipReminders(env: Env): Promise<void> {
       `SELECT u.id, u.fcm_token, u.vip_expires_at, p.name as plan_name
        FROM users u LEFT JOIN vip_plans p ON p.tier = u.vip_tier
        WHERE u.vip_expires_at IS NOT NULL AND u.vip_expires_at > ? AND u.vip_expires_at <= ?
-         AND u.fcm_token IS NOT NULL
          AND (u.vip_reminder_at IS NULL OR u.vip_reminder_at < ?)
        LIMIT 200`
     ).bind(now, soon, dedupeBefore).all<any>();
@@ -745,11 +745,13 @@ async function maybeSendVipReminders(env: Env): Promise<void> {
       const label = hrsLeft <= 24
         ? `${hrsLeft} hour${hrsLeft === 1 ? '' : 's'}`
         : `${Math.ceil(hrsLeft / 24)} day${Math.ceil(hrsLeft / 24) === 1 ? '' : 's'}`;
-      await sendFCMPush(
-        env.FIREBASE_SERVICE_ACCOUNT, u.fcm_token,
-        `${u.plan_name ?? 'VIP'} expiring soon`,
+      // notifyUser => in-app notification row + real-time notification_new +
+      // FCM (previously FCM-only, so it never appeared in the notifications list).
+      await notifyUser(
+        env, u.id,
+        `${u.plan_name ?? 'VIP'} expiring soon ⏳`,
         `Your VIP ends in ${label}. Renew now to keep your perks.`,
-        { type: 'vip_expiring' },
+        'vip_expiring',
       ).catch(() => {});
       await env.DB.prepare('UPDATE users SET vip_reminder_at = ? WHERE id = ?').bind(now, u.id).run().catch(() => {});
     }

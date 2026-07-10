@@ -11,7 +11,7 @@ import {
   Dimensions,
   Platform,
 } from "react-native";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
@@ -368,6 +368,20 @@ export default function HomeScreen() {
     staleTime: 60_000,
   });
 
+  // Unread in-app notification count for the bell badge. Refetched live by
+  // AppBridge on NOTIFICATION_NEW (same query key) + on screen focus below.
+  const { data: unreadNotif = 0 } = useQuery({
+    queryKey: ['notif-unread'],
+    queryFn: async () => {
+      try { const d = await API.getNotifications() as any[]; return Array.isArray(d) ? d.filter((n: any) => !n.is_read).length : 0; }
+      catch { return 0; }
+    },
+    staleTime: 30_000,
+  });
+  useFocusEffect(
+    useCallback(() => { queryClient.invalidateQueries({ queryKey: ['notif-unread'] }); }, [])
+  );
+
   const hosts: Host[] = hostsData ?? [];
   const banners: any[] = bannersData as any[];
 
@@ -594,9 +608,14 @@ export default function HomeScreen() {
             onPress={() => router.push("/user/notifications")}
             style={[styles.bellBtn, { backgroundColor: colors.muted }]}
             accessibilityRole="button"
-            accessibilityLabel="Notifications"
+            accessibilityLabel={unreadNotif > 0 ? `Notifications, ${unreadNotif} unread` : "Notifications"}
           >
             <Image source={require("@/assets/icons/ic_notify.png")} style={{ width: 18, height: 18, tintColor: colors.text }} resizeMode="contain" />
+            {unreadNotif > 0 && (
+              <View style={styles.notifBadge}>
+                <Text style={styles.notifBadgeText}>{unreadNotif > 99 ? "99+" : String(unreadNotif)}</Text>
+              </View>
+            )}
           </TouchableOpacity>
         </View>
       </View>
@@ -930,7 +949,9 @@ const styles = StyleSheet.create({
   },
   coinIconHeader: { width: 18, height: 18 },
   coinText: { fontSize: 13, fontFamily: "Poppins_600SemiBold" },
-  bellBtn: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
+  bellBtn: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center", position: "relative" },
+  notifBadge: { position: "absolute", top: -2, right: -2, minWidth: 16, height: 16, borderRadius: 8, backgroundColor: "#EF4444", alignItems: "center", justifyContent: "center", paddingHorizontal: 3 },
+  notifBadgeText: { color: "#fff", fontSize: 9, fontFamily: "Poppins_700Bold" },
 
   content: { paddingHorizontal: 16, paddingTop: 8 },
 

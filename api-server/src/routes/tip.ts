@@ -3,6 +3,7 @@ import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth';
 import { applyLevelUp } from '../lib/levelService';
+import { notifyUser } from '../lib/realtime';
 import type { Env, JWTPayload } from '../types';
 
 const tip = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
@@ -98,6 +99,14 @@ tip.post('/send', zValidator('json', sendTipSchema), async (c) => {
         tip_id: tipId,
       }),
     });
+    // Persist + offline push (realtime:false — the tip_received socket event
+    // above already shows the live toast to online hosts, so we skip the extra
+    // notification_new to avoid a double toast; the row + FCM still land).
+    c.executionCtx?.waitUntil?.(notifyUser(
+      c.env, host.user_id, 'Tip received 💝',
+      `${sender?.name ?? 'Someone'} sent you ${body.amount} coins${body.message ? `: ${body.message}` : ''}`,
+      'tip', { realtime: false },
+    ));
   } catch (e) {
     console.warn('[tip/send] notification failed:', e);
   }

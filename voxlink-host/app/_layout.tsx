@@ -59,8 +59,20 @@ const queryClient = new QueryClient({
   },
 });
 
+// Deep-link map: notification `data.type` → the host screen to open on tap.
+const HOST_NOTIF_ROUTE: Record<string, string> = {
+  support: "/help-center",
+  host_application: "/notifications",
+  payout: "/notifications",
+  tip: "/notifications",
+  review: "/notifications",
+  favorite: "/notifications",
+  system: "/notifications",
+};
+
 function FCMNotificationTapBridge({ seenCallIds, activeCallRef }: { seenCallIds: React.MutableRefObject<Set<string>>; activeCallRef: React.MutableRefObject<any> }) {
   const { receiveCall } = useCall();
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     if (!RNMessaging) return;
@@ -80,6 +92,9 @@ function FCMNotificationTapBridge({ seenCallIds, activeCallRef }: { seenCallIds:
         }
       } else if (data.type === "chat_message" && data.room_id) {
         router.push({ pathname: "/chat/[id]", params: { id: String(data.room_id) } });
+      } else {
+        const route = HOST_NOTIF_ROUTE[String(data.type ?? "")] ?? "/notifications";
+        router.push(route as any);
       }
     }
 
@@ -94,6 +109,10 @@ function FCMNotificationTapBridge({ seenCallIds, activeCallRef }: { seenCallIds:
     const unsubForeground = onForegroundMessage(({ title, body, data }) => {
       // Don't log notification content in production (privacy + perf).
       if (__DEV__) console.log("[FCM Foreground]", title, body, data);
+      // In-app toast is shown by AppBridge's NOTIFICATION_NEW (WebSocket); here
+      // we only refresh the unread bell badge as a fallback. No toast (avoids
+      // double toast when both channels deliver).
+      queryClient.invalidateQueries({ queryKey: ["host-notif-unread"] });
     });
 
     setupBackgroundMessageHandler();
@@ -280,6 +299,7 @@ function AppBridge() {
       showSuccessToast(`💝 ${who} sent you ${amt} coins${data?.message ? `: ${data.message}` : ""}`);
       refreshProfile().catch(() => {});
       queryClient.refetchQueries({ queryKey: ["host-earnings"] });
+      queryClient.invalidateQueries({ queryKey: ["host-notif-unread"] });
     },
     [refreshProfile, queryClient]
   );
@@ -292,6 +312,7 @@ function AppBridge() {
       showSuccessToast(`⭐ You received a new ${stars}-star review!`);
       refreshProfile().catch(() => {});
       queryClient.refetchQueries({ queryKey: ["host-me"] });
+      queryClient.invalidateQueries({ queryKey: ["host-notif-unread"] });
     },
     [refreshProfile, queryClient]
   );
@@ -301,8 +322,20 @@ function AppBridge() {
     SocketEvents.FAVORITED,
     (data: any) => {
       showSuccessToast(`❤️ ${data?.byName || "Someone"} added you to favorites`);
+      queryClient.invalidateQueries({ queryKey: ["host-notif-unread"] });
     },
-    []
+    [queryClient]
+  );
+
+  // Real-time in-app notification — toast + bump the unread bell badge live.
+  useSocketEvent(
+    SocketEvents.NOTIFICATION_NEW,
+    (data: any) => {
+      const n = data?.notification;
+      if (n?.title) showSuccessToast(n.body ? `${n.title} — ${n.body}` : n.title);
+      queryClient.invalidateQueries({ queryKey: ["host-notif-unread"] });
+    },
+    [queryClient]
   );
 
   // NOTE: CALL_END intentionally NOT handled here.

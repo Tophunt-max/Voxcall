@@ -110,21 +110,39 @@ export async function notifyUser(
   title: string,
   body: string,
   type: string = 'system',
+  opts?: { data?: Record<string, string>; realtime?: boolean },
 ): Promise<void> {
+  const id = 'notif-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+  const createdAt = Math.floor(Date.now() / 1000);
+  const safeTitle = title.slice(0, 100);
+  const safeBody = body.slice(0, 500);
+  const dataJson = opts?.data ? JSON.stringify(opts.data) : '{}';
   try {
-    const id = 'notif-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
     await env.DB.prepare(
-      'INSERT INTO notifications (id, user_id, type, title, body, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+      'INSERT INTO notifications (id, user_id, type, title, body, data, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
     )
-      .bind(id, userId, type, title.slice(0, 100), body.slice(0, 500), Math.floor(Date.now() / 1000))
+      .bind(id, userId, type, safeTitle, safeBody, dataJson, createdAt)
       .run();
   } catch (e) {
     console.warn('[realtime] notifyUser DB insert failed for', userId, e);
   }
+  // Real-time in-app delivery: push notification_new so an OPEN app prepends it
+  // to the list + bumps the unread badge + shows a toast — no refetch needed.
+  // Suppressed (realtime:false) for events that already have their own rich
+  // live toast (tips/reviews/favorites) to avoid a double toast.
+  if (opts?.realtime !== false) {
+    await pushToUser(env, userId, {
+      type: 'notification_new',
+      notification: { id, type, title: safeTitle, body: safeBody, data: opts?.data ?? {}, is_read: 0, created_at: createdAt },
+      timestamp: Date.now(),
+    });
+  }
+  // FCM push (delivers when app is backgrounded/closed). `data` carries the
+  // semantic type so the tap handler can deep-link to the right screen.
   try {
     const tokens = await getFCMTokens(env.DB, [userId]);
     if (tokens.length > 0) {
-      await sendFCMPush(env.FIREBASE_SERVICE_ACCOUNT, tokens, title, body, { type, notif_type: type });
+      await sendFCMPush(env.FIREBASE_SERVICE_ACCOUNT, tokens, safeTitle, safeBody, { type, notif_type: type, ...(opts?.data ?? {}) });
     }
   } catch (e) {
     console.warn('[realtime] notifyUser FCM push failed for', userId, e);

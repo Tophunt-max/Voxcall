@@ -8,6 +8,8 @@ import { useLanguage } from "@/context/LanguageContext";
 import { formatRelativeTime } from "@/utils/format";
 import { API, resolveMediaUrl } from "@/services/api";
 import { showErrorToast } from "@/components/Toast";
+import { useSocketEvent } from "@/context/SocketContext";
+import { SocketEvents } from "@/constants/events";
 
 interface Notification {
   id: string;
@@ -43,6 +45,16 @@ export default function NotificationsScreen() {
   }, []);
 
   useEffect(() => { load(); }, []);
+
+  // Real-time: prepend a newly-arrived notification while the screen is open.
+  useSocketEvent(
+    SocketEvents.NOTIFICATION_NEW,
+    (data: any) => {
+      const n = data?.notification;
+      if (n && (n.id || n.title)) setNotifications((prev) => [n as Notification, ...prev]);
+    },
+    []
+  );
 
   const markAllRead = async () => {
     try {

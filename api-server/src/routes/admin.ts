@@ -15,7 +15,7 @@ import { approveDeposit, validatePromoInput } from './payment';
 import { ensureAllMigrations, listMigrationStatus } from '../lib/autoMigrate';
 import { invalidateBannerCaches } from './public';
 import { findActiveBan } from '../lib/bans';
-import { pushCoinUpdate, notifyUser, pushBanState } from '../lib/realtime';
+import { pushCoinUpdate, notifyUser, pushBanState, pushToUser } from '../lib/realtime';
 import type { Env, JWTPayload } from '../types';
 
 const admin = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
@@ -1001,6 +1001,15 @@ admin.post('/notifications/send', async (c) => {
         .bind(id, u.id, type, title, msgBody, now);
     });
     await db(c).batch(stmts);
+    // Real-time: push notification_new so currently-open apps prepend it + bump
+    // the unread badge without waiting for a refetch.
+    c.executionCtx?.waitUntil?.(Promise.allSettled(chunk.map((u: any) =>
+      pushToUser(c.env, u.id, {
+        type: 'notification_new',
+        notification: { type, title, body: msgBody, is_read: 0, created_at: now },
+        timestamp: Date.now(),
+      }),
+    )));
   }
 
   // Send actual Expo Push Notifications in batches of 100
