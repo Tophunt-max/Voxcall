@@ -92,6 +92,13 @@ import m_0043 from '../../migrations/0043_reward_tasks.sql';
 import m_0044 from '../../migrations/0044_reward_dopamine.sql';
 import m_0045 from '../../migrations/0045_reward_trigger_counters.sql';
 import m_0046 from '../../migrations/0046_achievement_windows.sql';
+import m_0047 from '../../migrations/0047_message_edit_delete.sql';
+import m_0048 from '../../migrations/0048_vip_subscription.sql';
+import m_0049 from '../../migrations/0049_vip_perks_extra.sql';
+import m_0050 from '../../migrations/0050_vip_plans_refine.sql';
+import m_0051 from '../../migrations/0051_vip_perks_structured.sql';
+import m_0052 from '../../migrations/0052_banners_production.sql';
+import m_0053 from '../../migrations/0053_reset_demo_banners.sql';
 
 interface Migration {
   /**
@@ -150,6 +157,13 @@ const MIGRATIONS: ReadonlyArray<Migration> = [
   { name: '0044_reward_dopamine.sql',               sql: m_0044 },
   { name: '0045_reward_trigger_counters.sql',       sql: m_0045 },
   { name: '0046_achievement_windows.sql',           sql: m_0046 },
+  { name: '0047_message_edit_delete.sql',           sql: m_0047 },
+  { name: '0048_vip_subscription.sql',              sql: m_0048 },
+  { name: '0049_vip_perks_extra.sql',               sql: m_0049 },
+  { name: '0050_vip_plans_refine.sql',              sql: m_0050 },
+  { name: '0051_vip_perks_structured.sql',          sql: m_0051 },
+  { name: '0052_banners_production.sql',            sql: m_0052 },
+  { name: '0053_reset_demo_banners.sql',            sql: m_0053 },
 ];
 
 /**
