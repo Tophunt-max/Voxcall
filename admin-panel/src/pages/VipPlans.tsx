@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { Modal } from '@/components/ui/Modal';
-import { Plus, Edit2, Trash2, Crown, Percent, Gift, MessageCircle, Users, Check } from 'lucide-react';
+import { Plus, Edit2, Trash2, Crown, Percent, Gift, MessageCircle, Users, Check, Zap, LifeBuoy, Sparkles } from 'lucide-react';
 
 const empty = {
   tier: '',
@@ -17,6 +17,9 @@ const empty = {
   color: '#A855F7',
   perks: '',
   chat_unlock: true,
+  priority_matching: false,
+  priority_support: false,
+  profile_frame: false,
   is_active: true,
   sort_order: '0',
 };
@@ -52,6 +55,9 @@ function PlanCard({ plan, onEdit, onDelete }: { plan: any; onEdit: () => void; o
           <span className="flex items-center gap-1 text-xs font-semibold bg-emerald-50 text-emerald-700 px-2 py-1 rounded-full"><Percent size={11} />{plan.call_discount_pct}% off calls</span>
           <span className="flex items-center gap-1 text-xs font-semibold bg-amber-50 text-amber-700 px-2 py-1 rounded-full"><Gift size={11} />{plan.daily_bonus_coins}/day</span>
           {plan.chat_unlock ? <span className="flex items-center gap-1 text-xs font-semibold bg-violet-50 text-violet-700 px-2 py-1 rounded-full"><MessageCircle size={11} />Chat unlock</span> : null}
+          {plan.priority_matching ? <span className="flex items-center gap-1 text-xs font-semibold bg-blue-50 text-blue-700 px-2 py-1 rounded-full"><Zap size={11} />Priority match</span> : null}
+          {plan.priority_support ? <span className="flex items-center gap-1 text-xs font-semibold bg-rose-50 text-rose-700 px-2 py-1 rounded-full"><LifeBuoy size={11} />Priority support</span> : null}
+          {plan.profile_frame ? <span className="flex items-center gap-1 text-xs font-semibold bg-fuchsia-50 text-fuchsia-700 px-2 py-1 rounded-full"><Sparkles size={11} />Profile frame</span> : null}
         </div>
         {perks.length > 0 && (
           <ul className="space-y-1">
@@ -105,6 +111,9 @@ export default function VipPlans() {
       color: p.color || '#A855F7',
       perks: parsePerks(p.perks).join('\n'),
       chat_unlock: !!plan_bool(p.chat_unlock),
+      priority_matching: !!plan_bool(p.priority_matching),
+      priority_support: !!plan_bool(p.priority_support),
+      profile_frame: !!plan_bool(p.profile_frame),
       is_active: p.is_active !== 0,
       sort_order: String(p.sort_order ?? 0),
     });
@@ -132,6 +141,9 @@ export default function VipPlans() {
       color: form.color || null,
       perks: perksArr,
       chat_unlock: form.chat_unlock ? 1 : 0,
+      priority_matching: form.priority_matching ? 1 : 0,
+      priority_support: form.priority_support ? 1 : 0,
+      profile_frame: form.profile_frame ? 1 : 0,
       is_active: form.is_active ? 1 : 0,
       sort_order: parseInt(form.sort_order) || 0,
     };
@@ -250,11 +262,33 @@ export default function VipPlans() {
             <p className="text-xs text-muted-foreground mt-1">These are shown to users on the VIP screen.</p>
           </div>
 
+          <div>
+            <label className="text-sm font-semibold block mb-2">Perks (enforced by the app)</label>
+            <div className="grid grid-cols-2 gap-2.5">
+              {([
+                { key: 'chat_unlock', label: 'Chat unlock', hint: 'DM any host without calling first' },
+                { key: 'priority_matching', label: 'Priority matching', hint: 'Matched with higher-quality hosts' },
+                { key: 'priority_support', label: 'Priority support', hint: 'Support tickets flagged high-priority' },
+                { key: 'profile_frame', label: 'Exclusive profile frame', hint: 'Special frame around the avatar' },
+              ] as const).map((t) => (
+                <label key={t.key} className="flex items-start gap-2.5 cursor-pointer border border-border rounded-xl px-3 py-2.5 hover:bg-secondary/50 transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={(form as any)[t.key]}
+                    onChange={(e) => setForm((f) => ({ ...f, [t.key]: e.target.checked }))}
+                    className="w-4 h-4 rounded accent-violet-600 mt-0.5"
+                  />
+                  <span className="leading-tight">
+                    <span className="text-sm font-medium block">{t.label}</span>
+                    <span className="text-[11px] text-muted-foreground">{t.hint}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1.5">Toggle the actual benefits this plan unlocks. The free-text perks above are only the marketing copy shown to users.</p>
+          </div>
+
           <div className="flex gap-5 pt-1">
-            <label className="flex items-center gap-2.5 cursor-pointer">
-              <input type="checkbox" checked={form.chat_unlock} onChange={(e) => setForm((f) => ({ ...f, chat_unlock: e.target.checked }))} className="w-4 h-4 rounded accent-violet-600" />
-              <span className="text-sm font-medium">Chat unlock</span>
-            </label>
             <label className="flex items-center gap-2.5 cursor-pointer">
               <input type="checkbox" checked={form.is_active} onChange={(e) => setForm((f) => ({ ...f, is_active: e.target.checked }))} className="w-4 h-4 rounded accent-violet-600" />
               <span className="text-sm font-medium">Active</span>

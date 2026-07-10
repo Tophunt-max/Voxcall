@@ -570,8 +570,8 @@ admin.post('/vip-plans', async (c) => {
   const id = crypto.randomUUID();
   try {
     await db(c).prepare(
-      `INSERT INTO vip_plans (id, tier, name, price_coins, duration_days, call_discount_pct, daily_bonus_coins, signup_bonus_coins, daily_free_minutes, chat_unlock, badge, color, perks, is_active, sort_order)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+      `INSERT INTO vip_plans (id, tier, name, price_coins, duration_days, call_discount_pct, daily_bonus_coins, signup_bonus_coins, daily_free_minutes, chat_unlock, priority_matching, priority_support, profile_frame, badge, color, perks, is_active, sort_order)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
     ).bind(
       id, tier, name,
       Math.max(0, parseInt(b.price_coins) || 0),
@@ -581,6 +581,9 @@ admin.post('/vip-plans', async (c) => {
       Math.max(0, parseInt(b.signup_bonus_coins) || 0),
       Math.max(0, parseInt(b.daily_free_minutes) || 0),
       b.chat_unlock ? 1 : 0,
+      b.priority_matching ? 1 : 0,
+      b.priority_support ? 1 : 0,
+      b.profile_frame ? 1 : 0,
       b.badge ?? null, b.color ?? null,
       normalizePerks(b.perks),
       b.is_active === 0 || b.is_active === false ? 0 : 1,
@@ -607,6 +610,9 @@ admin.patch('/vip-plans/:id', async (c) => {
   if (b.signup_bonus_coins !== undefined) add('signup_bonus_coins', Math.max(0, parseInt(b.signup_bonus_coins) || 0));
   if (b.daily_free_minutes !== undefined) add('daily_free_minutes', Math.max(0, parseInt(b.daily_free_minutes) || 0));
   if (b.chat_unlock !== undefined) add('chat_unlock', b.chat_unlock ? 1 : 0);
+  if (b.priority_matching !== undefined) add('priority_matching', b.priority_matching ? 1 : 0);
+  if (b.priority_support !== undefined) add('priority_support', b.priority_support ? 1 : 0);
+  if (b.profile_frame !== undefined) add('profile_frame', b.profile_frame ? 1 : 0);
   if (b.badge !== undefined) add('badge', b.badge ?? null);
   if (b.color !== undefined) add('color', b.color ?? null);
   if (b.perks !== undefined) add('perks', normalizePerks(b.perks));

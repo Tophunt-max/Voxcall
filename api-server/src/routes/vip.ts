@@ -29,6 +29,9 @@ function serializePlan(p: any) {
     signup_bonus_coins: Number(p.signup_bonus_coins) || 0,
     daily_free_minutes: Number(p.daily_free_minutes) || 0,
     chat_unlock: !!Number(p.chat_unlock),
+    priority_matching: !!Number(p.priority_matching),
+    priority_support: !!Number(p.priority_support),
+    profile_frame: !!Number(p.profile_frame),
     badge: p.badge ?? null,
     color: p.color ?? null,
     perks: parsePerks(p.perks),
@@ -55,7 +58,19 @@ vip.get('/status', async (c) => {
     .bind(sub).first<{ coins: number; vip_daily_claim_at: number | null }>();
   const lastClaim = Number(u?.vip_daily_claim_at) || 0;
 
-  const dailyAvailable = status.isVip && status.dailyBonusCoins > 0 && now - lastClaim >= DAILY_COOLDOWN_SEC;
+  // The daily reward can be coins, free call minutes, or both — so a plan that
+  // grants ONLY free minutes still exposes a claimable daily reward. Guarded so
+  // a pre-migration DB (no daily_free_minutes column) simply reports 0 minutes.
+  let dailyFreeMinutes = 0;
+  if (status.isVip && status.tier) {
+    try {
+      const planRow = await db.prepare('SELECT daily_free_minutes FROM vip_plans WHERE tier = ?')
+        .bind(status.tier).first<{ daily_free_minutes: number }>();
+      dailyFreeMinutes = Math.max(0, Number(planRow?.daily_free_minutes) || 0);
+    } catch { dailyFreeMinutes = 0; }
+  }
+  const hasDailyReward = status.isVip && (status.dailyBonusCoins > 0 || dailyFreeMinutes > 0);
+  const dailyAvailable = hasDailyReward && now - lastClaim >= DAILY_COOLDOWN_SEC;
 
   return c.json({
     is_vip: status.isVip,
@@ -65,11 +80,15 @@ vip.get('/status', async (c) => {
     days_left: status.isVip && status.expiresAt ? Math.max(0, Math.ceil((status.expiresAt - now) / 86400)) : 0,
     call_discount_pct: status.callDiscountPct,
     daily_bonus_coins: status.dailyBonusCoins,
+    daily_free_minutes: dailyFreeMinutes,
     chat_unlock: status.chatUnlock,
+    priority_matching: status.priorityMatching,
+    priority_support: status.prioritySupport,
+    profile_frame: status.profileFrame,
     badge: status.badge,
     color: status.color,
     daily_available: dailyAvailable,
-    next_daily_at: status.dailyBonusCoins > 0 ? lastClaim + DAILY_COOLDOWN_SEC : null,
+    next_daily_at: hasDailyReward ? lastClaim + DAILY_COOLDOWN_SEC : null,
     coins: Number(u?.coins) || 0,
   });
 });
@@ -143,12 +162,31 @@ vip.post('/claim-daily', async (c) => {
 
   const status = await getVipStatus(db, sub);
   if (!status.isVip) return c.json({ error: 'VIP membership required', code: 'NOT_VIP' }, 403);
-  if (status.dailyBonusCoins <= 0) return c.json({ error: 'Your plan has no daily bonus' }, 400);
 
-  const bonus = status.dailyBonusCoins;
+  const bonus = Math.max(0, status.dailyBonusCoins);
+
+  // The daily reward is coins AND/OR free call minutes. Resolve the plan's free
+  // minutes up front so a plan that grants ONLY free minutes (no bonus coins)
+  // can still be claimed — previously this route rejected such plans with a 400
+  // BEFORE ever granting the minutes, so their daily perk was unreachable.
+  // Guarded: daily_free_minutes column is added by a later migration.
+  let freeMinutes = 0;
+  try {
+    const planRow = await db.prepare('SELECT daily_free_minutes FROM vip_plans WHERE tier = ?')
+      .bind(status.tier).first<{ daily_free_minutes: number }>();
+    freeMinutes = Math.max(0, Number(planRow?.daily_free_minutes) || 0);
+  } catch {
+    freeMinutes = 0; // column/table absent on a legacy DB
+  }
+
+  if (bonus <= 0 && freeMinutes <= 0) {
+    return c.json({ error: 'Your plan has no daily reward', code: 'NO_DAILY_REWARD' }, 400);
+  }
+
   const threshold = now - DAILY_COOLDOWN_SEC;
-  // Atomic, race-safe claim: only grants if the last claim is older than the
-  // cooldown (or never claimed). Two concurrent taps → only one succeeds.
+  // Atomic, race-safe claim: stamps the claim time (and adds any bonus coins)
+  // only if the last claim is older than the cooldown (or never claimed). Two
+  // concurrent taps → only one succeeds.
   const upd = await db.prepare(
     `UPDATE users SET coins = coins + ?, vip_daily_claim_at = ?, updated_at = unixepoch()
      WHERE id = ? AND (vip_daily_claim_at IS NULL OR vip_daily_claim_at <= ?)`
@@ -163,24 +201,23 @@ vip.post('/claim-daily', async (c) => {
     }, 429);
   }
 
-  await db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description) VALUES (?, ?, ?, ?, ?)')
-    .bind(crypto.randomUUID(), sub, 'bonus', bonus, 'VIP daily bonus')
-    .run()
-    .catch(() => {});
+  // Ledger the coin bonus (only when the plan actually grants coins).
+  if (bonus > 0) {
+    await db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description) VALUES (?, ?, ?, ?, ?)')
+      .bind(crypto.randomUUID(), sub, 'bonus', bonus, 'VIP daily bonus')
+      .run()
+      .catch(() => {});
+  }
 
-  // Also top up the plan's daily free call minutes (guarded: column added by a
-  // later migration, and free_call_minutes exists from migration 0028).
-  let freeMinutes = 0;
-  try {
-    const planRow = await db.prepare('SELECT daily_free_minutes FROM vip_plans WHERE tier = ?')
-      .bind(status.tier).first<{ daily_free_minutes: number }>();
-    freeMinutes = Math.max(0, Number(planRow?.daily_free_minutes) || 0);
-    if (freeMinutes > 0) {
+  // Top up the plan's daily free call minutes (guarded: free_call_minutes
+  // exists from migration 0028; a legacy DB without it just skips minutes).
+  if (freeMinutes > 0) {
+    try {
       await db.prepare('UPDATE users SET free_call_minutes = COALESCE(free_call_minutes, 0) + ? WHERE id = ?')
         .bind(freeMinutes, sub).run();
+    } catch {
+      freeMinutes = 0; // column absent — coins (if any) already granted
     }
-  } catch {
-    freeMinutes = 0; // column/table absent — skip minutes, coins already granted
   }
 
   const after = await db.prepare('SELECT coins FROM users WHERE id = ?').bind(sub).first<{ coins: number }>();

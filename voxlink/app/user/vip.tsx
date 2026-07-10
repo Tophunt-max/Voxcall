@@ -34,11 +34,25 @@ interface VipStatus {
   days_left: number;
   call_discount_pct: number;
   daily_bonus_coins: number;
+  daily_free_minutes: number;
+  chat_unlock: boolean;
+  priority_matching: boolean;
+  priority_support: boolean;
+  profile_frame: boolean;
   daily_available: boolean;
   coins: number;
 }
 
 const PURPLE_GRAD: readonly [string, string] = ["#7B2FF7", "#A855F7"];
+
+// Short label for the daily-reward button — reflects whatever the plan grants
+// (coins, free call minutes, or both) so a minutes-only plan reads correctly.
+function dailyRewardLabel(status: VipStatus): string {
+  const parts: string[] = [];
+  if (status.daily_bonus_coins > 0) parts.push(`${status.daily_bonus_coins} coins`);
+  if (status.daily_free_minutes > 0) parts.push(`${status.daily_free_minutes} min`);
+  return parts.join(" + ") || "reward";
+}
 
 export default function VipScreen() {
   const colors = useColors();
@@ -111,7 +125,10 @@ export default function VipScreen() {
     setClaiming(true);
     try {
       const res = await API.claimVipDaily();
-      showSuccessToast(`+${res.granted} coins added to your balance.`, "Daily bonus claimed 🎁");
+      const parts: string[] = [];
+      if (Number(res?.granted) > 0) parts.push(`+${res.granted} coins`);
+      if (Number(res?.free_minutes) > 0) parts.push(`+${res.free_minutes} free min`);
+      showSuccessToast(parts.length ? `${parts.join(" · ")} added.` : "Reward added to your account.", "Daily reward claimed 🎁");
       await Promise.all([load(), refreshBalance().catch(() => {})]);
     } catch (e: any) {
       const msg = String(e?.message || "");
@@ -163,7 +180,7 @@ export default function VipScreen() {
               <Text style={styles.statusExpiry}>
                 {status.days_left} day{status.days_left === 1 ? "" : "s"} left · renews on {expiryLabel}
               </Text>
-              {status.daily_bonus_coins > 0 && (
+              {(status.daily_bonus_coins > 0 || status.daily_free_minutes > 0) && (
                 <TouchableOpacity
                   onPress={claimDaily}
                   disabled={!status.daily_available || claiming}
@@ -176,7 +193,7 @@ export default function VipScreen() {
                     <>
                       <Feather name="gift" size={16} color="#7B2FF7" />
                       <Text style={styles.claimText}>
-                        {status.daily_available ? `Claim ${status.daily_bonus_coins} daily coins` : "Daily bonus claimed"}
+                        {status.daily_available ? `Claim daily ${dailyRewardLabel(status)}` : "Daily reward claimed"}
                       </Text>
                     </>
                   )}

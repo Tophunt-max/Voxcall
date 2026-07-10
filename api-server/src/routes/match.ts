@@ -537,7 +537,8 @@ match.post('/find', async (c) => {
       ? Math.min(5, body.min_rating)
       : undefined;
 
-  // VIP status — unlocks priority matching (no daily cap + quality boost).
+  // VIP status — active VIPs bypass the daily match cap; the quality boost is
+  // applied further below only for plans with the priority_matching perk.
   const vip = await getVipStatus(db, sub);
 
   // 3. Anti-abuse guards (daily cap + decline cooldown)
@@ -657,7 +658,10 @@ match.post('/find', async (c) => {
   }
   // VIP priority: bias the weighted pick toward higher-quality hosts so VIPs
   // are matched with better-rated / higher-level / more-popular listeners.
-  if (vip.isVip) {
+  // Gated on the plan's `priority_matching` flag (admin-configurable per plan)
+  // rather than a flat is-VIP check, so only plans that advertise "priority
+  // matching" actually get it — entry tiers without the perk don't.
+  if (vip.isVip && vip.priorityMatching) {
     matchWeights = {
       ...matchWeights,
       rating: matchWeights.rating * 1.6,

@@ -431,7 +431,7 @@ export const API = {
       'POST', '/api/vip/subscribe', { plan_id }
     ),
   claimVipDaily: () =>
-    apiRequest<{ success: boolean; granted: number; coins: number; next_daily_at: number }>('POST', '/api/vip/claim-daily'),
+    apiRequest<{ success: boolean; granted: number; free_minutes: number; coins: number; next_daily_at: number }>('POST', '/api/vip/claim-daily'),
   getChatStatus: (host_id: string) =>
     apiRequest<{ unlocked: boolean; reason: string }>('GET', `/api/hosts/${host_id}/chat-status`),
 

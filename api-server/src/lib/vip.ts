@@ -22,6 +22,12 @@ export interface VipStatus {
   dailyBonusCoins: number;
   /** Whether VIP can DM any host without a prior call (bypasses call_first). */
   chatUnlock: boolean;
+  /** Bias random matching toward higher-quality hosts. */
+  priorityMatching: boolean;
+  /** Mark this VIP's support tickets as high-priority. */
+  prioritySupport: boolean;
+  /** Show the exclusive animated profile frame around the avatar. */
+  profileFrame: boolean;
   /** Plan badge emoji + accent colour (for tier-styled UI). */
   badge: string | null;
   color: string | null;
@@ -35,6 +41,9 @@ export const NO_VIP: VipStatus = {
   callDiscountPct: 0,
   dailyBonusCoins: 0,
   chatUnlock: false,
+  priorityMatching: false,
+  prioritySupport: false,
+  profileFrame: false,
   badge: null,
   color: null,
 };
@@ -47,6 +56,7 @@ export async function getVipStatus(db: D1Database, userId: string): Promise<VipS
       .prepare(
         `SELECT u.vip_tier AS tier, u.vip_expires_at AS expires_at,
                 p.name AS plan_name, p.call_discount_pct, p.daily_bonus_coins, p.chat_unlock,
+                p.priority_matching, p.priority_support, p.profile_frame,
                 p.badge, p.color
          FROM users u
          LEFT JOIN vip_plans p ON p.tier = u.vip_tier
@@ -65,6 +75,9 @@ export async function getVipStatus(db: D1Database, userId: string): Promise<VipS
       callDiscountPct: Math.max(0, Math.min(90, Number(row.call_discount_pct) || 0)),
       dailyBonusCoins: Math.max(0, Number(row.daily_bonus_coins) || 0),
       chatUnlock: row.chat_unlock === null || row.chat_unlock === undefined ? true : !!Number(row.chat_unlock),
+      priorityMatching: !!Number(row.priority_matching),
+      prioritySupport: !!Number(row.priority_support),
+      profileFrame: !!Number(row.profile_frame),
       badge: row.badge ?? null,
       color: row.color ?? null,
     };
