@@ -1710,6 +1710,54 @@ admin.delete('/banners/:id', async (c) => {
   return c.json({ success: true });
 });
 
+// ─── Chat Gifts catalog CRUD ──────────────────────────────────────────────────
+// The coin-priced gifts users can send inside a chat (see migration 0056).
+admin.get('/gifts', async (c) => {
+  const r = await db(c).prepare('SELECT * FROM gifts ORDER BY sort_order ASC, price_coins ASC').all();
+  return c.json(r.results);
+});
+
+admin.post('/gifts', async (c) => {
+  const b = await c.req.json() as any;
+  const name = String(b.name || '').trim();
+  const icon = String(b.icon || '').trim();
+  if (!name) return c.json({ error: 'Gift name is required' }, 400);
+  if (!icon) return c.json({ error: 'Gift icon (emoji) is required' }, 400);
+  const id = crypto.randomUUID();
+  await db(c).prepare(
+    'INSERT INTO gifts (id, name, icon, price_coins, sort_order, is_active) VALUES (?, ?, ?, ?, ?, ?)'
+  ).bind(
+    id, name, icon.slice(0, 8),
+    Math.max(0, parseInt(b.price_coins) || 0),
+    Math.trunc(Number(b.sort_order) || 0),
+    b.is_active === 0 || b.is_active === false ? 0 : 1,
+  ).run();
+  return c.json({ id, success: true }, 201);
+});
+
+admin.patch('/gifts/:id', async (c) => {
+  const { id } = c.req.param();
+  const b = await c.req.json() as any;
+  const sets: string[] = [];
+  const vals: any[] = [];
+  if (b.name !== undefined) { sets.push('name = ?'); vals.push(String(b.name).trim()); }
+  if (b.icon !== undefined) { sets.push('icon = ?'); vals.push(String(b.icon).trim().slice(0, 8)); }
+  if (b.price_coins !== undefined) { sets.push('price_coins = ?'); vals.push(Math.max(0, parseInt(b.price_coins) || 0)); }
+  if (b.sort_order !== undefined) { sets.push('sort_order = ?'); vals.push(Math.trunc(Number(b.sort_order) || 0)); }
+  if (b.is_active !== undefined) { sets.push('is_active = ?'); vals.push(b.is_active ? 1 : 0); }
+  if (!sets.length) return c.json({ error: 'Nothing to update' }, 400);
+  sets.push('updated_at = unixepoch()');
+  vals.push(id);
+  await db(c).prepare(`UPDATE gifts SET ${sets.join(', ')} WHERE id = ?`).bind(...vals).run();
+  return c.json({ success: true });
+});
+
+admin.delete('/gifts/:id', async (c) => {
+  const { id } = c.req.param();
+  await db(c).prepare('DELETE FROM gifts WHERE id = ?').bind(id).run();
+  return c.json({ success: true });
+});
+
 // ─── Reward Tasks CRUD ────────────────────────────────────────────────────────
 // Admin-managed catalog of tasks users can complete inside the Rewards page.
 // See migration 0043_reward_tasks.sql for the schema + task_type semantics.

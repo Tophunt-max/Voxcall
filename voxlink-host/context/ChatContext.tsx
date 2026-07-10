@@ -4,7 +4,7 @@ import socketService from "@/services/SocketService";
 import { SocketEvents } from "@/constants/events";
 import { showErrorToast } from "@/components/Toast";
 
-export type MessageType = "text" | "image" | "audio";
+export type MessageType = "text" | "image" | "audio" | "gift";
 
 export interface Message {
   id: string;
@@ -14,6 +14,10 @@ export interface Message {
   type: MessageType;
   timestamp: number;
   isRead: boolean;
+  /** Gift message fields (type === 'gift'). */
+  giftIcon?: string;
+  giftName?: string;
+  giftAmount?: number;
   /** Set when the optimistic send failed at the API so the UI can flag it. */
   failed?: boolean;
   /** Sender edited this message after sending. */
@@ -129,18 +133,20 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     const offMessage = socketService.on(SocketEvents.MESSAGE_RECEIVED, (data: any) => {
       const roomId: string | undefined = data?.chatId ?? data?.roomId ?? data?.room_id;
       if (!roomId) return;
+      const isGift = data?.kind === "gift" || !!data?.giftName;
       const mediaType = data?.mediaType as MessageType | null | undefined;
-      const type: MessageType = mediaType ? mediaType : "text";
+      const type: MessageType = isGift ? "gift" : mediaType ? mediaType : "text";
       const incoming: Message = {
         id: data.id,
         senderId: data.senderId ?? "other",
         receiverId: "",
-        content: type === "text" ? (data.text ?? "") : (data.mediaUrl ?? data.text ?? ""),
+        content: type === "text" ? (data.text ?? "") : type === "gift" ? (data.giftName ?? "Gift") : (data.mediaUrl ?? data.text ?? ""),
         type,
         timestamp: data.timestamp ?? Date.now(),
         isRead: false,
+        ...(isGift ? { giftIcon: data.giftIcon, giftName: data.giftName, giftAmount: data.giftAmount } : {}),
       };
-      const preview = type === "text" ? incoming.content : (type === "image" ? "📷 Photo" : "🎤 Voice");
+      const preview = type === "text" ? incoming.content : type === "gift" ? `🎁 ${incoming.giftName ?? "Gift"}` : (type === "image" ? "📷 Photo" : "🎤 Voice");
       setConversations((prev) =>
         prev.map((c) => {
           if (c.id !== roomId && c.roomId !== roomId) return c;
@@ -211,17 +217,22 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const loadMessages = useCallback(async (conversationId: string, roomId: string) => {
     try {
       const msgs = await API.getMessages(roomId);
-      const mapped: Message[] = (msgs ?? []).map((m: any) => ({
-        id: m.id,
-        senderId: m.sender_id,
-        receiverId: "",
-        content: m.media_type ? (m.media_url ?? m.content ?? "") : (m.content ?? ""),
-        type: (m.media_type as MessageType) ?? "text",
-        timestamp: (m.created_at ?? 0) * 1000,
-        isRead: !!m.is_read,
-        edited: !!m.edited_at,
-        deleted: !!m.is_deleted,
-      }));
+      const mapped: Message[] = (msgs ?? []).map((m: any) => {
+        const isGift = m.msg_kind === "gift";
+        const mtype: MessageType = isGift ? "gift" : ((m.media_type as MessageType) ?? "text");
+        return {
+          id: m.id,
+          senderId: m.sender_id,
+          receiverId: "",
+          content: mtype === "text" ? (m.content ?? "") : mtype === "gift" ? (m.gift_name ?? "Gift") : (m.media_url ?? m.content ?? ""),
+          type: mtype,
+          timestamp: (m.created_at ?? 0) * 1000,
+          isRead: !!m.is_read,
+          edited: !!m.edited_at,
+          deleted: !!m.is_deleted,
+          ...(isGift ? { giftIcon: m.gift_icon, giftName: m.gift_name, giftAmount: Number(m.gift_amount) || 0 } : {}),
+        };
+      });
       setConversations((prev) => {
         const exists = prev.some((c) => c.id === conversationId || c.roomId === conversationId);
         if (exists) {

@@ -124,6 +124,11 @@ export const api = {
   updateVipPlan: (id: string, data: any) => req('PATCH', `/admin/vip-plans/${id}`, data),
   deleteVipPlan: (id: string) => req('DELETE', `/admin/vip-plans/${id}`),
   vipSubscribers: () => req<any[]>('GET', '/admin/vip-subscribers'),
+  // Chat gifts catalog
+  gifts: () => req<any[]>('GET', '/admin/gifts'),
+  createGift: (data: any) => req<any>('POST', '/admin/gifts', data),
+  updateGift: (id: string, data: any) => req('PATCH', `/admin/gifts/${id}`, data),
+  deleteGift: (id: string) => req('DELETE', `/admin/gifts/${id}`),
   settings: () => req<Record<string, string>>('GET', '/admin/settings'),
   updateSettings: (data: any) => req('PATCH', '/admin/settings', data),
   callSessions: () => req<any[]>('GET', '/admin/calls'),

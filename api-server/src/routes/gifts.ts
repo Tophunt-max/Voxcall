@@ -1,0 +1,172 @@
+import { Hono } from 'hono';
+import { authMiddleware } from '../middleware/auth';
+import { checkRateLimit } from '../lib/rateLimit';
+import { sendFCMPush } from '../lib/fcm';
+import { applyLevelUp } from '../lib/levelService';
+import type { Env, JWTPayload } from '../types';
+
+// ============================================================================
+// Chat gifts — monetized in-chat gifts (Model D)
+// ============================================================================
+// A gift is a special chat message: coins are debited from the sender and
+// credited to the host (counting toward host earnings + levels, like tips),
+// and a 'gift' message is persisted so it renders inline in both apps.
+// Reuses the atomic all-or-nothing coin-transfer pattern from tips/billing.
+// ============================================================================
+
+const gifts = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
+gifts.use('*', authMiddleware);
+
+function serializeGift(g: any) {
+  return {
+    id: g.id,
+    name: g.name,
+    icon: g.icon,
+    price_coins: Number(g.price_coins) || 0,
+    sort_order: Number(g.sort_order) || 0,
+  };
+}
+
+// GET /api/gifts — active gift catalog (for the in-chat picker).
+gifts.get('/', async (c) => {
+  try {
+    const rows = await c.env.DB.prepare(
+      'SELECT * FROM gifts WHERE is_active = 1 ORDER BY sort_order ASC, price_coins ASC'
+    ).all<any>();
+    return c.json((rows.results ?? []).map(serializeGift));
+  } catch (e: any) {
+    // Pre-migration DB (gifts table absent) → empty catalog, feature hidden.
+    if (/no such table/i.test(String(e?.message || ''))) return c.json([]);
+    throw e;
+  }
+});
+
+// POST /api/gifts/send { room_id, gift_id } — send a gift inside a chat room.
+gifts.post('/send', async (c) => {
+  const { sub, name: senderName } = c.get('user');
+  const db = c.env.DB;
+  const body = await c.req.json().catch(() => ({})) as { room_id?: string; gift_id?: string };
+  if (!body.room_id || !body.gift_id) {
+    return c.json({ error: 'room_id and gift_id are required' }, 400);
+  }
+
+  // Anti-spam: cap gift sends per user (fail-open if rate_limits is missing).
+  const rl = await checkRateLimit(db, `gift-send:${sub}`, 30, 60);
+  if (rl.limited) return c.json({ error: 'Too many gifts. Please slow down.', code: 'RATE_LIMITED' }, 429);
+
+  // The sender must be the room's regular user; the recipient is the host.
+  // (Gifts only flow user → host — a host can't gift coins to a user.)
+  const room = await db.prepare(
+    `SELECT cr.id, cr.user_id, cr.host_id, h.user_id AS host_user_id
+     FROM chat_rooms cr
+     JOIN hosts h ON h.id = cr.host_id
+     WHERE cr.id = ?`
+  ).bind(body.room_id).first<any>();
+  if (!room) return c.json({ error: 'Room not found' }, 404);
+  if (room.user_id !== sub) {
+    return c.json({ error: 'Only the sender in this chat can send gifts' }, 403);
+  }
+  const hostUserId: string = room.host_user_id;
+  if (!hostUserId || hostUserId === sub) {
+    return c.json({ error: 'Invalid gift recipient' }, 400);
+  }
+
+  // Resolve the gift from the active catalog.
+  const gift = await db.prepare('SELECT * FROM gifts WHERE id = ? AND is_active = 1')
+    .bind(body.gift_id).first<any>();
+  if (!gift) return c.json({ error: 'Gift not found or unavailable' }, 404);
+  const amount = Math.max(0, Number(gift.price_coins) || 0);
+  if (amount <= 0) return c.json({ error: 'Invalid gift price' }, 400);
+
+  // Atomic all-or-nothing transfer: debit sender, credit host — only if the
+  // sender can afford it (spendable = coins - held). Mirrors tips/billing.
+  const transfer = await db.prepare(
+    `UPDATE users SET coins = coins + CASE id
+       WHEN ? THEN -?
+       WHEN ? THEN ?
+       ELSE 0
+     END, updated_at = unixepoch()
+     WHERE id IN (?, ?)
+       AND EXISTS (SELECT 1 FROM users WHERE id = ? AND (coins - COALESCE(coins_held, 0)) >= ?)`
+  ).bind(sub, amount, hostUserId, amount, sub, hostUserId, sub, amount).run();
+
+  if (!transfer.meta?.changes) {
+    return c.json({ error: `Not enough coins. This gift costs ${amount} coins.`, code: 'INSUFFICIENT_COINS' }, 402);
+  }
+
+  const msgId = crypto.randomUUID();
+  const now = Math.floor(Date.now() / 1000);
+  const preview = `🎁 ${gift.name}`;
+
+  // Persist the gift message + bump the room preview. Ledger + earnings are
+  // non-fatal (coins already moved) — logged but never fail the gift.
+  await db.batch([
+    db.prepare(
+      `INSERT INTO messages (id, room_id, sender_id, content, msg_kind, gift_icon, gift_name, gift_amount)
+       VALUES (?, ?, ?, ?, 'gift', ?, ?, ?)`
+    ).bind(msgId, body.room_id, sub, preview, gift.icon, gift.name, amount),
+    db.prepare('UPDATE chat_rooms SET last_message = ?, last_message_at = ? WHERE id = ?')
+      .bind(preview, now, body.room_id),
+    db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
+      .bind(crypto.randomUUID(), sub, 'spend', -amount, `Gift sent: ${gift.name}`, msgId),
+    db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
+      .bind(crypto.randomUUID(), hostUserId, 'bonus', amount, `Gift received: ${gift.name}`, msgId),
+    // Gifts count toward the host's lifetime earnings (feeds level-up).
+    db.prepare('UPDATE hosts SET total_earnings = total_earnings + ? WHERE id = ?')
+      .bind(amount, room.host_id),
+  ]).catch((e) => console.warn('[gifts/send] ledger write failed (coins already moved):', e));
+
+  // A big gift can cross an earnings threshold — re-evaluate level in the
+  // background (idempotent; no-op when no promotion is due).
+  try {
+    const promo = applyLevelUp(c.env, room.host_id, 'auto').catch(() => {});
+    if (c.executionCtx?.waitUntil) c.executionCtx.waitUntil(promo);
+    else await promo;
+  } catch { /* never block a successful gift on level bookkeeping */ }
+
+  // Live in-app delivery to the host (renders the gift bubble instantly) +
+  // FCM push. Best-effort — the gift is already persisted.
+  try {
+    const stub = c.env.NOTIFICATION_HUB.get(c.env.NOTIFICATION_HUB.idFromName(hostUserId));
+    await stub.fetch('https://dummy/notify', {
+      method: 'POST',
+      body: JSON.stringify({
+        type: 'chat_message',
+        room_id: body.room_id,
+        id: msgId,
+        sender_id: sub,
+        sender_name: senderName || 'User',
+        content: preview,
+        msg_kind: 'gift',
+        gift_icon: gift.icon,
+        gift_name: gift.name,
+        gift_amount: amount,
+        created_at: now,
+      }),
+    });
+    const recipient = await db.prepare('SELECT fcm_token FROM users WHERE id = ?').bind(hostUserId).first<{ fcm_token: string }>();
+    if (recipient?.fcm_token) {
+      await sendFCMPush(
+        c.env.FIREBASE_SERVICE_ACCOUNT,
+        recipient.fcm_token,
+        senderName || 'New gift',
+        `sent you a ${gift.name} ${gift.icon}`,
+        { type: 'chat_message', room_id: body.room_id },
+      );
+    }
+  } catch (e) {
+    console.warn('[gifts/send] delivery notify failed:', e);
+  }
+
+  const after = await db.prepare('SELECT coins FROM users WHERE id = ?').bind(sub).first<{ coins: number }>();
+  return c.json({
+    success: true,
+    message_id: msgId,
+    room_id: body.room_id,
+    gift: { id: gift.id, name: gift.name, icon: gift.icon, amount },
+    created_at: now,
+    new_balance: Number(after?.coins) || 0,
+  });
+});
+
+export default gifts;

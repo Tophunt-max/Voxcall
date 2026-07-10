@@ -175,6 +175,12 @@ export default function ChatScreen() {
             <Text style={[styles.bubbleText, { fontStyle: "italic", color: isMe ? "rgba(255,255,255,0.7)" : colors.mutedForeground }]}>
               🚫 This message was deleted
             </Text>
+          ) : item.type === "gift" ? (
+            <View style={styles.giftInner}>
+              <Text style={styles.giftEmoji}>{item.giftIcon ?? "🎁"}</Text>
+              <Text style={[styles.giftName, { color: isMe ? "#fff" : colors.foreground }]} numberOfLines={1}>{item.giftName ?? "Gift"}</Text>
+              <Text style={[styles.giftCoins, { color: isMe ? "rgba(255,255,255,0.9)" : colors.accent }]}>+{(item.giftAmount ?? 0).toLocaleString()} coins</Text>
+            </View>
           ) : item.type === "image" ? (
             <Image source={{ uri: item.content }} style={styles.bubbleImage} resizeMode="cover" />
           ) : (
@@ -328,6 +334,10 @@ const styles = StyleSheet.create({
   bubble: { maxWidth: "72%", padding: 12, borderRadius: 18, gap: 4 },
   bubbleText: { fontSize: 14, fontFamily: "Poppins_400Regular", lineHeight: 20 },
   bubbleImage: { width: 200, height: 200, borderRadius: 12, marginBottom: 2 },
+  giftInner: { alignItems: "center", gap: 3, paddingVertical: 2, minWidth: 96 },
+  giftEmoji: { fontSize: 42, lineHeight: 48 },
+  giftName: { fontSize: 13, fontFamily: "Poppins_600SemiBold" },
+  giftCoins: { fontSize: 11, fontFamily: "Poppins_500Medium" },
   bubbleMetaRow: { flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 6 },
   bubbleTime: { fontSize: 10, fontFamily: "Poppins_400Regular", alignSelf: "flex-end" },
   bubbleStatus: { fontSize: 10, fontFamily: "Poppins_500Medium" },

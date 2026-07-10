@@ -25,6 +25,7 @@ const nav = [
   { href: '/payout-management', label: 'Payout Management', icon: IndianRupee, section: 'finance' },
   { href: '/coin-plans', label: 'Coin Plans', icon: Coins, section: 'finance' },
   { href: '/vip-plans', label: 'VIP Plans', icon: Crown, section: 'finance' },
+  { href: '/gifts', label: 'Chat Gifts', icon: Gift, section: 'finance' },
   { href: '/deposits', label: 'Deposits', icon: TrendingUp, section: 'finance' },
   { href: '/transactions', label: 'Transactions', icon: ArrowRightLeft, section: 'finance' },
   { href: '/promo-codes', label: 'Promo Codes', icon: Tag, section: 'finance' },

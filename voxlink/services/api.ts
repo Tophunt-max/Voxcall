@@ -403,6 +403,12 @@ export const API = {
     apiRequest<any[]>('GET', `/api/chat/rooms/${room_id}/messages${before ? `?before=${before}` : ''}`),
   sendMessage: (room_id: string, content: string, media_url?: string, media_type?: string) =>
     apiRequest<{ id?: string; sender_id?: string; content?: string; created_at?: number }>('POST', `/api/chat/rooms/${room_id}/messages`, { content, media_url, media_type }),
+  // Chat gifts — coin-priced gifts sent inside a chat (credited to the host).
+  getGifts: () => apiRequest<any[]>('GET', '/api/gifts', undefined, false),
+  sendGift: (room_id: string, gift_id: string) =>
+    apiRequest<{ success: boolean; message_id: string; room_id: string; gift: { id: string; name: string; icon: string; amount: number }; created_at: number; new_balance: number }>(
+      'POST', '/api/gifts/send', { room_id, gift_id }
+    ),
   // Typing indicator — best-effort, server relays a chat_typing event to the
   // other room participant via NotificationHub. Caller should debounce.
   sendChatTyping: (room_id: string, is_typing: boolean) =>

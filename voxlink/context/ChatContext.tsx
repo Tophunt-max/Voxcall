@@ -4,7 +4,7 @@ import socketService from "@/services/SocketService";
 import { SocketEvents } from "@/constants/events";
 import { showErrorToast } from "@/components/Toast";
 
-export type MessageType = "text" | "image" | "audio";
+export type MessageType = "text" | "image" | "audio" | "gift";
 export type MessageStatus = "sending" | "sent" | "failed";
 
 export interface Message {
@@ -15,6 +15,10 @@ export interface Message {
   type: MessageType;
   timestamp: number;
   isRead: boolean;
+  /** Gift message fields (type === 'gift'). */
+  giftIcon?: string;
+  giftName?: string;
+  giftAmount?: number;
   /** Delivery status for optimistic outgoing messages. Undefined == delivered
    *  (e.g. messages loaded from the server). */
   status?: MessageStatus;
@@ -57,6 +61,8 @@ export interface Conversation {
 interface ChatContextValue {
   conversations: Conversation[];
   sendMessage: (conversationId: string, content: string, type?: MessageType) => Promise<void>;
+  /** Send a coin-priced gift. Returns the new coin balance on success. */
+  sendGift: (conversationId: string, gift: { id: string; name: string; icon: string; price_coins: number }) => Promise<number | null>;
   retryMessage: (conversationId: string, messageId: string) => Promise<void>;
   editMessage: (conversationId: string, messageId: string, content: string) => Promise<void>;
   deleteMessage: (conversationId: string, messageId: string) => Promise<void>;
@@ -164,18 +170,20 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     const offMessage = socketService.on(SocketEvents.MESSAGE_RECEIVED, (data: any) => {
       const roomId: string | undefined = data?.chatId ?? data?.roomId ?? data?.room_id;
       if (!roomId) return;
+      const isGift = data?.kind === "gift" || !!data?.giftName;
       const mediaType = data?.mediaType as MessageType | null | undefined;
-      const type: MessageType = mediaType ? mediaType : "text";
+      const type: MessageType = isGift ? "gift" : mediaType ? mediaType : "text";
       const incoming: Message = {
         id: data.id,
         senderId: data.senderId ?? "other",
         receiverId: "",
-        content: type === "text" ? (data.text ?? "") : (data.mediaUrl ?? data.text ?? ""),
+        content: type === "text" ? (data.text ?? "") : type === "gift" ? (data.giftName ?? "Gift") : (data.mediaUrl ?? data.text ?? ""),
         type,
         timestamp: data.timestamp ?? Date.now(),
         isRead: false,
+        ...(isGift ? { giftIcon: data.giftIcon, giftName: data.giftName, giftAmount: data.giftAmount } : {}),
       };
-      const preview = type === "text" ? incoming.content : (type === "image" ? "📷 Photo" : "🎤 Voice");
+      const preview = type === "text" ? incoming.content : type === "gift" ? `🎁 ${incoming.giftName ?? "Gift"}` : (type === "image" ? "📷 Photo" : "🎤 Voice");
       setConversations((prev) =>
         prev.map((c) => {
           if (c.id !== roomId && c.roomId !== roomId) return c;
@@ -278,13 +286,15 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     try {
       const msgs = await API.getMessages(roomId);
       const mapped: Message[] = (msgs ?? []).map((m: any) => {
-        const mtype = (m.media_type as MessageType) ?? "text";
+        const isGift = m.msg_kind === "gift";
+        const mtype: MessageType = isGift ? "gift" : ((m.media_type as MessageType) ?? "text");
         return {
           id: m.id,
           senderId: m.sender_id,
           receiverId: "",
-          // For media messages the bubble renders `content` as the URL.
-          content: mtype === "text" ? (m.content ?? "") : (m.media_url ?? m.content ?? ""),
+          // For media messages the bubble renders `content` as the URL; gifts
+          // render from their denormalized gift_* fields.
+          content: mtype === "text" ? (m.content ?? "") : mtype === "gift" ? (m.gift_name ?? "Gift") : (m.media_url ?? m.content ?? ""),
           type: mtype,
           timestamp: (m.created_at ?? 0) * 1000,
           // is_read reflects whether the recipient has read it — for OUR sent
@@ -292,6 +302,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           isRead: !!m.is_read,
           edited: !!m.edited_at,
           deleted: !!m.is_deleted,
+          ...(isGift ? { giftIcon: m.gift_icon, giftName: m.gift_name, giftAmount: Number(m.gift_amount) || 0 } : {}),
         };
       });
       setConversations((prev) => {
@@ -385,6 +396,69 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         })
       );
       showErrorToast("Message not sent. Check your connection and try again.");
+    }
+  }, [conversations]);
+
+  // Send a coin-priced gift. Optimistically appends a gift bubble, calls the
+  // gift endpoint (which debits coins + credits the host), and reconciles the
+  // bubble id. Returns the sender's new coin balance (or null on failure).
+  const sendGift = useCallback(async (
+    conversationId: string,
+    gift: { id: string; name: string; icon: string; price_coins: number },
+  ): Promise<number | null> => {
+    const convo = conversations.find((c) => c.id === conversationId || c.roomId === conversationId);
+    const roomId = convo?.roomId ?? conversationId;
+    if (!roomId) return null;
+
+    const tempId = "tmp_gift_" + Date.now();
+    const tempMsg: Message = {
+      id: tempId,
+      senderId: "me",
+      receiverId: conversationId,
+      content: gift.name,
+      type: "gift",
+      timestamp: Date.now(),
+      isRead: true,
+      status: "sending",
+      giftIcon: gift.icon,
+      giftName: gift.name,
+      giftAmount: gift.price_coins,
+    };
+    const preview = `🎁 ${gift.name}`;
+    setConversations((prev) =>
+      prev.map((c) =>
+        (c.id === conversationId || c.roomId === conversationId)
+          ? { ...c, messages: [...c.messages, tempMsg], lastMessage: preview, lastMessageTime: Date.now() }
+          : c,
+      ),
+    );
+
+    try {
+      const res = await API.sendGift(roomId, gift.id);
+      setConversations((prev) =>
+        prev.map((c) => {
+          if (c.id !== conversationId && c.roomId !== conversationId) return c;
+          return {
+            ...c,
+            messages: c.messages.map((m) =>
+              m.id === tempId ? { ...m, id: res.message_id ?? m.id, status: "sent" as MessageStatus } : m,
+            ),
+          };
+        }),
+      );
+      return typeof res.new_balance === "number" ? res.new_balance : null;
+    } catch (e: any) {
+      // Roll the optimistic bubble back — the coins were not spent.
+      setConversations((prev) =>
+        prev.map((c) =>
+          (c.id === conversationId || c.roomId === conversationId)
+            ? { ...c, messages: c.messages.filter((m) => m.id !== tempId) }
+            : c,
+        ),
+      );
+      const msg = String(e?.message || "");
+      showErrorToast(/coin/i.test(msg) ? msg : "Couldn't send gift. Please try again.");
+      return null;
     }
   }, [conversations]);
 
@@ -541,6 +615,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       value={{
         conversations,
         sendMessage,
+        sendGift,
         retryMessage,
         editMessage,
         deleteMessage,

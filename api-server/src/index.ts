@@ -21,6 +21,7 @@ import engagementRouter from './routes/engagement';
 import rewardsRouter from './routes/rewards';
 import tipRouter from './routes/tip';
 import vipRouter from './routes/vip';
+import giftsRouter from './routes/gifts';
 import { ChatRoom } from './durable-objects/ChatRoom';
 import { NotificationHub } from './durable-objects/NotificationHub';
 import { ensureUsersSchema, ensureRandomCallSchema, ensureStreakSchema, ensureFirstCallFreeSchema, ensureCallObservabilitySchema, ensureEngagementSchema, ensureWithdrawalSchema } from './lib/schemaGuard';
@@ -184,6 +185,7 @@ app.route('/api/engagement', engagementRouter);
 app.route('/api/user/rewards', rewardsRouter);
 app.route('/api/tips', tipRouter);
 app.route('/api/vip', vipRouter);
+app.route('/api/gifts', giftsRouter);
 app.route('/api', publicRouter);
 
 // ─── WebSocket Auth Helper ─────────────────────────────────────────────────

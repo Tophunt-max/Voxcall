@@ -34,10 +34,14 @@ export default function ChatScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { user } = useAuth();
-  const { conversations, sendMessage, retryMessage, editMessage, deleteMessage, markRead, loadMessages, sendTyping } = useChat();
+  const { user, refreshBalance } = useAuth();
+  const { conversations, sendMessage, sendGift, retryMessage, editMessage, deleteMessage, markRead, loadMessages, sendTyping } = useChat();
   const { t } = useLanguage();
   const [text, setText] = useState("");
+  // Gift picker state.
+  const [gifts, setGifts] = useState<any[]>([]);
+  const [giftPickerOpen, setGiftPickerOpen] = useState(false);
+  const [sendingGiftId, setSendingGiftId] = useState<string | null>(null);
   // Long-press action sheet + inline edit state.
   const [actionMsg, setActionMsg] = useState<Message | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -219,6 +223,31 @@ export default function ChatScreen() {
     }
   };
 
+  // Open the gift picker, lazily loading the catalog the first time.
+  const openGiftPicker = async () => {
+    setGiftPickerOpen(true);
+    if (gifts.length === 0) {
+      try {
+        const list = await API.getGifts();
+        setGifts(Array.isArray(list) ? list : []);
+      } catch { /* keep empty — picker shows empty state */ }
+    }
+  };
+
+  const handleSendGift = async (gift: any) => {
+    if (sendingGiftId || !id) return;
+    setSendingGiftId(gift.id);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    const newBalance = await sendGift(convo?.id ?? (id as string), gift);
+    setSendingGiftId(null);
+    if (newBalance !== null) {
+      setGiftPickerOpen(false);
+      try { await refreshBalance?.(); } catch { /* balance refresh best-effort */ }
+      showSuccessToast(`Sent ${gift.name} ${gift.icon}`);
+      setTimeout(() => listRef.current?.scrollToOffset({ offset: 0, animated: true }), 100);
+    }
+  };
+
   const renderMessage = ({ item }: { item: Message }) => {
     const isMe = item.senderId === "me" || item.senderId === user?.id;
     return (
@@ -236,6 +265,15 @@ export default function ChatScreen() {
             <Text style={[styles.bubbleText, { fontStyle: "italic", color: isMe ? "rgba(255,255,255,0.7)" : colors.mutedForeground }]}>
               🚫 This message was deleted
             </Text>
+          ) : item.type === "gift" ? (
+            <View style={styles.giftInner}>
+              <Text style={styles.giftEmoji}>{item.giftIcon ?? "🎁"}</Text>
+              <Text style={[styles.giftName, { color: isMe ? "#fff" : colors.foreground }]} numberOfLines={1}>{item.giftName ?? "Gift"}</Text>
+              <View style={styles.giftCoinRow}>
+                <Image source={require("@/assets/icons/ic_coin.png")} style={{ width: 12, height: 12 }} resizeMode="contain" />
+                <Text style={[styles.giftCoins, { color: isMe ? "rgba(255,255,255,0.9)" : colors.mutedForeground }]}>{(item.giftAmount ?? 0).toLocaleString()}</Text>
+              </View>
+            </View>
           ) : item.type === "image" ? (
             <Image
               source={{ uri: item.content }}
@@ -347,6 +385,9 @@ export default function ChatScreen() {
               <Image source={require("@/assets/icons/ic_photo.png")} style={{ width: 18, height: 18, tintColor: colors.mutedForeground }} resizeMode="contain" />
             )}
           </TouchableOpacity>
+          <TouchableOpacity onPress={openGiftPicker} disabled={!!editingId} style={[styles.iconBtn, { backgroundColor: colors.muted }]} accessibilityRole="button" accessibilityLabel="Send a gift">
+            <Text style={{ fontSize: 18 }}>🎁</Text>
+          </TouchableOpacity>
           <View style={[styles.inputWrap, { backgroundColor: colors.muted }]}>
             <TextInput
               value={text}
@@ -372,6 +413,51 @@ export default function ChatScreen() {
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
+
+      {/* Gift picker */}
+      <Modal visible={giftPickerOpen} transparent animationType="slide" onRequestClose={() => setGiftPickerOpen(false)}>
+        <TouchableOpacity style={styles.sheetBackdrop} activeOpacity={1} onPress={() => setGiftPickerOpen(false)}>
+          <TouchableOpacity activeOpacity={1} style={[styles.giftSheet, { backgroundColor: colors.card, paddingBottom: insets.bottom + 16 }]}>
+            <View style={styles.giftSheetHeader}>
+              <Text style={[styles.giftSheetTitle, { color: colors.foreground }]}>Send a gift</Text>
+              <View style={styles.giftBalanceChip}>
+                <Image source={require("@/assets/icons/ic_coin.png")} style={{ width: 14, height: 14 }} resizeMode="contain" />
+                <Text style={[styles.giftBalanceText, { color: colors.foreground }]}>{(user?.coins ?? 0).toLocaleString()}</Text>
+              </View>
+            </View>
+            {gifts.length === 0 ? (
+              <Text style={[styles.emptyHint, { color: colors.mutedForeground, paddingVertical: 24 }]}>No gifts available right now.</Text>
+            ) : (
+              <View style={styles.giftGrid}>
+                {gifts.map((g) => {
+                  const affordable = (user?.coins ?? 0) >= (g.price_coins ?? 0);
+                  const busy = sendingGiftId === g.id;
+                  return (
+                    <TouchableOpacity
+                      key={g.id}
+                      activeOpacity={0.85}
+                      disabled={!!sendingGiftId}
+                      onPress={() => handleSendGift(g)}
+                      style={[styles.giftCell, { borderColor: colors.border, opacity: affordable || busy ? 1 : 0.5 }]}
+                    >
+                      {busy ? (
+                        <ActivityIndicator size="small" color={colors.primary} style={{ height: 34 }} />
+                      ) : (
+                        <Text style={styles.giftCellEmoji}>{g.icon}</Text>
+                      )}
+                      <Text style={[styles.giftCellName, { color: colors.foreground }]} numberOfLines={1}>{g.name}</Text>
+                      <View style={styles.giftCoinRow}>
+                        <Image source={require("@/assets/icons/ic_coin.png")} style={{ width: 11, height: 11 }} resizeMode="contain" />
+                        <Text style={[styles.giftCellPrice, { color: colors.mutedForeground }]}>{(g.price_coins ?? 0).toLocaleString()}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
 
       {/* Long-press action sheet */}
       <Modal visible={!!actionMsg} transparent animationType="fade" onRequestClose={() => setActionMsg(null)}>
@@ -436,6 +522,23 @@ const styles = StyleSheet.create({
   inputWrap: { flex: 1, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 10, maxHeight: 100 },
   input: { fontSize: 14, fontFamily: "Poppins_400Regular", padding: 0, ...(WEB_INPUT_RESET as any) },
   sendBtn: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
+  // Gift bubble (inside a message bubble)
+  giftInner: { alignItems: "center", gap: 3, paddingVertical: 2, minWidth: 96 },
+  giftEmoji: { fontSize: 42, lineHeight: 48 },
+  giftName: { fontSize: 13, fontFamily: "Poppins_600SemiBold" },
+  giftCoinRow: { flexDirection: "row", alignItems: "center", gap: 3 },
+  giftCoins: { fontSize: 11, fontFamily: "Poppins_500Medium" },
+  // Gift picker sheet
+  giftSheet: { borderTopLeftRadius: 22, borderTopRightRadius: 22, paddingTop: 16, paddingHorizontal: 16 },
+  giftSheetHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 14 },
+  giftSheetTitle: { fontSize: 16, fontFamily: "Poppins_700Bold" },
+  giftBalanceChip: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: "rgba(160,14,231,0.10)", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14 },
+  giftBalanceText: { fontSize: 13, fontFamily: "Poppins_600SemiBold" },
+  giftGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10, justifyContent: "space-between" },
+  giftCell: { width: "31%", borderWidth: 1, borderRadius: 16, paddingVertical: 12, alignItems: "center", gap: 4 },
+  giftCellEmoji: { fontSize: 30, lineHeight: 34 },
+  giftCellName: { fontSize: 12, fontFamily: "Poppins_500Medium" },
+  giftCellPrice: { fontSize: 11, fontFamily: "Poppins_500Medium" },
 });
 
 

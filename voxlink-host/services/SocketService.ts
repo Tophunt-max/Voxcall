@@ -228,6 +228,11 @@ class SocketService {
           text: msg.content ?? msg.text ?? "",
           mediaUrl: msg.media_url ?? null,
           mediaType: msg.media_type ?? null,
+          // Gift metadata (present only for gift messages).
+          kind: msg.msg_kind ?? null,
+          giftIcon: msg.gift_icon ?? null,
+          giftName: msg.gift_name ?? null,
+          giftAmount: msg.gift_amount ?? null,
           timestamp: msg.created_at ? msg.created_at * 1000 : (msg.timestamp ?? Date.now()),
         });
         break;
