@@ -25,6 +25,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useCall } from "@/context/CallContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { API, resolveMediaUrl } from "@/services/api";
+import { openBannerLink } from "@/utils/bannerLink";
 import { showErrorToast } from "@/components/Toast";
 import { InsufficientCoinsPopup } from "@/components/InsufficientCoinsPopup";
 
@@ -405,6 +406,7 @@ type Banner = {
   bg_color?: string;
   cta_text?: string;
   cta_link?: string;
+  link_type?: string;
 };
 
 // Rows for the vertical grid: a "pair" holds up to 2 host cards (a single card
@@ -455,7 +457,7 @@ function AdminBannerSlide({ item }: { item: Banner }) {
   return (
     <TouchableOpacity
       activeOpacity={0.9}
-      onPress={() => { if (item.cta_link) router.push(item.cta_link as any); }}
+      onPress={() => openBannerLink(item)}
       accessibilityRole="button"
       accessibilityLabel={item.title}
       style={[styles.promoSlide, { backgroundColor: bg }]}

@@ -24,6 +24,7 @@ import { InsufficientCoinsPopup } from "@/components/InsufficientCoinsPopup";
 import { SkeletonHostCard, SkeletonHostCardCompact } from "@/components/SkeletonCard";
 import { Host } from "@/data/mockData";
 import { API, resolveMediaUrl } from "@/services/api";
+import { openBannerLink } from "@/utils/bannerLink";
 import { fetchAppConfig } from "@/hooks/useAppConfig";
 import { logEngagement, logImpressionOnce } from "@/services/engagement";
 import { RefreshControl } from "react-native";
@@ -153,7 +154,7 @@ function mapApiHost(h: any): Host {
 
 type SlideItem =
   | { type: "find_more" }
-  | { type: "admin"; id: string; title: string; subtitle?: string; cta_text?: string; cta_link?: string; bg_color?: string };
+  | { type: "admin"; id: string; title: string; subtitle?: string; cta_text?: string; cta_link?: string; link_type?: string; bg_color?: string };
 
 function BannerSlider({ slides }: { slides: SlideItem[] }) {
   const { t: tr } = useLanguage();
@@ -220,9 +221,7 @@ function BannerSlider({ slides }: { slides: SlideItem[] }) {
     return (
       <TouchableOpacity
         activeOpacity={0.9}
-        onPress={() => {
-          if (item.cta_link) router.push(item.cta_link as any);
-        }}
+        onPress={() => openBannerLink(item)}
         style={[styles.slide, { backgroundColor: item.bg_color || "#A00EE7" }]}
       >
         <View style={styles.adminBannerContent}>
@@ -426,6 +425,7 @@ export default function HomeScreen() {
       subtitle: b.subtitle,
       cta_text: b.cta_text,
       cta_link: b.cta_link,
+      link_type: b.link_type,
       bg_color: b.bg_color,
     })),
     { type: "find_more" },

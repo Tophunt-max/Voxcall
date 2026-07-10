@@ -21,6 +21,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useLanguage } from "@/context/LanguageContext";
 import type { Translations } from "@/localization/en";
 import { API } from "@/services/api";
+import { openBannerLink } from "@/utils/bannerLink";
 import { notifyPurchaseSuccess } from "@/services/NotificationService";
 import LoadingOverlay from "@/components/LoadingOverlay";
 import { showSuccessToast, showErrorToast } from "@/components/Toast";
@@ -132,7 +133,7 @@ function WalletBannerSlider({ banners }: { banners: any[] }) {
         style={{ width: WALLET_BANNER_W }}
         renderItem={({ item }) => (
           <TouchableOpacity activeOpacity={0.9}
-            onPress={() => { if (item.cta_link) router.push(item.cta_link as any); }}
+            onPress={() => openBannerLink(item)}
             style={[wStyles.slide, { backgroundColor: item.bg_color || "#A00EE7" }]}
           >
             <View style={wStyles.textCol}>

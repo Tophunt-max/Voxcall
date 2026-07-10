@@ -71,6 +71,7 @@ async function validateFileType(file: File, allowed: Set<string>): Promise<strin
 upload.use('/avatar', authMiddleware);
 upload.use('/media', authMiddleware);
 upload.use('/admin-qr', authMiddleware);
+upload.use('/admin-banner', authMiddleware);
 
 // POST /api/upload/avatar — upload profile image to R2
 upload.post('/avatar', async (c) => {
@@ -173,6 +174,36 @@ upload.post('/admin-qr', async (c) => {
   await c.env.STORAGE.put(key, file.stream(), {
     httpMetadata: { contentType: file.type },
     customMetadata: { uploadedBy: sub, purpose: 'manual-qr' },
+  });
+
+  const url = `/api/files/${key}`;
+  return c.json({ url, key, filename: file.name, size: file.size });
+});
+
+// POST /api/upload/admin-banner — upload a promotional banner image (admin only,
+// stored in R2 under banners/). Returns a relative URL the admin panel stores
+// in banners.image_url. Mirrors admin-qr validation (magic bytes + 5 MB cap).
+upload.post('/admin-banner', async (c) => {
+  const { sub, role } = c.get('user');
+  if (role !== 'admin') return c.json({ error: 'Admin access required' }, 403);
+
+  const formData = await c.req.formData();
+  const file = formData.get('file') as File | null;
+  if (!file) return c.json({ error: 'No file provided' }, 400);
+
+  if (file.size > 5 * 1024 * 1024) {
+    return c.json({ error: 'File too large. Max 5 MB for banner images.' }, 413);
+  }
+  const typeError = await validateFileType(file, ALLOWED_IMAGE_TYPES);
+  if (typeError) return c.json({ error: typeError }, 415);
+
+  const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+  const safeExt = ['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(ext) ? ext : 'jpg';
+  const key = `banners/${Date.now()}-${crypto.randomUUID().slice(0, 8)}.${safeExt}`;
+
+  await c.env.STORAGE.put(key, file.stream(), {
+    httpMetadata: { contentType: file.type },
+    customMetadata: { uploadedBy: sub, purpose: 'banner' },
   });
 
   const url = `/api/files/${key}`;

@@ -315,6 +315,36 @@ export const api = {
     }
     return r.json();
   },
+  // Upload a promotional banner image directly to R2 (returns URL for banners.image_url)
+  uploadBannerImage: async (file: File): Promise<{ url: string; key: string; filename: string; size: number }> => {
+    const token = getToken();
+    if (!token) {
+      handleSessionExpired();
+      throw new Error('Session expired. Please log in again.');
+    }
+    const formData = new FormData();
+    formData.append('file', file);
+    const baseUrl = import.meta.env.VITE_API_URL
+      ? `${import.meta.env.VITE_API_URL}/api`
+      : `${import.meta.env.BASE_URL.replace(/\/$/, '')}/api`;
+    const post = (tk: string) =>
+      fetch(`${baseUrl}/upload/admin-banner`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${tk}` },
+        body: formData,
+      });
+    let r = await post(token);
+    if (r.status === 401) {
+      const newToken = await refreshAdminToken();
+      if (!newToken) { handleSessionExpired(); throw new Error('Session expired'); }
+      r = await post(newToken);
+    }
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({ error: r.statusText }));
+      throw new Error((err as any).error || r.statusText);
+    }
+    return r.json();
+  },
   runMigrations: () => req<any>('POST', '/admin/run-migrations', {}),
 
   // ─── Optimized (INR) coin economy seed ───────────────────────────────────

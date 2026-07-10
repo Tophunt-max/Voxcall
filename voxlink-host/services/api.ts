@@ -358,9 +358,10 @@ export const API = {
   submitReport: (data: { reported_user_id: string; reported_user?: string; reason: string; category?: string; reported_type?: string }) =>
     apiRequest<{ success: boolean; id: string }>('POST', '/api/user/report', data),
 
-  // Banners (public)
-  getBanners: (position?: 'home' | 'wallet') =>
-    apiRequest<any[]>('GET', position ? `/api/banners?position=${position}` : '/api/banners', undefined, false),
+  // Banners (public) — always request the 'host' audience so hosts only see
+  // host-facing campaigns, never the user app's promos.
+  getBanners: (position?: 'home') =>
+    apiRequest<any[]>('GET', `/api/banners?audience=host${position ? `&position=${position}` : ''}`, undefined, false),
 
   // Payment Gateways (public)
   getPaymentGateways: () =>

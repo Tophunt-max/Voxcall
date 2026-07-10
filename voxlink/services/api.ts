@@ -506,9 +506,10 @@ export const API = {
   submitReport: (data: { reported_user_id: string; reported_user?: string; reason: string; category?: string; reported_type?: string }) =>
     apiRequest<{ success: boolean; id: string }>('POST', '/api/user/report', data),
 
-  // Banners (public)
+  // Banners (public) — always request the 'user' audience so the user app only
+  // ever gets user-facing banners (never host-app campaigns).
   getBanners: (position?: 'home' | 'wallet' | 'search') =>
-    apiRequest<any[]>('GET', position ? `/api/banners?position=${position}` : '/api/banners', undefined, false),
+    apiRequest<any[]>('GET', `/api/banners?audience=user${position ? `&position=${position}` : ''}`, undefined, false),
 
   // ── Rewards Hub ───────────────────────────────────────────────────────
   // Reward tasks that let the user earn coins by completing in-app actions.

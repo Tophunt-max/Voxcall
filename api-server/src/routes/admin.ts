@@ -1581,29 +1581,121 @@ admin.delete('/manual-qr-codes/:id', async (c) => {
 });
 
 // ─── Banners CRUD ─────────────────────────────────────────────────────────────
+const BANNER_AUDIENCES = new Set(['user', 'host', 'all']);
+const BANNER_LINK_TYPES = new Set(['none', 'internal', 'external']);
+
+// Normalize + validate a banner CTA. In-app links must be app routes ("/...")
+// and external links must be https:// — this is what lets the mobile apps open
+// them safely (router.push vs Linking.openURL) without ever eval-ing an
+// arbitrary/unsafe string.
+function validateBannerLink(linkType: string, ctaLink: string): string | null {
+  const link = (ctaLink || '').trim();
+  if (linkType === 'internal' && link && !link.startsWith('/')) {
+    return 'In-app link must start with "/" (e.g. /coins).';
+  }
+  if (linkType === 'external' && link && !/^https:\/\//i.test(link)) {
+    return 'External link must start with https://';
+  }
+  return null;
+}
+
+// Coerce an incoming schedule value to a unix-seconds integer or null.
+function toEpochOrNull(v: any): number | null {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : null;
+}
+
 admin.get('/banners', async (c) => {
-  const result = await db(c).prepare('SELECT * FROM banners ORDER BY created_at DESC').all();
+  const result = await db(c)
+    .prepare('SELECT * FROM banners ORDER BY sort_order ASC, created_at DESC')
+    .all();
   return c.json(result.results);
 });
+
 admin.post('/banners', async (c) => {
   const body = await c.req.json() as any;
+
+  const title = String(body.title || '').trim();
+  if (!title) return c.json({ error: 'Title is required' }, 400);
+
+  const audience = BANNER_AUDIENCES.has(body.audience) ? body.audience : 'user';
+  const linkType = BANNER_LINK_TYPES.has(body.link_type) ? body.link_type : 'internal';
+  const ctaLink = String(body.cta_link || '').trim();
+  const linkErr = validateBannerLink(linkType, ctaLink);
+  if (linkErr) return c.json({ error: linkErr }, 400);
+
+  const startsAt = toEpochOrNull(body.starts_at);
+  const endsAt = toEpochOrNull(body.ends_at);
+  if (startsAt && endsAt && endsAt <= startsAt) {
+    return c.json({ error: 'End time must be after start time.' }, 400);
+  }
+
   const id = crypto.randomUUID();
   await db(c).prepare(
-    'INSERT INTO banners (id, title, subtitle, image_url, bg_color, cta_text, cta_link, position, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
-  ).bind(id, body.title, body.subtitle || '', body.image_url || '', body.bg_color || '#7C3AED', body.cta_text || 'Learn More', body.cta_link || '', body.position || 'home_top', body.active !== false ? 1 : 0).run();
+    `INSERT INTO banners
+       (id, title, subtitle, image_url, bg_color, cta_text, cta_link, position, audience, link_type, sort_order, starts_at, ends_at, active)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).bind(
+    id,
+    title,
+    String(body.subtitle || ''),
+    String(body.image_url || ''),
+    String(body.bg_color || '#7C3AED'),
+    String(body.cta_text || ''),
+    linkType === 'none' ? '' : ctaLink,
+    String(body.position || 'home_top'),
+    audience,
+    linkType,
+    Math.trunc(Number(body.sort_order) || 0),
+    startsAt,
+    endsAt,
+    body.active !== false ? 1 : 0,
+  ).run();
   return c.json({ id, success: true }, 201);
 });
+
 admin.patch('/banners/:id', async (c) => {
   const { id } = c.req.param();
   const body = await c.req.json() as any;
-  const fields = ['title', 'subtitle', 'image_url', 'bg_color', 'cta_text', 'cta_link', 'position', 'active'];
-  const sets: string[] = []; const vals: any[] = [];
-  for (const f of fields) { if (body[f] !== undefined) { sets.push(`${f} = ?`); vals.push(body[f]); } }
+
+  // Validate enum/link fields when they are part of the patch. For a partial
+  // update we need the effective link_type+cta_link pair, so read whichever
+  // side isn't being changed from the existing row.
+  if (body.audience !== undefined && !BANNER_AUDIENCES.has(body.audience)) {
+    return c.json({ error: 'Invalid audience' }, 400);
+  }
+  if (body.link_type !== undefined && !BANNER_LINK_TYPES.has(body.link_type)) {
+    return c.json({ error: 'Invalid link type' }, 400);
+  }
+  if (body.link_type !== undefined || body.cta_link !== undefined) {
+    const existing = await db(c).prepare('SELECT link_type, cta_link FROM banners WHERE id = ?').bind(id).first<any>();
+    const effType = body.link_type !== undefined ? body.link_type : (existing?.link_type || 'internal');
+    const effLink = body.cta_link !== undefined ? String(body.cta_link || '') : (existing?.cta_link || '');
+    const linkErr = validateBannerLink(effType, effLink);
+    if (linkErr) return c.json({ error: linkErr }, 400);
+    // A 'none' link clears any stored URL.
+    if (effType === 'none' && body.cta_link === undefined) body.cta_link = '';
+  }
+
+  const sets: string[] = [];
+  const vals: any[] = [];
+  const strFields = ['title', 'subtitle', 'image_url', 'bg_color', 'cta_text', 'cta_link', 'position', 'audience', 'link_type'];
+  for (const f of strFields) {
+    if (body[f] !== undefined) { sets.push(`${f} = ?`); vals.push(body[f]); }
+  }
+  if (body.sort_order !== undefined) { sets.push('sort_order = ?'); vals.push(Math.trunc(Number(body.sort_order) || 0)); }
+  if (body.starts_at !== undefined) { sets.push('starts_at = ?'); vals.push(toEpochOrNull(body.starts_at)); }
+  if (body.ends_at !== undefined) { sets.push('ends_at = ?'); vals.push(toEpochOrNull(body.ends_at)); }
+  if (body.active !== undefined) { sets.push('active = ?'); vals.push(body.active ? 1 : 0); }
+
   if (!sets.length) return c.json({ error: 'Nothing to update' }, 400);
-  sets.push('updated_at = unixepoch()'); vals.push(id);
+  sets.push('updated_at = unixepoch()');
+  vals.push(id);
   await db(c).prepare(`UPDATE banners SET ${sets.join(', ')} WHERE id = ?`).bind(...vals).run();
   return c.json({ success: true });
 });
+
 admin.delete('/banners/:id', async (c) => {
   const { id } = c.req.param();
   await db(c).prepare('DELETE FROM banners WHERE id = ?').bind(id).run();

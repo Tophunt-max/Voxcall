@@ -117,26 +117,68 @@ pub.get('/payment-gateways', async (c) => {
   return cachedJson(data);
 });
 
-// GET /api/banners?position=home|wallet|search — cached: active promotional banners
+// GET /api/banners?position=home|wallet|search&audience=user|host|all
+// Cached: active, in-schedule promotional banners targeted at the requesting
+// app. `audience` separates user-app promos from host-app campaigns; a banner
+// with audience 'all' shows in both. Ordered by admin-set sort_order.
 pub.get('/banners', async (c) => {
   const position = c.req.query('position') ?? 'all';
-  const KEY = `banners:${position}`;
+  const audRaw = (c.req.query('audience') ?? 'user').toLowerCase();
+  // Default to 'user' so legacy clients that omit the param keep getting the
+  // user-facing banners they always got (existing rows backfill to 'user').
+  const audience = audRaw === 'host' ? 'host' : audRaw === 'all' ? 'all' : 'user';
+
+  const KEY = `banners:${audience}:${position}`;
   const mem = memGet<any[]>(KEY);
   if (mem) return cachedJson(mem, 120, 300);
   const edge = await edgeGet(KEY);
   if (edge) { memSet(KEY, edge); return cachedJson(edge, 120, 300); }
-  let query: string;
-  if (position === 'home') {
-    query = "SELECT * FROM banners WHERE active = 1 AND (position LIKE 'home_%' OR position IS NULL OR position = '') ORDER BY created_at DESC LIMIT 10";
-  } else if (position === 'wallet') {
-    query = "SELECT * FROM banners WHERE active = 1 AND position = 'wallet' ORDER BY created_at DESC LIMIT 10";
-  } else if (position === 'search') {
-    query = "SELECT * FROM banners WHERE active = 1 AND position LIKE 'search%' ORDER BY created_at DESC LIMIT 10";
-  } else {
-    query = 'SELECT * FROM banners WHERE active = 1 ORDER BY created_at DESC LIMIT 10';
+
+  // Position → SQL predicate. `home` also matches legacy rows with a null/empty
+  // position so nothing is silently dropped.
+  const positionClause =
+    position === 'home'   ? "(position LIKE 'home_%' OR position IS NULL OR position = '')"
+    : position === 'wallet' ? "position = 'wallet'"
+    : position === 'search' ? "position LIKE 'search%'"
+    : '1 = 1';
+
+  const now = Math.floor(Date.now() / 1000);
+  const binds: any[] = [];
+  let audienceClause = '';
+  if (audience !== 'all') {
+    // 'all'-targeted banners always surface alongside the requested audience.
+    audienceClause = "AND (audience = ? OR audience = 'all')";
+    binds.push(audience);
   }
-  const result = await c.env.DB.prepare(query).all();
-  const data = result.results;
+  binds.push(now, now);
+
+  const cols = 'id, title, subtitle, image_url, bg_color, cta_text, cta_link, link_type, position, audience, sort_order';
+  const query =
+    `SELECT ${cols} FROM banners
+     WHERE active = 1 AND ${positionClause} ${audienceClause}
+       AND (starts_at IS NULL OR starts_at <= ?)
+       AND (ends_at   IS NULL OR ends_at   >= ?)
+     ORDER BY sort_order ASC, created_at DESC
+     LIMIT 10`;
+
+  let data: any[];
+  try {
+    const result = await c.env.DB.prepare(query).bind(...binds).all();
+    data = result.results ?? [];
+  } catch (e: any) {
+    // Graceful fallback for a DB where migration 0052 hasn't run yet (missing
+    // audience/link_type/schedule columns): serve the legacy active-by-position
+    // set so banners keep working during a staged deploy.
+    if (/no such column|no such table/i.test(String(e?.message || ''))) {
+      const legacy = await c.env.DB.prepare(
+        `SELECT * FROM banners WHERE active = 1 AND ${positionClause} ORDER BY created_at DESC LIMIT 10`
+      ).all();
+      data = legacy.results ?? [];
+    } else {
+      throw e;
+    }
+  }
+
   memSet(KEY, data);
   await edgePut(KEY, data);
   return cachedJson(data, 120, 300);

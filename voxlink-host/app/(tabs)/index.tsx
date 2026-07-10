@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useRef } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, Image,
-  ScrollView, Switch, RefreshControl, Linking, Dimensions, FlatList,
+  ScrollView, Switch, RefreshControl, Dimensions, FlatList,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
@@ -13,6 +13,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { API, resolveMediaUrl } from "@/services/api";
 import type { HostLevelResponse } from "@/services/api";
+import { openBannerLink } from "@/utils/bannerLink";
 import { showErrorToast } from "@/components/Toast";
 import { useSocketEvent } from "@/context/SocketContext";
 import { SocketEvents } from "@/constants/events";
@@ -67,7 +68,7 @@ function HostBanners({ banners }: { banners: any[] }) {
         renderItem={({ item }) => (
           <TouchableOpacity
             activeOpacity={item.cta_link ? 0.85 : 1}
-            onPress={() => { if (item.cta_link) Linking.openURL(item.cta_link).catch(() => {}); }}
+            onPress={() => openBannerLink(item)}
             style={[hostBannerStyles.card, { width: BANNER_W, backgroundColor: item.bg_color || "#6A00B8" }]}
           >
             {item.image_url ? (
