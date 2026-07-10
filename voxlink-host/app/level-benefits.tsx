@@ -9,8 +9,8 @@ import React from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from "react-native";
 import { router } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
-import { GradientHeader } from "@/components/GradientHeader";
 import { API } from "@/services/api";
 import type { HostLevelResponse, HostLevelDef } from "@/services/api";
 import { useLanguage } from "@/context/LanguageContext";
@@ -130,6 +130,7 @@ function LevelRow({
 
 export default function LevelBenefitsScreen() {
   const colors = useColors();
+  const insets = useSafeAreaInsets();
   const { data, isLoading, isError, refetch, isFetching } = useQuery<HostLevelResponse>({
     queryKey: ["host-level"],
     queryFn: () => API.getHostLevel(),
@@ -138,15 +139,15 @@ export default function LevelBenefitsScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
-      <GradientHeader
-        title="Level Benefits"
-        subtitle="Climb the ladder, earn more"
-        left={
-          <TouchableOpacity onPress={() => router.back()} hitSlop={12} style={styles.backBtn}>
-            <Text style={[styles.backIcon, { color: colors.text }]}>‹</Text>
-          </TouchableOpacity>
-        }
-      />
+      <View style={[styles.header, { paddingTop: insets.top + 12, backgroundColor: colors.background, borderBottomColor: colors.border }]}>
+        <TouchableOpacity onPress={() => router.back()} hitSlop={12} style={styles.backBtn}>
+          <Text style={[styles.backIcon, { color: colors.text }]}>‹</Text>
+        </TouchableOpacity>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>Level Benefits</Text>
+          <Text style={[styles.headerSub, { color: colors.mutedForeground }]}>Climb the ladder, earn more</Text>
+        </View>
+      </View>
 
       {isLoading ? (
         <View style={styles.loading}>
@@ -201,6 +202,9 @@ export default function LevelBenefitsScreen() {
 }
 
 const styles = StyleSheet.create({
+  header: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 16, paddingBottom: 12, borderBottomWidth: StyleSheet.hairlineWidth },
+  headerTitle: { fontSize: 20, fontFamily: "Poppins_700Bold" },
+  headerSub: { fontSize: 12, fontFamily: "Poppins_400Regular", marginTop: 1 },
   backBtn: { width: 40, height: 40, alignItems: "center", justifyContent: "center", marginLeft: -8 },
   backIcon: { fontSize: 34, fontFamily: "Poppins_400Regular", marginTop: -4 },
   loading: { flex: 1, alignItems: "center", justifyContent: "center" },

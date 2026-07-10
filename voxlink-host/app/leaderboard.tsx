@@ -6,7 +6,6 @@ import { router } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
-import { GradientHeader } from "@/components/GradientHeader";
 import { API, resolveMediaUrl } from "@/services/api";
 import type { HostLeaderboardEntry } from "@/services/api";
 
@@ -60,15 +59,15 @@ export default function Leaderboard() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
-      <GradientHeader
-        title="Leaderboard"
-        subtitle="Top hosts · last 7 days"
-        left={
-          <TouchableOpacity onPress={() => router.back()} hitSlop={12} style={styles.backBtn}>
-            <Text style={[styles.backIcon, { color: colors.text }]}>‹</Text>
-          </TouchableOpacity>
-        }
-      />
+      <View style={[styles.header, { paddingTop: insets.top + 12, backgroundColor: colors.background, borderBottomColor: colors.border }]}>
+        <TouchableOpacity onPress={() => router.back()} hitSlop={12} style={styles.backBtn}>
+          <Text style={[styles.backIcon, { color: colors.text }]}>‹</Text>
+        </TouchableOpacity>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>Leaderboard</Text>
+          <Text style={[styles.headerSub, { color: colors.mutedForeground }]}>Top hosts · last 7 days</Text>
+        </View>
+      </View>
 
       {isLoading ? (
         <View style={styles.center}><ActivityIndicator size="large" color={colors.accent} /></View>
@@ -116,7 +115,10 @@ export default function Leaderboard() {
 }
 
 const styles = StyleSheet.create({
-  backBtn: { width: 32, height: 32, alignItems: "center", justifyContent: "center" },
+  header: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 16, paddingBottom: 12, borderBottomWidth: StyleSheet.hairlineWidth },
+  headerTitle: { fontSize: 20, fontFamily: "Poppins_700Bold" },
+  headerSub: { fontSize: 12, fontFamily: "Poppins_400Regular", marginTop: 1 },
+  backBtn: { width: 36, height: 36, alignItems: "center", justifyContent: "center", marginLeft: -6 },
   backIcon: { fontSize: 30, fontFamily: "Poppins_400Regular", marginTop: -4 },
   center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 6, padding: 24 },
   emptyTitle: { fontSize: 16, fontFamily: "Poppins_700Bold", marginTop: 6 },
