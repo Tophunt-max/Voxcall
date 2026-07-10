@@ -9,6 +9,7 @@ import { detectCountryFromRequest, currencyForCountry } from '../lib/currency';
 import { verifyFirebaseIdToken, projectIdFromServiceAccount, decodeJwtPayloadUnsafe } from '../lib/firebaseVerify';
 import { registerHit } from '../lib/rateLimit';
 import { isEmergencyOn, emergencyBlockedBody } from '../lib/emergencyFlags';
+import { findActiveBan, bannedBody } from '../lib/bans';
 import type { Env } from '../types';
 import { authMiddleware } from '../middleware/auth';
 import { bumpRewardProgress } from './rewards';
@@ -150,6 +151,10 @@ auth.post('/register', rateLimit, zValidator('json', registerSchema), async (c) 
   if (await isEmergencyOn(db, 'registrations_paused')) {
     return c.json(emergencyBlockedBody('registrations_paused'), 503);
   }
+  // Block registration for a banned email (admins can pre-ban an address that
+  // hasn't signed up yet, e.g. a known abuser).
+  const emailBan = await findActiveBan(db, { email });
+  if (emailBan) return c.json(bannedBody(emailBan), 403);
   const existing = await db.prepare(
     'SELECT id, name, email, password_hash, role, coins FROM users WHERE email = ?'
   ).bind(email).first<any>();
@@ -229,6 +234,11 @@ auth.post('/login', rateLimit, zValidator('json', loginSchema), async (c) => {
   if (!user) return c.json({ error: 'Invalid email or password' }, 401);
   const valid = await verifyPassword(password, user.password_hash);
   if (!valid) return c.json({ error: 'Invalid email or password' }, 401);
+  // Reject banned accounts at login so no token is even issued. (The auth
+  // middleware already rejects banned accounts on every authenticated
+  // request, but blocking here gives the user a clear message immediately.)
+  const loginBan = await findActiveBan(db, { userId: user.id, email });
+  if (loginBan) return c.json(bannedBody(loginBan), 403);
 
   // FIX (currency auto-detect): backfill country/currency on login when the
   // user record predates the 0023 migration. Same pattern as the auth
@@ -521,6 +531,11 @@ auth.post('/google-login', rateLimit, async (c) => {
   }
   const db = c.env.DB;
 
+  // Block a banned email or a banned device before issuing a token / creating
+  // an account (stops a banned user signing in with Google on the same device).
+  const googleBan = await findActiveBan(db, { email, deviceId: device_id ?? null });
+  if (googleBan) return c.json(bannedBody(googleBan), 403);
+
   // 1. Look up by google_id first (handles email changes in Google account)
   let user = await db.prepare(
     'SELECT id, name, email, role, coins, avatar_url, gender, phone, bio, country, currency FROM users WHERE google_id = ?'
@@ -632,6 +647,11 @@ async function quickLoginHandler(c: any, deviceId: string | null) {
   }
 
   const db = c.env.DB;
+
+  // Block quick-login from a banned device — the primary reinstall loophole,
+  // since a fresh device account would otherwise start with status='active'.
+  const deviceBan = await findActiveBan(db, { deviceId });
+  if (deviceBan) return c.json(bannedBody(deviceBan), 403);
 
   // FIX (currency auto-detect): detect country once at the top of the handler
   // so both the returning-user backfill and the new-user INSERT can reuse it.

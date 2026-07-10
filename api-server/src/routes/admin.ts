@@ -14,6 +14,7 @@ import { recalcAllHostLevels } from '../lib/levelService';
 import { approveDeposit, validatePromoInput } from './payment';
 import { ensureAllMigrations, listMigrationStatus } from '../lib/autoMigrate';
 import { invalidateBannerCaches } from './public';
+import { findActiveBan } from '../lib/bans';
 import type { Env, JWTPayload } from '../types';
 
 const admin = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
@@ -1376,14 +1377,42 @@ admin.post('/bans', async (c) => {
   await db(c).prepare(
     'INSERT INTO user_bans (id, user_id, user_name, user_email, type, reason, ban_type, device_id, banned_by, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
   ).bind(id, userId, userName, body.email ?? '', body.type || 'user', body.reason, body.ban_type || 'permanent', body.device_id ?? null, 'Admin', body.expires_at || null).run();
+  // ENFORCEMENT: the ban row alone does nothing — auth middleware/login only
+  // reject accounts whose users.status = 'banned'. Flip the matching user (by
+  // id) and every account currently bound to the banned device so the ban
+  // takes effect on the user's very next request. Identity-level checks in
+  // auth.ts additionally block banned emails/devices from re-registering.
+  if (userId) {
+    await db(c).prepare("UPDATE users SET status = 'banned', updated_at = unixepoch() WHERE id = ? AND status != 'deleted'").bind(userId).run();
+  }
+  if (body.device_id) {
+    await db(c).prepare("UPDATE users SET status = 'banned', updated_at = unixepoch() WHERE device_id = ? AND status != 'deleted'").bind(body.device_id).run();
+  }
   const u = c.get('user');
   await auditLog(db(c), u.sub, u.email || 'Admin', u.email || '', 'ban', 'user', userName, `${body.ban_type || 'permanent'} ban: ${body.reason}`);
   return c.json({ id, success: true }, 201);
 });
 admin.delete('/bans/:id', async (c) => {
   const { id } = c.req.param();
-  const ban = await db(c).prepare('SELECT user_name, user_id FROM user_bans WHERE id = ?').bind(id).first<any>();
+  const ban = await db(c).prepare('SELECT user_name, user_id, user_email, device_id FROM user_bans WHERE id = ?').bind(id).first<any>();
   await db(c).prepare('DELETE FROM user_bans WHERE id = ?').bind(id).run();
+  // Restore access — but only if no OTHER active ban still covers this
+  // identity, and never resurrect a 'deleted' account. Mirrors the enforcement
+  // applied on ban create so unbanning actually lets the user back in.
+  if (ban) {
+    if (ban.user_id) {
+      const still = await findActiveBan(db(c), { userId: ban.user_id, email: ban.user_email });
+      if (!still) {
+        await db(c).prepare("UPDATE users SET status = 'active', updated_at = unixepoch() WHERE id = ? AND status = 'banned'").bind(ban.user_id).run();
+      }
+    }
+    if (ban.device_id) {
+      const stillDevice = await findActiveBan(db(c), { deviceId: ban.device_id });
+      if (!stillDevice) {
+        await db(c).prepare("UPDATE users SET status = 'active', updated_at = unixepoch() WHERE device_id = ? AND status = 'banned'").bind(ban.device_id).run();
+      }
+    }
+  }
   const u = c.get('user');
   await auditLog(db(c), u.sub, u.email || 'Admin', u.email || '', 'unban', 'user', ban?.user_name || id, 'Ban removed');
   return c.json({ success: true });
