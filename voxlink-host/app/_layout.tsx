@@ -19,7 +19,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { loadHostSettings, getHostSettingsSync } from "@/utils/hostSettings";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { ToastContainer } from "@/components/Toast";
+import { ToastContainer, showSuccessToast } from "@/components/Toast";
 import { OfflineBanner } from "@/components/OfflineBanner";
 import MaintenanceGate from "@/components/MaintenanceGate";
 import { BanGate } from "@/components/BanGate";
@@ -269,6 +269,40 @@ function AppBridge() {
       refreshProfile().catch(() => {});
     },
     [refreshProfile]
+  );
+
+  // Real-time: someone tipped this host — live toast + refresh earnings/balance.
+  useSocketEvent(
+    SocketEvents.TIP_RECEIVED,
+    (data: any) => {
+      const amt = Number(data?.amount) || 0;
+      const who = data?.senderName || "Someone";
+      showSuccessToast(`💝 ${who} sent you ${amt} coins${data?.message ? `: ${data.message}` : ""}`);
+      refreshProfile().catch(() => {});
+      queryClient.refetchQueries({ queryKey: ["host-earnings"] });
+    },
+    [refreshProfile, queryClient]
+  );
+
+  // Real-time: new rating/review — live toast + refresh rating (host-me).
+  useSocketEvent(
+    SocketEvents.REVIEW_RECEIVED,
+    (data: any) => {
+      const stars = Number(data?.stars) || 0;
+      showSuccessToast(`⭐ You received a new ${stars}-star review!`);
+      refreshProfile().catch(() => {});
+      queryClient.refetchQueries({ queryKey: ["host-me"] });
+    },
+    [refreshProfile, queryClient]
+  );
+
+  // Real-time: a user favorited this host.
+  useSocketEvent(
+    SocketEvents.FAVORITED,
+    (data: any) => {
+      showSuccessToast(`❤️ ${data?.byName || "Someone"} added you to favorites`);
+    },
+    []
   );
 
   // NOTE: CALL_END intentionally NOT handled here.

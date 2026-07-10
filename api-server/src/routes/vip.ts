@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { authMiddleware } from '../middleware/auth';
 import { getVipStatus } from '../lib/vip';
+import { pushCoinUpdate } from '../lib/realtime';
 import type { Env, JWTPayload } from '../types';
 
 const vip = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
@@ -143,6 +144,8 @@ vip.post('/subscribe', async (c) => {
   }
 
   const after = await db.prepare('SELECT coins FROM users WHERE id = ?').bind(sub).first<{ coins: number }>();
+  // Real-time: sync the new balance to the user's other devices.
+  c.executionCtx?.waitUntil?.(pushCoinUpdate(c.env, sub));
   return c.json({
     success: true,
     tier: plan.tier,

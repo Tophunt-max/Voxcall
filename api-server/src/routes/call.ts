@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth';
+import { pushToUser } from '../lib/realtime';
 import { buildAgoraRtcToken, isAgoraConfigured } from '../lib/agoraToken';
 import { getCallEconomicsConfig, floorRatePerMinCoins, agoraCostPerMinInr } from '../lib/callEconomics';
 import { sendFCMPush } from '../lib/fcm';
@@ -631,6 +632,16 @@ call.post('/rate', zValidator('json', rateSchema), async (c) => {
   } catch (e) {
     console.warn('[/rate] applyLevelUp failed:', e);
   }
+
+  // Real-time: tell the host they got a new review (live toast + refresh).
+  try {
+    const hostUser = await db.prepare('SELECT user_id FROM hosts WHERE id = ?').bind(session.host_id).first<{ user_id: string }>();
+    if (hostUser?.user_id) {
+      c.executionCtx?.waitUntil?.(pushToUser(c.env, hostUser.user_id, {
+        type: 'review_received', stars: starsVal, comment: body.comment ?? null, timestamp: Date.now(),
+      }));
+    }
+  } catch { /* best-effort */ }
 
   return c.json({ success: true });
 });

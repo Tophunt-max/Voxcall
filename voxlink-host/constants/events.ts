@@ -57,6 +57,9 @@ export const SocketEvents = {
 
   // Host Events
   HOST_EARNINGS_UPDATE: "host:earnings_update",
+  TIP_RECEIVED: "host:tip_received",
+  REVIEW_RECEIVED: "host:review_received",
+  FAVORITED: "host:favorited",
   HOST_REVIEW_NEW: "host:review_new",
   HOST_STATS_UPDATE: "host:stats_update",
   HOST_LEVEL_UP: "host:level_up",

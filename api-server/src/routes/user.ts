@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { authMiddleware } from '../middleware/auth';
+import { pushToUser } from '../lib/realtime';
 import { verifyPassword } from '../lib/hash';
 import { getStreakStatus, claimDailyStreak, repairStreak } from '../lib/streak';
 import { getDefaultCallRates } from '../lib/levels';
@@ -217,6 +218,13 @@ user.post('/favorites/:hostId', async (c) => {
     }
     await db.prepare('INSERT OR IGNORE INTO user_favorites (id, user_id, host_id) VALUES (?, ?, ?)')
       .bind(crypto.randomUUID(), sub, hostId).run();
+    // Real-time: tell the host someone favorited them (live toast).
+    try {
+      const me = await db.prepare('SELECT name FROM users WHERE id = ?').bind(sub).first<{ name: string }>();
+      c.executionCtx?.waitUntil?.(pushToUser(c.env, host.user_id, {
+        type: 'favorited', by_name: me?.name ?? 'Someone', timestamp: Date.now(),
+      }));
+    } catch { /* best-effort */ }
   }
 
   const total = await db.prepare('SELECT COUNT(*) as cnt FROM user_favorites WHERE user_id = ?')

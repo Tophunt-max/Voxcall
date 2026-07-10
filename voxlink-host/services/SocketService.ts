@@ -313,6 +313,46 @@ class SocketService {
           console.warn("[Socket] Failed to update config cache:", e);
         });
         break;
+      case "chat_typing":
+        // BUG FIX: host app never handled the user's typing relay, so the host
+        // chat header could not show "typing…". Re-route to MESSAGE_TYPING /
+        // MESSAGE_TYPING_STOP (ChatContext listens and flips convo.isTyping).
+        this.emit(
+          msg.is_typing ? SocketEvents.MESSAGE_TYPING : SocketEvents.MESSAGE_TYPING_STOP,
+          {
+            roomId: msg.room_id,
+            userId: msg.user_id,
+            senderName: msg.sender_name ?? "",
+            isTyping: !!msg.is_typing,
+            timestamp: Date.now(),
+          }
+        );
+        break;
+      case "tip_received":
+        // BUG FIX: backend pushed tip_received but no app handled it. Surface a
+        // live toast + trigger earnings/balance refresh (AppBridge listens).
+        this.emit(SocketEvents.TIP_RECEIVED, {
+          amount: msg.amount ?? 0,
+          senderName: msg.sender_name ?? "Someone",
+          message: msg.message ?? null,
+          timestamp: Date.now(),
+        });
+        break;
+      case "review_received":
+        // A user just rated this host — live toast + rating/profile refresh.
+        this.emit(SocketEvents.REVIEW_RECEIVED, {
+          stars: msg.stars ?? 0,
+          comment: msg.comment ?? null,
+          timestamp: Date.now(),
+        });
+        break;
+      case "favorited":
+        // A user added this host to favorites.
+        this.emit(SocketEvents.FAVORITED, {
+          byName: msg.by_name ?? "Someone",
+          timestamp: Date.now(),
+        });
+        break;
       case "data_changed":
         // REAL-TIME CATALOG UPDATE
         // Admin added/edited/deleted a catalog (gifts, banners, rewards, level

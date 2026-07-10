@@ -10,6 +10,7 @@ import { verifyFirebaseIdToken, projectIdFromServiceAccount, decodeJwtPayloadUns
 import { registerHit } from '../lib/rateLimit';
 import { isEmergencyOn, emergencyBlockedBody } from '../lib/emergencyFlags';
 import { findActiveBan, bannedBody } from '../lib/bans';
+import { pushCoinUpdate, notifyUser } from '../lib/realtime';
 import type { Env } from '../types';
 import { authMiddleware } from '../middleware/auth';
 import { bumpRewardProgress } from './rewards';
@@ -334,6 +335,12 @@ auth.post('/verify-otp', strictRateLimit, async (c) => {
       await writeCoinLedger(db, pendingReferral.referrer_id, 'bonus', referrerReward, 'Referral reward (invited a friend)');
       // Reward progress — bump the REFERRER's refer_friend tasks (Rewards Hub).
       await bumpRewardProgress(db, pendingReferral.referrer_id, 'refer_friend', 1);
+      // Real-time: the referrer (already a member, likely online) sees their
+      // reward coins land instantly + gets a notification.
+      if (referrerReward > 0) {
+        c.executionCtx?.waitUntil?.(pushCoinUpdate(c.env, pendingReferral.referrer_id, referrerReward));
+        c.executionCtx?.waitUntil?.(notifyUser(c.env, pendingReferral.referrer_id, 'Referral reward 🎉', `You earned ${referrerReward} coins — a friend joined using your code!`, 'referral'));
+      }
       return c.json({ success: true, bonus_coins: welcomeBonus + newUserReward });
     }
   }

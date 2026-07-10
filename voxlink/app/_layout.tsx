@@ -17,7 +17,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { ToastContainer } from "@/components/Toast";
+import { ToastContainer, showSuccessToast } from "@/components/Toast";
 import { DialogHost } from "@/components/DialogHost";
 import { OfflineBanner } from "@/components/OfflineBanner";
 import MaintenanceGate from "@/components/MaintenanceGate";
@@ -253,6 +253,12 @@ function AppBridge() {
     SocketEvents.DATA_CHANGED,
     (data: any) => {
       const resource: string = data?.resource ?? "";
+      // Host application approved — the host experience lives in the separate
+      // Host app, so surface a live celebratory toast pointing them there.
+      if (resource === "role") {
+        showSuccessToast("🎉 Your host application is approved! Open the VoxLink Host app to go online and start earning.");
+        return;
+      }
       const keys = CATALOG_QUERY_KEYS[resource];
       if (keys) {
         keys.forEach((queryKey) => queryClient.invalidateQueries({ queryKey }));
