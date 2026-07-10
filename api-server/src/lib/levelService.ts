@@ -61,7 +61,8 @@ export async function applyLevelUp(
 
   const host = await db
     .prepare(
-      `SELECT h.id, h.user_id, h.level, h.rating, h.review_count, h.is_active,
+      `SELECT h.id, h.user_id, h.level, h.rating, h.review_count,
+              h.total_minutes, h.total_earnings, h.is_active,
               u.status AS user_status
        FROM hosts h JOIN users u ON u.id = h.user_id
        WHERE h.id = ?`,
@@ -79,7 +80,12 @@ export async function applyLevelUp(
 
   const cfg = config ?? (await getLevelConfig(db));
   const target = evaluateLevel(
-    { review_count: Number(host.review_count) || 0, rating: Number(host.rating) || 0 },
+    {
+      review_count: Number(host.review_count) || 0,
+      rating: Number(host.rating) || 0,
+      total_minutes: Number(host.total_minutes) || 0,
+      total_earnings: Number(host.total_earnings) || 0,
+    },
     cfg,
   );
   if (target <= oldLevel) return NO_CHANGE(oldLevel);

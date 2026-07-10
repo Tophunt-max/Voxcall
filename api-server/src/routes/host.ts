@@ -592,7 +592,12 @@ hostProtected.get('/level', async (c) => {
 
   const config = await getLevelConfig(c.env.DB);
   const progress = computeLevelProgress(
-    { review_count: Number(h.review_count) || 0, rating: Number(h.rating) || 0 },
+    {
+      review_count: Number(h.review_count) || 0,
+      rating: Number(h.rating) || 0,
+      total_minutes: Number(h.total_minutes) || 0,
+      total_earnings: Number(h.total_earnings) || 0,
+    },
     config,
     h.level,
   );

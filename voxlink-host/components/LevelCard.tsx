@@ -130,7 +130,7 @@ export default function LevelCard({ data, loading, onPress }: LevelCardProps) {
             <View style={[styles.fill, { width: `${progress_pct}%`, backgroundColor: accent }]} />
           </View>
 
-          {/* Requirement pills */}
+          {/* Requirement pills — all four must be met to level up */}
           <View style={styles.reqRow}>
             <ReqPill
               label="Rated calls"
@@ -153,6 +153,30 @@ export default function LevelCard({ data, loading, onPress }: LevelCardProps) {
               mutedColor={colors.mutedForeground}
               surface={colors.surface}
             />
+            {requirements.minutes?.required > 0 ? (
+              <ReqPill
+                label="Talk-time (min)"
+                current={requirements.minutes.current}
+                required={requirements.minutes.required}
+                met={requirements.minutes.met}
+                color={accent}
+                textColor={colors.text}
+                mutedColor={colors.mutedForeground}
+                surface={colors.surface}
+              />
+            ) : null}
+            {requirements.earnings?.required > 0 ? (
+              <ReqPill
+                label="Coins earned"
+                current={requirements.earnings.current}
+                required={requirements.earnings.required}
+                met={requirements.earnings.met}
+                color={accent}
+                textColor={colors.text}
+                mutedColor={colors.mutedForeground}
+                surface={colors.surface}
+              />
+            ) : null}
           </View>
 
           {/* Reward hint */}
@@ -190,14 +214,14 @@ const styles = StyleSheet.create({
   progressPct: { fontSize: 13, fontFamily: "Poppins_700Bold" },
   track: { height: 10, borderRadius: 5, overflow: "hidden" },
   fill: { height: 10, borderRadius: 5 },
-  reqRow: { flexDirection: "row", gap: 10 },
+  reqRow: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   rewardRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingTop: 10, borderTopWidth: StyleSheet.hairlineWidth },
   rewardText: { fontSize: 12, fontFamily: "Poppins_400Regular" },
   rewardCoins: { fontSize: 13, fontFamily: "Poppins_700Bold" },
 });
 
 const reqStyles = StyleSheet.create({
-  pill: { flex: 1, borderRadius: 12, padding: 10, gap: 4 },
+  pill: { flexGrow: 1, flexBasis: "46%", borderRadius: 12, padding: 10, gap: 4 },
   pillTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   pillLabel: { fontSize: 11, fontFamily: "Poppins_500Medium" },
   pillCheck: { fontSize: 13, fontFamily: "Poppins_700Bold" },

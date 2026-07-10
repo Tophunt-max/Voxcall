@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth';
+import { applyLevelUp } from '../lib/levelService';
 import type { Env, JWTPayload } from '../types';
 
 const tip = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
@@ -64,10 +65,23 @@ tip.post('/send', zValidator('json', sendTipSchema), async (c) => {
       db.prepare(
         'INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)'
       ).bind(crypto.randomUUID(), host.user_id, 'bonus', body.amount, `Tip received`, tipId),
+      // Tips count toward the host's lifetime earnings, so they feed the
+      // level-up system (earnings threshold) just like call earnings do.
+      db.prepare('UPDATE hosts SET total_earnings = total_earnings + ? WHERE id = ?')
+        .bind(body.amount, host.id),
     ]);
   } catch (e) {
     console.warn('[tip/send] ledger write failed (coins already moved):', e);
   }
+
+  // A large tip can push the host across an earnings threshold — re-evaluate
+  // their level immediately (idempotent; a no-op when no promotion is due).
+  // Runs in the background so it never adds latency to the tip response.
+  try {
+    const promo = applyLevelUp(c.env, host.id, 'auto').catch(() => {});
+    if (c.executionCtx?.waitUntil) c.executionCtx.waitUntil(promo);
+    else await promo;
+  } catch { /* never block a successful tip on level bookkeeping */ }
 
   // Notify host via WebSocket
   try {

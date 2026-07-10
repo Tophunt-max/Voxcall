@@ -82,6 +82,16 @@ function LevelRow({
           <View style={[styles.infoChip, { backgroundColor: colors.surface }]}>
             <Text style={[styles.infoChipText, { color: colors.text }]}>⭐ {def.min_rating.toFixed(1)} rating</Text>
           </View>
+          {def.min_minutes > 0 ? (
+            <View style={[styles.infoChip, { backgroundColor: colors.surface }]}>
+              <Text style={[styles.infoChipText, { color: colors.text }]}>⏱️ {def.min_minutes.toLocaleString()} min talk-time</Text>
+            </View>
+          ) : null}
+          {def.min_earnings > 0 ? (
+            <View style={[styles.infoChip, { backgroundColor: colors.surface }]}>
+              <Text style={[styles.infoChipText, { color: colors.text }]}>🪙 {def.min_earnings.toLocaleString()} coins earned</Text>
+            </View>
+          ) : null}
         </View>
       </View>
 

@@ -22,17 +22,19 @@ interface LevelDef {
   color: string;
   min_calls: number;
   min_rating: number;
+  min_minutes: number;
+  min_earnings: number;
   coin_reward: number;
   description: string;
   perks: LevelPerks;
 }
 
 const DEFAULT_CONFIG: LevelDef[] = [
-  { level: 1, name: 'Newcomer', badge: '🌱', color: '#6B7280', min_calls: 0,    min_rating: 0,   coin_reward: 0,    description: 'New to the platform', perks: { max_rate: 100, max_audio_rate: 100, max_video_rate: 100, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.70, rank_boost: 0 } },
-  { level: 2, name: 'Rising',   badge: '⭐', color: '#F59E0B', min_calls: 50,   min_rating: 4.0, coin_reward: 100,  description: 'Getting established',  perks: { max_rate: 150, max_audio_rate: 150, max_video_rate: 150, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.70, rank_boost: 1 } },
-  { level: 3, name: 'Expert',   badge: '🔥', color: '#EF4444', min_calls: 200,  min_rating: 4.3, coin_reward: 300,  description: 'Proven expertise',    perks: { max_rate: 250, max_audio_rate: 250, max_video_rate: 250, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.72, rank_boost: 2 } },
-  { level: 4, name: 'Pro',      badge: '💎', color: '#8B5CF6', min_calls: 500,  min_rating: 4.6, coin_reward: 500,  description: 'Professional tier',   perks: { max_rate: 400, max_audio_rate: 400, max_video_rate: 400, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.75, rank_boost: 3 } },
-  { level: 5, name: 'Elite',    badge: '👑', color: '#D97706', min_calls: 1000, min_rating: 4.8, coin_reward: 1000, description: 'Top performer',       perks: { max_rate: 500, max_audio_rate: 500, max_video_rate: 500, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.80, rank_boost: 5 } },
+  { level: 1, name: 'Newcomer', badge: '🌱', color: '#6B7280', min_calls: 0,    min_rating: 0,   min_minutes: 0,    min_earnings: 0,     coin_reward: 0,    description: 'New to the platform', perks: { max_rate: 100, max_audio_rate: 100, max_video_rate: 100, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.70, rank_boost: 0 } },
+  { level: 2, name: 'Rising',   badge: '⭐', color: '#F59E0B', min_calls: 50,   min_rating: 4.0, min_minutes: 50,   min_earnings: 500,   coin_reward: 100,  description: 'Getting established',  perks: { max_rate: 150, max_audio_rate: 150, max_video_rate: 150, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.70, rank_boost: 1 } },
+  { level: 3, name: 'Expert',   badge: '🔥', color: '#EF4444', min_calls: 200,  min_rating: 4.3, min_minutes: 300,  min_earnings: 3000,  coin_reward: 300,  description: 'Proven expertise',    perks: { max_rate: 250, max_audio_rate: 250, max_video_rate: 250, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.72, rank_boost: 2 } },
+  { level: 4, name: 'Pro',      badge: '💎', color: '#8B5CF6', min_calls: 500,  min_rating: 4.6, min_minutes: 1000, min_earnings: 15000, coin_reward: 500,  description: 'Professional tier',   perks: { max_rate: 400, max_audio_rate: 400, max_video_rate: 400, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.75, rank_boost: 3 } },
+  { level: 5, name: 'Elite',    badge: '👑', color: '#D97706', min_calls: 1000, min_rating: 4.8, min_minutes: 2500, min_earnings: 50000, coin_reward: 1000, description: 'Top performer',       perks: { max_rate: 500, max_audio_rate: 500, max_video_rate: 500, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.80, rank_boost: 5 } },
 ];
 
 /**
@@ -61,6 +63,8 @@ function generateNewLevelDefaults(level: number): LevelDef {
   const overflow = Math.max(0, level - DEFAULT_CONFIG.length);
   const min_calls = base.min_calls + overflow * 1000;
   const min_rating = Math.min(5, base.min_rating + overflow * 0.05);
+  const min_minutes = base.min_minutes + overflow * 2500;
+  const min_earnings = base.min_earnings + overflow * 50000;
   const coin_reward = base.coin_reward + overflow * 500;
   const earning_share = Math.min(0.95, base.perks.earning_share + overflow * 0.02);
   // Random rates climb so a freshly added top tier isn't accidentally
@@ -74,6 +78,8 @@ function generateNewLevelDefaults(level: number): LevelDef {
     color: base.color,
     min_calls,
     min_rating,
+    min_minutes,
+    min_earnings,
     coin_reward,
     description: 'Custom tier — edit name, badge, perks below',
     perks: {
@@ -162,7 +168,7 @@ export default function LevelConfig() {
   const updateLevel = (idx: number, field: keyof LevelDef, val: string) => {
     setConfig(prev => prev.map((l, i) => {
       if (i !== idx) return l;
-      if (field === 'min_calls' || field === 'coin_reward') return { ...l, [field]: Math.max(0, parseInt(val) || 0) };
+      if (field === 'min_calls' || field === 'coin_reward' || field === 'min_minutes' || field === 'min_earnings') return { ...l, [field]: Math.max(0, parseInt(val) || 0) };
       if (field === 'min_rating') return { ...l, [field]: Math.min(5, Math.max(0, parseFloat(val) || 0)) };
       return { ...l, [field]: val };
     }));
@@ -207,9 +213,9 @@ export default function LevelConfig() {
     setSaving(true);
     try {
       await api.updateLevelConfig(config);
-      toast.error('Level config saved successfully!');
+      toast.success('Level config saved successfully!');
     } catch (e: any) {
-      toast.success(e.message || 'Failed to save');
+      toast.error(e.message || 'Failed to save');
     } finally {
       setSaving(false);
     }
@@ -251,10 +257,10 @@ export default function LevelConfig() {
   const handleRecalculate = async () => {
     setRecalculating(true);
     try {
-      const res = await api.recalculateHostLevels();
-      toast.error(`All host levels recalculated using current thresholds!`);
+      await api.recalculateHostLevels();
+      toast.success(`All host levels recalculated using current thresholds!`);
     } catch (e: any) {
-      toast.success(e.message || 'Recalculation failed');
+      toast.error(e.message || 'Recalculation failed');
     } finally {
       setRecalculating(false);
     }
@@ -306,7 +312,7 @@ export default function LevelConfig() {
       <div className="flex items-start gap-3 p-4 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800/40 rounded-xl text-sm">
         <Info size={16} className="text-blue-500 mt-0.5 flex-shrink-0" />
         <div className="text-blue-700 dark:text-blue-300">
-          <strong>How levels work:</strong> Hosts are <strong>auto-promoted in real time</strong> when their rated calls + rating cross a level's thresholds — the one-time Coin Reward is credited automatically.
+          <strong>How levels work:</strong> Hosts are <strong>auto-promoted in real time</strong> when they meet ALL of a level's thresholds — rated calls, rating, talk-time (minutes) &amp; total coins earned (calls + tips + chat) — the one-time Coin Reward is credited automatically.
           Level 1 is the starting level (no requirements). <strong>Perks</strong> per level: <strong>Max Audio Rate</strong> and <strong>Max Video Rate</strong> (highest coins/min a host may charge for each call type), <strong>Earning Share</strong> (host's cut of each call), and <strong>Rank Boost</strong> (higher = shown earlier in listings &amp; matchmaking).
           A host can charge up to <strong>+{HOST_RATE_BONUS} coins/min</strong> above each cap (effective ceiling shown next to each input).
           You can <strong>add or remove levels</strong> ({MIN_LEVELS}–{MAX_LEVELS} total) using the controls below; level 1 cannot be removed.
@@ -424,6 +430,20 @@ export default function LevelConfig() {
                 onChange={v => updateLevel(idx, 'min_rating', v)}
               />
               <Field
+                label="Min Talk-time (min)"
+                value={lvl.min_minutes}
+                type="number"
+                min={0}
+                onChange={v => updateLevel(idx, 'min_minutes', v)}
+              />
+              <Field
+                label="Min Earnings (coins)"
+                value={lvl.min_earnings}
+                type="number"
+                min={0}
+                onChange={v => updateLevel(idx, 'min_earnings', v)}
+              />
+              <Field
                 label="Coin Reward"
                 value={lvl.coin_reward}
                 type="number"
@@ -532,7 +552,7 @@ export default function LevelConfig() {
               >
                 <ChevronRight size={13} />
                 <span>
-                  Requires: <strong>{lvl.min_calls}+ calls</strong> and <strong>{lvl.min_rating}+ rating</strong> to unlock
+                  Requires: <strong>{lvl.min_calls}+ calls</strong>, <strong>{lvl.min_rating}+ rating</strong>, <strong>{lvl.min_minutes}+ min talk-time</strong> and <strong>{lvl.min_earnings.toLocaleString()}+ coins earned</strong> to unlock
                   {lvl.coin_reward > 0 && <> · Reward: <strong className="text-amber-600">{lvl.coin_reward} coins</strong></>}
                   {' '}· Perks: <strong className="text-emerald-600">{Math.round(lvl.perks.earning_share * 100)}% earnings</strong>, audio up to <strong>{lvl.perks.max_audio_rate}/min</strong>, video up to <strong>{lvl.perks.max_video_rate}/min</strong>, random <strong className="text-violet-600">{lvl.perks.random_audio_rate}/{lvl.perks.random_video_rate}</strong>, rank +{lvl.perks.rank_boost}
                 </span>

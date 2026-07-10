@@ -100,6 +100,7 @@ import m_0051 from '../../migrations/0051_vip_perks_structured.sql';
 import m_0052 from '../../migrations/0052_banners_production.sql';
 import m_0053 from '../../migrations/0053_reset_demo_banners.sql';
 import m_0054 from '../../migrations/0054_banner_designs.sql';
+import m_0055 from '../../migrations/0055_host_level_index.sql';
 
 interface Migration {
   /**
@@ -166,6 +167,7 @@ const MIGRATIONS: ReadonlyArray<Migration> = [
   { name: '0052_banners_production.sql',            sql: m_0052 },
   { name: '0053_reset_demo_banners.sql',            sql: m_0053 },
   { name: '0054_banner_designs.sql',                sql: m_0054 },
+  { name: '0055_host_level_index.sql',              sql: m_0055 },
 ];
 
 /**

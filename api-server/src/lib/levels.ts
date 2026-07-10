@@ -56,8 +56,14 @@ export interface LevelDef {
   name: string;
   badge: string;
   color: string;
+  /** Min RATED calls (review_count) required. */
   min_calls: number;
+  /** Min average rating (0–5) required. */
   min_rating: number;
+  /** Min total talk-time in MINUTES required (hosts.total_minutes). */
+  min_minutes: number;
+  /** Min total coins EARNED required (hosts.total_earnings — calls + tips + chat). */
+  min_earnings: number;
   coin_reward: number;
   description: string;
   perks: LevelPerks;
@@ -119,11 +125,11 @@ export const MAX_LEVELS = 20;
  * default length are seeded by {@link generateLevelDefault} when missing.
  */
 export const DEFAULT_LEVEL_CONFIG: LevelDef[] = [
-  { level: 1, name: 'Newcomer', badge: '🌱', color: '#6B7280', min_calls: 0,    min_rating: 0.0, coin_reward: 0,    description: 'New to the platform',  perks: { max_rate: 100, max_audio_rate: 100, max_video_rate: 100, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.70, rank_boost: 0 } },
-  { level: 2, name: 'Rising',   badge: '⭐', color: '#F59E0B', min_calls: 50,   min_rating: 4.0, coin_reward: 100,  description: 'Getting established',   perks: { max_rate: 150, max_audio_rate: 150, max_video_rate: 150, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.70, rank_boost: 1 } },
-  { level: 3, name: 'Expert',   badge: '🔥', color: '#EF4444', min_calls: 200,  min_rating: 4.3, coin_reward: 300,  description: 'Proven expertise',     perks: { max_rate: 250, max_audio_rate: 250, max_video_rate: 250, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.72, rank_boost: 2 } },
-  { level: 4, name: 'Pro',      badge: '💎', color: '#8B5CF6', min_calls: 500,  min_rating: 4.6, coin_reward: 500,  description: 'Professional tier',    perks: { max_rate: 400, max_audio_rate: 400, max_video_rate: 400, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.75, rank_boost: 3 } },
-  { level: 5, name: 'Elite',    badge: '👑', color: '#D97706', min_calls: 1000, min_rating: 4.8, coin_reward: 1000, description: 'Top performer',        perks: { max_rate: 500, max_audio_rate: 500, max_video_rate: 500, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.80, rank_boost: 5 } },
+  { level: 1, name: 'Newcomer', badge: '🌱', color: '#6B7280', min_calls: 0,    min_rating: 0.0, min_minutes: 0,    min_earnings: 0,     coin_reward: 0,    description: 'New to the platform',  perks: { max_rate: 100, max_audio_rate: 100, max_video_rate: 100, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.70, rank_boost: 0 } },
+  { level: 2, name: 'Rising',   badge: '⭐', color: '#F59E0B', min_calls: 50,   min_rating: 4.0, min_minutes: 50,   min_earnings: 500,   coin_reward: 100,  description: 'Getting established',   perks: { max_rate: 150, max_audio_rate: 150, max_video_rate: 150, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.70, rank_boost: 1 } },
+  { level: 3, name: 'Expert',   badge: '🔥', color: '#EF4444', min_calls: 200,  min_rating: 4.3, min_minutes: 300,  min_earnings: 3000,  coin_reward: 300,  description: 'Proven expertise',     perks: { max_rate: 250, max_audio_rate: 250, max_video_rate: 250, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.72, rank_boost: 2 } },
+  { level: 4, name: 'Pro',      badge: '💎', color: '#8B5CF6', min_calls: 500,  min_rating: 4.6, min_minutes: 1000, min_earnings: 15000, coin_reward: 500,  description: 'Professional tier',    perks: { max_rate: 400, max_audio_rate: 400, max_video_rate: 400, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.75, rank_boost: 3 } },
+  { level: 5, name: 'Elite',    badge: '👑', color: '#D97706', min_calls: 1000, min_rating: 4.8, min_minutes: 2500, min_earnings: 50000, coin_reward: 1000, description: 'Top performer',        perks: { max_rate: 500, max_audio_rate: 500, max_video_rate: 500, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.80, rank_boost: 5 } },
 ];
 
 /**
@@ -143,6 +149,8 @@ function generateLevelDefault(level: number): LevelDef {
   // Cap min_rating at 5.0 — the score is a 1-5 scale, asking for >5 stars
   // would make the rung permanently unreachable.
   const min_rating = Math.min(5, base.min_rating + overflow * 0.05);
+  const min_minutes = base.min_minutes + overflow * 2500;
+  const min_earnings = base.min_earnings + overflow * 50000;
   const coin_reward = base.coin_reward + overflow * 500;
   const earning_share = Math.min(0.95, base.perks.earning_share + overflow * 0.02);
   // Rate caps already at the absolute ceiling for level 5 — staying there is
@@ -166,6 +174,8 @@ function generateLevelDefault(level: number): LevelDef {
     color: base.color,
     min_calls,
     min_rating,
+    min_minutes,
+    min_earnings,
     coin_reward,
     description: 'Custom tier — configure in admin panel',
     perks: {
@@ -259,6 +269,11 @@ export function normalizeLevelConfig(input: unknown): LevelDef[] {
       color: String(l?.color || fallback.color),
       min_calls: Math.max(0, parseInt(String(l?.min_calls)) || 0),
       min_rating: Math.min(5, Math.max(0, parseFloat(String(l?.min_rating)) || 0)),
+      // New multi-metric thresholds. Missing on older saved configs → fall
+      // back to the seeded default for that slot (consistent with perks), so
+      // the feature is active with sensible values without a data migration.
+      min_minutes: Math.max(0, parseInt(String(l?.min_minutes)) || (l?.min_minutes === 0 ? 0 : fallback.min_minutes)),
+      min_earnings: Math.max(0, parseInt(String(l?.min_earnings)) || (l?.min_earnings === 0 ? 0 : fallback.min_earnings)),
       coin_reward: Math.max(0, parseInt(String(l?.coin_reward)) || 0),
       description: String(l?.description ?? ''),
       perks: normalizePerks(l?.perks, fallback.perks),
@@ -325,21 +340,36 @@ export interface HostLevelStats {
   review_count: number;
   /** Average host rating (0–5). */
   rating: number;
+  /** Total talk-time in minutes (hosts.total_minutes). Optional for back-compat. */
+  total_minutes?: number;
+  /** Total coins earned (hosts.total_earnings — calls + tips + chat). Optional. */
+  total_earnings?: number;
 }
 
 /**
  * The level a host has EARNED purely from their stats — the highest rung whose
- * thresholds (min_calls + min_rating) are both satisfied. Level 1 is the floor.
- * This is the authoritative promotion check used by the auto level-up engine.
+ * thresholds (min_calls + min_rating + min_minutes + min_earnings) are ALL
+ * satisfied. Level 1 is the floor. This is the authoritative promotion check
+ * used by the auto level-up engine, so it must exactly match
+ * computeLevelProgress's gating below.
  */
 export function evaluateLevel(stats: HostLevelStats, config: LevelDef[]): number {
   const ladder = asLadder(config);
   const calls = Math.max(0, Number(stats.review_count) || 0);
   const rating = Math.max(0, Number(stats.rating) || 0);
+  const minutes = Math.max(0, Number(stats.total_minutes) || 0);
+  const earnings = Math.max(0, Number(stats.total_earnings) || 0);
   let earned = 1;
   for (const lvl of ladder) {
     if (lvl.level === 1) continue;
-    if (calls >= lvl.min_calls && rating >= lvl.min_rating) earned = lvl.level;
+    if (
+      calls >= lvl.min_calls &&
+      rating >= lvl.min_rating &&
+      minutes >= (lvl.min_minutes || 0) &&
+      earnings >= (lvl.min_earnings || 0)
+    ) {
+      earned = lvl.level;
+    }
   }
   return earned;
 }
@@ -457,12 +487,14 @@ export interface LevelProgress {
   next: LevelDef | null;
   /** True when the host is at the top of the ladder. */
   is_max_level: boolean;
-  /** 0–100 progress towards the next level (min of calls% and rating%). */
+  /** 0–100 progress towards the next level (min of all requirement %s). */
   progress_pct: number;
   /** Per-requirement breakdown towards the next level. */
   requirements: {
     calls: { current: number; required: number; pct: number; met: boolean };
     rating: { current: number; required: number; pct: number; met: boolean };
+    minutes: { current: number; required: number; pct: number; met: boolean };
+    earnings: { current: number; required: number; pct: number; met: boolean };
   };
   /** Perks unlocked at the current level. */
   perks: LevelPerks;
@@ -489,6 +521,8 @@ export function computeLevelProgress(
 
   const calls = Math.max(0, Number(stats.review_count) || 0);
   const rating = Math.max(0, Number(stats.rating) || 0);
+  const minutes = Math.max(0, Number(stats.total_minutes) || 0);
+  const earnings = Math.max(0, Number(stats.total_earnings) || 0);
 
   const earned = evaluateLevel(stats, ladder);
   // Prefer the stored level when it is a valid rung; never show below earned.
@@ -509,15 +543,21 @@ export function computeLevelProgress(
       requirements: {
         calls: { current: calls, required: current.min_calls, pct: 100, met: true },
         rating: { current: rating, required: current.min_rating, pct: 100, met: true },
+        minutes: { current: minutes, required: current.min_minutes, pct: 100, met: true },
+        earnings: { current: earnings, required: current.min_earnings, pct: 100, met: true },
       },
       perks: current.perks,
     };
   }
 
+  const nextMinutes = next.min_minutes || 0;
+  const nextEarnings = next.min_earnings || 0;
   const callsPct = next.min_calls > 0 ? clampPct((calls / next.min_calls) * 100) : 100;
   const ratingPct = next.min_rating > 0 ? clampPct((rating / next.min_rating) * 100) : 100;
-  // Overall progress is gated by the slowest requirement — both must be met.
-  const progress_pct = Math.min(callsPct, ratingPct);
+  const minutesPct = nextMinutes > 0 ? clampPct((minutes / nextMinutes) * 100) : 100;
+  const earningsPct = nextEarnings > 0 ? clampPct((earnings / nextEarnings) * 100) : 100;
+  // Overall progress is gated by the slowest requirement — ALL must be met.
+  const progress_pct = Math.min(callsPct, ratingPct, minutesPct, earningsPct);
 
   return {
     level: levelNum,
@@ -528,6 +568,8 @@ export function computeLevelProgress(
     requirements: {
       calls: { current: calls, required: next.min_calls, pct: callsPct, met: calls >= next.min_calls },
       rating: { current: rating, required: next.min_rating, pct: ratingPct, met: rating >= next.min_rating },
+      minutes: { current: minutes, required: nextMinutes, pct: minutesPct, met: minutes >= nextMinutes },
+      earnings: { current: earnings, required: nextEarnings, pct: earningsPct, met: earnings >= nextEarnings },
     },
     perks: current.perks,
   };

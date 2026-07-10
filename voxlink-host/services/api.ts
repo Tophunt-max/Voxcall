@@ -116,10 +116,14 @@ export interface HostLevelDef {
   color: string;
   min_calls: number;
   min_rating: number;
+  min_minutes: number;
+  min_earnings: number;
   coin_reward: number;
   description: string;
   perks: HostLevelPerks;
 }
+
+type LevelReq = { current: number; required: number; pct: number; met: boolean };
 
 export interface HostLevelResponse {
   level: number;
@@ -128,8 +132,10 @@ export interface HostLevelResponse {
   is_max_level: boolean;
   progress_pct: number;
   requirements: {
-    calls: { current: number; required: number; pct: number; met: boolean };
-    rating: { current: number; required: number; pct: number; met: boolean };
+    calls: LevelReq;
+    rating: LevelReq;
+    minutes: LevelReq;
+    earnings: LevelReq;
   };
   perks: HostLevelPerks;
   levels: HostLevelDef[];
