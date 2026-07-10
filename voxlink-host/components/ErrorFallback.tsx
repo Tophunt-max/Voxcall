@@ -78,6 +78,25 @@ export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
           Please reload the app to continue.
         </Text>
 
+        {error?.message ? (
+          <Text
+            style={[styles.errCode, { color: colors.destructive, backgroundColor: colors.card }]}
+            numberOfLines={5}
+            selectable
+          >
+            {error.message}
+          </Text>
+        ) : null}
+
+        <Pressable
+          onPress={() => setIsModalVisible(true)}
+          accessibilityRole="button"
+          accessibilityLabel="View error details"
+          style={({ pressed }) => [styles.detailsLink, { opacity: pressed ? 0.6 : 1 }]}
+        >
+          <Text style={[styles.detailsLinkText, { color: colors.accent }]}>View error details</Text>
+        </Pressable>
+
         <Pressable
           onPress={handleRestart}
           style={({ pressed }) => [
@@ -100,7 +119,7 @@ export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
         </Pressable>
       </View>
 
-      {__DEV__ ? (
+      {isModalVisible ? (
         <Modal
           visible={isModalVisible}
           animationType="slide"
@@ -276,4 +295,15 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     width: "100%",
   },
+  errCode: {
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 8,
+    maxWidth: 560,
+  },
+  detailsLink: { paddingVertical: 4 },
+  detailsLinkText: { fontSize: 13, fontWeight: "600", textDecorationLine: "underline" },
 });
