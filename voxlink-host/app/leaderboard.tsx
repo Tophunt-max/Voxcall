@@ -20,7 +20,7 @@ export default function Leaderboard() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
 
-  const { data, isLoading, refetch, isRefetching } = useQuery({
+  const { data, isLoading, isError, refetch, isRefetching } = useQuery({
     queryKey: ["host-leaderboard"],
     queryFn: () => API.getLeaderboard(),
     staleTime: 60_000,
@@ -72,6 +72,14 @@ export default function Leaderboard() {
 
       {isLoading ? (
         <View style={styles.center}><ActivityIndicator size="large" color={colors.accent} /></View>
+      ) : isError ? (
+        <View style={styles.center}>
+          <Text style={{ fontSize: 40 }}>😕</Text>
+          <Text style={[styles.emptyTitle, { color: colors.text }]}>Couldn't load the leaderboard</Text>
+          <TouchableOpacity onPress={() => refetch()} style={[styles.retryBtn, { borderColor: colors.border }]}>
+            <Text style={[styles.emptyHint, { color: colors.accent }]}>{isRefetching ? "Retrying…" : "Retry"}</Text>
+          </TouchableOpacity>
+        </View>
       ) : entries.length === 0 ? (
         <View style={styles.center}>
           <Text style={{ fontSize: 40 }}>🏆</Text>
@@ -128,4 +136,9 @@ const styles = StyleSheet.create({
   },
   meRank: { width: 40, textAlign: "center", fontSize: 16, fontFamily: "Poppins_700Bold" },
   meLabel: { fontSize: 14, fontFamily: "Poppins_600SemiBold" },
+  retryBtn: { marginTop: 8, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 12, borderWidth: 1 },
 });
+
+// Per-screen error boundary — contains a render crash to this screen (retry /
+// go back) instead of blanking the whole app with the global fallback.
+export { ErrorBoundary } from "@/components/RouteErrorBoundary";

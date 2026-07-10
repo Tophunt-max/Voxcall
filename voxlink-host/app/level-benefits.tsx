@@ -225,3 +225,7 @@ const styles = StyleSheet.create({
   infoChipText: { fontSize: 12, fontFamily: "Poppins_500Medium" },
   footnote: { fontSize: 12, fontFamily: "Poppins_400Regular", lineHeight: 18, marginTop: 4 },
 });
+
+// Per-screen error boundary — contains a render crash to this screen instead of
+// blanking the whole app with the global fallback.
+export { ErrorBoundary } from "@/components/RouteErrorBoundary";

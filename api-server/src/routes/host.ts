@@ -539,11 +539,13 @@ hostProtected.get('/leaderboard', async (c) => {
   const windowDays = 7;
   const since = now - windowDays * 86400;
 
+  // NOTE: hosts has no avatar_url column — the avatar lives on users, so we join.
   const top = await db.prepare(
-    `SELECT h.id, h.display_name AS name, h.avatar_url AS avatar, h.level,
+    `SELECT h.id, h.display_name AS name, u.avatar_url AS avatar, h.level,
             SUM(cs.coins_charged) AS coins, COUNT(cs.id) AS calls
      FROM call_sessions cs
      JOIN hosts h ON h.id = cs.host_id
+     JOIN users u ON u.id = h.user_id
      WHERE cs.status = 'ended' AND cs.ended_at >= ? AND h.is_active = 1
      GROUP BY h.id
      HAVING coins > 0
