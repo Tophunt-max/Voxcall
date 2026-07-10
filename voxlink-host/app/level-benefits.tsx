@@ -122,20 +122,20 @@ function LevelRow({
         {/* Requirements */}
         <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Requirements</Text>
         <View style={styles.chipsRow}>
-          <Chip label={`📞 ${def.min_calls.toLocaleString()} rated calls`} bg={colors.surface} color={colors.text} />
-          <Chip label={`⭐ ${def.min_rating.toFixed(1)} rating`} bg={colors.surface} color={colors.text} />
-          {def.min_minutes > 0 ? <Chip label={`⏱️ ${def.min_minutes.toLocaleString()} min`} bg={colors.surface} color={colors.text} /> : null}
-          {def.min_earnings > 0 ? <Chip label={`🪙 ${def.min_earnings.toLocaleString()} earned`} bg={colors.surface} color={colors.text} /> : null}
+          <Chip label={`📞 ${def.min_calls.toLocaleString()} rated calls`} bg={hexToRgba("#2563EB", 0.12)} color="#2563EB" />
+          <Chip label={`⭐ ${def.min_rating.toFixed(1)} rating`} bg={hexToRgba("#F59E0B", 0.15)} color="#C77700" />
+          {def.min_minutes > 0 ? <Chip label={`⏱️ ${def.min_minutes.toLocaleString()} min`} bg={hexToRgba("#14B8A6", 0.14)} color="#0E9384" /> : null}
+          {def.min_earnings > 0 ? <Chip label={`🪙 ${def.min_earnings.toLocaleString()} earned`} bg={hexToRgba("#E0A106", 0.15)} color="#B07A00" /> : null}
         </View>
 
         {/* Rewards + perks */}
         <Text style={[styles.sectionLabel, { color: colors.mutedForeground, marginTop: 10 }]}>Rewards & Perks</Text>
         <View style={styles.chipsRow}>
-          {def.coin_reward > 0 ? <Chip label={`🎁 +${def.coin_reward.toLocaleString()} coins`} bg={hexToRgba("#D9A406", 0.14)} color={colors.coinGoldText} /> : null}
-          <Chip label={`💰 ${sharePct}% earnings`} bg={colors.surface} color={colors.text} />
-          <Chip label={`🎙️ Audio ${def.perks?.max_audio_rate ?? def.perks?.max_rate ?? 100}/min`} bg={colors.surface} color={colors.text} />
-          <Chip label={`📹 Video ${def.perks?.max_video_rate ?? def.perks?.max_rate ?? 100}/min`} bg={colors.surface} color={colors.text} />
-          {(def.perks?.rank_boost ?? 0) > 0 ? <Chip label="🚀 Higher visibility" bg={colors.surface} color={colors.text} /> : null}
+          {def.coin_reward > 0 ? <Chip label={`🎁 +${def.coin_reward.toLocaleString()} coins`} bg={hexToRgba("#D9A406", 0.16)} color="#B07A00" /> : null}
+          <Chip label={`💰 ${sharePct}% earnings`} bg={hexToRgba("#16A34A", 0.13)} color="#15803D" />
+          <Chip label={`🎙️ Audio ${def.perks?.max_audio_rate ?? def.perks?.max_rate ?? 100}/min`} bg={hexToRgba("#2563EB", 0.12)} color="#2563EB" />
+          <Chip label={`📹 Video ${def.perks?.max_video_rate ?? def.perks?.max_rate ?? 100}/min`} bg={hexToRgba("#7C3AED", 0.13)} color="#7C3AED" />
+          {(def.perks?.rank_boost ?? 0) > 0 ? <Chip label="🚀 Higher visibility" bg={hexToRgba("#DB2777", 0.13)} color="#DB2777" /> : null}
         </View>
       </View>
     </View>

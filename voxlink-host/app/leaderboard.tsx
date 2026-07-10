@@ -76,8 +76,8 @@ export default function Leaderboard() {
     const isMe = !!me && me.rank > 0 && item.rank === me.rank;
     return (
       <View style={[styles.row, { backgroundColor: isMe ? colors.accentLight : colors.card, borderColor: isMe ? colors.accent : colors.border }, shadow("#000", 0.05)]}>
-        <View style={[styles.rankBadge, { backgroundColor: colors.surface }]}>
-          <Text style={[styles.rankBadgeText, { color: colors.mutedForeground }]}>{item.rank}</Text>
+        <View style={[styles.rankBadge, { backgroundColor: isMe ? colors.accent : "rgba(124,47,247,0.12)" }]}>
+          <Text style={[styles.rankBadgeText, { color: isMe ? "#fff" : "#7C3AED" }]}>{item.rank}</Text>
         </View>
         <Image source={{ uri: rankAvatar(item) }} style={styles.avatar} />
         <View style={{ flex: 1 }}>

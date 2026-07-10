@@ -28,6 +28,21 @@ function shade(hex: string, percent: number): string {
   return `#${((1 << 24) + (ch(16) << 16) + (ch(8) << 8) + ch(0)).toString(16).slice(1)}`;
 }
 
+function rgba(hex: string, a: number): string {
+  const h = (hex || "").replace("#", "");
+  const n = parseInt(h.length === 3 ? h.split("").map((c) => c + c).join("") : h, 16);
+  if (Number.isNaN(n)) return `rgba(124,47,247,${a})`;
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+}
+
+// Per-metric colour so the requirement pills are vibrant + scannable.
+const METRIC = {
+  calls: { tint: "#2563EB", icon: "📞" },
+  rating: { tint: "#F59E0B", icon: "⭐" },
+  minutes: { tint: "#14B8A6", icon: "⏱️" },
+  earnings: { tint: "#E0A106", icon: "🪙" },
+};
+
 function cardShadow(color: string) {
   return Platform.select({
     ios: { shadowColor: color, shadowOpacity: 0.22, shadowRadius: 12, shadowOffset: { width: 0, height: 6 } },
@@ -37,19 +52,21 @@ function cardShadow(color: string) {
 }
 
 function ReqPill({
-  label, current, required, met, isRating, textColor, mutedColor, surface,
+  label, icon, tint, current, required, met, isRating, textColor, mutedColor,
 }: {
-  label: string; current: number; required: number; met: boolean; isRating?: boolean;
-  textColor: string; mutedColor: string; surface: string;
+  label: string; icon: string; tint: string; current: number; required: number; met: boolean; isRating?: boolean;
+  textColor: string; mutedColor: string;
 }) {
   const cur = isRating ? current.toFixed(1) : Math.round(current).toLocaleString();
   const req = isRating ? required.toFixed(1) : Math.round(required).toLocaleString();
   return (
-    <View style={[reqStyles.pill, { backgroundColor: surface }]}>
+    <View style={[reqStyles.pill, { backgroundColor: rgba(tint, 0.1), borderColor: rgba(tint, 0.22) }]}>
       <View style={reqStyles.pillTop}>
-        <Text style={[reqStyles.pillLabel, { color: mutedColor }]}>{label}</Text>
-        <View style={[reqStyles.check, { backgroundColor: met ? "#0BAF23" : "transparent", borderColor: met ? "#0BAF23" : mutedColor }]}>
-          <Text style={[reqStyles.checkText, { color: met ? "#fff" : mutedColor }]}>{met ? "✓" : ""}</Text>
+        <Text style={reqStyles.pillIcon}>{icon}</Text>
+        <Text style={[reqStyles.pillLabel, { color: tint }]} numberOfLines={1}>{label}</Text>
+        <View style={{ flex: 1 }} />
+        <View style={[reqStyles.check, { backgroundColor: met ? tint : "transparent", borderColor: met ? tint : rgba(tint, 0.5) }]}>
+          <Text style={[reqStyles.checkText, { color: met ? "#fff" : tint }]}>{met ? "✓" : ""}</Text>
         </View>
       </View>
       <Text style={[reqStyles.pillValue, { color: textColor }]}>
@@ -125,13 +142,13 @@ export default function LevelCard({ data, loading, onPress }: LevelCardProps) {
           ) : null}
 
           <View style={styles.reqRow}>
-            <ReqPill label="Rated calls" current={requirements.calls.current} required={requirements.calls.required} met={requirements.calls.met} textColor={colors.text} mutedColor={colors.mutedForeground} surface={colors.surface} />
-            <ReqPill label="Rating" current={requirements.rating.current} required={requirements.rating.required} met={requirements.rating.met} isRating textColor={colors.text} mutedColor={colors.mutedForeground} surface={colors.surface} />
+            <ReqPill label="Rated calls" icon={METRIC.calls.icon} tint={METRIC.calls.tint} current={requirements.calls.current} required={requirements.calls.required} met={requirements.calls.met} textColor={colors.text} mutedColor={colors.mutedForeground} />
+            <ReqPill label="Rating" icon={METRIC.rating.icon} tint={METRIC.rating.tint} current={requirements.rating.current} required={requirements.rating.required} met={requirements.rating.met} isRating textColor={colors.text} mutedColor={colors.mutedForeground} />
             {requirements.minutes?.required > 0 ? (
-              <ReqPill label="Talk-time (min)" current={requirements.minutes.current} required={requirements.minutes.required} met={requirements.minutes.met} textColor={colors.text} mutedColor={colors.mutedForeground} surface={colors.surface} />
+              <ReqPill label="Talk-time" icon={METRIC.minutes.icon} tint={METRIC.minutes.tint} current={requirements.minutes.current} required={requirements.minutes.required} met={requirements.minutes.met} textColor={colors.text} mutedColor={colors.mutedForeground} />
             ) : null}
             {requirements.earnings?.required > 0 ? (
-              <ReqPill label="Coins earned" current={requirements.earnings.current} required={requirements.earnings.required} met={requirements.earnings.met} textColor={colors.text} mutedColor={colors.mutedForeground} surface={colors.surface} />
+              <ReqPill label="Coins earned" icon={METRIC.earnings.icon} tint={METRIC.earnings.tint} current={requirements.earnings.current} required={requirements.earnings.required} met={requirements.earnings.met} textColor={colors.text} mutedColor={colors.mutedForeground} />
             ) : null}
           </View>
 
@@ -186,9 +203,10 @@ const styles = StyleSheet.create({
 });
 
 const reqStyles = StyleSheet.create({
-  pill: { flexGrow: 1, flexBasis: "46%", borderRadius: 14, padding: 11, gap: 6 },
-  pillTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  pillLabel: { fontSize: 11, fontFamily: "Poppins_500Medium" },
+  pill: { flexGrow: 1, flexBasis: "46%", borderRadius: 14, padding: 11, gap: 6, borderWidth: StyleSheet.hairlineWidth },
+  pillTop: { flexDirection: "row", alignItems: "center", gap: 5 },
+  pillIcon: { fontSize: 12 },
+  pillLabel: { fontSize: 11, fontFamily: "Poppins_600SemiBold" },
   check: { width: 16, height: 16, borderRadius: 8, borderWidth: 1.5, alignItems: "center", justifyContent: "center" },
   checkText: { fontSize: 10, fontFamily: "Poppins_700Bold", lineHeight: 12 },
   pillValue: { fontSize: 15, fontFamily: "Poppins_700Bold" },
