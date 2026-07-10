@@ -5,7 +5,7 @@ import {
   Poppins_700Bold,
   useFonts,
 } from "@expo-google-fonts/poppins";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { Stack, router } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
@@ -226,9 +226,35 @@ function DailyRewardGate() {
 // too causes a double-endCall race where the summary screen gets immediately
 // popped by the second router.back().
 // FCM tap handlers (native + web)
+// Maps a broadcasted `resource` to the react-query keys that cache it, so an
+// admin catalog change instantly invalidates the matching screens. Keys use
+// react-query prefix matching (e.g. ["banners"] also invalidates
+// ["banners","home"]). Resources not backed by react-query (coin plans, gifts,
+// payment methods) are refreshed on-screen via their own DATA_CHANGED listeners
+// / focus-refetch, and also emit the DATA_CHANGED app event handled below.
+const CATALOG_QUERY_KEYS: Record<string, (string | number)[][]> = {
+  talk_topics: [["talk-topics"]],
+  banners: [["banners"]],
+  level_config: [["host-level"]],
+};
+
 function AppBridge() {
   const { receiveCall, activeCall } = useCall();
   const { updateCoins } = useAuth();
+  const queryClient = useQueryClient();
+
+  // Real-time catalog updates — admin add/edit/delete reflects immediately.
+  useSocketEvent(
+    SocketEvents.DATA_CHANGED,
+    (data: any) => {
+      const resource: string = data?.resource ?? "";
+      const keys = CATALOG_QUERY_KEYS[resource];
+      if (keys) {
+        keys.forEach((queryKey) => queryClient.invalidateQueries({ queryKey }));
+      }
+    },
+    [queryClient]
+  );
 
   useSocketEvent(
     SocketEvents.CALL_INCOMING,

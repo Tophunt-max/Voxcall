@@ -15,6 +15,8 @@ import {
   Modal,
 } from "react-native";
 import { router, useFocusEffect } from "expo-router";
+import { useSocketEvent } from "@/context/SocketContext";
+import { SocketEvents } from "@/constants/events";
 import { alertDialog } from "@/utils/dialog";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
@@ -570,6 +572,20 @@ export default function CheckoutScreen() {
   }, []);
 
   useFocusEffect(loadCheckoutData);
+
+  // Real-time: if the admin edits coin plans / banners / payment methods while
+  // the user is sitting on this screen, refresh instantly (no need to leave and
+  // return). The backend pushes `data_changed` over the socket for these.
+  useSocketEvent(
+    SocketEvents.DATA_CHANGED,
+    (data: any) => {
+      const r: string = data?.resource ?? "";
+      if (r === "coin_plans" || r === "banners" || r === "payment_gateways") {
+        loadCheckoutData();
+      }
+    },
+    [loadCheckoutData]
+  );
 
   const handleApplyPromo = useCallback(async () => {
     if (!promoCode.trim()) return;

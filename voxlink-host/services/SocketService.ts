@@ -313,6 +313,16 @@ class SocketService {
           console.warn("[Socket] Failed to update config cache:", e);
         });
         break;
+      case "data_changed":
+        // REAL-TIME CATALOG UPDATE
+        // Admin added/edited/deleted a catalog (gifts, banners, rewards, level
+        // config, …). Forward the resource so listeners (AppBridge) invalidate
+        // the matching query and open screens refresh instantly.
+        this.emit(SocketEvents.DATA_CHANGED, {
+          resource: msg.resource ?? "",
+          timestamp: Date.now(),
+        });
+        break;
       default:
         break;
     }

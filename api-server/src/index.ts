@@ -11,6 +11,7 @@ import chatRouter from './routes/chat';
 import callRouter from './routes/call';
 import adminRouter from './routes/admin';
 import { auditLogMiddleware } from './middleware/auditLog';
+import { dataChangeBroadcastMiddleware } from './middleware/dataChangeBroadcast';
 import uploadRouter from './routes/upload';
 import publicRouter from './routes/public';
 import matchRouter from './routes/match';
@@ -176,6 +177,9 @@ app.route('/api/chat', chatRouter);
 app.route('/api/calls', callRouter);
 // FIX #14: Audit log middleware intercepts all mutating admin requests (POST/PUT/PATCH/DELETE)
 app.use('/api/admin/*', auditLogMiddleware);
+// Real-time: after a successful admin catalog mutation, push a lightweight
+// `data_changed` signal so user/host apps refetch instantly (no screen re-open).
+app.use('/api/admin/*', dataChangeBroadcastMiddleware);
 app.route('/api/admin', adminRouter);
 app.route('/api/match', matchRouter);
 app.route('/api/host-app', hostappRouter);

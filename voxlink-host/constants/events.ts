@@ -69,6 +69,12 @@ export const SocketEvents = {
   // Real-time Settings Updates
   // Broadcast when admin changes coin_to_usd_rate, call rates, etc.
   APP_SETTINGS_UPDATE: "app:settings_update",
+
+  // Real-time Catalog Updates
+  // Broadcast when admin adds/edits/deletes a catalog (gifts, banners, rewards,
+  // level config, …). Carries { resource }. Listeners refetch / invalidate the
+  // matching query so open screens update instantly without a re-open.
+  DATA_CHANGED: "data:changed",
 } as const;
 
 export type SocketEvent = (typeof SocketEvents)[keyof typeof SocketEvents];

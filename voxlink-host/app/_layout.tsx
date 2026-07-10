@@ -6,7 +6,7 @@ import {
   useFonts,
 } from "@expo-google-fonts/poppins";
 import { Feather } from "@expo/vector-icons";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { Stack, router } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect, useRef } from "react";
@@ -140,11 +140,31 @@ function WebNotificationBridge({ seenCallIds, activeCallRef }: { seenCallIds: Re
   return null;
 }
 
+// Maps a broadcasted `resource` to the react-query keys that cache it in the
+// host app, so an admin catalog change invalidates the matching screens
+// instantly (react-query prefix matching: ["host-banners"] also matches
+// ["host-banners","home"]).
+const HOST_CATALOG_QUERY_KEYS: Record<string, (string | number)[][]> = {
+  banners: [["host-banners"]],
+  level_config: [["host-level"]],
+};
+
 function AppBridge() {
   const { receiveCall, activeCall } = useCall();
   const { user, isLoggedIn, refreshProfile, setOnlineStatus } = useAuth();
+  const queryClient = useQueryClient();
   const activeCallRef = useRef(activeCall);
   const seenCallIds = useRef(new Set<string>());
+
+  // Real-time catalog updates — admin add/edit/delete reflects immediately.
+  useSocketEvent(
+    SocketEvents.DATA_CHANGED,
+    (data: any) => {
+      const keys = HOST_CATALOG_QUERY_KEYS[data?.resource ?? ""];
+      if (keys) keys.forEach((queryKey) => queryClient.invalidateQueries({ queryKey }));
+    },
+    [queryClient]
+  );
   // FIX (Auto Go Online): track whether we've already auto-flipped online for
   // this login session so we don't fight the user if they manually toggle off.
   const autoOnlineRunRef = useRef(false);
