@@ -162,6 +162,21 @@ export interface HostStreakStatus {
   schedule: number[];
   milestones: Record<string, number>;
 }
+export interface HostLeaderboardEntry {
+  rank: number;
+  host_id: string;
+  name: string;
+  avatar: string | null;
+  level: number;
+  badge: string;
+  coins: number;
+  calls: number;
+}
+export interface HostLeaderboard {
+  window_days: number;
+  entries: HostLeaderboardEntry[];
+  me: { rank: number; coins: number; calls: number };
+}
 export interface HostStreakCredit {
   credited: boolean;
   streak_days: number;
@@ -258,6 +273,8 @@ export const API = {
     apiRequest<{ success: boolean; is_online: boolean; streak: HostStreakCredit | null }>('PATCH', '/api/host/status', { is_online: online }),
   // Current daily-streak status for the dashboard streak card.
   getHostStreak: () => apiRequest<HostStreakStatus>('GET', '/api/host/streak'),
+  // Weekly (last 7 days) top-hosts leaderboard + the caller's own rank.
+  getLeaderboard: () => apiRequest<HostLeaderboard>('GET', '/api/host/leaderboard'),
   // Availability schedule — the daily window (HH:MM) during which the host is
   // shown as available, plus their timezone. Persisted on the hosts row
   // (available_from / available_to / timezone). Pass null to clear a field

@@ -529,6 +529,68 @@ hostProtected.get('/streak', async (c) => {
   return c.json(status);
 });
 
+// GET /api/host/leaderboard — top hosts by coins earned from calls in the last
+// 7 days (a rolling weekly leaderboard), plus the requesting host's own rank.
+// Read-time aggregation over call_sessions — no money-path writes involved.
+hostProtected.get('/leaderboard', async (c) => {
+  const { sub } = c.get('user');
+  const db = c.env.DB;
+  const now = Math.floor(Date.now() / 1000);
+  const windowDays = 7;
+  const since = now - windowDays * 86400;
+
+  const top = await db.prepare(
+    `SELECT h.id, h.display_name AS name, h.avatar_url AS avatar, h.level,
+            SUM(cs.coins_charged) AS coins, COUNT(cs.id) AS calls
+     FROM call_sessions cs
+     JOIN hosts h ON h.id = cs.host_id
+     WHERE cs.status = 'ended' AND cs.ended_at >= ? AND h.is_active = 1
+     GROUP BY h.id
+     HAVING coins > 0
+     ORDER BY coins DESC, calls DESC
+     LIMIT 20`,
+  ).bind(since).all<any>();
+
+  // The requesting host's own weekly total + rank (1 + hosts strictly above).
+  const mine = await db.prepare(
+    `SELECT COALESCE(SUM(cs.coins_charged), 0) AS coins, COUNT(cs.id) AS calls
+     FROM call_sessions cs JOIN hosts h ON h.id = cs.host_id
+     WHERE h.user_id = ? AND cs.status = 'ended' AND cs.ended_at >= ?`,
+  ).bind(sub, since).first<{ coins: number; calls: number }>();
+  const myCoins = Number(mine?.coins) || 0;
+
+  let myRank = 0;
+  if (myCoins > 0) {
+    const higher = await db.prepare(
+      `SELECT COUNT(*) AS n FROM (
+         SELECT cs.host_id, SUM(cs.coins_charged) AS c
+         FROM call_sessions cs JOIN hosts h ON h.id = cs.host_id
+         WHERE cs.status = 'ended' AND cs.ended_at >= ? AND h.is_active = 1
+         GROUP BY cs.host_id HAVING c > ?)`,
+    ).bind(since, myCoins).first<{ n: number }>();
+    myRank = (Number(higher?.n) || 0) + 1;
+  }
+
+  const cfg = await getLevelConfig(db);
+  const badgeFor = (lvl: number) => cfg.find((x) => x.level === lvl)?.badge ?? '🌱';
+  const entries = (top.results ?? []).map((r: any, i: number) => ({
+    rank: i + 1,
+    host_id: r.id,
+    name: r.name || 'Host',
+    avatar: r.avatar || null,
+    level: Number(r.level) || 1,
+    badge: badgeFor(Number(r.level) || 1),
+    coins: Number(r.coins) || 0,
+    calls: Number(r.calls) || 0,
+  }));
+
+  return c.json({
+    window_days: windowDays,
+    entries,
+    me: { rank: myRank, coins: myCoins, calls: Number(mine?.calls) || 0 },
+  });
+});
+
 // FIX: extracted to a function so it can run via ctx.waitUntil() without
 // blocking the toggle response. Errors are logged, never propagated — a failed
 // broadcast must not flip the host's status back to offline on the client.

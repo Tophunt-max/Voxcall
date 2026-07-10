@@ -26,7 +26,7 @@ import { ChatRoom } from './durable-objects/ChatRoom';
 import { NotificationHub } from './durable-objects/NotificationHub';
 import { ensureUsersSchema, ensureRandomCallSchema, ensureStreakSchema, ensureHostStreakSchema, ensureFirstCallFreeSchema, ensureCallObservabilitySchema, ensureEngagementSchema, ensureWithdrawalSchema } from './lib/schemaGuard';
 import { ensureAllMigrations } from './lib/autoMigrate';
-import { getLevelConfig, getEarningShare, DEFAULT_AUDIO_RATE } from './lib/levels';
+import { getLevelConfig, getEarningShare, DEFAULT_AUDIO_RATE, computeLevelProgress } from './lib/levels';
 import { recalcAllHostLevels } from './lib/levelService';
 import { billedMinutes, coinsForCall, chargeCallerWithFreePool, releaseCallHold } from './lib/billing';
 import { runReengagement } from './lib/reengagement';
@@ -755,6 +755,86 @@ async function maybeSendVipReminders(env: Env): Promise<void> {
   }
 }
 
+// Near-level nudge — once/day (at a configured IST hour), push hosts who are
+// close to their next level ("You're 85% to Expert!") so they come back and
+// finish the climb. Mirrors the streak-reminder gating (per-IST-day slot claim
+// before sending). Entirely best-effort.
+async function maybeSendNearLevelNudges(env: Env): Promise<void> {
+  try {
+    const now = Math.floor(Date.now() / 1000);
+    const rows = await env.DB.prepare(
+      "SELECT key, value FROM app_settings WHERE key IN ('near_level_nudge_enabled','near_level_nudge_hour_ist','near_level_nudge_threshold','last_near_level_nudge_day')",
+    ).all<{ key: string; value: string }>();
+    const cfg: Record<string, string> = {};
+    for (const r of rows.results ?? []) cfg[r.key] = r.value;
+
+    if (cfg['near_level_nudge_enabled'] === '0') return;
+
+    const parsedHour = parseInt(cfg['near_level_nudge_hour_ist'] ?? '', 10);
+    const nudgeHour = Number.isFinite(parsedHour) && parsedHour >= 0 && parsedHour <= 23 ? parsedHour : 19;
+    const parsedThreshold = parseInt(cfg['near_level_nudge_threshold'] ?? '', 10);
+    const threshold = Number.isFinite(parsedThreshold) ? Math.min(99, Math.max(50, parsedThreshold)) : 80;
+
+    const { hour: istHour, dayIndex } = istContext(now);
+    if (istHour !== nudgeHour) return;
+
+    const lastDay = parseInt(cfg['last_near_level_nudge_day'] ?? '', 10) || 0;
+    if (lastDay === dayIndex) return; // already sent today
+
+    // Claim the daily slot BEFORE sending so overlapping ticks don't double-send.
+    await env.DB.prepare(
+      "INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('last_near_level_nudge_day', ?, unixepoch())",
+    ).bind(String(dayIndex)).run();
+
+    const levelCfg = await getLevelConfig(env.DB);
+    const hosts = await env.DB.prepare(
+      `SELECT h.id, h.user_id, h.level, h.rating, h.review_count, h.total_minutes, h.total_earnings, u.fcm_token
+       FROM hosts h JOIN users u ON u.id = h.user_id
+       WHERE h.is_active = 1 AND u.status = 'active' AND u.fcm_token IS NOT NULL
+       LIMIT 5000`,
+    ).all<any>();
+
+    const targets: { userId: string; token: string; pct: number; nextName: string }[] = [];
+    for (const h of hosts.results ?? []) {
+      const prog = computeLevelProgress(
+        {
+          review_count: Number(h.review_count) || 0,
+          rating: Number(h.rating) || 0,
+          total_minutes: Number(h.total_minutes) || 0,
+          total_earnings: Number(h.total_earnings) || 0,
+        },
+        levelCfg,
+        Number(h.level) || 1,
+      );
+      if (!prog.is_max_level && prog.next && prog.progress_pct >= threshold && prog.progress_pct < 100) {
+        targets.push({ userId: h.user_id, token: h.fcm_token, pct: prog.progress_pct, nextName: prog.next.name });
+      }
+    }
+    if (targets.length === 0) return;
+
+    let pushed = 0;
+    const cap = targets.slice(0, 1000); // safety cap on per-host pushes
+    for (const t of cap) {
+      const title = '🔥 You\u2019re almost there!';
+      const body = `You\u2019re ${t.pct}% to ${t.nextName} — go online and level up!`;
+      await env.DB
+        .prepare('INSERT INTO notifications (id, user_id, type, title, body, data) VALUES (?,?,?,?,?,?)')
+        .bind(crypto.randomUUID(), t.userId, 'near_level', title, body, JSON.stringify({ kind: 'near_level', pct: t.pct }))
+        .run()
+        .catch(() => {});
+      if (env.FIREBASE_SERVICE_ACCOUNT && t.token) {
+        try {
+          const r = await sendFCMPush(env.FIREBASE_SERVICE_ACCOUNT, t.token, title, body, { type: 'near_level' });
+          pushed += r.sent;
+        } catch { /* non-fatal */ }
+      }
+    }
+    console.log(`[Cron] Near-level nudges: ${cap.length} candidates, ${pushed} pushed`);
+  } catch (e) {
+    console.error('[Cron] near-level nudge error:', e);
+  }
+}
+
 export default {
   fetch: app.fetch,
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
@@ -765,6 +845,7 @@ export default {
     ctx.waitUntil(maybeRunReengagement(env));
     ctx.waitUntil(maybeSendStreakReminders(env));
     ctx.waitUntil(maybeSendVipReminders(env));
+    ctx.waitUntil(maybeSendNearLevelNudges(env));
     ctx.waitUntil(maybeRollupEngagement(env));
   },
 };

@@ -351,6 +351,20 @@ export default function HostHomeScreen() {
       {/* Daily streak (engagement) card */}
       <StreakCard streak={streakData} />
 
+      {/* Weekly leaderboard entry */}
+      <TouchableOpacity
+        activeOpacity={0.85}
+        onPress={() => router.push("/leaderboard")}
+        style={[styles.leaderboardRow, { backgroundColor: colors.card, borderColor: colors.border }]}
+      >
+        <Text style={{ fontSize: 20 }}>🏆</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.leaderboardTitle, { color: colors.text }]}>Weekly Leaderboard</Text>
+          <Text style={[styles.leaderboardSub, { color: colors.mutedForeground }]}>See the top hosts this week</Text>
+        </View>
+        <Text style={[styles.leaderboardChevron, { color: colors.mutedForeground }]}>›</Text>
+      </TouchableOpacity>
+
       {/* Stats — OPTIMIZATION #8: skeleton while earnings are loading */}
       {earningsLoading ? (
         <SkeletonStatsCard />
@@ -569,6 +583,10 @@ export default function HostHomeScreen() {
 }
 
 const styles = StyleSheet.create({
+  leaderboardRow: { flexDirection: "row", alignItems: "center", gap: 12, marginHorizontal: 16, marginTop: 14, padding: 14, borderRadius: 16, borderWidth: 1 },
+  leaderboardTitle: { fontSize: 14, fontFamily: "Poppins_600SemiBold" },
+  leaderboardSub: { fontSize: 11.5, fontFamily: "Poppins_400Regular", marginTop: 1 },
+  leaderboardChevron: { fontSize: 24, fontFamily: "Poppins_400Regular" },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 16, paddingBottom: 16 },
   headerLeft: { flexDirection: "row", alignItems: "center", gap: 12 },
   dottedBorder: { borderWidth: 1.5, borderRadius: 28, borderStyle: "dashed" as any, padding: 2 },

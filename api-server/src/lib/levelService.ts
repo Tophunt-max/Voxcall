@@ -43,6 +43,26 @@ const NO_CHANGE = (lvl: number): LevelUpResult => ({
   coinsAwarded: 0,
 });
 
+// Max "mystery box" bonus as a fraction of the base reward (admin-tunable via
+// app_settings.level_reward_bonus_max_pct, a whole percent; default 50%).
+async function getRewardBonusMaxPct(db: D1Database): Promise<number> {
+  try {
+    const row = await db.prepare("SELECT value FROM app_settings WHERE key = 'level_reward_bonus_max_pct'").first<{ value: string }>();
+    const pct = row ? parseInt(row.value, 10) : NaN;
+    if (Number.isFinite(pct) && pct >= 0) return Math.min(pct, 500) / 100;
+  } catch { /* fall through to default */ }
+  return 0.5;
+}
+
+// Random surprise bonus on top of a base reward: usually 0..maxPct of base,
+// with a ~10% "jackpot" that doubles the base. Returns 0 for a zero base.
+function mysteryBonus(base: number, maxPct: number): number {
+  if (base <= 0 || maxPct <= 0) return 0;
+  const jackpot = Math.random() < 0.1;
+  const factor = jackpot ? 1 : Math.random() * maxPct;
+  return Math.round(base * factor);
+}
+
 /**
  * Evaluate a single host and, if their stats now qualify them for a higher
  * level, promote them and fire all side-effects. Safe to call on every rating;
@@ -101,12 +121,18 @@ export async function applyLevelUp(
   const ladder = cfg.slice().sort((a, b) => a.level - b.level);
   const targetDef = ladder.find((x) => x.level === target) ?? ladder[ladder.length - 1];
 
+  // "Mystery box" surprise: add a random bonus on top of each rung's base
+  // reward (variable rewards are the strongest dopamine driver). The amount is
+  // locked in at first insert (history row), so it stays idempotent.
+  const bonusMaxPct = await getRewardBonusMaxPct(db);
+
   // Record an audit row per newly-crossed rung; accumulate one-time rewards.
   // INSERT OR IGNORE + UNIQUE(host_id,new_level) ⇒ reward granted once ever.
   let coinsAwarded = 0;
   for (let L = oldLevel + 1; L <= target; L++) {
     const def = ladder.find((x) => x.level === L);
-    const reward = def?.coin_reward ?? 0;
+    const base = def?.coin_reward ?? 0;
+    const reward = base + mysteryBonus(base, bonusMaxPct);
     try {
       const ins = await db
         .prepare(
