@@ -325,6 +325,17 @@ class SocketService {
           timestamp: Date.now(),
         });
         break;
+      case "account_banned":
+        // Admin banned/suspended this account — raise the blocking ban popup
+        // instantly (no logout). Reason + expiry drive the popup text.
+        import("@/services/banState").then(({ setBanState }) => {
+          setBanState({ reason: msg.reason ?? null, expires_at: msg.expires_at ?? null });
+        }).catch(() => {});
+        break;
+      case "account_unbanned":
+        // Ban lifted — dismiss the popup.
+        import("@/services/banState").then(({ setBanState }) => setBanState(null)).catch(() => {});
+        break;
       default:
         break;
     }

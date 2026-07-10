@@ -92,6 +92,14 @@ export async function apiRequest<T>(
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
+    // Account banned/suspended → blocking ban popup (NOT a logout).
+    if (res.status === 403 && (err as any)?.code === 'account_banned') {
+      try {
+        const { setBanState } = await import('@/services/banState');
+        setBanState({ reason: (err as any).reason ?? null, expires_at: (err as any).expires_at ?? null });
+      } catch {}
+      throw new Error('ACCOUNT_BANNED');
+    }
     throw new Error((err as any).error || res.statusText);
   }
   return res.json() as Promise<T>;

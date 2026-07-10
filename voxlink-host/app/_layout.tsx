@@ -22,6 +22,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ToastContainer } from "@/components/Toast";
 import { OfflineBanner } from "@/components/OfflineBanner";
 import MaintenanceGate from "@/components/MaintenanceGate";
+import { BanGate } from "@/components/BanGate";
 import { AuthProvider } from "@/context/AuthContext";
 import { CallProvider } from "@/context/CallContext";
 import { ChatProvider } from "@/context/ChatContext";
@@ -327,6 +328,8 @@ function RootLayoutNav() {
       {/* Admin maintenance gate — renders LAST so it overlays everything when
           maintenance_mode is ON in the admin panel. */}
       <MaintenanceGate />
+      {/* Blocking ban popup — non-dismissable; no logout. */}
+      <BanGate />
     </>
   );
 }

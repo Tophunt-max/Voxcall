@@ -130,3 +130,40 @@ export async function notifyUser(
     console.warn('[realtime] notifyUser FCM push failed for', userId, e);
   }
 }
+
+
+// ─── Generic single-user push ────────────────────────────────────────────────
+/** Push an arbitrary real-time message to one user's connected apps. */
+export async function pushToUser(env: Env, userId: string, message: Record<string, unknown>): Promise<void> {
+  try {
+    const stub = env.NOTIFICATION_HUB.get(env.NOTIFICATION_HUB.idFromName(userId));
+    await stub.fetch('https://dummy/notify', { method: 'POST', body: JSON.stringify(message) });
+  } catch (e) {
+    console.warn('[realtime] pushToUser failed for', userId, e);
+  }
+}
+
+/**
+ * Push the account ban / unban state so the app can show (or dismiss) its
+ * blocking ban popup instantly — WITHOUT logging the user out. `reason` and
+ * `expires_at` are surfaced in the popup. Fans out to every account bound to a
+ * banned device as well.
+ */
+export async function pushBanState(
+  env: Env,
+  opts: { userId?: string | null; deviceId?: string | null; banned: boolean; reason?: string | null; expiresAt?: string | null },
+): Promise<void> {
+  const msg = opts.banned
+    ? { type: 'account_banned', reason: opts.reason ?? null, expires_at: opts.expiresAt ?? null, timestamp: Date.now() }
+    : { type: 'account_unbanned', timestamp: Date.now() };
+  const ids = new Set<string>();
+  if (opts.userId) ids.add(opts.userId);
+  if (opts.deviceId) {
+    try {
+      const rows = await env.DB.prepare("SELECT id FROM users WHERE device_id = ? AND status != 'deleted' LIMIT 200")
+        .bind(opts.deviceId).all<{ id: string }>();
+      for (const r of rows.results ?? []) ids.add(r.id);
+    } catch { /* best-effort */ }
+  }
+  await Promise.allSettled([...ids].map((uid) => pushToUser(env, uid, msg)));
+}

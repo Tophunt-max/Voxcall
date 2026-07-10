@@ -323,6 +323,16 @@ class SocketService {
           timestamp: Date.now(),
         });
         break;
+      case "account_banned":
+        // Admin banned/suspended this host — raise the blocking ban popup
+        // instantly (no logout).
+        import("@/services/banState").then(({ setBanState }) => {
+          setBanState({ reason: msg.reason ?? null, expires_at: msg.expires_at ?? null });
+        }).catch(() => {});
+        break;
+      case "account_unbanned":
+        import("@/services/banState").then(({ setBanState }) => setBanState(null)).catch(() => {});
+        break;
       default:
         break;
     }

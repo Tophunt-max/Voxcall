@@ -21,6 +21,7 @@ import { ToastContainer } from "@/components/Toast";
 import { DialogHost } from "@/components/DialogHost";
 import { OfflineBanner } from "@/components/OfflineBanner";
 import MaintenanceGate from "@/components/MaintenanceGate";
+import { BanGate } from "@/components/BanGate";
 import DailyRewardModal from "@/components/DailyRewardModal";
 import { useDailyStreak } from "@/hooks/useDailyStreak";
 import { AuthProvider } from "@/context/AuthContext";
@@ -345,6 +346,9 @@ function RootLayoutNav() {
       {/* Admin maintenance gate — renders LAST so it overlays everything when
           maintenance_mode is ON in the admin panel. */}
       <MaintenanceGate />
+      {/* Blocking ban popup — overlays everything when the account is
+          banned/suspended. Non-dismissable; no logout. */}
+      <BanGate />
     </>
   );
 }

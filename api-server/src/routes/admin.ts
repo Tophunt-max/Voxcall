@@ -15,7 +15,7 @@ import { approveDeposit, validatePromoInput } from './payment';
 import { ensureAllMigrations, listMigrationStatus } from '../lib/autoMigrate';
 import { invalidateBannerCaches } from './public';
 import { findActiveBan } from '../lib/bans';
-import { pushCoinUpdate, notifyUser } from '../lib/realtime';
+import { pushCoinUpdate, notifyUser, pushBanState } from '../lib/realtime';
 import type { Env, JWTPayload } from '../types';
 
 const admin = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
@@ -349,6 +349,13 @@ admin.patch('/users/:id', async (c) => {
   // balance to their app so the wallet updates instantly (no re-open).
   if (coins !== undefined) {
     await pushCoinUpdate(c.env, id);
+  }
+  // Real-time: status change here should drive the ban popup too (admins can
+  // ban/unban straight from the Users list, not only Ban Management).
+  if (status === 'banned' || status === 'suspended') {
+    c.executionCtx?.waitUntil?.(pushBanState(c.env, { userId: id, banned: true, reason: 'Your account has been suspended by the platform.' }));
+  } else if (status === 'active') {
+    c.executionCtx?.waitUntil?.(pushBanState(c.env, { userId: id, banned: false }));
   }
   return c.json({ success: true });
 });
@@ -1405,6 +1412,13 @@ admin.patch('/content-reports/:id', async (c) => {
       }
     }
   }
+  // Real-time: if the report action banned/suspended the user, show the popup.
+  if (report.reported_user_id && (action_taken === 'banned' || action_taken === 'suspended_7d')) {
+    c.executionCtx?.waitUntil?.(pushBanState(c.env, {
+      userId: report.reported_user_id, banned: true,
+      reason: action_taken === 'suspended_7d' ? 'Your account is suspended for 7 days due to a policy violation.' : 'Your account has been banned for a policy violation.',
+    }));
+  }
   await auditLog(d, u.sub, u.email || 'Admin', u.email || '', action_taken || status, 'content_report', id, `Report ${status}: ${action_taken || ''}`);
   return c.json({ success: true });
 });
@@ -1437,6 +1451,12 @@ admin.post('/bans', async (c) => {
   if (body.device_id) {
     await db(c).prepare("UPDATE users SET status = 'banned', updated_at = unixepoch() WHERE device_id = ? AND status != 'deleted'").bind(body.device_id).run();
   }
+  // Real-time: show the blocking ban popup in the affected app(s) instantly
+  // (with reason + expiry) — no logout.
+  c.executionCtx?.waitUntil?.(pushBanState(c.env, {
+    userId, deviceId: body.device_id ?? null, banned: true,
+    reason: body.reason ?? null, expiresAt: body.expires_at ?? null,
+  }));
   const u = c.get('user');
   await auditLog(db(c), u.sub, u.email || 'Admin', u.email || '', 'ban', 'user', userName, `${body.ban_type || 'permanent'} ban: ${body.reason}`);
   return c.json({ id, success: true }, 201);
@@ -1461,6 +1481,10 @@ admin.delete('/bans/:id', async (c) => {
         await db(c).prepare("UPDATE users SET status = 'active', updated_at = unixepoch() WHERE device_id = ? AND status = 'banned'").bind(ban.device_id).run();
       }
     }
+    // Real-time: dismiss the blocking ban popup in the affected app(s).
+    c.executionCtx?.waitUntil?.(pushBanState(c.env, {
+      userId: ban.user_id ?? null, deviceId: ban.device_id ?? null, banned: false,
+    }));
   }
   const u = c.get('user');
   await auditLog(db(c), u.sub, u.email || 'Admin', u.email || '', 'unban', 'user', ban?.user_name || id, 'Ban removed');

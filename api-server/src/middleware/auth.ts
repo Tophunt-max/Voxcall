@@ -2,6 +2,7 @@ import { createMiddleware } from 'hono/factory';
 import { verifyToken, extractBearer } from '../lib/jwt';
 import { detectCountryFromRequest, currencyForCountry } from '../lib/currency';
 import { registerHit } from '../lib/rateLimit';
+import { findActiveBan } from '../lib/bans';
 import type { Env, JWTPayload } from '../types';
 
 type Variables = { user: JWTPayload };
@@ -29,7 +30,18 @@ export const authMiddleware = createMiddleware<{ Bindings: Env; Variables: Varia
         currency: string | null;
       }>();
       if (!dbUser) return c.json({ error: 'User not found' }, 401);
-      if (dbUser.status === 'banned' || dbUser.status === 'deleted') {
+      if (dbUser.status === 'banned' || dbUser.status === 'suspended') {
+        // Carry the ban reason + expiry and a stable `code` so the app shows a
+        // blocking ban popup (NOT a logout). The reason comes from user_bans.
+        const ban = await findActiveBan(c.env.DB, { userId: payload.sub });
+        return c.json({
+          error: ban?.reason || 'Your account has been suspended. Contact support if you believe this is an error.',
+          code: 'account_banned',
+          reason: ban?.reason ?? null,
+          expires_at: ban?.expires_at ?? null,
+        }, 403);
+      }
+      if (dbUser.status === 'deleted') {
         return c.json({ error: 'Account suspended. Contact support if you believe this is an error.' }, 403);
       }
       // FIX #12: Reject tokens issued before the invalidation timestamp (e.g. after logout or password change)

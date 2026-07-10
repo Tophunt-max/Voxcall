@@ -449,6 +449,32 @@ auth.post('/refresh', rateLimit, async (c) => {
   }
 });
 
+// POST /api/auth/account-status — lightweight ban check that keeps working
+// WHILE the user is banned (it is NOT behind the ban-blocking authMiddleware).
+// Drives the app's blocking ban popup: returns the active ban's reason + expiry
+// so the popup can render, persist across restarts, and auto-dismiss the moment
+// the ban is lifted or expires. Never logs the user out.
+auth.post('/account-status', async (c) => {
+  const header = c.req.header('Authorization');
+  let token: string | null = header && header.startsWith('Bearer ') ? header.slice(7) : null;
+  if (!token) {
+    try { const b = await c.req.json(); token = b?.token ?? null; } catch { /* no body */ }
+  }
+  if (!token) return c.json({ error: 'Token required' }, 400);
+  try {
+    const payload = await verifyToken(token, c.env.JWT_SECRET);
+    const user = await c.env.DB.prepare('SELECT id, email, status FROM users WHERE id = ?')
+      .bind(payload.sub).first<{ id: string; email: string | null; status: string | null }>();
+    if (!user) return c.json({ banned: false, deleted: true });
+    if (user.status === 'deleted') return c.json({ banned: false, deleted: true });
+    const ban = await findActiveBan(c.env.DB, { userId: user.id, email: user.email });
+    const banned = !!ban || user.status === 'banned' || user.status === 'suspended';
+    return c.json({ banned, reason: ban?.reason ?? null, expires_at: ban?.expires_at ?? null });
+  } catch {
+    return c.json({ error: 'Invalid or expired token' }, 401);
+  }
+});
+
 // POST /api/auth/logout — FIX #12: Sets token_invalidated_at to NOW, instantly revoking
 // all tokens issued before this moment. The authMiddleware checks this on every request.
 // Requires a valid token so we know which user is logging out.
