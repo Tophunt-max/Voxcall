@@ -46,3 +46,30 @@ password also invalidates any tokens issued to the old admin session.
 - Public file serving blocks path traversal and KYC/identity documents.
 - Security response headers (nosniff, X-Frame-Options, HSTS, CSP) are set on
   every API response.
+
+## Recent security hardening (audit 2025-07)
+
+The following issues were identified and fixed in a 5-point security audit
+(based on Gitleaks, Bearer, ECC Production Audit, Trail of Bits, ECC Security
+Review methodologies):
+
+| # | Issue | Fix |
+|---|-------|-----|
+| 1 | Admin panel logout did not invalidate token server-side | `auth.tsx` now calls `POST /api/auth/logout` before clearing localStorage |
+| 2 | Email PII leaked into Workers Logs when RESEND_API_KEY was missing | Recipient email redacted in `email.ts` log output |
+| 3 | CORS ran with broad dev patterns when `CORS_ALLOWED_ORIGINS` unset in prod | Startup warning logged; operators must set the env var for production |
+| 4 | Mobile apps stored tokens in unencrypted AsyncStorage | Added `secureStorage.ts` wrapper using expo-secure-store (Keychain/Keystore) |
+| 5 | No explicit documentation of security posture for new contributors | This section added; controls enumerated above |
+
+### Known limitations (tracked, not yet fixed)
+
+- **Admin panel token in localStorage** — vulnerable to XSS on the admin
+  origin. Long-term fix: migrate to httpOnly + Secure + SameSite=Strict cookie
+  set by the API server. Requires a backend cookie-session endpoint.
+- **Mobile SecureStore adoption** — the `secureStorage.ts` wrapper is available
+  but callers in `services/api.ts` still use the legacy `setItem`/`getItem`.
+  A follow-up PR should swap AUTH_TOKEN / REFRESH_TOKEN reads/writes to
+  `secureSet`/`secureGet`/`secureRemove`.
+- **CORS dev patterns** — when `CORS_ALLOWED_ORIGINS` is not set, `*.pages.dev`
+  and `*.replit.dev` are allowed. For production deployments, always set the
+  env var to an explicit comma-separated allowlist of frontend domains.

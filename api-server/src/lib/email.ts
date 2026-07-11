@@ -10,7 +10,10 @@ export async function sendEmail(opts: {
   html: string;
 }): Promise<void> {
   if (!opts.apiKey) {
-    console.warn(`[email] RESEND_API_KEY not set — email not sent to ${opts.to} (subject: "${opts.subject}"). Set RESEND_API_KEY in Worker secrets to enable email delivery.`);
+    // SECURITY: redact the full email to avoid PII leaking into Workers Logs.
+    // Show only the domain so operators can still diagnose routing issues.
+    const domain = opts.to.includes('@') ? opts.to.split('@')[1] : '[redacted]';
+    console.warn(`[email] RESEND_API_KEY not set — email not sent to [redacted]@${domain} (subject: "${opts.subject}"). Set RESEND_API_KEY in Worker secrets to enable email delivery.`);
     return;
   }
 

@@ -22,4 +22,5 @@ export {
   updateInArray,
 } from "./storage";
 export type { StorageKey } from "./storage";
+export { secureSet, secureGet, secureRemove, isSecureKey, SECURE_KEYS } from "./secureStorage";
 export { WEB_INPUT_RESET, webInputReset } from "./webInputReset";

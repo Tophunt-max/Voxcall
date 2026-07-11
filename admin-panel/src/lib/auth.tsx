@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { api } from './api';
+import { api, req } from './api';
 
 interface AuthCtx { user: any; login: (e: string, p: string) => Promise<void>; logout: () => void; loading: boolean }
 const Ctx = createContext<AuthCtx>(null!);
@@ -48,8 +48,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = () => {
-    // SECURITY: see localStorage notes above — should also clear the cookie
-    // server-side once the migration to httpOnly cookies happens.
+    // SECURITY FIX: Invalidate the token SERVER-SIDE before clearing local
+    // state. This sets `token_invalidated_at` on the user row so even if the
+    // token was exfiltrated (XSS, log leak, shoulder-surf), it can never be
+    // reused after the admin clicks "Logout". Fire-and-forget: don't block
+    // the UI on network failure — clearing localStorage is the fallback that
+    // always works locally.
+    req('POST', '/auth/logout', {}).catch(() => {
+      // Best-effort: if the server is unreachable, the token will expire
+      // naturally (7 days) but can no longer be refreshed.
+    });
     localStorage.removeItem('voxlink_admin_token');
     localStorage.removeItem('voxlink_admin_user');
     setUser(null);
