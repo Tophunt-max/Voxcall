@@ -76,6 +76,10 @@ const USER_NOTIF_ROUTE: Record<string, string> = {
   free_spin: "/user/rewards-spin",
   profile_completion: "/user/profile/edit",
   reward: "/user/rewards",
+  happy_hour: "/user/payment/checkout",
+  promo_bonus: "/user/coin-history",
+  comeback: "/user/screens/home",
+  online_hosts: "/user/screens/home",
 };
 
 function FCMNotificationTapBridge() {

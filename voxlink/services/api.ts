@@ -517,6 +517,11 @@ export const API = {
     config?: { referrer_reward: number; new_user_reward: number; min_calls_to_unlock: number; active: boolean };
   }>('GET', '/api/user/referral'),
 
+  getReferralLeaderboard: () => apiRequest<{
+    leaderboard: { rank: number; name: string; avatar: string | null; referrals: number; coins: number; is_me: boolean }[];
+    me: { referrals: number; coins: number; rank: number | null };
+  }>('GET', '/api/user/referral-leaderboard'),
+
   // Reports
   submitReport: (data: { reported_user_id: string; reported_user?: string; reason: string; category?: string; reported_type?: string }) =>
     apiRequest<{ success: boolean; id: string }>('POST', '/api/user/report', data),

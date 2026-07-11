@@ -19,6 +19,9 @@ import { useAuth } from "@/context/AuthContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { API } from "@/services/api";
 import { showSuccessToast, showErrorToast } from "@/components/Toast";
+import { useAppConfig } from "@/hooks/useAppConfig";
+
+type LbEntry = { rank: number; name: string; avatar: string | null; referrals: number; coins: number; is_me: boolean };
 
 export default function ReferralScreen() {
   const colors = useColors();
@@ -34,6 +37,18 @@ export default function ReferralScreen() {
   } | null>(null);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
+
+  // Referral contest leaderboard — shown only when the admin enables it.
+  const { config } = useAppConfig();
+  const contestOn = config?.referral_contest_enabled === "1";
+  const [leaderboard, setLeaderboard] = useState<LbEntry[]>([]);
+  const [myRank, setMyRank] = useState<{ referrals: number; coins: number; rank: number | null } | null>(null);
+  useEffect(() => {
+    if (!contestOn) return;
+    API.getReferralLeaderboard()
+      .then((d) => { setLeaderboard(d.leaderboard ?? []); setMyRank(d.me ?? null); })
+      .catch(() => {});
+  }, [contestOn]);
 
   // Admin-managed reward amounts (with sensible fallbacks so the copy is never
   // blank while the request is in flight or on an older backend).
@@ -144,6 +159,37 @@ export default function ReferralScreen() {
           </View>
         </View>
 
+        {/* Referral contest leaderboard (admin-toggled) */}
+        {contestOn && (
+          <>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>🏆 Top Referrers</Text>
+            <View style={[styles.lbCard, { backgroundColor: colors.card }]}>
+              {leaderboard.length === 0 ? (
+                <Text style={[styles.lbEmpty, { color: colors.mutedForeground }]}>Abhi koi nahi — invite karke #1 ban jaaiye!</Text>
+              ) : (
+                leaderboard.map((r) => (
+                  <View key={r.rank} style={[styles.lbRow, r.is_me && { backgroundColor: "#F4E8FD" }]}>
+                    <Text style={[styles.lbRank, { color: r.rank <= 3 ? "#A00EE7" : colors.mutedForeground }]}>
+                      {r.rank <= 3 ? ["🥇", "🥈", "🥉"][r.rank - 1] : `#${r.rank}`}
+                    </Text>
+                    <Image source={r.avatar ? { uri: r.avatar } : require("@/assets/images/home_call_person.png")} style={styles.lbAvatar} />
+                    <Text style={[styles.lbName, { color: colors.text }]} numberOfLines={1}>{r.is_me ? "You" : r.name}</Text>
+                    <Text style={[styles.lbCount, { color: "#A00EE7" }]}>{r.referrals}</Text>
+                  </View>
+                ))
+              )}
+              {myRank?.rank != null && myRank.rank > leaderboard.length && (
+                <View style={[styles.lbRow, { backgroundColor: "#F4E8FD" }]}>
+                  <Text style={[styles.lbRank, { color: colors.mutedForeground }]}>#{myRank.rank}</Text>
+                  <Image source={require("@/assets/images/home_call_person.png")} style={styles.lbAvatar} />
+                  <Text style={[styles.lbName, { color: colors.text }]}>You</Text>
+                  <Text style={[styles.lbCount, { color: "#A00EE7" }]}>{myRank.referrals}</Text>
+                </View>
+              )}
+            </View>
+          </>
+        )}
+
         {/* How it works */}
         <Text style={[styles.sectionTitle, { color: colors.text }]}>{t.referralScreen.howItWorks}</Text>
         <View style={[styles.stepsCard, { backgroundColor: colors.card }]}>
@@ -183,6 +229,13 @@ const styles = StyleSheet.create({
   heroTitle: { fontSize: 20, fontFamily: "Poppins_700Bold", textAlign: "center" },
   heroSub: { fontSize: 13, fontFamily: "Poppins_400Regular", textAlign: "center", lineHeight: 20 },
   sectionTitle: { fontSize: 15, fontFamily: "Poppins_600SemiBold", marginTop: 8, marginBottom: 12 },
+  lbCard: { borderRadius: 16, padding: 8, marginBottom: 16, gap: 2 },
+  lbEmpty: { fontSize: 13, fontFamily: "Poppins_400Regular", textAlign: "center", paddingVertical: 16 },
+  lbRow: { flexDirection: "row", alignItems: "center", paddingVertical: 8, paddingHorizontal: 8, borderRadius: 12, gap: 10 },
+  lbRank: { width: 32, fontSize: 14, fontFamily: "Poppins_700Bold", textAlign: "center" },
+  lbAvatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: "#eee" },
+  lbName: { flex: 1, fontSize: 14, fontFamily: "Poppins_500Medium" },
+  lbCount: { fontSize: 15, fontFamily: "Poppins_700Bold" },
   codeLoading: { height: 72, alignItems: "center", justifyContent: "center", marginBottom: 16 },
   codeCard: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",

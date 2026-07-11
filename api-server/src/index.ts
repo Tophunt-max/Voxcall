@@ -1070,6 +1070,51 @@ async function maybeNudgeOnlineHosts(env: Env): Promise<void> {
   }
 }
 
+// ─── Growth: Happy Hour announcement ────────────────────────────────────────
+// Once a day, when the Happy Hour window is live, broadcast a "recharge now for
+// bonus coins" push to recently-active users so they know to buy during it.
+async function maybeAnnounceHappyHour(env: Env): Promise<void> {
+  try {
+    if (!(await engagementFeatureEnabled(env, 'happy_hour_enabled', false))) return;
+    if (await isQuietHoursIST(env)) return;
+    const readI = async (k: string, fb: number) => {
+      const r = await env.DB.prepare('SELECT value FROM app_settings WHERE key = ?').bind(k).first<{ value: string }>();
+      const n = parseInt(r?.value ?? '', 10);
+      return Number.isFinite(n) ? n : fb;
+    };
+    const pct = await readI('happy_hour_bonus_pct', 0);
+    if (pct <= 0) return;
+    const startH = await readI('happy_hour_start_ist', 20);
+    const endH = await readI('happy_hour_end_ist', 23);
+    const now = Math.floor(Date.now() / 1000);
+    const istOffset = (5 * 60 + 30) * 60;
+    const h = new Date((now + istOffset) * 1000).getUTCHours();
+    const inWindow = startH === endH ? false : (startH < endH ? (h >= startH && h < endH) : (h >= startH || h < endH));
+    if (!inWindow) return;
+    // Once per IST day.
+    const istDay = Math.floor((now + istOffset) / 86400);
+    const lastRow = await env.DB.prepare("SELECT value FROM app_settings WHERE key = 'last_happy_hour_announce_day'").first<{ value: string }>();
+    if (parseInt(lastRow?.value ?? '', 10) === istDay) return;
+    await env.DB.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('last_happy_hour_announce_day', ?, unixepoch())").bind(String(istDay)).run();
+
+    const rows = await env.DB.prepare(
+      `SELECT id FROM users u
+        WHERE u.role = 'user' AND COALESCE(u.status, 'active') = 'active'
+          AND u.fcm_token IS NOT NULL AND u.fcm_token != ''
+          AND COALESCE(u.updated_at, 0) > ?
+          AND NOT EXISTS (SELECT 1 FROM notifications n WHERE n.user_id = u.id AND n.type = 'happy_hour' AND n.created_at >= ?)
+        LIMIT 500`,
+    ).bind(now - 30 * 86400, now - 12 * 3600).all<{ id: string }>();
+    let sent = 0;
+    for (const r of rows.results ?? []) {
+      if (await notifyEngagement(env, r.id, 'Happy Hour is live ⚡', `${pct}% extra coins on every recharge right now — grab it before it ends!`, 'happy_hour', { data: { type: 'happy_hour' } })) sent++;
+    }
+    if (sent) console.log(`[Cron] Happy Hour announce: ${sent} sent`);
+  } catch (e) {
+    console.error('[Cron] happy hour announce error:', e);
+  }
+}
+
 export default {
   fetch: app.fetch,
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
@@ -1089,5 +1134,6 @@ export default {
     ctx.waitUntil(maybeRemindFreeSpin(env));
     ctx.waitUntil(maybeNudgeProfileCompletion(env));
     ctx.waitUntil(maybeNudgeOnlineHosts(env));
+    ctx.waitUntil(maybeAnnounceHappyHour(env));
   },
 };

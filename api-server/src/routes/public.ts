@@ -305,7 +305,7 @@ pub.get('/app-config', async (c) => {
     //   coin_value_inr                         → INR base coin value (single
     //                                            source of truth; apps convert
     //                                            from ₹ to the user's currency)
-    "SELECT key, value FROM app_settings WHERE key IN ('min_coins_for_call','coin_to_usd_rate','coin_value_inr','host_revenue_share','min_withdrawal_coins','registration_bonus_coins','maintenance_mode','maintenance_message','support_email','terms_url','privacy_url','app_name','default_audio_rate','default_video_rate','random_call_audio_rate','random_call_video_rate')"
+    "SELECT key, value FROM app_settings WHERE key IN ('min_coins_for_call','coin_to_usd_rate','coin_value_inr','host_revenue_share','min_withdrawal_coins','registration_bonus_coins','maintenance_mode','maintenance_message','support_email','terms_url','privacy_url','app_name','default_audio_rate','default_video_rate','random_call_audio_rate','random_call_video_rate','referral_contest_enabled')"
   ).all();
   const config: Record<string, string> = {};
   for (const row of settings.results as any[]) {
