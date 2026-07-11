@@ -168,8 +168,8 @@ export async function notifyFavoritersHostOnline(env: Env, hostId: string, hostU
     for (const r of rows.results ?? []) {
       await notifyEngagement(
         env, r.user_id,
-        `🟢 ${name} is online now`,
-        `Aapke favorite host ${name} abhi available hain — ek call ho jaaye?`,
+        `🟢 ${name} is Online Now!`,
+        `Great news! Aapke favorite host ${name} abhi available hain aur aapse baat karne ke liye ready. 💛 Ek call ho jaaye? ✨`,
         'favorite_online',
         { data: { type: 'favorite_online', host_id: hostId } },
       );

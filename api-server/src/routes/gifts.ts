@@ -149,8 +149,8 @@ gifts.post('/send', async (c) => {
       await sendFCMPush(
         c.env.FIREBASE_SERVICE_ACCOUNT,
         recipient.fcm_token,
-        senderName || 'New gift',
-        `sent you a ${gift.name} ${gift.icon}`,
+        `🎁 ${senderName || 'Someone'} sent you a gift!`,
+        `You received a ${gift.name} ${gift.icon} — someone's thinking of you! 💛`,
         { type: 'chat_message', room_id: body.room_id },
       );
     }
@@ -163,7 +163,7 @@ gifts.post('/send', async (c) => {
   // event + FCM above, so we insert the row only (no extra push/toast).
   try {
     await db.prepare('INSERT INTO notifications (id, user_id, type, title, body, created_at) VALUES (?, ?, ?, ?, ?, ?)')
-      .bind('notif-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7), hostUserId, 'gift', 'Gift received 🎁', `${senderName || 'Someone'} sent you a ${gift.name} ${gift.icon} (${amount} coins)`, now)
+      .bind('notif-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7), hostUserId, 'gift', '🎁 You Received a Gift!', `${senderName || 'Someone'} sent you a ${gift.name} ${gift.icon} worth ${amount} coins! Someone really appreciates you. 💛`, now)
       .run();
   } catch (e) {
     console.warn('[gifts/send] notification row insert failed:', e);

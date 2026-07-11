@@ -197,7 +197,7 @@ async function approveDeposit(db: D1Database, purchaseId: string, source: string
     // bonus coins BEFORE the balance push so the wallet reflects the total.
     await applyPurchaseBonuses(env, { id: purchase.id, user_id: purchase.user_id, coins: purchase.coins, bonus_coins: purchase.bonus_coins });
     await pushCoinUpdate(env, purchase.user_id, totalCoins);
-    await notifyUser(env, purchase.user_id, 'Coins added ✅', `${totalCoins} coins have been added to your wallet.`, 'deposit');
+    await notifyUser(env, purchase.user_id, '🎉 Recharge Successful!', `Woohoo! ${totalCoins} coins are now in your wallet. Time to connect with your favourite hosts! 💛`, 'deposit', { data: { status: 'success' } });
   }
   return { ok: true, coins: totalCoins };
 }

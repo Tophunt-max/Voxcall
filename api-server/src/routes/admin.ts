@@ -503,8 +503,8 @@ admin.patch('/withdrawals/:id', async (c) => {
     // Real-time: reflect the refunded balance instantly and tell the host why.
     await pushCoinUpdate(c.env, wr.user_id, wr.coins);
     c.executionCtx?.waitUntil?.(notifyUser(
-      c.env, wr.user_id, 'Withdrawal rejected',
-      `Your withdrawal was rejected and ${wr.coins} coins were refunded to your balance.${admin_note ? ` Reason: ${admin_note}` : ''}`,
+      c.env, wr.user_id, '↩️ Withdrawal Refunded',
+      `No worries — your withdrawal couldn't be processed this time, so we've safely returned all ${wr.coins} coins to your wallet.${admin_note ? ` Reason: ${admin_note}` : ''} Feel free to try again! 💛`,
       'payout',
     ));
     return c.json({ success: true, refunded_coins: wr.coins });
@@ -530,9 +530,10 @@ admin.patch('/withdrawals/:id', async (c) => {
   const wu = await d.prepare('SELECT h.user_id AS uid, wr.coins AS coins FROM withdrawal_requests wr JOIN hosts h ON h.id = wr.host_id WHERE wr.id = ?').bind(id).first<{ uid: string; coins: number }>();
   if (wu?.uid) {
     const msg = status === 'paid' || status === 'completed'
-      ? `Your withdrawal of ${wu.coins} coins has been paid.${admin_note ? ` Ref: ${admin_note}` : ''}`
-      : 'Your withdrawal request has been approved and is being processed.';
-    c.executionCtx?.waitUntil?.(notifyUser(c.env, wu.uid, 'Withdrawal update', msg, 'payout'));
+      ? `💰 Cha-ching! Your withdrawal of ${wu.coins} coins has been paid out.${admin_note ? ` Ref: ${admin_note}` : ''} Thanks for being an amazing host! 🌟`
+      : '✅ Great news! Your withdrawal has been approved and is being processed. Your money is on the way! 💸';
+    const notifTitle = status === 'paid' || status === 'completed' ? '💰 Payout Sent!' : '✅ Withdrawal Approved';
+    c.executionCtx?.waitUntil?.(notifyUser(c.env, wu.uid, notifTitle, msg, 'payout'));
   }
   return c.json({ success: true });
 });
@@ -1173,13 +1174,13 @@ admin.patch('/host-applications/:id/review', async (c) => {
   // to host mode — the auth middleware already reads the fresh role per request.
   if (app.user_id) {
     if (action === 'approve') {
-      c.executionCtx?.waitUntil?.(notifyUser(c.env, app.user_id, 'Application approved 🎉', 'Congratulations! Your host application has been approved. You can now go online and start receiving calls.', 'host_application'));
+      c.executionCtx?.waitUntil?.(notifyUser(c.env, app.user_id, '🎉 You\'re Approved — Welcome, Host!', 'Congratulations! 🌟 Your host application is approved. Go online now, start taking calls, and begin earning today. Your journey starts here! 🚀', 'host_application'));
       try {
         const stub = c.env.NOTIFICATION_HUB.get(c.env.NOTIFICATION_HUB.idFromName(app.user_id));
         c.executionCtx?.waitUntil?.(stub.fetch('https://dummy/notify', { method: 'POST', body: JSON.stringify({ type: 'data_changed', resource: 'role', timestamp: Date.now() }) }));
       } catch { /* best-effort */ }
     } else if (action === 'reject') {
-      c.executionCtx?.waitUntil?.(notifyUser(c.env, app.user_id, 'Application update', `Your host application was not approved.${rejection_reason ? ` Reason: ${rejection_reason}` : ''}`, 'host_application'));
+      c.executionCtx?.waitUntil?.(notifyUser(c.env, app.user_id, '📋 Application Update', `Thanks for applying to be a host! Unfortunately we couldn't approve it this time.${rejection_reason ? ` Reason: ${rejection_reason}` : ''} Don't give up — you can fix the details and reapply. 💛`, 'host_application'));
     }
   }
 
@@ -1245,7 +1246,7 @@ admin.patch('/deposits/:id', async (c) => {
     const dep = await db(c).prepare('SELECT user_id FROM coin_purchases WHERE id = ?').bind(id).first<{ user_id: string }>();
     if (dep?.user_id) {
       await pushCoinUpdate(c.env, dep.user_id, result.coins);
-      c.executionCtx?.waitUntil?.(notifyUser(c.env, dep.user_id, 'Coins added', `${result.coins} coins have been added to your wallet.`, 'deposit'));
+      c.executionCtx?.waitUntil?.(notifyUser(c.env, dep.user_id, '🎉 Recharge Successful!', `Woohoo! ${result.coins} coins are now in your wallet. Time to connect with your favourite hosts! 💛`, 'deposit', { data: { status: 'success' } }));
     }
     return c.json({ success: true, coins: result.coins });
   }

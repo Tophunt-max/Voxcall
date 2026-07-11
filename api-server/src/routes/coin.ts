@@ -484,8 +484,8 @@ coin.post('/withdraw', async (c) => {
   // Real-time: confirm the frozen balance + send a "withdrawal requested" note.
   c.executionCtx?.waitUntil?.(pushCoinUpdate(c.env, sub, -coinsReq));
   c.executionCtx?.waitUntil?.(notifyUser(
-    c.env, sub, 'Withdrawal requested 💸',
-    `Your request to withdraw ${coinsReq} coins has been received. Coins are frozen pending admin approval.`,
+    c.env, sub, '💸 Withdrawal Requested',
+    `Got it! Your request to withdraw ${coinsReq} coins is in. We're reviewing it now and your payout will be on its way soon. ✅`,
     'payout',
   ));
   return c.json({

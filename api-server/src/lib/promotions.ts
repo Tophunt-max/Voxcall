@@ -71,7 +71,7 @@ export async function applyPurchaseBonuses(
         const pct = await readInt(db, 'first_recharge_bonus_pct', 100);
         const cap = await readInt(db, 'first_recharge_bonus_max_coins', 500);
         const b = Math.min(cap, Math.round((base * pct) / 100));
-        if (b > 0) { bonusTotal += b; notes.push(`first-recharge +${b}`); toasts.push({ title: 'First recharge bonus 🎁', body: `${b} bonus coins added on your first purchase!` }); }
+        if (b > 0) { bonusTotal += b; notes.push(`first-recharge +${b}`); toasts.push({ title: '🎁 First Recharge Bonus!', body: `Amazing! You just scored ${b} FREE bonus coins on your very first recharge. Welcome aboard! 🚀` }); }
       }
     }
 
@@ -83,7 +83,7 @@ export async function applyPurchaseBonuses(
       if (pct > 0 && inHappyHour(startH, endH)) {
         const cap = await readInt(db, 'happy_hour_max_coins', 1000);
         const b = Math.min(cap, Math.round((base * pct) / 100));
-        if (b > 0) { bonusTotal += b; notes.push(`happy-hour +${b}`); toasts.push({ title: 'Happy Hour bonus ⚡', body: `${b} extra coins — Happy Hour is live!` }); }
+        if (b > 0) { bonusTotal += b; notes.push(`happy-hour +${b}`); toasts.push({ title: '⚡ Happy Hour Bonus!', body: `Lucky you! ${b} extra coins added because Happy Hour is LIVE. Grab more while it lasts! 🎉` }); }
       }
     }
 
@@ -101,7 +101,7 @@ export async function applyPurchaseBonuses(
         const rw = Number(reward) || 0;
         if (Number.isFinite(m) && m > 0 && rw > 0 && lifetimeBefore < m && lifetimeAfter >= m) cashback += rw;
       }
-      if (cashback > 0) { bonusTotal += cashback; notes.push(`milestone +${cashback}`); toasts.push({ title: 'Milestone cashback 🏆', body: `${cashback} cashback coins for hitting a purchase milestone!` }); }
+      if (cashback > 0) { bonusTotal += cashback; notes.push(`milestone +${cashback}`); toasts.push({ title: '🏆 Milestone Unlocked!', body: `You're a star! ${cashback} cashback coins are yours for hitting a spending milestone. Keep shining! ✨` }); }
     }
 
     if (bonusTotal > 0) {
@@ -138,7 +138,7 @@ export async function maybeGrantComebackReward(env: Env, userId: string, priorAc
       env.DB.prepare('UPDATE users SET coins = coins + ?, updated_at = unixepoch() WHERE id = ?').bind(bonus, userId),
       env.DB.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)').bind(crypto.randomUUID(), userId, 'bonus', bonus, 'Comeback reward', null),
     ]);
-    await notifyUser(env, userId, 'Welcome back! 🎉', `We missed you — ${bonus} bonus coins have been added to your wallet.`, 'comeback');
+    await notifyUser(env, userId, '🎉 Welcome Back — We Missed You!', `So good to see you again! Here's ${bonus} bonus coins as a little welcome-back gift. Let's pick up where you left off! 💛`, 'comeback');
     await pushCoinUpdate(env, userId, bonus);
     return bonus;
   } catch (e) {
