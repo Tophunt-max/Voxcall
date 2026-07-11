@@ -157,6 +157,16 @@ coin.get('/offer', authMiddleware, async (c) => {
   return c.json(offer);
 });
 
+// GET /api/coins/recommendation — smart "best pack for you" based on the user's
+// coin burn-rate + balance runway. Drives the "⭐ Best for you" badge + usage
+// hint on the checkout screen. Best-effort; disabled by default (admin opt-in).
+coin.get('/recommendation', authMiddleware, async (c) => {
+  const { sub } = c.get('user');
+  const { computeRechargeRecommendation } = await import('../lib/smartRecommend');
+  const rec = await computeRechargeRecommendation(c.env.DB, sub);
+  return c.json(rec);
+});
+
 // All routes below require auth
 coin.use('*', authMiddleware);
 

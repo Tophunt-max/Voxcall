@@ -554,6 +554,14 @@ export default function CheckoutScreen() {
   } | null>(null);
   // Live countdown (seconds) for a time-limited offer (welcome window).
   const [offerSecondsLeft, setOfferSecondsLeft] = useState<number | null>(null);
+  // Smart "best pack for you" recommendation (burn-rate based, admin-managed).
+  const [recommendation, setRecommendation] = useState<{
+    enabled: boolean; recommended_plan_id: string | null; days_left: number | null;
+    lasts_days: number | null; urgency: 'critical' | 'low' | 'normal'; reason: string;
+  } | null>(null);
+  // Tracks whether the user has manually tapped a package — so we only
+  // auto-select the recommended pack until they make their own choice.
+  const userPickedPlanRef = useRef(false);
 
   // Re-run on every focus (not just mount) so coin plans edited/added in the
   // admin panel — and any coin-value change — show up the next time the user
@@ -596,6 +604,10 @@ export default function CheckoutScreen() {
           }
         })
         .catch(() => {}),
+      // Smart "best pack for you" recommendation. Best-effort.
+      API.getCoinRecommendation()
+        .then((r: any) => { setRecommendation(r?.enabled ? r : null); })
+        .catch(() => {}),
     ]).then(() => {
       // Only surface a load error for the ESSENTIAL data (coin plans). Optional
       // extras (banners, gateways, QR, offer) failing must NOT spam an error
@@ -618,6 +630,17 @@ export default function CheckoutScreen() {
     }, 1000);
     return () => clearInterval(id);
   }, [offerSecondsLeft]);
+
+  // Smart auto-select: once the recommendation arrives, pre-select the
+  // recommended pack — but ONLY if the user hasn't already tapped one, so we
+  // never override their explicit choice.
+  useEffect(() => {
+    if (userPickedPlanRef.current) return;
+    const recId = recommendation?.recommended_plan_id;
+    if (!recId || plans.length === 0) return;
+    const recPlan = plans.find((p) => p.id === recId);
+    if (recPlan && selectedPlan?.id !== recId) setSelectedPlan(recPlan);
+  }, [recommendation?.recommended_plan_id, plans, selectedPlan?.id]);
 
   useFocusEffect(loadCheckoutData);
 
@@ -772,6 +795,26 @@ export default function CheckoutScreen() {
           </LinearGradient>
         )}
 
+        {/* ── Smart Recharge Recommendation hint ──────────────────────────
+            Usage-aware nudge: "Your coins run out in ~2 days. This pack lasts
+            ~24 days!" Red-tinted when critical (about to run dry). */}
+        {recommendation?.enabled && recommendation.reason ? (
+          <View style={[
+            styles.recHint,
+            recommendation.urgency === "critical"
+              ? { backgroundColor: "#FEE2E2", borderColor: "#FCA5A5" }
+              : { backgroundColor: "#F3E8FF", borderColor: "#E9D5FF" },
+          ]}>
+            <Text style={styles.recHintEmoji}>{recommendation.urgency === "critical" ? "⚠️" : "🪄"}</Text>
+            <Text style={[
+              styles.recHintText,
+              { color: recommendation.urgency === "critical" ? "#B91C1C" : "#7C3AED" },
+            ]}>
+              {recommendation.reason}
+            </Text>
+          </View>
+        ) : null}
+
         {/* Choose Package — with a live offer/countdown strip on the right */}
         <View style={styles.packageHeaderRow}>
           <Text style={[styles.sectionTitle, { color: colors.text, marginBottom: 0 }]}>{t.wallet.choosePackage}</Text>
@@ -800,14 +843,23 @@ export default function CheckoutScreen() {
               const planOfferBonus = smartOffer?.enabled && smartOffer.bonus_pct > 0
                 ? Math.round(((plan.coins + bonus) * smartOffer.bonus_pct) / 100)
                 : 0;
+              const isRecommended = recommendation?.recommended_plan_id === plan.id;
               return (
                 <TouchableOpacity
                   key={plan.id}
-                  style={[styles.planCard, { backgroundColor: selected ? colors.accent : colors.card, borderColor: selected ? colors.accent : colors.border }]}
-                  onPress={() => setSelectedPlan(plan)}
+                  style={[styles.planCard, {
+                    backgroundColor: selected ? colors.accent : colors.card,
+                    borderColor: selected ? colors.accent : (isRecommended ? "#A00EE7" : colors.border),
+                    borderWidth: isRecommended && !selected ? 2 : 2,
+                  }]}
+                  onPress={() => { userPickedPlanRef.current = true; setSelectedPlan(plan); }}
                   activeOpacity={0.82}
                 >
-                  {plan.is_popular ? (
+                  {isRecommended ? (
+                    <View style={styles.bestForYouTag}>
+                      <Text style={styles.bestForYouText}>⭐ Best for you</Text>
+                    </View>
+                  ) : plan.is_popular ? (
                     <View style={[styles.popularTag, { backgroundColor: colors.coinGoldBg }]}>
                       <Text style={[styles.popularTagText, { color: colors.coinGoldText }]}>{t.checkout.popular}</Text>
                     </View>
@@ -1059,6 +1111,13 @@ const styles = StyleSheet.create({
   // Smart-offer "+X%" badge on the top-left of each package card.
   offerCardBadge: { position: "absolute", top: 6, left: 6, backgroundColor: "#A00EE7", paddingHorizontal: 5, paddingVertical: 1, borderRadius: 8 },
   offerCardBadgeText: { fontSize: 8, color: "#fff", fontFamily: "Poppins_700Bold" },
+  // "⭐ Best for you" recommended-pack ribbon (top center, above the card).
+  bestForYouTag: { position: "absolute", top: -8, backgroundColor: "#A00EE7", paddingHorizontal: 7, paddingVertical: 2, borderRadius: 10, zIndex: 2 },
+  bestForYouText: { fontSize: 8, color: "#fff", fontFamily: "Poppins_700Bold" },
+  // Recommendation hint banner above the package grid.
+  recHint: { flexDirection: "row", alignItems: "center", gap: 8, padding: 12, borderRadius: 14, borderWidth: 1, marginBottom: 16 },
+  recHintEmoji: { fontSize: 18 },
+  recHintText: { flex: 1, fontSize: 12.5, fontFamily: "Poppins_600SemiBold", lineHeight: 17 },
   planExtraCoins: { fontSize: 9.5, fontFamily: "Poppins_600SemiBold", marginTop: 1 },
   planCoin: { width: 28, height: 28, resizeMode: "contain" },
   planCoins: { fontSize: 15, fontFamily: "Poppins_700Bold" },

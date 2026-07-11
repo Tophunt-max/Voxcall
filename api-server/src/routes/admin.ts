@@ -824,6 +824,8 @@ admin.patch('/settings', async (c) => {
     'smart_discount_vip_pct', 'smart_discount_returning_pct',
     'smart_discount_max_pct', 'smart_discount_max_coins',
     'smart_discount_ends_at',
+    // Smart Recharge Recommendation — usage-aware "best pack for you".
+    'smart_recommend_enabled', 'smart_recommend_lookback_days', 'smart_recommend_target_days',
   ];
   const stmts = Object.entries(processedBody)
     .filter(([k]) => ALLOWED_SETTINGS.includes(k))
@@ -933,6 +935,11 @@ admin.patch('/settings', async (c) => {
   // validity/countdown) without needing to reopen the screen.
   const smartDiscountChanged = changedKeys.some((k) => k.startsWith('smart_discount_'));
   if (smartDiscountChanged) {
+    c.executionCtx?.waitUntil?.(broadcastDataChanged(c.env, 'smart_discount', 'user'));
+  }
+  // Smart recharge recommendation settings also drive the checkout — refresh live.
+  const smartRecommendChanged = changedKeys.some((k) => k.startsWith('smart_recommend_'));
+  if (smartRecommendChanged) {
     c.executionCtx?.waitUntil?.(broadcastDataChanged(c.env, 'smart_discount', 'user'));
   }
 
