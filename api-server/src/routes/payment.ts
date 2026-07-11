@@ -4,6 +4,7 @@ import { authMiddleware } from '../middleware/auth';
 import { timingSafeEqual } from '../lib/hash';
 import { bumpRewardProgress } from './rewards';
 import { pushCoinUpdate, notifyUser } from '../lib/realtime';
+import { applyPurchaseBonuses } from '../lib/promotions';
 import {
   verifyRazorpaySignature,
   verifyStripeSignature,
@@ -192,6 +193,9 @@ async function approveDeposit(db: D1Database, purchaseId: string, source: string
   // most common purchase flow gave the user no confirmation at all. Only fires
   // on the CAS winner (genuine new approval), so no double-credit / double-notify.
   if (env) {
+    // Growth promos (first-recharge / happy-hour / spend-milestone) — grant any
+    // bonus coins BEFORE the balance push so the wallet reflects the total.
+    await applyPurchaseBonuses(env, { id: purchase.id, user_id: purchase.user_id, coins: purchase.coins, bonus_coins: purchase.bonus_coins });
     await pushCoinUpdate(env, purchase.user_id, totalCoins);
     await notifyUser(env, purchase.user_id, 'Coins added ✅', `${totalCoins} coins have been added to your wallet.`, 'deposit');
   }

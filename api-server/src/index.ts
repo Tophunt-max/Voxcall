@@ -1036,6 +1036,40 @@ async function maybeNudgeProfileCompletion(env: Env): Promise<void> {
   }
 }
 
+// ─── Engagement: Online / trending hosts discovery push ─────────────────────
+// When a healthy number of hosts are online, nudge moderately-idle users (2-14d)
+// to come explore. Opt-in (default OFF) to avoid over-messaging.
+async function maybeNudgeOnlineHosts(env: Env): Promise<void> {
+  try {
+    if (!(await engagementFeatureEnabled(env, 'online_hosts_push_enabled', false))) return;
+    if (await isQuietHoursIST(env)) return;
+    const now = Math.floor(Date.now() / 1000);
+    const lastRow = await env.DB.prepare("SELECT value FROM app_settings WHERE key = 'last_online_hosts_push_run'").first<{ value: string }>();
+    const last = lastRow?.value ? parseInt(lastRow.value, 10) || 0 : 0;
+    if (now - last < 12 * 3600) return;
+    const onlineRow = await env.DB.prepare("SELECT COUNT(*) AS n FROM hosts WHERE is_active = 1 AND is_online = 1").first<{ n: number }>();
+    const online = Number(onlineRow?.n) || 0;
+    if (online < 3) return; // only nudge when there's a real selection
+    await env.DB.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('last_online_hosts_push_run', ?, unixepoch())").bind(String(now)).run();
+
+    const rows = await env.DB.prepare(
+      `SELECT id FROM users u
+        WHERE u.role = 'user' AND COALESCE(u.status, 'active') = 'active'
+          AND u.fcm_token IS NOT NULL AND u.fcm_token != ''
+          AND COALESCE(u.updated_at, 0) <= ? AND COALESCE(u.updated_at, 0) > ?
+          AND NOT EXISTS (SELECT 1 FROM notifications n WHERE n.user_id = u.id AND n.type = 'online_hosts' AND n.created_at >= ?)
+        LIMIT 300`,
+    ).bind(now - 2 * 86400, now - 14 * 86400, now - 3 * 86400).all<{ id: string }>();
+    let sent = 0;
+    for (const r of rows.results ?? []) {
+      if (await notifyEngagement(env, r.id, `✨ ${online} hosts online abhi`, 'Naye aur trending hosts abhi available hain — kisi se baat karein!', 'online_hosts', { data: { type: 'online_hosts' } })) sent++;
+    }
+    if (sent) console.log(`[Cron] Online-hosts push: ${sent} sent`);
+  } catch (e) {
+    console.error('[Cron] online-hosts push error:', e);
+  }
+}
+
 export default {
   fetch: app.fetch,
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
@@ -1054,5 +1088,6 @@ export default {
     ctx.waitUntil(maybeSendWeeklyRecap(env));
     ctx.waitUntil(maybeRemindFreeSpin(env));
     ctx.waitUntil(maybeNudgeProfileCompletion(env));
+    ctx.waitUntil(maybeNudgeOnlineHosts(env));
   },
 };

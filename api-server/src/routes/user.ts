@@ -187,6 +187,49 @@ user.get('/favorites/status/:hostId', async (c) => {
   return c.json({ favorite: !!row });
 });
 
+// GET /api/user/referral-leaderboard — top referrers (referral contest).
+// Read-only; the app shows it when `referral_contest_enabled` is on.
+user.get('/referral-leaderboard', async (c) => {
+  const { sub } = c.get('user');
+  const db = c.env.DB;
+  const top = await db.prepare(
+    `SELECT u.id AS id, u.name AS name, u.avatar_url AS avatar,
+            COUNT(*) AS referrals, COALESCE(SUM(ru.coins_given), 0) AS coins
+       FROM referral_uses ru JOIN users u ON u.id = ru.referrer_id
+      WHERE ru.coins_given > 0
+      GROUP BY ru.referrer_id
+      ORDER BY referrals DESC, coins DESC
+      LIMIT 20`,
+  ).all<{ id: string; name: string; avatar: string | null; referrals: number; coins: number }>();
+
+  const mine = await db.prepare(
+    "SELECT COUNT(*) AS referrals, COALESCE(SUM(coins_given),0) AS coins FROM referral_uses WHERE referrer_id = ? AND coins_given > 0",
+  ).bind(sub).first<{ referrals: number; coins: number }>();
+  // Rank = 1 + number of referrers strictly ahead of me by referral count.
+  const rankRow = await db.prepare(
+    `SELECT COUNT(*) AS ahead FROM (
+       SELECT referrer_id, COUNT(*) AS n FROM referral_uses WHERE coins_given > 0 GROUP BY referrer_id
+     ) t WHERE t.n > ?`,
+  ).bind(Number(mine?.referrals) || 0).first<{ ahead: number }>();
+
+  const rows = (top.results ?? []).map((r, i) => ({
+    rank: i + 1,
+    name: r.name || 'User',
+    avatar: r.avatar ?? null,
+    referrals: Number(r.referrals) || 0,
+    coins: Number(r.coins) || 0,
+    is_me: r.id === sub,
+  }));
+  return c.json({
+    leaderboard: rows,
+    me: {
+      referrals: Number(mine?.referrals) || 0,
+      coins: Number(mine?.coins) || 0,
+      rank: (Number(mine?.referrals) || 0) > 0 ? (Number(rankRow?.ahead) || 0) + 1 : null,
+    },
+  });
+});
+
 // POST /api/user/favorites/:hostId — add favorite (guarded + idempotent)
 user.post('/favorites/:hostId', async (c) => {
   const { sub } = c.get('user');

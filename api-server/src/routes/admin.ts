@@ -808,6 +808,14 @@ admin.patch('/settings', async (c) => {
     'abandoned_recharge_enabled', 'low_balance_nudge_enabled',
     'weekly_recap_enabled', 'vip_reminder_enabled',
     'free_spin_reminder_enabled', 'profile_completion_enabled',
+    'online_hosts_push_enabled',
+    // Growth / promotions
+    'first_recharge_bonus_enabled', 'first_recharge_bonus_pct', 'first_recharge_bonus_max_coins',
+    'happy_hour_enabled', 'happy_hour_start_ist', 'happy_hour_end_ist',
+    'happy_hour_bonus_pct', 'happy_hour_max_coins',
+    'spend_cashback_enabled', 'spend_milestones',
+    'comeback_reward_enabled', 'comeback_idle_days', 'comeback_bonus_coins', 'comeback_cooldown_days',
+    'referral_contest_enabled',
   ];
   const stmts = Object.entries(processedBody)
     .filter(([k]) => ALLOWED_SETTINGS.includes(k))

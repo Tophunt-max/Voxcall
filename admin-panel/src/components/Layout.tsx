@@ -8,7 +8,7 @@ import {
   Hash, ArrowRightLeft, Trophy, ShieldCheck, TrendingUp, Tag,
   IndianRupee, MessageSquare, Flag, ShieldOff, Megaphone,
   ScrollText, Image, Gift, Radio, Sliders, CreditCard,
-  CircleDollarSign, Zap, Ticket, Medal, Crown, Sparkles
+  CircleDollarSign, Zap, Ticket, Medal, Crown, Sparkles, Rocket
 } from 'lucide-react';
 
 const nav = [
@@ -47,6 +47,7 @@ const nav = [
   { href: '/level-config', label: 'Level System', icon: Trophy, section: 'system' },
   { href: '/app-config', label: 'App Config', icon: Sliders, section: 'system' },
   { href: '/engagement', label: 'Engagement', icon: Sparkles, section: 'system' },
+  { href: '/growth', label: 'Growth & Promotions', icon: Rocket, section: 'system' },
   { href: '/settings', label: 'Settings', icon: Settings, section: 'system' },
 ];
 

@@ -11,6 +11,7 @@ import { registerHit } from '../lib/rateLimit';
 import { isEmergencyOn, emergencyBlockedBody } from '../lib/emergencyFlags';
 import { findActiveBan, bannedBody } from '../lib/bans';
 import { pushCoinUpdate, notifyUser } from '../lib/realtime';
+import { maybeGrantComebackReward } from '../lib/promotions';
 import type { Env } from '../types';
 import { authMiddleware } from '../middleware/auth';
 import { bumpRewardProgress } from './rewards';
@@ -693,10 +694,13 @@ async function quickLoginHandler(c: any, deviceId: string | null) {
 
   if (deviceId) {
     const existing = await db.prepare(
-      'SELECT id, name, email, role, coins, avatar_url, country, currency FROM users WHERE device_id = ? LIMIT 1'
+      'SELECT id, name, email, role, coins, avatar_url, country, currency, updated_at FROM users WHERE device_id = ? LIMIT 1'
     ).bind(deviceId).first() as any;
 
     if (existing) {
+      // Growth: one-time comeback reward if this account has been idle a while.
+      // Uses updated_at read BEFORE this login as the "last seen" signal.
+      c.executionCtx?.waitUntil?.(maybeGrantComebackReward(c.env, existing.id, existing.updated_at));
       // Backfill country/currency if missing
       if ((!existing.country || !existing.currency) && detectedCountry) {
         await db.prepare(

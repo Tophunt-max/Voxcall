@@ -28,7 +28,7 @@ export const ENGAGEMENT_TYPES = [
   'reengagement', 'streak_reminder', 'near_level', 'vip_expiring',
   'favorite_online', 'onboarding_d0', 'onboarding_d1', 'onboarding_d3',
   'abandoned_recharge', 'low_balance', 'weekly_recap',
-  'free_spin', 'profile_completion',
+  'free_spin', 'profile_completion', 'online_hosts',
 ] as const;
 
 const ENGAGEMENT_TYPE_SET = new Set<string>(ENGAGEMENT_TYPES);
