@@ -18,6 +18,7 @@ const DEFAULTS = {
   smart_discount_returning_pct: '10',
   smart_discount_max_pct: '100',
   smart_discount_max_coins: '100000',
+  smart_discount_ends_at: '0',
   // First-recharge bonus
   first_recharge_bonus_enabled: '0',
   first_recharge_bonus_pct: '100',
@@ -76,6 +77,42 @@ function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) =>
       className={`relative w-11 h-6 rounded-full transition-colors ${value ? 'bg-primary' : 'bg-border'}`}>
       <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${value ? 'translate-x-5' : 'translate-x-0.5'}`} />
     </button>
+  );
+}
+
+// Date picker that stores a UNIX-SECONDS string ('0' = no expiry / always on).
+// Picking a date means "discount valid THROUGH the end of that day".
+function DateInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const sec = parseInt(value || '0', 10) || 0;
+  const dateStr = sec > 0 ? new Date(sec * 1000).toISOString().slice(0, 10) : '';
+  const now = Math.floor(Date.now() / 1000);
+  const daysLeft = sec > now ? Math.ceil((sec - now) / 86400) : 0;
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <div className="flex items-center gap-2">
+        <input
+          type="date"
+          value={dateStr}
+          min={new Date().toISOString().slice(0, 10)}
+          onChange={(e) => {
+            const v = e.target.value;
+            if (!v) { onChange('0'); return; }
+            // End of the chosen day, in unix seconds.
+            const end = Math.floor(new Date(`${v}T23:59:59`).getTime() / 1000);
+            onChange(String(end));
+          }}
+          className="px-3 py-2 text-sm border border-border rounded-xl bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
+        />
+        {sec > 0 && (
+          <button onClick={() => onChange('0')} className="text-xs text-muted-foreground underline hover:text-foreground">clear</button>
+        )}
+      </div>
+      {sec > 0 && (
+        <span className={`text-[11px] ${daysLeft > 0 ? 'text-violet-600' : 'text-red-500'}`}>
+          {daysLeft > 0 ? `⏳ ${daysLeft} day${daysLeft === 1 ? '' : 's'} left` : 'Campaign ended'}
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -158,6 +195,9 @@ export default function GrowthPromotions() {
           <Section title="✨ Smart Discount Engine" desc="ONE personalized offer per user, chosen automatically by their lifecycle segment. Shown live on checkout and granted as bonus coins on payment. Recommended: use this instead of the flat first-recharge bonus below." icon={Sparkles}>
             <Field label="Enabled" desc="Master switch. When ON, every user sees a tailored offer on the checkout screen.">
               <Toggle value={isOn(config.smart_discount_enabled)} onChange={() => toggle('smart_discount_enabled')} />
+            </Field>
+            <Field label="⏳ Discount valid until" desc="Whole campaign ends on this date (a live countdown shows on every package). Leave empty = always on.">
+              <DateInput value={config.smart_discount_ends_at} onChange={v => update('smart_discount_ends_at', v)} />
             </Field>
             <div className="rounded-xl border border-violet-200 dark:border-violet-900/50 bg-violet-50/60 dark:bg-violet-950/20 p-3 text-xs text-violet-700 dark:text-violet-300 space-y-1">
               <p className="font-semibold">How segments are chosen (highest priority first):</p>

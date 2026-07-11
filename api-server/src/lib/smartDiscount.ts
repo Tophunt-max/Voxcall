@@ -131,6 +131,25 @@ export async function computeSmartOffer(
     const cap = Math.max(0, await readInt(db, 'smart_discount_max_pct', 100));
     const clampPct = (p: number) => Math.max(0, Math.min(cap, p));
 
+    // ── Global campaign window (admin "discount valid until") ──────────────
+    // `smart_discount_ends_at` (unix seconds; 0 = no global expiry). When set,
+    // the ENTIRE campaign stops after this time, and EVERY segment offer shows
+    // a live countdown to it (not just the welcome window). This is the admin's
+    // "kitne din tak discount milega" control.
+    const campaignEnd = await readInt(db, 'smart_discount_ends_at', 0);
+    if (campaignEnd > 0 && now >= campaignEnd) return NO_OFFER; // campaign is over
+
+    // Effective expiry for an offer = the SOONEST of its own limit (e.g. the
+    // welcome window) and the global campaign end. null = no time limit.
+    const buildExpiry = (segmentEnd: number | null): { expires_at: number | null; expires_in_sec: number } => {
+      const candidates = [segmentEnd, campaignEnd > 0 ? campaignEnd : null].filter(
+        (x): x is number => x != null && x > 0,
+      );
+      if (candidates.length === 0) return { expires_at: null, expires_in_sec: 0 };
+      const e = Math.min(...candidates);
+      return { expires_at: e, expires_in_sec: Math.max(0, e - now) };
+    };
+
     // ── Segment resolution (priority order) ────────────────────────────────
     // 1) Brand-new account still inside the welcome window (and yet to buy) —
     //    the strongest, urgency-driven offer with a live countdown.
@@ -146,8 +165,7 @@ export async function computeSmartOffer(
             label: `🎁 Welcome Offer — ${pct}% Extra Coins!`,
             description: `Recharge now and get ${pct}% bonus coins — but hurry, this welcome deal is only for your first few hours! ⏳`,
             bonus_pct: pct,
-            expires_at: welcomeEnd,
-            expires_in_sec: Math.max(0, welcomeEnd - now),
+            ...buildExpiry(welcomeEnd),
           };
         }
       }
@@ -160,8 +178,7 @@ export async function computeSmartOffer(
           label: `🚀 First Recharge — ${pct}% Extra Coins!`,
           description: `Make your very first recharge and instantly get ${pct}% bonus coins on top. 💛`,
           bonus_pct: pct,
-          expires_at: null,
-          expires_in_sec: 0,
+          ...buildExpiry(null),
         };
       }
       return NO_OFFER;
@@ -178,8 +195,7 @@ export async function computeSmartOffer(
           label: `💜 We Missed You — ${pct}% Extra Coins!`,
           description: `Welcome back! Here's ${pct}% bonus coins on your next recharge to pick up right where you left off. ✨`,
           bonus_pct: pct,
-          expires_at: null,
-          expires_in_sec: 0,
+          ...buildExpiry(null),
         };
       }
     }
@@ -194,8 +210,7 @@ export async function computeSmartOffer(
           label: `👑 VIP Bonus — ${pct}% Extra Coins!`,
           description: `As a VIP member you get an exclusive ${pct}% bonus on every recharge. Enjoy! 🌟`,
           bonus_pct: pct,
-          expires_at: null,
-          expires_in_sec: 0,
+          ...buildExpiry(null),
         };
       }
     }
@@ -209,8 +224,7 @@ export async function computeSmartOffer(
         label: `⭐ Loyalty Bonus — ${pct}% Extra Coins!`,
         description: `Thanks for being with us! Enjoy ${pct}% bonus coins on this recharge. 💛`,
         bonus_pct: pct,
-        expires_at: null,
-        expires_in_sec: 0,
+        ...buildExpiry(null),
       };
     }
 

@@ -628,7 +628,9 @@ export default function CheckoutScreen() {
     SocketEvents.DATA_CHANGED,
     (data: any) => {
       const r: string = data?.resource ?? "";
-      if (r === "coin_plans" || r === "banners" || r === "payment_gateways") {
+      // `smart_discount` fires when the admin changes any discount setting —
+      // refetch so the offer %, validity and countdown update live on screen.
+      if (r === "coin_plans" || r === "banners" || r === "payment_gateways" || r === "smart_discount") {
         loadCheckoutData();
       }
     },
@@ -770,8 +772,18 @@ export default function CheckoutScreen() {
           </LinearGradient>
         )}
 
-        {/* Choose Package */}
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>{t.wallet.choosePackage}</Text>
+        {/* Choose Package — with a live offer/countdown strip on the right */}
+        <View style={styles.packageHeaderRow}>
+          <Text style={[styles.sectionTitle, { color: colors.text, marginBottom: 0 }]}>{t.wallet.choosePackage}</Text>
+          {smartOffer?.enabled && smartOffer.bonus_pct > 0 && (
+            <View style={styles.pkgOfferChip}>
+              <Text style={styles.pkgOfferChipText}>
+                +{smartOffer.bonus_pct}% on all
+                {offerSecondsLeft != null && offerSecondsLeft > 0 ? ` · ${formatCountdown(offerSecondsLeft)}` : ""}
+              </Text>
+            </View>
+          )}
+        </View>
         {plansLoading ? (
           <View style={styles.plansLoading}>
             <ActivityIndicator color="#A00EE7" />
@@ -781,6 +793,13 @@ export default function CheckoutScreen() {
             {plans.map((plan) => {
               const selected = selectedPlan?.id === plan.id;
               const bonus = plan.bonus_coins ?? 0;
+              // Live smart-offer bonus coins for THIS package (base = coins +
+              // plan bonus; matches the server grant formula). Recomputes on
+              // every render, so an admin change reflected via refetch shows
+              // instantly on each card.
+              const planOfferBonus = smartOffer?.enabled && smartOffer.bonus_pct > 0
+                ? Math.round(((plan.coins + bonus) * smartOffer.bonus_pct) / 100)
+                : 0;
               return (
                 <TouchableOpacity
                   key={plan.id}
@@ -798,11 +817,26 @@ export default function CheckoutScreen() {
                       <Text style={styles.bonusTagText}>+{bonus}</Text>
                     </View>
                   ) : null}
+                  {/* Smart-discount offer badge — the exact bonus THIS package
+                      earns right now. Live: updates instantly if the admin
+                      changes the offer (data_changed → refetch). */}
+                  {planOfferBonus > 0 ? (
+                    <View style={styles.offerCardBadge}>
+                      <Text style={styles.offerCardBadgeText}>+{smartOffer!.bonus_pct}%</Text>
+                    </View>
+                  ) : null}
                   <Image source={require("@/assets/icons/ic_coin.png")} style={styles.planCoin} />
                   <Text style={[styles.planCoins, { color: selected ? "#fff" : colors.text }]}>
                     {plan.coins.toLocaleString()}
                   </Text>
                   <Text style={[styles.planLabel, { color: selected ? "rgba(255,255,255,0.8)" : colors.mutedForeground }]}>{t.wallet.coins}</Text>
+                  {/* "+N extra" line — shows the actual bonus coins this package
+                      gets from the live offer, so the deal is concrete. */}
+                  {planOfferBonus > 0 ? (
+                    <Text style={[styles.planExtraCoins, { color: selected ? "#FFE38A" : "#A00EE7" }]}>
+                      +{planOfferBonus.toLocaleString()} extra
+                    </Text>
+                  ) : null}
                   <Text style={[styles.planPrice, { color: selected ? "#fff" : colors.accent }]}>
                     {plan.price_local != null
                       ? formatLocalAmount(plan.price_local, plan.currency)
@@ -1022,10 +1056,18 @@ const styles = StyleSheet.create({
   popularTagText: { fontSize: 9, fontFamily: "Poppins_600SemiBold" },
   bonusTag: { position: "absolute", top: 6, right: 6, paddingHorizontal: 5, paddingVertical: 1, borderRadius: 8 },
   bonusTagText: { fontSize: 8, color: "#fff", fontFamily: "Poppins_600SemiBold" },
+  // Smart-offer "+X%" badge on the top-left of each package card.
+  offerCardBadge: { position: "absolute", top: 6, left: 6, backgroundColor: "#A00EE7", paddingHorizontal: 5, paddingVertical: 1, borderRadius: 8 },
+  offerCardBadgeText: { fontSize: 8, color: "#fff", fontFamily: "Poppins_700Bold" },
+  planExtraCoins: { fontSize: 9.5, fontFamily: "Poppins_600SemiBold", marginTop: 1 },
   planCoin: { width: 28, height: 28, resizeMode: "contain" },
   planCoins: { fontSize: 15, fontFamily: "Poppins_700Bold" },
   planLabel: { fontSize: 10, fontFamily: "Poppins_400Regular" },
   planPrice: { fontSize: 13, fontFamily: "Poppins_600SemiBold", marginTop: 2 },
+  // "Choose Package" header row + live offer/countdown chip.
+  packageHeaderRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8, marginBottom: 12, marginTop: 4 },
+  pkgOfferChip: { backgroundColor: "#F3E8FF", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, borderWidth: 1, borderColor: "#E9D5FF" },
+  pkgOfferChipText: { fontSize: 10.5, color: "#7C3AED", fontFamily: "Poppins_700Bold" },
   methodRow: { flexDirection: "row", marginBottom: 8 },
   methodCard: { flex: 1, borderRadius: 14, borderWidth: 2, padding: 14, alignItems: "center", gap: 4 },
   methodEmoji: { fontSize: 24 },
