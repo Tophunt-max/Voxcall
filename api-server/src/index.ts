@@ -217,9 +217,14 @@ app.route('/api', publicRouter);
 // ─── WebSocket Auth Helper ─────────────────────────────────────────────────
 async function verifyWsToken(token: string | null, secret: string): Promise<string | null> {
   if (!token) return null;
+  if (typeof secret !== 'string' || secret.length < 32) {
+    console.warn('[verifyWsToken] JWT_SECRET missing or too short — rejecting WS auth');
+    return null;
+  }
   try {
     const key = new TextEncoder().encode(secret);
-    const { payload } = await jwtVerify(token, key);
+    // Pin HS256 to match how we sign (see lib/jwt.ts) and block alg confusion.
+    const { payload } = await jwtVerify(token, key, { algorithms: ['HS256'] });
     return (payload as any).sub as string;
   } catch (e: any) {
     // Expected: expired/invalid tokens are routine (client reconnects with stale token).
