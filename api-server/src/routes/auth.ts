@@ -340,7 +340,7 @@ auth.post('/verify-otp', strictRateLimit, async (c) => {
       // reward coins land instantly + gets a notification.
       if (referrerReward > 0) {
         c.executionCtx?.waitUntil?.(pushCoinUpdate(c.env, pendingReferral.referrer_id, referrerReward));
-        c.executionCtx?.waitUntil?.(notifyUser(c.env, pendingReferral.referrer_id, 'Referral reward 🎉', `You earned ${referrerReward} coins — a friend joined using your code!`, 'referral'));
+        c.executionCtx?.waitUntil?.(notifyUser(c.env, pendingReferral.referrer_id, '🎉 Referral Reward Earned!', `Your friend just joined VoxLink using your code — and you scored ${referrerReward} coins! Invite more friends, earn more coins. 🤝`, 'referral'));
       }
       return c.json({ success: true, bonus_coins: welcomeBonus + newUserReward });
     }

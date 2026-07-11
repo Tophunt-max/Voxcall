@@ -704,8 +704,8 @@ async function maybeSendStreakReminders(env: Env): Promise<void> {
     const ids = (cand.results ?? []).map((r) => r.id);
     if (ids.length === 0) return;
 
-    const title = '🔥 Keep your streak alive!';
-    const body = "Claim today's reward before midnight — don't break your streak!";
+    const title = '🔥 Don\'t Break Your Streak!';
+    const body = "Your daily reward is waiting! 🎁 Claim it before midnight to keep that fire burning. You've got this! 💪";
 
     // 1. In-app notifications, D1 batches of 90 (batch limit is 100).
     for (let i = 0; i < ids.length; i += 90) {
@@ -779,8 +779,8 @@ async function maybeSendVipReminders(env: Env): Promise<void> {
       // FCM (previously FCM-only, so it never appeared in the notifications list).
       await notifyUser(
         env, u.id,
-        `${u.plan_name ?? 'VIP'} expiring soon ⏳`,
-        `Your VIP ends in ${label}. Renew now to keep your perks.`,
+        `👑 Your ${u.plan_name ?? 'VIP'} Ends in ${label}!`,
+        `Don't lose your VIP perks! ⏳ Renew now to keep enjoying exclusive benefits, bonus coins, and priority access. 🌟`,
         'vip_expiring',
       ).catch(() => {});
       await env.DB.prepare('UPDATE users SET vip_reminder_at = ? WHERE id = ?').bind(now, u.id).run().catch(() => {});
@@ -851,8 +851,8 @@ async function maybeSendNearLevelNudges(env: Env): Promise<void> {
     let pushed = 0;
     const cap = targets.slice(0, 1000); // safety cap on per-host pushes
     for (const t of cap) {
-      const title = '🔥 You\u2019re almost there!';
-      const body = `You\u2019re ${t.pct}% to ${t.nextName} — go online and level up!`;
+      const title = '🚀 You\u2019re SO Close to Levelling Up!';
+      const body = `Just ${t.pct}% away from ${t.nextName}! 🌟 Go online now and unlock your next level + bigger rewards. 🏆`;
       await env.DB
         .prepare('INSERT INTO notifications (id, user_id, type, title, body, data) VALUES (?,?,?,?,?,?)')
         .bind(crypto.randomUUID(), t.userId, 'near_level', title, body, JSON.stringify({ kind: 'near_level', pct: t.pct }))
@@ -885,9 +885,9 @@ async function maybeRunOnboardingDrip(env: Env): Promise<void> {
     await env.DB.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('last_onboarding_drip_run', ?, unixepoch())").bind(String(now)).run();
 
     const stages = [
-      { type: 'onboarding_d0', minAge: 2 * 3600, maxAge: 6 * 3600, title: 'Welcome to VoxCall 🎉', body: 'Aapke free minutes ready hain — abhi ek host se baat karein!' },
-      { type: 'onboarding_d1', minAge: 24 * 3600, maxAge: 30 * 3600, title: 'Pehli call abhi baaki hai 📞', body: 'Hosts aapka intezaar kar rahe hain — abhi try karein.' },
-      { type: 'onboarding_d3', minAge: 72 * 3600, maxAge: 80 * 3600, title: 'Aaj ka reward le lijiye 🎁', body: 'Wapas aaiye aur apni pehli call shuru karein.' },
+      { type: 'onboarding_d0', minAge: 2 * 3600, maxAge: 6 * 3600, title: '🎉 Welcome to VoxCall!', body: 'Aapke FREE minutes ready hain! 🎁 Abhi kisi host se baat karein aur apna pehla connection banayein. 💛' },
+      { type: 'onboarding_d1', minAge: 24 * 3600, maxAge: 30 * 3600, title: '📞 Aapki pehli call wait kar rahi hai!', body: 'Hundreds of friendly hosts online hain aur aapse baat karne ke liye ready hain. Abhi try karein! ✨' },
+      { type: 'onboarding_d3', minAge: 72 * 3600, maxAge: 80 * 3600, title: '🎁 Ek special reward aapka intezaar kar raha hai!', body: 'Wapas aaiye aur apni pehli call shuru karein — ek naya dost sirf ek tap door hai! 🌟' },
     ];
     let sent = 0;
     for (const s of stages) {
@@ -938,8 +938,8 @@ async function maybeNudgeAbandonedRecharge(env: Env): Promise<void> {
     for (const r of rows.results ?? []) {
       const coins = Number(r.coins) || 0;
       if (await notifyEngagement(
-        env, r.user_id, 'Aapka recharge adhoora reh gaya 🛒',
-        `${coins > 0 ? `${coins} coins` : 'Aapke coins'} abhi bhi wait kar rahe hain — recharge poora karein.`,
+        env, r.user_id, '🛒 Aapka recharge adhoora hai!',
+        `${coins > 0 ? `${coins} coins` : 'Aapke coins'} bilkul ready hain! 💛 Bas ek tap aur — recharge poora karke apni calls jaari rakhein. ✨`,
         'abandoned_recharge', { data: { type: 'abandoned_recharge' } },
       )) sent++;
     }
@@ -980,8 +980,8 @@ async function maybeSendWeeklyRecap(env: Env): Promise<void> {
     for (const r of rows.results ?? []) {
       const mins = Math.max(1, Math.round((Number(r.secs) || 0) / 60));
       if (await notifyEngagement(
-        env, r.user_id, 'Aapka weekly recap 📊',
-        `Is hafte aapne ${mins} min baat ki (${r.calls} call${Number(r.calls) === 1 ? '' : 's'}). Is hafte kisse baat karenge?`,
+        env, r.user_id, '📊 Aapka Weekly Recap!',
+        `Kya hafta tha! 🎉 Aapne ${mins} min baat ki across ${r.calls} call${Number(r.calls) === 1 ? '' : 's'}. Is hafte kaun sa naya dost banayenge? 💛`,
         'weekly_recap', { data: { type: 'weekly_recap' } },
       )) sent++;
     }
@@ -1020,7 +1020,7 @@ async function maybeRemindFreeSpin(env: Env): Promise<void> {
     ).bind(now - 14 * 86400, startOfIstDay, now - 20 * 3600).all<{ id: string }>();
     let sent = 0;
     for (const r of rows.results ?? []) {
-      if (await notifyEngagement(env, r.id, 'Aapka free spin ready hai 🎰', 'Aaj ka Lucky Spin abhi baaki hai — spin karke coins jeetein!', 'free_spin', { data: { type: 'free_spin' } })) sent++;
+      if (await notifyEngagement(env, r.id, '🎰 Aapka FREE Spin Ready Hai!', 'Aaj ka Lucky Spin abhi baaki hai! 🍀 Spin karein aur FREE coins jeetein — kaun jaanta hai jackpot aapka ho! 🎉', 'free_spin', { data: { type: 'free_spin' } })) sent++;
     }
     if (sent) console.log(`[Cron] Free-spin reminder: ${sent} sent`);
   } catch (e) {
@@ -1052,7 +1052,7 @@ async function maybeNudgeProfileCompletion(env: Env): Promise<void> {
     ).bind(now - 24 * 3600, now - 14 * 86400).all<{ id: string }>();
     let sent = 0;
     for (const r of rows.results ?? []) {
-      if (await notifyEngagement(env, r.id, 'Apni profile complete karein 📸', 'Ek photo add karke behtar hosts se connect karein aur zyada replies paayein.', 'profile_completion', { data: { type: 'profile_completion' } })) sent++;
+      if (await notifyEngagement(env, r.id, '📸 Apni Profile Complete Karein!', 'Ek pyaari si photo add karein aur dekhein magic! ✨ Behtar hosts se connect karein aur 3x zyada replies paayein. 💛', 'profile_completion', { data: { type: 'profile_completion' } })) sent++;
     }
     if (sent) console.log(`[Cron] Profile-completion nudge: ${sent} sent`);
   } catch (e) {
@@ -1086,7 +1086,7 @@ async function maybeNudgeOnlineHosts(env: Env): Promise<void> {
     ).bind(now - 2 * 86400, now - 14 * 86400, now - 3 * 86400).all<{ id: string }>();
     let sent = 0;
     for (const r of rows.results ?? []) {
-      if (await notifyEngagement(env, r.id, `✨ ${online} hosts online abhi`, 'Naye aur trending hosts abhi available hain — kisi se baat karein!', 'online_hosts', { data: { type: 'online_hosts' } })) sent++;
+      if (await notifyEngagement(env, r.id, `✨ ${online} Hosts Online Right Now!`, 'Naye aur trending hosts abhi live hain aur aapse baat karne ke liye ready! 💛 Kisi se connect karein aur maze karein. 🎉', 'online_hosts', { data: { type: 'online_hosts' } })) sent++;
     }
     if (sent) console.log(`[Cron] Online-hosts push: ${sent} sent`);
   } catch (e) {
@@ -1131,7 +1131,7 @@ async function maybeAnnounceHappyHour(env: Env): Promise<void> {
     ).bind(now - 30 * 86400, now - 12 * 3600).all<{ id: string }>();
     let sent = 0;
     for (const r of rows.results ?? []) {
-      if (await notifyEngagement(env, r.id, 'Happy Hour is live ⚡', `${pct}% extra coins on every recharge right now — grab it before it ends!`, 'happy_hour', { data: { type: 'happy_hour' } })) sent++;
+      if (await notifyEngagement(env, r.id, '⚡ Happy Hour is LIVE!', `🔥 Get ${pct}% EXTRA coins on every recharge right now! This deal won't last long — grab your bonus before the clock runs out! ⏳`, 'happy_hour', { data: { type: 'happy_hour' } })) sent++;
     }
     if (sent) console.log(`[Cron] Happy Hour announce: ${sent} sent`);
   } catch (e) {
