@@ -967,6 +967,75 @@ async function maybeSendWeeklyRecap(env: Env): Promise<void> {
   }
 }
 
+// ─── Engagement: Free Lucky Spin reminder ───────────────────────────────────
+// Daily-return driver — nudge recently-active users who haven't used today's
+// free spin yet (only while the Lucky Spin is enabled with free spins).
+async function maybeRemindFreeSpin(env: Env): Promise<void> {
+  try {
+    if (!(await engagementFeatureEnabled(env, 'free_spin_reminder_enabled', true))) return;
+    if (await isQuietHoursIST(env)) return;
+    const now = Math.floor(Date.now() / 1000);
+    const lastRow = await env.DB.prepare("SELECT value FROM app_settings WHERE key = 'last_free_spin_reminder_run'").first<{ value: string }>();
+    const last = lastRow?.value ? parseInt(lastRow.value, 10) || 0 : 0;
+    if (now - last < 3600) return;
+    const cfg = await env.DB.prepare("SELECT enabled, daily_free_spins FROM reward_spin_config WHERE id = 'default'").first<{ enabled: number; daily_free_spins: number }>().catch(() => null);
+    if (!cfg || !cfg.enabled || (Number(cfg.daily_free_spins) || 0) <= 0) return;
+    await env.DB.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('last_free_spin_reminder_run', ?, unixepoch())").bind(String(now)).run();
+
+    const istOffset = (5 * 60 + 30) * 60;
+    const startOfIstDay = Math.floor((now + istOffset) / 86400) * 86400 - istOffset;
+    const rows = await env.DB.prepare(
+      `SELECT u.id FROM users u
+         LEFT JOIN user_spin_state s ON s.user_id = u.id
+        WHERE u.role = 'user' AND COALESCE(u.status, 'active') = 'active'
+          AND u.fcm_token IS NOT NULL AND u.fcm_token != ''
+          AND COALESCE(u.updated_at, 0) >= ?
+          AND (s.last_spun_at IS NULL OR s.last_spun_at < ?)
+          AND NOT EXISTS (SELECT 1 FROM notifications n WHERE n.user_id = u.id AND n.type = 'free_spin' AND n.created_at >= ?)
+        LIMIT 300`,
+    ).bind(now - 14 * 86400, startOfIstDay, now - 20 * 3600).all<{ id: string }>();
+    let sent = 0;
+    for (const r of rows.results ?? []) {
+      if (await notifyEngagement(env, r.id, 'Aapka free spin ready hai 🎰', 'Aaj ka Lucky Spin abhi baaki hai — spin karke coins jeetein!', 'free_spin', { data: { type: 'free_spin' } })) sent++;
+    }
+    if (sent) console.log(`[Cron] Free-spin reminder: ${sent} sent`);
+  } catch (e) {
+    console.error('[Cron] free-spin reminder error:', e);
+  }
+}
+
+// ─── Engagement: Profile-completion nudge ────────────────────────────────────
+// Users who signed up 1–14d ago but never added a profile photo. A completed
+// profile = more investment + better host matching.
+async function maybeNudgeProfileCompletion(env: Env): Promise<void> {
+  try {
+    if (!(await engagementFeatureEnabled(env, 'profile_completion_enabled', true))) return;
+    if (await isQuietHoursIST(env)) return;
+    const now = Math.floor(Date.now() / 1000);
+    const lastRow = await env.DB.prepare("SELECT value FROM app_settings WHERE key = 'last_profile_nudge_run'").first<{ value: string }>();
+    const last = lastRow?.value ? parseInt(lastRow.value, 10) || 0 : 0;
+    if (now - last < 6 * 3600) return;
+    await env.DB.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('last_profile_nudge_run', ?, unixepoch())").bind(String(now)).run();
+
+    const rows = await env.DB.prepare(
+      `SELECT id FROM users u
+        WHERE u.role = 'user' AND COALESCE(u.status, 'active') = 'active'
+          AND u.fcm_token IS NOT NULL AND u.fcm_token != ''
+          AND u.created_at <= ? AND u.created_at > ?
+          AND (u.avatar_url IS NULL OR u.avatar_url = '')
+          AND NOT EXISTS (SELECT 1 FROM notifications n WHERE n.user_id = u.id AND n.type = 'profile_completion')
+        LIMIT 300`,
+    ).bind(now - 24 * 3600, now - 14 * 86400).all<{ id: string }>();
+    let sent = 0;
+    for (const r of rows.results ?? []) {
+      if (await notifyEngagement(env, r.id, 'Apni profile complete karein 📸', 'Ek photo add karke behtar hosts se connect karein aur zyada replies paayein.', 'profile_completion', { data: { type: 'profile_completion' } })) sent++;
+    }
+    if (sent) console.log(`[Cron] Profile-completion nudge: ${sent} sent`);
+  } catch (e) {
+    console.error('[Cron] profile completion error:', e);
+  }
+}
+
 export default {
   fetch: app.fetch,
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
@@ -983,5 +1052,7 @@ export default {
     ctx.waitUntil(maybeRunOnboardingDrip(env));
     ctx.waitUntil(maybeNudgeAbandonedRecharge(env));
     ctx.waitUntil(maybeSendWeeklyRecap(env));
+    ctx.waitUntil(maybeRemindFreeSpin(env));
+    ctx.waitUntil(maybeNudgeProfileCompletion(env));
   },
 };

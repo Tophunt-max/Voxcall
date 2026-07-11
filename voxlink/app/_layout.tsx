@@ -73,6 +73,9 @@ const USER_NOTIF_ROUTE: Record<string, string> = {
   vip_expiring: "/user/vip",
   host_application: "/user/notifications",
   system: "/user/notifications",
+  free_spin: "/user/rewards-spin",
+  profile_completion: "/user/profile/edit",
+  reward: "/user/rewards",
 };
 
 function FCMNotificationTapBridge() {

@@ -807,6 +807,7 @@ admin.patch('/settings', async (c) => {
     'favorite_online_enabled', 'onboarding_drip_enabled',
     'abandoned_recharge_enabled', 'low_balance_nudge_enabled',
     'weekly_recap_enabled', 'vip_reminder_enabled',
+    'free_spin_reminder_enabled', 'profile_completion_enabled',
   ];
   const stmts = Object.entries(processedBody)
     .filter(([k]) => ALLOWED_SETTINGS.includes(k))
@@ -3384,6 +3385,43 @@ admin.get('/coin-reconciliation', async (c) => {
 // ============================================================================
 
 // ─── GET /admin/emergency-flags ────────────────────────────────────────────
+// ─── Notification analytics — sent vs opened (CTR) per type ──────────────────
+// "Sent" = rows created in the notifications table. "Opened" = notif_open
+// engagement events (logged when the user taps a push), keyed by surface=type.
+admin.get('/notification-analytics', async (c) => {
+  const daysRaw = parseInt(c.req.query('days') ?? '7', 10);
+  const days = Number.isFinite(daysRaw) && daysRaw > 0 && daysRaw <= 90 ? daysRaw : 7;
+  const since = Math.floor(Date.now() / 1000) - days * 86400;
+  const d = db(c);
+
+  const sentRows = await d.prepare(
+    'SELECT type, COUNT(*) AS sent FROM notifications WHERE created_at >= ? GROUP BY type',
+  ).bind(since).all<{ type: string; sent: number }>();
+
+  const openRows = await d.prepare(
+    "SELECT surface AS type, COUNT(*) AS opened FROM engagement_events WHERE event_type = 'notif_open' AND created_at >= ? AND surface IS NOT NULL GROUP BY surface",
+  ).bind(since).all<{ type: string; opened: number }>().catch(() => ({ results: [] as any[] }));
+
+  const openedByType = new Map<string, number>();
+  for (const r of openRows.results ?? []) openedByType.set(r.type, Number(r.opened) || 0);
+
+  const rows = (sentRows.results ?? []).map((r) => {
+    const sent = Number(r.sent) || 0;
+    const opened = openedByType.get(r.type) ?? 0;
+    return { type: r.type, sent, opened, ctr: sent > 0 ? Math.round((opened / sent) * 1000) / 10 : 0 };
+  }).sort((a, b) => b.sent - a.sent);
+
+  const totalSent = rows.reduce((s, r) => s + r.sent, 0);
+  const totalOpened = rows.reduce((s, r) => s + r.opened, 0);
+  return c.json({
+    days,
+    total_sent: totalSent,
+    total_opened: totalOpened,
+    overall_ctr: totalSent > 0 ? Math.round((totalOpened / totalSent) * 1000) / 10 : 0,
+    by_type: rows,
+  });
+});
+
 admin.get('/emergency-flags', async (c) => {
   const flags = await readAllEmergencyFlags(c.env.DB);
   return c.json(flags);

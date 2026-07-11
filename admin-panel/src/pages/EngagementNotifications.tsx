@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
-import { Save, Bell, Moon, Gauge, Zap, RotateCcw } from 'lucide-react';
+import { Save, Bell, Moon, Zap, RotateCcw, BarChart3 } from 'lucide-react';
 
 // Every key here is persisted by the api-server admin /settings allowlist AND
 // consumed by the engagement engine (lib/engagementNotify.ts + the scheduled
@@ -19,6 +19,8 @@ const DEFAULTS = {
   low_balance_nudge_enabled: '1',
   weekly_recap_enabled: '1',
   vip_reminder_enabled: '1',
+  free_spin_reminder_enabled: '1',
+  profile_completion_enabled: '1',
   reengagement_enabled: '1',
   daily_streak_reminder_enabled: '1',
   near_level_nudge_enabled: '1',
@@ -79,6 +81,20 @@ function NumInput({ value, onChange, min, max, suffix }: { value: string; onChan
   );
 }
 
+function Stat({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="bg-secondary/60 rounded-xl px-3 py-2.5">
+      <p className="text-lg font-bold">{value}</p>
+      <p className="text-[11px] text-muted-foreground">{label}</p>
+    </div>
+  );
+}
+
+interface NotifAnalytics {
+  total_sent: number; total_opened: number; overall_ctr: number;
+  by_type: { type: string; sent: number; opened: number; ctr: number }[];
+}
+
 const TRIGGERS: { key: keyof Config; label: string; desc: string }[] = [
   { key: 'favorite_online_enabled', label: 'Favorite host online', desc: 'Real-time push when a favorited host comes online (highest converting).' },
   { key: 'onboarding_drip_enabled', label: 'Onboarding drip', desc: 'Day 0 / 1 / 3 nudges for users who haven\u2019t made their first call.' },
@@ -89,6 +105,8 @@ const TRIGGERS: { key: keyof Config; label: string; desc: string }[] = [
   { key: 'reengagement_enabled', label: 'Re-engagement / win-back', desc: 'Bring back idle (3d) and lapsed (7d) users.' },
   { key: 'daily_streak_reminder_enabled', label: 'Daily streak reminder', desc: 'Remind users to check in and keep their streak alive.' },
   { key: 'near_level_nudge_enabled', label: 'Near-level nudge (host)', desc: 'Nudge hosts who are close to their next level.' },
+  { key: 'free_spin_reminder_enabled', label: 'Free spin reminder', desc: 'Remind users who haven\u2019t used today\u2019s free Lucky Spin.' },
+  { key: 'profile_completion_enabled', label: 'Profile completion', desc: 'Nudge new users with no profile photo to complete their profile.' },
 ];
 
 export default function EngagementNotifications() {
@@ -96,6 +114,12 @@ export default function EngagementNotifications() {
   const [saving, setSaving] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [analytics, setAnalytics] = useState<NotifAnalytics | null>(null);
+  const [days, setDays] = useState(7);
+
+  useEffect(() => {
+    api.notificationAnalytics(days).then(setAnalytics).catch(() => setAnalytics(null));
+  }, [days]);
 
   useEffect(() => {
     api.settings().then(data => {
@@ -160,6 +184,55 @@ export default function EngagementNotifications() {
         </div>
       ) : (
         <>
+          <Section title="Notification analytics" desc="Delivery + open rate (CTR) per notification type." icon={BarChart3}>
+            <div className="flex items-center gap-2">
+              {[7, 30].map(d => (
+                <button key={d} onClick={() => setDays(d)}
+                  className={`px-3 py-1 rounded-lg text-xs font-semibold ${days === d ? 'bg-primary text-white' : 'bg-secondary text-foreground'}`}>
+                  Last {d}d
+                </button>
+              ))}
+            </div>
+            {analytics ? (
+              <>
+                <div className="grid grid-cols-3 gap-3">
+                  <Stat label="Sent" value={analytics.total_sent.toLocaleString()} />
+                  <Stat label="Opened" value={analytics.total_opened.toLocaleString()} />
+                  <Stat label="Overall CTR" value={`${analytics.overall_ctr}%`} />
+                </div>
+                {analytics.by_type.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">No notifications sent in this window yet.</p>
+                ) : (
+                  <div className="overflow-hidden rounded-xl border border-border">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="bg-secondary text-[11px] text-muted-foreground">
+                          <th className="text-left px-3 py-2 font-semibold">Type</th>
+                          <th className="text-right px-3 py-2 font-semibold">Sent</th>
+                          <th className="text-right px-3 py-2 font-semibold">Opened</th>
+                          <th className="text-right px-3 py-2 font-semibold">CTR</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {analytics.by_type.map(r => (
+                          <tr key={r.type} className="border-t border-border">
+                            <td className="px-3 py-2 font-medium">{r.type}</td>
+                            <td className="px-3 py-2 text-right">{r.sent.toLocaleString()}</td>
+                            <td className="px-3 py-2 text-right">{r.opened.toLocaleString()}</td>
+                            <td className={`px-3 py-2 text-right font-semibold ${r.ctr >= 10 ? 'text-green-600' : ''}`}>{r.ctr}%</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                <p className="text-[11px] text-muted-foreground">Opens are tracked when a user taps a push (user app).</p>
+              </>
+            ) : (
+              <p className="text-xs text-muted-foreground">Loading analytics…</p>
+            )}
+          </Section>
+
           <Section title="Master switch" desc="Turns every engagement notification on or off in one place." icon={Bell}>
             <Field label="Engagement notifications" desc="Master kill switch for all automatic engagement pushes.">
               <Toggle value={masterOn} onChange={() => toggle('engagement_notifications_enabled')} />

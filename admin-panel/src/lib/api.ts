@@ -145,6 +145,11 @@ export const api = {
   analytics: (days?: number) => req<any>('GET', `/admin/analytics${days ? `?days=${days}` : ''}`),
   // Agora-aware P&L + volume-discount / monthly-usage tracking.
   marginAnalytics: (days?: number) => req<any>('GET', `/admin/analytics/margins${days ? `?days=${days}` : ''}`),
+  // Notification analytics — sent / opened / CTR per notification type.
+  notificationAnalytics: (days?: number) => req<{
+    days: number; total_sent: number; total_opened: number; overall_ctr: number;
+    by_type: { type: string; sent: number; opened: number; ctr: number }[];
+  }>('GET', `/admin/notification-analytics${days ? `?days=${days}` : ''}`),
   streakAnalytics: () => req<any>('GET', '/admin/streak-analytics'),
   coinReconciliation: () => req<any>('GET', '/admin/coin-reconciliation'),
   notifications: () => req<any[]>('GET', '/admin/notifications'),
