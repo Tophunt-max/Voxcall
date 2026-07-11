@@ -319,6 +319,18 @@ coin.post('/manual-deposit', async (c) => {
   // The `auto_approve_manual` and `auto_approve_manual_max_amount` settings
   // are intentionally ignored here. They can stay in app_settings (other code
   // may surface them in the admin UI) but they no longer credit coins.
+
+  // NOTIFICATION: Immediately confirm to the user that their payment was
+  // received and is under review — so recharge always produces feedback
+  // (in-app notification + FCM push), not just a silent success response.
+  const totalCoins = plan.coins + (plan.bonus_coins || 0) + promoBonus;
+  c.executionCtx?.waitUntil?.(notifyUser(
+    c.env, sub, 'Payment received 🕐',
+    `Your payment for ${totalCoins} coins is under review. Coins will be added to your wallet once verified (usually within a few minutes).`,
+    'deposit',
+    { data: { status: 'pending', purchase_id: purchaseId } },
+  ));
+
   return c.json({
     success: true,
     purchase_id: purchaseId,
