@@ -6,6 +6,7 @@
 
 import { Platform } from "react-native";
 import { appendToArray, getItem, setItem, StorageKeys } from "@/utils/storage";
+import { secureSet } from "@/utils/storage";
 import { requestFCMPermission, getFCMToken, setupBackgroundMessageHandler } from "./fcm";
 
 export interface InAppNotification {
@@ -67,7 +68,7 @@ export async function configurePushNotifications(): Promise<void> {
 export async function registerForPushNotifications(): Promise<string | null> {
   try {
     const token = await getFCMToken();
-    if (token) await setItem(StorageKeys.PUSH_TOKEN, token);
+    if (token) await secureSet(StorageKeys.PUSH_TOKEN, token);
     return token;
   } catch (err) {
     console.warn("[Notifications] register error:", err);

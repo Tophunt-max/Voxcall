@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
 import { AppState } from "react-native";
 import { setItem, getItem, removeItem, StorageKeys } from "@/utils/storage";
+import { secureSet, secureGet, secureRemove } from "@/utils/storage";
 import { apiRequest, API } from "@/services/api";
 import type { HostStreakCredit } from "@/services/api";
 import { registerForPushNotifications } from "@/services/NotificationService";
@@ -142,7 +143,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const user = await getItem<UserProfile>(StorageKeys.USER);
         if (user) {
           // Attribute production error reports to this user (best-effort).
-          const savedToken = await getItem<string>(StorageKeys.AUTH_TOKEN);
+          const savedToken = await secureGet(StorageKeys.AUTH_TOKEN);
           if (savedToken) setErrorReporterToken(savedToken);
           // Fetch fresh profile (including role) BEFORE clearing isLoading.
           // This prevents the router from redirecting to the wrong screen
@@ -187,7 +188,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const loginWithToken = useCallback(async (token: string, user: UserProfile) => {
     await Promise.all([
-      setItem(StorageKeys.AUTH_TOKEN, token),
+      secureSet(StorageKeys.AUTH_TOKEN, token),
       setItem(StorageKeys.USER, user),
     ]);
     setErrorReporterToken(token);
@@ -210,7 +211,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await apiRequest("PATCH", "/api/user/me", { fcm_token: null });
     } catch {}
     await Promise.all([
-      removeItem(StorageKeys.AUTH_TOKEN),
+      secureRemove(StorageKeys.AUTH_TOKEN),
       removeItem(StorageKeys.USER),
     ]);
     setErrorReporterToken(null);
@@ -229,7 +230,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const unsub = onTokenRefresh(async (token) => {
       try {
         await apiRequest("PATCH", "/api/user/me", { fcm_token: token });
-        await setItem(StorageKeys.PUSH_TOKEN, token);
+        await secureSet(StorageKeys.PUSH_TOKEN, token);
       } catch {
         // best-effort — next app launch re-syncs via syncPushToken()
       }

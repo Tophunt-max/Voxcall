@@ -18,6 +18,7 @@ import matchRouter from './routes/match';
 import hostappRouter from './routes/hostapp';
 import errorsRouter from './routes/errors';
 import paymentRouter from './routes/payment';
+import adminAuthRouter from './routes/adminAuth';
 import engagementRouter from './routes/engagement';
 import rewardsRouter from './routes/rewards';
 import tipRouter from './routes/tip';
@@ -101,13 +102,16 @@ app.use('*', cors({
   origin: (origin, c) => {
     // Mobile apps (React Native) don't send Origin — allow all no-origin requests
     if (!origin) return '*';
-    // SECURITY: warn once if running in production without an explicit allowlist.
-    // The broad dev patterns (*.pages.dev, *.replit.dev) are too permissive for
-    // production — anyone can deploy on those shared platforms and trigger CORS-
-    // credentialed requests against the API. Set CORS_ALLOWED_ORIGINS to a
-    // comma-separated list of your actual frontend domains.
+    // SECURITY (fail-closed): In production, if CORS_ALLOWED_ORIGINS is not set,
+    // REJECT all browser-origin requests instead of falling through to the broad
+    // dev patterns. This prevents a misconfigured deploy from silently accepting
+    // requests from any *.pages.dev / *.replit.dev attacker site. The operator
+    // MUST set the env var to an explicit comma-separated allowlist before going
+    // live. In non-production (local dev / staging), the broad patterns still
+    // apply so development works without extra config.
     if (c.env.ENVIRONMENT === 'production' && !c.env.CORS_ALLOWED_ORIGINS) {
-      console.warn('[CORS] CORS_ALLOWED_ORIGINS is not set in production — using broad dev patterns. Set CORS_ALLOWED_ORIGINS to restrict origins.');
+      console.error('[CORS] BLOCKED: CORS_ALLOWED_ORIGINS is not set in production. All browser-origin requests are rejected. Set CORS_ALLOWED_ORIGINS to your frontend domain(s).');
+      return null;
     }
     return isOriginAllowed(origin, c.env) ? origin : null;
   },
@@ -215,6 +219,7 @@ app.route('/api/host-app', hostappRouter);
 app.route('/api/upload', uploadRouter);
 app.route('/api/errors', errorsRouter);
 app.route('/api/payment', paymentRouter);
+app.route('/api/admin-auth', adminAuthRouter);
 app.route('/api/engagement', engagementRouter);
 app.route('/api/user/rewards', rewardsRouter);
 app.route('/api/tips', tipRouter);
