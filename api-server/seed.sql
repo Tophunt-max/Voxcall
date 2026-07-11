@@ -1,9 +1,25 @@
 -- VoxLink Production Seed Data
 -- Run once after migrations: wrangler d1 execute voxlink-db --remote --file seed.sql
 
--- Admin user (password: Bubun@1997)
+-- ─── Admin user ─────────────────────────────────────────────────────────────
+-- SECURITY: Do NOT hardcode a real admin email or password hash in this file.
+-- This file is committed to source control, so anything here is public to
+-- everyone with repo access. Before running the seed:
+--   1. Set ADMIN_EMAIL below to your real admin email address.
+--   2. Generate a STRONG, random password and its PBKDF2 hash, then paste the
+--      hash in place of REPLACE_WITH_PBKDF2_HASH. Generate the hash with the
+--      same scheme the API uses (api-server/src/lib/hash.ts → hashPassword),
+--      e.g. in a Worker/Node one-off:
+--          import { hashPassword } from './src/lib/hash';
+--          console.log(await hashPassword('<your-strong-password>'));
+--      The output looks like: pbkdf2:100000:<saltHex>:<hashHex>
+--   3. Never commit the real hash back to git. Keep it only in the live D1 DB.
+--
+-- The placeholder hash below is intentionally NOT a valid login — running this
+-- seed unedited creates an admin row that CANNOT be logged into, so there is no
+-- known-credential backdoor. Set a real password via the reset flow afterwards.
 INSERT OR IGNORE INTO users (id, name, email, password_hash, role, coins, is_verified, bio) VALUES
-  ('admin-001', 'Admin', 'ssunilkumarmohanta3@gmail.com', 'MkcBBBS/UCoOEWHtx9EMT6fndhN+mV0ZWwL94V77SnU=', 'admin', 9999, 1, 'Platform administrator');
+  ('admin-001', 'Admin', 'REPLACE_WITH_YOUR_ADMIN_EMAIL', 'REPLACE_WITH_PBKDF2_HASH', 'admin', 9999, 1, 'Platform administrator');
 
 -- Coin plans — production INR ladder, priced NATIVELY in INR (coin_plans.price
 -- is the rupee amount; /api/coins/plans converts to other currencies only for

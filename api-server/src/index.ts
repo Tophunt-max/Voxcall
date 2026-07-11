@@ -108,6 +108,25 @@ app.use('*', cors({
   credentials: true,
   maxAge: 86400,
 }));
+
+// Security response headers — applied to every response (JSON + file serving).
+// Set in the "after" phase so they ride on top of whatever the handler returns,
+// including raw `new Response()` objects (e.g. /api/files) and error responses.
+//   - X-Content-Type-Options: nosniff  → stop MIME-sniffing of API/file bodies
+//   - X-Frame-Options / frame-ancestors → clickjacking defence (API is not a page)
+//   - Referrer-Policy                   → never leak full URLs to third parties
+//   - Strict-Transport-Security         → force HTTPS for 1 year (incl. subdomains)
+//   - Content-Security-Policy           → JSON API renders nothing; lock it down.
+// CSP here only governs documents rendered FROM these responses; it does not
+// block the mobile/web apps from embedding /api/files images loaded elsewhere.
+app.use('*', async (c, next) => {
+  await next();
+  c.header('X-Content-Type-Options', 'nosniff');
+  c.header('X-Frame-Options', 'DENY');
+  c.header('Referrer-Policy', 'strict-origin-when-cross-origin');
+  c.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  c.header('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'; base-uri 'none'");
+});
 // Schema auto-migration: bring the live D1 instance in sync with the code
 // before any /api/* DB query runs. Two layers, both cached per worker isolate
 // so subsequent requests pay only a microtask cost:
@@ -198,9 +217,14 @@ app.route('/api', publicRouter);
 // ─── WebSocket Auth Helper ─────────────────────────────────────────────────
 async function verifyWsToken(token: string | null, secret: string): Promise<string | null> {
   if (!token) return null;
+  if (typeof secret !== 'string' || secret.length < 32) {
+    console.warn('[verifyWsToken] JWT_SECRET missing or too short — rejecting WS auth');
+    return null;
+  }
   try {
     const key = new TextEncoder().encode(secret);
-    const { payload } = await jwtVerify(token, key);
+    // Pin HS256 to match how we sign (see lib/jwt.ts) and block alg confusion.
+    const { payload } = await jwtVerify(token, key, { algorithms: ['HS256'] });
     return (payload as any).sub as string;
   } catch (e: any) {
     // Expected: expired/invalid tokens are routine (client reconnects with stale token).
