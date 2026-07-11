@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth';
 import { getLevelConfig, computeLevelProgress, getHostAudioRateCeiling, getHostVideoRateCeiling, getRankBoost, buildLevelInfo, rankBoostCaseSql, ABSOLUTE_MAX_RATE, DEFAULT_AUDIO_RATE, DEFAULT_VIDEO_RATE, type LevelDef } from '../lib/levels';
 import { creditHostStreakOnActivity, getHostStreakStatus } from '../lib/hostStreak';
+import { notifyFavoritersHostOnline } from '../lib/engagementNotify';
 import { scoreHosts, normalizeWeights, type CandidateHost, type UserAffinity } from '../lib/recommend';
 import type { Env, JWTPayload } from '../types';
 
@@ -509,6 +510,13 @@ hostProtected.patch('/status', zValidator('json', statusSchema), async (c) => {
   // in the background. Workers keep the request alive until waitUntil resolves.
   const presenceMsg = JSON.stringify({ type: 'presence', user_id: sub, host_id: hostRow.id, is_online });
   c.executionCtx.waitUntil(broadcastPresence(c.env, sub, presenceMsg));
+
+  // Engagement #1: when a host comes ONLINE, nudge the users who favorited them
+  // (highest-converting trigger). Gated by quiet hours + per-user 6h cooldown +
+  // daily cap inside the helper. Fire-and-forget so the toggle stays snappy.
+  if (is_online) {
+    c.executionCtx.waitUntil(notifyFavoritersHostOnline(c.env, hostRow.id, sub));
+  }
 
   // Engagement: coming online is the daily "check-in" that advances the host's
   // streak. Credited once per IST day (idempotent). Returned so the app can pop

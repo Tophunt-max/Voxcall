@@ -35,6 +35,8 @@ const ALLOWED_EVENT_TYPES = new Set<string>([
   'banner_click',
   'call_start',
   'call_complete',
+  // Notification CTR: logged when the user opens/taps a push (surface = type).
+  'notif_open',
 ]);
 
 /** Hard cap on events accepted per request (extra are ignored). */

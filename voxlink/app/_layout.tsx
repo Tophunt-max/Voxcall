@@ -12,6 +12,7 @@ import React, { useEffect } from "react";
 import { Platform } from "react-native";
 import { configurePushNotifications } from "@/services/NotificationService";
 import { onForegroundMessage, setupBackgroundMessageHandler } from "@/services/fcm";
+import { logEngagement } from "@/services/engagement";
 import { setupGlobalErrorHandler } from "@/services/ErrorReporter";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -83,6 +84,12 @@ function FCMNotificationTapBridge() {
 
     function handleNotificationData(data: Record<string, any>) {
       if (!data) return;
+      const ntype = String(data.type ?? "");
+      // CTR metric — a tapped push is an "open" (skip live call pushes which
+      // aren't really "notifications" the user browses).
+      if (ntype && ntype !== "incoming_call") {
+        try { logEngagement({ type: "notif_open", surface: ntype }); } catch {}
+      }
       if (data.type === "incoming_call") {
         // receiveCall in user's CallContext already calls router.push("/user/call/incoming")
         // internally — do NOT push separately or the screen gets pushed twice onto the stack.
@@ -96,10 +103,13 @@ function FCMNotificationTapBridge() {
         }
       } else if (data.type === "chat_message" && data.room_id) {
         router.push({ pathname: "/user/chat/[id]", params: { id: String(data.room_id) } });
+      } else if (ntype === "favorite_online" && data.host_id) {
+        // Favorite host is online → open their profile so the user can call.
+        router.push({ pathname: "/user/hosts/[id]", params: { id: String(data.host_id) } });
       } else {
         // All other notification types → deep-link to the relevant screen
         // (falls back to the notifications list for unknown types).
-        const route = USER_NOTIF_ROUTE[String(data.type ?? "")] ?? "/user/notifications";
+        const route = USER_NOTIF_ROUTE[ntype] ?? "/user/notifications";
         router.push(route as any);
       }
     }

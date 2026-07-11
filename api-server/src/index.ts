@@ -34,6 +34,7 @@ import { runReengagement } from './lib/reengagement';
 import { istContext } from './lib/streak';
 import { getFCMTokens, sendFCMPush } from './lib/fcm';
 import { notifyUser } from './lib/realtime';
+import { notifyEngagement, isQuietHoursIST } from './lib/engagementNotify';
 import { USD_TO_FOREIGN } from './lib/currency';
 
 // Re-export Durable Objects (required by wrangler)
@@ -533,6 +534,9 @@ async function maybeRunReengagement(env: Env): Promise<void> {
     const last = lastRow?.value ? parseInt(lastRow.value, 10) || 0 : 0;
     if (now - last < intervalHours * 3600) return; // already ran within the window
 
+    // Engagement #5: never send re-engagement pushes during quiet hours (IST).
+    if (await isQuietHoursIST(env)) return;
+
     // Claim the slot first so a second cron tick in the same window is a no-op.
     await env.DB.prepare(
       "INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('last_reengagement_run', ?, unixepoch())"
@@ -726,6 +730,7 @@ async function maybeSendVipReminders(env: Env): Promise<void> {
     const row = await env.DB.prepare("SELECT value FROM app_settings WHERE key = 'last_vip_reminder_run'").first<{ value: string }>();
     const last = row?.value ? parseInt(row.value, 10) || 0 : 0;
     if (now - last < 3600) return; // at most once/hour
+    if (await isQuietHoursIST(env)) return; // Engagement #5: no VIP pings at night
     await env.DB.prepare(
       "INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('last_vip_reminder_run', ?, unixepoch())"
     ).bind(String(now)).run();
@@ -841,6 +846,123 @@ async function maybeSendNearLevelNudges(env: Env): Promise<void> {
   }
 }
 
+// ─── Engagement #2: New-user onboarding drip ─────────────────────────────────
+// Day 0 / 1 / 3 nudges for users who signed up but haven't made their FIRST
+// call yet. Distinct type per stage = natural per-stage dedup. Hourly gate.
+async function maybeRunOnboardingDrip(env: Env): Promise<void> {
+  try {
+    if (await isQuietHoursIST(env)) return;
+    const now = Math.floor(Date.now() / 1000);
+    const lastRow = await env.DB.prepare("SELECT value FROM app_settings WHERE key = 'last_onboarding_drip_run'").first<{ value: string }>();
+    const last = lastRow?.value ? parseInt(lastRow.value, 10) || 0 : 0;
+    if (now - last < 3600) return;
+    await env.DB.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('last_onboarding_drip_run', ?, unixepoch())").bind(String(now)).run();
+
+    const stages = [
+      { type: 'onboarding_d0', minAge: 2 * 3600, maxAge: 6 * 3600, title: 'Welcome to VoxCall 🎉', body: 'Aapke free minutes ready hain — abhi ek host se baat karein!' },
+      { type: 'onboarding_d1', minAge: 24 * 3600, maxAge: 30 * 3600, title: 'Pehli call abhi baaki hai 📞', body: 'Hosts aapka intezaar kar rahe hain — abhi try karein.' },
+      { type: 'onboarding_d3', minAge: 72 * 3600, maxAge: 80 * 3600, title: 'Aaj ka reward le lijiye 🎁', body: 'Wapas aaiye aur apni pehli call shuru karein.' },
+    ];
+    let sent = 0;
+    for (const s of stages) {
+      const rows = await env.DB.prepare(
+        `SELECT id FROM users u
+          WHERE u.role = 'user' AND COALESCE(u.status, 'active') = 'active'
+            AND u.fcm_token IS NOT NULL AND u.fcm_token != ''
+            AND u.created_at <= ? AND u.created_at > ?
+            AND NOT EXISTS (SELECT 1 FROM call_sessions cs WHERE cs.caller_id = u.id)
+            AND NOT EXISTS (SELECT 1 FROM notifications n WHERE n.user_id = u.id AND n.type = ?)
+          LIMIT 300`,
+      ).bind(now - s.minAge, now - s.maxAge, s.type).all<{ id: string }>();
+      for (const r of rows.results ?? []) {
+        if (await notifyEngagement(env, r.id, s.title, s.body, s.type, { data: { type: s.type } })) sent++;
+      }
+    }
+    if (sent) console.log(`[Cron] Onboarding drip: ${sent} sent`);
+  } catch (e) {
+    console.error('[Cron] onboarding drip error:', e);
+  }
+}
+
+// ─── Engagement #3: Abandoned recharge nudge ─────────────────────────────────
+// Users with a coin_purchase stuck at 'pending' for 1–24h who never finished.
+// Per-user 24h cooldown via the notifications dedup. Hourly gate.
+async function maybeNudgeAbandonedRecharge(env: Env): Promise<void> {
+  try {
+    if (await isQuietHoursIST(env)) return;
+    const now = Math.floor(Date.now() / 1000);
+    const lastRow = await env.DB.prepare("SELECT value FROM app_settings WHERE key = 'last_abandoned_recharge_run'").first<{ value: string }>();
+    const last = lastRow?.value ? parseInt(lastRow.value, 10) || 0 : 0;
+    if (now - last < 3600) return;
+    await env.DB.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('last_abandoned_recharge_run', ?, unixepoch())").bind(String(now)).run();
+
+    const rows = await env.DB.prepare(
+      `SELECT cp.user_id AS user_id, MAX(cp.coins + COALESCE(cp.bonus_coins, 0)) AS coins
+         FROM coin_purchases cp
+         JOIN users u ON u.id = cp.user_id
+        WHERE cp.status = 'pending'
+          AND cp.created_at <= ? AND cp.created_at > ?
+          AND u.fcm_token IS NOT NULL AND u.fcm_token != ''
+          AND NOT EXISTS (SELECT 1 FROM notifications n WHERE n.user_id = cp.user_id AND n.type = 'abandoned_recharge' AND n.created_at >= ?)
+        GROUP BY cp.user_id
+        LIMIT 300`,
+    ).bind(now - 3600, now - 24 * 3600, now - 24 * 3600).all<{ user_id: string; coins: number }>();
+    let sent = 0;
+    for (const r of rows.results ?? []) {
+      const coins = Number(r.coins) || 0;
+      if (await notifyEngagement(
+        env, r.user_id, 'Aapka recharge adhoora reh gaya 🛒',
+        `${coins > 0 ? `${coins} coins` : 'Aapke coins'} abhi bhi wait kar rahe hain — recharge poora karein.`,
+        'abandoned_recharge', { data: { type: 'abandoned_recharge' } },
+      )) sent++;
+    }
+    if (sent) console.log(`[Cron] Abandoned recharge: ${sent} sent`);
+  } catch (e) {
+    console.error('[Cron] abandoned recharge error:', e);
+  }
+}
+
+// ─── Engagement #6: Weekly recap ─────────────────────────────────────────────
+// Once a week (midday IST), send active callers a recap of the last 7 days.
+async function maybeSendWeeklyRecap(env: Env): Promise<void> {
+  try {
+    if (await isQuietHoursIST(env)) return;
+    const now = Math.floor(Date.now() / 1000);
+    const istHour = new Date(Date.now() + (5 * 60 + 30) * 60 * 1000).getUTCHours();
+    if (istHour < 11 || istHour >= 13) return; // send around midday IST
+    const lastRow = await env.DB.prepare("SELECT value FROM app_settings WHERE key = 'last_weekly_recap_run'").first<{ value: string }>();
+    const last = lastRow?.value ? parseInt(lastRow.value, 10) || 0 : 0;
+    if (now - last < 6 * 86400) return; // ~weekly
+    await env.DB.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('last_weekly_recap_run', ?, unixepoch())").bind(String(now)).run();
+
+    const weekAgo = now - 7 * 86400;
+    const rows = await env.DB.prepare(
+      `SELECT cs.caller_id AS user_id,
+              SUM(COALESCE(cs.duration_seconds, 0)) AS secs,
+              COUNT(*) AS calls
+         FROM call_sessions cs
+         JOIN users u ON u.id = cs.caller_id
+        WHERE cs.status = 'ended' AND cs.ended_at >= ?
+          AND u.fcm_token IS NOT NULL AND u.fcm_token != ''
+        GROUP BY cs.caller_id
+        HAVING calls > 0
+        LIMIT 500`,
+    ).bind(weekAgo).all<{ user_id: string; secs: number; calls: number }>();
+    let sent = 0;
+    for (const r of rows.results ?? []) {
+      const mins = Math.max(1, Math.round((Number(r.secs) || 0) / 60));
+      if (await notifyEngagement(
+        env, r.user_id, 'Aapka weekly recap 📊',
+        `Is hafte aapne ${mins} min baat ki (${r.calls} call${Number(r.calls) === 1 ? '' : 's'}). Is hafte kisse baat karenge?`,
+        'weekly_recap', { data: { type: 'weekly_recap' } },
+      )) sent++;
+    }
+    if (sent) console.log(`[Cron] Weekly recap: ${sent} sent`);
+  } catch (e) {
+    console.error('[Cron] weekly recap error:', e);
+  }
+}
+
 export default {
   fetch: app.fetch,
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
@@ -853,5 +975,9 @@ export default {
     ctx.waitUntil(maybeSendVipReminders(env));
     ctx.waitUntil(maybeSendNearLevelNudges(env));
     ctx.waitUntil(maybeRollupEngagement(env));
+    // Engagement suite (#2/#3/#6) — each self-gates (hourly/weekly + quiet hours).
+    ctx.waitUntil(maybeRunOnboardingDrip(env));
+    ctx.waitUntil(maybeNudgeAbandonedRecharge(env));
+    ctx.waitUntil(maybeSendWeeklyRecap(env));
   },
 };

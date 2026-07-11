@@ -3,6 +3,7 @@ import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth';
 import { pushToUser, notifyUser } from '../lib/realtime';
+import { notifyEngagement } from '../lib/engagementNotify';
 import { buildAgoraRtcToken, isAgoraConfigured } from '../lib/agoraToken';
 import { getCallEconomicsConfig, floorRatePerMinCoins, agoraCostPerMinInr } from '../lib/callEconomics';
 import { sendFCMPush } from '../lib/fcm';
@@ -956,6 +957,28 @@ call.post('/:id/end', async (c) => {
       } catch (e) {
         console.warn('[/:id/end] Failed to notify user of coin deduction:', e);
       }
+    }
+
+    // Engagement #4: post-call low-balance recharge nudge. Only when the CALLER
+    // ends, balance is below ~2 min of talk-time, and not already nudged in the
+    // last 12h. Goes through the engagement gate (quiet hours + cap + opt-out).
+    if (sub === session.caller_id) {
+      try {
+        const bal = await db.prepare('SELECT coins FROM users WHERE id = ?').bind(session.caller_id).first<{ coins: number }>();
+        const coins = Number(bal?.coins ?? 0);
+        const threshold = Math.max(20, effectiveRate * 2);
+        if (coins < threshold) {
+          const recent = await db.prepare("SELECT 1 AS ok FROM notifications WHERE user_id = ? AND type = 'low_balance' AND created_at >= ? LIMIT 1")
+            .bind(session.caller_id, now - 12 * 3600).first<{ ok: number }>();
+          if (!recent) {
+            c.executionCtx?.waitUntil?.(notifyEngagement(
+              c.env, session.caller_id, 'Coins low 💰',
+              'Aapke coins kam ho rahe hain — recharge karke apni calls jaari rakhein.',
+              'low_balance', { data: { type: 'low_balance' } },
+            ));
+          }
+        }
+      } catch { /* best-effort */ }
     }
 
     return c.json({ success: true, duration_seconds: durationSec, coins_charged: actualCoinsCharged, host_earnings: actualHostShare });
