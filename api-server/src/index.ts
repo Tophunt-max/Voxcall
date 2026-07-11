@@ -101,6 +101,14 @@ app.use('*', cors({
   origin: (origin, c) => {
     // Mobile apps (React Native) don't send Origin — allow all no-origin requests
     if (!origin) return '*';
+    // SECURITY: warn once if running in production without an explicit allowlist.
+    // The broad dev patterns (*.pages.dev, *.replit.dev) are too permissive for
+    // production — anyone can deploy on those shared platforms and trigger CORS-
+    // credentialed requests against the API. Set CORS_ALLOWED_ORIGINS to a
+    // comma-separated list of your actual frontend domains.
+    if (c.env.ENVIRONMENT === 'production' && !c.env.CORS_ALLOWED_ORIGINS) {
+      console.warn('[CORS] CORS_ALLOWED_ORIGINS is not set in production — using broad dev patterns. Set CORS_ALLOWED_ORIGINS to restrict origins.');
+    }
     return isOriginAllowed(origin, c.env) ? origin : null;
   },
   allowHeaders: ['Content-Type', 'Authorization'],
