@@ -158,6 +158,17 @@ gifts.post('/send', async (c) => {
     console.warn('[gifts/send] delivery notify failed:', e);
   }
 
+  // Persist an in-app notification so gifts show in the host's notifications
+  // history. Live delivery + push are already handled by the chat_message
+  // event + FCM above, so we insert the row only (no extra push/toast).
+  try {
+    await db.prepare('INSERT INTO notifications (id, user_id, type, title, body, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+      .bind('notif-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7), hostUserId, 'gift', 'Gift received 🎁', `${senderName || 'Someone'} sent you a ${gift.name} ${gift.icon} (${amount} coins)`, now)
+      .run();
+  } catch (e) {
+    console.warn('[gifts/send] notification row insert failed:', e);
+  }
+
   const after = await db.prepare('SELECT coins FROM users WHERE id = ?').bind(sub).first<{ coins: number }>();
   return c.json({
     success: true,

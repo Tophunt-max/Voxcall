@@ -350,6 +350,12 @@ user.post('/report', async (c) => {
       ).bind(id, sub, reporter?.name ?? '', reported_user_id, reported_user ?? '', reason, category ?? 'other').run();
     } else throw e;
   }
+  // Confirm to the reporter that we received it (in-app + FCM).
+  c.executionCtx?.waitUntil?.(notifyUser(
+    c.env, sub, 'Report received 🛡️',
+    'Thanks for the report. Our moderation team will review it shortly.',
+    'report',
+  ));
   return c.json({ success: true, id });
 });
 

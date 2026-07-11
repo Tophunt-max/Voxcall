@@ -3,6 +3,7 @@ import type { Env, JWTPayload } from '../types';
 import { authMiddleware } from '../middleware/auth';
 import { timingSafeEqual } from '../lib/hash';
 import { bumpRewardProgress } from './rewards';
+import { pushCoinUpdate, notifyUser } from '../lib/realtime';
 import {
   verifyRazorpaySignature,
   verifyStripeSignature,
@@ -136,7 +137,7 @@ export function validatePromoInput(
 // time (the single chokepoint all real credits pass through), and if the quota
 // is already exhausted by the time this deposit is approved, we strip the promo
 // bonus from the credited total instead of granting coins beyond the limit.
-async function approveDeposit(db: D1Database, purchaseId: string, source: string, note?: string): Promise<{ ok: boolean; already?: boolean; notFound?: boolean; coins?: number }> {
+async function approveDeposit(db: D1Database, purchaseId: string, source: string, note?: string, env?: Env): Promise<{ ok: boolean; already?: boolean; notFound?: boolean; coins?: number }> {
   const purchase = await db.prepare('SELECT id, user_id, coins, bonus_coins, promo_code, status FROM coin_purchases WHERE id = ?').bind(purchaseId).first<any>();
   if (!purchase) return { ok: false, notFound: true };
   if (purchase.status === 'success') return { ok: true, already: true };
@@ -185,6 +186,15 @@ async function approveDeposit(db: D1Database, purchaseId: string, source: string
   // `coin_topup` = lifetime coins purchased; `coin_topup_count` = # of txns.
   await bumpRewardProgress(db, purchase.user_id, 'coin_topup', totalCoins);
   await bumpRewardProgress(db, purchase.user_id, 'coin_topup_count', 1);
+  // Real-time: credit the buyer's wallet live + send a "coins added" in-app
+  // notification (+ FCM). This is the single chokepoint for EVERY gateway
+  // purchase (Razorpay/Stripe/PhonePe/Paytm/Google Play/UTR) — previously the
+  // most common purchase flow gave the user no confirmation at all. Only fires
+  // on the CAS winner (genuine new approval), so no double-credit / double-notify.
+  if (env) {
+    await pushCoinUpdate(env, purchase.user_id, totalCoins);
+    await notifyUser(env, purchase.user_id, 'Coins added ✅', `${totalCoins} coins have been added to your wallet.`, 'deposit');
+  }
   return { ok: true, coins: totalCoins };
 }
 
@@ -232,7 +242,7 @@ payment.post('/webhook/razorpay', async (c) => {
       purchase = await c.env.DB.prepare("SELECT id, status FROM coin_purchases WHERE id = ? LIMIT 1").bind(notePurchaseId).first<any>();
     }
     if (!purchase) return c.json({ ok: true, message: 'No matching purchase found' });
-    const result = await approveDeposit(c.env.DB, purchase.id, 'razorpay', `Razorpay payment ${razorpayPaymentId} captured`);
+    const result = await approveDeposit(c.env.DB, purchase.id, 'razorpay', `Razorpay payment ${razorpayPaymentId} captured`, c.env);
     return c.json({ ok: result.ok, already: result.already, coins: result.coins });
   } catch (e: any) {
     console.error('[Webhook] Razorpay handler error:', e);
@@ -270,7 +280,7 @@ payment.post('/webhook/stripe', async (c) => {
     if (purchaseId) purchase = await c.env.DB.prepare("SELECT id, status FROM coin_purchases WHERE id = ? LIMIT 1").bind(purchaseId).first<any>();
     if (!purchase) purchase = await c.env.DB.prepare("SELECT id, status FROM coin_purchases WHERE payment_ref = ? LIMIT 1").bind(stripeId).first<any>();
     if (!purchase) return c.json({ ok: true, message: 'No matching purchase found' });
-    const result = await approveDeposit(c.env.DB, purchase.id, 'stripe', `Stripe ${event} — ${stripeId}`);
+    const result = await approveDeposit(c.env.DB, purchase.id, 'stripe', `Stripe ${event} — ${stripeId}`, c.env);
     return c.json({ ok: result.ok, already: result.already, coins: result.coins });
   } catch (e: any) {
     console.error('[Webhook] Stripe handler error:', e);
@@ -333,7 +343,7 @@ payment.post('/webhook/phonepe', async (c) => {
     if (!purchase && merchantTxnId) purchase = await c.env.DB.prepare("SELECT id, status FROM coin_purchases WHERE payment_ref = ? OR utr_id = ? LIMIT 1").bind(merchantTxnId, merchantTxnId).first<any>();
     if (!purchase && utr) purchase = await c.env.DB.prepare("SELECT id, status FROM coin_purchases WHERE utr_id = ? LIMIT 1").bind(utr).first<any>();
     if (!purchase) return c.json({ ok: true, message: 'No matching purchase found' });
-    const result = await approveDeposit(c.env.DB, purchase.id, 'phonepe', `PhonePe payment ${utr || merchantTxnId} success`);
+    const result = await approveDeposit(c.env.DB, purchase.id, 'phonepe', `PhonePe payment ${utr || merchantTxnId} success`, c.env);
     return c.json({ ok: result.ok, already: result.already, coins: result.coins });
   } catch (e: any) {
     console.error('[Webhook] PhonePe handler error:', e);
@@ -380,7 +390,7 @@ payment.post('/webhook/paytm', async (c) => {
     if (orderId) purchase = await findPurchaseByOrderId(c.env.DB, orderId);
     if (!purchase && txnId) purchase = await c.env.DB.prepare("SELECT id, status FROM coin_purchases WHERE payment_ref = ? LIMIT 1").bind(txnId).first<any>();
     if (!purchase) return c.json({ ok: true, message: 'No matching purchase found' });
-    const result = await approveDeposit(c.env.DB, purchase.id, 'paytm', `Paytm TXN_SUCCESS — ${txnId}`);
+    const result = await approveDeposit(c.env.DB, purchase.id, 'paytm', `Paytm TXN_SUCCESS — ${txnId}`, c.env);
     return c.json({ ok: result.ok, already: result.already, coins: result.coins });
   } catch (e: any) {
     console.error('[Webhook] Paytm handler error:', e);
@@ -407,7 +417,7 @@ payment.post('/webhook/generic', async (c) => {
       return c.json({ error: 'Invalid secret' }, 401);
     }
     if (!purchase_id) return c.json({ error: 'purchase_id required' }, 400);
-    const result = await approveDeposit(c.env.DB, purchase_id, 'generic', note || 'Auto-matched via generic webhook');
+    const result = await approveDeposit(c.env.DB, purchase_id, 'generic', note || 'Auto-matched via generic webhook', c.env);
     return c.json({ ok: result.ok, already: result.already, coins: result.coins, notFound: result.notFound });
   } catch (e: any) {
     console.error('[Webhook] Generic handler error:', e);
@@ -584,7 +594,7 @@ payment.post('/verify-google-play', authMiddleware, async (c) => {
         }
       }
     }
-    const result = await approveDeposit(c.env.DB, purchaseId, 'google_play', `Google Play product ${product_id} verified`);
+    const result = await approveDeposit(c.env.DB, purchaseId, 'google_play', `Google Play product ${product_id} verified`, c.env);
     return c.json({ success: result.ok, purchase_id: purchaseId, coins_added: result.coins, already_credited: result.already });
   } catch (e: any) {
     console.error('[/verify-google-play] verification failed:', e);
@@ -601,7 +611,7 @@ payment.post('/match-utr', authMiddleware, async (c) => {
   if (!utr_id) return c.json({ error: 'utr_id required' }, 400);
   const purchase = await c.env.DB.prepare("SELECT id, status FROM coin_purchases WHERE utr_id = ? AND payment_method = 'manual' LIMIT 1").bind(utr_id.trim()).first<any>();
   if (!purchase) return c.json({ error: 'No pending manual deposit found for this UTR' }, 404);
-  const result = await approveDeposit(c.env.DB, purchase.id, 'manual-admin', `UTR matched: ${utr_id}`);
+  const result = await approveDeposit(c.env.DB, purchase.id, 'manual-admin', `UTR matched: ${utr_id}`, c.env);
   return c.json({ ok: result.ok, already: result.already, coins: result.coins });
 });
 

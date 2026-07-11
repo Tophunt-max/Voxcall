@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { authMiddleware } from '../middleware/auth';
 import { checkRateLimit } from '../lib/rateLimit';
+import { notifyUser } from '../lib/realtime';
 import type { Env, JWTPayload } from '../types';
 
 // ============================================================================
@@ -838,6 +839,9 @@ rewards.post('/claim', async (c) => {
   }
 
   const updated = await db.prepare('SELECT coins FROM users WHERE id = ?').bind(sub).first<{ coins: number }>();
+  if (coinsReward > 0) {
+    c.executionCtx?.waitUntil?.(notifyUser(c.env, sub, 'Reward claimed 🎁', `You earned ${coinsReward} coins from "${task.title}".`, 'reward'));
+  }
   return c.json({
     ok: true,
     task_id: taskId,
@@ -1022,6 +1026,9 @@ rewards.post('/spin', async (c) => {
   }
 
   const updated = await db.prepare('SELECT coins FROM users WHERE id = ?').bind(sub).first<{ coins: number }>();
+  if (coinsWon > 0) {
+    c.executionCtx?.waitUntil?.(notifyUser(c.env, sub, 'Lucky Spin 🎰', `You won ${coinsWon} coins on the Lucky Spin!`, 'reward'));
+  }
 
   return c.json({
     ok: true,
@@ -1148,6 +1155,9 @@ rewards.post('/redeem-coupon', async (c) => {
   }
 
   const updated = await db.prepare('SELECT coins FROM users WHERE id = ?').bind(sub).first<{ coins: number }>();
+  if (coinsAwarded > 0) {
+    c.executionCtx?.waitUntil?.(notifyUser(c.env, sub, 'Coupon redeemed 🎟️', `Coupon "${code}" applied — ${coinsAwarded} coins added.`, 'reward'));
+  }
   return c.json({
     ok: true,
     code,

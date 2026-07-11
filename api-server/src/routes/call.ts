@@ -808,6 +808,19 @@ call.post('/:id/end', async (c) => {
       return c.json({ error: 'Call already ended' }, 400);
     }
 
+    // Missed-call notification: the call ended while still PENDING (host never
+    // answered) and it was the caller who hung up — let the host know so they
+    // can re-engage. (An answered call is 'active', so this only fires on a
+    // genuine miss, not a normal hangup.)
+    if (session.status === 'pending' && session.host_user_id && sub === session.caller_id) {
+      const caller = await db.prepare('SELECT name FROM users WHERE id = ?').bind(session.caller_id).first<{ name: string }>();
+      c.executionCtx?.waitUntil?.(notifyUser(
+        c.env, session.host_user_id, 'Missed call 📞',
+        `You missed a ${session.type === 'video' ? 'video' : 'audio'} call from ${caller?.name ?? 'a user'}.`,
+        'missed_call',
+      ));
+    }
+
     const durationSec = session.started_at ? now - session.started_at : 0;
     // Whole minutes billed for this call (any started minute rounds up).
     const durationMin = billedMinutes(durationSec);

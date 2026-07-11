@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import { authMiddleware } from '../middleware/auth';
 import type { Env, JWTPayload } from '../types';
 import { DEFAULT_AUDIO_RATE, DEFAULT_VIDEO_RATE } from '../lib/levels';
+import { notifyUser } from '../lib/realtime';
 
 // FIX #20: Validate KYC document URLs are well-formed https URLs before
 // persisting. We don't fetch them — that's the admin/reviewer's job — but we
@@ -164,6 +165,13 @@ hostapp.post('/submit', async (c) => {
       aadhar_front_url, aadhar_back_url, verification_video_url ?? null
     ).run();
   }
+
+  // Confirm receipt to the applicant (in-app + FCM).
+  c.executionCtx?.waitUntil?.(notifyUser(
+    c.env, sub, 'Application received ✅',
+    'Your host application has been submitted and is under review. We\'ll notify you once it\'s processed.',
+    'host_application',
+  ));
 
   return c.json({ success: true, application_id: id, status: 'pending' });
 });

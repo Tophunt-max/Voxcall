@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { authMiddleware } from '../middleware/auth';
 import { USD_TO_FOREIGN, currencyForCountry, convertCurrency, convertFromUSD, detectCountryFromRequest } from '../lib/currency';
 import { isEmergencyOn, emergencyBlockedBody } from '../lib/emergencyFlags';
+import { pushCoinUpdate, notifyUser } from '../lib/realtime';
 import type { Env, JWTPayload } from '../types';
 
 const coin = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
@@ -480,6 +481,13 @@ coin.post('/withdraw', async (c) => {
   }
 
   const updated = await db.prepare('SELECT coins FROM users WHERE id = ?').bind(sub).first<any>();
+  // Real-time: confirm the frozen balance + send a "withdrawal requested" note.
+  c.executionCtx?.waitUntil?.(pushCoinUpdate(c.env, sub, -coinsReq));
+  c.executionCtx?.waitUntil?.(notifyUser(
+    c.env, sub, 'Withdrawal requested 💸',
+    `Your request to withdraw ${coinsReq} coins has been received. Coins are frozen pending admin approval.`,
+    'payout',
+  ));
   return c.json({
     success: true,
     amount_usd: usdAmount.toFixed(2),
