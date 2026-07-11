@@ -3872,4 +3872,81 @@ admin.get('/monitoring/health', async (c) => {
   });
 });
 
+// ─── GET /admin/health/full — comprehensive health monitor page data ───────
+// Provides real-time service status + uptime history + latency timeseries
+// for the dedicated Health Monitor admin page.
+admin.get('/health/full', async (c) => {
+  const db = c.env.DB;
+  const now = Math.floor(Date.now() / 1000);
+
+  // 1. Run live probe NOW (real-time status)
+  const { runHealthProbes } = await import('../lib/healthCheck');
+  const live = await runHealthProbes(c.env);
+
+  // 2. Uptime stats for 1h / 24h / 7d
+  const { getUptimeStats } = await import('../lib/healthCheck');
+  const [uptime1h, uptime24h, uptime7d] = await Promise.all([
+    getUptimeStats(db, 3600),
+    getUptimeStats(db, 86400),
+    getUptimeStats(db, 7 * 86400),
+  ]);
+
+  // 3. Latency timeseries (last 60 data points = ~1 hour at 1-min intervals)
+  let latencyTimeseries: any[] = [];
+  try {
+    const rows = await db.prepare(
+      `SELECT checked_at, db_latency_ms, r2_latency_ms, overall_status, active_calls, online_hosts, error_count_hour
+       FROM health_checks ORDER BY checked_at DESC LIMIT 60`
+    ).all<any>();
+    latencyTimeseries = (rows.results ?? []).reverse();
+  } catch { /* table may not exist yet */ }
+
+  // 4. Recent incidents (status != 'ok' in last 24h)
+  let incidents: any[] = [];
+  try {
+    const rows = await db.prepare(
+      `SELECT checked_at, overall_status, db_status, r2_status, agora_status, fcm_status, error_count_hour
+       FROM health_checks WHERE overall_status != 'ok' AND checked_at > ? ORDER BY checked_at DESC LIMIT 50`
+    ).bind(now - 86400).all<any>();
+    incidents = rows.results ?? [];
+  } catch { /* table may not exist yet */ }
+
+  // 5. 24h status timeline (hourly aggregation for the status bar)
+  let statusTimeline: any[] = [];
+  try {
+    const rows = await db.prepare(
+      `SELECT (checked_at / 3600) * 3600 AS hour_ts,
+              MIN(CASE WHEN overall_status = 'down' THEN 0 WHEN overall_status = 'degraded' THEN 1 ELSE 2 END) AS worst,
+              COUNT(*) AS checks,
+              AVG(db_latency_ms) AS avg_db_ms
+       FROM health_checks WHERE checked_at > ? GROUP BY hour_ts ORDER BY hour_ts ASC`
+    ).bind(now - 86400).all<any>();
+    statusTimeline = (rows.results ?? []).map((r: any) => ({
+      hour_ts: r.hour_ts,
+      status: r.worst === 0 ? 'down' : r.worst === 1 ? 'degraded' : 'ok',
+      checks: r.checks,
+      avg_db_ms: Math.round(Number(r.avg_db_ms) || 0),
+    }));
+  } catch { /* table may not exist yet */ }
+
+  // 6. Average latencies (last hour)
+  let avgLatency = { db_ms: 0, r2_ms: 0 };
+  try {
+    const row = await db.prepare(
+      `SELECT AVG(db_latency_ms) AS db_ms, AVG(r2_latency_ms) AS r2_ms
+       FROM health_checks WHERE checked_at > ? AND db_latency_ms >= 0`
+    ).bind(now - 3600).first<{ db_ms: number; r2_ms: number }>();
+    avgLatency = { db_ms: Math.round(Number(row?.db_ms) || 0), r2_ms: Math.round(Number(row?.r2_ms) || 0) };
+  } catch {}
+
+  return c.json({
+    live,
+    uptime: { '1h': uptime1h, '24h': uptime24h, '7d': uptime7d },
+    latency: { avg: avgLatency, timeseries: latencyTimeseries },
+    incidents,
+    status_timeline: statusTimeline,
+    server_time: now,
+  });
+});
+
 export default admin;

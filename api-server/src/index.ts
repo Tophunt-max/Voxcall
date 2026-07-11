@@ -31,6 +31,7 @@ import { getLevelConfig, getEarningShare, DEFAULT_AUDIO_RATE, computeLevelProgre
 import { recalcAllHostLevels } from './lib/levelService';
 import { billedMinutes, coinsForCall, chargeCallerWithFreePool, releaseCallHold } from './lib/billing';
 import { runReengagement } from './lib/reengagement';
+import { runHealthProbes, storeHealthCheck, pruneHealthChecks } from './lib/healthCheck';
 import { istContext } from './lib/streak';
 import { getFCMTokens, sendFCMPush } from './lib/fcm';
 import { notifyUser } from './lib/realtime';
@@ -1159,5 +1160,22 @@ export default {
     ctx.waitUntil(maybeNudgeProfileCompletion(env));
     ctx.waitUntil(maybeNudgeOnlineHosts(env));
     ctx.waitUntil(maybeAnnounceHappyHour(env));
+    // Health monitoring — probe all dependencies every minute and store results
+    // for the admin dashboard uptime/latency charts. Also stamps last_cron_run
+    // so the probe itself can detect cron staleness on the NEXT tick.
+    ctx.waitUntil((async () => {
+      try {
+        const result = await runHealthProbes(env);
+        await storeHealthCheck(env.DB, result);
+        // Stamp last_cron_run so the next probe can detect cron staleness
+        await env.DB.prepare(
+          "INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('last_cron_run', ?, unixepoch())"
+        ).bind(String(Math.floor(Date.now() / 1000))).run();
+        // Prune old health records (7-day retention, once per hour max)
+        if (Math.random() < 0.017) await pruneHealthChecks(env.DB, 7);
+      } catch (e) {
+        console.warn('[Cron] health probe error:', e);
+      }
+    })());
   },
 };
