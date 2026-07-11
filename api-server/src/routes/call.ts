@@ -3,7 +3,7 @@ import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth';
 import { pushToUser, notifyUser } from '../lib/realtime';
-import { notifyEngagement } from '../lib/engagementNotify';
+import { notifyEngagement, engagementFeatureEnabled } from '../lib/engagementNotify';
 import { buildAgoraRtcToken, isAgoraConfigured } from '../lib/agoraToken';
 import { getCallEconomicsConfig, floorRatePerMinCoins, agoraCostPerMinInr } from '../lib/callEconomics';
 import { sendFCMPush } from '../lib/fcm';
@@ -962,7 +962,7 @@ call.post('/:id/end', async (c) => {
     // Engagement #4: post-call low-balance recharge nudge. Only when the CALLER
     // ends, balance is below ~2 min of talk-time, and not already nudged in the
     // last 12h. Goes through the engagement gate (quiet hours + cap + opt-out).
-    if (sub === session.caller_id) {
+    if (sub === session.caller_id && await engagementFeatureEnabled(c.env, 'low_balance_nudge_enabled', true)) {
       try {
         const bal = await db.prepare('SELECT coins FROM users WHERE id = ?').bind(session.caller_id).first<{ coins: number }>();
         const coins = Number(bal?.coins ?? 0);

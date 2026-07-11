@@ -43,6 +43,7 @@ const RewardAchievements = lazy(() => import('@/pages/RewardAchievements'));
 const ReferralSystem = lazy(() => import('@/pages/ReferralSystem'));
 const LiveCalls = lazy(() => import('@/pages/LiveCalls'));
 const AppConfig = lazy(() => import('@/pages/AppConfig'));
+const EngagementNotifications = lazy(() => import('@/pages/EngagementNotifications'));
 const PaymentGateways = lazy(() => import('@/pages/PaymentGateways'));
 const Deposits = lazy(() => import('@/pages/Deposits'));
 
@@ -110,6 +111,7 @@ function ProtectedApp() {
         <Route path="/reward-achievements" component={RewardAchievements} />
         <Route path="/audit-logs" component={AuditLogs} />
         <Route path="/app-config" component={AppConfig} />
+        <Route path="/engagement" component={EngagementNotifications} />
         <Route path="/deposits" component={Deposits} />
         <Route path="/payment-gateways" component={PaymentGateways} />
         <Route path="/settings" component={SettingsPage} />

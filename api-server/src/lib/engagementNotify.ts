@@ -50,6 +50,21 @@ async function readIntSetting(db: D1Database, key: string, fallback: number): Pr
 }
 
 /**
+ * Read a boolean engagement feature flag from app_settings. Treats '0' / 'false'
+ * as OFF and anything else (including a missing row) as the fallback. Lets the
+ * admin panel toggle each engagement trigger on/off without a deploy.
+ */
+export async function engagementFeatureEnabled(env: Env, key: string, fallback = true): Promise<boolean> {
+  try {
+    const row = await env.DB.prepare('SELECT value FROM app_settings WHERE key = ?').bind(key).first<{ value: string }>();
+    if (row?.value == null) return fallback;
+    return row.value !== '0' && row.value.toLowerCase() !== 'false';
+  } catch {
+    return fallback;
+  }
+}
+
+/**
  * Is it currently inside the engagement quiet-hours window (IST)?
  * Default window 23:00 → 08:00 IST; both bounds admin-tunable. Cron jobs should
  * call this ONCE up-front and bail early to avoid per-user work at night.
@@ -102,6 +117,8 @@ export async function notifyEngagement(
   opts?: { data?: Record<string, string> },
 ): Promise<boolean> {
   try {
+    // Master kill switch — admin can disable ALL engagement notifications.
+    if (!(await engagementFeatureEnabled(env, 'engagement_notifications_enabled', true))) return false;
     if (await isQuietHoursIST(env)) return false;
     if (await isOptedOut(env.DB, userId, categoryForType(type))) return false;
     const cap = await readIntSetting(env.DB, 'engagement_daily_cap', 3);
@@ -122,6 +139,7 @@ export async function notifyEngagement(
  */
 export async function notifyFavoritersHostOnline(env: Env, hostId: string, hostUserId: string): Promise<void> {
   try {
+    if (!(await engagementFeatureEnabled(env, 'favorite_online_enabled', true))) return;
     if (await isQuietHoursIST(env)) return;
     const host = await env.DB.prepare('SELECT display_name FROM hosts WHERE id = ?').bind(hostId).first<{ display_name: string | null }>();
     const name = host?.display_name || 'A host you follow';

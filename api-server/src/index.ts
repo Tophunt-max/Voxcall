@@ -34,7 +34,7 @@ import { runReengagement } from './lib/reengagement';
 import { istContext } from './lib/streak';
 import { getFCMTokens, sendFCMPush } from './lib/fcm';
 import { notifyUser } from './lib/realtime';
-import { notifyEngagement, isQuietHoursIST } from './lib/engagementNotify';
+import { notifyEngagement, isQuietHoursIST, engagementFeatureEnabled } from './lib/engagementNotify';
 import { USD_TO_FOREIGN } from './lib/currency';
 
 // Re-export Durable Objects (required by wrangler)
@@ -730,6 +730,7 @@ async function maybeSendVipReminders(env: Env): Promise<void> {
     const row = await env.DB.prepare("SELECT value FROM app_settings WHERE key = 'last_vip_reminder_run'").first<{ value: string }>();
     const last = row?.value ? parseInt(row.value, 10) || 0 : 0;
     if (now - last < 3600) return; // at most once/hour
+    if (!(await engagementFeatureEnabled(env, 'vip_reminder_enabled', true))) return;
     if (await isQuietHoursIST(env)) return; // Engagement #5: no VIP pings at night
     await env.DB.prepare(
       "INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('last_vip_reminder_run', ?, unixepoch())"
@@ -851,6 +852,7 @@ async function maybeSendNearLevelNudges(env: Env): Promise<void> {
 // call yet. Distinct type per stage = natural per-stage dedup. Hourly gate.
 async function maybeRunOnboardingDrip(env: Env): Promise<void> {
   try {
+    if (!(await engagementFeatureEnabled(env, 'onboarding_drip_enabled', true))) return;
     if (await isQuietHoursIST(env)) return;
     const now = Math.floor(Date.now() / 1000);
     const lastRow = await env.DB.prepare("SELECT value FROM app_settings WHERE key = 'last_onboarding_drip_run'").first<{ value: string }>();
@@ -889,6 +891,7 @@ async function maybeRunOnboardingDrip(env: Env): Promise<void> {
 // Per-user 24h cooldown via the notifications dedup. Hourly gate.
 async function maybeNudgeAbandonedRecharge(env: Env): Promise<void> {
   try {
+    if (!(await engagementFeatureEnabled(env, 'abandoned_recharge_enabled', true))) return;
     if (await isQuietHoursIST(env)) return;
     const now = Math.floor(Date.now() / 1000);
     const lastRow = await env.DB.prepare("SELECT value FROM app_settings WHERE key = 'last_abandoned_recharge_run'").first<{ value: string }>();
@@ -926,6 +929,7 @@ async function maybeNudgeAbandonedRecharge(env: Env): Promise<void> {
 // Once a week (midday IST), send active callers a recap of the last 7 days.
 async function maybeSendWeeklyRecap(env: Env): Promise<void> {
   try {
+    if (!(await engagementFeatureEnabled(env, 'weekly_recap_enabled', true))) return;
     if (await isQuietHoursIST(env)) return;
     const now = Math.floor(Date.now() / 1000);
     const istHour = new Date(Date.now() + (5 * 60 + 30) * 60 * 1000).getUTCHours();

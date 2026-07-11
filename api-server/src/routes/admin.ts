@@ -801,6 +801,12 @@ admin.patch('/settings', async (c) => {
     'daily_streak_chest_enabled', 'daily_streak_chest_threshold',
     'daily_streak_chest_reward',
     'daily_streak_reminder_enabled', 'daily_streak_reminder_hour_ist',
+    // Engagement notification suite (admin-tunable via the Engagement page).
+    'engagement_notifications_enabled', 'engagement_quiet_start_ist',
+    'engagement_quiet_end_ist', 'engagement_daily_cap',
+    'favorite_online_enabled', 'onboarding_drip_enabled',
+    'abandoned_recharge_enabled', 'low_balance_nudge_enabled',
+    'weekly_recap_enabled', 'vip_reminder_enabled',
   ];
   const stmts = Object.entries(processedBody)
     .filter(([k]) => ALLOWED_SETTINGS.includes(k))
