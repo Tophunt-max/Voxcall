@@ -816,6 +816,13 @@ admin.patch('/settings', async (c) => {
     'spend_cashback_enabled', 'spend_milestones',
     'comeback_reward_enabled', 'comeback_idle_days', 'comeback_bonus_coins', 'comeback_cooldown_days',
     'referral_contest_enabled',
+    // Smart Discount Engine — segment-aware personalized recharge offers.
+    'smart_discount_enabled',
+    'smart_discount_welcome_hours', 'smart_discount_welcome_pct',
+    'smart_discount_first_recharge_pct',
+    'smart_discount_winback_idle_days', 'smart_discount_winback_pct',
+    'smart_discount_vip_pct', 'smart_discount_returning_pct',
+    'smart_discount_max_pct', 'smart_discount_max_coins',
   ];
   const stmts = Object.entries(processedBody)
     .filter(([k]) => ALLOWED_SETTINGS.includes(k))

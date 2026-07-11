@@ -1,12 +1,23 @@
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
-import { Save, Rocket, Gift, Zap, Trophy, RotateCcw, Users } from 'lucide-react';
+import { Save, Rocket, Gift, Zap, Trophy, RotateCcw, Users, Sparkles } from 'lucide-react';
 
 // Every key is persisted by the admin /settings allowlist AND consumed by
 // lib/promotions.ts (approveDeposit) + the comeback login hook + referral
 // leaderboard. Booleans use '1'/'0'.
 const DEFAULTS = {
+  // Smart Discount Engine — one personalized, segment-aware offer per user
+  smart_discount_enabled: '0',
+  smart_discount_welcome_hours: '24',
+  smart_discount_welcome_pct: '50',
+  smart_discount_first_recharge_pct: '30',
+  smart_discount_winback_idle_days: '7',
+  smart_discount_winback_pct: '25',
+  smart_discount_vip_pct: '15',
+  smart_discount_returning_pct: '10',
+  smart_discount_max_pct: '100',
+  smart_discount_max_coins: '100000',
   // First-recharge bonus
   first_recharge_bonus_enabled: '0',
   first_recharge_bonus_pct: '100',
@@ -144,6 +155,39 @@ export default function GrowthPromotions() {
         </div>
       ) : (
         <>
+          <Section title="✨ Smart Discount Engine" desc="ONE personalized offer per user, chosen automatically by their lifecycle segment. Shown live on checkout and granted as bonus coins on payment. Recommended: use this instead of the flat first-recharge bonus below." icon={Sparkles}>
+            <Field label="Enabled" desc="Master switch. When ON, every user sees a tailored offer on the checkout screen.">
+              <Toggle value={isOn(config.smart_discount_enabled)} onChange={() => toggle('smart_discount_enabled')} />
+            </Field>
+            <div className="rounded-xl border border-violet-200 dark:border-violet-900/50 bg-violet-50/60 dark:bg-violet-950/20 p-3 text-xs text-violet-700 dark:text-violet-300 space-y-1">
+              <p className="font-semibold">How segments are chosen (highest priority first):</p>
+              <ul className="list-disc list-inside space-y-0.5">
+                <li><strong>Welcome</strong> — brand-new account, still inside the welcome window (time-limited, urgency countdown).</li>
+                <li><strong>First recharge</strong> — never purchased, welcome window passed.</li>
+                <li><strong>Win-back</strong> — purchased before but idle for N+ days.</li>
+                <li><strong>VIP</strong> — active VIP member.</li>
+                <li><strong>Loyalty</strong> — everyone else (active recent buyers).</li>
+              </ul>
+            </div>
+            <Field label="🎁 Welcome window" desc="How long after signup the time-limited welcome offer stays live.">
+              <NumInput value={config.smart_discount_welcome_hours} onChange={v => update('smart_discount_welcome_hours', v)} min={0} max={720} suffix="hrs" />
+            </Field>
+            <Field label="🎁 Welcome bonus %" desc="Biggest offer — drives the first purchase fast.">
+              <NumInput value={config.smart_discount_welcome_pct} onChange={v => update('smart_discount_welcome_pct', v)} min={0} max={500} suffix="%" />
+            </Field>
+            <Field label="🚀 First-recharge bonus %" desc="For users past the welcome window who still haven't bought.">
+              <NumInput value={config.smart_discount_first_recharge_pct} onChange={v => update('smart_discount_first_recharge_pct', v)} min={0} max={500} suffix="%" />
+            </Field>
+            <Field label="💜 Win-back idle days" desc="Idle at least this long → win-back offer.">
+              <NumInput value={config.smart_discount_winback_idle_days} onChange={v => update('smart_discount_winback_idle_days', v)} min={0} max={365} suffix="days" />
+            </Field>
+            <Field label="💜 Win-back bonus %"><NumInput value={config.smart_discount_winback_pct} onChange={v => update('smart_discount_winback_pct', v)} min={0} max={500} suffix="%" /></Field>
+            <Field label="👑 VIP bonus %" desc="Exclusive perk for active VIP members."><NumInput value={config.smart_discount_vip_pct} onChange={v => update('smart_discount_vip_pct', v)} min={0} max={500} suffix="%" /></Field>
+            <Field label="⭐ Loyalty bonus %" desc="Everyday bonus for active returning buyers."><NumInput value={config.smart_discount_returning_pct} onChange={v => update('smart_discount_returning_pct', v)} min={0} max={500} suffix="%" /></Field>
+            <Field label="Safety cap %" desc="Hard ceiling on any segment's bonus %."><NumInput value={config.smart_discount_max_pct} onChange={v => update('smart_discount_max_pct', v)} min={0} max={1000} suffix="%" /></Field>
+            <Field label="Max bonus coins" desc="Absolute cap on coins granted per recharge."><NumInput value={config.smart_discount_max_coins} onChange={v => update('smart_discount_max_coins', v)} min={0} suffix="coins" /></Field>
+          </Section>
+
           <Section title="First-recharge bonus" desc="Extra coins on a user's very first purchase — big conversion lever." icon={Gift}>
             <Field label="Enabled"><Toggle value={isOn(config.first_recharge_bonus_enabled)} onChange={() => toggle('first_recharge_bonus_enabled')} /></Field>
             <Field label="Bonus %" desc="Extra coins as % of the purchase (100 = double).">

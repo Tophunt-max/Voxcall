@@ -146,6 +146,17 @@ coin.post('/apply-promo', authMiddleware, async (c) => {
   return c.json({ valid: true, type: promo.type, discount, bonus_coins, discount_pct: promo.discount_pct ?? 0, code: promo.code });
 });
 
+// GET /api/coins/offer — personalized smart-discount offer for the current user
+// Auth required (offer depends on the user's lifecycle segment). Drives the
+// checkout offer banner. The SAME engine grants the bonus at credit time, so
+// what's shown here is exactly what the user receives.
+coin.get('/offer', authMiddleware, async (c) => {
+  const { sub } = c.get('user');
+  const { computeSmartOffer } = await import('../lib/smartDiscount');
+  const offer = await computeSmartOffer(c.env.DB, sub);
+  return c.json(offer);
+});
+
 // All routes below require auth
 coin.use('*', authMiddleware);
 

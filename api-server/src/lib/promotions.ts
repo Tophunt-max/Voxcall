@@ -104,6 +104,27 @@ export async function applyPurchaseBonuses(
       if (cashback > 0) { bonusTotal += cashback; notes.push(`milestone +${cashback}`); toasts.push({ title: 'Milestone cashback 🏆', body: `${cashback} cashback coins for hitting a purchase milestone!` }); }
     }
 
+    // 4. Smart Discount Engine (default OFF). Segment-aware, personalized bonus
+    //    (welcome / first-recharge / winback / vip / returning). Computed from
+    //    the user's state BEFORE this purchase (excludePurchaseId) so a
+    //    "first recharge" offer correctly fires on the very first purchase.
+    //    This is the same offer the checkout showed the user, so the promised
+    //    bonus is exactly what gets granted.
+    try {
+      const { computeSmartOffer, smartOfferBonusCoins } = await import('./smartDiscount');
+      const offer = await computeSmartOffer(db, uid, { excludePurchaseId: purchase.id });
+      if (offer.enabled && offer.bonus_pct > 0) {
+        const b = await smartOfferBonusCoins(db, offer, base);
+        if (b > 0) {
+          bonusTotal += b;
+          notes.push(`smart-${offer.segment} +${b}`);
+          toasts.push({ title: offer.label, body: `You just earned ${b} bonus coins! ${offer.description}` });
+        }
+      }
+    } catch (e) {
+      console.warn('[promotions] smart discount grant failed:', e);
+    }
+
     if (bonusTotal > 0) {
       await db.batch([
         db.prepare('UPDATE users SET coins = coins + ?, updated_at = unixepoch() WHERE id = ?').bind(bonusTotal, uid),

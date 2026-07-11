@@ -354,6 +354,18 @@ export const API = {
   // Coins
   getCoinPlans: () => apiRequest<any[]>('GET', '/api/coins/plans'),
   getBalance: () => apiRequest<{ coins: number }>('GET', '/api/coins/balance'),
+  // Personalized smart-discount offer for the current user (segment-aware).
+  // Drives the checkout offer banner; the same bonus is granted server-side
+  // on payment so the promise == the payout.
+  getCoinOffer: () => apiRequest<{
+    enabled: boolean;
+    segment: 'welcome' | 'first_recharge' | 'winback' | 'vip' | 'returning' | 'none';
+    label: string;
+    description: string;
+    bonus_pct: number;
+    expires_at: number | null;
+    expires_in_sec: number;
+  }>('GET', '/api/coins/offer'),
   purchaseCoins: (plan_id: string, payment_method: string, payment_ref?: string, utr_id?: string, gateway_id?: string, promo_code?: string) =>
     apiRequest('POST', '/api/coins/purchase', { plan_id, payment_method, payment_ref, utr_id, gateway_id, promo_code }),
   getCoinHistory: () => apiRequest<any[]>('GET', '/api/coins/history'),

@@ -14,6 +14,7 @@ import {
   Linking,
   Modal,
 } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import { router, useFocusEffect } from "expo-router";
 import { useSocketEvent } from "@/context/SocketContext";
 import { SocketEvents } from "@/constants/events";
@@ -63,6 +64,17 @@ interface Gateway {
 function getPlanDisplayAmount(plan: CoinPlan | null): number {
   if (!plan) return 0;
   return plan.price_local ?? plan.price;
+}
+
+// Compact countdown for a time-limited offer: "5h 12m", "12m 30s", "45s".
+function formatCountdown(totalSec: number): string {
+  const s = Math.max(0, Math.floor(totalSec));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${sec}s`;
+  return `${sec}s`;
 }
 
 function convertBaseDiscountToDisplay(plan: CoinPlan | null, discount: number): number {
@@ -535,6 +547,13 @@ export default function CheckoutScreen() {
   const [paymentMethod, setPaymentMethod] = useState<"auto" | "manual">("auto");
   const [showManualModal, setShowManualModal] = useState(false);
   const [hasManualQR, setHasManualQR] = useState(false);
+  // Smart Discount Engine offer for this user (segment-aware, admin-managed).
+  const [smartOffer, setSmartOffer] = useState<{
+    enabled: boolean; segment: string; label: string; description: string;
+    bonus_pct: number; expires_at: number | null; expires_in_sec: number;
+  } | null>(null);
+  // Live countdown (seconds) for a time-limited offer (welcome window).
+  const [offerSecondsLeft, setOfferSecondsLeft] = useState<number | null>(null);
 
   // Re-run on every focus (not just mount) so coin plans edited/added in the
   // admin panel — and any coin-value change — show up the next time the user
@@ -563,13 +582,42 @@ export default function CheckoutScreen() {
       API.getBanners("wallet").then(setWalletBanners).catch(() => { errors.push("banners"); }),
       API.getPaymentGateways().then(setGateways).catch(() => { setGateways([]); errors.push("payment options"); }),
       API.getManualQR()
-        .then((d: any) => { if (d?.current) setHasManualQR(true); })
+        .then((d: any) => { setHasManualQR(!!d?.current); })
+        .catch(() => {}),
+      // Personalized smart-discount offer. Best-effort — never blocks checkout.
+      API.getCoinOffer()
+        .then((o: any) => {
+          if (o?.enabled && o?.bonus_pct > 0) {
+            setSmartOffer(o);
+            setOfferSecondsLeft(o.expires_in_sec > 0 ? o.expires_in_sec : null);
+          } else {
+            setSmartOffer(null);
+            setOfferSecondsLeft(null);
+          }
+        })
         .catch(() => {}),
     ]).then(() => {
-      if (errors.length > 0) showErrorToast(`Failed to load ${errors.join(", ")}.`);
+      // Only surface a load error for the ESSENTIAL data (coin plans). Optional
+      // extras (banners, gateways, QR, offer) failing must NOT spam an error
+      // toast every time the screen focuses or a socket event fires — that was
+      // the source of the "error shows every time" annoyance on checkout.
+      if (errors.includes("coin plans")) {
+        showErrorToast("Couldn't load coin packages. Pull to retry.");
+      }
       setPlansLoading(false);
     });
   }, []);
+
+  // Live countdown for a time-limited (welcome) offer. Ticks down each second
+  // and clears the offer when it expires so the UI never shows a stale deal.
+  useEffect(() => {
+    if (offerSecondsLeft == null) return;
+    if (offerSecondsLeft <= 0) { setSmartOffer(null); return; }
+    const id = setInterval(() => {
+      setOfferSecondsLeft((s) => (s == null ? null : Math.max(0, s - 1)));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [offerSecondsLeft]);
 
   useFocusEffect(loadCheckoutData);
 
@@ -601,8 +649,18 @@ export default function CheckoutScreen() {
     }
   }, [promoCode, selectedPlan?.id]);
 
-  const totalCoins = selectedPlan
+  // Smart-offer bonus coins for the SELECTED plan. Mirrors the server formula
+  // (round(base × pct / 100) where base = coins + plan bonus + promo bonus) so
+  // the "You get" total on screen matches what the wallet will actually receive.
+  const offerBase = selectedPlan
     ? selectedPlan.coins + (selectedPlan.bonus_coins ?? 0) + (promoApplied?.bonus_coins ?? 0)
+    : 0;
+  const offerBonusCoins = smartOffer?.enabled && smartOffer.bonus_pct > 0 && offerBase > 0
+    ? Math.round((offerBase * smartOffer.bonus_pct) / 100)
+    : 0;
+
+  const totalCoins = selectedPlan
+    ? selectedPlan.coins + (selectedPlan.bonus_coins ?? 0) + (promoApplied?.bonus_coins ?? 0) + offerBonusCoins
     : 0;
   const displayDiscount = convertBaseDiscountToDisplay(selectedPlan, promoApplied?.discount ?? 0);
   const finalPrice = selectedPlan
@@ -613,12 +671,43 @@ export default function CheckoutScreen() {
     : 0;
   const finalDisplayPriceText = formatPlanDisplayAmount(selectedPlan, finalDisplayPrice);
 
+  const isWeb = Platform.OS === "web";
+  const isNative = Platform.OS === "android" || Platform.OS === "ios";
+  const hasAutoGateways = gateways.length > 0;
+
+  // SMART GATEWAY SELECTION: the user never has to hand-pick a gateway.
+  //   • Native (Android/iOS) → native billing runs automatically.
+  //   • Web with auto gateways active → the primary gateway is used.
+  //   • Auto gateways turned OFF by admin but a manual QR exists → we silently
+  //     fall back to the manual UPI flow.
+  //   • Only when BOTH auto + manual are available do we surface a choice.
+  const showMethodChoice = hasAutoGateways && hasManualQR;
+  // The method we'll ACTUALLY use once the button is tapped.
+  const effectiveMethod: "auto" | "manual" =
+    isNative ? "auto"
+    : !hasAutoGateways && hasManualQR ? "manual"      // auto off → auto-fallback to manual
+    : showMethodChoice ? paymentMethod                // user's explicit pick
+    : "auto";
+
   const handlePurchase = useCallback(async () => {
     if (!user || !selectedPlan) return;
-    if (paymentMethod === "manual") {
+
+    // Manual (chosen or auto-fallback because no auto gateway is active).
+    if (effectiveMethod === "manual") {
       setShowManualModal(true);
       return;
     }
+
+    // Auto path needs at least one gateway on web. On native, billing is native.
+    if (isWeb && !hasAutoGateways) {
+      if (hasManualQR) { setShowManualModal(true); return; }
+      showErrorToast(
+        t.checkout.paymentFailed || "No payment method is available right now. Please try again shortly.",
+        t.checkout.paymentFailedTitle,
+      );
+      return;
+    }
+
     setLoading(true);
     try {
       await tryProcessPayment(gateways, selectedPlan, totalCoins, finalPrice, updateCoins, setLoading, t, promoCode);
@@ -627,9 +716,7 @@ export default function CheckoutScreen() {
     } finally {
       setLoading(false);
     }
-  }, [selectedPlan, gateways, user, totalCoins, finalPrice, updateCoins, paymentMethod]);
-
-  const isWeb = Platform.OS === "web";
+  }, [selectedPlan, gateways, user, totalCoins, finalPrice, updateCoins, effectiveMethod, hasAutoGateways, hasManualQR, isWeb, promoCode]);
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
@@ -656,6 +743,32 @@ export default function CheckoutScreen() {
 
         {/* Wallet Banners */}
         <WalletBannerSlider banners={walletBanners} />
+
+        {/* ── Smart Discount Offer Banner ─────────────────────────────────
+            Personalized, segment-aware offer (welcome / first-recharge /
+            win-back / VIP / loyalty). Shows a live countdown for time-limited
+            welcome offers. The bonus is granted server-side on payment. */}
+        {smartOffer?.enabled && smartOffer.bonus_pct > 0 && (
+          <LinearGradient
+            colors={["#7C3AED", "#C026D3"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.offerBanner}
+          >
+            <View style={styles.offerBadge}>
+              <Text style={styles.offerBadgePct}>+{smartOffer.bonus_pct}%</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.offerTitle} numberOfLines={2}>{smartOffer.label}</Text>
+              <Text style={styles.offerDesc} numberOfLines={2}>{smartOffer.description}</Text>
+              {offerSecondsLeft != null && offerSecondsLeft > 0 && (
+                <View style={styles.offerTimerPill}>
+                  <Text style={styles.offerTimerText}>⏳ Ends in {formatCountdown(offerSecondsLeft)}</Text>
+                </View>
+              )}
+            </View>
+          </LinearGradient>
+        )}
 
         {/* Choose Package */}
         <Text style={[styles.sectionTitle, { color: colors.text }]}>{t.wallet.choosePackage}</Text>
@@ -701,8 +814,10 @@ export default function CheckoutScreen() {
           </View>
         )}
 
-        {/* Payment Method Selector (Web + when manual QR available) */}
-        {isWeb && hasManualQR && (
+        {/* Payment Method Selector — shown ONLY when BOTH an auto gateway and a
+            manual QR are available, so the user has a real choice. When only
+            one exists, the smart selection uses it automatically (no picker). */}
+        {showMethodChoice && (
           <>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>{t.payment.paymentMethod}</Text>
             <View style={[styles.methodRow, { gap: 10 }]}>
@@ -789,6 +904,14 @@ export default function CheckoutScreen() {
                   <Text style={[styles.summaryValue, { color: colors.online }]}>+{promoApplied!.bonus_coins.toLocaleString()} {t.wallet.coins}</Text>
                 </View>
               )}
+              {offerBonusCoins > 0 && (
+                <View style={styles.summaryRow}>
+                  <Text style={[styles.summaryLabel, { color: "#A00EE7" }]} numberOfLines={1}>
+                    🎁 {smartOffer?.bonus_pct}% Offer Bonus
+                  </Text>
+                  <Text style={[styles.summaryValue, { color: "#A00EE7" }]}>+{offerBonusCoins.toLocaleString()} {t.wallet.coins}</Text>
+                </View>
+              )}
               <View style={styles.summaryRow}>
                 <Text style={[styles.summaryLabel, { color: colors.mutedForeground }]}>{t.checkout.youGet}</Text>
                 <Text style={[styles.summaryValue, { color: colors.coinGold, fontFamily: "Poppins_700Bold" }]}>{totalCoins.toLocaleString()} {t.wallet.coins}</Text>
@@ -858,6 +981,40 @@ const styles = StyleSheet.create({
   balanceLabel: { fontSize: 12, fontFamily: "Poppins_400Regular" },
   balanceValue: { fontSize: 18, fontFamily: "Poppins_700Bold" },
   sectionTitle: { fontSize: 15, fontFamily: "Poppins_600SemiBold", marginBottom: 12, marginTop: 4 },
+  // Smart Discount offer banner
+  offerBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    padding: 16,
+    borderRadius: 18,
+    marginBottom: 22,
+    shadowColor: "#7C3AED",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 14,
+    elevation: 8,
+  },
+  offerBadge: {
+    width: 58,
+    height: 58,
+    borderRadius: 16,
+    backgroundColor: "rgba(255,255,255,0.2)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  offerBadgePct: { color: "#fff", fontSize: 17, fontFamily: "Poppins_700Bold" },
+  offerTitle: { color: "#fff", fontSize: 14.5, fontFamily: "Poppins_700Bold" },
+  offerDesc: { color: "rgba(255,255,255,0.9)", fontSize: 11.5, fontFamily: "Poppins_400Regular", lineHeight: 16, marginTop: 2 },
+  offerTimerPill: {
+    alignSelf: "flex-start",
+    marginTop: 6,
+    backgroundColor: "rgba(0,0,0,0.25)",
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 20,
+  },
+  offerTimerText: { color: "#fff", fontSize: 11, fontFamily: "Poppins_600SemiBold" },
   plansLoading: { height: 120, alignItems: "center", justifyContent: "center", marginBottom: 24 },
   plansGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginBottom: 24 },
   planCard: { width: "30%", minWidth: 90, padding: 12, borderRadius: 14, borderWidth: 2, alignItems: "center", gap: 4, position: "relative" },
