@@ -103,6 +103,7 @@ import m_0054 from '../../migrations/0054_banner_designs.sql';
 import m_0055 from '../../migrations/0055_host_level_index.sql';
 import m_0056 from '../../migrations/0056_chat_gifts.sql';
 import m_0057 from '../../migrations/0057_host_streak.sql';
+import m_0058 from '../../migrations/0058_health_checks.sql';
 
 interface Migration {
   /**
@@ -172,6 +173,7 @@ const MIGRATIONS: ReadonlyArray<Migration> = [
   { name: '0055_host_level_index.sql',              sql: m_0055 },
   { name: '0056_chat_gifts.sql',                    sql: m_0056 },
   { name: '0057_host_streak.sql',                   sql: m_0057 },
+  { name: '0058_health_checks.sql',                 sql: m_0058 },
 ];
 
 /**

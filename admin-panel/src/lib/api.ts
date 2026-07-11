@@ -100,6 +100,8 @@ export const api = {
   // SLA & data-integrity signals — API errors, FX freshness, coin
   // reconciliation, migration state, reward-budget fill, security counters.
   monitoringHealth: () => req<any>('GET', '/admin/monitoring/health'),
+  // Full health monitor page data — live probes + uptime + latency + incidents
+  healthFull: () => req<any>('GET', '/admin/health/full'),
   // Kill-switch state for the emergency-switches card on the dashboard.
   emergencyFlags: () =>
     req<{ payouts_frozen: boolean; registrations_paused: boolean; new_calls_paused: boolean }>(
