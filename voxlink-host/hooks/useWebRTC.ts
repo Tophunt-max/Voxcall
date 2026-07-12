@@ -156,6 +156,7 @@ export function useWebRTC(options: UseWebRTCOptions): UseWebRTCReturn {
         channel: cfg.channel,
         uid: cfg.uid ?? 0,
         token: cfg.token,
+        initialTier: (cfg as any).recommended_quality,
       });
       serviceRef.current = service;
 

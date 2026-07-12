@@ -69,6 +69,10 @@ export interface AgoraJoinConfig {
   channel: string;
   uid: number;
   token: string;
+  // Smart call-quality routing: the tier the local video encoder should START
+  // at (server hint from the user's recent network history). Defaults to
+  // 'high' when absent; live adaptation still takes over after connect.
+  initialTier?: 'high' | 'medium' | 'low';
 }
 
 // Marker objects handed to the hook on native (where there is no MediaStream).
@@ -185,6 +189,13 @@ export class AgoraService {
     this.isVideo = isVideo;
     this.callbacks = callbacks;
     this.config = config;
+    // Smart call-quality routing: start at the server-recommended tier (from
+    // the user's recent network history) instead of always 'high', so a
+    // chronically-poor connection doesn't freeze on connect. Live adaptation
+    // (_maybeAdaptQuality) still ramps this up/down after connect.
+    if (config.initialTier === 'medium' || config.initialTier === 'low') {
+      this.currentTier = config.initialTier;
+    }
   }
 
   get provider(): 'agora' { return 'agora'; }

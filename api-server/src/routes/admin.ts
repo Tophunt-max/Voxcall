@@ -16,6 +16,7 @@ import { ensureAllMigrations, listMigrationStatus } from '../lib/autoMigrate';
 import { invalidateBannerCaches } from './public';
 import { findActiveBan } from '../lib/bans';
 import { pushCoinUpdate, notifyUser, pushBanState, pushToUser, broadcastDataChanged } from '../lib/realtime';
+import { assessUserRisk } from '../lib/riskScore';
 import type { Env, JWTPayload } from '../types';
 
 const admin = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
@@ -788,11 +789,15 @@ admin.patch('/settings', async (c) => {
     'agora_audio_usd_per_1000', 'agora_video_hd_usd_per_1000', 'agora_video_fhd_usd_per_1000',
     'call_participants', 'floor_max_host_share', 'call_floor_safety_multiplier',
     'video_max_resolution', 'regional_price_multiplier', 'call_prepaid_hold_enabled',
-    'reco_enabled', 'reco_weights',
+    'reco_enabled', 'reco_weights', 'reco_performance_weight',
     'reengagement_enabled', 'reengagement_idle_days', 'reengagement_winback_days',
     'reengagement_cooldown_days', 'reengagement_max_per_run',
     'reengagement_max_idle_days', 'reengagement_interval_hours',
     'match_weighting_enabled', 'match_weights',
+    // Smart engines suite — best-time-to-notify, churn prediction, call-quality routing.
+    'smart_timing_enabled', 'smart_timing_window_hours', 'smart_timing_lookback_days', 'smart_timing_max_users',
+    'churn_prediction_enabled', 'churn_horizon_days', 'churn_high_threshold', 'churn_medium_threshold', 'churn_max_users',
+    'smart_call_quality_enabled', 'smart_call_quality_samples',
     'daily_streak_variable_enabled', 'daily_streak_variable_table',
     // Daily streak engagement v2 — freeze/repair, anti-farming, chest, reminders.
     'daily_streak_comeback_bonus', 'daily_streak_guest_multiplier',
@@ -827,6 +832,19 @@ admin.patch('/settings', async (c) => {
     'smart_discount_ends_at',
     // Smart Recharge Recommendation — usage-aware "best pack for you".
     'smart_recommend_enabled', 'smart_recommend_lookback_days', 'smart_recommend_target_days',
+    // Smart-engines v2 — all DEFAULT OFF, admin opt-in.
+    // Fraud / Abuse Risk Scoring (lib/riskScore.ts).
+    'risk_scoring_enabled', 'risk_lookback_days', 'risk_velocity_window_hours',
+    'risk_velocity_burst', 'risk_new_account_days', 'risk_weights',
+    // Availability Prediction (lib/availabilityPredict.ts).
+    'availability_predict_enabled', 'availability_predict_lookback_days', 'availability_predict_threshold',
+    // Personalized Home Rail Ordering (lib/railOrder.ts).
+    'rail_order_enabled', 'rail_order_lookback_days', 'rail_order_weights',
+    // Smart Instant-Connect (lib/instantConnect.ts).
+    'instant_connect_enabled', 'instant_connect_max_wait_seconds',
+    'instant_connect_load_window_min', 'instant_connect_weights',
+    // Session Quality Auto-Router (lib/callQualityRouter.ts).
+    'quality_router_enabled', 'quality_host_min_samples', 'quality_host_max_penalty', 'quality_thresholds',
   ];
   const stmts = Object.entries(processedBody)
     .filter(([k]) => ALLOWED_SETTINGS.includes(k))
@@ -3795,6 +3813,13 @@ admin.get('/dashboard/summary', async (c) => {
   });
 });
 
+// ─── GET /admin/churn — churn-prediction summary (tier distribution + top risk)
+admin.get('/churn', async (c) => {
+  const { getChurnSummary } = await import('../lib/churn');
+  const summary = await getChurnSummary(c.env.DB);
+  return c.json(summary);
+});
+
 // ─── GET /admin/monitoring/health ──────────────────────────────────────────
 admin.get('/monitoring/health', async (c) => {
   const dbA = c.env.DB;
@@ -3989,6 +4014,71 @@ admin.get('/health/full', async (c) => {
     status_timeline: statusTimeline,
     server_time: now,
   });
+});
+
+// ─── Fraud / Abuse Risk Scoring (lib/riskScore.ts) ──────────────────────────
+// Read-only admin views. DEFAULT OFF: when risk_scoring_enabled=0 both return
+// { enabled:false } and do no work, so enabling is a pure opt-in.
+
+// GET /api/admin/risk/user/:id — full risk assessment for one user.
+admin.get('/risk/user/:id', async (c) => {
+  const userId = c.req.param('id');
+  if (!userId) return c.json({ error: 'user id required' }, 400);
+  const assessment = await assessUserRisk(c.env, userId);
+  return c.json({ user_id: userId, ...assessment });
+});
+
+// GET /api/admin/risk/flagged?limit=&min_tier= — assess a bounded set of
+// recently-active users and return those at or above the requested tier,
+// highest score first. Assessment runs in small concurrent chunks to keep the
+// worker responsive. `min_tier` ∈ {medium,high} (default medium).
+admin.get('/risk/flagged', async (c) => {
+  const db = c.env.DB;
+  const enabledRow = await db
+    .prepare("SELECT value FROM app_settings WHERE key = 'risk_scoring_enabled'")
+    .first<{ value: string }>()
+    .catch(() => null);
+  const enabled = enabledRow?.value != null && enabledRow.value !== '0' && enabledRow.value.toLowerCase() !== 'false';
+  if (!enabled) return c.json({ enabled: false, flagged: [] });
+
+  const limit = Math.min(200, Math.max(1, parseInt(c.req.query('limit') || '100', 10) || 100));
+  const minTier = c.req.query('min_tier') === 'high' ? 'high' : 'medium';
+  const minScore = minTier === 'high' ? 70 : 40;
+
+  // Candidate set: most-recently-active real users (bounded). We assess these
+  // rather than the whole base to keep cost predictable.
+  let candidates: { id: string; name: string | null; email: string | null }[] = [];
+  try {
+    const res = await db
+      .prepare(
+        `SELECT id, name, email FROM users
+         WHERE role = 'user' AND COALESCE(status,'active') != 'deleted'
+         ORDER BY updated_at DESC LIMIT ?`,
+      )
+      .bind(limit)
+      .all<{ id: string; name: string | null; email: string | null }>();
+    candidates = res.results ?? [];
+  } catch (e) {
+    console.warn('[admin/risk/flagged] candidate query failed:', e);
+    return c.json({ enabled: true, flagged: [] });
+  }
+
+  const flagged: Array<{ user_id: string; name: string | null; email: string | null; score: number; tier: string; reasons: string[] }> = [];
+  const CHUNK = 10;
+  for (let i = 0; i < candidates.length; i += CHUNK) {
+    const chunk = candidates.slice(i, i + CHUNK);
+    const results = await Promise.all(
+      chunk.map(async (u) => ({ u, a: await assessUserRisk(c.env, u.id) })),
+    );
+    for (const { u, a } of results) {
+      if (a.enabled && a.score >= minScore) {
+        flagged.push({ user_id: u.id, name: u.name, email: u.email, score: a.score, tier: a.tier, reasons: a.reasons });
+      }
+    }
+  }
+
+  flagged.sort((a, b) => b.score - a.score);
+  return c.json({ enabled: true, assessed: candidates.length, min_tier: minTier, flagged });
 });
 
 export default admin;

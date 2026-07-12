@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
-import { Save, Rocket, Gift, Zap, Trophy, RotateCcw, Users, Sparkles, Wand2 } from 'lucide-react';
+import { Save, Rocket, Gift, Zap, Trophy, RotateCcw, Users, Clock, TrendingDown, Star, Signal, Sparkles, Wand2 } from 'lucide-react';
 
 // Every key is persisted by the admin /settings allowlist AND consumed by
 // lib/promotions.ts (approveDeposit) + the comeback login hook + referral
@@ -43,6 +43,21 @@ const DEFAULTS = {
   comeback_cooldown_days: '30',
   // Referral contest
   referral_contest_enabled: '0',
+  // ── Smart Engines suite ──────────────────────────────────────────────────
+  // Best-Time-To-Notify
+  smart_timing_enabled: '0',
+  smart_timing_window_hours: '2',
+  smart_timing_lookback_days: '21',
+  // Churn Prediction
+  churn_prediction_enabled: '0',
+  churn_horizon_days: '30',
+  churn_high_threshold: '0.7',
+  churn_medium_threshold: '0.4',
+  // Dynamic host ranking — performance (conversion) weight
+  reco_performance_weight: '0.5',
+  // Smart call-quality routing
+  smart_call_quality_enabled: '0',
+  smart_call_quality_samples: '20',
 };
 
 type Config = typeof DEFAULTS;
@@ -285,6 +300,48 @@ export default function GrowthPromotions() {
           <Section title="Referral contest" desc="Show a referral leaderboard in the app to gamify inviting friends." icon={Users}>
             <Field label="Enabled" desc="Exposes the top-referrers leaderboard (GET /api/user/referral-leaderboard).">
               <Toggle value={isOn(config.referral_contest_enabled)} onChange={() => toggle('referral_contest_enabled')} />
+            </Field>
+          </Section>
+
+          <Section title="⏰ Best-Time-To-Notify" desc="Learn each user's most-active hour and deliver engagement nudges near it (better open rates, less annoyance). A daily job computes the active hour from calls + opened notifications." icon={Clock}>
+            <Field label="Enabled" desc="When ON, engagement nudges are held until the user's active window.">
+              <Toggle value={isOn(config.smart_timing_enabled)} onChange={() => toggle('smart_timing_enabled')} />
+            </Field>
+            <Field label="Window" desc="Deliver within ±this many hours of the user's peak active hour.">
+              <NumInput value={config.smart_timing_window_hours} onChange={v => update('smart_timing_window_hours', v)} min={0} max={12} suffix="hrs" />
+            </Field>
+            <Field label="Lookback" desc="Days of activity history used to learn the active hour.">
+              <NumInput value={config.smart_timing_lookback_days} onChange={v => update('smart_timing_lookback_days', v)} min={1} max={90} suffix="days" />
+            </Field>
+          </Section>
+
+          <Section title="📉 Churn Prediction" desc="Daily per-user churn-risk score (recency + call-frequency decline). View the breakdown on the dashboard and prioritize win-backs. Read-only — never messages users or moves coins." icon={TrendingDown}>
+            <Field label="Enabled" desc="When ON, a daily job scores every active user's churn risk.">
+              <Toggle value={isOn(config.churn_prediction_enabled)} onChange={() => toggle('churn_prediction_enabled')} />
+            </Field>
+            <Field label="Churn horizon" desc="Idle this many days ⇒ maximum recency risk.">
+              <NumInput value={config.churn_horizon_days} onChange={v => update('churn_horizon_days', v)} min={1} max={180} suffix="days" />
+            </Field>
+            <Field label="High-risk threshold" desc="Risk ≥ this → 'high' tier (0–1).">
+              <NumInput value={config.churn_high_threshold} onChange={v => update('churn_high_threshold', v)} min={0} max={1} />
+            </Field>
+            <Field label="Medium-risk threshold" desc="Risk ≥ this → 'medium' tier (0–1).">
+              <NumInput value={config.churn_medium_threshold} onChange={v => update('churn_medium_threshold', v)} min={0} max={1} />
+            </Field>
+          </Section>
+
+          <Section title="⭐ Dynamic Host Ranking" desc="Blend recent CONVERSION performance (how often surfacing a host led to a call) into the personalized recommendations. Higher weight = performing hosts surface more." icon={Star}>
+            <Field label="Performance weight" desc="0 = ignore performance. Confidence-shrunk so low-traffic hosts aren't over-rated.">
+              <NumInput value={config.reco_performance_weight} onChange={v => update('reco_performance_weight', v)} min={0} max={5} />
+            </Field>
+          </Section>
+
+          <Section title="📶 Smart Call-Quality Routing" desc="Start each user's video at a tier learned from their recent network history, so chronically-poor connections don't freeze on connect. Live adaptation still takes over after connect." icon={Signal}>
+            <Field label="Enabled" desc="OFF = always start at top quality (legacy).">
+              <Toggle value={isOn(config.smart_call_quality_enabled)} onChange={() => toggle('smart_call_quality_enabled')} />
+            </Field>
+            <Field label="Samples" desc="How many recent quality samples to average per user.">
+              <NumInput value={config.smart_call_quality_samples} onChange={v => update('smart_call_quality_samples', v)} min={3} max={200} />
             </Field>
           </Section>
 

@@ -129,6 +129,13 @@ host.get('/recommended', authMiddleware, async (c) => {
   } catch {
     weights = normalizeWeights(undefined);
   }
+  // Dedicated admin knob for the performance signal (conversion rate) so it can
+  // be tuned without editing the reco_weights JSON. Overrides the JSON value.
+  try {
+    const perfRow = await db.prepare("SELECT value FROM app_settings WHERE key = 'reco_performance_weight'").first<{ value: string }>();
+    const pw = Number(perfRow?.value);
+    if (Number.isFinite(pw) && pw >= 0) weights.performance = pw;
+  } catch { /* keep default */ }
 
   // 1. Candidate pool (bounded): top hosts by availability/level/rating, the
   //    newest hosts (freshness/exploration), and the caller's affinity history.
@@ -209,6 +216,37 @@ host.get('/recommended', authMiddleware, async (c) => {
     preferredGender: topGender,
   };
 
+  // 2b. Recent conversion performance per candidate host (last 7 days) from
+  //     host_engagement_stats. Confidence-shrunk so a host with 1 impression
+  //     and 1 call doesn't score a perfect 1.0: score = conversions /
+  //     (impressions + SMOOTHING). Best-effort — missing table/rows → 0.
+  const perfByHost = new Map<string, number>();
+  if (weights.performance > 0) {
+    try {
+      const candidateIds = [...rawById.keys()];
+      const SMOOTHING = 20;
+      for (let i = 0; i < candidateIds.length; i += 90) {
+        const chunk = candidateIds.slice(i, i + 90);
+        if (chunk.length === 0) break;
+        const ph = chunk.map(() => '?').join(',');
+        const rows = await db.prepare(
+          `SELECT host_id,
+                  COALESCE(SUM(impressions), 0) AS imp,
+                  COALESCE(SUM(conversions), 0) AS conv
+             FROM host_engagement_stats
+            WHERE host_id IN (${ph})
+              AND day >= date('now', '-7 days')
+            GROUP BY host_id`,
+        ).bind(...chunk).all<{ host_id: string; imp: number; conv: number }>();
+        for (const r of rows.results ?? []) {
+          const imp = Number(r.imp) || 0;
+          const conv = Number(r.conv) || 0;
+          perfByHost.set(r.host_id, conv / (imp + SMOOTHING));
+        }
+      }
+    } catch { /* engagement stats missing → no performance signal */ }
+  }
+
   // 3. Score + rank. Build CandidateHost shapes with parsed arrays.
   const candidates: CandidateHost[] = [...rawById.values()].map((h) => ({
     id: h.id,
@@ -221,6 +259,7 @@ host.get('/recommended', authMiddleware, async (c) => {
     gender: h.gender ?? null,
     languages: safeParse(h.languages, []),
     specialties: safeParse(h.specialties, []),
+    performanceScore: perfByHost.get(h.id) ?? 0,
   }));
 
   // Seed the exploration jitter with the current 6-hour bucket so the rail

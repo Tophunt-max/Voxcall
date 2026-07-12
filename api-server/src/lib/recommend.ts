@@ -52,6 +52,8 @@ export interface RecoWeights {
   freshness: number;
   /** Magnitude of the random jitter added to every score (exploration). */
   exploration: number;
+  /** Recent conversion performance (impressions→calls) from engagement stats. */
+  performance: number;
 }
 
 export const DEFAULT_WEIGHTS: RecoWeights = {
@@ -66,6 +68,7 @@ export const DEFAULT_WEIGHTS: RecoWeights = {
   gender: 0.3,
   freshness: 0.5,
   exploration: 0.15,
+  performance: 0.5,
 };
 
 /**
@@ -97,6 +100,12 @@ export interface CandidateHost {
   gender: string | null;
   languages: string[];
   specialties: string[];
+  /**
+   * Recent conversion performance in [0,1]: how often surfacing this host led
+   * to a call (impressions→conversions from host_engagement_stats), confidence-
+   * shrunk so low-traffic hosts aren't over/under-rated. Optional — defaults 0.
+   */
+  performanceScore?: number;
   // Passthrough fields the route returns to the client (not used in scoring).
   [extra: string]: unknown;
 }
@@ -210,6 +219,7 @@ export function scoreHost(
 
   const freshness = freshnessScore(host.created_at, host.review_count, now);
   const jitter = seededJitter(host.id, seed);
+  const performance = clamp01(Number(host.performanceScore) || 0);
 
   const breakdown: Record<string, number> = {
     online: weights.online * online,
@@ -223,6 +233,7 @@ export function scoreHost(
     gender: weights.gender * genderMatch,
     freshness: weights.freshness * freshness,
     exploration: weights.exploration * jitter,
+    performance: weights.performance * performance,
   };
 
   let score = 0;

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { Link } from 'wouter';
 import { api } from '@/lib/api';
-import { Save, Smartphone, AlertTriangle, Mail, RefreshCw, ArrowRight, Flame, Bell } from 'lucide-react';
+import { Save, Smartphone, AlertTriangle, Mail, RefreshCw, ArrowRight, Flame, Bell, ShieldAlert, Clock, LayoutList, Zap, Activity } from 'lucide-react';
 
 // IMPORTANT: every key below is one the backend actually persists
 // (api-server admin /settings allowlist) AND consumes:
@@ -36,6 +36,21 @@ const DEFAULTS = {
   near_level_nudge_enabled: '1',
   near_level_nudge_hour_ist: '19',
   near_level_nudge_threshold: '80',
+  // ── Smart-engines v2 (all DEFAULT OFF — pure admin opt-in). Advanced JSON
+  //    weight blobs (risk_weights / instant_connect_weights / etc.) are tuned
+  //    via the API, not this page; here we expose the on/off + key params.
+  risk_scoring_enabled: '0',
+  risk_lookback_days: '30',
+  risk_velocity_burst: '4',
+  risk_new_account_days: '3',
+  availability_predict_enabled: '0',
+  availability_predict_lookback_days: '30',
+  availability_predict_threshold: '0.5',
+  rail_order_enabled: '0',
+  instant_connect_enabled: '0',
+  instant_connect_max_wait_seconds: '300',
+  quality_router_enabled: '0',
+  quality_host_max_penalty: '0.3',
 };
 
 type Config = typeof DEFAULTS;
@@ -233,6 +248,57 @@ export default function AppConfig() {
           </Field>
           <Field label="Trigger at progress (%)" desc="Push hosts at or above this % to next level (50–99)">
             <Input type="number" value={config.near_level_nudge_threshold} onChange={v => update('near_level_nudge_threshold', v)} />
+          </Field>
+        </Section>
+
+        <Section title="Smart Instant-Connect" icon={Zap}>
+          <Field label="Enabled" desc="'Talk Now' connects to the best host for each user (affinity + quality + fair load). Off = normal flow.">
+            <Toggle value={config.instant_connect_enabled !== '0'} onChange={v => update('instant_connect_enabled', v ? '1' : '0')} />
+          </Field>
+          <Field label="Max wait estimate (seconds)" desc="Cap on the 'usually ~N min' ETA shown when all hosts are busy">
+            <Input type="number" value={config.instant_connect_max_wait_seconds} onChange={v => update('instant_connect_max_wait_seconds', v)} />
+          </Field>
+        </Section>
+
+        <Section title="Availability Prediction" icon={Clock}>
+          <Field label="Enabled" desc="Shows a data-driven 'Usually online now / around 8 PM' hint (a probability, never a false 'live')">
+            <Toggle value={config.availability_predict_enabled !== '0'} onChange={v => update('availability_predict_enabled', v ? '1' : '0')} />
+          </Field>
+          <Field label="History window (days)" desc="How many days of activity to learn each host's online pattern from">
+            <Input type="number" value={config.availability_predict_lookback_days} onChange={v => update('availability_predict_lookback_days', v)} />
+          </Field>
+          <Field label="'Usually online' threshold (0–1)" desc="P(active) at/above which we say a host is usually online now">
+            <Input type="number" value={config.availability_predict_threshold} onChange={v => update('availability_predict_threshold', v)} />
+          </Field>
+        </Section>
+
+        <Section title="Personalized Home Rails" icon={LayoutList}>
+          <Field label="Enabled" desc="Reorder the home rails per user from their own tap history. Off = static order for everyone.">
+            <Toggle value={config.rail_order_enabled !== '0'} onChange={v => update('rail_order_enabled', v ? '1' : '0')} />
+          </Field>
+        </Section>
+
+        <Section title="Session Quality Auto-Router" icon={Activity}>
+          <Field label="Enabled" desc="Recommend graceful video→audio downgrade on bad networks + softly demote consistently poor-quality hosts">
+            <Toggle value={config.quality_router_enabled !== '0'} onChange={v => update('quality_router_enabled', v ? '1' : '0')} />
+          </Field>
+          <Field label="Max host ranking penalty (0–1)" desc="Upper bound on how much a poor-quality host is demoted in discovery">
+            <Input type="number" value={config.quality_host_max_penalty} onChange={v => update('quality_host_max_penalty', v)} />
+          </Field>
+        </Section>
+
+        <Section title="Fraud / Abuse Risk Scoring" icon={ShieldAlert}>
+          <Field label="Enabled" desc="Score users on recharge/refund/decline patterns for the Risk view. Off = no scoring, no throttling.">
+            <Toggle value={config.risk_scoring_enabled !== '0'} onChange={v => update('risk_scoring_enabled', v ? '1' : '0')} />
+          </Field>
+          <Field label="Lookback window (days)" desc="History window used to gather risk signals">
+            <Input type="number" value={config.risk_lookback_days} onChange={v => update('risk_lookback_days', v)} />
+          </Field>
+          <Field label="Recharge burst count" desc="Purchases within 1h that saturate the velocity signal (card-testing pattern)">
+            <Input type="number" value={config.risk_velocity_burst} onChange={v => update('risk_velocity_burst', v)} />
+          </Field>
+          <Field label="New-account window (days)" desc="Big spend within this many days of signup flags promo/bonus abuse">
+            <Input type="number" value={config.risk_new_account_days} onChange={v => update('risk_new_account_days', v)} />
           </Field>
         </Section>
 

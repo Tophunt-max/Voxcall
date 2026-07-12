@@ -340,6 +340,7 @@ export const API = {
       token: string;
       role: 'caller' | 'host';
       call_type: 'audio' | 'video';
+      recommended_quality?: 'high' | 'medium' | 'low';
     }>('GET', `/api/calls/${sessionId}/agora-token`),
   // Relay in-call mic/camera state to the other party so their UI updates
   // instantly (camera-off avatar / muted badge) instead of polling the remote

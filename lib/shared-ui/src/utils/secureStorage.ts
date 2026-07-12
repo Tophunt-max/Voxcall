@@ -20,11 +20,11 @@
 // so the app never crashes on a missing native module.
 // ============================================================================
 
-// Minimal structural type for the parts of expo-secure-store we use. We avoid
-// `typeof import('expo-secure-store')` because the package is an optional peer
-// (not in this shared lib's deps), so a direct type import fails to resolve
-// during typecheck. Loaded via dynamic require at runtime with a graceful
-// AsyncStorage fallback, so this local interface is all we need.
+// Minimal structural type for the bits of expo-secure-store we use. Declaring
+// it locally (instead of `typeof import('expo-secure-store')`) means this file
+// type-checks even when the optional native package isn't installed — the
+// runtime require() below still picks it up when it IS present, and falls back
+// to AsyncStorage when it isn't.
 interface SecureStoreModule {
   setItemAsync(key: string, value: string): Promise<void>;
   getItemAsync(key: string): Promise<string | null>;
