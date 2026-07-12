@@ -9,7 +9,7 @@ import {
   IndianRupee, MessageSquare, Flag, ShieldOff, Megaphone,
   ScrollText, Image, Gift, Radio, Sliders, CreditCard,
   CircleDollarSign, Zap, Ticket, Medal, Crown, Sparkles, Rocket,
-  HeartPulse
+  HeartPulse, ShieldAlert
 } from 'lucide-react';
 
 const nav = [
@@ -33,6 +33,7 @@ const nav = [
   { href: '/payment-gateways', label: 'Payment Gateways', icon: CreditCard, section: 'finance' },
   { href: '/referral-system', label: 'Referral System', icon: Gift, section: 'growth' },
   { href: '/content-moderation', label: 'Moderation', icon: Flag, section: 'moderation' },
+  { href: '/risk', label: 'Fraud / Risk', icon: ShieldAlert, section: 'moderation' },
   { href: '/support-tickets', label: 'Support Tickets', icon: MessageSquare, section: 'moderation' },
   { href: '/bulk-notifications', label: 'Bulk Notifications', icon: Megaphone, section: 'content' },
   { href: '/banners', label: 'Banners', icon: Image, section: 'content' },

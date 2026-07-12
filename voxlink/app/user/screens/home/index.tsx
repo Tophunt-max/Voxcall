@@ -356,6 +356,23 @@ export default function HomeScreen() {
     staleTime: 5 * 60_000,
   });
 
+  // Personalized rail ORDER (smart-engines: routes/smart.ts /rail-order). Only
+  // reorders the three top horizontal rails (favorites / recommended / top)
+  // relative to each other — the "Available now" list + filter chips stay put.
+  // DEFAULT OFF on the server → { enabled:false } and we keep the static order.
+  // Best-effort: any error just yields the default order (never throws / blocks).
+  const { data: railOrderData } = useQuery({
+    queryKey: ['rail-order'],
+    queryFn: async () => {
+      try {
+        const res = await API.getRailOrder();
+        return res?.enabled && Array.isArray(res.order) ? res.order : null;
+      } catch { return null; }
+    },
+    staleTime: 5 * 60_000,
+    retry: 0,
+  });
+
   // First-call-free trial — surface the user's remaining free call minutes
   // (admin sets the pool via first_call_free_minutes; /api/user/me returns the
   // remaining balance). 0 / older backend simply hides the banner.
@@ -558,6 +575,136 @@ export default function HomeScreen() {
     [queryClient]
   );
 
+  // Resolve the display order of the three top horizontal rails. When the
+  // smart engine is off (railOrderData === null) this is the static default:
+  // favorites → recommended → top. When on, we honour the server's relative
+  // order for just these three ids and append any it didn't mention.
+  const DEFAULT_TOP_RAILS = ['favorites', 'recommended', 'top'];
+  const orderedTopRails = (() => {
+    if (!railOrderData) return DEFAULT_TOP_RAILS;
+    const filtered = railOrderData.filter((id) => DEFAULT_TOP_RAILS.includes(id));
+    const missing = DEFAULT_TOP_RAILS.filter((id) => !filtered.includes(id));
+    return [...filtered, ...missing];
+  })();
+
+  // One rail's JSX by id. Each returns null when its rail has nothing to show,
+  // so ordering never leaves an empty gap. Keys are stable rail ids so React
+  // just reorders the existing subtrees when the order changes.
+  const renderTopRail = (railId: string) => {
+    switch (railId) {
+      case 'favorites':
+        return favoriteHosts.length > 0 ? (
+          <View key="favorites" style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>{tr.home.yourFavorites}</Text>
+              <TouchableOpacity onPress={() => router.push("/user/screens/home/messages")}>
+                <Text style={[styles.seeAll, { color: colors.primary }]}>{tr.home.viewAll}</Text>
+              </TouchableOpacity>
+            </View>
+            <FlatList
+              data={favoriteHosts}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              keyExtractor={(h) => h.id}
+              onViewableItemsChanged={onFavViewable}
+              viewabilityConfig={favViewabilityConfig}
+              renderItem={({ item }) => (
+                <HostCard
+                  host={item}
+                  compact
+                  userCoins={user?.coins}
+                  onPress={() => {
+                    logEngagement({ type: 'host_click', host_id: item.id, surface: 'home_favorites' });
+                    prefetchHost(item.id);
+                    router.push(`/user/hosts/${item.id}`);
+                  }}
+                />
+              )}
+              contentContainerStyle={{ paddingRight: 16, paddingLeft: 2 }}
+            />
+          </View>
+        ) : null;
+
+      case 'recommended':
+        return recommended.length > 0 ? (
+          <View key="recommended" style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>{tr.home.recommendedForYou}</Text>
+            </View>
+            <FlatList
+              data={recommended}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              keyExtractor={(it) => it.host.id}
+              onViewableItemsChanged={onRecoViewable}
+              viewabilityConfig={recoViewabilityConfig}
+              renderItem={({ item }) => (
+                <View style={styles.recoItem}>
+                  <HostCard
+                    host={item.host}
+                    compact
+                    userCoins={user?.coins}
+                    onPress={() => {
+                      logEngagement({ type: 'reco_click', host_id: item.host.id, surface: 'home_reco' });
+                      prefetchHost(item.host.id);
+                      router.push(`/user/hosts/${item.host.id}`);
+                    }}
+                  />
+                  {item.reason ? (
+                    <Text numberOfLines={1} style={[styles.recoReason, { color: colors.primary }]}>
+                      {item.reason}
+                    </Text>
+                  ) : null}
+                </View>
+              )}
+              contentContainerStyle={{ paddingRight: 16, paddingLeft: 2 }}
+            />
+          </View>
+        ) : null;
+
+      case 'top':
+        return hostsLoading ? (
+          <View key="top" style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>{tr.home.topListeners}</Text>
+            <View style={{ flexDirection: "row" }}>
+              {[1, 2, 3].map((i) => <SkeletonHostCardCompact key={i} />)}
+            </View>
+          </View>
+        ) : topHosts.length > 0 ? (
+          <View key="top" style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>{tr.home.topListeners}</Text>
+              <TouchableOpacity onPress={() => router.push("/user/hosts/all")}>
+                <Text style={[styles.seeAll, { color: colors.primary }]}>{tr.home.viewAll}</Text>
+              </TouchableOpacity>
+            </View>
+            <FlatList
+              data={topHosts}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              keyExtractor={(h) => h.id}
+              renderItem={({ item }) => (
+                <HostCard
+                  host={item}
+                  compact
+                  userCoins={user?.coins}
+                  onPress={() => {
+                    logEngagement({ type: 'host_click', host_id: item.id, surface: 'home_top' });
+                    prefetchHost(item.id);
+                    router.push(`/user/hosts/${item.id}`);
+                  }}
+                />
+              )}
+              contentContainerStyle={{ paddingRight: 16, paddingLeft: 2 }}
+            />
+          </View>
+        ) : null;
+
+      default:
+        return null;
+    }
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header bar */}
@@ -696,114 +843,11 @@ export default function HomeScreen() {
           </TouchableOpacity>
         )}
 
-        {/* P1: Your favorites — highest-intent rail, shown above Recommended
-            for returning users who have saved hosts. */}
-        {favoriteHosts.length > 0 && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>{tr.home.yourFavorites}</Text>
-              <TouchableOpacity onPress={() => router.push("/user/screens/home/messages")}>
-                <Text style={[styles.seeAll, { color: colors.primary }]}>{tr.home.viewAll}</Text>
-              </TouchableOpacity>
-            </View>
-            <FlatList
-              data={favoriteHosts}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              keyExtractor={(h) => h.id}
-              onViewableItemsChanged={onFavViewable}
-              viewabilityConfig={favViewabilityConfig}
-              renderItem={({ item }) => (
-                <HostCard
-                  host={item}
-                  compact
-                  userCoins={user?.coins}
-                  onPress={() => {
-                    logEngagement({ type: 'host_click', host_id: item.id, surface: 'home_favorites' });
-                    prefetchHost(item.id);
-                    router.push(`/user/hosts/${item.id}`);
-                  }}
-                />
-              )}
-              contentContainerStyle={{ paddingRight: 16, paddingLeft: 2 }}
-            />
-          </View>
-        )}
-
-        {/* Recommended for you — personalized rail (see services/api.getRecommendedHosts) */}
-        {recommended.length > 0 && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>{tr.home.recommendedForYou}</Text>
-            </View>
-            <FlatList
-              data={recommended}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              keyExtractor={(it) => it.host.id}
-              onViewableItemsChanged={onRecoViewable}
-              viewabilityConfig={recoViewabilityConfig}
-              renderItem={({ item }) => (
-                <View style={styles.recoItem}>
-                  <HostCard
-                    host={item.host}
-                    compact
-                    userCoins={user?.coins}
-                    onPress={() => {
-                      logEngagement({ type: 'reco_click', host_id: item.host.id, surface: 'home_reco' });
-                      prefetchHost(item.host.id);
-                      router.push(`/user/hosts/${item.host.id}`);
-                    }}
-                  />
-                  {item.reason ? (
-                    <Text numberOfLines={1} style={[styles.recoReason, { color: colors.primary }]}>
-                      {item.reason}
-                    </Text>
-                  ) : null}
-                </View>
-              )}
-              contentContainerStyle={{ paddingRight: 16, paddingLeft: 2 }}
-            />
-          </View>
-        )}
-
-        {/* Top Listeners section — OPTIMIZATION #8: skeleton cards while loading */}
-        {hostsLoading ? (
-          <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>{tr.home.topListeners}</Text>
-            <View style={{ flexDirection: "row" }}>
-              {[1, 2, 3].map((i) => <SkeletonHostCardCompact key={i} />)}
-            </View>
-          </View>
-        ) : topHosts.length > 0 ? (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>{tr.home.topListeners}</Text>
-              <TouchableOpacity onPress={() => router.push("/user/hosts/all")}>
-                <Text style={[styles.seeAll, { color: colors.primary }]}>{tr.home.viewAll}</Text>
-              </TouchableOpacity>
-            </View>
-            <FlatList
-              data={topHosts}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              keyExtractor={(h) => h.id}
-              renderItem={({ item }) => (
-                <HostCard
-                  host={item}
-                  compact
-                  userCoins={user?.coins}
-                  onPress={() => {
-                    logEngagement({ type: 'host_click', host_id: item.id, surface: 'home_top' });
-                    prefetchHost(item.id);
-                    router.push(`/user/hosts/${item.id}`);
-                  }}
-                />
-              )}
-              contentContainerStyle={{ paddingRight: 16, paddingLeft: 2 }}
-            />
-          </View>
-        ) : null}
+        {/* Top horizontal rails (Favorites / Recommended / Top Listeners).
+            Order is personalized by the smart rail-order engine when enabled,
+            else the static default favorites → recommended → top. Each rail
+            self-hides when empty. */}
+        {orderedTopRails.map((id) => renderTopRail(id))}
 
         {/* Filter chips */}
         <View style={styles.section}>

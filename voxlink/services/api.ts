@@ -527,6 +527,51 @@ export const API = {
   matchDecline: (host_id: string) =>
     apiRequest<{ success: boolean }>('POST', '/api/match/decline', { host_id }),
 
+  // ─── Smart engines (see api-server routes/smart.ts) ───────────────────────
+  // All three honour a DEFAULT-OFF server flag: when the engine is disabled the
+  // response is a neutral shape (`enabled:false`) so the client can call them
+  // unconditionally and simply keep its existing behaviour.
+
+  /**
+   * Personalized home-rail ORDER for the current user (from their tap history).
+   * `order` is a permutation of rail ids: favorites|recommended|online|
+   * interest|new|top. Disabled → { enabled:false } (client keeps static order).
+   */
+  getRailOrder: () =>
+    apiRequest<{ enabled: boolean; order?: string[] }>('GET', '/api/smart/rail-order'),
+
+  /**
+   * Data-driven "usually online" hint for one host (a probability from the
+   * host's historical activity — NOT a live-presence claim). Disabled →
+   * { enabled:false }. `label` is a ready-to-render string ('' when low data).
+   */
+  getHostAvailability: (hostId: string) =>
+    apiRequest<{
+      enabled: boolean;
+      likelihood_now: number;
+      usually_online: boolean;
+      peak_hours: number[];
+      next_active_hour: number | null;
+      sample_count: number;
+      label: string;
+    }>('GET', `/api/smart/availability/${hostId}`),
+
+  /**
+   * "Talk Now" brain: best host to connect to right now for THIS user, or an
+   * honest wait ETA + queue position when none are online. Disabled →
+   * { enabled:false } (caller falls back to the normal random-match flow).
+   */
+  requestInstantConnect: (call_type: 'audio' | 'video' = 'audio') =>
+    apiRequest<{
+      enabled: boolean;
+      call_type?: 'audio' | 'video';
+      matched?: boolean;
+      host_id?: string | null;
+      wait_seconds?: number;
+      queue_position?: number;
+      reason?: string;
+    }>('POST', '/api/smart/instant-connect', { call_type }),
+
   // Promo codes
   applyPromoCode: (code: string, plan_id?: string) =>
     apiRequest<{ valid: boolean; type: string; discount: number; bonus_coins: number; discount_pct: number; code: string }>(

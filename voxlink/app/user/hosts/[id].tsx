@@ -225,6 +225,16 @@ export default function HostDetailScreen() {
     enabled: !!id,
     staleTime: 30_000,
   });
+  // Data-driven "usually online" hint (smart availability-prediction engine).
+  // A probability from the host's history — shown only when they're OFFLINE
+  // (live status wins when online). DEFAULT OFF server-side → { enabled:false }.
+  const { data: availability } = useQuery({
+    queryKey: ['host-availability', id],
+    queryFn: async () => { try { return await API.getHostAvailability(id!); } catch { return null; } },
+    enabled: !!id,
+    staleTime: 5 * 60_000,
+    retry: 0,
+  });
 
   // Highlight gallery (photos / videos the host uploaded). Public endpoint.
   const { data: gallery = [] } = useQuery<any[]>({
@@ -526,6 +536,12 @@ export default function HostDetailScreen() {
               <View style={[s.heroStatusDot, { backgroundColor: host.is_online ? "#fff" : "#CBCBD4" }]} />
               <Text style={s.heroStatusTxt}>{host.is_online ? t.hosts.online : t.hosts.offline}</Text>
             </View>
+            {/* Predicted-availability hint — offline hosts only, best-effort */}
+            {!host.is_online && availability?.enabled && availability.label ? (
+              <Text style={{ marginTop: 6, fontSize: 12, fontFamily: "Poppins_500Medium", color: "rgba(255,255,255,0.85)", textAlign: "center" }}>
+                {availability.label}
+              </Text>
+            ) : null}
           </View>
           </View>
         </View>
