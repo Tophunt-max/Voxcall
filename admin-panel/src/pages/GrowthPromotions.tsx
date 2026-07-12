@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
-import { Save, Rocket, Gift, Zap, Trophy, RotateCcw, Users, Sparkles } from 'lucide-react';
+import { Save, Rocket, Gift, Zap, Trophy, RotateCcw, Users, Sparkles, Wand2 } from 'lucide-react';
 
 // Every key is persisted by the admin /settings allowlist AND consumed by
 // lib/promotions.ts (approveDeposit) + the comeback login hook + referral
@@ -19,6 +19,10 @@ const DEFAULTS = {
   smart_discount_max_pct: '100',
   smart_discount_max_coins: '100000',
   smart_discount_ends_at: '0',
+  // Smart Recharge Recommendation — usage-aware "best pack for you"
+  smart_recommend_enabled: '0',
+  smart_recommend_lookback_days: '14',
+  smart_recommend_target_days: '30',
   // First-recharge bonus
   first_recharge_bonus_enabled: '0',
   first_recharge_bonus_pct: '100',
@@ -226,6 +230,21 @@ export default function GrowthPromotions() {
             <Field label="⭐ Loyalty bonus %" desc="Everyday bonus for active returning buyers."><NumInput value={config.smart_discount_returning_pct} onChange={v => update('smart_discount_returning_pct', v)} min={0} max={500} suffix="%" /></Field>
             <Field label="Safety cap %" desc="Hard ceiling on any segment's bonus %."><NumInput value={config.smart_discount_max_pct} onChange={v => update('smart_discount_max_pct', v)} min={0} max={1000} suffix="%" /></Field>
             <Field label="Max bonus coins" desc="Absolute cap on coins granted per recharge."><NumInput value={config.smart_discount_max_coins} onChange={v => update('smart_discount_max_coins', v)} min={0} suffix="coins" /></Field>
+          </Section>
+
+          <Section title="🪄 Smart Recharge Recommendation" desc="Analyzes each user's coin burn-rate and recommends the best-fit pack on checkout, with a '⭐ Best for you' badge + a 'lasts ~N days' hint and an urgency nudge when they're about to run out." icon={Wand2}>
+            <Field label="Enabled" desc="When ON, checkout highlights the ideal pack for each user's usage.">
+              <Toggle value={isOn(config.smart_recommend_enabled)} onChange={() => toggle('smart_recommend_enabled')} />
+            </Field>
+            <Field label="Lookback window" desc="How many days of spending to average for the burn-rate.">
+              <NumInput value={config.smart_recommend_lookback_days} onChange={v => update('smart_recommend_lookback_days', v)} min={1} max={90} suffix="days" />
+            </Field>
+            <Field label="Target runway" desc="Recommend the smallest pack that lasts at least this long at the user's pace.">
+              <NumInput value={config.smart_recommend_target_days} onChange={v => update('smart_recommend_target_days', v)} min={1} max={365} suffix="days" />
+            </Field>
+            <div className="rounded-xl border border-violet-200 dark:border-violet-900/50 bg-violet-50/60 dark:bg-violet-950/20 p-3 text-xs text-violet-700 dark:text-violet-300">
+              New users with no spend history are shown the <strong>popular</strong> pack. Heavy users who'd blow through even the biggest pack before the target are shown the <strong>largest</strong> pack. Everyone else gets the <strong>smallest pack that covers the runway</strong> — so it never feels like over-selling.
+            </div>
           </Section>
 
           <Section title="First-recharge bonus" desc="Extra coins on a user's very first purchase — big conversion lever." icon={Gift}>
