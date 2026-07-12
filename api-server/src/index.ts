@@ -24,9 +24,10 @@ import rewardsRouter from './routes/rewards';
 import tipRouter from './routes/tip';
 import vipRouter from './routes/vip';
 import giftsRouter from './routes/gifts';
+import smartRouter from './routes/smart';
 import { ChatRoom } from './durable-objects/ChatRoom';
 import { NotificationHub } from './durable-objects/NotificationHub';
-import { ensureUsersSchema, ensureRandomCallSchema, ensureStreakSchema, ensureHostStreakSchema, ensureFirstCallFreeSchema, ensureCallObservabilitySchema, ensureEngagementSchema, ensureWithdrawalSchema } from './lib/schemaGuard';
+import { ensureUsersSchema, ensureRandomCallSchema, ensureStreakSchema, ensureHostStreakSchema, ensureFirstCallFreeSchema, ensureCallObservabilitySchema, ensureEngagementSchema, ensureWithdrawalSchema, ensureSmartV2Schema } from './lib/schemaGuard';
 import { ensureAllMigrations } from './lib/autoMigrate';
 import { getLevelConfig, getEarningShare, DEFAULT_AUDIO_RATE, computeLevelProgress } from './lib/levels';
 import { recalcAllHostLevels } from './lib/levelService';
@@ -178,6 +179,7 @@ app.use('/api/*', async (c, next) => {
     ensureCallObservabilitySchema(c.env.DB),
     ensureEngagementSchema(c.env.DB),
     ensureWithdrawalSchema(c.env.DB),
+    ensureSmartV2Schema(c.env.DB),
   ]);
   return next();
 });
@@ -226,6 +228,7 @@ app.route('/api/user/rewards', rewardsRouter);
 app.route('/api/tips', tipRouter);
 app.route('/api/vip', vipRouter);
 app.route('/api/gifts', giftsRouter);
+app.route('/api/smart', smartRouter);
 app.route('/api', publicRouter);
 
 // ─── WebSocket Auth Helper ─────────────────────────────────────────────────

@@ -774,3 +774,122 @@ export function ensureWithdrawalSchema(db: D1Database): Promise<boolean> {
 
   return withdrawalSchemaReadyPromise;
 }
+
+
+// ============================================================================
+// Smart-engines v2 schema guard — Risk / Availability-predict / Rail-order /
+// Instant-connect / Quality-router.
+// ============================================================================
+//
+// No new columns/tables: all five engines work off existing tables
+// (coin_transactions, call_sessions, engagement_events, call_quality, hosts,
+// users). This guard only seeds their tunable app_settings — every feature
+// DEFAULT OFF ('*_enabled' = '0') so enabling is a pure admin opt-in with zero
+// behaviour change until then — plus a couple of supporting indexes for the
+// per-user / per-host time-range aggregations they run. Idempotent; mirrors
+// ensureEngagementSchema.
+
+let smartV2SchemaReadyPromise: Promise<boolean> | null = null;
+
+const SMART_V2_DEFAULT_SETTINGS: ReadonlyArray<{ key: string; value: string }> = [
+  // ── Fraud / Abuse Risk Scoring (lib/riskScore.ts). '0' = fully disabled.
+  { key: 'risk_scoring_enabled', value: '0' },
+  { key: 'risk_lookback_days', value: '30' },
+  { key: 'risk_velocity_window_hours', value: '1' },
+  { key: 'risk_velocity_burst', value: '4' },
+  { key: 'risk_new_account_days', value: '3' },
+  {
+    key: 'risk_weights',
+    value: JSON.stringify({
+      recharge_velocity: 0.9,
+      refund_ratio: 1.0,
+      chargeback_hits: 1.4,
+      new_account_burst: 0.7,
+      ban_history: 1.2,
+      decline_rate: 0.5,
+    }),
+  },
+  // ── Availability Prediction (lib/availabilityPredict.ts). '0' = disabled.
+  { key: 'availability_predict_enabled', value: '0' },
+  { key: 'availability_predict_lookback_days', value: '30' },
+  { key: 'availability_predict_threshold', value: '0.5' },
+  // ── Personalized Home Rail Ordering (lib/railOrder.ts). '0' = static order.
+  { key: 'rail_order_enabled', value: '0' },
+  { key: 'rail_order_lookback_days', value: '30' },
+  {
+    key: 'rail_order_weights',
+    value: JSON.stringify({ click: 1.0, conversion: 3.0, prior: 8.0 }),
+  },
+  // ── Smart Instant-Connect (lib/instantConnect.ts). '0' = disabled.
+  { key: 'instant_connect_enabled', value: '0' },
+  { key: 'instant_connect_max_wait_seconds', value: '300' },
+  { key: 'instant_connect_load_window_min', value: '30' },
+  {
+    key: 'instant_connect_weights',
+    value: JSON.stringify({
+      affinity: 1.4,
+      rating: 1.0,
+      rank_boost: 0.7,
+      freshness: 0.5,
+      load_balance: 1.0,
+    }),
+  },
+  // ── Session Quality Auto-Router (lib/callQualityRouter.ts). '0' = disabled.
+  { key: 'quality_router_enabled', value: '0' },
+  { key: 'quality_host_min_samples', value: '5' },
+  { key: 'quality_host_max_penalty', value: '0.3' },
+  {
+    key: 'quality_thresholds',
+    value: JSON.stringify({
+      loss_degrade_pct: 5,
+      jitter_degrade_ms: 40,
+      rtt_degrade_ms: 300,
+      loss_audio_only_pct: 15,
+    }),
+  },
+];
+
+export function ensureSmartV2Schema(db: D1Database): Promise<boolean> {
+  if (smartV2SchemaReadyPromise) return smartV2SchemaReadyPromise;
+
+  smartV2SchemaReadyPromise = (async () => {
+    try {
+      for (const s of SMART_V2_DEFAULT_SETTINGS) {
+        try {
+          await db
+            .prepare("INSERT OR IGNORE INTO app_settings (key, value, updated_at) VALUES (?, ?, unixepoch())")
+            .bind(s.key, s.value)
+            .run();
+        } catch (err) {
+          console.warn(`[schemaGuard] seed app_settings.${s.key} failed:`, err);
+        }
+      }
+
+      // Supporting indexes for the engines' time-range aggregations. All
+      // idempotent; a failure here is non-fatal (queries still work, slower).
+      const indexes = [
+        // availabilityPredict: per-host recent-call histogram.
+        'CREATE INDEX IF NOT EXISTS idx_call_sessions_host_time ON call_sessions(host_id, created_at)',
+        // riskScore: per-caller recent-call decline aggregation.
+        'CREATE INDEX IF NOT EXISTS idx_call_sessions_caller_time ON call_sessions(caller_id, created_at)',
+        // riskScore: per-user recent coin-transaction velocity / refunds.
+        'CREATE INDEX IF NOT EXISTS idx_coin_tx_user_time ON coin_transactions(user_id, created_at)',
+      ];
+      for (const ddl of indexes) {
+        try {
+          await db.prepare(ddl).run();
+        } catch (err) {
+          console.warn('[schemaGuard] smart-v2 index creation failed:', err);
+        }
+      }
+
+      return true;
+    } catch (err) {
+      console.error('[schemaGuard] ensureSmartV2Schema failed:', err);
+      smartV2SchemaReadyPromise = null;
+      return false;
+    }
+  })();
+
+  return smartV2SchemaReadyPromise;
+}
