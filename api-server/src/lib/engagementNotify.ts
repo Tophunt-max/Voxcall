@@ -122,6 +122,12 @@ export async function notifyEngagement(
     if (!(await engagementFeatureEnabled(env, 'engagement_notifications_enabled', true))) return false;
     if (await isQuietHoursIST(env)) return false;
     if (await isOptedOut(env.DB, userId, categoryForType(type))) return false;
+    // Best-Time-To-Notify: when smart timing is ON and we know this user's
+    // active hour, only deliver near that hour (fail-open when unknown/off).
+    {
+      const { isWithinActiveWindow } = await import('./bestTime');
+      if (!(await isWithinActiveWindow(env.DB, userId))) return false;
+    }
     const cap = await readIntSetting(env.DB, 'engagement_daily_cap', 3);
     if (ENGAGEMENT_TYPE_SET.has(type) && (await engagementCountLast24h(env.DB, userId)) >= cap) return false;
     await notifyUser(env, userId, title, body, type, opts);

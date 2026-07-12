@@ -1346,6 +1346,15 @@ call.get('/:id/agora-token', async (c) => {
       uid,
       EXPIRE_SECONDS,
     );
+    // Smart call-quality routing: recommend the tier this user's video should
+    // START at, based on their recent call-quality history. 'high' when the
+    // feature is off / no data. The client uses it as the initial encoder tier
+    // and still adapts live after connect. Best-effort — never blocks the token.
+    let recommendedQuality: 'high' | 'medium' | 'low' = 'high';
+    try {
+      const { recommendInitialTier } = await import('../lib/callQualityHint');
+      recommendedQuality = await recommendInitialTier(c.env.DB, sub);
+    } catch { /* default high */ }
     return c.json({
       provider: 'agora' as const,
       app_id: c.env.AGORA_APP_ID,
@@ -1354,6 +1363,7 @@ call.get('/:id/agora-token', async (c) => {
       token,
       role: result.role,
       call_type: result.session.type,
+      recommended_quality: recommendedQuality,
     });
   } catch (e: any) {
     console.error('[agora-token] token build failed:', e);

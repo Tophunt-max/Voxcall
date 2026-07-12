@@ -156,6 +156,8 @@ export function useWebRTC(options: UseWebRTCOptions): UseWebRTCReturn {
         channel: cfg.channel,
         uid: cfg.uid ?? 0,
         token: cfg.token,
+        // Smart call-quality routing: start at the server-recommended tier.
+        initialTier: (cfg as any).recommended_quality,
       });
       serviceRef.current = service;
 
