@@ -366,6 +366,16 @@ export const API = {
     expires_at: number | null;
     expires_in_sec: number;
   }>('GET', '/api/coins/offer'),
+  // Smart "best pack for you" recommendation based on the user's burn-rate.
+  getCoinRecommendation: () => apiRequest<{
+    enabled: boolean;
+    recommended_plan_id: string | null;
+    burn_rate_per_day: number;
+    days_left: number | null;
+    lasts_days: number | null;
+    urgency: 'critical' | 'low' | 'normal';
+    reason: string;
+  }>('GET', '/api/coins/recommendation'),
   purchaseCoins: (plan_id: string, payment_method: string, payment_ref?: string, utr_id?: string, gateway_id?: string, promo_code?: string) =>
     apiRequest('POST', '/api/coins/purchase', { plan_id, payment_method, payment_ref, utr_id, gateway_id, promo_code }),
   getCoinHistory: () => apiRequest<any[]>('GET', '/api/coins/history'),

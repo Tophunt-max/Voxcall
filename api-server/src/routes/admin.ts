@@ -15,7 +15,7 @@ import { approveDeposit, validatePromoInput } from './payment';
 import { ensureAllMigrations, listMigrationStatus } from '../lib/autoMigrate';
 import { invalidateBannerCaches } from './public';
 import { findActiveBan } from '../lib/bans';
-import { pushCoinUpdate, notifyUser, pushBanState, pushToUser } from '../lib/realtime';
+import { pushCoinUpdate, notifyUser, pushBanState, pushToUser, broadcastDataChanged } from '../lib/realtime';
 import type { Env, JWTPayload } from '../types';
 
 const admin = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
@@ -824,6 +824,9 @@ admin.patch('/settings', async (c) => {
     'smart_discount_winback_idle_days', 'smart_discount_winback_pct',
     'smart_discount_vip_pct', 'smart_discount_returning_pct',
     'smart_discount_max_pct', 'smart_discount_max_coins',
+    'smart_discount_ends_at',
+    // Smart Recharge Recommendation — usage-aware "best pack for you".
+    'smart_recommend_enabled', 'smart_recommend_lookback_days', 'smart_recommend_target_days',
   ];
   const stmts = Object.entries(processedBody)
     .filter(([k]) => ALLOWED_SETTINGS.includes(k))
@@ -927,6 +930,20 @@ admin.patch('/settings', async (c) => {
     }
   }
   
+  // Smart Discount live update — if any smart_discount_* key changed, push a
+  // lightweight `data_changed` (resource 'smart_discount') so every user's open
+  // checkout screen re-fetches their personalized offer INSTANTLY (new %, new
+  // validity/countdown) without needing to reopen the screen.
+  const smartDiscountChanged = changedKeys.some((k) => k.startsWith('smart_discount_'));
+  if (smartDiscountChanged) {
+    c.executionCtx?.waitUntil?.(broadcastDataChanged(c.env, 'smart_discount', 'user'));
+  }
+  // Smart recharge recommendation settings also drive the checkout — refresh live.
+  const smartRecommendChanged = changedKeys.some((k) => k.startsWith('smart_recommend_'));
+  if (smartRecommendChanged) {
+    c.executionCtx?.waitUntil?.(broadcastDataChanged(c.env, 'smart_discount', 'user'));
+  }
+
   return c.json({ success: true, updated_keys: changedKeys, realtime_broadcast: coinValueChanged || callRatesChanged });
 });
 
