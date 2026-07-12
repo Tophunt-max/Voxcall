@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, Platform, RefreshControl, ActivityIndicator } from "react-native";
+import { Feather } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
@@ -12,7 +14,7 @@ import { SocketEvents } from "@/constants/events";
 
 interface Notification {
   id: string;
-  type: "call" | "message" | "promo" | "system";
+  type: string;
   title: string;
   body: string;
   created_at: number;
@@ -20,12 +22,27 @@ interface Notification {
   avatar_url?: string;
 }
 
-const PNG_ICONS: Record<string, any> = {
-  call: require("@/assets/icons/ic_call.png"),
-  message: require("@/assets/icons/ic_chat.png"),
-  promo: require("@/assets/icons/ic_bonus.png"),
-  system: require("@/assets/icons/ic_settings.png"),
+// ─── Per-type gradient icon badge ───────────────────────────────────────────
+// Each notification category gets a vibrant gradient + Feather icon so the
+// list is colourful, scannable, and delightful — driving users to tap in.
+const TYPE_VISUAL: Record<string, { gradient: [string, string]; icon: keyof typeof Feather.glyphMap }> = {
+  call:          { gradient: ["#0BAF23", "#37D67A"], icon: "phone-call" },
+  message:       { gradient: ["#1499F1", "#5CC0FF"], icon: "message-circle" },
+  promo:         { gradient: ["#FF6B00", "#FFA100"], icon: "gift" },
+  deposit:       { gradient: ["#0BAF23", "#37D67A"], icon: "credit-card" },
+  payout:        { gradient: ["#7C3AED", "#B57BFF"], icon: "dollar-sign" },
+  referral:      { gradient: ["#FF025F", "#FF5C8A"], icon: "users" },
+  streak_reminder: { gradient: ["#FF6B00", "#FFC34D"], icon: "zap" },
+  vip_expiring:  { gradient: ["#5B21B6", "#9333EA"], icon: "award" },
+  near_level:    { gradient: ["#FFA100", "#FFC34D"], icon: "trending-up" },
+  free_spin:     { gradient: ["#EC4899", "#F9A8D4"], icon: "target" },
+  happy_hour:    { gradient: ["#F59E0B", "#EF4444"], icon: "clock" },
+  system:        { gradient: ["#757396", "#A5A3C0"], icon: "bell" },
 };
+
+function visualFor(type: string) {
+  return TYPE_VISUAL[type] ?? TYPE_VISUAL.system;
+}
 
 export default function NotificationsScreen() {
   const colors = useColors();
@@ -78,28 +95,46 @@ export default function NotificationsScreen() {
     }
   };
 
-  const renderItem = ({ item }: { item: Notification }) => (
-    <TouchableOpacity
-      style={[styles.item, { backgroundColor: item.is_read ? colors.background : colors.primary + "08", borderBottomColor: colors.border }]}
-      onPress={() => markOneRead(item.id)}
-      activeOpacity={0.75}
-    >
-      <View style={[styles.iconCircle, { backgroundColor: colors.secondary }]}>
-        {item.avatar_url
-          ? <Image source={{ uri: resolveMediaUrl(item.avatar_url) }} style={styles.notifAvatar} />
-          : <Image source={PNG_ICONS[item.type] ?? PNG_ICONS.system} style={{ width: 18, height: 18, tintColor: colors.primary }} resizeMode="contain" />
-        }
-      </View>
-      <View style={styles.textArea}>
-        <View style={styles.titleRow}>
-          <Text style={[styles.notifTitle, { color: colors.foreground }]}>{item.title}</Text>
-          {!item.is_read && <View style={[styles.unreadDot, { backgroundColor: colors.primary }]} />}
+  const renderItem = ({ item }: { item: Notification }) => {
+    const v = visualFor(item.type);
+    return (
+      <TouchableOpacity
+        style={[
+          styles.item,
+          {
+            backgroundColor: item.is_read ? colors.background : colors.primary + "0A",
+            borderBottomColor: colors.border,
+          },
+        ]}
+        onPress={() => markOneRead(item.id)}
+        activeOpacity={0.7}
+      >
+        {/* Gradient icon badge (or avatar if the notification carries one) */}
+        {item.avatar_url ? (
+          <View style={styles.badgeWrap}>
+            <Image source={{ uri: resolveMediaUrl(item.avatar_url) }} style={styles.notifAvatar} />
+          </View>
+        ) : (
+          <LinearGradient
+            colors={v.gradient}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.badgeWrap}
+          >
+            <Feather name={v.icon} size={19} color="#FFFFFF" />
+          </LinearGradient>
+        )}
+        <View style={styles.textArea}>
+          <View style={styles.titleRow}>
+            <Text style={[styles.notifTitle, { color: colors.foreground }]} numberOfLines={1}>{item.title}</Text>
+            {!item.is_read && <View style={[styles.unreadDot, { backgroundColor: colors.red }]} />}
+          </View>
+          <Text style={[styles.notifBody, { color: colors.mutedForeground }]} numberOfLines={2}>{item.body}</Text>
+          <Text style={[styles.notifTime, { color: colors.mutedForeground }]}>{formatRelativeTime(item.created_at * 1000)}</Text>
         </View>
-        <Text style={[styles.notifBody, { color: colors.mutedForeground }]} numberOfLines={2}>{item.body}</Text>
-        <Text style={[styles.notifTime, { color: colors.mutedForeground }]}>{formatRelativeTime(item.created_at * 1000)}</Text>
-      </View>
-    </TouchableOpacity>
-  );
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -152,9 +187,21 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingBottom: 14, borderBottomWidth: StyleSheet.hairlineWidth },
   title: { fontSize: 18, fontFamily: "Poppins_700Bold" },
   markRead: { fontSize: 13, fontFamily: "Poppins_500Medium" },
-  item: { flexDirection: "row", padding: 16, gap: 12, alignItems: "flex-start", borderBottomWidth: StyleSheet.hairlineWidth },
-  iconCircle: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center", flexShrink: 0 },
-  notifAvatar: { width: 44, height: 44, borderRadius: 22 },
+  item: { flexDirection: "row", padding: 16, gap: 13, alignItems: "flex-start", borderBottomWidth: StyleSheet.hairlineWidth },
+  badgeWrap: {
+    width: 46,
+    height: 46,
+    borderRadius: 15,
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 5,
+    elevation: 3,
+  },
+  notifAvatar: { width: 46, height: 46, borderRadius: 15 },
   textArea: { flex: 1, gap: 3 },
   titleRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   notifTitle: { fontSize: 14, fontFamily: "Poppins_600SemiBold", flex: 1 },
