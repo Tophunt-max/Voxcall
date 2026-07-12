@@ -788,11 +788,15 @@ admin.patch('/settings', async (c) => {
     'agora_audio_usd_per_1000', 'agora_video_hd_usd_per_1000', 'agora_video_fhd_usd_per_1000',
     'call_participants', 'floor_max_host_share', 'call_floor_safety_multiplier',
     'video_max_resolution', 'regional_price_multiplier', 'call_prepaid_hold_enabled',
-    'reco_enabled', 'reco_weights',
+    'reco_enabled', 'reco_weights', 'reco_performance_weight',
     'reengagement_enabled', 'reengagement_idle_days', 'reengagement_winback_days',
     'reengagement_cooldown_days', 'reengagement_max_per_run',
     'reengagement_max_idle_days', 'reengagement_interval_hours',
     'match_weighting_enabled', 'match_weights',
+    // Smart engines suite — best-time-to-notify, churn prediction, call-quality routing.
+    'smart_timing_enabled', 'smart_timing_window_hours', 'smart_timing_lookback_days', 'smart_timing_max_users',
+    'churn_prediction_enabled', 'churn_horizon_days', 'churn_high_threshold', 'churn_medium_threshold', 'churn_max_users',
+    'smart_call_quality_enabled', 'smart_call_quality_samples',
     'daily_streak_variable_enabled', 'daily_streak_variable_table',
     // Daily streak engagement v2 — freeze/repair, anti-farming, chest, reminders.
     'daily_streak_comeback_bonus', 'daily_streak_guest_multiplier',
@@ -3793,6 +3797,13 @@ admin.get('/dashboard/summary', async (c) => {
     anomalies,
     server_time: now,
   });
+});
+
+// ─── GET /admin/churn — churn-prediction summary (tier distribution + top risk)
+admin.get('/churn', async (c) => {
+  const { getChurnSummary } = await import('../lib/churn');
+  const summary = await getChurnSummary(c.env.DB);
+  return c.json(summary);
 });
 
 // ─── GET /admin/monitoring/health ──────────────────────────────────────────

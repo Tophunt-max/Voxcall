@@ -32,6 +32,8 @@ import { getLevelConfig, getEarningShare, DEFAULT_AUDIO_RATE, computeLevelProgre
 import { recalcAllHostLevels } from './lib/levelService';
 import { billedMinutes, coinsForCall, chargeCallerWithFreePool, releaseCallHold } from './lib/billing';
 import { runReengagement } from './lib/reengagement';
+import { recomputeActiveHours } from './lib/bestTime';
+import { recomputeChurnRisk } from './lib/churn';
 import { runHealthProbes, storeHealthCheck, pruneHealthChecks } from './lib/healthCheck';
 import { istContext } from './lib/streak';
 import { getFCMTokens, sendFCMPush } from './lib/fcm';
@@ -1153,6 +1155,39 @@ async function maybeAnnounceHappyHour(env: Env): Promise<void> {
   }
 }
 
+// ── Smart engines: daily learning jobs ──────────────────────────────────────
+// Best-Time-To-Notify: once/UTC-day, recompute each user's modal active IST
+// hour from recent activity so engagement nudges can be delivered near it.
+// Gated by a slot-claim so overlapping ticks don't double-run. Best-effort.
+async function maybeRecomputeActiveHours(env: Env): Promise<void> {
+  try {
+    const now = Math.floor(Date.now() / 1000);
+    const dayIndex = Math.floor(now / 86400);
+    const row = await env.DB.prepare("SELECT value FROM app_settings WHERE key = 'last_active_hours_recompute_day'").first<{ value: string }>();
+    if ((parseInt(row?.value ?? '', 10) || 0) === dayIndex) return;
+    await env.DB.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('last_active_hours_recompute_day', ?, unixepoch())").bind(String(dayIndex)).run();
+    const n = await recomputeActiveHours(env.DB);
+    if (n) console.log(`[Cron] Best-time recompute: ${n} users`);
+  } catch (e) {
+    console.error('[Cron] active-hours recompute error:', e);
+  }
+}
+
+// Churn Prediction: once/UTC-day, recompute per-user churn risk + tier.
+async function maybeRecomputeChurn(env: Env): Promise<void> {
+  try {
+    const now = Math.floor(Date.now() / 1000);
+    const dayIndex = Math.floor(now / 86400);
+    const row = await env.DB.prepare("SELECT value FROM app_settings WHERE key = 'last_churn_compute_day'").first<{ value: string }>();
+    if ((parseInt(row?.value ?? '', 10) || 0) === dayIndex) return;
+    await env.DB.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('last_churn_compute_day', ?, unixepoch())").bind(String(dayIndex)).run();
+    const res = await recomputeChurnRisk(env.DB);
+    if (!res.skipped) console.log('[Cron] Churn prediction:', JSON.stringify(res));
+  } catch (e) {
+    console.error('[Cron] churn recompute error:', e);
+  }
+}
+
 export default {
   fetch: app.fetch,
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
@@ -1173,6 +1208,9 @@ export default {
     ctx.waitUntil(maybeNudgeProfileCompletion(env));
     ctx.waitUntil(maybeNudgeOnlineHosts(env));
     ctx.waitUntil(maybeAnnounceHappyHour(env));
+    // Smart engines — daily learning jobs (each self-gates to once/UTC-day).
+    ctx.waitUntil(maybeRecomputeActiveHours(env));
+    ctx.waitUntil(maybeRecomputeChurn(env));
     // Health monitoring — probe all dependencies every minute and store results
     // for the admin dashboard uptime/latency charts. Also stamps last_cron_run
     // so the probe itself can detect cron staleness on the NEXT tick.

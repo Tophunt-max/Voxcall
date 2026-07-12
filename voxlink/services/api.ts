@@ -405,6 +405,10 @@ export const API = {
       token: string;
       role: 'caller' | 'host';
       call_type: 'audio' | 'video';
+      // Smart call-quality routing: recommended STARTING video tier for this
+      // user based on their recent network history. Client uses it as the
+      // initial encoder tier, then adapts live. Absent/older backends → 'high'.
+      recommended_quality?: 'high' | 'medium' | 'low';
     }>('GET', `/api/calls/${sessionId}/agora-token`),
   // Relay in-call mic/camera state to the other party so their UI updates
   // instantly (camera-off avatar / muted badge) instead of polling the remote

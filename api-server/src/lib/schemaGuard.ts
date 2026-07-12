@@ -655,6 +655,28 @@ const ENGAGEMENT_DEFAULT_SETTINGS: ReadonlyArray<{ key: string; value: string }>
   { key: 'engagement_events_retention_days', value: '30' },
   // Slot-claim for the once-a-day rollup cron (UTC day number). 0 = never run.
   { key: 'last_engagement_rollup_day', value: '0' },
+  // ── Best-Time-To-Notify (lib/bestTime.ts) — learn each user's active IST
+  //    hour and deliver engagement nudges near it. '0' = off (no change).
+  { key: 'smart_timing_enabled', value: '0' },
+  { key: 'smart_timing_window_hours', value: '2' },
+  { key: 'smart_timing_lookback_days', value: '21' },
+  { key: 'smart_timing_max_users', value: '10000' },
+  { key: 'last_active_hours_recompute_day', value: '0' },
+  // ── Churn Prediction (lib/churn.ts) — daily risk score per user. '0' = off.
+  { key: 'churn_prediction_enabled', value: '0' },
+  { key: 'churn_horizon_days', value: '30' },
+  { key: 'churn_high_threshold', value: '0.7' },
+  { key: 'churn_medium_threshold', value: '0.4' },
+  { key: 'churn_max_users', value: '5000' },
+  { key: 'last_churn_compute_day', value: '0' },
+  // ── Dynamic host ranking: performance weight (conversion rate from
+  //    host_engagement_stats). Additive to lib/recommend.ts scoring.
+  { key: 'reco_performance_weight', value: '0.5' },
+  // ── Smart call-quality routing (lib/callQualityHint.ts). '0' = always start
+  //    at the top tier (legacy). '1' = start at a tier learned from the user's
+  //    recent call quality so bad-network users don't freeze on connect.
+  { key: 'smart_call_quality_enabled', value: '0' },
+  { key: 'smart_call_quality_samples', value: '20' },
 ];
 
 export function ensureEngagementSchema(db: D1Database): Promise<boolean> {
@@ -681,6 +703,29 @@ export function ensureEngagementSchema(db: D1Database): Promise<boolean> {
           .run();
       } catch (err) {
         console.warn('[schemaGuard] idx_notifications_user_type_time creation failed:', err);
+      }
+
+      // Smart-engine user columns: best-time-to-notify + churn prediction.
+      // Added here (idempotent) so the daily crons can read/write them without
+      // a separate migration. active_hour_ist: 0..23, -1 = unknown.
+      const smartUserCols = [
+        'ALTER TABLE users ADD COLUMN active_hour_ist INTEGER DEFAULT -1',
+        'ALTER TABLE users ADD COLUMN churn_risk REAL DEFAULT 0',
+        "ALTER TABLE users ADD COLUMN churn_tier TEXT DEFAULT 'low'",
+        'ALTER TABLE users ADD COLUMN churn_computed_at INTEGER DEFAULT 0',
+      ];
+      try {
+        const uInfo = await db.prepare('PRAGMA table_info(users)').all<{ name: string }>();
+        const uCols = new Set((uInfo.results ?? []).map((r) => r.name));
+        const want: Record<string, string> = {
+          active_hour_ist: smartUserCols[0], churn_risk: smartUserCols[1],
+          churn_tier: smartUserCols[2], churn_computed_at: smartUserCols[3],
+        };
+        for (const [name, ddl] of Object.entries(want)) {
+          if (!uCols.has(name)) { try { await db.prepare(ddl).run(); } catch (e) { console.warn(`[schemaGuard] add users.${name} failed:`, e); } }
+        }
+      } catch (err) {
+        console.warn('[schemaGuard] smart user columns check failed:', err);
       }
 
       // Engagement event logging tables (migration 0035). Created here too so a

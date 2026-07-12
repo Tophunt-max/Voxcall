@@ -20,13 +20,24 @@
 // so the app never crashes on a missing native module.
 // ============================================================================
 
-let SecureStore: typeof import('expo-secure-store') | null = null;
+// Minimal structural type for the bits of expo-secure-store we use. Declaring
+// it locally (instead of `typeof import('expo-secure-store')`) means this file
+// type-checks even when the optional native package isn't installed — the
+// runtime require() below still picks it up when it IS present, and falls back
+// to AsyncStorage when it isn't.
+interface SecureStoreModule {
+  setItemAsync(key: string, value: string): Promise<void>;
+  getItemAsync(key: string): Promise<string | null>;
+  deleteItemAsync(key: string): Promise<void>;
+}
+
+let SecureStore: SecureStoreModule | null = null;
 
 try {
   // Dynamic require so the module resolves at runtime — avoids a hard crash
   // on platforms where the native module isn't linked (web, Expo Go < SDK 49).
   // eslint-disable-next-line @typescript-eslint/no-var-requires
-  SecureStore = require('expo-secure-store');
+  SecureStore = require('expo-secure-store') as SecureStoreModule;
 } catch {
   // expo-secure-store not available — will fall back to AsyncStorage below.
 }
