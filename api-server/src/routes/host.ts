@@ -509,7 +509,7 @@ hostProtected.patch('/status', zValidator('json', statusSchema), async (c) => {
   // Fire-and-forget pattern: client gets 200 immediately, broadcast happens
   // in the background. Workers keep the request alive until waitUntil resolves.
   const presenceMsg = JSON.stringify({ type: 'presence', user_id: sub, host_id: hostRow.id, is_online });
-  c.executionCtx.waitUntil(broadcastPresence(c.env, sub, presenceMsg));
+  c.executionCtx.waitUntil(broadcastPresence(c.env, sub, hostRow.id, presenceMsg));
 
   // Engagement #1: when a host comes ONLINE, nudge the users who favorited them
   // (highest-converting trigger). Gated by quiet hours + per-user 6h cooldown +
@@ -604,35 +604,55 @@ hostProtected.get('/leaderboard', async (c) => {
 // FIX: extracted to a function so it can run via ctx.waitUntil() without
 // blocking the toggle response. Errors are logged, never propagated — a failed
 // broadcast must not flip the host's status back to offline on the client.
-async function broadcastPresence(env: Env, hostUserId: string, presenceMsg: string): Promise<void> {
-  // 1. Notify the host's own NotificationHub (so other tabs/devices update)
+async function broadcastPresence(env: Env, hostUserId: string, hostId: string, presenceMsg: string): Promise<void> {
+  // Fan-out targets are deduped in a single Set so no user's NotificationHub is
+  // pinged twice (e.g. a favoriter who is also recently-active). We always start
+  // with the host's own user id so their other tabs/devices update.
+  const targets = new Set<string>();
+  targets.add(hostUserId);
+
+  // A) Favoriters of THIS host — highest-intent audience. These users have the
+  //    host on their "Your favorites" rail, so they must see the flip even if
+  //    they aren't in the recent-active window. host_id here = hosts.id.
   try {
-    const hostNotifStub = env.NOTIFICATION_HUB.get(env.NOTIFICATION_HUB.idFromName(hostUserId));
-    await hostNotifStub.fetch('https://dummy/notify', { method: 'POST', body: presenceMsg });
+    const favoriters = await env.DB
+      .prepare("SELECT user_id FROM user_favorites WHERE host_id = ? LIMIT 500")
+      .bind(hostId)
+      .all<{ user_id: string }>();
+    for (const f of favoriters.results ?? []) {
+      if (f.user_id) targets.add(f.user_id);
+    }
   } catch (e) {
-    console.warn('[host/status] self-notify failed:', e);
+    console.warn('[host/status] favoriters lookup failed:', e);
   }
 
-  // 2. Broadcast to recently-active users so their host list updates live.
-  //    NOTE: ORDER BY users.updated_at — relies on the index added below.
+  // B) Recently-active users so anyone currently browsing the home list gets a
+  //    live update. ORDER BY users.updated_at — relies on the users(updated_at)
+  //    index. Cap kept generous but bounded to protect the DO fan-out.
   try {
     const recentUsers = await env.DB
-      .prepare("SELECT id FROM users WHERE role = 'user' ORDER BY updated_at DESC LIMIT 100")
+      .prepare("SELECT id FROM users WHERE role = 'user' ORDER BY updated_at DESC LIMIT 200")
       .all<{ id: string }>();
-
-    await Promise.allSettled(
-      (recentUsers.results ?? []).map(async (u) => {
-        try {
-          const stub = env.NOTIFICATION_HUB.get(env.NOTIFICATION_HUB.idFromName(u.id));
-          await stub.fetch('https://dummy/notify', { method: 'POST', body: presenceMsg });
-        } catch {
-          /* one user's hub failure must not abort the rest of the broadcast */
-        }
-      })
-    );
+    for (const u of recentUsers.results ?? []) {
+      if (u.id) targets.add(u.id);
+    }
   } catch (e) {
-    console.warn('[host/status] broadcast failed:', e);
+    console.warn('[host/status] recent-users lookup failed:', e);
   }
+
+  // C) Notify every deduped target's NotificationHub. One hub failing must never
+  //    abort the rest of the broadcast, and the whole thing runs under
+  //    ctx.waitUntil() so it never blocks the status-toggle response.
+  await Promise.allSettled(
+    Array.from(targets).map(async (uid) => {
+      try {
+        const stub = env.NOTIFICATION_HUB.get(env.NOTIFICATION_HUB.idFromName(uid));
+        await stub.fetch('https://dummy/notify', { method: 'POST', body: presenceMsg });
+      } catch {
+        /* per-user hub failure is swallowed; broadcast continues */
+      }
+    })
+  );
 }
 
 // GET /api/host/earnings

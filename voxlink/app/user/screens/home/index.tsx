@@ -523,18 +523,37 @@ export default function HomeScreen() {
       const isOnline: boolean = !!(data?.isOnline ?? data?.is_online);
       if (!hostId) return;
 
+      // 1) Main "available now" list (['hosts']). Sirf is host ka flag patch
+      //    karo; agar host cache mein nahi hai to ek hi baar fresh list laao.
       const current = queryClient.getQueryData<Host[]>(['hosts']);
       const inCache = current?.some((h) => h.id === hostId);
-
       if (inCache) {
-        // Sirf is host ka online flag patch karo — poori list refetch ki zarurat nahi.
         queryClient.setQueryData<Host[]>(['hosts'], (old) =>
           old?.map((h) => (h.id === hostId ? { ...h, isOnline } : h)),
         );
       } else if (current) {
-        // Host cache mein nahi mila — fresh list le aao.
         queryClient.invalidateQueries({ queryKey: ['hosts'] });
       }
+
+      // 2) "Recommended for you" rail (['recommended-hosts']). Items are
+      //    { host: Host, reason?: string }, so patch the nested host. Best-effort
+      //    rail — koi cache-miss invalidation nahi (rail apne interval par refresh
+      //    ho jata hai). Updater pure hai (koi side-effect andar nahi).
+      queryClient.setQueryData<{ host: Host; reason?: string }[]>(
+        ['recommended-hosts'],
+        (old) =>
+          old?.map((item) =>
+            item.host?.id === hostId
+              ? { ...item, host: { ...item.host, isOnline } }
+              : item,
+          ),
+      );
+
+      // 3) "Your favorites" rail (['favorite-hosts']) — plain Host[]. Yehi rail
+      //    sabse zyada intent wala hai, isliye iska live update sabse important.
+      queryClient.setQueryData<Host[]>(['favorite-hosts'], (old) =>
+        old?.map((h) => (h.id === hostId ? { ...h, isOnline } : h)),
+      );
     },
     [queryClient]
   );
