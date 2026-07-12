@@ -8,7 +8,8 @@ import {
   Hash, ArrowRightLeft, Trophy, ShieldCheck, TrendingUp, Tag,
   IndianRupee, MessageSquare, Flag, ShieldOff, Megaphone,
   ScrollText, Image, Gift, Radio, Sliders, CreditCard,
-  CircleDollarSign, Zap, Ticket, Medal, Crown, Sparkles, Rocket
+  CircleDollarSign, Zap, Ticket, Medal, Crown, Sparkles, Rocket,
+  HeartPulse
 } from 'lucide-react';
 
 const nav = [
@@ -48,6 +49,7 @@ const nav = [
   { href: '/app-config', label: 'App Config', icon: Sliders, section: 'system' },
   { href: '/engagement', label: 'Engagement', icon: Sparkles, section: 'system' },
   { href: '/growth', label: 'Growth & Promotions', icon: Rocket, section: 'system' },
+  { href: '/health', label: 'Health Monitor', icon: HeartPulse, section: 'system' },
   { href: '/settings', label: 'Settings', icon: Settings, section: 'system' },
 ];
 

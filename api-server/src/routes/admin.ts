@@ -15,7 +15,7 @@ import { approveDeposit, validatePromoInput } from './payment';
 import { ensureAllMigrations, listMigrationStatus } from '../lib/autoMigrate';
 import { invalidateBannerCaches } from './public';
 import { findActiveBan } from '../lib/bans';
-import { pushCoinUpdate, notifyUser, pushBanState, pushToUser } from '../lib/realtime';
+import { pushCoinUpdate, notifyUser, pushBanState, pushToUser, broadcastDataChanged } from '../lib/realtime';
 import type { Env, JWTPayload } from '../types';
 
 const admin = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
@@ -503,8 +503,8 @@ admin.patch('/withdrawals/:id', async (c) => {
     // Real-time: reflect the refunded balance instantly and tell the host why.
     await pushCoinUpdate(c.env, wr.user_id, wr.coins);
     c.executionCtx?.waitUntil?.(notifyUser(
-      c.env, wr.user_id, 'Withdrawal rejected',
-      `Your withdrawal was rejected and ${wr.coins} coins were refunded to your balance.${admin_note ? ` Reason: ${admin_note}` : ''}`,
+      c.env, wr.user_id, '↩️ Withdrawal Refunded',
+      `No worries — your withdrawal couldn't be processed this time, so we've safely returned all ${wr.coins} coins to your wallet.${admin_note ? ` Reason: ${admin_note}` : ''} Feel free to try again! 💛`,
       'payout',
     ));
     return c.json({ success: true, refunded_coins: wr.coins });
@@ -530,9 +530,10 @@ admin.patch('/withdrawals/:id', async (c) => {
   const wu = await d.prepare('SELECT h.user_id AS uid, wr.coins AS coins FROM withdrawal_requests wr JOIN hosts h ON h.id = wr.host_id WHERE wr.id = ?').bind(id).first<{ uid: string; coins: number }>();
   if (wu?.uid) {
     const msg = status === 'paid' || status === 'completed'
-      ? `Your withdrawal of ${wu.coins} coins has been paid.${admin_note ? ` Ref: ${admin_note}` : ''}`
-      : 'Your withdrawal request has been approved and is being processed.';
-    c.executionCtx?.waitUntil?.(notifyUser(c.env, wu.uid, 'Withdrawal update', msg, 'payout'));
+      ? `💰 Cha-ching! Your withdrawal of ${wu.coins} coins has been paid out.${admin_note ? ` Ref: ${admin_note}` : ''} Thanks for being an amazing host! 🌟`
+      : '✅ Great news! Your withdrawal has been approved and is being processed. Your money is on the way! 💸';
+    const notifTitle = status === 'paid' || status === 'completed' ? '💰 Payout Sent!' : '✅ Withdrawal Approved';
+    c.executionCtx?.waitUntil?.(notifyUser(c.env, wu.uid, notifTitle, msg, 'payout'));
   }
   return c.json({ success: true });
 });
@@ -820,6 +821,16 @@ admin.patch('/settings', async (c) => {
     'spend_cashback_enabled', 'spend_milestones',
     'comeback_reward_enabled', 'comeback_idle_days', 'comeback_bonus_coins', 'comeback_cooldown_days',
     'referral_contest_enabled',
+    // Smart Discount Engine — segment-aware personalized recharge offers.
+    'smart_discount_enabled',
+    'smart_discount_welcome_hours', 'smart_discount_welcome_pct',
+    'smart_discount_first_recharge_pct',
+    'smart_discount_winback_idle_days', 'smart_discount_winback_pct',
+    'smart_discount_vip_pct', 'smart_discount_returning_pct',
+    'smart_discount_max_pct', 'smart_discount_max_coins',
+    'smart_discount_ends_at',
+    // Smart Recharge Recommendation — usage-aware "best pack for you".
+    'smart_recommend_enabled', 'smart_recommend_lookback_days', 'smart_recommend_target_days',
   ];
   const stmts = Object.entries(processedBody)
     .filter(([k]) => ALLOWED_SETTINGS.includes(k))
@@ -923,6 +934,20 @@ admin.patch('/settings', async (c) => {
     }
   }
   
+  // Smart Discount live update — if any smart_discount_* key changed, push a
+  // lightweight `data_changed` (resource 'smart_discount') so every user's open
+  // checkout screen re-fetches their personalized offer INSTANTLY (new %, new
+  // validity/countdown) without needing to reopen the screen.
+  const smartDiscountChanged = changedKeys.some((k) => k.startsWith('smart_discount_'));
+  if (smartDiscountChanged) {
+    c.executionCtx?.waitUntil?.(broadcastDataChanged(c.env, 'smart_discount', 'user'));
+  }
+  // Smart recharge recommendation settings also drive the checkout — refresh live.
+  const smartRecommendChanged = changedKeys.some((k) => k.startsWith('smart_recommend_'));
+  if (smartRecommendChanged) {
+    c.executionCtx?.waitUntil?.(broadcastDataChanged(c.env, 'smart_discount', 'user'));
+  }
+
   return c.json({ success: true, updated_keys: changedKeys, realtime_broadcast: coinValueChanged || callRatesChanged });
 });
 
@@ -1177,13 +1202,13 @@ admin.patch('/host-applications/:id/review', async (c) => {
   // to host mode — the auth middleware already reads the fresh role per request.
   if (app.user_id) {
     if (action === 'approve') {
-      c.executionCtx?.waitUntil?.(notifyUser(c.env, app.user_id, 'Application approved 🎉', 'Congratulations! Your host application has been approved. You can now go online and start receiving calls.', 'host_application'));
+      c.executionCtx?.waitUntil?.(notifyUser(c.env, app.user_id, '🎉 You\'re Approved — Welcome, Host!', 'Congratulations! 🌟 Your host application is approved. Go online now, start taking calls, and begin earning today. Your journey starts here! 🚀', 'host_application'));
       try {
         const stub = c.env.NOTIFICATION_HUB.get(c.env.NOTIFICATION_HUB.idFromName(app.user_id));
         c.executionCtx?.waitUntil?.(stub.fetch('https://dummy/notify', { method: 'POST', body: JSON.stringify({ type: 'data_changed', resource: 'role', timestamp: Date.now() }) }));
       } catch { /* best-effort */ }
     } else if (action === 'reject') {
-      c.executionCtx?.waitUntil?.(notifyUser(c.env, app.user_id, 'Application update', `Your host application was not approved.${rejection_reason ? ` Reason: ${rejection_reason}` : ''}`, 'host_application'));
+      c.executionCtx?.waitUntil?.(notifyUser(c.env, app.user_id, '📋 Application Update', `Thanks for applying to be a host! Unfortunately we couldn't approve it this time.${rejection_reason ? ` Reason: ${rejection_reason}` : ''} Don't give up — you can fix the details and reapply. 💛`, 'host_application'));
     }
   }
 
@@ -1249,7 +1274,7 @@ admin.patch('/deposits/:id', async (c) => {
     const dep = await db(c).prepare('SELECT user_id FROM coin_purchases WHERE id = ?').bind(id).first<{ user_id: string }>();
     if (dep?.user_id) {
       await pushCoinUpdate(c.env, dep.user_id, result.coins);
-      c.executionCtx?.waitUntil?.(notifyUser(c.env, dep.user_id, 'Coins added', `${result.coins} coins have been added to your wallet.`, 'deposit'));
+      c.executionCtx?.waitUntil?.(notifyUser(c.env, dep.user_id, '🎉 Recharge Successful!', `Woohoo! ${result.coins} coins are now in your wallet. Time to connect with your favourite hosts! 💛`, 'deposit', { data: { status: 'success' } }));
     }
     return c.json({ success: true, coins: result.coins });
   }
@@ -1283,6 +1308,23 @@ admin.patch('/deposits/:id', async (c) => {
     c.executionCtx?.waitUntil?.(notifyUser(c.env, purchase.user_id, 'Deposit refunded', `A deposit was refunded and ${totalRefund} coins were reversed from your wallet.`, 'deposit'));
   } else {
     await db(c).prepare(`UPDATE coin_purchases SET ${sets.join(', ')} WHERE id = ?`).bind(...vals).run();
+    // NOTIFICATION: when an admin REJECTS or marks a deposit FAILED, tell the
+    // user so a recharge always ends with clear feedback (never silent). This
+    // was the missing failure-path notification — previously only success and
+    // refund notified. Sends both in-app row + FCM push via notifyUser.
+    if (body.status === 'rejected' || body.status === 'failed') {
+      const dep = await db(c).prepare('SELECT user_id, coins, bonus_coins FROM coin_purchases WHERE id = ?').bind(id).first<{ user_id: string; coins: number; bonus_coins: number }>();
+      if (dep?.user_id) {
+        const attempted = (dep.coins || 0) + (dep.bonus_coins || 0);
+        const reason = body.admin_note ? ` Reason: ${body.admin_note}` : '';
+        c.executionCtx?.waitUntil?.(notifyUser(
+          c.env, dep.user_id, 'Recharge failed ❌',
+          `Your recharge for ${attempted} coins could not be verified and was not credited.${reason} If money was deducted, please contact support with your payment reference.`,
+          'deposit',
+          { data: { status: body.status, purchase_id: id } },
+        ));
+      }
+    }
   }
   const u = c.get('user');
   await auditLog(db(c), u.sub, u.email || 'Admin', u.email || '', 'update', 'deposit', id, `Deposit ${id} updated: ${JSON.stringify(body)}`);
@@ -3879,6 +3921,83 @@ admin.get('/monitoring/health', async (c) => {
       rate_limit_hits_hour: Number(rateLimitedHits?.n ?? 0),
       banned_users_total: Number(bannedTotal?.n ?? 0),
     },
+    server_time: now,
+  });
+});
+
+// ─── GET /admin/health/full — comprehensive health monitor page data ───────
+// Provides real-time service status + uptime history + latency timeseries
+// for the dedicated Health Monitor admin page.
+admin.get('/health/full', async (c) => {
+  const db = c.env.DB;
+  const now = Math.floor(Date.now() / 1000);
+
+  // 1. Run live probe NOW (real-time status)
+  const { runHealthProbes } = await import('../lib/healthCheck');
+  const live = await runHealthProbes(c.env);
+
+  // 2. Uptime stats for 1h / 24h / 7d
+  const { getUptimeStats } = await import('../lib/healthCheck');
+  const [uptime1h, uptime24h, uptime7d] = await Promise.all([
+    getUptimeStats(db, 3600),
+    getUptimeStats(db, 86400),
+    getUptimeStats(db, 7 * 86400),
+  ]);
+
+  // 3. Latency timeseries (last 60 data points = ~1 hour at 1-min intervals)
+  let latencyTimeseries: any[] = [];
+  try {
+    const rows = await db.prepare(
+      `SELECT checked_at, db_latency_ms, r2_latency_ms, overall_status, active_calls, online_hosts, error_count_hour
+       FROM health_checks ORDER BY checked_at DESC LIMIT 60`
+    ).all<any>();
+    latencyTimeseries = (rows.results ?? []).reverse();
+  } catch { /* table may not exist yet */ }
+
+  // 4. Recent incidents (status != 'ok' in last 24h)
+  let incidents: any[] = [];
+  try {
+    const rows = await db.prepare(
+      `SELECT checked_at, overall_status, db_status, r2_status, agora_status, fcm_status, error_count_hour
+       FROM health_checks WHERE overall_status != 'ok' AND checked_at > ? ORDER BY checked_at DESC LIMIT 50`
+    ).bind(now - 86400).all<any>();
+    incidents = rows.results ?? [];
+  } catch { /* table may not exist yet */ }
+
+  // 5. 24h status timeline (hourly aggregation for the status bar)
+  let statusTimeline: any[] = [];
+  try {
+    const rows = await db.prepare(
+      `SELECT (checked_at / 3600) * 3600 AS hour_ts,
+              MIN(CASE WHEN overall_status = 'down' THEN 0 WHEN overall_status = 'degraded' THEN 1 ELSE 2 END) AS worst,
+              COUNT(*) AS checks,
+              AVG(db_latency_ms) AS avg_db_ms
+       FROM health_checks WHERE checked_at > ? GROUP BY hour_ts ORDER BY hour_ts ASC`
+    ).bind(now - 86400).all<any>();
+    statusTimeline = (rows.results ?? []).map((r: any) => ({
+      hour_ts: r.hour_ts,
+      status: r.worst === 0 ? 'down' : r.worst === 1 ? 'degraded' : 'ok',
+      checks: r.checks,
+      avg_db_ms: Math.round(Number(r.avg_db_ms) || 0),
+    }));
+  } catch { /* table may not exist yet */ }
+
+  // 6. Average latencies (last hour)
+  let avgLatency = { db_ms: 0, r2_ms: 0 };
+  try {
+    const row = await db.prepare(
+      `SELECT AVG(db_latency_ms) AS db_ms, AVG(r2_latency_ms) AS r2_ms
+       FROM health_checks WHERE checked_at > ? AND db_latency_ms >= 0`
+    ).bind(now - 3600).first<{ db_ms: number; r2_ms: number }>();
+    avgLatency = { db_ms: Math.round(Number(row?.db_ms) || 0), r2_ms: Math.round(Number(row?.r2_ms) || 0) };
+  } catch {}
+
+  return c.json({
+    live,
+    uptime: { '1h': uptime1h, '24h': uptime24h, '7d': uptime7d },
+    latency: { avg: avgLatency, timeseries: latencyTimeseries },
+    incidents,
+    status_timeline: statusTimeline,
     server_time: now,
   });
 });

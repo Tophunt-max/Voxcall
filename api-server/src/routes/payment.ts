@@ -197,7 +197,7 @@ async function approveDeposit(db: D1Database, purchaseId: string, source: string
     // bonus coins BEFORE the balance push so the wallet reflects the total.
     await applyPurchaseBonuses(env, { id: purchase.id, user_id: purchase.user_id, coins: purchase.coins, bonus_coins: purchase.bonus_coins });
     await pushCoinUpdate(env, purchase.user_id, totalCoins);
-    await notifyUser(env, purchase.user_id, 'Coins added ✅', `${totalCoins} coins have been added to your wallet.`, 'deposit');
+    await notifyUser(env, purchase.user_id, '🎉 Recharge Successful!', `Woohoo! ${totalCoins} coins are now in your wallet. Time to connect with your favourite hosts! 💛`, 'deposit', { data: { status: 'success' } });
   }
   return { ok: true, coins: totalCoins };
 }
@@ -553,7 +553,19 @@ payment.post('/verify-google-play', authMiddleware, async (c) => {
     const verifyData = await verifyRes.json() as any;
     if (!verifyRes.ok) throw new Error(`Google Play API error: ${JSON.stringify(verifyData)}`);
     // purchaseState: 0 = purchased, 1 = cancelled, 2 = pending
-    if (verifyData.purchaseState !== 0) return c.json({ error: 'Purchase not completed', state: verifyData.purchaseState }, 400);
+    if (verifyData.purchaseState !== 0) {
+      // NOTIFICATION: tell the user their Play purchase didn't complete so the
+      // recharge never fails silently. (state 1 = cancelled, 2 = pending)
+      const stateMsg = verifyData.purchaseState === 1
+        ? 'Your Google Play purchase was cancelled and no coins were charged.'
+        : 'Your Google Play purchase is still pending. Coins will be added automatically once it completes.';
+      c.executionCtx?.waitUntil?.(notifyUser(
+        c.env, userId,
+        verifyData.purchaseState === 1 ? 'Recharge cancelled ❌' : 'Recharge pending 🕐',
+        stateMsg, 'deposit', { data: { status: verifyData.purchaseState === 1 ? 'cancelled' : 'pending' } },
+      ));
+      return c.json({ error: 'Purchase not completed', state: verifyData.purchaseState }, 400);
+    }
     // Acknowledge the purchase (required within 3 days or it's refunded by Google)
     if (verifyData.acknowledgementState === 0) {
       await fetch(
@@ -602,6 +614,14 @@ payment.post('/verify-google-play', authMiddleware, async (c) => {
     return c.json({ success: result.ok, purchase_id: purchaseId, coins_added: result.coins, already_credited: result.already });
   } catch (e: any) {
     console.error('[/verify-google-play] verification failed:', e);
+    // NOTIFICATION: verification errored (network / Google API / key issue).
+    // Let the user know it's being reviewed rather than leaving them with no
+    // feedback and (possibly) a charged card.
+    c.executionCtx?.waitUntil?.(notifyUser(
+      c.env, userId, 'Recharge under review 🕐',
+      'We could not instantly verify your Google Play purchase. If money was deducted, your coins will be credited shortly or after a quick review. Contact support if not resolved.',
+      'deposit', { data: { status: 'verifying' } },
+    ));
     return c.json({ error: 'Google Play verification failed' }, 500);
   }
 });

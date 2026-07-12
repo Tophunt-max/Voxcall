@@ -1,6 +1,6 @@
 // VoxLink API Client — connects to Cloudflare Workers backend
-import { getItem, setItem } from '@/utils/storage';
 import { StorageKeys } from '@/utils/storage';
+import { secureGet, secureSet, secureRemove } from '@/utils/storage';
 
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://voxlink-api.ssunilkumarmohanta3.workers.dev';
 
@@ -11,7 +11,7 @@ export function resolveMediaUrl(path?: string | null): string | undefined {
 }
 
 async function getToken(): Promise<string> {
-  const token = await getItem<string>(StorageKeys.AUTH_TOKEN);
+  const token = await secureGet(StorageKeys.AUTH_TOKEN);
   return token || '';
 }
 
@@ -24,7 +24,7 @@ async function refreshAuthToken(): Promise<string | null> {
   if (_refreshing) return _refreshing;
   _refreshing = (async () => {
     try {
-      const old = await getItem<string>(StorageKeys.AUTH_TOKEN);
+      const old = await secureGet(StorageKeys.AUTH_TOKEN);
       if (!old) return null;
       const res = await fetch(`${BASE_URL}/api/auth/refresh`, {
         method: 'POST',
@@ -34,7 +34,7 @@ async function refreshAuthToken(): Promise<string | null> {
       if (!res.ok) return null;
       const data = await res.json() as { token: string };
       if (data.token) {
-        await setItem(StorageKeys.AUTH_TOKEN, data.token);
+        await secureSet(StorageKeys.AUTH_TOKEN, data.token);
         return data.token;
       }
       return null;
@@ -89,7 +89,7 @@ export async function apiRequest<T>(
     // Refresh bhi fail hua — token revoked ya expired hai, force logout karo
     try {
       const { removeItem } = await import('@/utils/storage');
-      await removeItem(StorageKeys.AUTH_TOKEN);
+      await secureRemove(StorageKeys.AUTH_TOKEN);
       await removeItem(StorageKeys.USER);
       const { router } = await import('expo-router');
       router.replace('/user/auth/login');
@@ -354,6 +354,28 @@ export const API = {
   // Coins
   getCoinPlans: () => apiRequest<any[]>('GET', '/api/coins/plans'),
   getBalance: () => apiRequest<{ coins: number }>('GET', '/api/coins/balance'),
+  // Personalized smart-discount offer for the current user (segment-aware).
+  // Drives the checkout offer banner; the same bonus is granted server-side
+  // on payment so the promise == the payout.
+  getCoinOffer: () => apiRequest<{
+    enabled: boolean;
+    segment: 'welcome' | 'first_recharge' | 'winback' | 'vip' | 'returning' | 'none';
+    label: string;
+    description: string;
+    bonus_pct: number;
+    expires_at: number | null;
+    expires_in_sec: number;
+  }>('GET', '/api/coins/offer'),
+  // Smart "best pack for you" recommendation based on the user's burn-rate.
+  getCoinRecommendation: () => apiRequest<{
+    enabled: boolean;
+    recommended_plan_id: string | null;
+    burn_rate_per_day: number;
+    days_left: number | null;
+    lasts_days: number | null;
+    urgency: 'critical' | 'low' | 'normal';
+    reason: string;
+  }>('GET', '/api/coins/recommendation'),
   purchaseCoins: (plan_id: string, payment_method: string, payment_ref?: string, utr_id?: string, gateway_id?: string, promo_code?: string) =>
     apiRequest('POST', '/api/coins/purchase', { plan_id, payment_method, payment_ref, utr_id, gateway_id, promo_code }),
   getCoinHistory: () => apiRequest<any[]>('GET', '/api/coins/history'),

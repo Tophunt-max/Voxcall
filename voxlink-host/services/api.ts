@@ -1,6 +1,6 @@
 // VoxLink API Client — connects to Cloudflare Workers backend
-import { getItem, setItem } from '@/utils/storage';
 import { StorageKeys } from '@/utils/storage';
+import { secureGet, secureSet, secureRemove } from '@/utils/storage';
 import { API_BASE_URL } from '@/constants/config';
 
 const BASE_URL = API_BASE_URL;
@@ -12,7 +12,7 @@ export function resolveMediaUrl(path?: string | null): string | undefined {
 }
 
 async function getToken(): Promise<string> {
-  const token = await getItem<string>(StorageKeys.AUTH_TOKEN);
+  const token = await secureGet(StorageKeys.AUTH_TOKEN);
   return token || '';
 }
 
@@ -25,7 +25,7 @@ async function refreshAuthToken(): Promise<string | null> {
   if (_refreshing) return _refreshing;
   _refreshing = (async () => {
     try {
-      const old = await getItem<string>(StorageKeys.AUTH_TOKEN);
+      const old = await secureGet(StorageKeys.AUTH_TOKEN);
       if (!old) return null;
       const res = await fetch(`${BASE_URL}/api/auth/refresh`, {
         method: 'POST',
@@ -35,7 +35,7 @@ async function refreshAuthToken(): Promise<string | null> {
       if (!res.ok) return null;
       const data = await res.json() as { token: string };
       if (data.token) {
-        await setItem(StorageKeys.AUTH_TOKEN, data.token);
+        await secureSet(StorageKeys.AUTH_TOKEN, data.token);
         return data.token;
       }
       return null;
@@ -82,7 +82,7 @@ export async function apiRequest<T>(
     // Refresh bhi fail hua — token revoked ya expired, force logout karo
     try {
       const { removeItem } = await import('@/utils/storage');
-      await removeItem(StorageKeys.AUTH_TOKEN);
+      await secureRemove(StorageKeys.AUTH_TOKEN);
       await removeItem(StorageKeys.USER);
       const { router } = await import('expo-router');
       router.replace('/auth/login');

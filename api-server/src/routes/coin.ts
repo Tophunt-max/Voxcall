@@ -146,6 +146,27 @@ coin.post('/apply-promo', authMiddleware, async (c) => {
   return c.json({ valid: true, type: promo.type, discount, bonus_coins, discount_pct: promo.discount_pct ?? 0, code: promo.code });
 });
 
+// GET /api/coins/offer — personalized smart-discount offer for the current user
+// Auth required (offer depends on the user's lifecycle segment). Drives the
+// checkout offer banner. The SAME engine grants the bonus at credit time, so
+// what's shown here is exactly what the user receives.
+coin.get('/offer', authMiddleware, async (c) => {
+  const { sub } = c.get('user');
+  const { computeSmartOffer } = await import('../lib/smartDiscount');
+  const offer = await computeSmartOffer(c.env.DB, sub);
+  return c.json(offer);
+});
+
+// GET /api/coins/recommendation — smart "best pack for you" based on the user's
+// coin burn-rate + balance runway. Drives the "⭐ Best for you" badge + usage
+// hint on the checkout screen. Best-effort; disabled by default (admin opt-in).
+coin.get('/recommendation', authMiddleware, async (c) => {
+  const { sub } = c.get('user');
+  const { computeRechargeRecommendation } = await import('../lib/smartRecommend');
+  const rec = await computeRechargeRecommendation(c.env.DB, sub);
+  return c.json(rec);
+});
+
 // All routes below require auth
 coin.use('*', authMiddleware);
 
@@ -319,6 +340,18 @@ coin.post('/manual-deposit', async (c) => {
   // The `auto_approve_manual` and `auto_approve_manual_max_amount` settings
   // are intentionally ignored here. They can stay in app_settings (other code
   // may surface them in the admin UI) but they no longer credit coins.
+
+  // NOTIFICATION: Immediately confirm to the user that their payment was
+  // received and is under review — so recharge always produces feedback
+  // (in-app notification + FCM push), not just a silent success response.
+  const totalCoins = plan.coins + (plan.bonus_coins || 0) + promoBonus;
+  c.executionCtx?.waitUntil?.(notifyUser(
+    c.env, sub, 'Payment received 🕐',
+    `Your payment for ${totalCoins} coins is under review. Coins will be added to your wallet once verified (usually within a few minutes).`,
+    'deposit',
+    { data: { status: 'pending', purchase_id: purchaseId } },
+  ));
+
   return c.json({
     success: true,
     purchase_id: purchaseId,
@@ -484,8 +517,8 @@ coin.post('/withdraw', async (c) => {
   // Real-time: confirm the frozen balance + send a "withdrawal requested" note.
   c.executionCtx?.waitUntil?.(pushCoinUpdate(c.env, sub, -coinsReq));
   c.executionCtx?.waitUntil?.(notifyUser(
-    c.env, sub, 'Withdrawal requested 💸',
-    `Your request to withdraw ${coinsReq} coins has been received. Coins are frozen pending admin approval.`,
+    c.env, sub, '💸 Withdrawal Requested',
+    `Got it! Your request to withdraw ${coinsReq} coins is in. We're reviewing it now and your payout will be on its way soon. ✅`,
     'payout',
   ));
   return c.json({

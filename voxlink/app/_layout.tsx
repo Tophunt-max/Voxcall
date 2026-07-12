@@ -18,7 +18,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { ToastContainer, showSuccessToast } from "@/components/Toast";
+import { ToastContainer, showSuccessToast, showErrorToast, showInfoToast } from "@/components/Toast";
 import { DialogHost } from "@/components/DialogHost";
 import { OfflineBanner } from "@/components/OfflineBanner";
 import MaintenanceGate from "@/components/MaintenanceGate";
@@ -304,12 +304,27 @@ function AppBridge() {
   );
 
   // Real-time in-app notification — show a toast + bump the unread badge live.
+  // Pick the toast style from the notification content so a FAILED recharge /
+  // rejected deposit shows a RED error toast (not a green success one), and a
+  // "pending / under review" shows a neutral info toast.
   useSocketEvent(
     SocketEvents.NOTIFICATION_NEW,
     (data: any) => {
       const n = data?.notification;
-      if (n?.title) showSuccessToast(n.body ? `${n.title} — ${n.body}` : n.title);
+      if (n?.title) {
+        const msg = n.body ? `${n.title} — ${n.body}` : n.title;
+        const status = n?.data?.status;
+        const failed = status === 'rejected' || status === 'failed' || status === 'cancelled' ||
+          /failed|cancelled|could not|not credited|rejected/i.test(String(n.body ?? '') + String(n.title ?? ''));
+        const pending = status === 'pending' || status === 'verifying' ||
+          /under review|pending|being verified/i.test(String(n.body ?? ''));
+        if (failed) showErrorToast(msg);
+        else if (pending) showInfoToast(msg);
+        else showSuccessToast(msg);
+      }
       queryClient.invalidateQueries({ queryKey: ["notif-unread"] });
+      // Also refresh wallet balance in case a deposit just credited coins.
+      queryClient.invalidateQueries({ queryKey: ["balance"] });
     },
     [queryClient]
   );

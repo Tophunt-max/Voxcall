@@ -644,8 +644,8 @@ call.post('/rate', zValidator('json', rateSchema), async (c) => {
       // Persist + offline push (realtime:false — review_received socket event
       // already shows the live toast).
       c.executionCtx?.waitUntil?.(notifyUser(
-        c.env, hostUser.user_id, 'New review ⭐',
-        `You received a ${starsVal}-star review${body.comment ? `: ${body.comment}` : ''}`,
+        c.env, hostUser.user_id, '⭐ You Got a New Review!',
+        `Someone just rated you ${starsVal} stars! 🌟${body.comment ? ` "${body.comment}"` : ''} Keep up the amazing work! 💛`,
         'review', { realtime: false },
       ));
     }
@@ -816,8 +816,8 @@ call.post('/:id/end', async (c) => {
     if (session.status === 'pending' && session.host_user_id && sub === session.caller_id) {
       const caller = await db.prepare('SELECT name FROM users WHERE id = ?').bind(session.caller_id).first<{ name: string }>();
       c.executionCtx?.waitUntil?.(notifyUser(
-        c.env, session.host_user_id, 'Missed call 📞',
-        `You missed a ${session.type === 'video' ? 'video' : 'audio'} call from ${caller?.name ?? 'a user'}.`,
+        c.env, session.host_user_id, '📞 You Missed a Call!',
+        `${caller?.name ?? 'Someone'} tried to reach you on a ${session.type === 'video' ? 'video' : 'audio'} call. 💛 Go online and call them back — they might still be waiting! ✨`,
         'missed_call',
       ));
     }
@@ -972,8 +972,8 @@ call.post('/:id/end', async (c) => {
             .bind(session.caller_id, now - 12 * 3600).first<{ ok: number }>();
           if (!recent) {
             c.executionCtx?.waitUntil?.(notifyEngagement(
-              c.env, session.caller_id, 'Coins low 💰',
-              'Aapke coins kam ho rahe hain — recharge karke apni calls jaari rakhein.',
+              c.env, session.caller_id, '💰 Aapke Coins Kam Ho Rahe Hain!',
+              'Uh-oh! Aapke coins khatam hone waale hain. ⏳ Abhi recharge karein taaki aapki calls beech mein na ruke. 💛',
               'low_balance', { data: { type: 'low_balance' } },
             ));
           }

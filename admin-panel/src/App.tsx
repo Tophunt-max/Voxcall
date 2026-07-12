@@ -47,6 +47,7 @@ const EngagementNotifications = lazy(() => import('@/pages/EngagementNotificatio
 const GrowthPromotions = lazy(() => import('@/pages/GrowthPromotions'));
 const PaymentGateways = lazy(() => import('@/pages/PaymentGateways'));
 const Deposits = lazy(() => import('@/pages/Deposits'));
+const HealthMonitor = lazy(() => import('@/pages/HealthMonitor'));
 
 function PageLoader() {
   return (
@@ -116,6 +117,7 @@ function ProtectedApp() {
         <Route path="/growth" component={GrowthPromotions} />
         <Route path="/deposits" component={Deposits} />
         <Route path="/payment-gateways" component={PaymentGateways} />
+        <Route path="/health" component={HealthMonitor} />
         <Route path="/settings" component={SettingsPage} />
           <Route component={() => <Redirect to="/dashboard" />} />
         </Switch>
