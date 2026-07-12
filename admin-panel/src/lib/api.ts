@@ -17,28 +17,54 @@ function handleSessionExpired() {
 // ─── Token Auto-Refresh ──────────────────────────────────────────────────────
 // On 401: silently refresh the token via /api/auth/refresh and retry once.
 // Multiple concurrent 401s are collapsed into a single refresh call.
-let _refreshing: Promise<string | null> | null = null;
+let _refreshing: Promise<boolean> | null = null;
 
-async function refreshAdminToken(): Promise<string | null> {
+// Build request headers. The Authorization header is only attached when a
+// legacy localStorage Bearer token exists; the primary auth path is now the
+// httpOnly admin session cookie (sent automatically via credentials:'include').
+export function authHeaders(hasBody: boolean): Record<string, string> {
+  const h: Record<string, string> = {};
+  if (hasBody) h['Content-Type'] = 'application/json';
+  const token = getToken();
+  if (token) h['Authorization'] = `Bearer ${token}`;
+  return h;
+}
+
+// Refresh the admin session. Two flows are supported:
+//   • Cookie flow (primary): POST /api/admin-auth/refresh with credentials —
+//     the server re-issues the httpOnly cookie. Returns true on success.
+//   • Legacy Bearer flow: POST /api/auth/refresh with the localStorage token —
+//     stores the new token so authHeaders() attaches it. Returns true.
+// Concurrent 401s are collapsed into a single in-flight refresh.
+async function refreshAdminToken(): Promise<boolean> {
   if (_refreshing) return _refreshing;
   _refreshing = (async () => {
     try {
+      // Cookie session refresh (primary). credentials:'include' sends the
+      // httpOnly admin_session cookie; the server rotates it in the response.
+      const cookieRes = await fetch(`${API}/admin-auth/refresh`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      if (cookieRes.ok) return true;
+
+      // Legacy Bearer refresh (migration bridge) — only if a token exists.
       const oldToken = localStorage.getItem('voxlink_admin_token');
-      if (!oldToken) return null;
+      if (!oldToken) return false;
       const res = await fetch(`${API}/auth/refresh`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token: oldToken }),
       });
-      if (!res.ok) return null;
+      if (!res.ok) return false;
       const data = await res.json() as { token?: string };
       if (data.token) {
         localStorage.setItem('voxlink_admin_token', data.token);
-        return data.token;
+        return true;
       }
-      return null;
+      return false;
     } catch {
-      return null;
+      return false;
     } finally {
       _refreshing = null;
     }
@@ -47,27 +73,24 @@ async function refreshAdminToken(): Promise<string | null> {
 }
 
 export async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const token = getToken();
-  if (!token && !path.includes('/auth/')) {
-    handleSessionExpired();
-    throw new Error('Session expired. Please log in again.');
-  }
-  const r = await fetch(`${API}${path}`, {
-    method,
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  // FIX #3: On 401, try refreshing the token and retry once before giving up.
+  const doFetch = () =>
+    fetch(`${API}${path}`, {
+      method,
+      // credentials:'include' sends the httpOnly admin session cookie — the
+      // primary auth mechanism. authHeaders() adds a Bearer token only if a
+      // legacy localStorage token is still present.
+      credentials: 'include',
+      headers: authHeaders(!!body),
+      body: body ? JSON.stringify(body) : undefined,
+    });
+
+  const r = await doFetch();
+  // FIX #3: On 401, try refreshing the session and retry once before giving up.
   // Previously, a 401 immediately killed the session, losing any unsaved admin work.
   if (r.status === 401 && !path.includes('/auth/')) {
-    const newToken = await refreshAdminToken();
-    if (newToken) {
-      // Retry the original request with the new token
-      const retry = await fetch(`${API}${path}`, {
-        method,
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${newToken}` },
-        body: body ? JSON.stringify(body) : undefined,
-      });
+    const refreshed = await refreshAdminToken();
+    if (refreshed) {
+      const retry = await doFetch();
       if (retry.status === 401) {
         handleSessionExpired();
         throw new Error('Session expired. Please log in again.');
@@ -271,16 +294,11 @@ export const api = {
     level_count: number;
     settings_updated: string[];
   }> => {
-    const token = getToken();
-    if (!token) {
-      handleSessionExpired();
-      throw new Error('Session expired. Please log in again.');
-    }
     const r = await fetch(`${API}/admin/seed/india-defaults?confirm=true`, {
       method: 'POST',
+      credentials: 'include',
       headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
+        ...authHeaders(true),
         // Backend cross-checks this header against a fixed magic string
         // before applying the (destructive) seed. Without the header the
         // endpoint 400s — protects against accidental URL-share clicks.
@@ -309,37 +327,25 @@ export const api = {
 
   // Upload QR image directly to R2 (returns URL to use in createManualQRCode)
   uploadQRImage: async (file: File): Promise<{ url: string; key: string; filename: string; size: number }> => {
-    const token = getToken();
-    if (!token) {
-      handleSessionExpired();
-      throw new Error('Session expired. Please log in again.');
-    }
     const formData = new FormData();
     formData.append('file', file);
     const baseUrl = import.meta.env.VITE_API_URL
       ? `${import.meta.env.VITE_API_URL}/api`
       : `${import.meta.env.BASE_URL.replace(/\/$/, '')}/api`;
-    const r = await fetch(`${baseUrl}/upload/admin-qr`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
-      body: formData,
-    });
+    // FormData sets its own Content-Type boundary — only attach a Bearer token
+    // if a legacy one exists; the httpOnly cookie rides credentials:'include'.
+    const post = () =>
+      fetch(`${baseUrl}/upload/admin-qr`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: authHeaders(false),
+        body: formData,
+      });
+    let r = await post();
     if (r.status === 401) {
-      const newToken = await refreshAdminToken();
-      if (newToken) {
-        const retry = await fetch(`${baseUrl}/upload/admin-qr`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${newToken}` },
-          body: formData,
-        });
-        if (!retry.ok) {
-          const err = await retry.json().catch(() => ({ error: retry.statusText }));
-          throw new Error((err as any).error || retry.statusText);
-        }
-        return retry.json();
-      }
-      handleSessionExpired();
-      throw new Error('Session expired');
+      const refreshed = await refreshAdminToken();
+      if (!refreshed) { handleSessionExpired(); throw new Error('Session expired'); }
+      r = await post();
     }
     if (!r.ok) {
       const err = await r.json().catch(() => ({ error: r.statusText }));
@@ -349,27 +355,23 @@ export const api = {
   },
   // Upload a promotional banner image directly to R2 (returns URL for banners.image_url)
   uploadBannerImage: async (file: File): Promise<{ url: string; key: string; filename: string; size: number }> => {
-    const token = getToken();
-    if (!token) {
-      handleSessionExpired();
-      throw new Error('Session expired. Please log in again.');
-    }
     const formData = new FormData();
     formData.append('file', file);
     const baseUrl = import.meta.env.VITE_API_URL
       ? `${import.meta.env.VITE_API_URL}/api`
       : `${import.meta.env.BASE_URL.replace(/\/$/, '')}/api`;
-    const post = (tk: string) =>
+    const post = () =>
       fetch(`${baseUrl}/upload/admin-banner`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${tk}` },
+        credentials: 'include',
+        headers: authHeaders(false),
         body: formData,
       });
-    let r = await post(token);
+    let r = await post();
     if (r.status === 401) {
-      const newToken = await refreshAdminToken();
-      if (!newToken) { handleSessionExpired(); throw new Error('Session expired'); }
-      r = await post(newToken);
+      const refreshed = await refreshAdminToken();
+      if (!refreshed) { handleSessionExpired(); throw new Error('Session expired'); }
+      r = await post();
     }
     if (!r.ok) {
       const err = await r.json().catch(() => ({ error: r.statusText }));
