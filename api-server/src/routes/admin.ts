@@ -1287,6 +1287,23 @@ admin.patch('/deposits/:id', async (c) => {
     c.executionCtx?.waitUntil?.(notifyUser(c.env, purchase.user_id, 'Deposit refunded', `A deposit was refunded and ${totalRefund} coins were reversed from your wallet.`, 'deposit'));
   } else {
     await db(c).prepare(`UPDATE coin_purchases SET ${sets.join(', ')} WHERE id = ?`).bind(...vals).run();
+    // NOTIFICATION: when an admin REJECTS or marks a deposit FAILED, tell the
+    // user so a recharge always ends with clear feedback (never silent). This
+    // was the missing failure-path notification — previously only success and
+    // refund notified. Sends both in-app row + FCM push via notifyUser.
+    if (body.status === 'rejected' || body.status === 'failed') {
+      const dep = await db(c).prepare('SELECT user_id, coins, bonus_coins FROM coin_purchases WHERE id = ?').bind(id).first<{ user_id: string; coins: number; bonus_coins: number }>();
+      if (dep?.user_id) {
+        const attempted = (dep.coins || 0) + (dep.bonus_coins || 0);
+        const reason = body.admin_note ? ` Reason: ${body.admin_note}` : '';
+        c.executionCtx?.waitUntil?.(notifyUser(
+          c.env, dep.user_id, 'Recharge failed ❌',
+          `Your recharge for ${attempted} coins could not be verified and was not credited.${reason} If money was deducted, please contact support with your payment reference.`,
+          'deposit',
+          { data: { status: body.status, purchase_id: id } },
+        ));
+      }
+    }
   }
   const u = c.get('user');
   await auditLog(db(c), u.sub, u.email || 'Admin', u.email || '', 'update', 'deposit', id, `Deposit ${id} updated: ${JSON.stringify(body)}`);
