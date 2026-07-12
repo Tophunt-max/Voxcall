@@ -590,9 +590,9 @@ export default function RandomScreen() {
 
   // Start polling for match. Each poll runs against the configured filters;
   // a hard cap prevents an idle screen from hammering the server forever.
-  const startSearching = useCallback(() => {
+  const startSearching = useCallback((initialStatus?: string) => {
     setPhase("searching");
-    setStatusMsg(searchingMessageForCode(undefined, onlineCount, tr));
+    setStatusMsg(initialStatus || searchingMessageForCode(undefined, onlineCount, tr));
     setStatusCode(undefined);
     pollAttemptsRef.current = 0;
 
@@ -664,6 +664,60 @@ export default function RandomScreen() {
     poll(); // immediate first call
     pollRef.current = setInterval(poll, 2500);
   }, [callType, buildFilterPayload, onlineCount, adminCoinRate]);
+
+  // Smart Instant-Connect entry point (smart-engines: routes/smart.ts
+  // /instant-connect). Tapping "Random Match" first asks the affinity-aware
+  // brain for the single best host for THIS user right now:
+  //   • matched + host_id → fetch that host and ring them via ConnectingScreen
+  //     (the affinity-ranked pick, not a blind random draw).
+  //   • enabled but queued → carry the server's honest "usually ~N min" ETA
+  //     into the normal polling search so the user sees a real wait hint.
+  //   • disabled / any error → fall straight through to the existing polling
+  //     flow, so behaviour is unchanged when the engine is off.
+  const tryInstantConnect = useCallback(async () => {
+    lastTriedHostRef.current = undefined;
+    setPhase("searching");
+    setStatusMsg(tr.random.findingMatch);
+    setStatusCode(undefined);
+    try {
+      const res = await API.requestInstantConnect(callType);
+      if (!isMounted.current) return;
+      if (res?.enabled && res.matched && res.host_id) {
+        try {
+          const h: any = await API.getHost(res.host_id);
+          if (!isMounted.current) return;
+          const rate = Number(h.audio_coins_per_minute ?? h.coins_per_minute) || 25;
+          const specialties = Array.isArray(h.specialties)
+            ? h.specialties
+            : (() => { try { return JSON.parse(h.specialties || "[]"); } catch { return []; } })();
+          setAdminCoinRate(rate);
+          setMatchedHost({
+            id: h.id,
+            user_id: h.user_id,
+            name: h.display_name || h.name || "Host",
+            avatar_url: h.avatar_url,
+            rating: Number(h.rating) || 0,
+            coins_per_minute: rate,
+            specialties,
+          });
+          setPhase("connecting");
+          return;
+        } catch {
+          /* host fetch failed — fall through to normal polling below */
+        }
+      }
+      // Enabled but no instant match (busy pool) → carry the ETA reason into
+      // the polling search so the wait hint isn't lost.
+      if (res?.enabled && res.matched === false && res.reason) {
+        startSearching(res.reason);
+        return;
+      }
+    } catch {
+      /* engine disabled / network error — fall back to normal polling */
+    }
+    if (!isMounted.current) return;
+    startSearching();
+  }, [callType, startSearching, tr]);
 
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
 
@@ -794,7 +848,7 @@ export default function RandomScreen() {
             </View>
           </TouchableOpacity>
         ) : (
-          <TouchableOpacity onPress={() => { lastTriedHostRef.current = undefined; startSearching(); }} activeOpacity={0.85} style={styles.randomBtnWrap}>
+          <TouchableOpacity onPress={() => { void tryInstantConnect(); }} activeOpacity={0.85} style={styles.randomBtnWrap}>
             <LinearGradient colors={GRAD} style={styles.randomBtn} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
               <Text style={styles.randomBtnTxt}>{tr.random.randomMatch}</Text>
             </LinearGradient>

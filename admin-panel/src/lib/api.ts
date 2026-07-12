@@ -182,6 +182,26 @@ export const api = {
   bannedUsers: (page = 1, limit = 50) => req<any[]>('GET', `/admin/bans?page=${page}&limit=${limit}`),
   banUser: (data: any) => req<any>('POST', '/admin/bans', data),
   unbanUser: (id: string) => req('DELETE', `/admin/bans/${id}`),
+
+  // ─── Fraud / Abuse Risk Scoring (api-server lib/riskScore.ts) ─────────────
+  // Read-only. DEFAULT OFF: when risk_scoring_enabled=0 both return
+  // { enabled:false } so the page shows a "disabled" hint instead of data.
+  riskFlagged: (minTier: 'medium' | 'high' = 'medium', limit = 100) =>
+    req<{
+      enabled: boolean;
+      assessed?: number;
+      min_tier?: string;
+      flagged: Array<{ user_id: string; name: string | null; email: string | null; score: number; tier: 'low' | 'medium' | 'high'; reasons: string[] }>;
+    }>('GET', `/admin/risk/flagged?min_tier=${minTier}&limit=${limit}`),
+  riskUser: (id: string) =>
+    req<{
+      user_id: string;
+      enabled: boolean;
+      score: number;
+      tier: 'low' | 'medium' | 'high';
+      breakdown: Record<string, number>;
+      reasons: string[];
+    }>('GET', `/admin/risk/user/${id}`),
   auditLogs: (page = 1, limit = 50) => req<any[]>('GET', `/admin/audit-logs?page=${page}&limit=${limit}`),
   banners: () => req<any[]>('GET', '/admin/banners'),
   createBanner: (data: any) => req<any>('POST', '/admin/banners', data),

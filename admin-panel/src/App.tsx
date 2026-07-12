@@ -48,6 +48,7 @@ const GrowthPromotions = lazy(() => import('@/pages/GrowthPromotions'));
 const PaymentGateways = lazy(() => import('@/pages/PaymentGateways'));
 const Deposits = lazy(() => import('@/pages/Deposits'));
 const HealthMonitor = lazy(() => import('@/pages/HealthMonitor'));
+const Risk = lazy(() => import('@/pages/Risk'));
 
 function PageLoader() {
   return (
@@ -103,6 +104,7 @@ function ProtectedApp() {
         <Route path="/analytics" component={Analytics} />
         <Route path="/referral-system" component={ReferralSystem} />
         <Route path="/content-moderation" component={ContentModeration} />
+        <Route path="/risk" component={Risk} />
         <Route path="/support-tickets" component={SupportTickets} />
         <Route path="/bulk-notifications" component={BulkNotifications} />
         <Route path="/banners" component={Banners} />

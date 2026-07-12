@@ -26,6 +26,14 @@ interface Props {
    * dead-end "insufficient coins" call attempt. Omit to disable (default).
    */
   userCoins?: number;
+  /**
+   * Data-driven availability hint from the smart availability-prediction engine
+   * (e.g. "Usually online around 8 PM"). A PROBABILITY from the host's history,
+   * NOT a live-presence claim — so it's only shown when the host is currently
+   * OFFLINE (when online, the live "Available" badge is authoritative). Omit /
+   * empty string to hide (default).
+   */
+  availabilityLabel?: string;
 }
 
 function StatusBadge({ isOnline, isBusy }: { isOnline: boolean; isBusy?: boolean }) {
@@ -43,8 +51,12 @@ function StatusBadge({ isOnline, isBusy }: { isOnline: boolean; isBusy?: boolean
   );
 }
 
-export function HostCard({ host, onPress, compact = false, onTalkNow, onAudioCall, onVideoCall, userCoins }: Props) {
+export function HostCard({ host, onPress, compact = false, onTalkNow, onAudioCall, onVideoCall, userCoins, availabilityLabel }: Props) {
   const colors = useColors();
+
+  // Only surface the predicted-availability hint for an OFFLINE host — for an
+  // online host the live status is the source of truth. Empty label = hide.
+  const showAvailabilityHint = !host.isOnline && !!availabilityLabel;
 
   // P3: can the viewer afford ~1 minute with this host? Only meaningful when a
   // balance was passed AND the host has a positive rate. undefined = unknown
@@ -76,6 +88,11 @@ export function HostCard({ host, onPress, compact = false, onTalkNow, onAudioCal
         <Text style={[styles.compactLang, { color: colors.mutedForeground }]} numberOfLines={1}>
           {host.languages[0]}
         </Text>
+        {showAvailabilityHint && (
+          <Text style={[styles.availHint, { color: colors.mutedForeground }]} numberOfLines={1}>
+            {availabilityLabel}
+          </Text>
+        )}
         <View style={styles.compactCoinRow}>
           <Image source={require("@/assets/icons/ic_coin.png")} style={styles.compactCoinIcon} contentFit="contain" cachePolicy="memory" />
           <Text style={[styles.compactCoinText, { color: colors.coinGold }]}>{host.coinsPerMinute}/min</Text>
@@ -126,6 +143,16 @@ export function HostCard({ host, onPress, compact = false, onTalkNow, onAudioCal
               {host.languages.slice(0, 2).join(", ")}
             </Text>
           </View>
+
+          {/* Predicted-availability hint (offline hosts only) */}
+          {showAvailabilityHint && (
+            <View style={styles.availHintRow}>
+              <View style={[styles.availHintDot, { backgroundColor: colors.coinGold }]} />
+              <Text style={[styles.availHint, { color: colors.mutedForeground }]} numberOfLines={1}>
+                {availabilityLabel}
+              </Text>
+            </View>
+          )}
 
           {/* Topics */}
           <View style={styles.topicsRow}>
@@ -221,6 +248,9 @@ const styles = StyleSheet.create({
   langRow: { flexDirection: "row", alignItems: "center", gap: 4 },
   langIcon: { width: 12, height: 12, opacity: 0.6 },
   langText: { fontSize: 12, fontFamily: "Poppins_400Regular" },
+  availHintRow: { flexDirection: "row", alignItems: "center", gap: 5 },
+  availHintDot: { width: 6, height: 6, borderRadius: 3 },
+  availHint: { fontSize: 11, fontFamily: "Poppins_500Medium", textAlign: "center" },
   topicsRow: { flexDirection: "row", flexWrap: "wrap", gap: 4 },
   topicChip: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6 },
   topicText: { fontSize: 10, fontFamily: "Poppins_500Medium" },
