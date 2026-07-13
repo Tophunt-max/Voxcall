@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  Image, ActivityIndicator, Platform,
+  Image, ActivityIndicator, Platform, TextInput,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
@@ -14,6 +14,9 @@ import { useLanguage } from "@/context/LanguageContext";
 import { API, resolveMediaUrl } from "@/services/api";
 import { getRandomAvatarUri } from "@/utils/randomAvatar";
 import { showErrorToast, showSuccessToast } from "@/components/Toast";
+import {
+  getPendingReferral, setPendingReferral, clearPendingReferral, normalizeReferralCode,
+} from "@/utils/pendingReferral";
 
 const ACCENT = "#A00EE7";
 const DEVICE_ID_KEY = "@voxlink_device_id";
@@ -78,6 +81,37 @@ export default function LoginScreen() {
   const { t } = useLanguage();
   const [googleLoading, setGoogleLoading] = useState(false);
   const [quickLoading, setQuickLoading] = useState(false);
+  const [referralCode, setReferralCode] = useState("");
+  const [showReferral, setShowReferral] = useState(false);
+
+  // Restore a referral code across mounts / the web Google-OAuth redirect.
+  // Priority: a `?ref=` (or `?referral=`) query param on web, else the value
+  // persisted by a previous keystroke. Persisting is what keeps the code alive
+  // through the full-page redirect, where React state would otherwise be lost.
+  useEffect(() => {
+    (async () => {
+      let code = "";
+      if (Platform.OS === "web" && typeof window !== "undefined") {
+        try {
+          const p = new URLSearchParams(window.location.search);
+          code = normalizeReferralCode(p.get("ref") || p.get("referral") || "");
+        } catch { /* ignore */ }
+      }
+      if (!code) code = await getPendingReferral();
+      if (code) {
+        setReferralCode(code);
+        setShowReferral(true);
+        await setPendingReferral(code);
+      }
+    })();
+  }, []);
+
+  const onChangeReferral = (v: string) => {
+    const norm = normalizeReferralCode(v);
+    setReferralCode(norm);
+    // Persist every keystroke so the code survives the web OAuth redirect.
+    setPendingReferral(norm);
+  };
 
   const handleGoogleLogin = async () => {
     setGoogleLoading(true);
@@ -153,7 +187,12 @@ export default function LoginScreen() {
   ) => {
     try {
       const deviceId = await getDeviceId();
-      const data = await API.googleLogin(email, name, id, photo ?? null, deviceId, idToken);
+      // Read the referral code from storage (survives the web OAuth redirect,
+      // where React state is lost). The backend only attributes it to a
+      // brand-new account, so passing it on a returning login is a harmless no-op.
+      const ref = (await getPendingReferral()) || referralCode || null;
+      const data = await API.googleLogin(email, name, id, photo ?? null, deviceId, idToken, ref);
+      await clearPendingReferral();
       const profile = {
         id: data.user.id || id,
         name: data.user.name || name,
@@ -201,7 +240,9 @@ export default function LoginScreen() {
     setQuickLoading(true);
     try {
       const deviceId = await getDeviceId();
-      const data = await API.quickLogin(deviceId);
+      const ref = (await getPendingReferral()) || referralCode || null;
+      const data = await API.quickLogin(deviceId, ref);
+      await clearPendingReferral();
       const avatarKey = resolveMediaUrl(data.user.avatar_url) || getRandomAvatarUri();
       const profile = {
         id: data.user.id,
@@ -298,6 +339,27 @@ export default function LoginScreen() {
             {quickLoading ? t.auth.pleaseWait : t.auth.quickLogin}
           </Text>
         </TouchableOpacity>
+
+        {showReferral ? (
+          <View style={s.referralWrap}>
+            <TextInput
+              value={referralCode}
+              onChangeText={onChangeReferral}
+              placeholder="Enter referral code"
+              placeholderTextColor="#84889F"
+              autoCapitalize="characters"
+              autoCorrect={false}
+              maxLength={40}
+              editable={!isLoading}
+              style={s.referralInput}
+            />
+            <Text style={s.referralHint}>Your friend&apos;s code — apply it before you sign up.</Text>
+          </View>
+        ) : (
+          <TouchableOpacity onPress={() => setShowReferral(true)} disabled={isLoading} activeOpacity={0.7}>
+            <Text style={s.referralToggle}>Have a referral code?</Text>
+          </TouchableOpacity>
+        )}
 
         <Text style={s.noteText}>
           {t.auth.quickLoginNote}
@@ -408,6 +470,32 @@ const s = StyleSheet.create({
     color: "#fff",
   },
   btnDisabled: { opacity: 0.65 },
+  referralToggle: {
+    fontSize: 13,
+    fontFamily: "Poppins_600SemiBold",
+    color: ACCENT,
+    textAlign: "center",
+    marginTop: 2,
+  },
+  referralWrap: { gap: 6, marginTop: 2 },
+  referralInput: {
+    paddingVertical: 13,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: "#E8EAF0",
+    backgroundColor: "#fff",
+    fontSize: 15,
+    fontFamily: "Poppins_600SemiBold",
+    color: "#111329",
+    letterSpacing: 1,
+  },
+  referralHint: {
+    fontSize: 11,
+    fontFamily: "Poppins_400Regular",
+    color: "#84889F",
+    textAlign: "center",
+  },
   noteText: {
     fontSize: 12,
     fontFamily: "Poppins_400Regular",

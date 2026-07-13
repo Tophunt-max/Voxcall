@@ -5,6 +5,7 @@ import { timingSafeEqual } from '../lib/hash';
 import { bumpRewardProgress } from './rewards';
 import { pushCoinUpdate, notifyUser } from '../lib/realtime';
 import { applyPurchaseBonuses } from '../lib/promotions';
+import { maybeUnlockReferral } from '../lib/referral';
 import {
   verifyRazorpaySignature,
   verifyStripeSignature,
@@ -198,6 +199,10 @@ async function approveDeposit(db: D1Database, purchaseId: string, source: string
     await applyPurchaseBonuses(env, { id: purchase.id, user_id: purchase.user_id, coins: purchase.coins, bonus_coins: purchase.bonus_coins });
     await pushCoinUpdate(env, purchase.user_id, totalCoins);
     await notifyUser(env, purchase.user_id, '🎉 Recharge Successful!', `Woohoo! ${totalCoins} coins are now in your wallet. Time to connect with your favourite hosts! 💛`, 'deposit', { data: { status: 'success' } });
+    // Anti-fraud referral unlock: a real-money recharge is the strongest signal
+    // of a genuine referred user. If this buyer was referred, this unlocks the
+    // referrer's reward. Idempotent + best-effort (see lib/referral.ts).
+    await maybeUnlockReferral(env, purchase.user_id);
   }
   return { ok: true, coins: totalCoins };
 }

@@ -11,7 +11,7 @@ import { registerHit } from '../lib/rateLimit';
 import { isEmergencyOn, emergencyBlockedBody } from '../lib/emergencyFlags';
 import { findActiveBan, bannedBody } from '../lib/bans';
 import { maybeGrantComebackReward } from '../lib/promotions';
-import { maybeUnlockReferral } from '../lib/referral';
+import { recordReferral } from '../lib/referral';
 import type { Env } from '../types';
 import { authMiddleware } from '../middleware/auth';
 
@@ -200,18 +200,10 @@ auth.post('/register', rateLimit, zValidator('json', registerSchema), async (c) 
     `INSERT INTO users (id, name, email, password_hash, gender, phone, otp, otp_expires_at, is_verified, country, currency, free_call_minutes)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`
   ).bind(id, name, email, hash, gender ?? null, phone ?? null, otp, otpExp, country, currency, freeCallMinutes).run();
-  // Bug 3 Fix: Record referral as pending (coins_given=0) — coins awarded only after OTP verification
-  // This prevents Sybil attacks where fake accounts are created to farm referral coins.
-  if (referral_code) {
-    try {
-      const ref = await db.prepare('SELECT * FROM referral_codes WHERE code = ?').bind(referral_code.trim().toUpperCase()).first<any>();
-      if (ref && ref.user_id !== id) {
-        const useId = crypto.randomUUID();
-        await db.prepare('INSERT INTO referral_uses (id, referrer_id, referred_id, code, coins_given) VALUES (?, ?, ?, ?, 0)')
-          .bind(useId, ref.user_id, id, referral_code.trim().toUpperCase()).run();
-      }
-    } catch { /* ignore referral errors — don't block registration */ }
-  }
+  // Record the referral as PENDING. It is credited later by maybeUnlockReferral
+  // only once the referred user proves genuine (a real recharge or enough PAID
+  // calls) — NOT on email verification. See lib/referral.ts.
+  await recordReferral(db, referral_code, id);
   // Send OTP via email
   await sendEmail({
     apiKey: c.env.RESEND_API_KEY,
@@ -307,14 +299,11 @@ auth.post('/verify-otp', strictRateLimit, async (c) => {
   // Ledger row for the welcome bonus (best-effort audit trail).
   await writeCoinLedger(db, user.id, 'bonus', welcomeBonus, 'Welcome bonus (email signup)');
 
-  // Referral reward is NO LONGER granted here. It now unlocks only after the
-  // referred user satisfies the admin-configured `min_calls_to_unlock` — see
-  // lib/referral.ts (also hooked into the call-completion paths in routes/call.ts).
-  // This enforces the setting the admin panel already exposes and closes the
-  // email-OTP referral-farming vector (verifying an email was free; completing
-  // real calls is not). We still fire the check here so a `min_calls_to_unlock = 0`
-  // config unlocks instantly on verify. Best-effort, off the response path.
-  c.executionCtx?.waitUntil?.(maybeUnlockReferral(c.env, user.id));
+  // NOTE: Referral rewards are intentionally NOT touched here. Email OTP is not
+  // a trusted signal of a genuine user (it's free to farm), and it isn't even
+  // part of the Google / Quick-Login signup paths. Referrals unlock only on
+  // real engagement (a recharge or PAID calls) via lib/referral.ts, triggered
+  // from routes/call.ts and the payment approval path.
 
   return c.json({ success: true, bonus_coins: welcomeBonus });
 });
@@ -469,9 +458,9 @@ auth.post('/logout', authMiddleware, async (c) => {
 // Previously trusted client-supplied google_id + email, allowing account impersonation.
 auth.post('/google-login', rateLimit, async (c) => {
   const body = await c.req.json();
-  const { avatar_url, device_id, id_token } = body as {
+  const { avatar_url, device_id, id_token, referral_code } = body as {
     email?: string; name?: string; google_id?: string; avatar_url?: string | null;
-    device_id?: string | null; id_token?: string;
+    device_id?: string | null; id_token?: string; referral_code?: string | null;
   };
 
   let email: string;
@@ -584,6 +573,10 @@ auth.post('/google-login', rateLimit, async (c) => {
        VALUES (?, ?, ?, '', 'user', ?, 1, ?, ?, ?, ?, ?, ?)`
     ).bind(id, name, email, welcomeBonus, av, google_id, device_id ?? null, detectedCountry, detectedCurrency, freeCallMinutes).run();
     await writeCoinLedger(db, id, 'bonus', welcomeBonus, 'Welcome bonus (Google signup)');
+    // Referral attribution for Google sign-ups (pending until genuine — a
+    // recharge or PAID calls unlock it via lib/referral.ts). Only for brand-new
+    // accounts; a returning/merged Google user is not a new referral.
+    await recordReferral(db, referral_code, id, device_id ?? null);
     user = { id, name, email, role: 'user', coins: welcomeBonus, avatar_url: av, country: detectedCountry, currency: detectedCurrency };
   } else {
     // 5. Existing user — update google_id, avatar, device_id, and backfill country/currency if missing
@@ -635,17 +628,17 @@ auth.post('/google-login', rateLimit, async (c) => {
 // POST /api/auth/guest-login — legacy alias for quick-login
 auth.post('/guest-login', rateLimit, async (c) => {
   const body = await c.req.json().catch(() => ({}));
-  return quickLoginHandler(c, (body as any).device_id ?? null);
+  return quickLoginHandler(c, (body as any).device_id ?? null, (body as any).referral_code ?? null);
 });
 
 // POST /api/auth/quick-login — persistent device-based login (same device = same account)
 // BUG FIX #4: Add device-level rate limiting to prevent Sybil attacks (unlimited guest account creation)
 auth.post('/quick-login', deviceRateLimit, async (c) => {
   const body = await c.req.json().catch(() => ({}));
-  return quickLoginHandler(c, (body as any).device_id ?? null);
+  return quickLoginHandler(c, (body as any).device_id ?? null, (body as any).referral_code ?? null);
 });
 
-async function quickLoginHandler(c: any, deviceId: string | null) {
+async function quickLoginHandler(c: any, deviceId: string | null, referralCode: string | null = null) {
   if (!deviceId || deviceId.trim().length < 4) {
     return c.json({ error: 'device_id is required for Quick Login' }, 400);
   }
@@ -751,6 +744,10 @@ async function quickLoginHandler(c: any, deviceId: string | null) {
     `INSERT INTO users (id, name, email, password_hash, coins, is_verified, role, device_id, country, currency, free_call_minutes) VALUES (?, ?, ?, '', ?, 0, 'user', ?, ?, ?, ?)`
   ).bind(quickId, quickName, quickEmail, welcomeBonus, deviceId ?? null, detectedCountry, detectedCurrency, guestFreeMinutes).run();
   await writeCoinLedger(db, quickId, 'bonus', welcomeBonus, 'Welcome bonus (Quick-Login signup)');
+  // Referral attribution for Quick-Login sign-ups (pending until genuine — a
+  // recharge or PAID calls unlock it via lib/referral.ts). The same-device
+  // guard inside recordReferral blocks the reinstall/second-account self-farm.
+  await recordReferral(db, referralCode, quickId, deviceId ?? null);
 
   const token = await signToken({ sub: quickId, role: 'user', name: quickName, email: quickEmail }, c.env.JWT_SECRET);
   return c.json({

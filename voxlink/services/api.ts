@@ -139,10 +139,10 @@ export const API = {
       coins_charged?: number;
       duration_seconds?: number;
     }>('POST', `/api/calls/${session_id}/heartbeat`, {}),
-  quickLogin: (device_id?: string | null) =>
-    apiRequest<{ token: string; user: any; is_returning?: boolean }>('POST', '/api/auth/quick-login', { device_id: device_id ?? null }, false),
-  googleLogin: (email: string, name: string, google_id: string, avatar_url?: string | null, device_id?: string | null, id_token?: string | null) =>
-    apiRequest<{ token: string; user: any }>('POST', '/api/auth/google-login', { email, name, google_id, avatar_url, device_id: device_id ?? null, id_token: id_token ?? undefined }, false),
+  quickLogin: (device_id?: string | null, referral_code?: string | null) =>
+    apiRequest<{ token: string; user: any; is_returning?: boolean }>('POST', '/api/auth/quick-login', { device_id: device_id ?? null, referral_code: referral_code ?? null }, false),
+  googleLogin: (email: string, name: string, google_id: string, avatar_url?: string | null, device_id?: string | null, id_token?: string | null, referral_code?: string | null) =>
+    apiRequest<{ token: string; user: any }>('POST', '/api/auth/google-login', { email, name, google_id, avatar_url, device_id: device_id ?? null, id_token: id_token ?? undefined, referral_code: referral_code ?? null }, false),
 
   me: () => apiRequest<any>('GET', '/api/user/me'),
   updateProfile: (data: any) => apiRequest('PATCH', '/api/user/me', data),
