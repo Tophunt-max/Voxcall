@@ -3,6 +3,7 @@ import { authMiddleware } from '../middleware/auth';
 import { USD_TO_FOREIGN, currencyForCountry, convertCurrency, convertFromUSD, detectCountryFromRequest } from '../lib/currency';
 import { isEmergencyOn, emergencyBlockedBody } from '../lib/emergencyFlags';
 import { pushCoinUpdate, notifyUser } from '../lib/realtime';
+import { claimWithdrawal } from '../lib/transfers';
 import type { Env, JWTPayload } from '../types';
 
 const coin = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
@@ -444,57 +445,25 @@ coin.post('/withdraw', async (c) => {
   //       drains the host's balance between (a) and (b), the UPDATE
   //       returns 0 rows changed and we DELETE the just-inserted
   //       withdrawal_requests row — leaving the system in a clean state.
-  const insertResult = await db.prepare(
-    `INSERT INTO withdrawal_requests
-       (id, host_id, coins, amount, currency, payment_method, account_details, status)
-     SELECT ?1, ?2, ?3, ?4, ?8, ?5, ?6, 'pending'
-     WHERE NOT EXISTS (
-       SELECT 1 FROM withdrawal_requests WHERE host_id = ?2 AND status = 'pending'
-     )
-     AND EXISTS (
-       SELECT 1 FROM users WHERE id = ?7 AND (coins - COALESCE(coins_held, 0)) >= ?3
-     )`
-  ).bind(
+  // Race-safe atomic claim (INSERT…SELECT guard + spendable-guarded debit +
+  // rollback). See lib/transfers.claimWithdrawal — extracted so the
+  // double-payout prevention is covered by test/transfers.integration.test.ts.
+  const claim = await claimWithdrawal(db, {
     withdrawId,
-    h.id,
-    coinsReq,
+    hostId: h.id,
+    userId: sub,
+    coins: coinsReq,
     localAmount,
-    method ?? 'bank',
-    account_info ?? '',
-    sub,
-    payoutCurrency
-  ).run();
-
-  if (!insertResult.meta?.changes) {
-    // Conditional INSERT was a no-op. Disambiguate the reason for the user.
-    const pending = await db.prepare(
-      "SELECT 1 as ok FROM withdrawal_requests WHERE host_id = ? AND status = 'pending' LIMIT 1"
-    ).bind(h.id).first<{ ok: number }>();
-    if (pending) {
+    currency: payoutCurrency,
+    method: method ?? 'bank',
+    accountInfo: account_info ?? '',
+  });
+  if (!claim.ok) {
+    if (claim.reason === 'pending') {
       return c.json(
         { error: 'You already have a pending withdrawal request. Please wait for it to be processed.' },
         409
       );
-    }
-    return c.json({ error: 'Insufficient coin balance' }, 400);
-  }
-
-  // Atomic debit. If this fails the request body racing with us drained the
-  // wallet — roll back the withdrawal_requests INSERT so we don't leak a
-  // ghost pending row (which would block the host from withdrawing again
-  // until an admin manually intervenes).
-  // Debit guarded on SPENDABLE balance (coins - coins_held). coins_held holds
-  // both active-call reservations AND referral payout holds, so held referral
-  // rewards are correctly excluded from withdrawal until their hold is released.
-  const debit = await db.prepare(
-    'UPDATE users SET coins = coins - ?, updated_at = unixepoch() WHERE id = ? AND (coins - COALESCE(coins_held, 0)) >= ?'
-  ).bind(coinsReq, sub, coinsReq).run();
-
-  if (!debit.meta?.changes) {
-    try {
-      await db.prepare('DELETE FROM withdrawal_requests WHERE id = ?').bind(withdrawId).run();
-    } catch (e) {
-      console.warn('[/withdraw] failed to roll back withdrawal_requests row after debit race:', e);
     }
     return c.json({ error: 'Insufficient coin balance' }, 400);
   }

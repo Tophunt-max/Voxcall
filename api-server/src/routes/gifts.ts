@@ -3,6 +3,7 @@ import { authMiddleware } from '../middleware/auth';
 import { checkRateLimit } from '../lib/rateLimit';
 import { sendFCMPush } from '../lib/fcm';
 import { applyLevelUp } from '../lib/levelService';
+import { atomicGiftTransfer } from '../lib/transfers';
 import type { Env, JWTPayload } from '../types';
 
 // ============================================================================
@@ -80,17 +81,8 @@ gifts.post('/send', async (c) => {
 
   // Atomic all-or-nothing transfer: debit sender, credit host — only if the
   // sender can afford it (spendable = coins - held). Mirrors tips/billing.
-  const transfer = await db.prepare(
-    `UPDATE users SET coins = coins + CASE id
-       WHEN ? THEN -?
-       WHEN ? THEN ?
-       ELSE 0
-     END, updated_at = unixepoch()
-     WHERE id IN (?, ?)
-       AND EXISTS (SELECT 1 FROM users WHERE id = ? AND (coins - COALESCE(coins_held, 0)) >= ?)`
-  ).bind(sub, amount, hostUserId, amount, sub, hostUserId, sub, amount).run();
-
-  if (!transfer.meta?.changes) {
+  const moved = await atomicGiftTransfer(db, { senderId: sub, hostUserId, amount });
+  if (!moved) {
     return c.json({ error: `Not enough coins. This gift costs ${amount} coins.`, code: 'INSUFFICIENT_COINS' }, 402);
   }
 
