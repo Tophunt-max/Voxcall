@@ -13,7 +13,8 @@
 //
 // When a NEW pending item appears (a queue's count increases vs. the previous
 // poll) it:
-//   1. plays a short "ring" chime (Web Audio API — no asset needed),
+//   1. plays a LOUD ~30-second two-tone alarm (Web Audio API — no asset needed)
+//      that repeats until the admin opens a queue (acknowledge),
 //   2. shows an in-app toast,
 //   3. fires a desktop/browser notification (if permission was granted),
 //   4. flags the backlog as UNACKNOWLEDGED so the ring keeps repeating on an
@@ -90,15 +91,87 @@ const PendingAlertsContext = createContext<PendingAlertsValue>({
 
 export const usePendingAlerts = () => useContext(PendingAlertsContext);
 
-// ─── Ring chime via Web Audio (a pleasant two-note "ding-dong") ─────────────
-function playRing() {
+// ─── Loud alert alarm via Web Audio (no asset needed) ───────────────────────
+// A new pending withdrawal/deposit is money-critical, so the alert is a LOUD,
+// ~30-second two-tone emergency siren (detuned square waves pushed through a
+// compressor) that an admin can't miss from across the room. Only ONE alarm
+// ever plays at a time (no stacking/distortion); it's silenced by acknowledging
+// (opening a queue) or turning sound off.
+const ALARM_SECONDS = 30;
+
+let activeAlarm: { stop: () => void } | null = null;
+
+function stopAlarm() {
+  if (activeAlarm) {
+    try { activeAlarm.stop(); } catch { /* ignore */ }
+    activeAlarm = null;
+  }
+}
+
+function playAlarm(durationSec = ALARM_SECONDS) {
+  try {
+    const AudioCtx: typeof AudioContext =
+      window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioCtx) return;
+    if (activeAlarm) return; // already blaring — never stack alarms
+    const ctx = new AudioCtx();
+    try { ctx.resume?.(); } catch { /* ignore */ }
+
+    // Master path: gain → compressor → speakers. The compressor lets us push
+    // the level hard (loud) while taming clipping on the square-wave stack.
+    const master = ctx.createGain();
+    master.gain.value = 0.95;
+    const comp = ctx.createDynamicsCompressor();
+    master.connect(comp).connect(ctx.destination);
+
+    const now = ctx.currentTime;
+    const beep = 0.5;             // length of each tone (s)
+    const tones = [1046.5, 784];  // C6 / G5 — bright, alarming two-tone
+    const oscillators: OscillatorNode[] = [];
+    let t = now;
+    for (let i = 0; t < now + durationSec; i++) {
+      const freq = tones[i % tones.length];
+      // Two slightly-detuned square oscillators per beep = a thick, LOUD tone.
+      for (const detune of [-6, 6]) {
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'square';
+        osc.frequency.value = freq;
+        osc.detune.value = detune;
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(0.5, t + 0.02);
+        g.gain.setValueAtTime(0.5, t + beep - 0.06);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + beep - 0.01);
+        osc.connect(g).connect(master);
+        osc.start(t);
+        osc.stop(t + beep);
+        oscillators.push(osc);
+      }
+      t += beep;
+    }
+
+    const endTimer = window.setTimeout(() => stopAlarm(), durationSec * 1000 + 400);
+    activeAlarm = {
+      stop: () => {
+        window.clearTimeout(endTimer);
+        oscillators.forEach((o) => { try { o.stop(); } catch { /* ignore */ } });
+        window.setTimeout(() => ctx.close().catch(() => {}), 120);
+      },
+    };
+  } catch {
+    /* ignore — audio is best-effort */
+  }
+}
+
+// Short confirmation chime (used when toggling sound ON) — NOT the 30s alarm,
+// so enabling sound doesn't blast the admin for half a minute.
+function playPreview() {
   try {
     const AudioCtx: typeof AudioContext =
       window.AudioContext || (window as any).webkitAudioContext;
     if (!AudioCtx) return;
     const ctx = new AudioCtx();
     const now = ctx.currentTime;
-    // Two descending notes for a doorbell-like alert.
     [1174.66, 880].forEach((freq, i) => {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
@@ -106,7 +179,7 @@ function playRing() {
       osc.frequency.value = freq;
       const t = now + i * 0.22;
       gain.gain.setValueAtTime(0.0001, t);
-      gain.gain.exponentialRampToValueAtTime(0.35, t + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.4, t + 0.02);
       gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
       osc.connect(gain).connect(ctx.destination);
       osc.start(t);
@@ -162,12 +235,14 @@ export function PendingAlertsProvider({ children }: { children: ReactNode }) {
     setSoundEnabledState(on);
     localStorage.setItem(SOUND_KEY, on ? 'on' : 'off');
     if (on) requestNotifyPermission();
+    else stopAlarm(); // muting also silences any alarm blaring right now
   }, []);
 
-  const testRing = useCallback(() => playRing(), []);
+  const testRing = useCallback(() => playPreview(), []);
 
   const acknowledge = useCallback(() => {
     unackedRef.current = false;
+    stopAlarm(); // opening a queue silences the alarm immediately
   }, []);
 
   // Prefer the single aggregated endpoint; if it isn't available (older
@@ -231,7 +306,7 @@ export function PendingAlertsProvider({ children }: { children: ReactNode }) {
         const grew = QUEUES.filter((q) => next[q.key] - previous[q.key] > 0);
         if (grew.length > 0) {
           unackedRef.current = true;
-          if (soundRef.current) playRing();
+          if (soundRef.current) playAlarm();
           for (const q of grew) {
             const delta = next[q.key] - previous[q.key];
             const msg = `${delta} new ${q.label}${delta > 1 ? 's' : ''} pending`;
@@ -275,7 +350,7 @@ export function PendingAlertsProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const id = window.setInterval(() => {
       if (unackedRef.current && soundRef.current && totalRef.current > 0) {
-        playRing();
+        playAlarm();
       }
     }, REPEAT_MS);
     return () => window.clearInterval(id);
