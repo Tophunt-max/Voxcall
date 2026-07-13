@@ -905,6 +905,42 @@ export function ensureReferralIntegritySchema(db: D1Database): Promise<boolean> 
 }
 
 // ============================================================================
+// VIP signup-bonus claim tracking — auto-heal migration 0060 on cold start.
+// ============================================================================
+//
+// A composite-PK table that makes the VIP signup bonus a once-per-(user,tier)
+// grant (atomic INSERT OR IGNORE), preventing repeated-subscribe farming.
+
+let vipSignupBonusSchemaReadyPromise: Promise<boolean> | null = null;
+
+export function ensureVipSignupBonusSchema(db: D1Database): Promise<boolean> {
+  if (vipSignupBonusSchemaReadyPromise) return vipSignupBonusSchemaReadyPromise;
+
+  vipSignupBonusSchemaReadyPromise = (async () => {
+    try {
+      await db
+        .prepare(
+          `CREATE TABLE IF NOT EXISTS vip_signup_bonus_claims (
+             user_id     TEXT NOT NULL,
+             tier        TEXT NOT NULL,
+             bonus_coins INTEGER DEFAULT 0,
+             claimed_at  INTEGER DEFAULT (unixepoch()),
+             PRIMARY KEY (user_id, tier)
+           )`,
+        )
+        .run();
+      return true;
+    } catch (err) {
+      console.error('[schemaGuard] ensureVipSignupBonusSchema failed:', err);
+      vipSignupBonusSchemaReadyPromise = null;
+      return false;
+    }
+  })();
+
+  return vipSignupBonusSchemaReadyPromise;
+}
+
+// ============================================================================
 // Smart-engines v2 schema guard — Risk / Availability-predict / Rail-order /
 // Instant-connect / Quality-router.
 // ============================================================================

@@ -135,12 +135,35 @@ vip.post('/subscribe', async (c) => {
       .bind(crypto.randomUUID(), sub, 'spend', -price, `${plan.name} (${durationDays} days)`, subId),
   ]).catch((e) => console.warn('[vip/subscribe] ledger write failed (non-fatal):', e));
 
-  // One-time signup/renewal bonus coins (0 if the plan/column has none).
-  const signupBonus = Math.max(0, Number(plan.signup_bonus_coins) || 0);
-  if (signupBonus > 0) {
-    await db.prepare('UPDATE users SET coins = coins + ? WHERE id = ?').bind(signupBonus, sub).run().catch(() => {});
-    await db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
-      .bind(crypto.randomUUID(), sub, 'bonus', signupBonus, `${plan.name} signup bonus`, subId).run().catch(() => {});
+  // Signup bonus — granted ONCE per (user, tier), NOT on every renewal.
+  //
+  // Prior bug: this fired on every subscribe/extend, so a plan whose
+  // signup_bonus_coins was >= its price_coins could be farmed by repeatedly
+  // re-subscribing. The composite-PK claim table makes the grant an atomic
+  // INSERT OR IGNORE — it succeeds (changes=1) only the first time this user
+  // subscribes to this tier; renewals / re-subscribes hit the PK and grant
+  // nothing. Upgrading to a NEW tier still earns that tier's bonus once.
+  const planSignupBonus = Math.max(0, Number(plan.signup_bonus_coins) || 0);
+  let signupBonus = 0;
+  if (planSignupBonus > 0) {
+    let firstTimeForTier = false;
+    try {
+      const claim = await db.prepare(
+        'INSERT OR IGNORE INTO vip_signup_bonus_claims (user_id, tier, bonus_coins, claimed_at) VALUES (?, ?, ?, unixepoch())'
+      ).bind(sub, plan.tier, planSignupBonus).run();
+      firstTimeForTier = !!claim.meta?.changes;
+    } catch (e) {
+      // Claim table absent on a legacy DB (schemaGuard normally heals it before
+      // this route runs). Skip the bonus rather than risk re-opening the farm.
+      console.warn('[vip/subscribe] signup-bonus claim table unavailable; skipping bonus:', e);
+      firstTimeForTier = false;
+    }
+    if (firstTimeForTier) {
+      signupBonus = planSignupBonus;
+      await db.prepare('UPDATE users SET coins = coins + ? WHERE id = ?').bind(signupBonus, sub).run().catch(() => {});
+      await db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
+        .bind(crypto.randomUUID(), sub, 'bonus', signupBonus, `${plan.name} signup bonus`, subId).run().catch(() => {});
+    }
   }
 
   const after = await db.prepare('SELECT coins FROM users WHERE id = ?').bind(sub).first<{ coins: number }>();

@@ -27,7 +27,7 @@ import giftsRouter from './routes/gifts';
 import smartRouter from './routes/smart';
 import { ChatRoom } from './durable-objects/ChatRoom';
 import { NotificationHub } from './durable-objects/NotificationHub';
-import { ensureUsersSchema, ensureRandomCallSchema, ensureStreakSchema, ensureHostStreakSchema, ensureFirstCallFreeSchema, ensureCallObservabilitySchema, ensureEngagementSchema, ensureWithdrawalSchema, ensureSmartV2Schema, ensureReferralIntegritySchema } from './lib/schemaGuard';
+import { ensureUsersSchema, ensureRandomCallSchema, ensureStreakSchema, ensureHostStreakSchema, ensureFirstCallFreeSchema, ensureCallObservabilitySchema, ensureEngagementSchema, ensureWithdrawalSchema, ensureSmartV2Schema, ensureReferralIntegritySchema, ensureVipSignupBonusSchema } from './lib/schemaGuard';
 import { releaseExpiredReferralHolds } from './lib/referral';
 import { ensureAllMigrations } from './lib/autoMigrate';
 import { getLevelConfig, getEarningShare, DEFAULT_AUDIO_RATE, computeLevelProgress } from './lib/levels';
@@ -184,6 +184,7 @@ app.use('/api/*', async (c, next) => {
     ensureWithdrawalSchema(c.env.DB),
     ensureSmartV2Schema(c.env.DB),
     ensureReferralIntegritySchema(c.env.DB),
+    ensureVipSignupBonusSchema(c.env.DB),
   ]);
   return next();
 });
