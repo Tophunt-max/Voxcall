@@ -3,7 +3,7 @@ import { useSocketEvent } from "@/context/SocketContext";
 import { SocketEvents } from "@/constants/events";
 import {
   View, Text, StyleSheet, TouchableOpacity, Image,
-  ScrollView, Platform, Animated, Linking
+  ScrollView, Platform, Animated, Linking, TextInput, ActivityIndicator,
 } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -11,6 +11,7 @@ import { useColors } from "@/hooks/useColors";
 import { useLanguage } from "@/context/LanguageContext";
 import { API } from "@/services/api";
 import { fetchAppConfig } from "@/hooks/useAppConfig";
+import { showSuccessToast, showErrorToast } from "@/components/Toast";
 
 const DEFAULT_SUPPORT_EMAIL = "support@voxlink.app";
 
@@ -55,6 +56,43 @@ export default function HelpCenterScreen() {
   // the screen is never empty if the network/admin config is unavailable.
   const [faqs, setFaqs] = useState<{ q: string; a: string }[]>(FALLBACK_FAQS);
   const [supportEmail, setSupportEmail] = useState(DEFAULT_SUPPORT_EMAIL);
+
+  // In-app support request (delivers the VIP priority_support perk server-side).
+  const [subject, setSubject] = useState("");
+  const [message, setMessage] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [vipPriority, setVipPriority] = useState(false);
+
+  useEffect(() => {
+    API.getVipStatus()
+      .then((s: any) => setVipPriority(!!(s?.is_vip && s?.priority_support)))
+      .catch(() => setVipPriority(false));
+  }, []);
+
+  const submitRequest = useCallback(async () => {
+    const subj = subject.trim();
+    const msg = message.trim();
+    if (!subj || !msg) {
+      showErrorToast("Please add a subject and a message.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const res = await API.createSupportTicket(subj, msg);
+      showSuccessToast(
+        res?.priority === "high"
+          ? "Your VIP priority request was sent — we'll respond fast. ⚡"
+          : "Your request was sent. We'll get back to you soon.",
+        "Request submitted",
+      );
+      setSubject("");
+      setMessage("");
+    } catch (e: any) {
+      showErrorToast(e?.message || "Couldn't submit your request. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }, [subject, message]);
 
   const loadHelp = useCallback(() => {
     API.getFaqs()
@@ -111,6 +149,40 @@ export default function HelpCenterScreen() {
           <Image source={require("@/assets/icons/ic_back.png")} style={[styles.chevron, { transform: [{ rotate: "180deg" }] }]} tintColor={colors.mutedForeground} resizeMode="contain" />
         </TouchableOpacity>
 
+        {/* Submit a request (in-app support ticket) */}
+        <View style={[styles.requestCard, { backgroundColor: colors.card }]}>
+          <View style={styles.requestHead}>
+            <Text style={[styles.requestTitle, { color: colors.text }]}>Submit a request</Text>
+            {vipPriority && (
+              <View style={styles.priorityPill}>
+                <Text style={styles.priorityPillText}>⚡ VIP priority</Text>
+              </View>
+            )}
+          </View>
+          <TextInput
+            value={subject}
+            onChangeText={setSubject}
+            placeholder="Subject"
+            placeholderTextColor={colors.mutedForeground}
+            maxLength={200}
+            editable={!submitting}
+            style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
+          />
+          <TextInput
+            value={message}
+            onChangeText={setMessage}
+            placeholder="Describe your issue…"
+            placeholderTextColor={colors.mutedForeground}
+            maxLength={4000}
+            multiline
+            editable={!submitting}
+            style={[styles.input, styles.inputMultiline, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
+          />
+          <TouchableOpacity onPress={submitRequest} disabled={submitting} activeOpacity={0.85} style={[styles.submitBtn, { opacity: submitting ? 0.6 : 1 }]}>
+            {submitting ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.submitBtnText}>Send request</Text>}
+          </TouchableOpacity>
+        </View>
+
         {/* FAQ */}
         <Text style={[styles.faqTitle, { color: colors.text }]}>{t.helpScreen.faqTitle}</Text>
 
@@ -134,6 +206,15 @@ const styles = StyleSheet.create({
   contactTitle: { fontSize: 14, fontFamily: "Poppins_600SemiBold" },
   contactSub: { fontSize: 12, fontFamily: "Poppins_400Regular" },
   chevron: { width: 14, height: 14 },
+  requestCard: { borderRadius: 16, padding: 16, gap: 10 },
+  requestHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  requestTitle: { fontSize: 15, fontFamily: "Poppins_600SemiBold" },
+  priorityPill: { backgroundColor: "#7B2FF7", paddingHorizontal: 10, paddingVertical: 3, borderRadius: 12 },
+  priorityPillText: { color: "#fff", fontSize: 11, fontFamily: "Poppins_600SemiBold" },
+  input: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, fontFamily: "Poppins_400Regular" },
+  inputMultiline: { minHeight: 90, textAlignVertical: "top" },
+  submitBtn: { backgroundColor: "#7B2FF7", borderRadius: 12, paddingVertical: 12, alignItems: "center", justifyContent: "center" },
+  submitBtnText: { color: "#fff", fontSize: 14, fontFamily: "Poppins_600SemiBold" },
   faqTitle: { fontSize: 16, fontFamily: "Poppins_700Bold", marginTop: 8 },
   faqItem: { borderRadius: 14, padding: 16, gap: 8 },
   faqRow: { flexDirection: "row", alignItems: "center", gap: 8 },

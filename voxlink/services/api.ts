@@ -473,6 +473,14 @@ export const API = {
     ),
   claimVipDaily: () =>
     apiRequest<{ success: boolean; granted: number; free_minutes: number; coins: number; next_daily_at: number }>('POST', '/api/vip/claim-daily'),
+
+  // ─── Support tickets (VIP priority_support applies server-side) ────────────
+  createSupportTicket: (subject: string, message: string, category = 'general') =>
+    apiRequest<{ success: boolean; id: string; priority: string; status: string }>('POST', '/api/support/tickets', { subject, message, category }),
+  getSupportTickets: () =>
+    apiRequest<any[]>('GET', '/api/support/tickets'),
+  replySupportTicket: (id: string, text: string) =>
+    apiRequest<{ success: boolean; messages: any[] }>('POST', `/api/support/tickets/${id}/reply`, { text }),
   getChatStatus: (host_id: string) =>
     apiRequest<{ unlocked: boolean; reason: string }>('GET', `/api/hosts/${host_id}/chat-status`),
 
