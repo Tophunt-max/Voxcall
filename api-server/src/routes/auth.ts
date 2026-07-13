@@ -10,11 +10,10 @@ import { verifyFirebaseIdToken, projectIdFromServiceAccount, decodeJwtPayloadUns
 import { registerHit } from '../lib/rateLimit';
 import { isEmergencyOn, emergencyBlockedBody } from '../lib/emergencyFlags';
 import { findActiveBan, bannedBody } from '../lib/bans';
-import { pushCoinUpdate, notifyUser } from '../lib/realtime';
 import { maybeGrantComebackReward } from '../lib/promotions';
+import { maybeUnlockReferral } from '../lib/referral';
 import type { Env } from '../types';
 import { authMiddleware } from '../middleware/auth';
-import { bumpRewardProgress } from './rewards';
 
 const auth = new Hono<{ Bindings: Env }>();
 
@@ -308,43 +307,14 @@ auth.post('/verify-otp', strictRateLimit, async (c) => {
   // Ledger row for the welcome bonus (best-effort audit trail).
   await writeCoinLedger(db, user.id, 'bonus', welcomeBonus, 'Welcome bonus (email signup)');
 
-  // Atomic referral processing. Reward amounts come from admin settings
-  // (referrer_reward / new_user_reward) — previously hardcoded 25/10, which
-  // silently ignored the admin's configured referral rewards.
-  const pendingReferral = await db.prepare(
-    'SELECT id, referrer_id FROM referral_uses WHERE referred_id = ? AND coins_given = 0 LIMIT 1'
-  ).bind(user.id).first<any>();
-
-  if (pendingReferral) {
-    const referrerReward = await readIntSetting(db, 'referrer_reward', 100);
-    const newUserReward = await readIntSetting(db, 'new_user_reward', 50);
-    const refResult = await db.prepare(
-      'UPDATE referral_uses SET coins_given = ? WHERE id = ? AND coins_given = 0'
-    ).bind(referrerReward, pendingReferral.id).run();
-
-    if (refResult.meta?.changes && refResult.meta.changes > 0) {
-      const ops: D1PreparedStatement[] = [];
-      if (newUserReward > 0) {
-        ops.push(db.prepare('UPDATE users SET coins = coins + ? WHERE id = ?').bind(newUserReward, user.id));
-      }
-      if (referrerReward > 0) {
-        ops.push(db.prepare('UPDATE users SET coins = coins + ? WHERE id = ?').bind(referrerReward, pendingReferral.referrer_id));
-      }
-      if (ops.length) await db.batch(ops);
-      // Ledger rows for both sides of the referral.
-      await writeCoinLedger(db, user.id, 'bonus', newUserReward, 'Referral signup bonus');
-      await writeCoinLedger(db, pendingReferral.referrer_id, 'bonus', referrerReward, 'Referral reward (invited a friend)');
-      // Reward progress — bump the REFERRER's refer_friend tasks (Rewards Hub).
-      await bumpRewardProgress(db, pendingReferral.referrer_id, 'refer_friend', 1);
-      // Real-time: the referrer (already a member, likely online) sees their
-      // reward coins land instantly + gets a notification.
-      if (referrerReward > 0) {
-        c.executionCtx?.waitUntil?.(pushCoinUpdate(c.env, pendingReferral.referrer_id, referrerReward));
-        c.executionCtx?.waitUntil?.(notifyUser(c.env, pendingReferral.referrer_id, '🎉 Referral Reward Earned!', `Your friend just joined VoxLink using your code — and you scored ${referrerReward} coins! Invite more friends, earn more coins. 🤝`, 'referral'));
-      }
-      return c.json({ success: true, bonus_coins: welcomeBonus + newUserReward });
-    }
-  }
+  // Referral reward is NO LONGER granted here. It now unlocks only after the
+  // referred user satisfies the admin-configured `min_calls_to_unlock` — see
+  // lib/referral.ts (also hooked into the call-completion paths in routes/call.ts).
+  // This enforces the setting the admin panel already exposes and closes the
+  // email-OTP referral-farming vector (verifying an email was free; completing
+  // real calls is not). We still fire the check here so a `min_calls_to_unlock = 0`
+  // config unlocks instantly on verify. Best-effort, off the response path.
+  c.executionCtx?.waitUntil?.(maybeUnlockReferral(c.env, user.id));
 
   return c.json({ success: true, bonus_coins: welcomeBonus });
 });

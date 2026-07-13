@@ -16,6 +16,7 @@ import { isEmergencyOn, emergencyBlockedBody } from '../lib/emergencyFlags';
 import { isWithinAvailability } from '../lib/availability';
 import { getVipStatus, applyVipCallDiscount } from '../lib/vip';
 import { bumpRewardProgress } from './rewards';
+import { maybeUnlockReferral } from '../lib/referral';
 import type { Env, JWTPayload, HostRow, CallSessionRow, CallerData, HostData } from '../types';
 
 const call = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
@@ -496,6 +497,9 @@ call.post('/end', async (c) => {
       if (minutes > 0) {
         await bumpRewardProgress(db, session.caller_id, 'talk_minutes', minutes);
       }
+      // Referral unlock — a completed call is what unlocks the referral reward
+      // (enforces admin `min_calls_to_unlock`). Idempotent + best-effort.
+      c.executionCtx?.waitUntil?.(maybeUnlockReferral(c.env, session.caller_id));
     }
     if (actualCoinsCharged > 0) {
       await bumpRewardProgress(db, session.caller_id, 'spend_coins', actualCoinsCharged);
@@ -904,6 +908,9 @@ call.post('/:id/end', async (c) => {
       if (minutes > 0) {
         await bumpRewardProgress(db, session.caller_id, 'talk_minutes', minutes);
       }
+      // Referral unlock — a completed call is what unlocks the referral reward
+      // (enforces admin `min_calls_to_unlock`). Idempotent + best-effort.
+      c.executionCtx?.waitUntil?.(maybeUnlockReferral(c.env, session.caller_id));
     }
     if (actualCoinsCharged > 0) {
       await bumpRewardProgress(db, session.caller_id, 'spend_coins', actualCoinsCharged);
