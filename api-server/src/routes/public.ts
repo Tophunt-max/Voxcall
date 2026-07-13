@@ -6,6 +6,7 @@
 // clients can show stale data for 10 minutes while a background refresh happens silently).
 import { Hono } from 'hono';
 import type { Env } from '../types';
+import { isPrivateKey, verifyMediaSig } from '../lib/mediaSign';
 
 interface CacheEntry<T> { data: T; expiresAt: number }
 const memCache = new Map<string, CacheEntry<any>>();
@@ -112,22 +113,40 @@ pub.get('/calls-config-status', (c) => {
 });
 
 
-// GET /api/files/:key* — public R2 file serving (avatars, media ONLY)
-// SECURITY FIX: Block access to KYC documents (aadhar, verification, kyc paths).
-// KYC docs should only be accessible via authenticated admin endpoints.
+// GET /api/files/:key* — R2 file serving.
+//   • Public objects (avatars/, banners/, media/ gallery) are served openly.
+//   • PRIVATE objects (chat-media/, kyc/) require a short-lived HMAC signature
+//     that only the server mints, and only for authorised readers (chat
+//     participants / admins). Guessing the key is no longer enough.
+//   • Any other reference to a sensitive doc (legacy aadhar/verification/etc.
+//     substrings not under a signed prefix) stays hard-blocked.
 pub.get('/files/:key{.+}', async (c) => {
   const key = c.req.param('key');
-  // Block path traversal and sensitive file access
-  if (key.includes('..') || /\b(kyc|aadhar|aadhaar|verification|identity|document|id[-_]?proof)\b/i.test(key)) {
+  if (key.includes('..')) return c.json({ error: 'Access denied' }, 403);
+
+  const isPrivate = isPrivateKey(key);
+  if (isPrivate) {
+    // Signature required — fails closed on missing/invalid/expired.
+    const ok = await verifyMediaSig(key, c.req.query('exp'), c.req.query('sig'), c.env.JWT_SECRET);
+    if (!ok) return c.json({ error: 'Access denied' }, 403);
+  } else if (/\b(kyc|aadhar|aadhaar|verification|identity|document|id[-_]?proof)\b/i.test(key)) {
+    // Legacy sensitive substrings outside a signed prefix: never public.
     return c.json({ error: 'Access denied' }, 403);
   }
+
   const obj = await c.env.STORAGE.get(key);
   if (!obj) return c.json({ error: 'File not found' }, 404);
   const headers = new Headers();
   obj.writeHttpMetadata(headers);
   headers.set('etag', obj.httpEtag);
-  headers.set('Cache-Control', 'public, max-age=31536000, immutable');
-  headers.set('Access-Control-Allow-Origin', '*');
+  if (isPrivate) {
+    // Never let a shared/CDN cache retain private media; the signature also
+    // expires, so a long immutable cache would be wrong anyway.
+    headers.set('Cache-Control', 'private, max-age=300');
+  } else {
+    headers.set('Cache-Control', 'public, max-age=31536000, immutable');
+    headers.set('Access-Control-Allow-Origin', '*');
+  }
   return new Response(obj.body, { headers });
 });
 

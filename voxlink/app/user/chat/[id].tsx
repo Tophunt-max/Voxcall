@@ -213,6 +213,7 @@ export default function ChatScreen() {
       const rawExt = (asset.uri.split(".").pop() || "jpg").toLowerCase();
       const mime = rawExt === "jpg" ? "jpeg" : rawExt;
       await appendFileToFormData(fd, "file", asset.uri, `chat.${rawExt}`, `image/${mime}`);
+      fd.append("purpose", "chat"); // → private chat-media/ prefix (signed URLs)
       const res = await API.uploadFile(fd);
       const url = res?.url ? (resolveMediaUrl(res.url) || res.url) : null;
       if (!url) { showErrorToast(t.chatScreen.uploadFailed); return; }

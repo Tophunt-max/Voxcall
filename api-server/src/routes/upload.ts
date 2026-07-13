@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { authMiddleware } from '../middleware/auth';
+import { signedFileUrl } from '../lib/mediaSign';
 import type { Env, JWTPayload } from '../types';
 
 const upload = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
@@ -138,9 +139,28 @@ upload.post('/media', async (c) => {
 
   const ext = file.name.split('.').pop()?.toLowerCase() || 'bin';
   const safeExt = ext.replace(/[^a-z0-9]/g, '').slice(0, 5);
-  const key = `media/${sub}-${Date.now()}.${safeExt}`;
+
+  // Route by PURPOSE so private content lands under a protected prefix instead
+  // of the public `media/` bucket:
+  //   • 'chat' → chat-media/  (private — served only with a signature)
+  //   • 'kyc'  → kyc/         (private — admin-only via signed URLs)
+  //   • else   → media/       (public: host gallery, misc — unchanged)
+  // Default stays public so existing gallery/avatar flows are untouched; only
+  // the private callers (chat, KYC) opt in.
+  const purpose = String(formData.get('purpose') || '').toLowerCase();
+  const prefix = purpose === 'chat' ? 'chat-media' : purpose === 'kyc' ? 'kyc' : 'media';
+  const key = `${prefix}/${sub}-${Date.now()}.${safeExt}`;
   await c.env.STORAGE.put(key, file.stream(), { httpMetadata: { contentType: file.type } });
-  const url = `/api/files/${key}`;
+
+  // Chat media is served signature-gated, so hand the sender a signed URL up
+  // front (30-day window) — enough for immediate send + real-time delivery to
+  // the recipient. The chat-history endpoint re-signs on every read, so older
+  // messages keep rendering long after this initial signature expires. KYC
+  // returns a bare path (admin endpoints mint short-lived signed URLs on read).
+  let url = `/api/files/${key}`;
+  if (purpose === 'chat') {
+    url = await signedFileUrl(key, c.env.JWT_SECRET, 30 * 24 * 60 * 60);
+  }
   const kind = file.type.startsWith('image/') ? 'image' : file.type.startsWith('audio/') ? 'audio' : 'video';
   return c.json({ url, key, type: kind });
 });

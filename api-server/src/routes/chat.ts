@@ -3,6 +3,7 @@ import { authMiddleware } from '../middleware/auth';
 import { sendFCMPush } from '../lib/fcm';
 import { checkRateLimit } from '../lib/rateLimit';
 import { getVipStatus } from '../lib/vip';
+import { resignIfPrivate } from '../lib/mediaSign';
 import type { Env, JWTPayload } from '../types';
 
 // Fire-and-forget relay of a real-time event to a user's NotificationHub.
@@ -123,8 +124,20 @@ chat.get('/rooms/:id/messages', async (c) => {
   if (before) { query += ' AND m.created_at < ?'; params.push(parseInt(before)); }
   query += ' ORDER BY m.created_at DESC LIMIT ?';
   params.push(parseInt(limit));
-  const result = await c.env.DB.prepare(query).bind(...params).all();
-  return c.json(result.results.reverse());
+  const result = await c.env.DB.prepare(query).bind(...params).all<any>();
+  // Re-sign private chat-media URLs with a fresh 7-day signature so media in
+  // old messages keeps rendering (the upload-time signature eventually
+  // expires). Only the room participants reach this endpoint, so minting
+  // signatures here is the authorisation boundary. Public/legacy URLs pass
+  // through untouched.
+  const rows = result.results.reverse();
+  const secret = c.env.JWT_SECRET;
+  await Promise.all(
+    rows.map(async (m: any) => {
+      if (m?.media_url) m.media_url = await resignIfPrivate(m.media_url, secret, 7 * 24 * 60 * 60);
+    }),
+  );
+  return c.json(rows);
 });
 
 // POST /api/chat/rooms/:id/messages — send message (REST fallback)

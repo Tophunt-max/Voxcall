@@ -88,7 +88,7 @@ export default function HostKYCScreen() {
       const ext = asset.uri.split(".").pop()?.split("?")[0] || (doc.accept === "image" ? "jpg" : "mp4");
       const mimeType = doc.accept === "image" ? `image/${ext}` : `video/${ext}`;
       await appendFileToFormData(formData, "file", asset.uri, `kyc_${doc.key}.${ext}`, mimeType);
-      formData.append("path", `kyc/${user?.id ?? "unknown"}/${doc.key}.${ext}`);
+      formData.append("purpose", "kyc"); // → private kyc/ prefix (admin-only signed URLs)
       const uploadData = await API.uploadFile(formData);
       setFiles((prev) => ({ ...prev, [doc.key]: { uri: asset.uri, uploaded: uploadData.url } }));
     } catch {

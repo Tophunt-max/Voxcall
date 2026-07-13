@@ -11,6 +11,7 @@ import {
 import { listMigrationStatus as listMigrationStatusForHealth } from '../lib/autoMigrate';
 import { getLevelConfig, normalizeLevelConfig, getDefaultCallRates, getEarningShare, MIN_LEVELS, MAX_LEVELS } from '../lib/levels';
 import { recalcAllHostLevels } from '../lib/levelService';
+import { resignIfPrivate } from '../lib/mediaSign';
 import { approveDeposit, validatePromoInput } from './payment';
 import { ensureAllMigrations, listMigrationStatus } from '../lib/autoMigrate';
 import { invalidateBannerCaches } from './public';
@@ -1161,11 +1162,19 @@ admin.get('/host-applications', async (c) => {
   if (status) { q += ' WHERE ha.status = ?'; params.push(status); }
   q += ' ORDER BY ha.submitted_at DESC';
   const result = await db(c).prepare(q).bind(...params).all<any>();
-  return c.json(result.results.map(r => ({
+  const secret = c.env.JWT_SECRET;
+  const rows = await Promise.all(result.results.map(async (r) => ({
     ...r,
     specialties: JSON.parse(r.specialties || '[]'),
     languages: JSON.parse(r.languages || '[]'),
+    // KYC docs now live under the private kyc/ prefix — mint short-lived signed
+    // URLs so only an authenticated admin (who reached this endpoint) can view
+    // them. Legacy public URLs pass through unchanged.
+    aadhar_front_url: await resignIfPrivate(r.aadhar_front_url, secret, 6 * 60 * 60),
+    aadhar_back_url: await resignIfPrivate(r.aadhar_back_url, secret, 6 * 60 * 60),
+    verification_video_url: await resignIfPrivate(r.verification_video_url, secret, 6 * 60 * 60),
   })));
+  return c.json(rows);
 });
 
 // GET /api/admin/host-applications/:id — single application detail
@@ -1177,10 +1186,14 @@ admin.get('/host-applications/:id', async (c) => {
               WHERE ha.id = ?`)
     .bind(id).first<any>();
   if (!app) return c.json({ error: 'Not found' }, 404);
+  const secret = c.env.JWT_SECRET;
   return c.json({
     ...app,
     specialties: JSON.parse(app.specialties || '[]'),
     languages: JSON.parse(app.languages || '[]'),
+    aadhar_front_url: await resignIfPrivate(app.aadhar_front_url, secret, 6 * 60 * 60),
+    aadhar_back_url: await resignIfPrivate(app.aadhar_back_url, secret, 6 * 60 * 60),
+    verification_video_url: await resignIfPrivate(app.verification_video_url, secret, 6 * 60 * 60),
   });
 });
 
