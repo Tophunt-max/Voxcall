@@ -401,8 +401,10 @@ export default function HomeScreen() {
     try {
       const res = await API.claimDailyFreeMinutes();
       showSuccessToast(
-        `🎁 ${res.granted} free ${res.granted === 1 ? "minute" : "minutes"} added! Pick a host and call free.`,
-        "Free minutes claimed",
+        tr.home.dailyFreeClaimedBody
+          .replace("{count}", String(res.granted))
+          .replace("{unit}", res.granted === 1 ? tr.common.minute : tr.common.minutes),
+        tr.home.dailyFreeClaimedTitle,
       );
       queryClient.invalidateQueries({ queryKey: ['free-call-minutes'] });
     } catch (e: any) {
@@ -831,10 +833,10 @@ export default function HomeScreen() {
             <Text style={{ fontSize: 28 }}>🎁</Text>
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 14, fontFamily: "Poppins_700Bold", color: "#0B8F1C" }}>
-                {freeInfo.dailyMinutes} free call minutes today!
+                {tr.home.dailyFreeTitle.replace("{count}", String(freeInfo.dailyMinutes))}
               </Text>
               <Text style={{ fontSize: 12, fontFamily: "Poppins_400Regular", color: "#3B9B4A", marginTop: 2 }}>
-                Claim your daily free minutes and call any host free.
+                {tr.home.dailyFreeSub}
               </Text>
             </View>
             <TouchableOpacity
@@ -842,10 +844,10 @@ export default function HomeScreen() {
               disabled={claimingFree}
               activeOpacity={0.85}
               accessibilityRole="button"
-              accessibilityLabel={`Claim ${freeInfo.dailyMinutes} free call minutes`}
+              accessibilityLabel={tr.home.dailyFreeA11y.replace("{count}", String(freeInfo.dailyMinutes))}
               style={{ backgroundColor: "#0BAF23", borderRadius: 12, paddingHorizontal: 16, paddingVertical: 9, opacity: claimingFree ? 0.6 : 1 }}
             >
-              <Text style={{ color: "#fff", fontSize: 13, fontFamily: "Poppins_700Bold" }}>{claimingFree ? "…" : "Claim"}</Text>
+              <Text style={{ color: "#fff", fontSize: 13, fontFamily: "Poppins_700Bold" }}>{claimingFree ? "…" : tr.home.claim}</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -856,7 +858,7 @@ export default function HomeScreen() {
             activeOpacity={0.85}
             onPress={() => router.push("/user/screens/home/search")}
             accessibilityRole="button"
-            accessibilityLabel={`${freeMinutes} free call minutes available. Tap to pick a host and start a call.`}
+            accessibilityLabel={tr.home.freeMinutesA11y.replace("{count}", String(freeMinutes))}
             style={{ flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: "#F4E8FD", borderRadius: 16, padding: 14, marginBottom: 8 }}
           >
             <Text style={{ fontSize: 28 }}>🎁</Text>

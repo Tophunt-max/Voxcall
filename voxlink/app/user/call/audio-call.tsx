@@ -521,7 +521,7 @@ export default function AudioCallScreen() {
             <View style={styles.freeBadge}>
               <Text style={styles.coinEmoji}>🎁</Text>
               <Text style={styles.freeText}>
-                {Math.ceil((activeCall.freeSeconds - elapsed) / 60)} free min left
+                {t.calls.freeMinLeft.replace("{count}", String(Math.ceil((activeCall.freeSeconds - elapsed) / 60)))}
               </Text>
             </View>
           )}

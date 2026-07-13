@@ -142,7 +142,7 @@ function TalkNowSheet({
 
           {freeMinutes > 0 && (
             <View style={sht.freeHint}>
-              <Text style={sht.freeHintText}>🎁 Your first {freeMinutes} {freeMinutes === 1 ? "minute" : "minutes"} are FREE</Text>
+              <Text style={sht.freeHintText}>{t.hostDetail.freeFirstMinutes.replace("{count}", String(freeMinutes)).replace("{unit}", freeMinutes === 1 ? t.common.minute : t.common.minutes)}</Text>
             </View>
           )}
 

@@ -2,6 +2,9 @@
 
 const hi = {
   common: {
+    minute: "मिनट",
+    minutes: "मिनट",
+    vip: "VIP",
     ok: "ठीक है",
     cancel: "रद्द करें",
     confirm: "पुष्टि करें",
@@ -95,6 +98,13 @@ const hi = {
   },
 
   home: {
+    dailyFreeTitle: "आज {count} फ्री कॉल मिनट!",
+    dailyFreeSub: "अपने डेली फ्री मिनट क्लेम करें और किसी भी होस्ट से फ्री बात करें।",
+    dailyFreeA11y: "{count} फ्री कॉल मिनट क्लेम करें",
+    claim: "क्लेम करें",
+    dailyFreeClaimedTitle: "फ्री मिनट मिल गए",
+    dailyFreeClaimedBody: "🎁 {count} फ्री {unit} जुड़ गए! कोई होस्ट चुनें और फ्री कॉल करें।",
+    freeMinutesA11y: "{count} फ्री कॉल मिनट उपलब्ध हैं। होस्ट चुनने और कॉल शुरू करने के लिए टैप करें।",
     greeting: "नमस्ते",
     findHosts: "होस्ट खोजें",
     topListeners: "शीर्ष श्रोता",
@@ -200,6 +210,8 @@ const hi = {
   },
 
   calls: {
+    freeMinLeft: "{count} फ्री मिनट बचे",
+    freeMin: "{count} फ्री मिनट",
     incoming: "आने वाली कॉल",
     outgoing: "कनेक्ट हो रहा है...",
     ongoing: "कॉल पर",
@@ -576,6 +588,7 @@ const hi = {
   },
 
   helpScreen: {
+    submitRequest: "अनुरोध भेजें",
     title: "सहायता केंद्र",
     bannerTitle: "मदद या FAQ चाहिए?",
     bannerSub: "सामान्य प्रश्नों के उत्तर खोजें",
@@ -652,6 +665,7 @@ const hi = {
   },
 
   hostDetail: {
+    freeFirstMinutes: "🎁 आपके पहले {count} {unit} फ्री हैं",
     notFound: "होस्ट नहीं मिला",
     selectCallType: "कॉल प्रकार चुनें",
     highlights: "झलकियाँ",

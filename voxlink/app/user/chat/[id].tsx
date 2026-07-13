@@ -344,7 +344,7 @@ export default function ChatScreen() {
             <Text style={[styles.headerName, { color: colors.foreground }]} numberOfLines={1}>{participantName}</Text>
             {convo?.isVip && (
               <View style={styles.vipChip}>
-                <Text style={styles.vipChipText}>{vipTierEmoji(convo.vipTier)} VIP</Text>
+                <Text style={styles.vipChipText}>{vipTierEmoji(convo.vipTier)} {t.common.vip}</Text>
               </View>
             )}
           </View>

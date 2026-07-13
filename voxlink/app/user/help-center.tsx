@@ -152,7 +152,7 @@ export default function HelpCenterScreen() {
         {/* Submit a request (in-app support ticket) */}
         <View style={[styles.requestCard, { backgroundColor: colors.card }]}>
           <View style={styles.requestHead}>
-            <Text style={[styles.requestTitle, { color: colors.text }]}>Submit a request</Text>
+            <Text style={[styles.requestTitle, { color: colors.text }]}>{t.helpScreen.submitRequest}</Text>
             {vipPriority && (
               <View style={styles.priorityPill}>
                 <Text style={styles.priorityPillText}>⚡ VIP priority</Text>

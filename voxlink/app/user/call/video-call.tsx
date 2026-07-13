@@ -935,7 +935,7 @@ export default function VideoCallScreen() {
                     </View>
                     <Text style={uiS.timer}>{formatTime(elapsed)}</Text>
                     {activeCall?.freeSeconds != null && activeCall.freeSeconds > 0 && elapsed < activeCall.freeSeconds && (
-                      <Text style={uiS.freeChip}>🎁 {Math.ceil((activeCall.freeSeconds - elapsed) / 60)} free min</Text>
+                      <Text style={uiS.freeChip}>🎁 {t.calls.freeMin.replace("{count}", String(Math.ceil((activeCall.freeSeconds - elapsed) / 60)))}</Text>
                     )}
                     {webrtc.remoteMuted && <Text style={{ fontSize: 12, marginLeft: 4 }}>🔇</Text>}
                   </View>

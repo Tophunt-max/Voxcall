@@ -2,6 +2,9 @@
 
 const zh = {
   common: {
+    minute: "分钟",
+    minutes: "分钟",
+    vip: "VIP",
     ok: "确定",
     cancel: "取消",
     confirm: "确认",
@@ -92,6 +95,13 @@ const zh = {
     notifications: "通知",
   },
   home: {
+    dailyFreeTitle: "今天有 {count} 分钟免费通话！",
+    dailyFreeSub: "领取每日免费分钟，免费与任意主播通话。",
+    dailyFreeA11y: "领取 {count} 分钟免费通话",
+    claim: "领取",
+    dailyFreeClaimedTitle: "已领取免费分钟",
+    dailyFreeClaimedBody: "🎁 已添加 {count} 免费{unit}！选择一位主播免费通话。",
+    freeMinutesA11y: "有 {count} 分钟免费通话可用。点击选择主播并开始通话。",
     greeting: "你好",
     findHosts: "查找主播",
     topListeners: "顶级倾听者",
@@ -195,6 +205,8 @@ const zh = {
     startCall: "开始通话",
   },
   calls: {
+    freeMinLeft: "剩余 {count} 免费分钟",
+    freeMin: "{count} 免费分钟",
     incoming: "来电",
     outgoing: "连接中...",
     ongoing: "通话中",
@@ -564,6 +576,7 @@ const zh = {
   },
 
   helpScreen: {
+    submitRequest: "提交请求",
     title: "帮助中心",
     bannerTitle: "需要帮助或常见问题？",
     bannerSub: "查找常见问题的答案",
@@ -640,6 +653,7 @@ const zh = {
   },
 
   hostDetail: {
+    freeFirstMinutes: "🎁 您的前 {count} {unit}免费",
     notFound: "未找到主播",
     selectCallType: "选择通话类型",
     highlights: "精彩展示",

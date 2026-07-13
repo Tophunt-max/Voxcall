@@ -2,6 +2,9 @@
 
 const es = {
   common: {
+    minute: "minuto",
+    minutes: "minutos",
+    vip: "VIP",
     ok: "Aceptar",
     cancel: "Cancelar",
     confirm: "Confirmar",
@@ -92,6 +95,13 @@ const es = {
     notifications: "Notificaciones",
   },
   home: {
+    dailyFreeTitle: "¡{count} minutos de llamada gratis hoy!",
+    dailyFreeSub: "Reclama tus minutos gratis diarios y llama gratis a cualquier anfitrión.",
+    dailyFreeA11y: "Reclama {count} minutos de llamada gratis",
+    claim: "Reclamar",
+    dailyFreeClaimedTitle: "Minutos gratis reclamados",
+    dailyFreeClaimedBody: "🎁 ¡{count} {unit} gratis añadidos! Elige un anfitrión y llama gratis.",
+    freeMinutesA11y: "{count} minutos de llamada gratis disponibles. Toca para elegir un anfitrión e iniciar una llamada.",
     greeting: "Hola",
     findHosts: "Buscar anfitrión",
     topListeners: "Mejores oyentes",
@@ -195,6 +205,8 @@ const es = {
     startCall: "Iniciar llamada",
   },
   calls: {
+    freeMinLeft: "{count} min gratis restantes",
+    freeMin: "{count} min gratis",
     incoming: "Llamada entrante",
     outgoing: "Conectando...",
     ongoing: "En llamada",
@@ -564,6 +576,7 @@ const es = {
   },
 
   helpScreen: {
+    submitRequest: "Enviar una solicitud",
     title: "Centro de ayuda",
     bannerTitle: "¿Necesitas ayuda o FAQ?",
     bannerSub: "Encuentra respuestas a preguntas comunes",
@@ -640,6 +653,7 @@ const es = {
   },
 
   hostDetail: {
+    freeFirstMinutes: "🎁 Tus primeros {count} {unit} son GRATIS",
     notFound: "Anfitrión no encontrado",
     selectCallType: "Seleccionar tipo de llamada",
     highlights: "Destacados",

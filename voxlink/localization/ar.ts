@@ -2,6 +2,9 @@
 
 const ar = {
   common: {
+    minute: "دقيقة",
+    minutes: "دقائق",
+    vip: "VIP",
     ok: "موافق",
     cancel: "إلغاء",
     confirm: "تأكيد",
@@ -92,6 +95,13 @@ const ar = {
     notifications: "الإشعارات",
   },
   home: {
+    dailyFreeTitle: "{count} دقيقة مكالمة مجانية اليوم!",
+    dailyFreeSub: "احصل على دقائقك المجانية اليومية واتصل بأي مضيف مجاناً.",
+    dailyFreeA11y: "احصل على {count} دقيقة مكالمة مجانية",
+    claim: "احصل عليها",
+    dailyFreeClaimedTitle: "تم الحصول على الدقائق المجانية",
+    dailyFreeClaimedBody: "🎁 تمت إضافة {count} {unit} مجانية! اختر مضيفاً واتصل مجاناً.",
+    freeMinutesA11y: "{count} دقيقة مكالمة مجانية متاحة. اضغط لاختيار مضيف وبدء مكالمة.",
     greeting: "مرحبًا",
     findHosts: "ابحث عن مضيف",
     topListeners: "أبرز المستمعين",
@@ -195,6 +205,8 @@ const ar = {
     startCall: "بدء المكالمة",
   },
   calls: {
+    freeMinLeft: "{count} دقيقة مجانية متبقية",
+    freeMin: "{count} دقيقة مجانية",
     incoming: "مكالمة واردة",
     outgoing: "جاري الاتصال...",
     ongoing: "في مكالمة",
@@ -564,6 +576,7 @@ const ar = {
   },
 
   helpScreen: {
+    submitRequest: "إرسال طلب",
     title: "مركز المساعدة",
     bannerTitle: "تحتاج مساعدة أو أسئلة شائعة؟",
     bannerSub: "اعثر على إجابات للأسئلة الشائعة",
@@ -640,6 +653,7 @@ const ar = {
   },
 
   hostDetail: {
+    freeFirstMinutes: "🎁 أول {count} {unit} مجانية لك",
     notFound: "لم يتم العثور على المضيف",
     selectCallType: "اختر نوع المكالمة",
     highlights: "أبرز اللحظات",

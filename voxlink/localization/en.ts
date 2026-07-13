@@ -3,6 +3,9 @@
 const en = {
   // Common
   common: {
+    minute: "minute",
+    minutes: "minutes",
+    vip: "VIP",
     ok: "OK",
     cancel: "Cancel",
     confirm: "Confirm",
@@ -99,6 +102,13 @@ const en = {
 
   // Home
   home: {
+    dailyFreeTitle: "{count} free call minutes today!",
+    dailyFreeSub: "Claim your daily free minutes and call any host free.",
+    dailyFreeA11y: "Claim {count} free call minutes",
+    claim: "Claim",
+    dailyFreeClaimedTitle: "Free minutes claimed",
+    dailyFreeClaimedBody: "🎁 {count} free {unit} added! Pick a host and call free.",
+    freeMinutesA11y: "{count} free call minutes available. Tap to pick a host and start a call.",
     greeting: "Hi",
     findHosts: "Find a Host",
     topListeners: "Top Listeners",
@@ -207,6 +217,8 @@ const en = {
 
   // Calls
   calls: {
+    freeMinLeft: "{count} free min left",
+    freeMin: "{count} free min",
     incoming: "Incoming Call",
     outgoing: "Connecting...",
     ongoing: "On Call",
@@ -593,6 +605,7 @@ const en = {
   },
 
   helpScreen: {
+    submitRequest: "Submit a request",
     title: "Help Center",
     bannerTitle: "Need Help or FAQ?",
     bannerSub: "Find answers to common questions",
@@ -669,6 +682,7 @@ const en = {
   },
 
   hostDetail: {
+    freeFirstMinutes: "🎁 Your first {count} {unit} are FREE",
     notFound: "Host not found",
     selectCallType: "Select Call Type",
     highlights: "Highlights",
