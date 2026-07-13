@@ -33,6 +33,9 @@ export interface ActiveCall {
   startTime?: number;
   coinsPerMinute?: number;
   maxSeconds?: number;
+  /** Talk-time (seconds) covered by the caller's free-minute pool before coins
+   *  start being charged. Drives the in-call "free minutes" chip. */
+  freeSeconds?: number;
   isMuted?: boolean;
   isCameraOn?: boolean;
   isSpeakerOn?: boolean;
@@ -89,6 +92,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         sessionId,
         coinsPerMinute: res.host_coins_per_minute ?? coinsPerMinute,
         maxSeconds: res.max_seconds,
+        freeSeconds: Number(res.free_seconds) || 0,
       };
       updateCall(updated);
       // Engagement conversion signal — a successfully initiated call is the
@@ -202,6 +206,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
     // BUG FIX #7: Use server duration if available, fall back to client duration
     let finalDuration = clientDuration;
     let coinsSpent = Math.ceil((clientDuration / 60) * (call?.coinsPerMinute ?? 25));
+    let freeMinutesUsed = 0;
 
     if (call?.sessionId) {
       try {
@@ -212,6 +217,9 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
         }
         if (res?.coins_charged != null) {
           coinsSpent = res.coins_charged;
+        }
+        if (res?.free_minutes_used != null) {
+          freeMinutesUsed = res.free_minutes_used;
         }
       } catch (e: any) {
         // "Call already ended" means the remote party ended it first — the server
@@ -225,6 +233,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
             const session = await API.getCallSession(call.sessionId);
             if (session?.coins_charged != null) coinsSpent = session.coins_charged;
             if (session?.duration_seconds != null) finalDuration = session.duration_seconds;
+            if (session?.free_minutes_used != null) freeMinutesUsed = session.free_minutes_used;
           } catch (e2) {
             console.warn("[CallContext] getCallSession after already-ended failed:", e2);
           }
@@ -255,6 +264,7 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
           participantId: call.participant.id,
           sessionId: call.sessionId ?? "",
           coinsSpent: String(coinsSpent),
+          freeMinutesUsed: String(freeMinutesUsed),
           autoEnded: autoEnded ? "1" : "0",
           endReason,
         },

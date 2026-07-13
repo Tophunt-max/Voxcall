@@ -934,6 +934,9 @@ export default function VideoCallScreen() {
                       <Text style={uiS.liveText}>{t.calls.live}</Text>
                     </View>
                     <Text style={uiS.timer}>{formatTime(elapsed)}</Text>
+                    {activeCall?.freeSeconds != null && activeCall.freeSeconds > 0 && elapsed < activeCall.freeSeconds && (
+                      <Text style={uiS.freeChip}>🎁 {Math.ceil((activeCall.freeSeconds - elapsed) / 60)} free min</Text>
+                    )}
                     {webrtc.remoteMuted && <Text style={{ fontSize: 12, marginLeft: 4 }}>🔇</Text>}
                   </View>
                 ) : (
@@ -1293,6 +1296,9 @@ const uiS = StyleSheet.create({
   timer: {
     color: "#fff", fontSize: 14, fontFamily: "Poppins_600SemiBold",
     fontVariant: ["tabular-nums"],
+  },
+  freeChip: {
+    color: "#8EF5A0", fontSize: 11, fontFamily: "Poppins_700Bold", marginLeft: 6,
   },
   remainPill: {
     backgroundColor: "rgba(255,255,255,0.12)",

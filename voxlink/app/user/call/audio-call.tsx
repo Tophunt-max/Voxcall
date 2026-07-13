@@ -514,6 +514,17 @@ export default function AudioCallScreen() {
         )}
 
         <View style={styles.badgeRow}>
+          {/* Free-minutes chip: while the call is covered by the free-trial
+              pool, show remaining free time — coins aren't charged until it
+              runs out. */}
+          {status === "active" && activeCall?.freeSeconds != null && activeCall.freeSeconds > 0 && elapsed < activeCall.freeSeconds && (
+            <View style={styles.freeBadge}>
+              <Text style={styles.coinEmoji}>🎁</Text>
+              <Text style={styles.freeText}>
+                {Math.ceil((activeCall.freeSeconds - elapsed) / 60)} free min left
+              </Text>
+            </View>
+          )}
           {activeCall?.coinsPerMinute ? (
             <View style={styles.costBadge}>
               <Text style={styles.coinEmoji}>🪙</Text>
@@ -651,6 +662,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20,
   },
   warningBadge: { backgroundColor: "rgba(255, 107, 107, 0.2)", borderWidth: 1, borderColor: "rgba(255,107,107,0.4)" },
+  freeBadge: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    backgroundColor: "rgba(11,175,35,0.22)",
+    borderWidth: 1, borderColor: "rgba(11,175,35,0.5)",
+    paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20,
+  },
+  freeText: { color: "#8EF5A0", fontSize: 12, fontFamily: "Poppins_700Bold" },
   coinEmoji: { fontSize: 14 },
   costText: { color: "#FFD166", fontSize: 12, fontFamily: "Poppins_600SemiBold" },
 

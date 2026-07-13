@@ -370,6 +370,12 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
     rate_per_minute: ratePerMin,
     call_type: callType,
     max_seconds: maxSeconds,
+    // Free-trial pool for THIS caller (first_call_free / VIP daily / streak
+    // minutes). free_seconds = the talk-time covered by the free pool before
+    // coins start being charged, so the client can show a "free minutes" chip
+    // and count it down. 1 free minute always == 1 minute of talk-time.
+    free_minutes: callerFreeMinutes,
+    free_seconds: callerFreeMinutes * 60,
     // Media transport for this call. Calls run on Agora RTC; the client joins
     // via GET /api/calls/:id/agora-token. Kept in the response so the client
     // can assert the provider it expects.
@@ -604,7 +610,7 @@ call.post('/end', async (c) => {
       }
     }
 
-    return c.json({ success: true, duration_seconds: durationSec, coins_charged: actualCoinsCharged, host_earnings: actualHostShare });
+    return c.json({ success: true, duration_seconds: durationSec, coins_charged: actualCoinsCharged, host_earnings: actualHostShare, free_minutes_used: freeMinutesUsed });
   } catch (e: any) {
     console.error('[/end] error:', e);
     return apiError(c, ErrorCode.INTERNAL, 500, 'Failed to end call');
@@ -988,7 +994,7 @@ call.post('/:id/end', async (c) => {
       } catch { /* best-effort */ }
     }
 
-    return c.json({ success: true, duration_seconds: durationSec, coins_charged: actualCoinsCharged, host_earnings: actualHostShare });
+    return c.json({ success: true, duration_seconds: durationSec, coins_charged: actualCoinsCharged, host_earnings: actualHostShare, free_minutes_used: freeMinutesUsed });
   } catch (e: any) {
     console.error('[/:id/end] error:', e);
     return apiError(c, ErrorCode.INTERNAL, 500, 'Failed to end call');
@@ -1159,7 +1165,7 @@ call.post('/:id/heartbeat', async (c) => {
     }
   }
 
-  return c.json({ ok: true, ended: true, reason: 'balance_exhausted', coins_charged: actualCoinsCharged, duration_seconds: durationSec });
+  return c.json({ ok: true, ended: true, reason: 'balance_exhausted', coins_charged: actualCoinsCharged, duration_seconds: durationSec, free_minutes_used: freeMinutesUsed });
 });
 
 // POST /api/calls/:id/quality — ingest a per-call quality sample.

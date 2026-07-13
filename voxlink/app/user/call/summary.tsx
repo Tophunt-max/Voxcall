@@ -25,6 +25,7 @@ export default function CallSummaryScreen() {
     participantId,
     sessionId,
     coinsSpent,
+    freeMinutesUsed,
     autoEnded,
     endReason,
   } = useLocalSearchParams<{
@@ -34,12 +35,14 @@ export default function CallSummaryScreen() {
     participantId: string;
     sessionId: string;
     coinsSpent: string;
+    freeMinutesUsed: string;
     autoEnded: string;
     endReason: string;
   }>();
 
   const durationSec  = parseInt(duration  ?? "0", 10);
   const coinsUsed    = parseInt(coinsSpent ?? "0", 10);
+  const freeMinUsed  = parseInt(freeMinutesUsed ?? "0", 10);
   // `autoEnded` is retained in the route params for backward-compat but the
   // banner/messaging is now driven by the precise `endReason` below.
   void autoEnded;
@@ -111,6 +114,16 @@ export default function CallSummaryScreen() {
           {(isOutOfCoins || isConnectionDrop) ? t.calls.callAutoEnded : t.calls.callEnded}
         </Text>
         <Text style={[s.hostName, { color: colors.mutedForeground }]}>{t.calls.with} {hostName}</Text>
+
+        {/* Free-minutes notice — how much of this call was covered by the
+            free-trial pool (so the user sees the value they received). */}
+        {freeMinUsed > 0 && (
+          <View style={s.freeBanner}>
+            <Text style={s.freeBannerText}>
+              🎁 {freeMinUsed} free {freeMinUsed === 1 ? "minute" : "minutes"} used{coinsUsed > 0 ? " — coins charged only after" : " — this call was free!"}
+            </Text>
+          </View>
+        )}
 
         {/* FIX BUG-5: Minimum billing notice — shown when actual call was < 1 min */}
         {durationSec > 0 && durationSec < 60 && (
@@ -280,6 +293,24 @@ const s = StyleSheet.create({
     color: "#B87700",
     fontSize: 12,
     fontFamily: "Poppins_500Medium",
+  },
+  freeBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(11,175,35,0.10)",
+    borderWidth: 1,
+    borderColor: "rgba(11,175,35,0.30)",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    width: "100%",
+  },
+  freeBannerText: {
+    color: "#0B8F1C",
+    fontSize: 12,
+    fontFamily: "Poppins_600SemiBold",
+    textAlign: "center",
   },
   iconCircle: {
     width: 80,
