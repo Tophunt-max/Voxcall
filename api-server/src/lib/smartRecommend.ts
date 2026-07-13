@@ -19,8 +19,6 @@
 // and defaults to DISABLED — pure opt-in, no behaviour change until enabled.
 // ============================================================================
 
-import type { Env } from '../types';
-
 export interface RechargeRecommendation {
   enabled: boolean;
   /** The plan we recommend the user buy. null when we can't recommend one. */

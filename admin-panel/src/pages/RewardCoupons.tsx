@@ -71,7 +71,7 @@ function localInputToUnix(s: string): number | null {
 }
 
 function normaliseCode(v: string): string {
-  return v.toUpperCase().replace(/[^A-Z0-9_\-]/g, '');
+  return v.toUpperCase().replace(/[^A-Z0-9_-]/g, '');
 }
 
 export default function RewardCoupons() {

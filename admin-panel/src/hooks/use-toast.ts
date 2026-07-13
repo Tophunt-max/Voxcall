@@ -15,6 +15,9 @@ type ToasterToast = ToastProps & {
   action?: ToastActionElement
 }
 
+// Runtime binding required so `type ActionType = typeof actionTypes` resolves;
+// the value itself is only referenced at the type level (vendored shadcn util).
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const actionTypes = {
   ADD_TOAST: "ADD_TOAST",
   UPDATE_TOAST: "UPDATE_TOAST",

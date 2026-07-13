@@ -325,8 +325,7 @@ auth.post('/forgot-password', strictRateLimit, async (c) => {
   const otp = generateOTP();
   const otpExp = Math.floor(Date.now() / 1000) + 600;
   
-  // BUG FIX #5: Store OTP generation timestamp to detect brute-force attacks
-  const otpAttemptKey = `otp_reset:${email}`;
+  // BUG FIX #5: Store OTP generation timestamp (otp_request_at) to detect brute-force attacks
   await db.prepare('UPDATE users SET otp = ?, otp_expires_at = ?, otp_request_at = ? WHERE id = ?')
     .bind(otp, otpExp, Math.floor(Date.now() / 1000), user.id).run();
   

@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { StatCard } from '@/components/ui/StatCard';
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  BarChart, Bar, AreaChart, Area, PieChart, Pie, Cell, Legend
+  Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  BarChart, Bar, AreaChart, Area, PieChart, Pie, Cell
 } from 'recharts';
 import { TrendingUp, Users, Clock, Coins, Activity, UserCheck, Gift } from 'lucide-react';
 

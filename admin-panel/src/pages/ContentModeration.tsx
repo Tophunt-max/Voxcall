@@ -4,7 +4,7 @@ import { api } from '@/lib/api';
 import { Table } from '@/components/ui/Table';
 import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
-import { Search, Flag, AlertTriangle, Eye, Shield, Clock, Phone, Mail, User, ChevronRight } from 'lucide-react';
+import { Search, Flag, AlertTriangle, Eye, Shield, Clock, Phone, Mail, User } from 'lucide-react';
 
 const categoryColor: Record<string, string> = {
   harassment: 'text-red-600 bg-red-50',

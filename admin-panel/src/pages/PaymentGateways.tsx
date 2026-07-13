@@ -13,7 +13,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { Plus, Pencil, Trash2, CreditCard, ArrowUp, ArrowDown, Star, AlertTriangle, QrCode, Clock, RefreshCw, Webhook, Copy, CheckCircle2, Settings, ShieldCheck, Zap, Upload } from 'lucide-react';
+import { Plus, Pencil, Trash2, CreditCard, ArrowUp, ArrowDown, Star, AlertTriangle, QrCode, Clock, RefreshCw, Webhook, Copy, CheckCircle2, Settings, ShieldCheck, Zap } from 'lucide-react';
 
 const GATEWAY_TYPES = [
   { value: 'googlepay',  label: 'Google Pay',   emoji: '🟢' },
@@ -688,8 +688,6 @@ function WebhookSettingsTab() {
   const [autoApprove, setAutoApprove] = useState(false);
   const [autoApproveMax, setAutoApproveMax] = useState('');
   const [autoSaving, setAutoSaving] = useState(false);
-  const [gpKey, setGpKey] = useState('');
-  const [gpSaving, setGpSaving] = useState(false);
 
   // Sync local state from loaded config
   useEffect(() => {
@@ -720,13 +718,6 @@ function WebhookSettingsTab() {
     await saveMutation.mutateAsync({ auto_approve_manual: autoApprove ? 'true' : 'false', auto_approve_manual_max_amount: autoApproveMax });
     setAutoSaving(false);
     toast.success('Auto-approve settings saved!');
-  }
-
-  async function saveGPKey() {
-    setGpSaving(true);
-    await saveMutation.mutateAsync({ google_play_service_account_note: gpKey ? 'configured' : '' });
-    setGpSaving(false);
-    toast.success('Note saved — add GOOGLE_PLAY_SERVICE_ACCOUNT_JSON as environment variable in Cloudflare Workers dashboard');
   }
 
   if (isLoading) return <div className="flex items-center justify-center h-40"><div className="animate-spin w-6 h-6 border-2 border-primary border-t-transparent rounded-full" /></div>;

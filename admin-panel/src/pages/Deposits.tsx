@@ -7,8 +7,8 @@ import { Modal } from '@/components/ui/Modal';
 import { StatCard } from '@/components/ui/StatCard';
 import {
   Search, Download, Coins, CheckCircle, Clock, XCircle,
-  DollarSign, RefreshCw, CreditCard, Eye, ArrowRightLeft,
-  TrendingUp, Undo2
+  DollarSign, RefreshCw, Eye,
+  Undo2
 } from 'lucide-react';
 
 const STATUS_COLORS: Record<string, string> = {

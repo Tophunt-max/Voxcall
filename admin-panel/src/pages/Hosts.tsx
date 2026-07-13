@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { Badge } from '@/components/ui/Badge';
 import {
-  Star, CheckCircle, Circle, RefreshCw, Save, Search,
+  Star, CheckCircle, RefreshCw, Save, Search,
   X, Mail, Phone, Coins, Calendar, Mic, Video, ThumbsUp
 } from 'lucide-react';
 

@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import {
   Activity, AlertTriangle, CheckCircle2, Clock, Database, Globe,
-  HardDrive, HeartPulse, Phone, Radio, Server, Shield, Users, Wifi, XCircle, Zap,
+  HardDrive, HeartPulse, Phone, Radio, Shield, Users, XCircle, Zap,
 } from 'lucide-react';
 import {
   Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,

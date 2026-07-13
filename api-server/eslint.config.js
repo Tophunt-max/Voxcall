@@ -39,7 +39,7 @@ export default tseslint.config(
       // Unused vars are a real smell — warn, and allow the `_`-prefix opt-out.
       '@typescript-eslint/no-unused-vars': [
         'warn',
-        { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrors: 'none' },
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrors: 'none', ignoreRestSiblings: true },
       ],
 
       '@typescript-eslint/ban-ts-comment': 'warn',

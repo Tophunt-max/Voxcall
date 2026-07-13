@@ -10,7 +10,7 @@
 // 4. UK user sees: 1 coin = £0.00047
 // 5. UAE user sees: 1 coin = د.إ0.0022
 
-import { USD_TO_FOREIGN, COUNTRY_TO_CURRENCY } from './currency';
+import { USD_TO_FOREIGN } from './currency';
 
 // INR is the base currency for admin panel
 export const BASE_CURRENCY = 'INR';

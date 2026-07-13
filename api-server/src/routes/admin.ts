@@ -741,7 +741,7 @@ admin.patch('/settings', async (c) => {
   // MULTI-CURRENCY SUPPORT: Admin sets coin value in INR, we convert to USD
   // This makes it natural for Indian admins: 1 coin = ₹0.05
   // Backend stores coin_to_usd_rate for consistency
-  let processedBody = { ...body };
+  const processedBody = { ...body };
   
   // If admin sends coin_value_inr, convert to coin_to_usd_rate
   if (body.coin_value_inr !== undefined) {
@@ -3631,7 +3631,7 @@ admin.get('/dashboard/summary', async (c) => {
   // once D1 is warm.
   const [
     // Financial aggregates
-    revToday, revWeek, revPrevWeek, revMonth, hostPayoutMonth, hostPayoutToday,
+    revToday, revWeek, revPrevWeek, revMonth, _hostPayoutMonth, hostPayoutToday,
     monthMinutes, pendingPayouts,
     // Pending counters
     pKyc, pWith, pDep, pTickets, pReports, errHour,

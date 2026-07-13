@@ -43,18 +43,6 @@ async function cookieGetSession(): Promise<any | null> {
   }
 }
 
-async function cookieRefresh(): Promise<boolean> {
-  try {
-    const res = await fetch(`${ADMIN_AUTH_API}/refresh`, {
-      method: 'POST',
-      credentials: 'include',
-    });
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
-
 async function cookieLogout(): Promise<void> {
   try {
     await fetch(`${ADMIN_AUTH_API}/logout`, {

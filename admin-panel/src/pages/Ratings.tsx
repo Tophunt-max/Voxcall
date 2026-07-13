@@ -24,7 +24,6 @@ export default function Ratings() {
 
   const avg = ratings.length ? (ratings.reduce((s, r) => s + r.stars, 0) / ratings.length).toFixed(1) : '—';
   const withComments = ratings.filter(r => r.comment).length;
-  const fiveStars = ratings.filter(r => r.stars === 5).length;
 
   const cols = [
     { key: 'host', header: 'Host',

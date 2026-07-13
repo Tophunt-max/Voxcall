@@ -26,8 +26,6 @@
 // so what the user is promised is exactly what they receive.
 // ============================================================================
 
-import type { Env } from '../types';
-
 export type SmartSegment =
   | 'welcome'
   | 'first_recharge'
@@ -75,13 +73,6 @@ async function readBool(db: D1Database, key: string, fallback: boolean): Promise
     return row.value !== '0' && row.value.toLowerCase() !== 'false';
   } catch { return fallback; }
 }
-async function readStr(db: D1Database, key: string, fallback: string): Promise<string> {
-  try {
-    const row = await db.prepare('SELECT value FROM app_settings WHERE key = ?').bind(key).first<{ value: string }>();
-    return row?.value ?? fallback;
-  } catch { return fallback; }
-}
-
 /**
  * Compute the single best offer for a user right now.
  *
