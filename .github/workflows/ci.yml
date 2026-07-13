@@ -1,8 +1,9 @@
 name: CI — Quality Gate
 
-# Unified quality gate for the whole monorepo. Runs typecheck / lint / test
-# (and a dry-run bundle for the backend) for every deployable package via a
-# matrix, on pull requests and pushes to main.
+# Unified quality gate for the whole monorepo. Runs typecheck / lint / test /
+# build for every deployable package via a matrix, on pull requests and pushes
+# to main. "build" = wrangler dry-run (backend), vite build (admin), or
+# `expo export --platform web` (both Expo apps).
 #
 # Replaces the old per-package ci-backend.yml + ci-admin.yml and adds the two
 # Expo apps (voxlink user app + voxlink-host) which previously had NO CI.
@@ -40,17 +41,17 @@ jobs:
             filter: '@workspace/admin-panel'
             lint: true
             test: true
-            build: false
+            build: true
           - name: User App (voxlink)
             filter: '@workspace/voxlink'
             lint: true
             test: true
-            build: false
+            build: true
           - name: Host App (voxlink-host)
             filter: '@workspace/voxlink-host'
             lint: true
             test: false
-            build: false
+            build: true
 
     steps:
       - name: Checkout code
@@ -84,6 +85,9 @@ jobs:
         if: ${{ matrix.test }}
         run: pnpm --filter ${{ matrix.filter }} run test
 
-      - name: Build (dry-run bundle)
+      # Backend = wrangler dry-run bundle; admin-panel = vite build; the two
+      # Expo apps = `expo export --platform web`. Catches build-time breakage
+      # (bundler/asset/resolution errors) that typecheck alone misses.
+      - name: Build
         if: ${{ matrix.build }}
         run: pnpm --filter ${{ matrix.filter }} run build
