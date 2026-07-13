@@ -822,6 +822,89 @@ export function ensureWithdrawalSchema(db: D1Database): Promise<boolean> {
 
 
 // ============================================================================
+// Referral integrity schema guard — auto-heal migration 0059 on cold start.
+// ============================================================================
+//
+// Adds the payout-hold / clawback / manual-review / audit columns on
+// referral_uses and seeds the integrity tunables. Idempotent — same pattern as
+// the other ensure* guards. See lib/referral.ts for the logic that uses them.
+
+let referralIntegritySchemaReadyPromise: Promise<boolean> | null = null;
+
+const REQUIRED_REFERRAL_COLUMNS: ReadonlyArray<{ name: string; ddl: string }> = [
+  { name: 'unlocked_at',     ddl: 'ALTER TABLE referral_uses ADD COLUMN unlocked_at INTEGER' },
+  { name: 'reward_state',    ddl: "ALTER TABLE referral_uses ADD COLUMN reward_state TEXT DEFAULT 'none'" },
+  { name: 'hold_until',      ddl: 'ALTER TABLE referral_uses ADD COLUMN hold_until INTEGER DEFAULT 0' },
+  { name: 'referrer_reward', ddl: 'ALTER TABLE referral_uses ADD COLUMN referrer_reward INTEGER DEFAULT 0' },
+  { name: 'new_user_reward', ddl: 'ALTER TABLE referral_uses ADD COLUMN new_user_reward INTEGER DEFAULT 0' },
+  { name: 'flagged',         ddl: 'ALTER TABLE referral_uses ADD COLUMN flagged INTEGER DEFAULT 0' },
+  { name: 'flag_reason',     ddl: 'ALTER TABLE referral_uses ADD COLUMN flag_reason TEXT' },
+];
+
+const REFERRAL_INTEGRITY_DEFAULT_SETTINGS: ReadonlyArray<{ key: string; value: string }> = [
+  // Master switch. '0' → simple mode (credit immediately on genuine activity,
+  // no hold / review / clawback). '1' → full integrity pipeline.
+  { key: 'referral_integrity_enabled', value: '1' },
+  // Referrer reward is non-withdrawable + non-spendable for this many days
+  // after unlock (payout hold). '0' → no hold (immediately available).
+  { key: 'referral_hold_days', value: '7' },
+  // Per-referrer auto-unlock cap per rolling 24h. Beyond it, genuine referrals
+  // go to the admin review queue instead of auto-crediting. '0' → unlimited.
+  { key: 'referral_daily_unlock_cap', value: '25' },
+  // Per-referrer lifetime auto-unlock cap. '0' → unlimited.
+  { key: 'referral_total_cap', value: '0' },
+  // If a referred account is banned within this many days of the reward
+  // unlocking, still-held referrer rewards are clawed back.
+  { key: 'referral_clawback_days', value: '14' },
+  // Route high-risk referred accounts (lib/riskScore) to review instead of
+  // auto-credit. Requires risk_scoring_enabled to actually score; otherwise a
+  // no-op. '0' → skip the risk gate.
+  { key: 'referral_risk_review_enabled', value: '1' },
+];
+
+export function ensureReferralIntegritySchema(db: D1Database): Promise<boolean> {
+  if (referralIntegritySchemaReadyPromise) return referralIntegritySchemaReadyPromise;
+
+  referralIntegritySchemaReadyPromise = (async () => {
+    try {
+      const info = await db.prepare('PRAGMA table_info(referral_uses)').all<{ name: string }>();
+      const cols = new Set((info.results ?? []).map((r) => r.name));
+      for (const col of REQUIRED_REFERRAL_COLUMNS) {
+        if (!cols.has(col.name)) {
+          try {
+            await db.prepare(col.ddl).run();
+            console.log(`[schemaGuard] added referral_uses.${col.name}`);
+          } catch (err) {
+            console.warn(`[schemaGuard] add referral_uses.${col.name} failed (may be a race):`, err);
+          }
+        }
+      }
+      const indexes = [
+        'CREATE INDEX IF NOT EXISTS idx_referral_uses_referrer_status ON referral_uses(referrer_id, status)',
+        'CREATE INDEX IF NOT EXISTS idx_referral_uses_reward_hold ON referral_uses(reward_state, hold_until)',
+      ];
+      for (const ddl of indexes) {
+        try { await db.prepare(ddl).run(); } catch (err) { console.warn('[schemaGuard] referral index failed:', err); }
+      }
+      for (const s of REFERRAL_INTEGRITY_DEFAULT_SETTINGS) {
+        try {
+          await db.prepare("INSERT OR IGNORE INTO app_settings (key, value, updated_at) VALUES (?, ?, unixepoch())").bind(s.key, s.value).run();
+        } catch (err) {
+          console.warn(`[schemaGuard] seed app_settings.${s.key} failed:`, err);
+        }
+      }
+      return true;
+    } catch (err) {
+      console.error('[schemaGuard] ensureReferralIntegritySchema failed:', err);
+      referralIntegritySchemaReadyPromise = null;
+      return false;
+    }
+  })();
+
+  return referralIntegritySchemaReadyPromise;
+}
+
+// ============================================================================
 // Smart-engines v2 schema guard — Risk / Availability-predict / Rail-order /
 // Instant-connect / Quality-router.
 // ============================================================================

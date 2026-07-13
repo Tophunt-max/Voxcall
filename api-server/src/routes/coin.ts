@@ -452,7 +452,7 @@ coin.post('/withdraw', async (c) => {
        SELECT 1 FROM withdrawal_requests WHERE host_id = ?2 AND status = 'pending'
      )
      AND EXISTS (
-       SELECT 1 FROM users WHERE id = ?7 AND coins >= ?3
+       SELECT 1 FROM users WHERE id = ?7 AND (coins - COALESCE(coins_held, 0)) >= ?3
      )`
   ).bind(
     withdrawId,
@@ -483,8 +483,11 @@ coin.post('/withdraw', async (c) => {
   // wallet — roll back the withdrawal_requests INSERT so we don't leak a
   // ghost pending row (which would block the host from withdrawing again
   // until an admin manually intervenes).
+  // Debit guarded on SPENDABLE balance (coins - coins_held). coins_held holds
+  // both active-call reservations AND referral payout holds, so held referral
+  // rewards are correctly excluded from withdrawal until their hold is released.
   const debit = await db.prepare(
-    'UPDATE users SET coins = coins - ?, updated_at = unixepoch() WHERE id = ? AND coins >= ?'
+    'UPDATE users SET coins = coins - ?, updated_at = unixepoch() WHERE id = ? AND (coins - COALESCE(coins_held, 0)) >= ?'
   ).bind(coinsReq, sub, coinsReq).run();
 
   if (!debit.meta?.changes) {

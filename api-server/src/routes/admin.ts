@@ -16,7 +16,7 @@ import { ensureAllMigrations, listMigrationStatus } from '../lib/autoMigrate';
 import { invalidateBannerCaches } from './public';
 import { findActiveBan } from '../lib/bans';
 import { pushCoinUpdate, notifyUser, pushBanState, pushToUser, broadcastDataChanged } from '../lib/realtime';
-import { maybeUnlockReferral } from '../lib/referral';
+import { maybeUnlockReferral, clawbackReferrals, approveReviewReferral, rejectReviewReferral } from '../lib/referral';
 import { assessUserRisk } from '../lib/riskScore';
 import type { Env, JWTPayload } from '../types';
 
@@ -356,6 +356,9 @@ admin.patch('/users/:id', async (c) => {
   // ban/unban straight from the Users list, not only Ban Management).
   if (status === 'banned' || status === 'suspended') {
     c.executionCtx?.waitUntil?.(pushBanState(c.env, { userId: id, banned: true, reason: 'Your account has been suspended by the platform.' }));
+    // Anti-fraud: reverse any still-held referral rewards earned by referring
+    // this now-banned account (a common farming outcome). Best-effort.
+    c.executionCtx?.waitUntil?.(clawbackReferrals(c.env, id, 'account_banned'));
   } else if (status === 'active') {
     c.executionCtx?.waitUntil?.(pushBanState(c.env, { userId: id, banned: false }));
   }
@@ -1562,6 +1565,9 @@ admin.post('/bans', async (c) => {
     userId, deviceId: body.device_id ?? null, banned: true,
     reason: body.reason ?? null, expiresAt: body.expires_at ?? null,
   }));
+  // Anti-fraud: reverse still-held referral rewards earned by referring this
+  // banned account (best-effort; only reverses safely-reversible held rewards).
+  if (userId) c.executionCtx?.waitUntil?.(clawbackReferrals(c.env, userId, 'account_banned'));
   const u = c.get('user');
   await auditLog(db(c), u.sub, u.email || 'Admin', u.email || '', 'ban', 'user', userName, `${body.ban_type || 'permanent'} ban: ${body.reason}`);
   return c.json({ id, success: true }, 201);
@@ -2539,24 +2545,54 @@ admin.get('/referrals', async (c) => {
   });
 });
 admin.get('/referral-config', async (c) => {
-  const keys = ['referrer_reward', 'new_user_reward', 'min_calls_to_unlock', 'referral_active'];
+  const keys = [
+    'referrer_reward', 'new_user_reward', 'min_calls_to_unlock', 'referral_active',
+    'referral_integrity_enabled', 'referral_hold_days', 'referral_daily_unlock_cap',
+    'referral_total_cap', 'referral_clawback_days', 'referral_risk_review_enabled',
+  ];
   const result = await db(c).prepare(`SELECT key, value FROM app_settings WHERE key IN (${keys.map(() => '?').join(',')})`)
     .bind(...keys).all<any>();
-  const obj: any = { referrer_reward: 100, new_user_reward: 50, min_calls_to_unlock: 1, active: true };
+  const obj: any = {
+    referrer_reward: 100, new_user_reward: 50, min_calls_to_unlock: 1, active: true,
+    integrity_enabled: true, hold_days: 7, daily_unlock_cap: 25, total_cap: 0,
+    clawback_days: 14, risk_review_enabled: true,
+  };
   (result.results || []).forEach((r: any) => {
-    if (r.key === 'referral_active') obj.active = r.value === '1';
-    else if (['referrer_reward', 'new_user_reward', 'min_calls_to_unlock'].includes(r.key)) obj[r.key] = parseInt(r.value);
+    switch (r.key) {
+      case 'referral_active': obj.active = r.value === '1'; break;
+      case 'referral_integrity_enabled': obj.integrity_enabled = r.value === '1'; break;
+      case 'referral_risk_review_enabled': obj.risk_review_enabled = r.value === '1'; break;
+      case 'referral_hold_days': obj.hold_days = parseInt(r.value); break;
+      case 'referral_daily_unlock_cap': obj.daily_unlock_cap = parseInt(r.value); break;
+      case 'referral_total_cap': obj.total_cap = parseInt(r.value); break;
+      case 'referral_clawback_days': obj.clawback_days = parseInt(r.value); break;
+      case 'referrer_reward': case 'new_user_reward': case 'min_calls_to_unlock':
+        obj[r.key] = parseInt(r.value); break;
+    }
   });
   return c.json(obj);
 });
 admin.put('/referral-config', async (c) => {
   const body = await c.req.json() as any;
+  // Clamp integers into safe, non-negative bounds so a bad admin input can't
+  // corrupt the money path (e.g. a negative hold or cap).
+  const nn = (v: any, d: number) => { const n = parseInt(String(v), 10); return Number.isFinite(n) && n >= 0 ? n : d; };
+  const set = (key: string, value: string) =>
+    db(c).prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES (?, ?, unixepoch())").bind(key, value);
   const stmts = [
-    db(c).prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('referrer_reward', ?, unixepoch())").bind(String(body.referrer_reward || 100)),
-    db(c).prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('new_user_reward', ?, unixepoch())").bind(String(body.new_user_reward || 50)),
-    db(c).prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('min_calls_to_unlock', ?, unixepoch())").bind(String(body.min_calls_to_unlock || 1)),
-    db(c).prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('referral_active', ?, unixepoch())").bind(body.active ? '1' : '0'),
+    set('referrer_reward', String(nn(body.referrer_reward, 100))),
+    set('new_user_reward', String(nn(body.new_user_reward, 50))),
+    set('min_calls_to_unlock', String(nn(body.min_calls_to_unlock, 1))),
+    set('referral_active', body.active ? '1' : '0'),
   ];
+  // Integrity settings are optional in the payload — only persist what's sent
+  // so an older client that omits them doesn't reset them to defaults.
+  if (body.integrity_enabled !== undefined) stmts.push(set('referral_integrity_enabled', body.integrity_enabled ? '1' : '0'));
+  if (body.risk_review_enabled !== undefined) stmts.push(set('referral_risk_review_enabled', body.risk_review_enabled ? '1' : '0'));
+  if (body.hold_days !== undefined) stmts.push(set('referral_hold_days', String(nn(body.hold_days, 7))));
+  if (body.daily_unlock_cap !== undefined) stmts.push(set('referral_daily_unlock_cap', String(nn(body.daily_unlock_cap, 25))));
+  if (body.total_cap !== undefined) stmts.push(set('referral_total_cap', String(nn(body.total_cap, 0))));
+  if (body.clawback_days !== undefined) stmts.push(set('referral_clawback_days', String(nn(body.clawback_days, 14))));
   await db(c).batch(stmts);
   return c.json({ success: true });
 });
@@ -4100,6 +4136,100 @@ admin.get('/risk/flagged', async (c) => {
 
   flagged.sort((a, b) => b.score - a.score);
   return c.json({ enabled: true, assessed: candidates.length, min_tier: minTier, flagged });
+});
+
+// ─── Referral integrity — review queue + audit ───────────────────────────────
+//
+// Genuine referrals that tripped a velocity cap or the risk gate land in the
+// 'review' state (flagged, coins NOT credited). These endpoints power the admin
+// review queue: list, approve (credit with hold), reject (void).
+
+// GET /api/admin/referral-queue?status=review|unlocked|void|pending|all&limit=&page=
+admin.get('/referral-queue', async (c) => {
+  const d = db(c);
+  const status = (c.req.query('status') || 'review').toLowerCase();
+  const limit = Math.min(Math.max(parseInt(c.req.query('limit') || '50', 10) || 50, 1), 200);
+  const page = Math.max(parseInt(c.req.query('page') || '1', 10) || 1, 1);
+  const offset = (page - 1) * limit;
+
+  const allowed = ['review', 'unlocked', 'void', 'pending', 'all'];
+  const filter = allowed.includes(status) ? status : 'review';
+  const where = filter === 'all' ? '' : 'WHERE ru.status = ?1';
+
+  try {
+    const sql = `
+      SELECT ru.id, ru.status, ru.reward_state, ru.flag_reason, ru.flagged,
+             ru.referrer_reward, ru.new_user_reward, ru.coins_given,
+             ru.created_at, ru.unlocked_at, ru.hold_until,
+             ru.referrer_id, ru.referred_id,
+             rer.name AS referrer_name, rer.email AS referrer_email,
+             red.name AS referred_name, red.email AS referred_email,
+             red.status AS referred_account_status
+      FROM referral_uses ru
+      LEFT JOIN users rer ON rer.id = ru.referrer_id
+      LEFT JOIN users red ON red.id = ru.referred_id
+      ${where}
+      ORDER BY (ru.status = 'review') DESC, ru.created_at DESC
+      LIMIT ${limit} OFFSET ${offset}`;
+    const rows = filter === 'all'
+      ? await d.prepare(sql).all()
+      : await d.prepare(sql).bind(filter).all();
+    return c.json(rows.results ?? []);
+  } catch (e) {
+    console.warn('[admin/referrals] list failed (schema may lag):', e);
+    return c.json([]);
+  }
+});
+
+// GET /api/admin/referral-queue/stats — queue + payout summary for the dashboard.
+admin.get('/referral-queue/stats', async (c) => {
+  const d = db(c);
+  try {
+    const now = Math.floor(Date.now() / 1000);
+    const row = await d.prepare(
+      `SELECT
+         SUM(CASE WHEN status = 'review'   THEN 1 ELSE 0 END) AS in_review,
+         SUM(CASE WHEN status = 'unlocked' THEN 1 ELSE 0 END) AS unlocked,
+         SUM(CASE WHEN status = 'void'     THEN 1 ELSE 0 END) AS voided,
+         SUM(CASE WHEN status = 'pending'  THEN 1 ELSE 0 END) AS pending,
+         COALESCE(SUM(CASE WHEN reward_state = 'held' AND hold_until > ?1 THEN referrer_reward ELSE 0 END), 0) AS coins_on_hold,
+         COALESCE(SUM(CASE WHEN status = 'unlocked' THEN referrer_reward ELSE 0 END), 0) AS coins_paid_referrers
+       FROM referral_uses`
+    ).bind(now).first<any>();
+    return c.json({
+      in_review: Number(row?.in_review) || 0,
+      unlocked: Number(row?.unlocked) || 0,
+      voided: Number(row?.voided) || 0,
+      pending: Number(row?.pending) || 0,
+      coins_on_hold: Number(row?.coins_on_hold) || 0,
+      coins_paid_referrers: Number(row?.coins_paid_referrers) || 0,
+    });
+  } catch (e) {
+    console.warn('[admin/referrals/stats] failed:', e);
+    return c.json({ in_review: 0, unlocked: 0, voided: 0, pending: 0, coins_on_hold: 0, coins_paid_referrers: 0 });
+  }
+});
+
+// PATCH /api/admin/referral-queue/:id — { action: 'approve' | 'reject', reason? }
+admin.patch('/referral-queue/:id', async (c) => {
+  const { id } = c.req.param();
+  const body = await c.req.json().catch(() => ({})) as { action?: string; reason?: string };
+  const action = String(body.action || '').toLowerCase();
+  const u = c.get('user');
+
+  if (action === 'approve') {
+    const res = await approveReviewReferral(c.env, id);
+    if (!res.ok) return c.json({ error: res.error || 'Could not approve' }, 400);
+    await auditLog(db(c), u.sub, u.email || 'Admin', u.email || '', 'update', 'referral', id, 'Approved referral from review', c.req.header('CF-Connecting-IP') ?? '');
+    return c.json({ success: true });
+  }
+  if (action === 'reject') {
+    const res = await rejectReviewReferral(c.env, id, (body.reason || 'admin').slice(0, 120));
+    if (!res.ok) return c.json({ error: res.error || 'Could not reject' }, 400);
+    await auditLog(db(c), u.sub, u.email || 'Admin', u.email || '', 'update', 'referral', id, `Rejected referral: ${body.reason || 'admin'}`, c.req.header('CF-Connecting-IP') ?? '');
+    return c.json({ success: true });
+  }
+  return c.json({ error: "action must be 'approve' or 'reject'" }, 400);
 });
 
 export default admin;

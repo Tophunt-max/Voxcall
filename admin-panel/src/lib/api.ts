@@ -263,6 +263,11 @@ export const api = {
   referrals: () => req<any>('GET', '/admin/referrals'),
   referralConfig: () => req<any>('GET', '/admin/referral-config'),
   updateReferralConfig: (data: any) => req('PUT', '/admin/referral-config', data),
+  // Referral integrity review queue (flagged: velocity cap / high risk).
+  referralQueue: (status = 'review') => req<any[]>('GET', `/admin/referral-queue?status=${encodeURIComponent(status)}`),
+  referralQueueStats: () => req<any>('GET', '/admin/referral-queue/stats'),
+  actOnReferral: (id: string, data: { action: 'approve' | 'reject'; reason?: string }) =>
+    req('PATCH', `/admin/referral-queue/${id}`, data),
   liveCalls: () => req<any[]>('GET', '/admin/calls/live'),
   // Mints an Agora token so the admin can silently listen in on an active call
   // (audio-only, never publishes). channel = call session id.

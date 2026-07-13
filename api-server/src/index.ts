@@ -27,7 +27,8 @@ import giftsRouter from './routes/gifts';
 import smartRouter from './routes/smart';
 import { ChatRoom } from './durable-objects/ChatRoom';
 import { NotificationHub } from './durable-objects/NotificationHub';
-import { ensureUsersSchema, ensureRandomCallSchema, ensureStreakSchema, ensureHostStreakSchema, ensureFirstCallFreeSchema, ensureCallObservabilitySchema, ensureEngagementSchema, ensureWithdrawalSchema, ensureSmartV2Schema } from './lib/schemaGuard';
+import { ensureUsersSchema, ensureRandomCallSchema, ensureStreakSchema, ensureHostStreakSchema, ensureFirstCallFreeSchema, ensureCallObservabilitySchema, ensureEngagementSchema, ensureWithdrawalSchema, ensureSmartV2Schema, ensureReferralIntegritySchema } from './lib/schemaGuard';
+import { releaseExpiredReferralHolds } from './lib/referral';
 import { ensureAllMigrations } from './lib/autoMigrate';
 import { getLevelConfig, getEarningShare, DEFAULT_AUDIO_RATE, computeLevelProgress } from './lib/levels';
 import { recalcAllHostLevels } from './lib/levelService';
@@ -182,6 +183,7 @@ app.use('/api/*', async (c, next) => {
     ensureEngagementSchema(c.env.DB),
     ensureWithdrawalSchema(c.env.DB),
     ensureSmartV2Schema(c.env.DB),
+    ensureReferralIntegritySchema(c.env.DB),
   ]);
   return next();
 });
@@ -1196,6 +1198,9 @@ export default {
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil(reapStaleCalls(env));
     ctx.waitUntil(reconcileStuckEndedCalls(env));
+    // Release referral payout holds whose window has elapsed (held → released,
+    // making the referrer reward withdrawable). Best-effort; idempotent.
+    ctx.waitUntil(releaseExpiredReferralHolds(env).catch((e) => console.warn('[cron] releaseExpiredReferralHolds failed:', e)));
     ctx.waitUntil(maybeRecalcLevelsDaily(env));
     ctx.waitUntil(maybeRefreshFxRates(env));
     ctx.waitUntil(maybeRunReengagement(env));

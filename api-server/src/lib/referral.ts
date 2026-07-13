@@ -2,22 +2,37 @@ import type { Env } from '../types';
 import { pushCoinUpdate, notifyUser } from './realtime';
 import { bumpRewardProgress } from '../routes/rewards';
 
+// ============================================================================
+// Referral system — attribution + anti-fraud integrity pipeline
+// ============================================================================
+//
+// Lifecycle of a referral_uses row:
+//   pending  → recorded at signup (recordReferral), not yet earned
+//   review   → genuine but held for admin review (velocity cap / high risk)
+//   unlocked → credited (maybeUnlockReferral / admin approve)
+//   void     → self-referral or admin-rejected, never pays out
+//
+// referrer-reward payout hold (reward_state): none → held → released|clawed_back
+//   A held reward is added to BOTH users.coins AND users.coins_held, so it is
+//   non-spendable (calls/tips use coins - coins_held) AND non-withdrawable
+//   (the withdraw path subtracts coins_held). That guarantees clawback can
+//   always fully reverse a held reward without driving a balance negative.
+//   The release cron flips held→released and frees it from coins_held; a ban
+//   within the clawback window flips held→clawed_back and reverses it.
+//
+// The three decision helpers (selfReferralReason / referralOutcome /
+// computeHold) are PURE and unit-tested (see test/referral.test.ts).
+// ============================================================================
+
 /**
  * Record a referral attribution for a BRAND-NEW account, across every signup
  * method (email register, Google sign-up, Quick-Login). Creates a `pending`
- * referral_uses row that is only credited later by {@link maybeUnlockReferral}
- * once the referred user proves they are genuine.
+ * referral_uses row that is only credited later by {@link maybeUnlockReferral}.
  *
- * Guards:
- *   - No self-referral (a user can't redeem their own code).
- *   - No same-device self-referral (referrer and referred on the same physical
- *     device — the classic reinstall/second-account farm).
- *   - `referral_uses.UNIQUE(referred_id)` + INSERT OR IGNORE make this
- *     idempotent: a user can only ever be attributed to ONE referrer, and only
- *     for their first account creation.
- *
- * Best-effort: never throws — a referral bookkeeping failure must never block
- * account creation.
+ * Guards: no self-referral by own code, no same-device self-referral, and
+ * `referral_uses.UNIQUE(referred_id)` + INSERT OR IGNORE make it idempotent (a
+ * user can only ever be attributed to ONE referrer, for their first account).
+ * Best-effort — never throws (a referral failure must never block signup).
  */
 export async function recordReferral(
   db: D1Database,
@@ -37,9 +52,6 @@ export async function recordReferral(
     if (!ref || !ref.user_id) return;
     if (ref.user_id === newUserId) return; // self-referral by own code
 
-    // Same-device self-referral guard: if the referrer's account lives on the
-    // same physical device as the new account, this is almost certainly one
-    // person farming their own code across a reinstall / second account.
     if (newUserDeviceId) {
       const referrer = await db
         .prepare('SELECT device_id FROM users WHERE id = ?')
@@ -59,161 +71,409 @@ export async function recordReferral(
   }
 }
 
+// ─── Pure decision helpers (unit-tested) ─────────────────────────────────────
+
 /**
- * Credit a pending referral once the referred user has proven to be a GENUINE
- * user — NOT a farmed / throwaway account.
- *
- * WHY THIS EXISTS
- * ----------------
- * The referral reward used to be granted the instant the referred user verified
- * their email OTP. That was wrong on two counts:
- *   1. The app's real signup paths are Google + Quick-Login, which never touch
- *      email OTP — so referrals via those methods were never even recorded, and
- *      the reward could never unlock.
- *   2. Verifying an email is free, so it was trivial to farm `referrer_reward`
- *      coins with throwaway accounts.
- *
- * ANTI-FRAUD UNLOCK CONDITION
- * ---------------------------
- * The referred user must show REAL, hard-to-fake engagement — either:
- *   • they made at least one successful REAL-MONEY recharge (coin purchase), OR
- *   • they completed at least `min_calls_to_unlock` PAID calls (coins actually
- *     charged — free-trial-minute calls do NOT count, so a fresh account's free
- *     minutes can't be turned into referral payouts).
- * A same-device self-referral is voided outright.
- *
- * This is auth-method-agnostic (no email-verification dependency), so it works
- * identically for Google and Quick-Login users.
- *
- * IDEMPOTENCY / RACE-SAFETY
- * -------------------------
- * The credit is a single-winner atomic UPDATE guarded by
- * (status = 'pending' AND coins_given = 0) that flips status -> 'unlocked', so
- * concurrent/duplicate triggers (a call end AND a recharge landing together)
- * can never double-credit — even when `referrer_reward` is 0. Legacy rows
- * already credited under the old OTP path have coins_given > 0, so the
- * `coins_given = 0` guard also protects them from being re-credited.
- *
- * Trigger points (all best-effort, off the response path):
- *   • routes/call.ts   — after a paid call is settled
- *   • routes/payment.ts (approveDeposit) — after a real recharge is credited
- * Never throws.
+ * Detect a self-referral from the two accounts' device + phone. Returns the
+ * reason ('same_device' | 'same_phone') or null. Phone compared on the last 10
+ * digits so a country-code prefix difference doesn't defeat it.
  */
+export function selfReferralReason(
+  referred: { deviceId?: string | null; phone?: string | null },
+  referrer: { deviceId?: string | null; phone?: string | null },
+): string | null {
+  if (referred.deviceId && referrer.deviceId && referred.deviceId === referrer.deviceId) {
+    return 'same_device';
+  }
+  const digits = (p?: string | null) => (p ? String(p).replace(/\D/g, '').slice(-10) : '');
+  const a = digits(referred.phone);
+  const b = digits(referrer.phone);
+  if (a.length >= 10 && a === b) return 'same_phone';
+  return null;
+}
+
+export type ReferralAction = 'void' | 'credit' | 'review' | 'skip';
+
+/**
+ * Decide what to do with a pending referral, given the fraud signals. Pure so
+ * the policy is testable in isolation.
+ *   void   — self-referral; never pays out
+ *   skip   — not genuine yet; stays pending, re-checked on next activity
+ *   review — genuine but throttled (velocity/total cap) or high-risk; held for
+ *            admin approval
+ *   credit — genuine and within limits; pay out now
+ */
+export function referralOutcome(input: {
+  selfReferral: boolean;
+  genuine: boolean;
+  integrityEnabled: boolean;
+  dailyUnlockCount: number;
+  dailyCap: number; // 0 = unlimited
+  totalUnlockCount: number;
+  totalCap: number; // 0 = unlimited
+  riskTier: 'low' | 'medium' | 'high' | null;
+}): { action: ReferralAction; reason: string } {
+  if (input.selfReferral) return { action: 'void', reason: 'self_referral' };
+  if (!input.genuine) return { action: 'skip', reason: 'not_genuine_yet' };
+  if (!input.integrityEnabled) return { action: 'credit', reason: 'genuine' };
+  if (input.riskTier === 'high') return { action: 'review', reason: 'high_risk' };
+  if (input.dailyCap > 0 && input.dailyUnlockCount >= input.dailyCap) return { action: 'review', reason: 'daily_cap' };
+  if (input.totalCap > 0 && input.totalUnlockCount >= input.totalCap) return { action: 'review', reason: 'total_cap' };
+  return { action: 'credit', reason: 'genuine' };
+}
+
+/** Payout-hold window for the referrer reward. holdDays<=0 → released now. */
+export function computeHold(now: number, holdDays: number): { rewardState: 'held' | 'released'; holdUntil: number } {
+  const d = Number.isFinite(holdDays) && holdDays > 0 ? Math.floor(holdDays) : 0;
+  return d <= 0 ? { rewardState: 'released', holdUntil: now } : { rewardState: 'held', holdUntil: now + d * 86400 };
+}
+
+// ─── Config ──────────────────────────────────────────────────────────────────
+
+interface ReferralConfig {
+  active: boolean;
+  integrityEnabled: boolean;
+  referrerReward: number;
+  newUserReward: number;
+  needCalls: number;
+  holdDays: number;
+  dailyCap: number;
+  totalCap: number;
+  riskReview: boolean;
+}
+
+async function loadReferralConfig(db: D1Database): Promise<ReferralConfig> {
+  const keys = [
+    'referral_active', 'referrer_reward', 'new_user_reward', 'min_calls_to_unlock',
+    'referral_integrity_enabled', 'referral_hold_days', 'referral_daily_unlock_cap',
+    'referral_total_cap', 'referral_risk_review_enabled',
+  ];
+  const m: Record<string, string> = {};
+  try {
+    const rows = await db
+      .prepare(`SELECT key, value FROM app_settings WHERE key IN (${keys.map(() => '?').join(',')})`)
+      .bind(...keys)
+      .all<{ key: string; value: string }>();
+    for (const r of rows.results || []) m[r.key] = r.value;
+  } catch (e) {
+    console.warn('[referral] loadReferralConfig failed, using defaults:', e);
+  }
+  const intOr = (k: string, d: number) => {
+    const n = parseInt(m[k] ?? '', 10);
+    return Number.isFinite(n) && n >= 0 ? n : d;
+  };
+  const boolOr = (k: string, d: boolean) => (m[k] === undefined ? d : m[k] === '1');
+  return {
+    active: boolOr('referral_active', true),
+    integrityEnabled: boolOr('referral_integrity_enabled', true),
+    referrerReward: intOr('referrer_reward', 100),
+    newUserReward: intOr('new_user_reward', 50),
+    needCalls: Math.max(1, intOr('min_calls_to_unlock', 1)),
+    holdDays: intOr('referral_hold_days', 7),
+    dailyCap: intOr('referral_daily_unlock_cap', 25),
+    totalCap: intOr('referral_total_cap', 0),
+    riskReview: boolOr('referral_risk_review_enabled', true),
+  };
+}
+
+// ─── DB-driven signal checks ─────────────────────────────────────────────────
+
+/**
+ * The referred account must show REAL, hard-to-fake value. Any ONE of:
+ *   1. a real-money recharge (genuine caller),
+ *   2. a KYC-APPROVED host (verified identity + documents — the strongest
+ *      signal, and the only one that fits a referred HOST, who earns rather
+ *      than recharges / makes outgoing paid calls), or
+ *   3. >= needCalls PAID calls AS CALLER (coins actually charged — free-trial
+ *      minutes don't count, so a fresh account's freebie can't be farmed).
+ */
+async function isGenuineReferredUser(db: D1Database, referredUserId: string, needCalls: number): Promise<boolean> {
+  const recharged = await db
+    .prepare("SELECT 1 as ok FROM coin_purchases WHERE user_id = ? AND status = 'success' AND amount > 0 LIMIT 1")
+    .bind(referredUserId)
+    .first<{ ok: number }>()
+    .catch(() => null);
+  if (recharged) return true;
+
+  const approvedHost = await db
+    .prepare("SELECT 1 as ok FROM host_applications WHERE user_id = ? AND status = 'approved' LIMIT 1")
+    .bind(referredUserId)
+    .first<{ ok: number }>()
+    .catch(() => null);
+  if (approvedHost) return true;
+
+  const cnt = await db
+    .prepare("SELECT COUNT(*) as n FROM call_sessions WHERE caller_id = ? AND status = 'ended' AND coins_charged > 0")
+    .bind(referredUserId)
+    .first<{ n: number }>()
+    .catch(() => null);
+  return (Number(cnt?.n) || 0) >= needCalls;
+}
+
+/** Referred-user risk tier from lib/riskScore (best-effort; null if disabled/errors). */
+async function referredRiskTier(env: Env, referredUserId: string): Promise<'low' | 'medium' | 'high' | null> {
+  try {
+    const rs = await env.DB.prepare("SELECT value FROM app_settings WHERE key = 'risk_scoring_enabled'").first<{ value: string }>();
+    if ((rs?.value ?? '0') !== '1') return null;
+    const settings = await env.DB
+      .prepare("SELECT key, value FROM app_settings WHERE key IN ('risk_lookback_days','risk_velocity_window_hours','risk_velocity_burst','risk_new_account_days','risk_weights')")
+      .all<{ key: string; value: string }>();
+    const m: Record<string, string> = {};
+    for (const r of settings.results || []) m[r.key] = r.value;
+    const num = (k: string, d: number) => { const n = parseFloat(m[k] ?? ''); return Number.isFinite(n) && n > 0 ? n : d; };
+    const { gatherRiskFeatures, computeRiskScore, normalizeRiskWeights } = await import('./riskScore');
+    let weights;
+    try { weights = normalizeRiskWeights(JSON.parse(m['risk_weights'] ?? '{}')); } catch { weights = normalizeRiskWeights({}); }
+    const features = await gatherRiskFeatures(env.DB, referredUserId, num('risk_lookback_days', 30), num('risk_velocity_window_hours', 1));
+    const assessment = computeRiskScore(features, weights, {
+      velocityBurst: num('risk_velocity_burst', 4),
+      newAccountDays: num('risk_new_account_days', 3),
+    });
+    return assessment.tier;
+  } catch (e) {
+    console.warn('[referral] risk tier check failed (skipping gate):', e);
+    return null;
+  }
+}
+
+// ─── Credit (shared by auto-unlock + admin approve) ──────────────────────────
+
+type ReferralRow = { id: string; referrer_id: string; referred_id: string };
+
+/**
+ * Atomically credit a referral. Single-winner UPDATE (pending|review →
+ * unlocked) guarantees a referral is credited at most once even under
+ * concurrent triggers. Held rewards land in coins + coins_held; released ones
+ * in coins only. Returns false if the row was already processed / lost the race.
+ */
+async function creditReferralInternal(
+  env: Env,
+  row: ReferralRow,
+  referrerReward: number,
+  newUserReward: number,
+  holdDays: number,
+): Promise<boolean> {
+  const db = env.DB;
+  const now = Math.floor(Date.now() / 1000);
+  const { rewardState, holdUntil } = computeHold(now, holdDays);
+
+  const claim = await db
+    .prepare(
+      `UPDATE referral_uses
+         SET status = 'unlocked', flagged = 0, coins_given = ?, referrer_reward = ?,
+             new_user_reward = ?, unlocked_at = ?, reward_state = ?, hold_until = ?
+       WHERE id = ? AND status IN ('pending', 'review')`,
+    )
+    .bind(referrerReward, referrerReward, newUserReward, now, rewardState, holdUntil, row.id)
+    .run();
+  if (!claim.meta?.changes) return false; // already processed / lost race
+
+  // Credit coins. Held referrer reward also bumps coins_held (locks it).
+  const ops: D1PreparedStatement[] = [];
+  if (newUserReward > 0) {
+    ops.push(db.prepare('UPDATE users SET coins = coins + ?, updated_at = unixepoch() WHERE id = ?').bind(newUserReward, row.referred_id));
+  }
+  if (referrerReward > 0) {
+    ops.push(
+      rewardState === 'held'
+        ? db.prepare('UPDATE users SET coins = coins + ?, coins_held = COALESCE(coins_held, 0) + ?, updated_at = unixepoch() WHERE id = ?').bind(referrerReward, referrerReward, row.referrer_id)
+        : db.prepare('UPDATE users SET coins = coins + ?, updated_at = unixepoch() WHERE id = ?').bind(referrerReward, row.referrer_id),
+    );
+  }
+  if (ops.length) await db.batch(ops);
+
+  // Ledger (best-effort audit).
+  try {
+    const ledger: D1PreparedStatement[] = [];
+    if (newUserReward > 0) ledger.push(db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)').bind(crypto.randomUUID(), row.referred_id, 'bonus', newUserReward, 'Referral signup bonus (unlocked)', row.id));
+    if (referrerReward > 0) ledger.push(db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)').bind(crypto.randomUUID(), row.referrer_id, 'bonus', referrerReward, rewardState === 'held' ? `Referral reward (held ${holdDays}d)` : 'Referral reward (invited a friend)', row.id));
+    if (ledger.length) await db.batch(ledger);
+  } catch (e) {
+    console.warn('[referral] ledger write failed (credit already applied):', e);
+  }
+
+  await bumpRewardProgress(db, row.referrer_id, 'refer_friend', 1);
+
+  // Real-time + notifications.
+  if (referrerReward > 0) {
+    await pushCoinUpdate(env, row.referrer_id, referrerReward);
+    const holdNote = rewardState === 'held' ? ` Withdrawable in ${holdDays} day${holdDays === 1 ? '' : 's'}.` : '';
+    await notifyUser(env, row.referrer_id, '🎉 Referral Reward Earned!', `Your friend just got active on VoxLink — you earned ${referrerReward} coins!${holdNote} 🤝`, 'referral');
+  }
+  if (newUserReward > 0) {
+    await pushCoinUpdate(env, row.referred_id, newUserReward);
+    await notifyUser(env, row.referred_id, '🎁 Referral Bonus Unlocked!', `You earned ${newUserReward} bonus coins for joining with a friend's invite. Enjoy! 💛`, 'referral');
+  }
+  return true;
+}
+
+// ─── Public: unlock check (called from call end / recharge / KYC approve) ────
+
 export async function maybeUnlockReferral(env: Env, referredUserId: string): Promise<void> {
   const db = env.DB;
   try {
     const pending = await db
-      .prepare("SELECT id, referrer_id FROM referral_uses WHERE referred_id = ? AND status = 'pending' AND coins_given = 0 LIMIT 1")
+      .prepare("SELECT id, referrer_id, referred_id FROM referral_uses WHERE referred_id = ? AND status = 'pending' AND coins_given = 0 LIMIT 1")
       .bind(referredUserId)
-      .first<{ id: string; referrer_id: string }>();
+      .first<ReferralRow>();
     if (!pending) return;
 
-    // Admin config (single round-trip). Defaults mirror /admin/referral-config.
-    const rows = await db
-      .prepare("SELECT key, value FROM app_settings WHERE key IN ('min_calls_to_unlock','referrer_reward','new_user_reward','referral_active')")
-      .all<{ key: string; value: string }>();
-    const cfg: Record<string, string> = {};
-    for (const r of rows.results || []) cfg[r.key] = r.value;
-    const active = cfg['referral_active'] === undefined ? true : cfg['referral_active'] === '1';
-    if (!active) return;
-    const referrerReward = Math.max(0, parseInt(cfg['referrer_reward'] ?? '100') || 0);
-    const newUserReward = Math.max(0, parseInt(cfg['new_user_reward'] ?? '50') || 0);
-    // Require at least ONE paid call even when admins set 0 — the whole point is
-    // that a reward never fires on a zero-effort account.
-    const needCalls = Math.max(1, parseInt(cfg['min_calls_to_unlock'] ?? '1') || 1);
+    const cfg = await loadReferralConfig(db);
+    if (!cfg.active) return;
 
-    // Self-referral guards. Void (never pay out + stop re-checking) when the
-    // referrer and the referred account are almost certainly the same person:
-    //   • same physical device, OR
-    //   • same phone number — hosts MUST give a phone at KYC, so this catches a
-    //     host farming their own code from a second account.
+    // Self-referral guards.
     const [refUser, referrer] = await Promise.all([
       db.prepare('SELECT device_id, phone FROM users WHERE id = ?').bind(referredUserId).first<{ device_id: string | null; phone: string | null }>(),
       db.prepare('SELECT device_id, phone FROM users WHERE id = ?').bind(pending.referrer_id).first<{ device_id: string | null; phone: string | null }>(),
     ]);
-    const sameDevice = !!(refUser?.device_id && referrer?.device_id && refUser.device_id === referrer.device_id);
-    const digits = (p: string | null | undefined) => (p ? String(p).replace(/\D/g, '').slice(-10) : '');
-    const refPhone = digits(refUser?.phone);
-    const referrerPhone = digits(referrer?.phone);
-    const samePhone = refPhone.length >= 10 && refPhone === referrerPhone;
-    if (sameDevice || samePhone) {
-      await db.prepare("UPDATE referral_uses SET status = 'void' WHERE id = ? AND status = 'pending'").bind(pending.id).run();
-      console.warn('[referral] voided self-referral', pending.id, sameDevice ? '(same device)' : '(same phone)');
+    const selfReason = selfReferralReason(
+      { deviceId: refUser?.device_id, phone: refUser?.phone },
+      { deviceId: referrer?.device_id, phone: referrer?.phone },
+    );
+
+    const genuine = selfReason ? false : await isGenuineReferredUser(db, referredUserId, cfg.needCalls);
+
+    // Velocity / total / risk signals — only computed when relevant.
+    let dailyUnlockCount = 0;
+    let totalUnlockCount = 0;
+    let riskTier: 'low' | 'medium' | 'high' | null = null;
+    if (!selfReason && genuine && cfg.integrityEnabled) {
+      const since = Math.floor(Date.now() / 1000) - 86400;
+      const daily = await db.prepare("SELECT COUNT(*) as n FROM referral_uses WHERE referrer_id = ? AND status = 'unlocked' AND unlocked_at >= ?").bind(pending.referrer_id, since).first<{ n: number }>().catch(() => null);
+      dailyUnlockCount = Number(daily?.n) || 0;
+      if (cfg.totalCap > 0) {
+        const total = await db.prepare("SELECT COUNT(*) as n FROM referral_uses WHERE referrer_id = ? AND status = 'unlocked'").bind(pending.referrer_id).first<{ n: number }>().catch(() => null);
+        totalUnlockCount = Number(total?.n) || 0;
+      }
+      if (cfg.riskReview) riskTier = await referredRiskTier(env, referredUserId);
+    }
+
+    const { action, reason } = referralOutcome({
+      selfReferral: !!selfReason,
+      genuine,
+      integrityEnabled: cfg.integrityEnabled,
+      dailyUnlockCount,
+      dailyCap: cfg.dailyCap,
+      totalUnlockCount,
+      totalCap: cfg.totalCap,
+      riskTier,
+    });
+
+    if (action === 'void') {
+      await db.prepare("UPDATE referral_uses SET status = 'void', flag_reason = ? WHERE id = ? AND status = 'pending'").bind(selfReason, pending.id).run();
+      console.warn('[referral] voided self-referral', pending.id, selfReason);
+      return;
+    }
+    if (action === 'skip') return;
+    if (action === 'review') {
+      // Freeze the reward amounts + flag for admin. NO coins credited yet.
+      await db
+        .prepare("UPDATE referral_uses SET status = 'review', flagged = 1, flag_reason = ?, referrer_reward = ?, new_user_reward = ? WHERE id = ? AND status = 'pending'")
+        .bind(reason, cfg.referrerReward, cfg.newUserReward, pending.id)
+        .run();
+      console.warn('[referral] flagged for review', pending.id, reason);
       return;
     }
 
-    // Genuine-user check — the referred account must show REAL, hard-to-fake
-    // value. Any ONE of:
-    //   1. a real-money recharge (genuine caller), OR
-    //   2. >= needCalls PAID calls AS CALLER (coins actually charged — free
-    //      trial minutes don't count), OR
-    //   3. the referred user became a KYC-APPROVED host. This is the strongest
-    //      signal (verified identity + documents) AND the only one that fits a
-    //      referred HOST — hosts EARN from received calls, they never recharge
-    //      or make outgoing paid calls, so without this a host referral could
-    //      never unlock.
-    let genuine = false;
-    const recharged = await db
-      .prepare("SELECT 1 as ok FROM coin_purchases WHERE user_id = ? AND status = 'success' AND amount > 0 LIMIT 1")
-      .bind(referredUserId)
-      .first<{ ok: number }>();
-    if (recharged) {
-      genuine = true;
-    } else {
-      // KYC-approved host? (best-effort — table may not exist on a legacy DB)
-      const approvedHost = await db
-        .prepare("SELECT 1 as ok FROM host_applications WHERE user_id = ? AND status = 'approved' LIMIT 1")
-        .bind(referredUserId)
-        .first<{ ok: number }>()
-        .catch(() => null);
-      if (approvedHost) {
-        genuine = true;
-      } else {
-        const cnt = await db
-          .prepare("SELECT COUNT(*) as n FROM call_sessions WHERE caller_id = ? AND status = 'ended' AND coins_charged > 0")
-          .bind(referredUserId)
-          .first<{ n: number }>();
-        if ((Number(cnt?.n) || 0) >= needCalls) genuine = true;
-      }
-    }
-    if (!genuine) return;
-
-    // Atomic single-winner credit. Flipping status -> 'unlocked' makes this
-    // idempotent even when referrerReward is 0 (coins_given would stay 0).
-    const claim = await db
-      .prepare("UPDATE referral_uses SET coins_given = ?, status = 'unlocked' WHERE id = ? AND status = 'pending' AND coins_given = 0")
-      .bind(referrerReward, pending.id)
-      .run();
-    if (!claim.meta?.changes) return; // lost the race — already unlocked
-
-    const ops: D1PreparedStatement[] = [];
-    if (newUserReward > 0) ops.push(db.prepare('UPDATE users SET coins = coins + ?, updated_at = unixepoch() WHERE id = ?').bind(newUserReward, referredUserId));
-    if (referrerReward > 0) ops.push(db.prepare('UPDATE users SET coins = coins + ?, updated_at = unixepoch() WHERE id = ?').bind(referrerReward, pending.referrer_id));
-    if (ops.length) await db.batch(ops);
-
-    // Ledger rows (best-effort audit trail for both sides).
-    try {
-      const ledger: D1PreparedStatement[] = [];
-      if (newUserReward > 0) ledger.push(db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)').bind(crypto.randomUUID(), referredUserId, 'bonus', newUserReward, 'Referral signup bonus (unlocked)', pending.id));
-      if (referrerReward > 0) ledger.push(db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)').bind(crypto.randomUUID(), pending.referrer_id, 'bonus', referrerReward, 'Referral reward (invited a friend)', pending.id));
-      if (ledger.length) await db.batch(ledger);
-    } catch (e) {
-      console.warn('[referral] ledger write failed (credit already applied):', e);
-    }
-
-    // Reward-hub progress for the referrer (refer_friend tasks).
-    await bumpRewardProgress(db, pending.referrer_id, 'refer_friend', 1);
-
-    // Real-time balance push + notification for both parties.
-    if (referrerReward > 0) {
-      await pushCoinUpdate(env, pending.referrer_id, referrerReward);
-      await notifyUser(env, pending.referrer_id, '🎉 Referral Reward Earned!', `Your friend just got active on VoxLink — and you scored ${referrerReward} coins! Invite more friends, earn more coins. 🤝`, 'referral');
-    }
-    if (newUserReward > 0) {
-      await pushCoinUpdate(env, referredUserId, newUserReward);
-      await notifyUser(env, referredUserId, '🎁 Referral Bonus Unlocked!', `You just earned ${newUserReward} bonus coins for joining with a friend's invite. Enjoy! 💛`, 'referral');
-    }
+    // action === 'credit'
+    await creditReferralInternal(env, pending, cfg.referrerReward, cfg.newUserReward, cfg.integrityEnabled ? cfg.holdDays : 0);
   } catch (e) {
     console.warn('[referral] maybeUnlockReferral failed:', e);
   }
+}
+
+// ─── Payout hold release (cron) ──────────────────────────────────────────────
+
+/**
+ * Release referral payout holds whose window has elapsed: held → released, and
+ * free the amount from coins_held so it becomes withdrawable. Per-row atomic
+ * CAS makes it idempotent. Best-effort; tolerates a legacy DB (missing columns
+ * → caught, no-op).
+ */
+export async function releaseExpiredReferralHolds(env: Env): Promise<void> {
+  const db = env.DB;
+  try {
+    const now = Math.floor(Date.now() / 1000);
+    const due = await db
+      .prepare("SELECT id, referrer_id, referrer_reward FROM referral_uses WHERE reward_state = 'held' AND hold_until > 0 AND hold_until <= ? LIMIT 500")
+      .bind(now)
+      .all<{ id: string; referrer_id: string; referrer_reward: number }>();
+    for (const r of due.results || []) {
+      const claim = await db.prepare("UPDATE referral_uses SET reward_state = 'released' WHERE id = ? AND reward_state = 'held'").bind(r.id).run();
+      if (!claim.meta?.changes) continue; // another sweep won
+      const amt = Number(r.referrer_reward) || 0;
+      if (amt > 0) {
+        await db.prepare('UPDATE users SET coins_held = MAX(0, COALESCE(coins_held, 0) - ?) WHERE id = ?').bind(amt, r.referrer_id).run()
+          .catch((e) => console.warn('[referral] release hold decrement failed:', e));
+      }
+    }
+  } catch (e) {
+    console.warn('[referral] releaseExpiredReferralHolds failed (schema may lag):', e);
+  }
+}
+
+// ─── Clawback (called when a referred account is banned) ──────────────────────
+
+/**
+ * Reverse still-HELD referral rewards earned by referring the now-banned
+ * account. Only 'held' rewards are reversed — they're guaranteed present in
+ * coins_held, so the reversal can never drive a balance negative (released /
+ * withdrawn rewards are left untouched). Per-row atomic CAS = idempotent.
+ */
+export async function clawbackReferrals(env: Env, referredUserId: string, reason = 'fraud'): Promise<void> {
+  const db = env.DB;
+  try {
+    const rows = await db
+      .prepare("SELECT id, referrer_id, referrer_reward, new_user_reward FROM referral_uses WHERE referred_id = ? AND status = 'unlocked' AND reward_state = 'held'")
+      .bind(referredUserId)
+      .all<{ id: string; referrer_id: string; referrer_reward: number; new_user_reward: number }>();
+    for (const r of rows.results || []) {
+      const claim = await db.prepare("UPDATE referral_uses SET reward_state = 'clawed_back', status = 'void', flag_reason = ? WHERE id = ? AND reward_state = 'held'").bind(`clawback:${reason}`, r.id).run();
+      if (!claim.meta?.changes) continue;
+      const rr = Number(r.referrer_reward) || 0;
+      const nr = Number(r.new_user_reward) || 0;
+      const ops: D1PreparedStatement[] = [];
+      if (rr > 0) ops.push(db.prepare('UPDATE users SET coins = MAX(0, coins - ?), coins_held = MAX(0, COALESCE(coins_held, 0) - ?), updated_at = unixepoch() WHERE id = ?').bind(rr, rr, r.referrer_id));
+      if (nr > 0) ops.push(db.prepare('UPDATE users SET coins = MAX(0, coins - ?), updated_at = unixepoch() WHERE id = ?').bind(nr, referredUserId));
+      if (ops.length) await db.batch(ops);
+      try {
+        if (rr > 0) {
+          await db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
+            .bind(crypto.randomUUID(), r.referrer_id, 'adjustment', -rr, `Referral reward reversed (${reason})`, r.id).run();
+        }
+      } catch (e) { console.warn('[referral] clawback ledger failed:', e); }
+      // Live-update the referrer's balance.
+      try { await pushCoinUpdate(env, r.referrer_id, -rr); } catch { /* best-effort */ }
+    }
+  } catch (e) {
+    console.warn('[referral] clawbackReferrals failed:', e);
+  }
+}
+
+// ─── Admin review-queue actions ──────────────────────────────────────────────
+
+/** Approve a referral that was held for review → credit it (with hold). */
+export async function approveReviewReferral(env: Env, referralId: string): Promise<{ ok: boolean; error?: string }> {
+  const db = env.DB;
+  const row = await db
+    .prepare('SELECT id, referrer_id, referred_id, referrer_reward, new_user_reward, status FROM referral_uses WHERE id = ?')
+    .bind(referralId)
+    .first<ReferralRow & { referrer_reward: number; new_user_reward: number; status: string }>();
+  if (!row) return { ok: false, error: 'Referral not found' };
+  if (row.status !== 'review') return { ok: false, error: `Referral is ${row.status}, not in review` };
+  const cfg = await loadReferralConfig(db);
+  const rr = Number(row.referrer_reward) > 0 ? Number(row.referrer_reward) : cfg.referrerReward;
+  const nr = Number(row.new_user_reward) > 0 ? Number(row.new_user_reward) : cfg.newUserReward;
+  const ok = await creditReferralInternal(env, row, rr, nr, cfg.integrityEnabled ? cfg.holdDays : 0);
+  return ok ? { ok: true } : { ok: false, error: 'Already processed' };
+}
+
+/** Reject a referral that was held for review → void it (never pays out). */
+export async function rejectReviewReferral(env: Env, referralId: string, reason = 'rejected'): Promise<{ ok: boolean; error?: string }> {
+  const db = env.DB;
+  const res = await db
+    .prepare("UPDATE referral_uses SET status = 'void', flagged = 0, flag_reason = ? WHERE id = ? AND status = 'review'")
+    .bind(`admin_reject:${reason}`.slice(0, 200), referralId)
+    .run();
+  return res.meta?.changes ? { ok: true } : { ok: false, error: 'Referral not in review' };
 }
