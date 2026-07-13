@@ -20,6 +20,7 @@ import { useLanguage } from "@/context/LanguageContext";
 import { API } from "@/services/api";
 import { showSuccessToast, showErrorToast } from "@/components/Toast";
 import { useAppConfig } from "@/hooks/useAppConfig";
+import { buildInviteUrl } from "@/utils/pendingReferral";
 
 type LbEntry = { rank: number; name: string; avatar: string | null; referrals: number; coins: number; is_me: boolean };
 
@@ -78,10 +79,15 @@ export default function ReferralScreen() {
   const handleShare = async () => {
     if (!referral?.code) return;
     try {
+      // Invite link carries the referral code (?ref=CODE). A friend who opens
+      // it lands on the login screen with the code already applied — no manual
+      // typing. The message still shows the raw code as a fallback for anyone
+      // who signs up on native without the link auto-filling it.
+      const inviteUrl = buildInviteUrl(referral.code);
       await crossShare({
         message: t.referralScreen.shareMessage.replace("{code}", referral.code),
         title: t.referralScreen.shareTitle,
-        url: "https://voxlink.app",
+        url: inviteUrl,
       });
     } catch {
       // User cancelled the share sheet or it failed — non-fatal, no toast needed.

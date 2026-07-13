@@ -14,8 +14,10 @@ import { useLanguage } from "@/context/LanguageContext";
 import { API, resolveMediaUrl } from "@/services/api";
 import { getRandomAvatarUri } from "@/utils/randomAvatar";
 import { showErrorToast, showSuccessToast } from "@/components/Toast";
+import * as Linking from "expo-linking";
 import {
   getPendingReferral, setPendingReferral, clearPendingReferral, normalizeReferralCode,
+  extractReferralFromUrl,
 } from "@/utils/pendingReferral";
 
 const ACCENT = "#A00EE7";
@@ -84,27 +86,45 @@ export default function LoginScreen() {
   const [referralCode, setReferralCode] = useState("");
   const [showReferral, setShowReferral] = useState(false);
 
-  // Restore a referral code across mounts / the web Google-OAuth redirect.
-  // Priority: a `?ref=` (or `?referral=`) query param on web, else the value
-  // persisted by a previous keystroke. Persisting is what keeps the code alive
-  // through the full-page redirect, where React state would otherwise be lost.
+  // Capture a referral code from an invite link and restore it across the web
+  // Google-OAuth redirect. Sources, in priority order:
+  //   1. The deep link / universal link the app was opened with
+  //      (voxlink://…?ref=CODE  or  https://voxlink.app/?ref=CODE)
+  //   2. A `?ref=` / `?referral=` query param on the web build
+  //   3. A code persisted by a previous keystroke (survives the OAuth redirect)
+  // Persisting to storage is what keeps the code alive through the full-page
+  // redirect, where in-memory React state would otherwise be lost.
+  const applyReferral = React.useCallback((code: string) => {
+    if (!code) return;
+    setReferralCode(code);
+    setShowReferral(true);
+    setPendingReferral(code);
+  }, []);
+
   useEffect(() => {
     (async () => {
       let code = "";
-      if (Platform.OS === "web" && typeof window !== "undefined") {
+      try {
+        code = extractReferralFromUrl(await Linking.getInitialURL());
+      } catch { /* ignore */ }
+      if (!code && Platform.OS === "web" && typeof window !== "undefined") {
         try {
           const p = new URLSearchParams(window.location.search);
           code = normalizeReferralCode(p.get("ref") || p.get("referral") || "");
         } catch { /* ignore */ }
       }
       if (!code) code = await getPendingReferral();
-      if (code) {
-        setReferralCode(code);
-        setShowReferral(true);
-        await setPendingReferral(code);
-      }
+      if (code) applyReferral(code);
     })();
-  }, []);
+
+    // Warm start: the app is already open on this screen and the user taps an
+    // invite link. expo-linking delivers the URL here.
+    const sub = Linking.addEventListener("url", ({ url }) => {
+      const code = extractReferralFromUrl(url);
+      if (code) applyReferral(code);
+    });
+    return () => sub.remove();
+  }, [applyReferral]);
 
   const onChangeReferral = (v: string) => {
     const norm = normalizeReferralCode(v);

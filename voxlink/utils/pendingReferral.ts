@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Linking from "expo-linking";
 
 // A referral code the new user entered on the login screen (or that arrived via
 // a `?ref=` query on web). Persisted so it survives the full-page Google OAuth
@@ -42,4 +43,26 @@ export async function clearPendingReferral(): Promise<void> {
   } catch {
     /* best-effort */
   }
+}
+
+/**
+ * Pull a referral code out of a deep link / universal link, e.g.
+ *   voxlink://open?ref=ABC123   or   https://voxlink.app/?ref=ABC123
+ * Accepts both `ref` and `referral` query params. Returns "" when absent.
+ */
+export function extractReferralFromUrl(url: string | null | undefined): string {
+  if (!url) return "";
+  try {
+    const { queryParams } = Linking.parse(url);
+    const raw = queryParams?.ref ?? queryParams?.referral;
+    return normalizeReferralCode(Array.isArray(raw) ? raw[0] : (raw as string | undefined));
+  } catch {
+    return "";
+  }
+}
+
+/** Build the shareable invite link that carries a referral code. */
+export function buildInviteUrl(code: string): string {
+  const norm = normalizeReferralCode(code);
+  return `https://voxlink.app/?ref=${encodeURIComponent(norm)}`;
 }
