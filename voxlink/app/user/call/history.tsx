@@ -4,7 +4,7 @@
 import React, { useState, useEffect } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  Image, Platform, ActivityIndicator
+  Image, ActivityIndicator
 } from "react-native";
 import { FlashList } from "@shopify/flash-list";
 import { router } from "expo-router";

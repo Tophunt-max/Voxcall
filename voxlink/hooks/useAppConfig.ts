@@ -13,7 +13,7 @@
 //
 // All reads are best-effort: a network error keeps the last good cache (or an
 // empty object), so the app never blocks on this.
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef } from "react";
 import { API } from "@/services/api";
 import { setCoinToUsdRate } from "@/utils/currency";
 

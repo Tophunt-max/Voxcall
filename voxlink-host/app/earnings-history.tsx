@@ -100,7 +100,6 @@ export default function EarningsHistoryScreen() {
   // totalEarned/totalWithdrawn are approximations from visible history only.
   const totalEarned     = transactions.filter(t => t.amount > 0).reduce((s, t) => s + t.amount, 0);
   const totalWithdrawn  = transactions.filter(t => t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0);
-  const isApproximate   = transactions.length >= 100;
 
   const renderItem = ({ item }: { item: Transaction }) => {
     const cfg = TYPE_CONFIG[item.type] ?? TYPE_CONFIG.earn;

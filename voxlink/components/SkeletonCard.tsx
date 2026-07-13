@@ -6,7 +6,7 @@ import { View, Animated, StyleSheet, Dimensions, Platform } from "react-native";
 
 const useNativeDriverValue = Platform.OS !== "web";
 
-const SCREEN_W = Dimensions.get("window").width;
+const _SCREEN_W = Dimensions.get("window").width;
 
 function Pulse({ style }: { style?: object }) {
   const anim = useRef(new Animated.Value(0.4)).current;

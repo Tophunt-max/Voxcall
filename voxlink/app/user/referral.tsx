@@ -6,7 +6,6 @@ import {
   ScrollView,
   TouchableOpacity,
   Image,
-  Platform,
   ActivityIndicator,
 } from "react-native";
 import * as ClipboardModule from "expo-clipboard";
@@ -27,7 +26,7 @@ type LbEntry = { rank: number; name: string; avatar: string | null; referrals: n
 export default function ReferralScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { user } = useAuth();
+  const { user: _user } = useAuth();
   const { t } = useLanguage();
 
   const [referral, setReferral] = useState<{

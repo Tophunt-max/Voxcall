@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from "react";
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
-  Image, Platform, ActivityIndicator
+  Image, ActivityIndicator
 } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { SvgIcon } from "@/components/SvgIcon";
 import { useColors } from "@/hooks/useColors";
 import { useLanguage } from "@/context/LanguageContext";
 import { API, resolveMediaUrl } from "@/services/api";
@@ -28,11 +27,6 @@ const STATUS_COLORS: Record<string, string> = {
   completed: "#0BAF23",
   missed: "#F44336",
   cancelled: "#9E9E9E",
-};
-const STATUS_LABELS: Record<string, string> = {
-  completed: "Completed",
-  missed: "Missed",
-  cancelled: "Cancelled",
 };
 
 function mapStatus(s: string): "completed" | "missed" | "cancelled" {

@@ -65,11 +65,11 @@ const TIMELINE_STEPS = [
 export default function HostStatusScreen() {
   const insets = useSafeAreaInsets();
   const { t } = useLanguage();
-  const { user, refreshProfile } = useAuth();
+  const { refreshProfile } = useAuth();
   const [data, setData]             = useState<any>(null);
   const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [justApproved, setJustApproved] = useState(false);
+  const [_justApproved, setJustApproved] = useState(false);
 
   const pollRef      = useRef<ReturnType<typeof setInterval> | null>(null);
   const isMountedRef = useRef(true);
@@ -216,7 +216,7 @@ export default function HostStatusScreen() {
           <View style={s.timeline}>
             <Text style={[s.timelineTitle, { color: DARK }]}>{t.statusScreen.timelineTitle}</Text>
             {TIMELINE_STEPS.map((step, i) => {
-              const done = stepDone(step.doneKey);
+              const _done = stepDone(step.doneKey);
               return (
                 <View key={i} style={s.tlRow}>
                   <View style={s.tlLeft}>

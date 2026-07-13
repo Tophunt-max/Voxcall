@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useState, useCallback, use
 import { AppState } from "react-native";
 import { setItem, getItem, removeItem, StorageKeys } from "@/utils/storage";
 import { secureSet, secureGet, secureRemove } from "@/utils/storage";
-import { apiRequest, API } from "@/services/api";
+import { apiRequest } from "@/services/api";
 import type { HostStreakCredit } from "@/services/api";
 import { registerForPushNotifications } from "@/services/NotificationService";
 import { onTokenRefresh } from "@/services/fcm";

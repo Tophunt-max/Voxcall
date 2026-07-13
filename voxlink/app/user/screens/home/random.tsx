@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, Image,
   Animated, Dimensions, Modal, ScrollView, ActivityIndicator,
@@ -502,7 +502,7 @@ export default function RandomScreen() {
   // replaced with the exact server value the moment a host is matched.
   const [adminCoinRate, setAdminCoinRate] = useState<number>(25);
   const [statusMsg, setStatusMsg]  = useState("");
-  const [statusCode, setStatusCode] = useState<string | undefined>(undefined);
+  const [_statusCode, setStatusCode] = useState<string | undefined>(undefined);
   const [onlineCount, setOnlineCount] = useState<number>(0);
 
   // Limit / abuse popups. INSUFFICIENT_COINS gets the coin-plans sheet; the

@@ -42,10 +42,6 @@ export function isRTL(lang?: SupportedLanguage): boolean {
   return LANGUAGES.find((x) => x.code === l)?.rtl ?? false;
 }
 
-type NestedKeys<T> = T extends object
-  ? { [K in keyof T]: K extends string ? (T[K] extends object ? `${K}.${NestedKeys<T[K]>}` : K) : never }[keyof T]
-  : never;
-
 type TranslationKey = string;
 
 export function t(key: TranslationKey, lang?: SupportedLanguage): string {

@@ -8,7 +8,7 @@ export interface ValidationResult {
 
 export function validateEmail(email: string): ValidationResult {
   if (!email.trim()) return { valid: false, error: "Email is required" };
-  const re = /^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/;
+  const re = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
   if (!re.test(email.trim())) return { valid: false, error: "Enter a valid email address" };
   return { valid: true };
 }
@@ -67,7 +67,7 @@ export function validateUsername(username: string): ValidationResult {
   if (!username.trim()) return { valid: false, error: "Username is required" };
   if (username.length < 3) return { valid: false, error: "Username must be at least 3 characters" };
   if (username.length > 30) return { valid: false, error: "Username is too long" };
-  if (!/^[a-zA-Z0-9_\.]+$/.test(username)) {
+  if (!/^[a-zA-Z0-9_.]+$/.test(username)) {
     return { valid: false, error: "Username can only contain letters, numbers, _ and ." };
   }
   return { valid: true };

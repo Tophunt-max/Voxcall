@@ -3,7 +3,7 @@ import { useSocketEvent } from "@/context/SocketContext";
 import { SocketEvents } from "@/constants/events";
 import {
   View, Text, StyleSheet, TouchableOpacity, Image,
-  ScrollView, Platform, Animated, Linking, TextInput, ActivityIndicator,
+  ScrollView, Linking, TextInput, ActivityIndicator,
 } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";

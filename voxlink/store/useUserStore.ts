@@ -31,7 +31,7 @@ interface UserStore {
   clearProfile: () => void;
 }
 
-export const useUserStore = create<UserStore>((set, get) => ({
+export const useUserStore = create<UserStore>((set, _get) => ({
   profile: null,
   coins: 0,
   isLoggedIn: false,

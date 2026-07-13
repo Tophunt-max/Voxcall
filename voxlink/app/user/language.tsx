@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, Image,
-  ScrollView, Platform
+  ScrollView
 } from "react-native";
 import { router } from "expo-router";
 import { alertDialog } from "@/utils/dialog";

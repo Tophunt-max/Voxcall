@@ -17,7 +17,7 @@ const RING_TIMEOUT_MS = 45000;
 export default function OutgoingCallScreen() {
   const insets = useSafeAreaInsets();
   const { t } = useLanguage();
-  const { activeCall, endCall } = useCall();
+  const { endCall } = useCall();
   const { onEvent } = useSocket();
   const params = useLocalSearchParams<{
     hostId: string;

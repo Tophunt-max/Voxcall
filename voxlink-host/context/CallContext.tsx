@@ -51,7 +51,7 @@ interface CallContextValue {
 const CallContext = createContext<CallContextValue | null>(null);
 
 export function CallProvider({ children }: { children: React.ReactNode }) {
-  const { updateEarnings, refreshProfile } = useAuth();
+  const { refreshProfile } = useAuth();
   const [activeCall, setActiveCall] = useState<ActiveCall | null>(null);
   const activeCallRef = useRef<ActiveCall | null>(null);
   const isAcceptingRef = useRef(false);

@@ -1,5 +1,5 @@
 import { ErrorBoundary as SharedErrorBoundary } from "@workspace/shared-ui/components";
-import type { ErrorBoundaryProps as SharedProps, ErrorFallbackProps } from "@workspace/shared-ui/components";
+import type { ErrorFallbackProps } from "@workspace/shared-ui/components";
 import { ErrorFallback } from "@/components/ErrorFallback";
 import { ComponentType, PropsWithChildren } from "react";
 

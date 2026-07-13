@@ -78,7 +78,7 @@ function validate(method: Method, details: Record<string, string>, tr2: any): st
     if (!/^[A-Z]{4}0[A-Z0-9]{6}$/i.test(details.ifsc?.trim() ?? "")) return tr2.payoutMethodScreen.ifscInvalid;
     if (!details.bank_name?.trim()) return tr2.payoutMethodScreen.bankRequired;
   } else if (method === "upi") {
-    if (!/^[\w.\-]+@[\w.\-]+$/.test(details.upi_id?.trim() ?? "")) return tr2.payoutMethodScreen.upiInvalid;
+    if (!/^[\w.-]+@[\w.-]+$/.test(details.upi_id?.trim() ?? "")) return tr2.payoutMethodScreen.upiInvalid;
   } else if (method === "paytm" || method === "phonepe") {
     const digits = (details.phone_number ?? "").replace(/\D/g, "");
     if (digits.length < 10) return tr2.payoutMethodScreen.phoneInvalid;

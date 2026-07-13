@@ -9,7 +9,7 @@
 //
 // Before this, the admin maintenance toggle had NO effect in the app — the
 // `system:maintenance` socket constant existed but nothing consumed it.
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, Image, AppState, Platform,
 } from "react-native";

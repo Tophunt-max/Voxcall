@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
+import { Text, StyleSheet, TouchableOpacity } from "react-native";
 import { IconView } from "@/components/IconView";
 import { useColors } from "@/hooks/useColors";
 

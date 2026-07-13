@@ -20,7 +20,7 @@ export default function ReferralScreen() {
   const colors = useColors();
   const { t } = useLanguage();
   const insets = useSafeAreaInsets();
-  const { user } = useAuth();
+  const { user: _user } = useAuth();
 
   const [referral, setReferral] = useState<{
     code: string;

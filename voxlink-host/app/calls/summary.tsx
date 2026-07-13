@@ -22,7 +22,6 @@ export default function CallSummaryScreen() {
     duration,
     type,
     participantName,
-    participantId,
     sessionId,
     coinsEarned,
     autoEnded,

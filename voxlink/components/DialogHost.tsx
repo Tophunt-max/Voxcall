@@ -15,8 +15,6 @@ export function DialogHost() {
     return () => _setDialogHost(null);
   }, []);
 
-  const close = useCallback(() => setReq(null), []);
-
   const handleConfirm = useCallback(() => {
     const fn = req?.onConfirm;
     // Close first so a follow-up dialog opened inside onConfirm (e.g. the

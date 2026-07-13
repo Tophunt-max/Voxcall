@@ -36,9 +36,9 @@ export default function HostBecomeScreen() {
   const [audioRate, setAudioRate]       = useState("25");
   const [videoRate, setVideoRate]       = useState("40");
   const [experience, setExperience]     = useState("");
-  const [loading, setLoading]           = useState(false);
+  const [loading, _setLoading]          = useState(false);
 
-  const toggle = (list: string[], setList: Function, val: string) => {
+  const toggle = (list: string[], setList: (updater: (prev: string[]) => string[]) => void, val: string) => {
     setList((prev: string[]) => prev.includes(val) ? prev.filter((x: string) => x !== val) : [...prev, val]);
   };
 

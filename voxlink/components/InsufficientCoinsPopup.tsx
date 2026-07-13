@@ -15,7 +15,7 @@ import { API } from "@/services/api";
 import { formatLocalAmount } from "@/utils/currency";
 import { showErrorToast } from "@/components/Toast";
 
-const { width: SW } = Dimensions.get("window");
+const { width: _SW } = Dimensions.get("window");
 const ACCENT = "#A00EE7";
 const COIN_GOLD = "#E49F14";
 

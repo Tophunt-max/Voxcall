@@ -9,7 +9,6 @@ import {
   Image,
   Modal,
   Dimensions,
-  Platform,
   ActivityIndicator,
   RefreshControl,
   Linking,

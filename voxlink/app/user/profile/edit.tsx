@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform, Image } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { appendFileToFormData } from "@/utils/fileUpload";
 import { alertDialog } from "@/utils/dialog";

@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Image, Platform
+  Image
 } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";

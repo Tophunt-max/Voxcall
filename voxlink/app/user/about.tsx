@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Image, Platform, Linking
+  Image, Linking
 } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";

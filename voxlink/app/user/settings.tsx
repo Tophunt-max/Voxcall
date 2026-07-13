@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, Image,
-  ScrollView, Switch, Platform
+  ScrollView, Switch
 } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -18,7 +18,7 @@ export default function SettingsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { logout } = useAuth();
-  const { permissions, requestNotifications, openSettings, refresh } = usePermissions();
+  const { permissions, requestNotifications, openSettings } = usePermissions();
   const { language } = useLanguage();
   const currentLangLabel = LANGUAGES.find((l) => l.code === language)?.name ?? "English";
 

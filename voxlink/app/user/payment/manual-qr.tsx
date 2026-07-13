@@ -17,7 +17,7 @@ import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { API } from "@/services/api";
-import { showSuccessToast, showErrorToast } from "@/components/Toast";
+import { showErrorToast } from "@/components/Toast";
 import { formatLocalAmount } from "@/utils/currency";
 import * as Haptics from "expo-haptics";
 import { WEB_INPUT_RESET } from "@workspace/shared-ui/utils";
@@ -48,7 +48,7 @@ export default function ManualQRPaymentPage() {
   }>();
 
   const [state, setState] = useState<PageState>("loading");
-  const [qrCodes, setQrCodes] = useState<ManualQR[]>([]);
+  const [_qrCodes, setQrCodes] = useState<ManualQR[]>([]);
   const [currentQR, setCurrentQR] = useState<ManualQR | null>(null);
   const [rotateMin, setRotateMin] = useState(30);
   const [utr, setUtr] = useState("");

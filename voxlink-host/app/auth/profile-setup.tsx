@@ -28,11 +28,6 @@ const GENDERS: Array<{ label: string; value: string }> = [
   { label: "Other", value: "other" },
 ];
 
-const MONTHS = [
-  "January","February","March","April","May","June",
-  "July","August","September","October","November","December",
-];
-
 const today    = new Date();
 const MIN_DATE = new Date(today.getFullYear() - 70, 0, 1);
 const MAX_DATE = new Date(today.getFullYear() - 18, today.getMonth(), today.getDate());
@@ -159,7 +154,7 @@ export default function HostProfileSetupScreen() {
     if (!displayName.trim() || !dob.trim() || !gender || !phone.trim()) {
       showErrorToast(t.profileSetupScreen.missingFieldsMsg, t.profileSetupScreen.missingFields); return;
     }
-    if (!/^\d{10,15}$/.test(phone.replace(/[\s\-\+]/g, ""))) {
+    if (!/^\d{10,15}$/.test(phone.replace(/[\s\-+]/g, ""))) {
       showErrorToast(t.profileSetupScreen.invalidPhoneMsg, t.profileSetupScreen.invalidPhone); return;
     }
     setLoading(true);

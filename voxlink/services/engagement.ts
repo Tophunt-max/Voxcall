@@ -44,7 +44,6 @@ const MAX_PER_FLUSH = 50; // mirror server MAX_BATCH
 
 const queue: EngagementEvent[] = [];
 const seenImpressions = new Set<string>();
-let flushTimer: ReturnType<typeof setInterval> | null = null;
 let started = false;
 let flushing = false;
 
@@ -67,7 +66,7 @@ async function flush(): Promise<void> {
 function ensureStarted(): void {
   if (started) return;
   started = true;
-  flushTimer = setInterval(() => { void flush(); }, FLUSH_INTERVAL_MS);
+  setInterval(() => { void flush(); }, FLUSH_INTERVAL_MS);
   try {
     AppState.addEventListener('change', (state) => {
       if (state !== 'active') void flush();

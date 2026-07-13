@@ -22,7 +22,7 @@ interface TabIconProps {
   badge?: number;
 }
 
-function TabIcon({ source, color, focused, badge }: TabIconProps) {
+function TabIcon({ source, color, badge }: TabIconProps) {
   return (
     <View style={{ alignItems: "center", justifyContent: "center" }}>
       <Image

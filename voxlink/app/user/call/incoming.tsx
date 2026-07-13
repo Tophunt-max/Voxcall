@@ -12,7 +12,7 @@ import * as Haptics from "expo-haptics";
 import { useRingtone } from "@/hooks/useRingtone";
 
 export default function IncomingCallScreen() {
-  const colors = useColors();
+  const _colors = useColors();
   const insets = useSafeAreaInsets();
   const { activeCall, acceptCall, declineCall, endCall } = useCall();
   const { onEvent } = useSocket();

@@ -11,7 +11,7 @@ import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
 import { Platform } from "react-native";
 import { configurePushNotifications } from "@/services/NotificationService";
-import { onForegroundMessage, setupBackgroundMessageHandler } from "@/services/fcm";
+import { onForegroundMessage } from "@/services/fcm";
 import { logEngagement } from "@/services/engagement";
 import { setupGlobalErrorHandler } from "@/services/ErrorReporter";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
