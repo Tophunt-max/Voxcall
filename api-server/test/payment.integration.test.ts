@@ -23,10 +23,28 @@ beforeEach(() => {
       user_id TEXT NOT NULL,
       coins INTEGER NOT NULL DEFAULT 0,
       bonus_coins INTEGER NOT NULL DEFAULT 0,
+      amount REAL,
+      currency TEXT,
       status TEXT NOT NULL DEFAULT 'pending',
       payment_method TEXT,
       promo_code TEXT,
       updated_at INTEGER
+    );
+    CREATE TABLE app_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT,
+      updated_at INTEGER
+    );
+    CREATE TABLE app_errors (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT,
+      message TEXT,
+      stack TEXT,
+      context TEXT,
+      platform TEXT,
+      app_version TEXT,
+      extra TEXT,
+      created_at INTEGER DEFAULT (unixepoch())
     );
     CREATE TABLE promo_codes (
       id TEXT PRIMARY KEY,
@@ -124,5 +142,63 @@ describe('approveDeposit promo max_uses enforcement (FIX #2)', () => {
     expect(res.ok).toBe(true);
     expect(res.coins).toBe(100); // promo bonus (20) stripped — quota was full
     expect(await promoUsed('MAXED')).toBe(1); // not incremented beyond max
+  });
+});
+
+// ─── Amount / currency defense-in-depth (Task #6 hardening) ──────────────────
+// The gateway-reported captured amount is checked against the expected purchase
+// price. A mismatch ALWAYS raises an admin alert (app_errors); it only BLOCKS
+// the credit when the operator opts in via payment_enforce_amount = '1'.
+describe('approveDeposit amount/currency verification', () => {
+  async function alerts(): Promise<number> {
+    const row = await db.prepare("SELECT COUNT(*) AS n FROM app_errors WHERE context = 'payment_amount_mismatch'").first<{ n: number }>();
+    return Number(row?.n ?? 0);
+  }
+
+  beforeEach(() => {
+    db.applySchema(`
+      INSERT INTO coin_purchases (id, user_id, coins, bonus_coins, amount, currency, status)
+        VALUES ('pa', 'u1', 500, 0, 100, 'INR', 'pending');
+    `);
+  });
+
+  it('credits normally when the paid amount + currency match (within tolerance)', async () => {
+    const res = await approveDeposit(db as any, 'pa', 'razorpay', undefined, undefined, { amount: 100, currency: 'INR' });
+    expect(res.ok).toBe(true);
+    expect(res.coins).toBe(500);
+    expect(await userCoins('u1')).toBe(500);
+    expect(await alerts()).toBe(0);
+  });
+
+  it('log-only by default: underpayment raises an alert but STILL credits (never bounce a real payment pre-validation)', async () => {
+    const res = await approveDeposit(db as any, 'pa', 'razorpay', undefined, undefined, { amount: 1, currency: 'INR' });
+    expect(res.ok).toBe(true); // not blocked
+    expect(res.mismatch).toBeUndefined();
+    expect(await userCoins('u1')).toBe(500);
+    expect(await alerts()).toBe(1); // but flagged for the operator
+  });
+
+  it('blocks the credit on a mismatch once the operator enables enforcement', async () => {
+    db.applySchema("INSERT INTO app_settings (key, value) VALUES ('payment_enforce_amount', '1');");
+    const res = await approveDeposit(db as any, 'pa', 'razorpay', undefined, undefined, { amount: 1, currency: 'INR' });
+    expect(res.ok).toBe(false);
+    expect(res.mismatch).toBe(true);
+    expect(await userCoins('u1')).toBe(0); // NOT credited
+    // Purchase left pending so a corrected/real settlement can still complete.
+    const p = await db.prepare("SELECT status FROM coin_purchases WHERE id = 'pa'").first<{ status: string }>();
+    expect(p?.status).toBe('pending');
+    expect(await alerts()).toBe(1);
+  });
+
+  it('flags a currency swap', async () => {
+    const res = await approveDeposit(db as any, 'pa', 'stripe', undefined, undefined, { amount: 100, currency: 'USD' });
+    expect(res.ok).toBe(true); // log-only
+    expect(await alerts()).toBe(1);
+  });
+
+  it('tolerates a 1-unit rounding difference without alerting', async () => {
+    const res = await approveDeposit(db as any, 'pa', 'razorpay', undefined, undefined, { amount: 100.5, currency: 'INR' });
+    expect(res.ok).toBe(true);
+    expect(await alerts()).toBe(0);
   });
 });

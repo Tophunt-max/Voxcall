@@ -64,3 +64,46 @@ A plain `https` link does **not** carry the `?ref=` code through a fresh Play
 Store / App Store install. For that, add a deferred-deep-link provider (Branch,
 Firebase Dynamic Links, or Play Install Referrer) later. Until then, the raw code
 in the share message is the fallback (the friend types it once).
+
+
+## Finalization checklist (do this before the store release)
+
+Until the two placeholders below are replaced with real signing credentials, an
+`https://voxlink.app` tap falls back to the browser (web `?ref=` still works) —
+it will NOT open the installed native app. Nothing crashes; the feature is just
+inert. Complete these steps to activate universal / App Links:
+
+1. **Fill the credentials** (the only manual edits — everything else is wired):
+   - `apple-app-site-association` → replace both `TEAMID` tokens with your Apple
+     Developer **Team ID** (Apple Developer → Membership → Team ID).
+   - `assetlinks.json` → replace `REPLACE_WITH_USER_APP_RELEASE_SHA256` and
+     `REPLACE_WITH_HOST_APP_RELEASE_SHA256` with each app's **release** signing
+     SHA-256 (`eas credentials` → Android, or Play Console → App integrity → App
+     signing key certificate). Use the *App signing* key, not the upload key, if
+     Play App Signing is enabled.
+
+2. **Deploy** the user web app so the files are live on `voxlink.app`, then
+   **verify they are served correctly** (both must return HTTP 200 as JSON):
+   ```bash
+   # AASA — must be application/json and have NO file extension
+   curl -sI https://voxlink.app/.well-known/apple-app-site-association | grep -i content-type
+   curl -s  https://voxlink.app/.well-known/apple-app-site-association | head -c 200
+   # Android Digital Asset Links
+   curl -s  https://voxlink.app/.well-known/assetlinks.json | head -c 200
+   ```
+   Then confirm with the official validators:
+   - Apple CDN cache (what devices actually fetch):
+     `https://app-site-association.cdn-apple.com/a/v1/voxlink.app`
+   - Google statement list API:
+     `https://digitalassetlinks.googleapis.com/v1/statements:list?source.web.site=https://voxlink.app&relation=delegate_permission/common.handle_all_urls`
+
+3. **Device test** (release/TestFlight/internal-track build, NOT Expo Go — custom
+   dev clients don't carry the entitlements):
+   - iOS: tap `https://voxlink.app/?ref=TEST10` in Notes/Messages → app opens on
+     the signup screen with `TEST10` pre-filled. `/host?ref=` opens the Host app.
+   - Android: same, and `adb shell pm get-app-links com.voxlink.app` should show
+     `voxlink.app: verified`.
+
+4. **Re-verify after any signing-key change** (new keystore, key rotation, or a
+   second Play signing key) — the SHA-256 in `assetlinks.json` must list every
+   active release fingerprint or Android verification silently fails.

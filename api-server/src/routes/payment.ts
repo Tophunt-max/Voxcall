@@ -139,10 +139,61 @@ export function validatePromoInput(
 // time (the single chokepoint all real credits pass through), and if the quota
 // is already exhausted by the time this deposit is approved, we strip the promo
 // bonus from the credited total instead of granting coins beyond the limit.
-async function approveDeposit(db: D1Database, purchaseId: string, source: string, note?: string, env?: Env): Promise<{ ok: boolean; already?: boolean; notFound?: boolean; coins?: number }> {
-  const purchase = await db.prepare('SELECT id, user_id, coins, bonus_coins, promo_code, status FROM coin_purchases WHERE id = ?').bind(purchaseId).first<any>();
+async function approveDeposit(
+  db: D1Database,
+  purchaseId: string,
+  source: string,
+  note?: string,
+  env?: Env,
+  paid?: { amount: number; currency?: string },
+): Promise<{ ok: boolean; already?: boolean; notFound?: boolean; coins?: number; mismatch?: boolean }> {
+  const purchase = await db.prepare('SELECT id, user_id, coins, bonus_coins, promo_code, amount, currency, status FROM coin_purchases WHERE id = ?').bind(purchaseId).first<any>();
   if (!purchase) return { ok: false, notFound: true };
   if (purchase.status === 'success') return { ok: true, already: true };
+
+  // ── Amount / currency defense-in-depth ────────────────────────────────────
+  // The credited COIN amount is server-authoritative (taken from the plan at
+  // /initiate, never from the webhook), so a forged/inflated payload can't mint
+  // coins. This is the complementary check: confirm the gateway actually
+  // CAPTURED the price we expected, in the expected currency — catching
+  // underpayment / amount-tampering / currency swaps. Callers pass the paid
+  // amount already normalised to MAJOR units (rupees, not paise).
+  //
+  // Enforcement is OPT-IN via app_settings `payment_enforce_amount` = '1'. It
+  // defaults OFF (log-only) because each provider reports amounts in its own
+  // minor unit and the exact field must be validated against that provider's
+  // SANDBOX before a hard reject can be trusted not to bounce real payments.
+  // Either way, a mismatch ALWAYS raises an admin alert (app_errors →
+  // dashboard + health monitor + coin-reconciliation watchdog context).
+  if (paid && Number.isFinite(paid.amount)) {
+    const expected = Number(purchase.amount) || 0;
+    const paidMajor = Number(paid.amount) || 0;
+    const curExpected = String(purchase.currency || '').toUpperCase();
+    const curPaid = String(paid.currency || curExpected).toUpperCase();
+    // >1 major-unit tolerance absorbs gateway rounding; currency must match exactly.
+    const amountMismatch = expected > 0 && Math.abs(paidMajor - expected) > 1;
+    const currencyMismatch = !!curExpected && !!curPaid && curExpected !== curPaid;
+    if (amountMismatch || currencyMismatch) {
+      await db.prepare(
+        "INSERT INTO app_errors (user_id, message, context, platform, app_version) VALUES (?, ?, 'payment_amount_mismatch', 'webhook', ?)",
+      ).bind(
+        purchase.user_id,
+        `Payment amount/currency mismatch via ${source}: expected ${expected} ${curExpected}, gateway reported ${paidMajor} ${curPaid} (purchase ${purchaseId}).`,
+        source,
+      ).run().catch((e) => console.warn('[approveDeposit] mismatch alert write failed:', e));
+
+      let enforce = false;
+      try {
+        const r = await db.prepare("SELECT value FROM app_settings WHERE key = 'payment_enforce_amount'").first<{ value: string }>();
+        enforce = r?.value === '1';
+      } catch { /* setting table absent → stay in log-only mode */ }
+      if (enforce) {
+        console.error(`[approveDeposit] REJECTED ${purchaseId} on amount/currency mismatch (${source})`);
+        return { ok: false, mismatch: true };
+      }
+    }
+  }
+
   let totalCoins = (purchase.coins || 0) + (purchase.bonus_coins || 0);
   // Atomic CAS: only update if status is still not 'success' — prevents double-credit on concurrent webhook retries.
   // The winner of this CAS is the ONLY caller that proceeds to credit + promo consumption below.
@@ -251,7 +302,11 @@ payment.post('/webhook/razorpay', async (c) => {
       purchase = await c.env.DB.prepare("SELECT id, status FROM coin_purchases WHERE id = ? LIMIT 1").bind(notePurchaseId).first<any>();
     }
     if (!purchase) return c.json({ ok: true, message: 'No matching purchase found' });
-    const result = await approveDeposit(c.env.DB, purchase.id, 'razorpay', `Razorpay payment ${razorpayPaymentId} captured`, c.env);
+    // Razorpay reports `amount` in paise → convert to rupees (major units).
+    const paid = Number.isFinite(Number(paymentEntity.amount))
+      ? { amount: Number(paymentEntity.amount) / 100, currency: paymentEntity.currency }
+      : undefined;
+    const result = await approveDeposit(c.env.DB, purchase.id, 'razorpay', `Razorpay payment ${razorpayPaymentId} captured`, c.env, paid);
     return c.json({ ok: result.ok, already: result.already, coins: result.coins });
   } catch (e: any) {
     console.error('[Webhook] Razorpay handler error:', e);
@@ -289,7 +344,13 @@ payment.post('/webhook/stripe', async (c) => {
     if (purchaseId) purchase = await c.env.DB.prepare("SELECT id, status FROM coin_purchases WHERE id = ? LIMIT 1").bind(purchaseId).first<any>();
     if (!purchase) purchase = await c.env.DB.prepare("SELECT id, status FROM coin_purchases WHERE payment_ref = ? LIMIT 1").bind(stripeId).first<any>();
     if (!purchase) return c.json({ ok: true, message: 'No matching purchase found' });
-    const result = await approveDeposit(c.env.DB, purchase.id, 'stripe', `Stripe ${event} — ${stripeId}`, c.env);
+    // Stripe reports `amount_total` (checkout) / `amount` (payment_intent) in the
+    // currency's minor unit (cents) → convert to major units.
+    const stripeMinor = obj.amount_total ?? obj.amount;
+    const paid = Number.isFinite(Number(stripeMinor))
+      ? { amount: Number(stripeMinor) / 100, currency: obj.currency }
+      : undefined;
+    const result = await approveDeposit(c.env.DB, purchase.id, 'stripe', `Stripe ${event} — ${stripeId}`, c.env, paid);
     return c.json({ ok: result.ok, already: result.already, coins: result.coins });
   } catch (e: any) {
     console.error('[Webhook] Stripe handler error:', e);
@@ -352,7 +413,12 @@ payment.post('/webhook/phonepe', async (c) => {
     if (!purchase && merchantTxnId) purchase = await c.env.DB.prepare("SELECT id, status FROM coin_purchases WHERE payment_ref = ? OR utr_id = ? LIMIT 1").bind(merchantTxnId, merchantTxnId).first<any>();
     if (!purchase && utr) purchase = await c.env.DB.prepare("SELECT id, status FROM coin_purchases WHERE utr_id = ? LIMIT 1").bind(utr).first<any>();
     if (!purchase) return c.json({ ok: true, message: 'No matching purchase found' });
-    const result = await approveDeposit(c.env.DB, purchase.id, 'phonepe', `PhonePe payment ${utr || merchantTxnId} success`, c.env);
+    // PhonePe reports `amount` in paise (INR-only gateway) → convert to rupees.
+    const ppAmount = data.amount ?? payload.amount;
+    const paid = Number.isFinite(Number(ppAmount))
+      ? { amount: Number(ppAmount) / 100, currency: 'INR' }
+      : undefined;
+    const result = await approveDeposit(c.env.DB, purchase.id, 'phonepe', `PhonePe payment ${utr || merchantTxnId} success`, c.env, paid);
     return c.json({ ok: result.ok, already: result.already, coins: result.coins });
   } catch (e: any) {
     console.error('[Webhook] PhonePe handler error:', e);
@@ -399,7 +465,11 @@ payment.post('/webhook/paytm', async (c) => {
     if (orderId) purchase = await findPurchaseByOrderId(c.env.DB, orderId);
     if (!purchase && txnId) purchase = await c.env.DB.prepare("SELECT id, status FROM coin_purchases WHERE payment_ref = ? LIMIT 1").bind(txnId).first<any>();
     if (!purchase) return c.json({ ok: true, message: 'No matching purchase found' });
-    const result = await approveDeposit(c.env.DB, purchase.id, 'paytm', `Paytm TXN_SUCCESS — ${txnId}`, c.env);
+    // Paytm reports TXNAMOUNT already in rupees (major units, e.g. "100.00").
+    const paid = Number.isFinite(Number(payload.TXNAMOUNT))
+      ? { amount: Number(payload.TXNAMOUNT), currency: payload.CURRENCY || 'INR' }
+      : undefined;
+    const result = await approveDeposit(c.env.DB, purchase.id, 'paytm', `Paytm TXN_SUCCESS — ${txnId}`, c.env, paid);
     return c.json({ ok: result.ok, already: result.already, coins: result.coins });
   } catch (e: any) {
     console.error('[Webhook] Paytm handler error:', e);
