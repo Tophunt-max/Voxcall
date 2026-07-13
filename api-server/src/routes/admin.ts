@@ -1508,7 +1508,12 @@ admin.patch('/content-reports/:id', async (c) => {
         await d.prepare(
           'INSERT OR IGNORE INTO user_bans (id, user_id, user_name, user_email, type, reason, ban_type, banned_by, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
         ).bind(banId, target.id, target.name || '', target.email || '', report.reported_type || 'user', `Report: ${report.reason}`, 'temporary', u.email || 'Admin', expiresAt).run();
-        await d.prepare('UPDATE users SET status = ? WHERE id = ?').bind('suspended', target.id).run();
+        // NOTE: use status='banned' (NOT 'suspended') — the users.status CHECK
+        // constraint only permits active/banned/deleted, so writing 'suspended'
+        // throws and the suspension silently failed. The 7-day expiry lives on
+        // the user_bans row (expires_at) and is auto-lifted by the ban-expiry
+        // cron; the auth middleware treats status='banned' as blocked meanwhile.
+        await d.prepare('UPDATE users SET status = ? WHERE id = ?').bind('banned', target.id).run();
         await auditLog(d, u.sub, u.email || 'Admin', u.email || '', 'suspend', 'user', target.name || target.id, `Suspended 7 days via report: ${report.reason}`);
       } else if (action_taken === 'warned') {
         await auditLog(d, u.sub, u.email || 'Admin', u.email || '', 'warn', 'user', target.name || target.id, `Warning via report: ${report.reason}`);
@@ -1526,6 +1531,9 @@ admin.patch('/content-reports/:id', async (c) => {
       userId: report.reported_user_id, banned: true,
       reason: action_taken === 'suspended_7d' ? 'Your account is suspended for 7 days due to a policy violation.' : 'Your account has been banned for a policy violation.',
     }));
+    // Anti-fraud: reverse still-held referral rewards earned by referring this
+    // banned/suspended account (consistent with the other ban paths).
+    c.executionCtx?.waitUntil?.(clawbackReferrals(c.env, report.reported_user_id, 'report_action'));
   }
   await auditLog(d, u.sub, u.email || 'Admin', u.email || '', action_taken || status, 'content_report', id, `Report ${status}: ${action_taken || ''}`);
   return c.json({ success: true });

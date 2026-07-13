@@ -43,6 +43,7 @@ import {
 } from '../lib/levels';
 import { checkRateLimit } from '../lib/rateLimit';
 import { isWithinAvailability } from '../lib/availability';
+import { affordableCallSeconds } from '../lib/billing';
 import {
   computeMatchWeight,
   weightedSample,
@@ -555,23 +556,39 @@ match.post('/find', async (c) => {
     );
   }
 
-  // 4. Coin balance pre-check
-  const caller = await db
-    .prepare('SELECT coins FROM users WHERE id = ?')
-    .bind(sub)
-    .first<{ coins: number }>();
+  // Level config — loaded up front because it drives BOTH the affordability
+  // pre-check (level-1 random rate) and the host pick below.
+  const levelCfg = await getLevelConfig(db);
+
+  // 4. Affordability pre-check — mirror the call route exactly (coins + the
+  //    free-minute pool must cover >= 2 minutes) so a user is never matched
+  //    with a host they'll immediately fail to call. The cheapest possible
+  //    match is a level-1 host, so we price the check at the level-1 random
+  //    rate; a higher-level match is re-checked authoritatively at call start.
+  //    Prior bug: this used a stale hardcoded 5/8 coins (from an old economy),
+  //    far below the real 25/40 rates, so low-balance users matched then hit
+  //    INSUFFICIENT_COINS at /call/initiate.
+  let caller: { coins: number; free_call_minutes?: number } | null = null;
+  try {
+    caller = await db
+      .prepare('SELECT coins, COALESCE(free_call_minutes, 0) as free_call_minutes FROM users WHERE id = ?')
+      .bind(sub)
+      .first<{ coins: number; free_call_minutes: number }>();
+  } catch {
+    caller = await db.prepare('SELECT coins FROM users WHERE id = ?').bind(sub).first<{ coins: number }>();
+  }
   const callerCoins = Number(caller?.coins) || 0;
-  // We require at least the level-1 random rate × 2 minutes — enough to
-  // cover the fast-disconnect grace + a bit of buffer. Per-level rate may
-  // be higher; the actual call route will re-check at /call/start time.
-  const minNeeded = (callType === 'video' ? 8 : 5) * 2;
-  if (callerCoins < minNeeded) {
+  const callerFreeMinutes = Number((caller as any)?.free_call_minutes) || 0;
+  const level1Rate = callType === 'video'
+    ? getRandomVideoRate(1, levelCfg)
+    : getRandomAudioRate(1, levelCfg);
+  if (affordableCallSeconds(callerCoins, callerFreeMinutes, level1Rate) < 120) {
     return c.json(
       {
         matched: false,
         code: 'INSUFFICIENT_COINS',
         coins: callerCoins,
-        min_needed: minNeeded,
+        min_needed: level1Rate * 2,
       },
       402,
     );
@@ -636,8 +653,7 @@ match.post('/find', async (c) => {
   //    We ALSO want a count for the UI, so report the size of the un-filtered
   //    online pool separately. Every query is wrapped so a missing
   //    migration-0026 column never crashes the route.
-  const [levelCfg, weightingEnabled, matchWeightsRaw] = await Promise.all([
-    getLevelConfig(db),
+  const [weightingEnabled, matchWeightsRaw] = await Promise.all([
     readBoolSetting(db, 'match_weighting_enabled', true),
     (async () => {
       try {

@@ -426,6 +426,37 @@ async function reapStaleCalls(env: Env): Promise<void> {
 // WITHOUT re-charging (never double-charge): if a 'spend' ledger row already
 // exists for the session the money moved, so we trust that amount; otherwise we
 // close it as 0 and log for manual review.
+// Ban-expiry auto-lift — reactivate users whose TEMPORARY ban has elapsed.
+//
+// Temporary bans (7-day suspensions, admin temp bans) store an expiry on the
+// user_bans row but flip users.status='banned' for enforcement. The auth
+// middleware blocks purely on status, so without this sweep a "7-day" ban was
+// effectively permanent. This restores status='active' only for users who:
+//   • have a user_bans row that is now EXPIRED, AND
+//   • have NO currently-active ban (permanent or not-yet-expired).
+// Manual status-only bans (no user_bans row) and permanent bans are untouched.
+async function liftExpiredBans(env: Env): Promise<void> {
+  try {
+    await env.DB.prepare(
+      `UPDATE users SET status = 'active', updated_at = unixepoch()
+       WHERE status = 'banned'
+         AND EXISTS (
+           SELECT 1 FROM user_bans ub
+           WHERE ub.user_id = users.id
+             AND ub.expires_at IS NOT NULL AND ub.expires_at != ''
+             AND date(ub.expires_at) < date('now')
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM user_bans ub2
+           WHERE ub2.user_id = users.id
+             AND (ub2.expires_at IS NULL OR ub2.expires_at = '' OR date(ub2.expires_at) >= date('now'))
+         )`
+    ).run();
+  } catch (e) {
+    console.warn('[cron] liftExpiredBans failed (schema may lag):', e);
+  }
+}
+
 async function reconcileStuckEndedCalls(env: Env): Promise<void> {
   const db = env.DB;
   const now = Math.floor(Date.now() / 1000);
@@ -1201,6 +1232,9 @@ export default {
     // Release referral payout holds whose window has elapsed (held → released,
     // making the referrer reward withdrawable). Best-effort; idempotent.
     ctx.waitUntil(releaseExpiredReferralHolds(env).catch((e) => console.warn('[cron] releaseExpiredReferralHolds failed:', e)));
+    // Auto-lift temporary bans whose expiry has passed (so "7-day" bans are
+    // actually temporary). Best-effort; only touches expired temp bans.
+    ctx.waitUntil(liftExpiredBans(env));
     ctx.waitUntil(maybeRecalcLevelsDaily(env));
     ctx.waitUntil(maybeRefreshFxRates(env));
     ctx.waitUntil(maybeRunReengagement(env));
