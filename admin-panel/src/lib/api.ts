@@ -283,6 +283,7 @@ export const api = {
   cleanupStaleCalls: (maxHours?: number) => req<any>('POST', '/admin/calls/stale-cleanup', { max_hours: maxHours ?? 4 }),
   appConfig: () => req<any>('GET', '/admin/app-config'),
   updateAppConfig: (data: any) => req('PUT', '/admin/app-config', data),
+  freeMinutesStats: () => req<any>('GET', '/admin/free-minutes-stats'),
   recalculateHostLevels: () => req<any>('POST', '/admin/hosts/recalculate-levels', {}),
   getLevelConfig: () => req<any[]>('GET', '/admin/level-config'),
   updateLevelConfig: (data: any[]) => req<any>('PUT', '/admin/level-config', data),

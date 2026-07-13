@@ -21,6 +21,7 @@ import { useSocketEvent } from "@/context/SocketContext";
 import { SocketEvents } from "@/constants/events";
 import { HostCard } from "@/components/HostCard";
 import { InsufficientCoinsPopup } from "@/components/InsufficientCoinsPopup";
+import { showSuccessToast, showErrorToast } from "@/components/Toast";
 import { SkeletonHostCard, SkeletonHostCardCompact } from "@/components/SkeletonCard";
 import { Host } from "@/data/mockData";
 import { API, resolveMediaUrl } from "@/services/api";
@@ -376,14 +377,40 @@ export default function HomeScreen() {
   // First-call-free trial — surface the user's remaining free call minutes
   // (admin sets the pool via first_call_free_minutes; /api/user/me returns the
   // remaining balance). 0 / older backend simply hides the banner.
-  const { data: freeMinutes = 0 } = useQuery({
+  const { data: freeInfo = { balance: 0, dailyMinutes: 0, dailyAvailable: false } } = useQuery({
     queryKey: ['free-call-minutes'],
     queryFn: async () => {
-      try { const me: any = await API.me(); return Number(me?.free_call_minutes ?? 0) || 0; }
-      catch { return 0; }
+      try {
+        const me: any = await API.me();
+        return {
+          balance: Number(me?.free_call_minutes ?? 0) || 0,
+          dailyMinutes: Number(me?.daily_free_minutes ?? 0) || 0,
+          dailyAvailable: !!me?.daily_free_available,
+        };
+      } catch { return { balance: 0, dailyMinutes: 0, dailyAvailable: false }; }
     },
     staleTime: 60_000,
   });
+  const freeMinutes = freeInfo.balance;
+
+  // Claim the recurring daily free minutes (admin-configured for all users).
+  const [claimingFree, setClaimingFree] = useState(false);
+  const claimDailyFree = useCallback(async () => {
+    if (claimingFree) return;
+    setClaimingFree(true);
+    try {
+      const res = await API.claimDailyFreeMinutes();
+      showSuccessToast(
+        `🎁 ${res.granted} free ${res.granted === 1 ? "minute" : "minutes"} added! Pick a host and call free.`,
+        "Free minutes claimed",
+      );
+      queryClient.invalidateQueries({ queryKey: ['free-call-minutes'] });
+    } catch (e: any) {
+      showErrorToast(e?.message || "Couldn't claim right now. Try again later.");
+    } finally {
+      setClaimingFree(false);
+    }
+  }, [claimingFree, queryClient]);
 
   // Unread in-app notification count for the bell badge. Refetched live by
   // AppBridge on NOTIFICATION_NEW (same query key) + on screen focus below.
@@ -795,6 +822,33 @@ export default function HomeScreen() {
       >
         {/* Unified Auto/Manual Banner Slider */}
         <BannerSlider slides={slides} />
+
+        {/* Recurring daily free minutes — claimable once/day when the admin has
+            enabled it (daily_free_minutes_all). Strong daily-return + free-call
+            acquisition lever. */}
+        {freeInfo.dailyAvailable && freeInfo.dailyMinutes > 0 && (
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: "#E6F9EA", borderWidth: 1, borderColor: "#0BAF2333", borderRadius: 16, padding: 14, marginBottom: 8 }}>
+            <Text style={{ fontSize: 28 }}>🎁</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 14, fontFamily: "Poppins_700Bold", color: "#0B8F1C" }}>
+                {freeInfo.dailyMinutes} free call minutes today!
+              </Text>
+              <Text style={{ fontSize: 12, fontFamily: "Poppins_400Regular", color: "#3B9B4A", marginTop: 2 }}>
+                Claim your daily free minutes and call any host free.
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={claimDailyFree}
+              disabled={claimingFree}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel={`Claim ${freeInfo.dailyMinutes} free call minutes`}
+              style={{ backgroundColor: "#0BAF23", borderRadius: 12, paddingHorizontal: 16, paddingVertical: 9, opacity: claimingFree ? 0.6 : 1 }}
+            >
+              <Text style={{ color: "#fff", fontSize: 13, fontFamily: "Poppins_700Bold" }}>{claimingFree ? "…" : "Claim"}</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* First-call-free trial — admin-configured free minutes for new users */}
         {freeMinutes > 0 && (

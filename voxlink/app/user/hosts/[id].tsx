@@ -116,13 +116,14 @@ function HeroMediaCover({ media, onOpen, topOffset }: { media: { url: string; ty
 
 /* ─── Talk Now bottom sheet ─── */
 function TalkNowSheet({
-  visible, host, onClose, onAudio, onVideo,
+  visible, host, onClose, onAudio, onVideo, freeMinutes = 0,
 }: {
   visible: boolean;
   host: any;
   onClose: () => void;
   onAudio: () => void;
   onVideo: () => void;
+  freeMinutes?: number;
 }) {
   const audioRate = host?.audio_coins_per_minute ?? host?.coinsPerMinute ?? 25;
   const videoRate = host?.video_coins_per_minute ?? (audioRate + 5);
@@ -138,6 +139,12 @@ function TalkNowSheet({
         <View style={[sht.box, { backgroundColor: boxBg }]}>
           <View style={sht.handle} />
           <Text style={[sht.title, { color: txtColor, borderBottomColor: dividerColor }]}>{t.hostDetail.selectCallType}</Text>
+
+          {freeMinutes > 0 && (
+            <View style={sht.freeHint}>
+              <Text style={sht.freeHintText}>🎁 Your first {freeMinutes} {freeMinutes === 1 ? "minute" : "minutes"} are FREE</Text>
+            </View>
+          )}
 
           <TouchableOpacity onPress={onAudio} style={sht.row} activeOpacity={0.8}>
             <Image source={require("@/assets/icons/ic_call_gradient.png")} style={sht.ico} resizeMode="contain" />
@@ -260,6 +267,14 @@ export default function HostDetailScreen() {
   });
   const [isFavorite, setIsFavorite] = useState(false);
   useEffect(() => { setIsFavorite(serverIsFavorite); }, [serverIsFavorite]);
+
+  // Caller's free-trial minutes — used to show "first X min free" before a call.
+  // Shares the home screen's cache key so it stays in sync.
+  const { data: freeMinutes = 0 } = useQuery({
+    queryKey: ['free-call-minutes-balance'],
+    queryFn: async () => { try { const me: any = await API.me(); return Number(me?.free_call_minutes ?? 0) || 0; } catch { return 0; } },
+    staleTime: 60_000,
+  });
 
   const toggleFavorite = useCallback(async () => {
     if (!id) return;
@@ -757,6 +772,7 @@ export default function HostDetailScreen() {
       <TalkNowSheet
         visible={talkSheet}
         host={{ ...host, coinsPerMinute: audioRate }}
+        freeMinutes={freeMinutes}
         onClose={() => setTalkSheet(false)}
         onAudio={handleAudio}
         onVideo={handleVideo}
@@ -764,6 +780,7 @@ export default function HostDetailScreen() {
 
       <InsufficientCoinsPopup
         visible={coinPopup}
+        freeMinutes={freeMinutes}
         onClose={() => setCoinPopup(false)}
         requiredCoins={coinPopupRequired}
         currentCoins={user?.coins ?? 0}
@@ -1060,6 +1077,8 @@ const sht = StyleSheet.create({
   chip: { flexDirection: "row", alignItems: "center", backgroundColor: "#FFF8E7", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 16, gap: 4 },
   chipIco: { width: 16, height: 16 },
   chipTxt: { fontSize: 12, fontFamily: "Poppins_600SemiBold", color: ORANGE },
+  freeHint: { backgroundColor: "#E6F9EA", borderWidth: 1, borderColor: "#0BAF2333", borderRadius: 10, paddingVertical: 8, paddingHorizontal: 12, marginTop: 12, marginBottom: 2 },
+  freeHintText: { color: "#0B8F1C", fontSize: 13, fontFamily: "Poppins_700Bold", textAlign: "center" },
 });
 
 

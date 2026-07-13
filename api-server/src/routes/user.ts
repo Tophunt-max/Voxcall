@@ -11,6 +11,21 @@ import type { Env, JWTPayload } from '../types';
 const user = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
 user.use('*', authMiddleware);
 
+// Once-per-day cooldown for the recurring daily free-minutes reward. 20h (not
+// 24h) matches the VIP daily bonus so timezone drift never blocks a daily claim.
+const DAILY_FREE_COOLDOWN_SEC = 20 * 60 * 60;
+
+/** Read the admin-configured recurring daily free-minutes amount (0 = off). */
+async function readDailyFreeMinutes(db: D1Database): Promise<number> {
+  try {
+    const row = await db.prepare("SELECT value FROM app_settings WHERE key = 'daily_free_minutes_all'").first<{ value: string }>();
+    const n = parseInt(row?.value ?? '', 10);
+    return Number.isFinite(n) && n >= 0 ? n : 0;
+  } catch {
+    return 0;
+  }
+}
+
 // GET /api/user/me
 user.get('/me', async (c) => {
   const { sub } = c.get('user');
@@ -32,15 +47,69 @@ user.get('/me', async (c) => {
       .bind(sub).first<{ free_call_minutes: number }>();
     free_call_minutes = Number(row?.free_call_minutes ?? 0) || 0;
   } catch { /* column absent on legacy DB — treat as 0 */ }
+  // Recurring daily free-minutes reward (admin-configurable, all users).
+  // Expose the amount + whether it's claimable now so the home screen can show
+  // a "Claim X free minutes" button. Best-effort — 0/absent hides the feature.
+  let daily_free_minutes = 0;
+  let daily_free_available = false;
+  let next_daily_free_at: number | null = null;
+  try {
+    daily_free_minutes = await readDailyFreeMinutes(c.env.DB);
+    if (daily_free_minutes > 0) {
+      const row = await c.env.DB.prepare('SELECT free_minutes_daily_claim_at FROM users WHERE id = ?')
+        .bind(sub).first<{ free_minutes_daily_claim_at: number }>();
+      const last = Number(row?.free_minutes_daily_claim_at) || 0;
+      const now = Math.floor(Date.now() / 1000);
+      daily_free_available = now - last >= DAILY_FREE_COOLDOWN_SEC;
+      next_daily_free_at = last > 0 ? last + DAILY_FREE_COOLDOWN_SEC : now;
+    }
+  } catch { /* legacy DB — feature hidden */ }
   // VIP membership (best-effort; getVipStatus is safe on un-migrated DBs).
   const vip = await getVipStatus(c.env.DB, sub);
   return c.json({
     ...me,
     free_call_minutes,
+    daily_free_minutes,
+    daily_free_available,
+    next_daily_free_at,
     is_vip: vip.isVip,
     vip_tier: vip.tier,
     vip_expires_at: vip.expiresAt,
   });
+});
+
+// POST /api/user/claim-daily-free-minutes — claim the recurring daily free
+// minutes (all users). Atomic once-per-day claim, mirrors the VIP daily bonus.
+user.post('/claim-daily-free-minutes', async (c) => {
+  const { sub } = c.get('user');
+  const db = c.env.DB;
+  const now = Math.floor(Date.now() / 1000);
+
+  const rl = await checkRateLimit(db, `free-min-claim:${sub}`, 5, 60);
+  if (rl.limited) return c.json({ error: 'Too many requests. Please wait.', code: 'RATE_LIMITED' }, 429);
+
+  const minutes = await readDailyFreeMinutes(db);
+  if (minutes <= 0) return c.json({ error: 'Daily free minutes are not available right now.', code: 'DISABLED' }, 400);
+
+  const threshold = now - DAILY_FREE_COOLDOWN_SEC;
+  try {
+    // Atomic, race-safe: adds the minutes + stamps the claim only if the last
+    // claim is older than the cooldown. Two concurrent taps → only one wins.
+    const upd = await db.prepare(
+      `UPDATE users SET free_call_minutes = COALESCE(free_call_minutes, 0) + ?, free_minutes_daily_claim_at = ?, updated_at = unixepoch()
+       WHERE id = ? AND (free_minutes_daily_claim_at IS NULL OR free_minutes_daily_claim_at <= ?)`
+    ).bind(minutes, now, sub, threshold).run();
+    if (!upd.meta?.changes) {
+      const r = await db.prepare('SELECT free_minutes_daily_claim_at FROM users WHERE id = ?').bind(sub).first<{ free_minutes_daily_claim_at: number }>();
+      return c.json({ error: 'Daily free minutes already claimed. Come back later.', code: 'ALREADY_CLAIMED', next_at: (Number(r?.free_minutes_daily_claim_at) || now) + DAILY_FREE_COOLDOWN_SEC }, 429);
+    }
+  } catch (e) {
+    console.error('[claim-daily-free-minutes] failed:', e);
+    return c.json({ error: 'Could not claim right now. Please try again.' }, 500);
+  }
+
+  const after = await db.prepare('SELECT free_call_minutes FROM users WHERE id = ?').bind(sub).first<{ free_call_minutes: number }>();
+  return c.json({ success: true, granted: minutes, free_call_minutes: Number(after?.free_call_minutes) || 0, next_at: now + DAILY_FREE_COOLDOWN_SEC });
 });
 
 // PATCH /api/user/me

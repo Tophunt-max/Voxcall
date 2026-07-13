@@ -42,6 +42,7 @@ export default function CallingHistoryScreen() {
         type: c.type || "audio",
         duration: c.duration_seconds || 0,
         coinsSpent: c.coins_charged || 0,
+        freeMinutesUsed: c.free_minutes_used || 0,
         timestamp: (c.created_at || 0) * 1000,
         rating: c.rating,
       })));
@@ -120,6 +121,7 @@ export default function CallingHistoryScreen() {
                 participantId: item.hostId,
                 sessionId: item.id,
                 coinsSpent: String(item.coinsSpent),
+                freeMinutesUsed: String(item.freeMinutesUsed ?? 0),
                 autoEnded: "0",
               },
             })}
@@ -148,10 +150,15 @@ export default function CallingHistoryScreen() {
             </View>
 
             <View style={styles.cardRight}>
-              <View style={styles.coinRow}>
-                <Image source={require("@/assets/icons/ic_coin.png")} style={styles.coinIco} resizeMode="contain" />
-                <Text style={[styles.coinSpent, { color: colors.coinGoldText }]}>-{item.coinsSpent}</Text>
-              </View>
+              {item.coinsSpent > 0 ? (
+                <View style={styles.coinRow}>
+                  <Image source={require("@/assets/icons/ic_coin.png")} style={styles.coinIco} resizeMode="contain" />
+                  <Text style={[styles.coinSpent, { color: colors.coinGoldText }]}>-{item.coinsSpent}</Text>
+                </View>
+              ) : null}
+              {item.freeMinutesUsed > 0 ? (
+                <Text style={styles.freeTag}>🎁 {item.freeMinutesUsed} free</Text>
+              ) : null}
               {item.rating ? (
                 <Text style={styles.stars}>{"★".repeat(item.rating)}</Text>
               ) : null}
@@ -186,6 +193,7 @@ const styles = StyleSheet.create({
   coinRow: { flexDirection: "row", alignItems: "center", gap: 3 },
   coinIco: { width: 14, height: 14 },
   coinSpent: { fontSize: 13, fontFamily: "Poppins_600SemiBold" },
+  freeTag: { fontSize: 11, fontFamily: "Poppins_700Bold", color: "#0B8F1C", marginTop: 2 },
   stars: { fontSize: 12, color: "#FFA100" },
   emptyWrap: { alignItems: "center", paddingTop: 80, gap: 12 },
   emptyImg: { width: 180, height: 140 },

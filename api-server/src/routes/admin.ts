@@ -797,7 +797,7 @@ admin.patch('/settings', async (c) => {
     'host_streak_enabled', 'host_streak_schedule', 'host_streak_milestones',
     'level_reward_bonus_max_pct',
     'near_level_nudge_enabled', 'near_level_nudge_hour_ist', 'near_level_nudge_threshold',
-    'first_call_free_minutes',
+    'first_call_free_minutes', 'daily_free_minutes_all',
     'default_audio_rate', 'default_video_rate', 'default_video_fhd_rate',
     'billing_granularity_sec', 'low_balance_warn_seconds',
     // Agora-aware call economics (lib/callEconomics.ts). Cost inputs + margins.
@@ -2910,8 +2910,8 @@ admin.put('/app-config', async (c) => {
     // Level-up mystery-box bonus + near-level nudge push.
     'level_reward_bonus_max_pct',
     'near_level_nudge_enabled', 'near_level_nudge_hour_ist', 'near_level_nudge_threshold',
-    // First-call-free + calling-system observability.
-    'first_call_free_minutes',
+    // First-call-free + recurring daily free minutes + calling-system observability.
+    'first_call_free_minutes', 'daily_free_minutes_all',
     'billing_granularity_sec', 'low_balance_warn_seconds',
     // Calling system — admin-controlled default per-minute call rates (coins).
     'default_audio_rate', 'default_video_rate',
@@ -4238,6 +4238,39 @@ admin.patch('/referral-queue/:id', async (c) => {
     return c.json({ success: true });
   }
   return c.json({ error: "action must be 'approve' or 'reject'" }, 400);
+});
+
+// GET /api/admin/free-minutes-stats — free-trial economics + conversion.
+admin.get('/free-minutes-stats', async (c) => {
+  const d = db(c);
+  const safe = async <T,>(q: Promise<T>, fallback: T): Promise<T> => { try { return await q; } catch { return fallback; } };
+  try {
+    const [usage, outstanding, conversion, usersWithFreeCalls] = await Promise.all([
+      safe(d.prepare("SELECT COALESCE(SUM(free_minutes_used),0) AS used, COUNT(*) AS free_calls FROM call_sessions WHERE free_minutes_used > 0").first<any>(), { used: 0, free_calls: 0 }),
+      safe(d.prepare("SELECT COALESCE(SUM(free_call_minutes),0) AS outstanding, COUNT(*) AS holders FROM users WHERE free_call_minutes > 0").first<any>(), { outstanding: 0, holders: 0 }),
+      safe(d.prepare(
+        `SELECT COUNT(DISTINCT cs.caller_id) AS converted
+         FROM call_sessions cs
+         WHERE cs.free_minutes_used > 0
+           AND EXISTS (SELECT 1 FROM coin_purchases cp WHERE cp.user_id = cs.caller_id AND cp.status = 'success' AND cp.amount > 0)`
+      ).first<any>(), { converted: 0 }),
+      safe(d.prepare("SELECT COUNT(DISTINCT caller_id) AS n FROM call_sessions WHERE free_minutes_used > 0").first<any>(), { n: 0 }),
+    ]);
+    const triedFree = Number(usersWithFreeCalls?.n) || 0;
+    const converted = Number(conversion?.converted) || 0;
+    return c.json({
+      free_minutes_used_total: Number(usage?.used) || 0,
+      free_calls: Number(usage?.free_calls) || 0,
+      users_tried_free: triedFree,
+      free_minutes_outstanding: Number(outstanding?.outstanding) || 0,
+      users_with_free_balance: Number(outstanding?.holders) || 0,
+      converted_to_paid: converted,
+      conversion_pct: triedFree > 0 ? Math.round((converted / triedFree) * 1000) / 10 : 0,
+    });
+  } catch (e) {
+    console.warn('[admin/free-minutes-stats] failed:', e);
+    return c.json({ free_minutes_used_total: 0, free_calls: 0, users_tried_free: 0, free_minutes_outstanding: 0, users_with_free_balance: 0, converted_to_paid: 0, conversion_pct: 0 });
+  }
 });
 
 export default admin;

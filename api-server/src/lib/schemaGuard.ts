@@ -397,6 +397,9 @@ let firstCallSchemaReadyPromise: Promise<boolean> | null = null;
 
 const REQUIRED_FIRST_CALL_USER_COLS: ReadonlyArray<{ name: string; ddl: string }> = [
   { name: 'free_call_minutes', ddl: 'ALTER TABLE users ADD COLUMN free_call_minutes INTEGER DEFAULT 0' },
+  // Last time the user claimed the recurring daily free-minutes reward (unix
+  // seconds). Drives the once-per-day cooldown for daily_free_minutes_all.
+  { name: 'free_minutes_daily_claim_at', ddl: 'ALTER TABLE users ADD COLUMN free_minutes_daily_claim_at INTEGER DEFAULT 0' },
 ];
 
 const REQUIRED_FIRST_CALL_SESSION_COLS: ReadonlyArray<{ name: string; ddl: string }> = [
@@ -407,6 +410,9 @@ const FIRST_CALL_DEFAULT_SETTINGS: ReadonlyArray<{ key: string; value: string }>
   // Default 5-minute freebie. Set to '0' to kill-switch the feature without
   // removing the schema; admin can lift the cap to 10/30/etc. via Settings.
   { key: 'first_call_free_minutes', value: '5' },
+  // Recurring daily free-minutes reward available to EVERY user (like the VIP
+  // daily bonus, but for all). '0' = disabled (default) so it's opt-in.
+  { key: 'daily_free_minutes_all', value: '0' },
 ];
 
 export function ensureFirstCallFreeSchema(db: D1Database): Promise<boolean> {

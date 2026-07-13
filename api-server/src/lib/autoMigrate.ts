@@ -104,6 +104,9 @@ import m_0055 from '../../migrations/0055_host_level_index.sql';
 import m_0056 from '../../migrations/0056_chat_gifts.sql';
 import m_0057 from '../../migrations/0057_host_streak.sql';
 import m_0058 from '../../migrations/0058_health_checks.sql';
+import m_0059 from '../../migrations/0059_referral_integrity.sql';
+import m_0060 from '../../migrations/0060_vip_signup_bonus_claims.sql';
+import m_0061 from '../../migrations/0061_daily_free_minutes.sql';
 
 interface Migration {
   /**
@@ -174,6 +177,9 @@ const MIGRATIONS: ReadonlyArray<Migration> = [
   { name: '0056_chat_gifts.sql',                    sql: m_0056 },
   { name: '0057_host_streak.sql',                   sql: m_0057 },
   { name: '0058_health_checks.sql',                 sql: m_0058 },
+  { name: '0059_referral_integrity.sql',            sql: m_0059 },
+  { name: '0060_vip_signup_bonus_claims.sql',       sql: m_0060 },
+  { name: '0061_daily_free_minutes.sql',            sql: m_0061 },
 ];
 
 /**

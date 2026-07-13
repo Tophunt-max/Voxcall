@@ -5,7 +5,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   BarChart, Bar, AreaChart, Area, PieChart, Pie, Cell, Legend
 } from 'recharts';
-import { TrendingUp, Users, Clock, Coins, Activity, UserCheck } from 'lucide-react';
+import { TrendingUp, Users, Clock, Coins, Activity, UserCheck, Gift } from 'lucide-react';
 
 const COLORS = ['#7C3AED', '#06B6D4', '#10B981', '#F59E0B', '#EF4444'];
 
@@ -33,6 +33,7 @@ export default function Analytics() {
   const [streak, setStreak] = useState<any>(null);
   const [recon, setRecon] = useState<any>(null);
   const [margins, setMargins] = useState<any>(null);
+  const [freeMin, setFreeMin] = useState<any>(null);
   const [range, setRange] = useState<'7d' | '30d'>('7d');
   const [loading, setLoading] = useState(true);
 
@@ -45,12 +46,14 @@ export default function Analytics() {
       api.streakAnalytics().catch(() => null),
       api.coinReconciliation().catch(() => null),
       api.marginAnalytics(days).catch(() => null),
-    ]).then(([a, h, s, r, m]) => {
+      api.freeMinutesStats().catch(() => null),
+    ]).then(([a, h, s, r, m, fm]) => {
       setAnalytics(a);
       setHosts(Array.isArray(h) ? h.slice(0, 5) : []);
       setStreak(s);
       setRecon(r);
       setMargins(m);
+      setFreeMin(fm);
     }).finally(() => setLoading(false));
   }, [range]);
 
@@ -106,6 +109,25 @@ export default function Analytics() {
         <StatCard icon={Activity} label="Call/User Rate" value={estRetention} gradient="gradient-green" />
         <StatCard icon={Coins} label="Avg Revenue/User" value={avgRevenuePerUser > 0 ? `${avgRevenuePerUser} coins` : '—'} gradient="gradient-orange" />
       </div>
+
+      {/* ── Free-Trial Minutes: acquisition → conversion ────────────────── */}
+      {freeMin && (
+        <div className="bg-card border border-border rounded-2xl p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <Gift size={16} className="text-green-500" />
+            <h3 className="font-bold text-base">Free Trial Minutes</h3>
+          </div>
+          <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
+            <StatCard icon={Gift} label="Free Min Used" value={(freeMin.free_minutes_used_total || 0).toLocaleString()} gradient="gradient-green" />
+            <StatCard icon={Activity} label="Free Calls" value={(freeMin.free_calls || 0).toLocaleString()} gradient="gradient-blue" />
+            <StatCard icon={UserCheck} label="Tried → Paid" value={`${freeMin.converted_to_paid || 0} (${freeMin.conversion_pct || 0}%)`} gradient="gradient-purple" />
+            <StatCard icon={Coins} label="Outstanding (min)" value={(freeMin.free_minutes_outstanding || 0).toLocaleString()} gradient="gradient-orange" />
+          </div>
+          <p className="text-xs text-muted-foreground mt-3">
+            {freeMin.users_tried_free || 0} users tried free minutes; {freeMin.users_with_free_balance || 0} currently hold a free balance. Conversion = free-trial users who later recharged with real money.
+          </p>
+        </div>
+      )}
 
       {/* ── Call Economics & Margins (Agora-aware P&L) ─────────────────── */}
       {margins && (

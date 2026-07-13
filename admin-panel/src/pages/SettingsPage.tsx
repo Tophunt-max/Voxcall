@@ -104,6 +104,7 @@ const settingGroups: Array<{
       { key: 'billing_granularity_sec', label: 'Billing granularity — locked to per-minute', type: 'number', hint: 'PER-MINUTE round-up is enforced: any 1–60s call = 1 full minute (a 2-second call = 1 minute). Values below 60 are clamped server-side. Keep at 60.', step: '1' },
       { key: 'low_balance_warn_seconds', label: 'Low-balance warning threshold (seconds)', type: 'number', hint: 'Heartbeat pushes a call_low_balance event when the caller has fewer than this many seconds of coins left — drives the mid-call top-up modal.', step: '1' },
       { key: 'first_call_free_minutes', label: 'Free minutes for new signups', type: 'number', hint: 'Each newly registered user gets this many free call minutes. The host is paid in full; the platform absorbs the cost as customer acquisition. 0 disables.', step: '1' },
+      { key: 'daily_free_minutes_all', label: 'Daily free minutes (all users)', type: 'number', hint: 'Recurring reward every user can claim once per day (like the VIP daily bonus, for everyone). Drives daily return + free-call trials. 0 disables.', step: '1' },
     ],
   },
 ];
@@ -138,6 +139,7 @@ const DEFAULTS: Record<string, string> = {
   billing_granularity_sec: '60',
   low_balance_warn_seconds: '60',
   first_call_free_minutes: '5',
+  daily_free_minutes_all: '0',
 };
 
 const INR_PER_USD_FALLBACK = 83;

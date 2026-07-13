@@ -24,9 +24,11 @@ interface Props {
   onClose: () => void;
   requiredCoins: number;
   currentCoins: number;
+  /** Caller's free-trial minutes, if any — surfaced as an alternative to buying. */
+  freeMinutes?: number;
 }
 
-export function InsufficientCoinsPopup({ visible, onClose, requiredCoins, currentCoins }: Props) {
+export function InsufficientCoinsPopup({ visible, onClose, requiredCoins, currentCoins, freeMinutes = 0 }: Props) {
   const [plans, setPlans] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -72,6 +74,12 @@ export function InsufficientCoinsPopup({ visible, onClose, requiredCoins, curren
             {"\n"}You have <Text style={st.bold}>{currentCoins} coins</Text> — need{" "}
             <Text style={st.bold}>{shortage} more</Text>.
           </Text>
+
+          {freeMinutes > 0 && (
+            <View style={st.freeHint}>
+              <Text style={st.freeHintTxt}>🎁 You still have {freeMinutes} free {freeMinutes === 1 ? "minute" : "minutes"} — use them on a call!</Text>
+            </View>
+          )}
 
           {loading ? (
             <ActivityIndicator size="small" color={ACCENT} style={{ marginVertical: 20 }} />
@@ -185,6 +193,22 @@ const st = StyleSheet.create({
   bold: {
     fontFamily: "Poppins_700Bold",
     color: "#111329",
+  },
+  freeHint: {
+    backgroundColor: "#E6F9EA",
+    borderWidth: 1,
+    borderColor: "#0BAF2333",
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginBottom: 12,
+    width: "100%",
+  },
+  freeHintTxt: {
+    color: "#0B8F1C",
+    fontSize: 12,
+    fontFamily: "Poppins_600SemiBold",
+    textAlign: "center",
   },
   plansList: {
     width: "100%",

@@ -146,6 +146,9 @@ export const API = {
 
   me: () => apiRequest<any>('GET', '/api/user/me'),
   updateProfile: (data: any) => apiRequest('PATCH', '/api/user/me', data),
+  // Recurring daily free-minutes reward (admin-configured, all users).
+  claimDailyFreeMinutes: () =>
+    apiRequest<{ success: boolean; granted: number; free_call_minutes: number; next_at: number }>('POST', '/api/user/claim-daily-free-minutes'),
 
   // Daily streak — Layer 4 engagement reward. Caller renders a "Daily
   // Reward" card from getStreak(); when the user taps Claim, calls
