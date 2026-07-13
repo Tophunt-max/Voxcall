@@ -522,9 +522,21 @@ admin.patch('/withdrawals/:id', async (c) => {
   if ((status === 'paid' || status === 'completed') && (!admin_note || !String(admin_note).trim())) {
     return c.json({ error: 'admin_note (e.g. transaction reference) is required when marking withdrawal as paid/completed' }, 400);
   }
-  await d.prepare(
+  // Atomic guard: only transition a withdrawal that is NOT already in a
+  // terminal state. Without the meta.changes check below, re-patching an
+  // already-paid/completed withdrawal was a no-op UPDATE but STILL fired a
+  // second "Payout Sent" push + audit-log row to the host — a confusing
+  // duplicate notification. Now a no-op returns 409 so the action is idempotent.
+  const progressResult = await d.prepare(
     "UPDATE withdrawal_requests SET status = ?, admin_note = ?, updated_at = unixepoch() WHERE id = ? AND status NOT IN ('paid', 'completed', 'rejected')"
   ).bind(status, admin_note ?? null, id).run();
+  if (!progressResult.meta?.changes) {
+    // Either the id doesn't exist or the withdrawal is already in a terminal
+    // state. Disambiguate so the admin UI shows the right message.
+    const exists = await d.prepare('SELECT status FROM withdrawal_requests WHERE id = ?').bind(id).first<{ status: string }>();
+    if (!exists) return c.json({ error: 'Withdrawal request not found' }, 404);
+    return c.json({ error: `Withdrawal already ${exists.status}` }, 409);
+  }
   const pu = c.get('user');
   await auditLog(d, pu.sub, pu.email || 'Admin', pu.email || '', 'update', 'withdrawal', id, `Withdrawal ${id} marked ${status}${admin_note ? ` (ref: ${admin_note})` : ''}`, c.req.header('CF-Connecting-IP') ?? '');
   // Real-time: let the host know their payout progressed.
