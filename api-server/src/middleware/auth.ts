@@ -7,9 +7,31 @@ import type { Env, JWTPayload } from '../types';
 
 type Variables = { user: JWTPayload };
 
+// Admin panel session cookie (set by routes/adminAuth.ts). The __Host- prefix
+// variant is used in production (Secure), the plain name in local dev/HTTP.
+// Kept in sync with adminAuth.ts's setSessionCookie().
+function extractAdminSessionCookie(cookieHeader: string | null): string | null {
+  if (!cookieHeader) return null;
+  // Try both names so the fallback works in prod and dev regardless of
+  // ENVIRONMENT; a stray cookie of the wrong name simply fails verifyToken.
+  for (const name of ['__Host-admin_session', 'admin_session']) {
+    const m = cookieHeader.match(new RegExp(`(?:^|;\\s*)${name}=([^;]+)`));
+    if (m) return m[1];
+  }
+  return null;
+}
+
 export const authMiddleware = createMiddleware<{ Bindings: Env; Variables: Variables }>(
   async (c, next) => {
-    const token = extractBearer(c.req.header('Authorization') ?? null);
+    // Prefer the Authorization: Bearer header (mobile apps + legacy admin
+    // localStorage flow). Fall back to the admin panel's httpOnly session
+    // cookie so the cookie-based admin auth (routes/adminAuth.ts) works against
+    // the /api/admin/* routes too. The cookie is SameSite=Strict so this
+    // fallback is not CSRF-exposed, and adminMiddleware still enforces
+    // role === 'admin' downstream.
+    const token =
+      extractBearer(c.req.header('Authorization') ?? null) ??
+      extractAdminSessionCookie(c.req.header('Cookie') ?? null);
     if (!token) return c.json({ error: 'Unauthorized' }, 401);
     try {
       const payload = await verifyToken(token, c.env.JWT_SECRET);

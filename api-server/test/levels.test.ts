@@ -26,17 +26,20 @@ describe('evaluateLevel — highest rung whose call + rating thresholds are both
     expect(evaluateLevel({ review_count: 49, rating: 5 }, cfg)).toBe(1);
   });
 
-  it('promotes only when BOTH calls and rating clear the bar', () => {
-    expect(evaluateLevel({ review_count: 50, rating: 4.0 }, cfg)).toBe(2);
-    expect(evaluateLevel({ review_count: 200, rating: 4.3 }, cfg)).toBe(3);
-    expect(evaluateLevel({ review_count: 1000, rating: 4.8 }, cfg)).toBe(5);
+  it('promotes only when ALL metrics (calls, rating, minutes, earnings) clear the bar', () => {
+    // evaluateLevel gates on all four thresholds (min_calls + min_rating +
+    // min_minutes + min_earnings), exactly like the auto level-up engine in
+    // levelService.ts. Supply the minutes/earnings that match each target rung.
+    expect(evaluateLevel({ review_count: 50, rating: 4.0, total_minutes: 50, total_earnings: 500 }, cfg)).toBe(2);
+    expect(evaluateLevel({ review_count: 200, rating: 4.3, total_minutes: 300, total_earnings: 3000 }, cfg)).toBe(3);
+    expect(evaluateLevel({ review_count: 1000, rating: 4.8, total_minutes: 2500, total_earnings: 50000 }, cfg)).toBe(5);
   });
 
-  it('does not promote when rating is just below the threshold', () => {
-    // enough calls for level 5 but rating below 4.8 -> caps at level 4 (needs 4.6)
-    expect(evaluateLevel({ review_count: 1000, rating: 4.7 }, cfg)).toBe(4);
+  it('does not promote when a single metric is just below the threshold', () => {
+    // Minutes + earnings satisfy level 5, but rating 4.7 < 4.8 -> caps at level 4 (needs 4.6).
+    expect(evaluateLevel({ review_count: 1000, rating: 4.7, total_minutes: 2500, total_earnings: 50000 }, cfg)).toBe(4);
     // enough calls for level 2 but rating below 4.0 -> stays level 1
-    expect(evaluateLevel({ review_count: 60, rating: 3.9 }, cfg)).toBe(1);
+    expect(evaluateLevel({ review_count: 60, rating: 3.9, total_minutes: 50, total_earnings: 500 }, cfg)).toBe(1);
   });
 });
 
@@ -176,7 +179,7 @@ describe('variable-length ladder (admin add/remove rungs)', () => {
     expect(out.map((l) => l.level)).toEqual([1, 2, 3]);
     // A host with stats matching level 5 of the seed ladder should still
     // cap at 3 because that's the highest configured rung now.
-    expect(evaluateLevel({ review_count: 1000, rating: 4.8 }, out)).toBe(3);
+    expect(evaluateLevel({ review_count: 1000, rating: 4.8, total_minutes: 2500, total_earnings: 50000 }, out)).toBe(3);
   });
 
   it('accepts ladders longer than the seed (up to MAX_LEVELS)', () => {
@@ -191,8 +194,11 @@ describe('variable-length ladder (admin add/remove rungs)', () => {
     expect(out[5].name).toBe('Legend');
     expect(out[6].name).toBe('Mythic');
     expect(out[6].perks.earning_share).toBe(0.90);
-    // Highest rung whose thresholds are met should now reach level 7.
-    expect(evaluateLevel({ review_count: 5000, rating: 5 }, out)).toBe(7);
+    // Highest rung whose thresholds are met should now reach level 7. Rungs 6
+    // & 7 omit min_minutes/min_earnings, so normalizeLevelConfig backfills them
+    // from generateLevelDefault (level 7 → 7500 min / 150000 earnings); supply
+    // stats that clear those synthesized thresholds too.
+    expect(evaluateLevel({ review_count: 5000, rating: 5, total_minutes: 7500, total_earnings: 150000 }, out)).toBe(7);
   });
 
   it('renumbers `level` to position so admin-side reorders never produce gaps', () => {
