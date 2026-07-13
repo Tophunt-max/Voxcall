@@ -1227,6 +1227,81 @@ async function maybeRecomputeChurn(env: Env): Promise<void> {
   }
 }
 
+// ─── Coin reconciliation watchdog (money-integrity alarm) ───────────────────
+// Runs at most once/hour even though the cron fires every minute. Recomputes
+// the same invariant the admin dashboard shows live — total coins held across
+// all wallets vs the signed net of every coin_transactions row — and RAISES AN
+// ALERT when they diverge beyond tolerance.
+//
+// Why a cron and not just the dashboard: the dashboard only surfaces drift when
+// an operator happens to be looking. A money bug that silently mints or burns
+// coins at 3am needs to page someone. This watchdog persists a snapshot every
+// run (app_settings 'coin_recon_last') and writes an app_errors row on a bad
+// imbalance, which shows up in the admin error feed AND bumps the health
+// monitor's hourly error count.
+//
+// Invariant: every balance change writes a signed ledger row (grants +, spends
+// −), so SUM(users.coins) should equal SUM(coin_transactions.amount). Legacy
+// accounts whose welcome bonus predates the ledger fix carry a small expected
+// baseline drift, so we alert on a PERCENTAGE breach gated by an absolute-coin
+// floor — never on any non-zero drift. Both thresholds are admin-tunable via
+// app_settings ('coin_recon_alert_pct' default 2%, 'coin_recon_alert_min_abs'
+// default 1000 coins; interval via 'coin_recon_interval_sec' default 3600s).
+async function maybeReconcileCoins(env: Env): Promise<void> {
+  try {
+    const now = Math.floor(Date.now() / 1000);
+    const readSetting = async (key: string): Promise<string | null> =>
+      (await env.DB.prepare('SELECT value FROM app_settings WHERE key = ?').bind(key).first<{ value: string }>().catch(() => null))?.value ?? null;
+
+    const interval = Math.max(300, parseInt((await readSetting('coin_recon_interval_sec')) ?? '', 10) || 3600); // default 1h, floor 5m
+    const last = parseInt((await readSetting('coin_recon_last_run')) ?? '', 10) || 0;
+    if (now - last < interval) return;
+    // Claim the slot first so overlapping cron ticks don't double-run the scan.
+    await env.DB.prepare(
+      "INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('coin_recon_last_run', ?, unixepoch())"
+    ).bind(String(now)).run();
+
+    // Same canonical figures as GET /admin/coin-reconciliation.
+    const [walletRow, ledgerRow] = await Promise.all([
+      env.DB.prepare("SELECT COALESCE(SUM(coins),0) AS n FROM users WHERE COALESCE(status,'active') != 'deleted'").first<{ n: number }>().catch(() => ({ n: 0 })),
+      env.DB.prepare('SELECT COALESCE(SUM(amount),0) AS n FROM coin_transactions').first<{ n: number }>().catch(() => ({ n: 0 })),
+    ]);
+    const inWallets = Number(walletRow?.n ?? 0);
+    const ledgerNet = Number(ledgerRow?.n ?? 0);
+    const drift = inWallets - ledgerNet;
+    const denom = Math.max(Math.abs(ledgerNet), Math.abs(inWallets), 1);
+    const driftPct = (Math.abs(drift) / denom) * 100;
+
+    const badPct = parseFloat((await readSetting('coin_recon_alert_pct')) ?? '') || 2;
+    const minAbs = parseInt((await readSetting('coin_recon_alert_min_abs')) ?? '', 10) || 1000;
+    const tone: 'ok' | 'warn' | 'bad' =
+      (driftPct > badPct && Math.abs(drift) >= minAbs) ? 'bad'
+      : driftPct > badPct / 4 ? 'warn'
+      : 'ok';
+
+    const snapshot = { ts: now, in_wallets: inWallets, ledger_net: ledgerNet, drift, drift_pct: Math.round(driftPct * 1000) / 1000, tone };
+    await env.DB.prepare(
+      "INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('coin_recon_last', ?, unixepoch())"
+    ).bind(JSON.stringify(snapshot)).run().catch((e) => console.warn('[Cron] coin recon snapshot write failed:', e));
+
+    if (tone === 'bad') {
+      console.error(`[Cron] COIN RECONCILIATION ALERT — drift ${drift} (${driftPct.toFixed(2)}%) wallets=${inWallets} ledger=${ledgerNet}`);
+      // Persist an alert row so it surfaces in the admin error feed + bumps the
+      // health-monitor hourly error count even with no dashboard open.
+      await env.DB.prepare(
+        `INSERT INTO app_errors (user_id, message, context, platform, app_version)
+         VALUES (NULL, ?, 'coin_reconciliation', 'cron', 'watchdog')`
+      ).bind(
+        `Coin reconciliation imbalance: wallets=${inWallets} ledger_net=${ledgerNet} drift=${drift} (${driftPct.toFixed(2)}%). Investigate for a mint/burn bug.`
+      ).run().catch((e) => console.warn('[Cron] coin recon alert write failed:', e));
+    } else {
+      console.log(`[Cron] coin reconciliation ok — drift ${drift} (${driftPct.toFixed(2)}%)`);
+    }
+  } catch (e) {
+    console.error('[Cron] coin reconciliation error:', e);
+  }
+}
+
 export default {
   fetch: app.fetch,
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
@@ -1240,6 +1315,8 @@ export default {
     ctx.waitUntil(liftExpiredBans(env));
     ctx.waitUntil(maybeRecalcLevelsDaily(env));
     ctx.waitUntil(maybeRefreshFxRates(env));
+    // Money-integrity watchdog — hourly self-gated; alerts on coin drift.
+    ctx.waitUntil(maybeReconcileCoins(env).catch((e) => console.warn('[cron] maybeReconcileCoins failed:', e)));
     ctx.waitUntil(maybeRunReengagement(env));
     ctx.waitUntil(maybeSendStreakReminders(env));
     ctx.waitUntil(maybeSendVipReminders(env));

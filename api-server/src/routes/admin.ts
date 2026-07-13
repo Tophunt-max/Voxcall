@@ -3478,13 +3478,25 @@ admin.get('/coin-reconciliation', async (c) => {
     [] as Array<{ id: string; name: string; balance: number; ledger_sum: number; drift: number }>,
   );
 
+  // Last automated watchdog verdict (cron: maybeReconcileCoins). Lets the
+  // operator confirm the hourly money-integrity check is running and see its
+  // last tone/drift without waiting for the next tick.
+  const lastAuto = await safe(
+    async () => {
+      const row = await database.prepare("SELECT value FROM app_settings WHERE key = 'coin_recon_last'").first<{ value: string }>();
+      return row?.value ? JSON.parse(row.value) : null;
+    },
+    null as null | { ts: number; in_wallets: number; ledger_net: number; drift: number; drift_pct: number; tone: string },
+  );
+
   return c.json({
     circulation: { users: circ.users ?? 0, total_coins: circ.total_coins ?? 0 },
     ledger_net: net.net ?? 0,
     aggregate_drift: (circ.total_coins ?? 0) - (net.net ?? 0),
     ledger_by_type: byType ?? [],
     top_drifters: drifters ?? [],
-    note: 'Drift is expected for accounts whose welcome/legacy bonuses predate the ledger fix. Large unexplained drift on recent activity is the signal to investigate.',
+    last_auto_check: lastAuto,
+    note: 'Drift is expected for accounts whose welcome/legacy bonuses predate the ledger fix. Large unexplained drift on recent activity is the signal to investigate. The hourly watchdog (last_auto_check) raises an admin error-feed alert when drift breaches the configured tolerance.',
   });
 });
 
