@@ -201,13 +201,13 @@ export const API = {
     apiRequest<{ token: string; user: any }>('POST', '/api/auth/login', { email, password }, false),
   register: (name: string, email: string, password: string, gender?: string, phone?: string, referral_code?: string) =>
     apiRequest<{ token: string; user: any; signup_incomplete?: boolean }>('POST', '/api/auth/register', { name, email, password, gender, phone, referral_code }, false),
-  guestLogin: (device_id?: string | null) =>
-    apiRequest<{ token: string; user: any; is_returning?: boolean }>('POST', '/api/auth/guest-login', { device_id: device_id ?? null }, false),
-  quickLogin: (device_id?: string | null) =>
-    apiRequest<{ token: string; user: any; is_returning?: boolean }>('POST', '/api/auth/quick-login', { device_id: device_id ?? null }, false),
+  guestLogin: (device_id?: string | null, referral_code?: string | null) =>
+    apiRequest<{ token: string; user: any; is_returning?: boolean }>('POST', '/api/auth/guest-login', { device_id: device_id ?? null, referral_code: referral_code ?? null }, false),
+  quickLogin: (device_id?: string | null, referral_code?: string | null) =>
+    apiRequest<{ token: string; user: any; is_returning?: boolean }>('POST', '/api/auth/quick-login', { device_id: device_id ?? null, referral_code: referral_code ?? null }, false),
   // FIX: Added device_id param (was missing — causes Google/QuickLogin account merge to fail)
-  googleLogin: (email: string, name: string, google_id: string, avatar_url?: string | null, device_id?: string | null, id_token?: string | null) =>
-    apiRequest<{ token: string; user: any }>('POST', '/api/auth/google-login', { email, name, google_id, avatar_url, device_id: device_id ?? null, id_token: id_token ?? undefined }, false),
+  googleLogin: (email: string, name: string, google_id: string, avatar_url?: string | null, device_id?: string | null, id_token?: string | null, referral_code?: string | null) =>
+    apiRequest<{ token: string; user: any }>('POST', '/api/auth/google-login', { email, name, google_id, avatar_url, device_id: device_id ?? null, id_token: id_token ?? undefined, referral_code: referral_code ?? null }, false),
   forgotPassword: (email: string) =>
     apiRequest<{ success: boolean }>('POST', '/api/auth/forgot-password', { email }, false),
   resetPassword: (email: string, otp: string, new_password: string) =>

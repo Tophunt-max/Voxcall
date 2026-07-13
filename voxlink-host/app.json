@@ -16,6 +16,9 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.voxlink.host",
+      "associatedDomains": [
+        "applinks:voxlink.app"
+      ],
       "infoPlist": {
         "NSCameraUsageDescription": "VoxLink needs camera access for video calls so the other person can see you.",
         "NSMicrophoneUsageDescription": "VoxLink needs microphone access for audio and video calls.",
@@ -32,6 +35,23 @@
     "android": {
       "package": "com.voxlink.host",
       "googleServicesFile": "./google-services.json",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "voxlink.app",
+              "pathPrefix": "/host"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
+      ],
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO",

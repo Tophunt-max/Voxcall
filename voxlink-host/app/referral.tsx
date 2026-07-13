@@ -14,6 +14,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { API } from "@/services/api";
 import { showSuccessToast, showErrorToast } from "@/components/Toast";
+import { buildInviteUrl } from "@/utils/pendingReferral";
 
 export default function ReferralScreen() {
   const colors = useColors();
@@ -57,10 +58,14 @@ export default function ReferralScreen() {
   const handleShare = async () => {
     if (!referral?.code) return;
     try {
+      // Invite link carries the referral code (?ref=CODE) so a friend who opens
+      // it lands on the host signup with the code already applied — no manual
+      // typing. The raw code stays in the message as a fallback.
+      const inviteUrl = buildInviteUrl(referral.code);
       await crossShare({
         message: t.referralScreen.shareMessage.replace("{code}", referral.code),
         title: t.referralScreen.shareTitle,
-        url: "https://voxlink.app/host",
+        url: inviteUrl,
       });
     } catch {
       // user dismissed the share sheet or it's unavailable — non-fatal

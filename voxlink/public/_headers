@@ -1,0 +1,8 @@
+# The Apple App Site Association file has NO extension, so serve it as JSON
+# explicitly. (Cloudflare Pages serves existing static assets before applying
+# the SPA /* -> /index.html rewrite in _redirects, so these files are not
+# swallowed by the catch-all.)
+/.well-known/apple-app-site-association
+  Content-Type: application/json
+/.well-known/assetlinks.json
+  Content-Type: application/json

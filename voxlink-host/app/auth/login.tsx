@@ -12,6 +12,8 @@ import { useAuth } from "@/context/AuthContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { API } from "@/services/api";
 import { GoogleSignin, isErrorWithCode, statusCodes } from "@react-native-google-signin/google-signin";
+import { useReferralCapture } from "@/hooks/useReferralCapture";
+import { getPendingReferral, clearPendingReferral } from "@/utils/pendingReferral";
 
 const BG      = "#0A0B1E";
 const ACCENT  = "#A00EE7";
@@ -39,6 +41,7 @@ export default function HostLoginScreen() {
   const [showPw, setShowPw]     = useState(false);
   const [loading, setLoading]   = useState(false);
   const [gLoading, setGLoading] = useState(false);
+  const { referralCode, showInput, setShowInput, onChange } = useReferralCapture();
 
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
@@ -108,7 +111,11 @@ export default function HostLoginScreen() {
 
   const handleGoogleProfileData = async (id: string, name: string, email: string, photo?: string | null, idToken?: string | null) => {
     try {
-      const data = await API.googleLogin(email, name, id, photo ?? null, undefined, idToken);
+      // A first-time Google sign-in creates the account, so attribute any
+      // pending referral (survives the web OAuth redirect via storage).
+      const ref = (await getPendingReferral()) || referralCode || null;
+      const data = await API.googleLogin(email, name, id, photo ?? null, undefined, idToken, ref);
+      await clearPendingReferral();
       const u = data.user;
       await loginWithToken(data.token, {
         id: u.id, name: u.name, email: u.email,
@@ -252,6 +259,20 @@ export default function HostLoginScreen() {
             <Text style={s.googleTxt}>{gLoading ? t.loginScreen.signingIn : t.loginScreen.continueGoogle}</Text>
           </TouchableOpacity>
 
+          {showInput ? (
+            <AppInput
+              icon={<Image source={require("@/assets/icons/ic_bonus.png")} style={s.inputIcon} tintColor="#9B9FB8" resizeMode="contain" />}
+              value={referralCode}
+              onChangeText={onChange}
+              placeholder="Referral code (optional)"
+              autoCapitalize="characters"
+            />
+          ) : (
+            <TouchableOpacity onPress={() => setShowInput(true)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+              <Text style={s.referralToggle}>Have a referral code?</Text>
+            </TouchableOpacity>
+          )}
+
           <View style={s.registerRow}>
             <Text style={s.registerTxt}>{t.loginScreen.newPrompt}</Text>
             <TouchableOpacity onPress={() => router.push("/auth/register")} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
@@ -330,6 +351,7 @@ const s = StyleSheet.create({
   googleIcon: { width: 22, height: 22 },
   googleTxt: { fontSize: 14, fontFamily: "Poppins_600SemiBold", color: "#2E3050" },
 
+  referralToggle: { fontSize: 13, fontFamily: "Poppins_600SemiBold", color: ACCENT, textAlign: "center", marginTop: 2 },
   registerRow: { flexDirection: "row", justifyContent: "center", alignItems: "center", marginTop: 4 },
   registerTxt: { fontSize: 14, fontFamily: "Poppins_400Regular", color: "#84889F" },
   registerLink: { fontSize: 14, fontFamily: "Poppins_700Bold", color: ACCENT },

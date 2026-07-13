@@ -1,0 +1,23 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["TEAMID.com.voxlink.app"],
+        "components": [
+          { "/": "/host", "exclude": true, "comment": "host paths belong to the Host app" },
+          { "/": "/host/*", "exclude": true },
+          { "/": "*", "?": { "ref": "*" }, "comment": "referral invite links" },
+          { "/": "/" }
+        ]
+      },
+      {
+        "appIDs": ["TEAMID.com.voxlink.host"],
+        "components": [
+          { "/": "/host", "?": { "ref": "*" }, "comment": "host referral invite links" },
+          { "/": "/host" },
+          { "/": "/host/*" }
+        ]
+      }
+    ]
+  }
+}

@@ -13,6 +13,8 @@ import { useLanguage } from "@/context/LanguageContext";
 import { PrimaryButton } from "@/components/PrimaryButton";
 import { API } from "@/services/api";
 import { GoogleSignin, isErrorWithCode, statusCodes } from "@react-native-google-signin/google-signin";
+import { useReferralCapture } from "@/hooks/useReferralCapture";
+import { getPendingReferral, clearPendingReferral } from "@/utils/pendingReferral";
 
 const BG     = "#0A0B1E";
 const ACCENT = "#A00EE7";
@@ -42,6 +44,7 @@ export default function HostRegisterScreen() {
   const [showPw, setShowPw]     = useState(false);
   const [loading, setLoading]   = useState(false);
   const [gLoading, setGLoading] = useState(false);
+  const { referralCode, showInput, setShowInput, onChange } = useReferralCapture();
 
   useEffect(() => {
     if (isLoggedIn && user)
@@ -57,7 +60,9 @@ export default function HostRegisterScreen() {
     }
     setLoading(true);
     try {
-      const data = await API.register(name.trim(), email.trim(), password);
+      const ref = (await getPendingReferral()) || referralCode || undefined;
+      const data = await API.register(name.trim(), email.trim(), password, undefined, undefined, ref || undefined);
+      await clearPendingReferral();
       await loginWithToken(data.token, {
         id: data.user.id, name: data.user.name, email: data.user.email,
         coins: data.user.coins ?? 0, role: data.user.role ?? "user",
@@ -114,7 +119,9 @@ export default function HostRegisterScreen() {
 
   const handleGoogleProfileData = async (id: string, name: string, email: string, photo?: string | null, idToken?: string | null) => {
     try {
-      const data = await API.googleLogin(email, name, id, photo ?? null, undefined, idToken);
+      const ref = (await getPendingReferral()) || referralCode || null;
+      const data = await API.googleLogin(email, name, id, photo ?? null, undefined, idToken, ref);
+      await clearPendingReferral();
       const u = data.user;
       await loginWithToken(data.token, {
         id: u.id, name: u.name, email: u.email,
@@ -218,6 +225,20 @@ export default function HostRegisterScreen() {
           secureTextEntry={!showPw}
         />
 
+        {showInput ? (
+          <AppInput
+            icon={<Image source={require("@/assets/icons/ic_bonus.png")} style={s.inputIcon} tintColor="#84889F" resizeMode="contain" />}
+            value={referralCode}
+            onChangeText={onChange}
+            placeholder="Referral code (optional)"
+            autoCapitalize="characters"
+          />
+        ) : (
+          <TouchableOpacity onPress={() => setShowInput(true)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+            <Text style={s.referralToggle}>Have a referral code?</Text>
+          </TouchableOpacity>
+        )}
+
         <PrimaryButton title={t.registerScreen.continueBtn} onPress={handleNext} loading={loading} />
 
         <View style={s.divRow}>
@@ -279,6 +300,7 @@ const s = StyleSheet.create({
   },
   googleIcon: { width: 22, height: 22 },
   googleTxt: { fontSize: 15, fontFamily: "Poppins_600SemiBold", color: DARK },
+  referralToggle: { fontSize: 13, fontFamily: "Poppins_600SemiBold", color: ACCENT, textAlign: "center" },
   loginRow: { flexDirection: "row", justifyContent: "center", alignItems: "center", marginTop: 2 },
   loginTxt: { fontSize: 14, fontFamily: "Poppins_400Regular", color: "#84889F" },
   loginLink: { fontSize: 14, fontFamily: "Poppins_700Bold", color: ACCENT },
