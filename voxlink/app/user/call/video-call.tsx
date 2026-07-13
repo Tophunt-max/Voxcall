@@ -18,6 +18,9 @@ import { useSocket } from "@/context/SocketContext";
 import { SocketEvents } from "@/constants/events";
 import { API } from "@/services/api";
 import { RtcVideoView } from "@/components/RtcVideoView";
+import { showErrorToast } from "@/components/Toast";
+import { GiftPickerSheet, type GiftCatalogItem } from "@/components/GiftPickerSheet";
+import { GiftAnimation, type GiftAnim } from "@/components/GiftAnimation";
 
 // FIX (UI: draggable self-preview): pre-compute screen dims so the drag
 // handler can clamp to viewport edges. Falls back to reasonable defaults
@@ -187,9 +190,43 @@ type PermStep = "camera" | "microphone" | "done";
 export default function VideoCallScreen() {
   const insets = useSafeAreaInsets();
   const { activeCall, endCall, toggleMute, toggleCamera, toggleSpeaker, markCallActive } = useCall();
-  const { user } = useAuth();
+  const { user, updateCoins } = useAuth();
   const { t } = useLanguage();
   const [status, setStatus] = useState<"connecting" | "ringing" | "active">("connecting");
+
+  // ─── In-call gifts ─────────────────────────────────────────────────────────
+  const [giftOpen, setGiftOpen] = useState(false);
+  const [giftCatalog, setGiftCatalog] = useState<GiftCatalogItem[]>([]);
+  const [sendingGiftId, setSendingGiftId] = useState<string | null>(null);
+  const [giftAnim, setGiftAnim] = useState<GiftAnim | null>(null);
+  const giftKeyRef = useRef(0);
+
+  const openGifts = useCallback(async () => {
+    setGiftOpen(true);
+    if (giftCatalog.length === 0) {
+      try { const list = await API.getGifts(); setGiftCatalog(Array.isArray(list) ? list : []); } catch { /* keep empty */ }
+    }
+  }, [giftCatalog.length]);
+
+  const handleSendGift = useCallback(async (g: GiftCatalogItem) => {
+    const hostId = activeCall?.participant?.id;
+    if (!hostId || sendingGiftId) return;
+    if ((user?.coins ?? 0) < (g.price_coins ?? 0)) { showErrorToast(`Not enough coins for ${g.name}.`); return; }
+    setSendingGiftId(g.id);
+    try { Haptics?.impactAsync?.(Haptics?.ImpactFeedbackStyle?.Medium); } catch { /* haptics best-effort */ }
+    try {
+      const res = await API.sendCallGift(hostId, g.id, activeCall?.sessionId);
+      if (typeof res?.new_balance === "number") updateCoins(res.new_balance);
+      setGiftOpen(false);
+      giftKeyRef.current += 1;
+      setGiftAnim({ icon: g.icon, name: g.name, key: giftKeyRef.current });
+    } catch (e: any) {
+      const msg = String(e?.message || "");
+      showErrorToast(/coin/i.test(msg) ? msg : "Couldn't send gift. Please try again.");
+    } finally {
+      setSendingGiftId(null);
+    }
+  }, [activeCall?.participant?.id, activeCall?.sessionId, sendingGiftId, user?.coins, updateCoins]);
 
   const [permStep, setPermStep] = useState<PermStep | null>(null);
   const [webrtcReady, setWebrtcReady] = useState(false);
@@ -975,6 +1012,11 @@ export default function VideoCallScreen() {
         {/* FIX (UI: Chamet-style controls): individual floating frosted circles
             instead of one pill — reads more like a live video-chat app. End
             button stays red + larger (dominant action). */}
+        {status === "active" && (
+          <TouchableOpacity onPress={openGifts} style={styles.giftFab} activeOpacity={0.85} accessibilityRole="button" accessibilityLabel="Send a gift">
+            <Text style={styles.giftFabEmoji}>🎁</Text>
+          </TouchableOpacity>
+        )}
         <View style={uiS.controlRow} pointerEvents="box-none">
           <View style={uiS.ctrlItem}>
             <TouchableOpacity
@@ -1063,12 +1105,24 @@ export default function VideoCallScreen() {
           </View>
         </View>
       </Modal>
+
+      <GiftPickerSheet
+        visible={giftOpen}
+        onClose={() => setGiftOpen(false)}
+        gifts={giftCatalog}
+        coins={user?.coins ?? 0}
+        sendingId={sendingGiftId}
+        onPick={handleSendGift}
+      />
+      <GiftAnimation gift={giftAnim} onDone={() => setGiftAnim(null)} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: "#0a0a14" },
+  giftFab: { alignSelf: "center", alignItems: "center", justifyContent: "center", width: 50, height: 50, borderRadius: 25, backgroundColor: "rgba(255,255,255,0.16)", borderWidth: 1, borderColor: "rgba(255,255,255,0.28)", marginBottom: 12 },
+  giftFabEmoji: { fontSize: 25, lineHeight: 29 },
 
   remoteArea: {
     ...StyleSheet.absoluteFillObject,

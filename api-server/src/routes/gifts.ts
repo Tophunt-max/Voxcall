@@ -46,9 +46,9 @@ gifts.get('/', async (c) => {
 gifts.post('/send', async (c) => {
   const { sub, name: senderName } = c.get('user');
   const db = c.env.DB;
-  const body = await c.req.json().catch(() => ({})) as { room_id?: string; gift_id?: string };
-  if (!body.room_id || !body.gift_id) {
-    return c.json({ error: 'room_id and gift_id are required' }, 400);
+  const body = await c.req.json().catch(() => ({})) as { room_id?: string; host_id?: string; session_id?: string; gift_id?: string };
+  if (!body.gift_id || (!body.room_id && !body.host_id)) {
+    return c.json({ error: 'gift_id and (room_id or host_id) are required' }, 400);
   }
 
   // Anti-spam: cap gift sends per user (fail-open if rate_limits is missing).
@@ -57,16 +57,38 @@ gifts.post('/send', async (c) => {
 
   // The sender must be the room's regular user; the recipient is the host.
   // (Gifts only flow user → host — a host can't gift coins to a user.)
-  const room = await db.prepare(
-    `SELECT cr.id, cr.user_id, cr.host_id, h.user_id AS host_user_id
-     FROM chat_rooms cr
-     JOIN hosts h ON h.id = cr.host_id
-     WHERE cr.id = ?`
-  ).bind(body.room_id).first<any>();
+  let room: any;
+  if (body.room_id) {
+    room = await db.prepare(
+      `SELECT cr.id, cr.user_id, cr.host_id, h.user_id AS host_user_id
+       FROM chat_rooms cr
+       JOIN hosts h ON h.id = cr.host_id
+       WHERE cr.id = ?`
+    ).bind(body.room_id).first<any>();
+  } else {
+    // Gifting during a call: the client has the host id but may not have a chat
+    // room yet. Resolve-or-create the (caller, host) room. The active call is
+    // itself the unlock, so we intentionally bypass the chat_unlock_policy gate
+    // (which normally requires a prior call before chatting).
+    room = await db.prepare(
+      `SELECT cr.id, cr.user_id, cr.host_id, h.user_id AS host_user_id
+       FROM chat_rooms cr
+       JOIN hosts h ON h.id = cr.host_id
+       WHERE cr.user_id = ? AND cr.host_id = ?`
+    ).bind(sub, body.host_id).first<any>();
+    if (!room) {
+      const hostRow = await db.prepare('SELECT id, user_id FROM hosts WHERE id = ?').bind(body.host_id).first<{ id: string; user_id: string }>();
+      if (!hostRow) return c.json({ error: 'Host not found' }, 404);
+      const newRoomId = crypto.randomUUID();
+      await db.prepare('INSERT INTO chat_rooms (id, user_id, host_id) VALUES (?, ?, ?)').bind(newRoomId, sub, body.host_id).run();
+      room = { id: newRoomId, user_id: sub, host_id: body.host_id, host_user_id: hostRow.user_id };
+    }
+  }
   if (!room) return c.json({ error: 'Room not found' }, 404);
   if (room.user_id !== sub) {
     return c.json({ error: 'Only the sender in this chat can send gifts' }, 403);
   }
+  const roomId: string = room.id;
   const hostUserId: string = room.host_user_id;
   if (!hostUserId || hostUserId === sub) {
     return c.json({ error: 'Invalid gift recipient' }, 400);
@@ -90,15 +112,27 @@ gifts.post('/send', async (c) => {
   const now = Math.floor(Date.now() / 1000);
   const preview = `🎁 ${gift.name}`;
 
-  // Persist the gift message + bump the room preview. Ledger + earnings are
-  // non-fatal (coins already moved) — logged but never fail the gift.
+  // CRITICAL: persist the gift MESSAGE row + room preview. This is what makes
+  // the gift render in both chats (live + on reload). Kept as its own awaited
+  // step (NOT bundled with the best-effort ledger below) so an accounting
+  // hiccup can never silently drop the gift message. The gift columns are
+  // auto-healed by ensureGiftSchema on every request, so this INSERT won't fail
+  // on a lagging-migration DB — the original "gift not showing" cause.
+  try {
+    await db.batch([
+      db.prepare(
+        `INSERT INTO messages (id, room_id, sender_id, content, msg_kind, gift_icon, gift_name, gift_amount)
+         VALUES (?, ?, ?, ?, 'gift', ?, ?, ?)`
+      ).bind(msgId, roomId, sub, preview, gift.icon, gift.name, amount),
+      db.prepare('UPDATE chat_rooms SET last_message = ?, last_message_at = ? WHERE id = ?')
+        .bind(preview, now, roomId),
+    ]);
+  } catch (e) {
+    console.error('[gifts/send] CRITICAL: gift message persist failed (coins already moved):', e);
+  }
+
+  // Ledger + host earnings — non-fatal accounting (coins already moved).
   await db.batch([
-    db.prepare(
-      `INSERT INTO messages (id, room_id, sender_id, content, msg_kind, gift_icon, gift_name, gift_amount)
-       VALUES (?, ?, ?, ?, 'gift', ?, ?, ?)`
-    ).bind(msgId, body.room_id, sub, preview, gift.icon, gift.name, amount),
-    db.prepare('UPDATE chat_rooms SET last_message = ?, last_message_at = ? WHERE id = ?')
-      .bind(preview, now, body.room_id),
     db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
       .bind(crypto.randomUUID(), sub, 'spend', -amount, `Gift sent: ${gift.name}`, msgId),
     db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
@@ -124,7 +158,7 @@ gifts.post('/send', async (c) => {
       method: 'POST',
       body: JSON.stringify({
         type: 'chat_message',
-        room_id: body.room_id,
+        room_id: roomId,
         id: msgId,
         sender_id: sub,
         sender_name: senderName || 'User',
@@ -136,6 +170,23 @@ gifts.post('/send', async (c) => {
         created_at: now,
       }),
     });
+    // In-call gift → also fire a lightweight `call_gift` event so the host's
+    // CALL screen (not the chat) plays the gift animation in real time.
+    if (body.session_id) {
+      await stub.fetch('https://dummy/notify', {
+        method: 'POST',
+        body: JSON.stringify({
+          type: 'call_gift',
+          session_id: body.session_id,
+          room_id: roomId,
+          sender_name: senderName || 'User',
+          gift_icon: gift.icon,
+          gift_name: gift.name,
+          gift_amount: amount,
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+    }
     const recipient = await db.prepare('SELECT fcm_token FROM users WHERE id = ?').bind(hostUserId).first<{ fcm_token: string }>();
     if (recipient?.fcm_token) {
       await sendFCMPush(
@@ -143,7 +194,7 @@ gifts.post('/send', async (c) => {
         recipient.fcm_token,
         `🎁 ${senderName || 'Someone'} sent you a gift!`,
         `You received a ${gift.name} ${gift.icon} — someone's thinking of you! 💛`,
-        { type: 'chat_message', room_id: body.room_id },
+        { type: 'chat_message', room_id: roomId },
         db,
       );
     }
@@ -166,7 +217,7 @@ gifts.post('/send', async (c) => {
   return c.json({
     success: true,
     message_id: msgId,
-    room_id: body.room_id,
+    room_id: roomId,
     gift: { id: gift.id, name: gift.name, icon: gift.icon, amount },
     created_at: now,
     new_balance: Number(after?.coins) || 0,

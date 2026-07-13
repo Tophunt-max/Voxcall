@@ -37,6 +37,8 @@ export const SocketEvents = {
   CALL_LOW_COINS: "call:low_coins",
   PEER_TRACKS_READY: "webrtc:peer_tracks_ready",
   PEER_MEDIA_STATE: "webrtc:peer_media_state",
+  // A gift sent DURING a call — drives the in-call gift animation overlay.
+  CALL_GIFT: "call:gift",
 
   // Chat Events
   MESSAGE_SEND: "message:send",

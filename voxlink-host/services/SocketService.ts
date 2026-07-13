@@ -281,6 +281,17 @@ class SocketService {
           timestamp: Date.now(),
         });
         break;
+      case "call_gift":
+        this.emit(SocketEvents.CALL_GIFT, {
+          sessionId: msg.session_id,
+          roomId: msg.room_id,
+          senderName: msg.sender_name ?? "Someone",
+          giftIcon: msg.gift_icon ?? "🎁",
+          giftName: msg.gift_name ?? "Gift",
+          giftAmount: msg.gift_amount ?? 0,
+          timestamp: Date.now(),
+        });
+        break;
       case "peer_media_state":
         this.emit(SocketEvents.PEER_MEDIA_STATE, {
           sessionId: msg.session_id,

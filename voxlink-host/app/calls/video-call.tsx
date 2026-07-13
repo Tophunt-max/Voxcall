@@ -20,6 +20,7 @@ import { SocketEvents } from "@/constants/events";
 import { API } from "@/services/api";
 import { API_BASE_URL } from "@/constants/config";
 import { RtcVideoView } from "@/components/RtcVideoView";
+import { GiftAnimation, type GiftAnim } from "@/components/GiftAnimation";
 
 // FIX (UI: draggable self-preview): see voxlink/app/user/call/video-call.tsx
 // for full rationale. Identical numbers so both apps behave the same.
@@ -326,6 +327,18 @@ export default function VideoCallScreen() {
       }
     }
   }, [webrtc.error, webrtc.clearError, webrtc.cleanup, endCall, permissions.camera.status, permissions.microphone.status]);
+
+  // In-call gift from the caller → play the reveal animation for the host.
+  const [giftAnim, setGiftAnim] = useState<GiftAnim | null>(null);
+  const giftKeyRef = useRef(0);
+  useEffect(() => {
+    const off = onEvent(SocketEvents.CALL_GIFT, (d: any) => {
+      if (d?.sessionId && activeCall?.sessionId && d.sessionId !== activeCall.sessionId) return;
+      giftKeyRef.current += 1;
+      setGiftAnim({ icon: d?.giftIcon ?? "🎁", name: d?.giftName, senderName: d?.senderName, key: giftKeyRef.current });
+    });
+    return off;
+  }, [onEvent, activeCall?.sessionId]);
 
   // FIX: Handle remote party ending the call — clean up and show call summary
   useEffect(() => {
@@ -985,6 +998,7 @@ export default function VideoCallScreen() {
         </View>
       </Animated.View>
 
+      <GiftAnimation gift={giftAnim} onDone={() => setGiftAnim(null)} />
     </View>
   );
 }

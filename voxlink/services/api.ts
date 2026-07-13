@@ -447,6 +447,13 @@ export const API = {
     apiRequest<{ success: boolean; message_id: string; room_id: string; gift: { id: string; name: string; icon: string; amount: number }; created_at: number; new_balance: number }>(
       'POST', '/api/gifts/send', { room_id, gift_id }
     ),
+  // Send a gift DURING a call — resolves/creates the chat room server-side from
+  // host_id (an active call is the unlock) and relays a call_gift animation to
+  // the host's call screen.
+  sendCallGift: (host_id: string, gift_id: string, session_id?: string) =>
+    apiRequest<{ success: boolean; message_id: string; room_id: string; gift: { id: string; name: string; icon: string; amount: number }; created_at: number; new_balance: number }>(
+      'POST', '/api/gifts/send', { host_id, gift_id, session_id }
+    ),
   // Typing indicator — best-effort, server relays a chat_typing event to the
   // other room participant via NotificationHub. Caller should debounce.
   sendChatTyping: (room_id: string, is_typing: boolean) =>

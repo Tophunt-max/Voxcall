@@ -10,6 +10,7 @@ import { useChat, Message } from "@/context/ChatContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { API, resolveMediaUrl } from "@/services/api";
 import { appendFileToFormData } from "@/utils/fileUpload";
+import { GiftAnimation, type GiftAnim } from "@/components/GiftAnimation";
 import { alertDialog, confirmDialog } from "@/utils/dialog";
 import * as ImagePicker from "expo-image-picker";
 import { showErrorToast, showSuccessToast } from "@/components/Toast";
@@ -44,6 +45,8 @@ export default function ChatScreen() {
   const [gifts, setGifts] = useState<any[]>([]);
   const [giftPickerOpen, setGiftPickerOpen] = useState(false);
   const [sendingGiftId, setSendingGiftId] = useState<string | null>(null);
+  const [giftAnim, setGiftAnim] = useState<GiftAnim | null>(null);
+  const giftKeyRef = useRef(0);
   // Long-press action sheet + inline edit state.
   const [actionMsg, setActionMsg] = useState<Message | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -259,6 +262,8 @@ export default function ChatScreen() {
     setSendingGiftId(null);
     if (newBalance !== null) {
       setGiftPickerOpen(false);
+      giftKeyRef.current += 1;
+      setGiftAnim({ icon: gift.icon, name: gift.name, key: giftKeyRef.current });
       try { await refreshBalance?.(); } catch { /* balance refresh best-effort */ }
       showSuccessToast(`Sent ${gift.name} ${gift.icon}`);
       setTimeout(() => listRef.current?.scrollToOffset({ offset: 0, animated: true }), 100);
@@ -502,6 +507,8 @@ export default function ChatScreen() {
           </View>
         </TouchableOpacity>
       </Modal>
+
+      <GiftAnimation gift={giftAnim} onDone={() => setGiftAnim(null)} />
     </View>
   );
 }

@@ -947,6 +947,77 @@ export function ensureVipSignupBonusSchema(db: D1Database): Promise<boolean> {
 }
 
 // ============================================================================
+// Chat gifts — auto-heal migration 0056 on cold start.
+// ============================================================================
+//
+// Creates the gift catalog (+ default seed) and adds the gift columns to
+// `messages` (msg_kind / gift_icon / gift_name / gift_amount). Without this, a
+// prod DB where migration 0056 never fully applied would MOVE COINS on a gift
+// but silently fail to persist the gift MESSAGE row (the INSERT references a
+// missing column), so the gift never renders in either chat — the classic
+// "gift not showing" bug. Idempotent; mirrors the other guards.
+
+let giftSchemaReadyPromise: Promise<boolean> | null = null;
+
+const GIFT_MESSAGE_COLUMNS: ReadonlyArray<{ name: string; ddl: string }> = [
+  { name: 'msg_kind',    ddl: 'ALTER TABLE messages ADD COLUMN msg_kind TEXT' },
+  { name: 'gift_icon',   ddl: 'ALTER TABLE messages ADD COLUMN gift_icon TEXT' },
+  { name: 'gift_name',   ddl: 'ALTER TABLE messages ADD COLUMN gift_name TEXT' },
+  { name: 'gift_amount', ddl: 'ALTER TABLE messages ADD COLUMN gift_amount INTEGER' },
+];
+
+export function ensureGiftSchema(db: D1Database): Promise<boolean> {
+  if (giftSchemaReadyPromise) return giftSchemaReadyPromise;
+
+  giftSchemaReadyPromise = (async () => {
+    try {
+      // 1. Gift catalog table + default seed (admin can edit/disable later).
+      await db
+        .prepare(
+          `CREATE TABLE IF NOT EXISTS gifts (
+             id          TEXT PRIMARY KEY,
+             name        TEXT NOT NULL,
+             icon        TEXT NOT NULL,
+             price_coins INTEGER NOT NULL DEFAULT 0,
+             sort_order  INTEGER NOT NULL DEFAULT 0,
+             is_active   INTEGER NOT NULL DEFAULT 1,
+             created_at  INTEGER DEFAULT (unixepoch()),
+             updated_at  INTEGER DEFAULT (unixepoch())
+           )`,
+        )
+        .run();
+      await db
+        .prepare(
+          `INSERT OR IGNORE INTO gifts (id, name, icon, price_coins, sort_order, is_active) VALUES
+             ('gift_rose','Rose','🌹',10,0,1),('gift_heart','Heart','❤️',50,1,1),
+             ('gift_teddy','Teddy','🧸',100,2,1),('gift_cake','Cake','🎂',200,3,1),
+             ('gift_diamond','Diamond','💎',500,4,1),('gift_crown','Crown','👑',1000,5,1),
+             ('gift_rocket','Rocket','🚀',2000,6,1)`,
+        )
+        .run()
+        .catch((e) => console.warn('[schemaGuard] gift seed:', e));
+
+      // 2. Gift columns on messages — SQLite has no ADD COLUMN IF NOT EXISTS,
+      //    so read PRAGMA and add only what's missing.
+      const info = await db.prepare('PRAGMA table_info(messages)').all<{ name: string }>();
+      const have = new Set((info.results ?? []).map((r) => r.name));
+      for (const col of GIFT_MESSAGE_COLUMNS) {
+        if (!have.has(col.name)) {
+          await db.prepare(col.ddl).run().catch((e) => console.warn(`[schemaGuard] gift col ${col.name}:`, e));
+        }
+      }
+      return true;
+    } catch (err) {
+      console.error('[schemaGuard] ensureGiftSchema failed:', err);
+      giftSchemaReadyPromise = null;
+      return false;
+    }
+  })();
+
+  return giftSchemaReadyPromise;
+}
+
+// ============================================================================
 // Smart-engines v2 schema guard — Risk / Availability-predict / Rail-order /
 // Instant-connect / Quality-router.
 // ============================================================================

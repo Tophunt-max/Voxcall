@@ -15,6 +15,10 @@ import { useWebRTC } from "@/hooks/useWebRTC";
 import { useSocket } from "@/context/SocketContext";
 import { SocketEvents } from "@/constants/events";
 import { API } from "@/services/api";
+import { useAuth } from "@/context/AuthContext";
+import { showErrorToast } from "@/components/Toast";
+import { GiftPickerSheet, type GiftCatalogItem } from "@/components/GiftPickerSheet";
+import { GiftAnimation, type GiftAnim } from "@/components/GiftAnimation";
 import * as Haptics from "expo-haptics";
 
 // FIX (no-audio bug): on web, the remote audio track will not play unless
@@ -101,6 +105,41 @@ export default function AudioCallScreen() {
   const { permissions, requestMicrophone, openSettings, loaded } = usePermissions();
   const { onEvent } = useSocket();
   const pulse = useRef(new Animated.Value(1)).current;
+
+  // ─── In-call gifts ─────────────────────────────────────────────────────────
+  const { user, updateCoins } = useAuth();
+  const [giftOpen, setGiftOpen] = useState(false);
+  const [giftCatalog, setGiftCatalog] = useState<GiftCatalogItem[]>([]);
+  const [sendingGiftId, setSendingGiftId] = useState<string | null>(null);
+  const [giftAnim, setGiftAnim] = useState<GiftAnim | null>(null);
+  const giftKeyRef = useRef(0);
+
+  const openGifts = useCallback(async () => {
+    setGiftOpen(true);
+    if (giftCatalog.length === 0) {
+      try { const list = await API.getGifts(); setGiftCatalog(Array.isArray(list) ? list : []); } catch { /* keep empty */ }
+    }
+  }, [giftCatalog.length]);
+
+  const handleSendGift = useCallback(async (g: GiftCatalogItem) => {
+    const hostId = activeCall?.participant?.id;
+    if (!hostId || sendingGiftId) return;
+    if ((user?.coins ?? 0) < (g.price_coins ?? 0)) { showErrorToast(`Not enough coins for ${g.name}.`); return; }
+    setSendingGiftId(g.id);
+    try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); } catch { /* haptics best-effort */ }
+    try {
+      const res = await API.sendCallGift(hostId, g.id, activeCall?.sessionId);
+      if (typeof res?.new_balance === "number") updateCoins(res.new_balance);
+      setGiftOpen(false);
+      giftKeyRef.current += 1;
+      setGiftAnim({ icon: g.icon, name: g.name, key: giftKeyRef.current });
+    } catch (e: any) {
+      const msg = String(e?.message || "");
+      showErrorToast(/coin/i.test(msg) ? msg : "Couldn't send gift. Please try again.");
+    } finally {
+      setSendingGiftId(null);
+    }
+  }, [activeCall?.participant?.id, activeCall?.sessionId, sendingGiftId, user?.coins, updateCoins]);
 
   const [webrtcReady, setWebrtcReady] = useState(false);
   // FIX (repeated permission popup): one-shot guards — see video-call.tsx.
@@ -542,6 +581,11 @@ export default function AudioCallScreen() {
         </View>
       </View>
 
+      {status === "active" && (
+        <TouchableOpacity onPress={openGifts} style={styles.giftFab} activeOpacity={0.85} accessibilityRole="button" accessibilityLabel="Send a gift">
+          <Text style={styles.giftFabEmoji}>🎁</Text>
+        </TouchableOpacity>
+      )}
       <View style={styles.controlsSection}>
         <View style={styles.controlRow}>
           <View style={styles.ctrlItem}>
@@ -603,12 +647,24 @@ export default function AudioCallScreen() {
           </View>
         </View>
       </Modal>
+
+      <GiftPickerSheet
+        visible={giftOpen}
+        onClose={() => setGiftOpen(false)}
+        gifts={giftCatalog}
+        coins={user?.coins ?? 0}
+        sendingId={sendingGiftId}
+        onPick={handleSendGift}
+      />
+      <GiftAnimation gift={giftAnim} onDone={() => setGiftAnim(null)} />
     </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
   screen: { flex: 1, alignItems: "center", justifyContent: "space-between" },
+  giftFab: { alignSelf: "center", flexDirection: "row", alignItems: "center", justifyContent: "center", width: 52, height: 52, borderRadius: 26, backgroundColor: "rgba(255,255,255,0.16)", borderWidth: 1, borderColor: "rgba(255,255,255,0.25)", marginBottom: 14 },
+  giftFabEmoji: { fontSize: 26, lineHeight: 30 },
 
   permBanner: {
     flexDirection: "row",

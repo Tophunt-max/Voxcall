@@ -275,6 +275,17 @@ class SocketService {
           timestamp: Date.now(),
         });
         break;
+      case "call_gift":
+        this.emit(SocketEvents.CALL_GIFT, {
+          sessionId: msg.session_id,
+          roomId: msg.room_id,
+          senderName: msg.sender_name ?? "Someone",
+          giftIcon: msg.gift_icon ?? "🎁",
+          giftName: msg.gift_name ?? "Gift",
+          giftAmount: msg.gift_amount ?? 0,
+          timestamp: Date.now(),
+        });
+        break;
       case "presence":
         this.emit(SocketEvents.PRESENCE_UPDATE, {
           userId: msg.user_id,

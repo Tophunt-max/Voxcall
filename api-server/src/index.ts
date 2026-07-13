@@ -28,7 +28,7 @@ import giftsRouter from './routes/gifts';
 import smartRouter from './routes/smart';
 import { ChatRoom } from './durable-objects/ChatRoom';
 import { NotificationHub } from './durable-objects/NotificationHub';
-import { ensureUsersSchema, ensureRandomCallSchema, ensureStreakSchema, ensureHostStreakSchema, ensureFirstCallFreeSchema, ensureCallObservabilitySchema, ensureEngagementSchema, ensureWithdrawalSchema, ensureSmartV2Schema, ensureReferralIntegritySchema, ensureVipSignupBonusSchema } from './lib/schemaGuard';
+import { ensureUsersSchema, ensureRandomCallSchema, ensureStreakSchema, ensureHostStreakSchema, ensureFirstCallFreeSchema, ensureCallObservabilitySchema, ensureEngagementSchema, ensureWithdrawalSchema, ensureSmartV2Schema, ensureReferralIntegritySchema, ensureVipSignupBonusSchema, ensureGiftSchema } from './lib/schemaGuard';
 import { releaseExpiredReferralHolds } from './lib/referral';
 import { raiseAdminAlert } from './lib/alerts';
 import { ensureAllMigrations } from './lib/autoMigrate';
@@ -187,6 +187,7 @@ app.use('/api/*', async (c, next) => {
     ensureSmartV2Schema(c.env.DB),
     ensureReferralIntegritySchema(c.env.DB),
     ensureVipSignupBonusSchema(c.env.DB),
+    ensureGiftSchema(c.env.DB),
   ]);
   return next();
 });
