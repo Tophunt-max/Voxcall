@@ -6,6 +6,7 @@ import { bumpRewardProgress } from './rewards';
 import { pushCoinUpdate, notifyUser } from '../lib/realtime';
 import { applyPurchaseBonuses } from '../lib/promotions';
 import { maybeUnlockReferral } from '../lib/referral';
+import { raiseAdminAlert } from '../lib/alerts';
 import {
   verifyRazorpaySignature,
   verifyStripeSignature,
@@ -174,13 +175,13 @@ async function approveDeposit(
     const amountMismatch = expected > 0 && Math.abs(paidMajor - expected) > 1;
     const currencyMismatch = !!curExpected && !!curPaid && curExpected !== curPaid;
     if (amountMismatch || currencyMismatch) {
-      await db.prepare(
-        "INSERT INTO app_errors (user_id, message, context, platform, app_version) VALUES (?, ?, 'payment_amount_mismatch', 'webhook', ?)",
-      ).bind(
-        purchase.user_id,
-        `Payment amount/currency mismatch via ${source}: expected ${expected} ${curExpected}, gateway reported ${paidMajor} ${curPaid} (purchase ${purchaseId}).`,
-        source,
-      ).run().catch((e) => console.warn('[approveDeposit] mismatch alert write failed:', e));
+      await raiseAdminAlert(db, {
+        context: 'payment_amount_mismatch',
+        severity: 'critical',
+        platform: 'webhook',
+        userId: purchase.user_id,
+        message: `Payment amount/currency mismatch via ${source}: expected ${expected} ${curExpected}, gateway reported ${paidMajor} ${curPaid} (purchase ${purchaseId}).`,
+      });
 
       let enforce = false;
       try {

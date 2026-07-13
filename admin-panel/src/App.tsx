@@ -48,6 +48,7 @@ const GrowthPromotions = lazy(() => import('@/pages/GrowthPromotions'));
 const PaymentGateways = lazy(() => import('@/pages/PaymentGateways'));
 const Deposits = lazy(() => import('@/pages/Deposits'));
 const HealthMonitor = lazy(() => import('@/pages/HealthMonitor'));
+const Alerts = lazy(() => import('@/pages/Alerts'));
 const Risk = lazy(() => import('@/pages/Risk'));
 
 function PageLoader() {
@@ -120,6 +121,7 @@ function ProtectedApp() {
         <Route path="/deposits" component={Deposits} />
         <Route path="/payment-gateways" component={PaymentGateways} />
         <Route path="/health" component={HealthMonitor} />
+        <Route path="/alerts" component={Alerts} />
         <Route path="/settings" component={SettingsPage} />
           <Route component={() => <Redirect to="/dashboard" />} />
         </Switch>

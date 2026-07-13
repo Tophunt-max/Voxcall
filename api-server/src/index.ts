@@ -30,6 +30,7 @@ import { ChatRoom } from './durable-objects/ChatRoom';
 import { NotificationHub } from './durable-objects/NotificationHub';
 import { ensureUsersSchema, ensureRandomCallSchema, ensureStreakSchema, ensureHostStreakSchema, ensureFirstCallFreeSchema, ensureCallObservabilitySchema, ensureEngagementSchema, ensureWithdrawalSchema, ensureSmartV2Schema, ensureReferralIntegritySchema, ensureVipSignupBonusSchema } from './lib/schemaGuard';
 import { releaseExpiredReferralHolds } from './lib/referral';
+import { raiseAdminAlert } from './lib/alerts';
 import { ensureAllMigrations } from './lib/autoMigrate';
 import { getLevelConfig, getEarningShare, DEFAULT_AUDIO_RATE, computeLevelProgress } from './lib/levels';
 import { recalcAllHostLevels } from './lib/levelService';
@@ -1286,14 +1287,14 @@ async function maybeReconcileCoins(env: Env): Promise<void> {
 
     if (tone === 'bad') {
       console.error(`[Cron] COIN RECONCILIATION ALERT — drift ${drift} (${driftPct.toFixed(2)}%) wallets=${inWallets} ledger=${ledgerNet}`);
-      // Persist an alert row so it surfaces in the admin error feed + bumps the
-      // health-monitor hourly error count even with no dashboard open.
-      await env.DB.prepare(
-        `INSERT INTO app_errors (user_id, message, context, platform, app_version)
-         VALUES (NULL, ?, 'coin_reconciliation', 'cron', 'watchdog')`
-      ).bind(
-        `Coin reconciliation imbalance: wallets=${inWallets} ledger_net=${ledgerNet} drift=${drift} (${driftPct.toFixed(2)}%). Investigate for a mint/burn bug.`
-      ).run().catch((e) => console.warn('[Cron] coin recon alert write failed:', e));
+      // Persist + optionally page an operator (webhook). Surfaces in the admin
+      // alerts feed + dashboard error count even with no dashboard open.
+      await raiseAdminAlert(env.DB, {
+        context: 'coin_reconciliation',
+        severity: 'critical',
+        platform: 'cron',
+        message: `Coin reconciliation imbalance: wallets=${inWallets} ledger_net=${ledgerNet} drift=${drift} (${driftPct.toFixed(2)}%). Investigate for a mint/burn bug.`,
+      });
     } else {
       console.log(`[Cron] coin reconciliation ok — drift ${drift} (${driftPct.toFixed(2)}%)`);
     }

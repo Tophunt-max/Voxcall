@@ -3513,6 +3513,58 @@ admin.get('/coin-reconciliation', async (c) => {
   });
 });
 
+// GET /api/admin/alerts — operational alert feed (app_errors).
+// Surfaces the actual alert ROWS an operator needs to act on — coin-drift
+// watchdog, payment amount/currency mismatches, client crashes, etc. — not
+// just the dashboard's hourly count. Read-only; legacy-tolerant.
+//   ?context=coin_reconciliation   filter to one context
+//   ?limit=100                     cap rows (max 200)
+//   ?since=<unix>                  only rows at/after this time
+admin.get('/alerts', async (c) => {
+  const database = db(c);
+  const now = Math.floor(Date.now() / 1000);
+  const context = c.req.query('context');
+  const limit = Math.min(200, Math.max(1, parseInt(c.req.query('limit') || '100', 10) || 100));
+  const sinceRaw = parseInt(c.req.query('since') || '', 10);
+  const since = Number.isFinite(sinceRaw) && sinceRaw > 0 ? sinceRaw : 0;
+
+  const conds: string[] = [];
+  const params: any[] = [];
+  if (context) { conds.push('context = ?'); params.push(context); }
+  if (since) { conds.push('created_at >= ?'); params.push(since); }
+  const where = conds.length ? ` WHERE ${conds.join(' AND ')}` : '';
+
+  const alerts = await database
+    .prepare(
+      `SELECT id, user_id, message, context, platform, app_version, created_at
+       FROM app_errors${where} ORDER BY created_at DESC LIMIT ?`,
+    )
+    .bind(...params, limit)
+    .all<any>()
+    .catch(() => ({ results: [] as any[] }));
+
+  // Per-context rollup for the last 24h so the UI can show "what's noisy now".
+  const summary = await database
+    .prepare(
+      `SELECT context, COUNT(*) AS count, MAX(created_at) AS last_at
+       FROM app_errors WHERE created_at >= ? GROUP BY context ORDER BY count DESC`,
+    )
+    .bind(now - 86400)
+    .all<any>()
+    .catch(() => ({ results: [] as any[] }));
+
+  const webhookRow = await database
+    .prepare("SELECT value FROM app_settings WHERE key = 'alert_webhook_url'")
+    .first<{ value: string }>()
+    .catch(() => null);
+
+  return c.json({
+    alerts: alerts.results ?? [],
+    summary: summary.results ?? [],
+    webhook_configured: !!webhookRow?.value?.trim(),
+  });
+});
+
 // ============================================================================
 //  PRODUCTION DASHBOARD ENDPOINTS
 // ============================================================================

@@ -51,6 +51,7 @@ const nav = [
   { href: '/engagement', label: 'Engagement', icon: Sparkles, section: 'system' },
   { href: '/growth', label: 'Growth & Promotions', icon: Rocket, section: 'system' },
   { href: '/health', label: 'Health Monitor', icon: HeartPulse, section: 'system' },
+  { href: '/alerts', label: 'Alerts', icon: ShieldAlert, section: 'system' },
   { href: '/settings', label: 'Settings', icon: Settings, section: 'system' },
 ];
 

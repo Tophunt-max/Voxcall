@@ -177,6 +177,12 @@ export const api = {
   }>('GET', `/admin/notification-analytics${days ? `?days=${days}` : ''}`),
   streakAnalytics: () => req<any>('GET', '/admin/streak-analytics'),
   coinReconciliation: () => req<any>('GET', '/admin/coin-reconciliation'),
+  alerts: (context?: string) =>
+    req<{
+      alerts: { id: number; user_id: string | null; message: string; context: string; platform: string; app_version: string; created_at: number }[];
+      summary: { context: string; count: number; last_at: number }[];
+      webhook_configured: boolean;
+    }>('GET', `/admin/alerts${context ? `?context=${encodeURIComponent(context)}` : ''}`),
   notifications: () => req<any[]>('GET', '/admin/notifications'),
   sendNotification: (data: any) => req<any>('POST', '/admin/notifications/send', data),
   post: (path: string, data: any) => req<any>('POST', path.replace('/api/admin/', '/admin/').replace('/api/', '/'), data),
