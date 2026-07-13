@@ -19,6 +19,7 @@ import { useLanguage } from "@/context/LanguageContext";
 import { formatRelativeTime } from "@/utils/format";
 import { resolveMediaUrl } from "@/services/api";
 import { WEB_INPUT_RESET } from "@workspace/shared-ui/utils";
+import { VipBadge } from "@/components/VipBadge";
 
 const ACCENT = "#A00EE7";
 
@@ -121,7 +122,10 @@ export default function MessagesScreen() {
               </View>
               <View style={styles.info}>
                 <View style={styles.topRow}>
-                  <Text style={[styles.name, { color: colors.text }]}>{item.participantName}</Text>
+                  <View style={styles.nameWrap}>
+                    <Text style={[styles.name, { color: colors.text }]} numberOfLines={1}>{item.participantName}</Text>
+                    {item.isVip && <VipBadge tier={item.vipTier} compact />}
+                  </View>
                   {item.lastMessageTime && (
                     <Text style={[styles.time, { color: colors.mutedForeground }]}>{formatRelativeTime(item.lastMessageTime)}</Text>
                   )}
@@ -162,7 +166,8 @@ const styles = StyleSheet.create({
   avatar: { width: 52, height: 52, borderRadius: 26 },
   info: { flex: 1, gap: 4 },
   topRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  name: { fontSize: 15, fontFamily: "Poppins_600SemiBold" },
+  nameWrap: { flexDirection: "row", alignItems: "center", gap: 6, flex: 1, marginRight: 8 },
+  name: { fontSize: 15, fontFamily: "Poppins_600SemiBold", flexShrink: 1 },
   time: { fontSize: 12, fontFamily: "Poppins_400Regular" },
   bottomRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   lastMsg: { fontSize: 13, fontFamily: "Poppins_400Regular", flex: 1 },

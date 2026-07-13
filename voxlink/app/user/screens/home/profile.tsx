@@ -28,6 +28,7 @@ import { ConfirmModal } from "@/components/ConfirmModal";
 import { useLanguage } from "@/context/LanguageContext";
 import { API, resolveMediaUrl } from "@/services/api";
 import { showSuccessToast, showErrorToast } from "@/components/Toast";
+import { VipBadge } from "@/components/VipBadge";
 
 type FeatherName = keyof typeof Feather.glyphMap;
 
@@ -43,7 +44,7 @@ export default function ProfileScreen() {
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [callCount, setCallCount] = useState(0);
   const [favCount, setFavCount] = useState(0);
-  const [vip, setVip] = useState<{ is_vip: boolean; plan_name: string | null; days_left: number; tier?: string | null; badge?: string | null; color?: string | null } | null>(null);
+  const [vip, setVip] = useState<{ is_vip: boolean; plan_name: string | null; days_left: number; tier?: string | null; badge?: string | null; color?: string | null; profile_frame?: boolean } | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [showLogout, setShowLogout] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
@@ -260,7 +261,9 @@ export default function ProfileScreen() {
         {/* Profile row */}
         <View style={[styles.profileCard, { backgroundColor: colors.card }, cardShadow()]}>
           <TouchableOpacity onPress={handleAvatarPress} activeOpacity={0.85} style={styles.avatarOuter} accessibilityRole="button" accessibilityLabel="Change profile photo">
-            <LinearGradient colors={[colors.accent, colors.chatPurple]} style={styles.avatarRing}>
+            {/* VIP profile-frame perk: active VIPs (with profile_frame) get a
+                tier-coloured avatar ring instead of the default accent ring. */}
+            <LinearGradient colors={vip?.is_vip && vip?.profile_frame ? vipGradient(vip) : [colors.accent, colors.chatPurple]} style={styles.avatarRing}>
               <View style={[styles.avatarInner, { backgroundColor: colors.card }]}>
                 <Image source={{ uri: resolvedAvatar }} style={styles.avatar} />
               </View>
@@ -283,6 +286,7 @@ export default function ProfileScreen() {
                   <Text style={[styles.hostChipText, { color: colors.accent }]}>HOST</Text>
                 </View>
               )}
+              {vip?.is_vip && <VipBadge tier={vip.tier} badge={vip.badge} color={vip.color} />}
             </View>
             <TouchableOpacity onPress={copyId} style={[styles.idRow, { backgroundColor: colors.surface }]} accessibilityRole="button" accessibilityLabel={`Copy your ID ${uniqueId}`}>
               <Text style={[styles.idText, { color: colors.mutedForeground }]}>ID : {uniqueId}</Text>
