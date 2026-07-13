@@ -66,11 +66,15 @@ user.get('/me', async (c) => {
   } catch { /* legacy DB — feature hidden */ }
   // VIP membership (best-effort; getVipStatus is safe on un-migrated DBs).
   const vip = await getVipStatus(c.env.DB, sub);
+  // VIP users claim their own (richer) VIP daily reward via /api/vip/claim-daily,
+  // so the all-users daily free-minutes claim is hidden for them — the two
+  // perks do NOT stack (keeps the VIP daily feeling exclusive).
+  const dailyFreeAvailableEffective = daily_free_available && !vip.isVip;
   return c.json({
     ...me,
     free_call_minutes,
     daily_free_minutes,
-    daily_free_available,
+    daily_free_available: dailyFreeAvailableEffective,
     next_daily_free_at,
     is_vip: vip.isVip,
     vip_tier: vip.tier,
@@ -90,6 +94,17 @@ user.post('/claim-daily-free-minutes', async (c) => {
 
   const minutes = await readDailyFreeMinutes(db);
   if (minutes <= 0) return c.json({ error: 'Daily free minutes are not available right now.', code: 'DISABLED' }, 400);
+
+  // VIP users have their own (richer) daily reward via /api/vip/claim-daily.
+  // The all-users daily free minutes are a NON-VIP perk, so the two never
+  // stack — direct VIPs to their VIP daily instead. Fail-open if the VIP
+  // lookup errors so a transient blip never blocks a legit non-VIP claim.
+  try {
+    const vip = await getVipStatus(db, sub);
+    if (vip.isVip) {
+      return c.json({ error: 'As a VIP, claim your daily reward from the VIP screen — it already includes free minutes.', code: 'VIP_USE_VIP_DAILY' }, 400);
+    }
+  } catch { /* fail-open */ }
 
   const threshold = now - DAILY_FREE_COOLDOWN_SEC;
   try {
