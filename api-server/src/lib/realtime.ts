@@ -142,7 +142,8 @@ export async function notifyUser(
   try {
     const tokens = await getFCMTokens(env.DB, [userId]);
     if (tokens.length > 0) {
-      await sendFCMPush(env.FIREBASE_SERVICE_ACCOUNT, tokens, safeTitle, safeBody, { type, notif_type: type, ...(opts?.data ?? {}) });
+      // Pass env.DB so any UNREGISTERED tokens are pruned from the user row.
+      await sendFCMPush(env.FIREBASE_SERVICE_ACCOUNT, tokens, safeTitle, safeBody, { type, notif_type: type, ...(opts?.data ?? {}) }, env.DB);
     }
   } catch (e) {
     console.warn('[realtime] notifyUser FCM push failed for', userId, e);

@@ -102,37 +102,91 @@ async function getAccessToken(serviceAccountJson: string): Promise<string> {
   return cachedToken!;
 }
 
+/**
+ * Does this FCM error mean the TOKEN is permanently dead (so we should stop
+ * pushing to it and delete it)? Deliberately CONSERVATIVE: only a 404 /
+ * UNREGISTERED or an explicit "registration token" message counts. A generic
+ * 400 INVALID_ARGUMENT is NOT treated as a dead token — that can be a payload
+ * bug, and treating it as dead would wrongly wipe every user's token. Pure +
+ * unit-tested (see test/fcm.test.ts).
+ */
+export function isPermanentTokenError(status: number, body: string): boolean {
+  if (status === 404) return true;
+  const b = (body || '').toUpperCase();
+  return (
+    b.includes('UNREGISTERED') ||
+    b.includes('REGISTRATION-TOKEN-NOT-REGISTERED') ||
+    b.includes('INVALID-REGISTRATION-TOKEN') ||
+    b.includes('NOT A VALID FCM REGISTRATION TOKEN')
+  );
+}
+
+/** Transient FCM failures worth one retry (server/quota hiccups). */
+function isTransientError(status: number): boolean {
+  return status === 429 || status === 500 || status === 503;
+}
+
 export async function sendFCM(
   serviceAccountJson: string,
   message: FCMMessage
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; error?: string; invalidToken?: boolean }> {
   try {
     const accessToken = await getAccessToken(serviceAccountJson);
-    const res = await fetch(FCM_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${accessToken}`,
-      },
-      body: JSON.stringify({ message }),
-    });
+    // One retry on a transient error (429/5xx) — FCM occasionally 503s under
+    // load; a single short backoff recovers most of these without stalling the
+    // request path.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const res = await fetch(FCM_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ message }),
+      });
 
-    if (!res.ok) {
+      if (res.ok) return { success: true };
+
       const err = await res.text();
+      if (isTransientError(res.status) && attempt === 0) {
+        await new Promise((r) => setTimeout(r, 250));
+        continue;
+      }
       console.error('[FCM] Send failed:', res.status, err);
-      return { success: false, error: err };
+      return { success: false, error: err, invalidToken: isPermanentTokenError(res.status, err) };
     }
-
-    return { success: true };
+    return { success: false, error: 'exhausted retries' };
   } catch (e: any) {
     console.error('[FCM] sendFCM error:', e);
     return { success: false, error: e.message };
   }
 }
 
+/**
+ * Null out FCM tokens that FCM told us are permanently dead, so we never push
+ * to them again. Best-effort; never throws.
+ */
+export async function pruneFcmTokens(db: D1Database, deadTokens: string[]): Promise<number> {
+  const unique = Array.from(new Set(deadTokens.filter((t) => !!t)));
+  if (unique.length === 0) return 0;
+  try {
+    const placeholders = unique.map(() => '?').join(',');
+    const res = await db
+      .prepare(`UPDATE users SET fcm_token = NULL WHERE fcm_token IN (${placeholders})`)
+      .bind(...unique)
+      .run();
+    return Number(res.meta?.changes) || 0;
+  } catch (e) {
+    console.warn('[FCM] pruneFcmTokens failed:', e);
+    return 0;
+  }
+}
+
 export interface PushResult {
   sent: number;
   failed: number;
+  /** Dead tokens that were nulled out in D1 (only when `db` was supplied). */
+  pruned?: number;
 }
 
 export async function sendFCMPush(
@@ -140,7 +194,8 @@ export async function sendFCMPush(
   tokens: string | string[],
   title: string,
   body: string,
-  data?: Record<string, string>
+  data?: Record<string, string>,
+  db?: D1Database,
 ): Promise<PushResult> {
   if (!serviceAccountJson) {
     console.warn('[FCM] FIREBASE_SERVICE_ACCOUNT not configured');
@@ -151,49 +206,74 @@ export async function sendFCMPush(
   const valid = tokenList.filter((t) => !!t && t.length > 10);
   if (valid.length === 0) return { sent: 0, failed: 0 };
 
-  let sent = 0;
-  let failed = 0;
-
-  for (const token of valid) {
-    const msg: FCMMessage = {
-      token,
-      notification: { title, body },
-      data: data ?? {},
-      android: {
-        priority: 'HIGH',
-        notification: {
-          channel_id: data?.type === 'incoming_call' ? 'calls' : 'default',
-          sound: 'default',
-        },
-      },
-      apns: {
-        payload: {
-          aps: {
-            sound: 'default',
-            badge: 1,
-            // FIX BUG-11: content-available wakes the app in background for incoming calls.
-            // Without this, iOS won't deliver data-only push to the app process,
-            // so the host app never shows the incoming call screen when backgrounded.
-            ...(data?.type === 'incoming_call' ? { 'content-available': 1 } : {}),
-          },
-        },
-      },
-      webpush: {
-        notification: {
-          icon: '/assets/images/icon.png',
-          badge: '/assets/images/icon.png',
-          requireInteraction: data?.type === 'incoming_call',
-          vibrate: data?.type === 'incoming_call' ? [200, 100, 200, 100, 200] : [200],
-        },
-      },
-    };
-
-    const result = await sendFCM(serviceAccountJson, msg);
-    if (result.success) sent++;
-    else failed++;
+  // Pre-warm the OAuth token once so the parallel sends below all reuse the
+  // cached access token instead of each racing to mint a new one on a cold
+  // isolate. A failure here means nothing can send — fail the whole batch.
+  try {
+    await getAccessToken(serviceAccountJson);
+  } catch (e) {
+    console.error('[FCM] access-token fetch failed; dropping push batch:', e);
+    return { sent: 0, failed: valid.length };
   }
 
-  return { sent, failed };
+  const buildMsg = (token: string): FCMMessage => ({
+    token,
+    notification: { title, body },
+    data: data ?? {},
+    android: {
+      priority: 'HIGH',
+      notification: {
+        channel_id: data?.type === 'incoming_call' ? 'calls' : 'default',
+        sound: 'default',
+      },
+    },
+    apns: {
+      payload: {
+        aps: {
+          sound: 'default',
+          badge: 1,
+          // FIX BUG-11: content-available wakes the app in background for incoming calls.
+          // Without this, iOS won't deliver data-only push to the app process,
+          // so the host app never shows the incoming call screen when backgrounded.
+          ...(data?.type === 'incoming_call' ? { 'content-available': 1 } : {}),
+        },
+      },
+    },
+    webpush: {
+      notification: {
+        icon: '/assets/images/icon.png',
+        badge: '/assets/images/icon.png',
+        requireInteraction: data?.type === 'incoming_call',
+        vibrate: data?.type === 'incoming_call' ? [200, 100, 200, 100, 200] : [200],
+      },
+    },
+  });
+
+  // Send in parallel — independent per-token requests, so one slow/failed
+  // device never blocks the others (previously fully sequential).
+  const results = await Promise.all(
+    valid.map(async (token) => ({ token, res: await sendFCM(serviceAccountJson, buildMsg(token)) })),
+  );
+
+  let sent = 0;
+  let failed = 0;
+  const deadTokens: string[] = [];
+  for (const { token, res } of results) {
+    if (res.success) sent++;
+    else {
+      failed++;
+      if (res.invalidToken) deadTokens.push(token);
+    }
+  }
+
+  // Reliability: evict permanently-dead tokens so we stop wasting sends on them
+  // (and stop inflating the failure count on every future notification).
+  let pruned = 0;
+  if (db && deadTokens.length > 0) {
+    pruned = await pruneFcmTokens(db, deadTokens);
+  }
+
+  return { sent, failed, pruned };
 }
 
 // Fetch FCM tokens for a list of user IDs from D1

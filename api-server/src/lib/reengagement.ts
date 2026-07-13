@@ -244,7 +244,7 @@ export async function runReengagement(env: Env): Promise<ReengagementResult> {
         try {
           const tokens = await getFCMTokens(db, batch);
           if (tokens.length) {
-            const r = await sendFCMPush(env.FIREBASE_SERVICE_ACCOUNT, tokens, title, body, { type: 'reengagement' });
+            const r = await sendFCMPush(env.FIREBASE_SERVICE_ACCOUNT, tokens, title, body, { type: 'reengagement' }, db);
             pushed += r.sent;
           }
         } catch (err) {

@@ -229,7 +229,8 @@ chat.post('/rooms/:id/messages', async (c) => {
           recipient.fcm_token,
           senderName || 'New Message',
           pushBody,
-          { type: 'chat_message', room_id: id }
+          { type: 'chat_message', room_id: id },
+          c.env.DB,
         );
       }
     }

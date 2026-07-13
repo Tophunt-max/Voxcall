@@ -1096,7 +1096,7 @@ admin.post('/notifications/send', async (c) => {
       const batch = userIds.slice(i, i + batchSize);
       const tokens = await getFCMTokens(db(c), batch);
       if (tokens.length > 0) {
-        const result = await sendFCMPush(c.env.FIREBASE_SERVICE_ACCOUNT, tokens, title, msgBody, { type, notif_type: type });
+        const result = await sendFCMPush(c.env.FIREBASE_SERVICE_ACCOUNT, tokens, title, msgBody, { type, notif_type: type }, db(c));
         totalPushed += result.sent;
       }
     }

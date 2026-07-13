@@ -144,6 +144,7 @@ gifts.post('/send', async (c) => {
         `🎁 ${senderName || 'Someone'} sent you a gift!`,
         `You received a ${gift.name} ${gift.icon} — someone's thinking of you! 💛`,
         { type: 'chat_message', room_id: body.room_id },
+        db,
       );
     }
   } catch (e) {

@@ -786,7 +786,7 @@ async function maybeSendStreakReminders(env: Env): Promise<void> {
         try {
           const tokens = await getFCMTokens(env.DB, batch);
           if (tokens.length) {
-            const r = await sendFCMPush(env.FIREBASE_SERVICE_ACCOUNT, tokens, title, body, { type: 'streak_reminder' });
+            const r = await sendFCMPush(env.FIREBASE_SERVICE_ACCOUNT, tokens, title, body, { type: 'streak_reminder' }, env.DB);
             pushed += r.sent;
           }
         } catch (err) {
@@ -915,7 +915,7 @@ async function maybeSendNearLevelNudges(env: Env): Promise<void> {
         .catch(() => {});
       if (env.FIREBASE_SERVICE_ACCOUNT && t.token) {
         try {
-          const r = await sendFCMPush(env.FIREBASE_SERVICE_ACCOUNT, t.token, title, body, { type: 'near_level' });
+          const r = await sendFCMPush(env.FIREBASE_SERVICE_ACCOUNT, t.token, title, body, { type: 'near_level' }, env.DB);
           pushed += r.sent;
         } catch { /* non-fatal */ }
       }

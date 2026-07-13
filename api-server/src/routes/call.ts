@@ -356,7 +356,8 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
         hostUser.fcm_token,
         `Incoming ${callLabel}`,
         `${caller.name || 'Someone'} is calling you`,
-        { type: 'incoming_call', session_id: sessionId, call_type: callType, caller_id: sub, caller_name: caller.name ?? 'Caller' }
+        { type: 'incoming_call', session_id: sessionId, call_type: callType, caller_id: sub, caller_name: caller.name ?? 'Caller' },
+        c.env.DB,
       );
     }
   } catch (e) {
@@ -569,7 +570,8 @@ call.post('/end', async (c) => {
                 otherUser.fcm_token,
                 'Call Ended',
                 'The other party has disconnected.',
-                { type: 'call_ended', session_id: session_id }
+                { type: 'call_ended', session_id: session_id },
+                c.env.DB,
               );
             }
           } catch (e) {

@@ -204,7 +204,7 @@ export async function applyLevelUp(
       await sendFCMPush(env.FIREBASE_SERVICE_ACCOUNT, tokens, title, body, {
         type: 'level_up',
         new_level: String(target),
-      });
+      }, db);
     }
   } catch (e) {
     console.warn('[applyLevelUp] push failed:', e);
