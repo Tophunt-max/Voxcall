@@ -11,6 +11,8 @@ import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
+import { useLanguage } from "@/context/LanguageContext";
+import type { Translations } from "@/localization/en";
 import { confirmDialog } from "@/utils/dialog";
 import { API } from "@/services/api";
 import { showSuccessToast, showErrorToast } from "@/components/Toast";
@@ -49,17 +51,18 @@ const PURPLE_GRAD: readonly [string, string] = ["#7B2FF7", "#A855F7"];
 
 // Short label for the daily-reward button — reflects whatever the plan grants
 // (coins, free call minutes, or both) so a minutes-only plan reads correctly.
-function dailyRewardLabel(status: VipStatus): string {
+function dailyRewardLabel(status: VipStatus, t: Translations): string {
   const parts: string[] = [];
-  if (status.daily_bonus_coins > 0) parts.push(`${status.daily_bonus_coins} coins`);
-  if (status.daily_free_minutes > 0) parts.push(`${status.daily_free_minutes} min`);
-  return parts.join(" + ") || "reward";
+  if (status.daily_bonus_coins > 0) parts.push(t.vip.rewardCoins.replace("{count}", String(status.daily_bonus_coins)));
+  if (status.daily_free_minutes > 0) parts.push(t.vip.rewardMinutes.replace("{count}", String(status.daily_free_minutes)));
+  return parts.join(" + ") || t.vip.rewardFallback;
 }
 
 export default function VipScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { user, refreshBalance } = useAuth();
+  const { t } = useLanguage();
 
   const [plans, setPlans] = useState<VipPlan[]>([]);
   const [status, setStatus] = useState<VipStatus | null>(null);
@@ -109,12 +112,12 @@ export default function VipScreen() {
     setBusyPlan(plan.id);
     try {
       const res = await API.subscribeVip(plan.id);
-      showSuccessToast(`${plan.name} active — enjoy your perks!`, "Welcome to VIP 🎉");
+      showSuccessToast(t.vip.subscribedMsg.replace("{plan}", plan.name), t.vip.subscribedTitle);
       await Promise.all([load(), refreshBalance().catch(() => {})]);
       void res;
     } catch (e: any) {
       const msg = String(e?.message || "");
-      showErrorToast(/coin/i.test(msg) ? msg : "Couldn't complete your VIP purchase.", "Subscription failed");
+      showErrorToast(/coin/i.test(msg) ? msg : t.vip.subscribeFailMsg, t.vip.subscribeFailTitle);
     } finally {
       setBusyPlan(null);
     }
@@ -123,9 +126,11 @@ export default function VipScreen() {
   const confirmSubscribe = (plan: VipPlan) => {
     const isRenew = status?.is_vip && status.tier === plan.tier;
     confirmDialog({
-      title: isRenew ? `Renew ${plan.name}?` : `Subscribe to ${plan.name}?`,
-      message: `This will use ${plan.price_coins.toLocaleString()} coins for ${plan.duration_days} days of VIP.`,
-      confirmText: isRenew ? "Renew" : "Subscribe",
+      title: (isRenew ? t.vip.renewConfirmTitle : t.vip.subscribeConfirmTitle).replace("{plan}", plan.name),
+      message: t.vip.confirmMsg
+        .replace("{coins}", plan.price_coins.toLocaleString())
+        .replace("{days}", String(plan.duration_days)),
+      confirmText: isRenew ? t.vip.renew : t.vip.subscribe,
       onConfirm: () => doSubscribe(plan),
     });
   };
@@ -135,13 +140,16 @@ export default function VipScreen() {
     try {
       const res = await API.claimVipDaily();
       const parts: string[] = [];
-      if (Number(res?.granted) > 0) parts.push(`+${res.granted} coins`);
-      if (Number(res?.free_minutes) > 0) parts.push(`+${res.free_minutes} free min`);
-      showSuccessToast(parts.length ? `${parts.join(" · ")} added.` : "Reward added to your account.", "Daily reward claimed 🎁");
+      if (Number(res?.granted) > 0) parts.push(t.vip.claimGrantedCoins.replace("{count}", String(res.granted)));
+      if (Number(res?.free_minutes) > 0) parts.push(t.vip.claimGrantedMinutes.replace("{count}", String(res.free_minutes)));
+      showSuccessToast(
+        parts.length ? t.vip.dailyRewardAdded.replace("{parts}", parts.join(" · ")) : t.vip.dailyRewardAddedGeneric,
+        t.vip.dailyClaimedTitle,
+      );
       await Promise.all([load(), refreshBalance().catch(() => {})]);
     } catch (e: any) {
       const msg = String(e?.message || "");
-      showErrorToast(/already/i.test(msg) ? "You've already claimed today. Come back tomorrow." : "Couldn't claim your bonus.");
+      showErrorToast(/already/i.test(msg) ? t.vip.alreadyClaimed : t.vip.claimFail);
     } finally {
       setClaiming(false);
     }
@@ -158,7 +166,7 @@ export default function VipScreen() {
         <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} style={styles.backBtn}>
           <Feather name="chevron-left" size={24} color="#fff" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>VIP Membership</Text>
+        <Text style={styles.headerTitle}>{t.vip.title}</Text>
         <View style={styles.coinChip}>
           <Image source={require("@/assets/icons/ic_coin.png")} style={{ width: 15, height: 15 }} resizeMode="contain" />
           <Text style={styles.coinChipText}>{coins.toLocaleString()}</Text>
@@ -179,15 +187,18 @@ export default function VipScreen() {
             <LinearGradient colors={["#5B21B6", "#9333EA"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.statusCard, cardShadow()]}>
               <View style={styles.statusTop}>
                 <View>
-                  <Text style={styles.statusActive}>ACTIVE</Text>
-                  <Text style={styles.statusPlan}>{status.plan_name ?? "VIP"}</Text>
+                  <Text style={styles.statusActive}>{t.vip.active}</Text>
+                  <Text style={styles.statusPlan}>{status.plan_name ?? t.vip.fallbackName}</Text>
                 </View>
                 <View style={styles.crownBadge}>
                   <Text style={{ fontSize: 26 }}>👑</Text>
                 </View>
               </View>
               <Text style={styles.statusExpiry}>
-                {status.days_left} day{status.days_left === 1 ? "" : "s"} left · renews on {expiryLabel}
+                {t.vip.daysLeftRenews
+                  .replace("{count}", String(status.days_left))
+                  .replace("{unit}", status.days_left === 1 ? t.vip.day : t.vip.days)
+                  .replace("{date}", expiryLabel)}
               </Text>
               {(status.daily_bonus_coins > 0 || status.daily_free_minutes > 0) && (
                 <TouchableOpacity
@@ -202,7 +213,7 @@ export default function VipScreen() {
                     <>
                       <Feather name="gift" size={16} color="#7B2FF7" />
                       <Text style={styles.claimText}>
-                        {status.daily_available ? `Claim daily ${dailyRewardLabel(status)}` : "Daily reward claimed"}
+                        {status.daily_available ? t.vip.claimDaily.replace("{reward}", dailyRewardLabel(status, t)) : t.vip.dailyClaimed}
                       </Text>
                     </>
                   )}
@@ -212,16 +223,16 @@ export default function VipScreen() {
           ) : (
             <LinearGradient colors={PURPLE_GRAD} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.heroCard, cardShadow()]}>
               <Text style={{ fontSize: 34 }}>👑</Text>
-              <Text style={styles.heroTitle}>Become a VIP</Text>
-              <Text style={styles.heroSub}>Cheaper calls, daily free coins, unlock chat with anyone & an exclusive badge.</Text>
+              <Text style={styles.heroTitle}>{t.vip.becomeVip}</Text>
+              <Text style={styles.heroSub}>{t.vip.becomeVipSub}</Text>
             </LinearGradient>
           )}
 
           {/* Plans */}
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Choose your plan</Text>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>{t.vip.choosePlan}</Text>
           {plans.length === 0 ? (
             <Text style={{ color: colors.mutedForeground, textAlign: "center", marginTop: 20, fontFamily: "Poppins_400Regular" }}>
-              No plans available right now.
+              {t.vip.noPlans}
             </Text>
           ) : (
             plans.map((plan) => {
@@ -235,14 +246,14 @@ export default function VipScreen() {
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.planName, { color: colors.text }]}>{plan.name}</Text>
-                      <Text style={[styles.planDuration, { color: colors.mutedForeground }]}>{plan.duration_days} days</Text>
+                      <Text style={[styles.planDuration, { color: colors.mutedForeground }]}>{t.vip.planDays.replace("{count}", String(plan.duration_days))}</Text>
                     </View>
                     <View style={{ alignItems: "flex-end" }}>
                       <View style={styles.priceRow}>
                         <Image source={require("@/assets/icons/ic_coin.png")} style={{ width: 16, height: 16 }} resizeMode="contain" />
                         <Text style={[styles.priceText, { color: colors.text }]}>{plan.price_coins.toLocaleString()}</Text>
                       </View>
-                      {isCurrent && <Text style={[styles.currentTag, { color: accent }]}>CURRENT</Text>}
+                      {isCurrent && <Text style={[styles.currentTag, { color: accent }]}>{t.vip.current}</Text>}
                     </View>
                   </View>
 
@@ -267,7 +278,7 @@ export default function VipScreen() {
                       {busyPlan === plan.id ? (
                         <ActivityIndicator size="small" color="#fff" />
                       ) : (
-                        <Text style={styles.subBtnText}>{isCurrent ? "Renew" : "Subscribe"}</Text>
+                        <Text style={styles.subBtnText}>{isCurrent ? t.vip.renew : t.vip.subscribe}</Text>
                       )}
                     </LinearGradient>
                   </TouchableOpacity>
@@ -277,7 +288,7 @@ export default function VipScreen() {
           )}
 
           <Text style={[styles.footNote, { color: colors.mutedForeground }]}>
-            VIP is paid with coins and auto-expires at the end of the period. Perks apply while active.
+            {t.vip.footNote}
           </Text>
         </ScrollView>
       )}
