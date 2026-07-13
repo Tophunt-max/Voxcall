@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth';
 import { applyLevelUp } from '../lib/levelService';
 import { notifyUser } from '../lib/realtime';
+import { checkRateLimit } from '../lib/rateLimit';
 import type { Env, JWTPayload } from '../types';
 
 const tip = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
@@ -21,6 +22,15 @@ tip.post('/send', zValidator('json', sendTipSchema), async (c) => {
   const { sub } = c.get('user');
   const body = c.req.valid('json');
   const db = c.env.DB;
+
+  // Anti-spam / accidental double-tip guard: cap tip sends per user. Mirrors
+  // the gift-send limiter. Without this, a laggy UI or a network retry could
+  // fire /tips/send twice and charge the user for two tips. Fail-open if the
+  // rate_limits table is missing (pre-migration DB).
+  const rl = await checkRateLimit(db, `tip-send:${sub}`, 30, 60);
+  if (rl.limited) {
+    return c.json({ error: 'Too many tips. Please slow down.', code: 'RATE_LIMITED' }, 429);
+  }
 
   // Lookup host
   const host = await db.prepare('SELECT id, user_id, display_name FROM hosts WHERE id = ?')
