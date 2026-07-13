@@ -122,18 +122,36 @@ export async function maybeUnlockReferral(env: Env, referredUserId: string): Pro
     // that a reward never fires on a zero-effort account.
     const needCalls = Math.max(1, parseInt(cfg['min_calls_to_unlock'] ?? '1') || 1);
 
-    // Same-device self-referral guard — void it so it never pays out and we
-    // stop re-checking it on every future call/recharge.
+    // Self-referral guards. Void (never pay out + stop re-checking) when the
+    // referrer and the referred account are almost certainly the same person:
+    //   • same physical device, OR
+    //   • same phone number — hosts MUST give a phone at KYC, so this catches a
+    //     host farming their own code from a second account.
     const [refUser, referrer] = await Promise.all([
-      db.prepare('SELECT device_id FROM users WHERE id = ?').bind(referredUserId).first<{ device_id: string | null }>(),
-      db.prepare('SELECT device_id FROM users WHERE id = ?').bind(pending.referrer_id).first<{ device_id: string | null }>(),
+      db.prepare('SELECT device_id, phone FROM users WHERE id = ?').bind(referredUserId).first<{ device_id: string | null; phone: string | null }>(),
+      db.prepare('SELECT device_id, phone FROM users WHERE id = ?').bind(pending.referrer_id).first<{ device_id: string | null; phone: string | null }>(),
     ]);
-    if (refUser?.device_id && referrer?.device_id && refUser.device_id === referrer.device_id) {
+    const sameDevice = !!(refUser?.device_id && referrer?.device_id && refUser.device_id === referrer.device_id);
+    const digits = (p: string | null | undefined) => (p ? String(p).replace(/\D/g, '').slice(-10) : '');
+    const refPhone = digits(refUser?.phone);
+    const referrerPhone = digits(referrer?.phone);
+    const samePhone = refPhone.length >= 10 && refPhone === referrerPhone;
+    if (sameDevice || samePhone) {
       await db.prepare("UPDATE referral_uses SET status = 'void' WHERE id = ? AND status = 'pending'").bind(pending.id).run();
+      console.warn('[referral] voided self-referral', pending.id, sameDevice ? '(same device)' : '(same phone)');
       return;
     }
 
-    // Genuine-user check: a real recharge, OR enough PAID calls.
+    // Genuine-user check — the referred account must show REAL, hard-to-fake
+    // value. Any ONE of:
+    //   1. a real-money recharge (genuine caller), OR
+    //   2. >= needCalls PAID calls AS CALLER (coins actually charged — free
+    //      trial minutes don't count), OR
+    //   3. the referred user became a KYC-APPROVED host. This is the strongest
+    //      signal (verified identity + documents) AND the only one that fits a
+    //      referred HOST — hosts EARN from received calls, they never recharge
+    //      or make outgoing paid calls, so without this a host referral could
+    //      never unlock.
     let genuine = false;
     const recharged = await db
       .prepare("SELECT 1 as ok FROM coin_purchases WHERE user_id = ? AND status = 'success' AND amount > 0 LIMIT 1")
@@ -142,11 +160,21 @@ export async function maybeUnlockReferral(env: Env, referredUserId: string): Pro
     if (recharged) {
       genuine = true;
     } else {
-      const cnt = await db
-        .prepare("SELECT COUNT(*) as n FROM call_sessions WHERE caller_id = ? AND status = 'ended' AND coins_charged > 0")
+      // KYC-approved host? (best-effort — table may not exist on a legacy DB)
+      const approvedHost = await db
+        .prepare("SELECT 1 as ok FROM host_applications WHERE user_id = ? AND status = 'approved' LIMIT 1")
         .bind(referredUserId)
-        .first<{ n: number }>();
-      if ((Number(cnt?.n) || 0) >= needCalls) genuine = true;
+        .first<{ ok: number }>()
+        .catch(() => null);
+      if (approvedHost) {
+        genuine = true;
+      } else {
+        const cnt = await db
+          .prepare("SELECT COUNT(*) as n FROM call_sessions WHERE caller_id = ? AND status = 'ended' AND coins_charged > 0")
+          .bind(referredUserId)
+          .first<{ n: number }>();
+        if ((Number(cnt?.n) || 0) >= needCalls) genuine = true;
+      }
     }
     if (!genuine) return;
 

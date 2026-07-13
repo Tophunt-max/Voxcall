@@ -16,6 +16,7 @@ import { ensureAllMigrations, listMigrationStatus } from '../lib/autoMigrate';
 import { invalidateBannerCaches } from './public';
 import { findActiveBan } from '../lib/bans';
 import { pushCoinUpdate, notifyUser, pushBanState, pushToUser, broadcastDataChanged } from '../lib/realtime';
+import { maybeUnlockReferral } from '../lib/referral';
 import { assessUserRisk } from '../lib/riskScore';
 import type { Env, JWTPayload } from '../types';
 
@@ -1221,6 +1222,14 @@ admin.patch('/host-applications/:id/review', async (c) => {
         .bind(app.display_name, app.specialties, app.user_id).run();
       await d.prepare(`UPDATE users SET role='host', updated_at=unixepoch() WHERE id=?`).bind(app.user_id).run();
     }
+  }
+
+  // Referral unlock: KYC approval is the strongest genuine-user signal (verified
+  // identity + documents) AND the only trigger that fits a referred HOST — hosts
+  // earn from received calls, so they never recharge / make outgoing paid calls.
+  // Idempotent + best-effort (see lib/referral.ts).
+  if (action === 'approve' && app.user_id) {
+    c.executionCtx?.waitUntil?.(maybeUnlockReferral(c.env, app.user_id));
   }
 
   // Real-time: tell the applicant the outcome. On approval also push a
