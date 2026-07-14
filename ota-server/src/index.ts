@@ -35,7 +35,7 @@ import {
   sanitize,
   json,
 } from './shared';
-import { renderConsolePage, handleConsoleApi } from './console';
+import { handleConsoleApi } from './console';
 
 export type { Env };
 
@@ -44,9 +44,11 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname.replace(/\/+$/, '') || '/';
 
-    if (path === '/' || path === '/health') {
-      return json({ status: 'ok', service: 'ota', protocol: PROTOCOL_VERSION, console: '/console' });
+    if (path === '/health') {
+      return json({ status: 'ok', service: 'ota', protocol: PROTOCOL_VERSION, console: '/' });
     }
+    // OTA bundle asset (exact `/assets` with ?key=). Vite's built assets live
+    // under `/assets/<file>` and are served as static assets below.
     if (path === '/assets') {
       return serveAsset(request, env, url);
     }
@@ -56,28 +58,29 @@ export default {
     if (path === '/download') {
       return serveDownload(request, env, url);
     }
-    // Built-in web console: the static single-page dashboard (no auth to view
-    // the shell) plus JSON endpoints that read/manage the ota/ objects (auth-gated).
-    if (path === '/console') {
-      return new Response(renderConsolePage(), {
-        headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' },
-      });
-    }
+    // Console API (same origin as the served SPA — no CORS needed).
     if (path.startsWith('/console/api/')) {
-      // The console front-end (ota-console) is a separate Cloudflare Pages app,
-      // so its API calls are cross-origin. Auth is a bearer token (no cookies),
-      // so a permissive CORS policy is safe here.
-      if (request.method === 'OPTIONS') return corsPreflight(request);
-      return handleConsoleApi(request, env, url, path).then((res) => withCors(res, request));
+      return handleConsoleApi(request, env, url, path);
     }
     const m = path.match(/^\/manifest\/([a-z0-9_-]+)$/i);
     if (m) {
       if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405);
       return serveManifest(request, env, url, m[1], ctx);
     }
-    return json({ error: 'Not found' }, 404);
+    // Everything else → the React console (static assets), with SPA fallback.
+    return serveConsoleApp(request, env);
   },
 };
+
+// Serve the built React console from static assets. On an asset miss (a
+// client-side route like /updates), fall back to index.html so the SPA router
+// can take over.
+async function serveConsoleApp(request: Request, env: Env): Promise<Response> {
+  const res = await env.ASSETS.fetch(request);
+  if (res.status !== 404) return res;
+  const url = new URL(request.url);
+  return env.ASSETS.fetch(new Request(new URL('/index.html', url), request));
+}
 
 // ─── Manifest endpoint (the Expo Updates request) ───────────────────────────
 async function serveManifest(request: Request, env: Env, url: URL, app: string, ctx: ExecutionContext): Promise<Response> {
@@ -224,26 +227,6 @@ async function serveManifest(request: Request, env: Env, url: URL, app: string, 
 // running whatever it already has (a prior update or the embedded bundle).
 function noUpdate(headers: Record<string, string>): Response {
   return new Response(null, { status: 204, headers });
-}
-
-// ─── CORS (console API only) ─────────────────────────────────────────────────
-function corsHeaders(request: Request): Record<string, string> {
-  return {
-    'access-control-allow-origin': request.headers.get('origin') || '*',
-    'access-control-allow-methods': 'GET,POST,DELETE,OPTIONS',
-    'access-control-allow-headers': 'authorization, content-type',
-    'access-control-max-age': '86400',
-    vary: 'origin',
-  };
-}
-function corsPreflight(request: Request): Response {
-  return new Response(null, { status: 204, headers: corsHeaders(request) });
-}
-function withCors(res: Response, request: Request): Response {
-  const headers = new Headers(res.headers);
-  const cors = corsHeaders(request);
-  for (const k in cors) headers.set(k, cors[k]);
-  return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
 }
 
 // Best-effort adoption record: one R2 object per install (overwritten each

@@ -4,7 +4,9 @@
 // kept in sessionStorage and sent on every request.
 // ============================================================================
 
-const API_BASE = (import.meta.env.VITE_API_ORIGIN || '') + '/console/api';
+// Same-origin: the console is served by the OTA worker itself, so the API is a
+// relative path — no CORS, no cross-origin config.
+const API_BASE = '/console/api';
 const TOKEN_KEY = 'voxota_token';
 
 let token = sessionStorage.getItem(TOKEN_KEY) || '';

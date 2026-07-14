@@ -143,8 +143,10 @@ update history + live channel pointers, **promote / roll back** a channel to any
 update, and **toggle the mandatory flag** — no CLI needed. Publishing new bundles
 still runs from the CLI/CI (it needs `expo export`).
 
-**1. Built into this worker — `https://<your-worker>/console`.** A self-contained
-Expo-style dashboard (no separate deploy, no build step) gated by a bearer token:
+**1. Built into this worker — `https://<your-worker>/`.** A React dashboard
+(Vite + Tailwind + TanStack Query, in `web/`) that the worker serves itself as
+static assets — **one worker, one deploy, same origin (no CORS)**. Real-time
+(auto-polling) UI, gated by a bearer token:
 
 - **Overview** — stat cards (updates, channels, runtime versions, mandatory) plus
   a "live now" grid and recent updates.
@@ -194,27 +196,28 @@ Each build gets a **download link** testers can open on-device to install:
 Publishing/uploading builds requires the console token; only the resulting
 download link is public.
 
-Source layout (no frontend build step — the assets are imported as strings and
-bundled into the worker):
+Source layout — the worker (`src/`) and its React console (`web/`) live in this
+one package. `pnpm run build` runs `vite build` → `web-dist/`, which
+`wrangler deploy` uploads as static assets (`[assets]` in `wrangler.toml`).
 
 ```
-src/
-  index.ts              worker entry: routing + Expo manifest/asset endpoints
-  shared.ts             shared types, constants, helpers
+src/                    Cloudflare Worker (Expo protocol + console API)
+  index.ts              routing + manifest/asset/download; SPA fallback to web-dist
+  shared.ts             shared types, constants, helpers (incl. ASSETS binding)
   console/
-    index.ts            barrel (renderConsolePage, handleConsoleApi)
+    index.ts            barrel (handleConsoleApi)
     auth.ts             bearer-token authorization
     api.ts              /console/api/* request handler
     store.ts            R2 read/manage data layer
-    page.ts             assembles the page from assets/
-    assets/
-      shell.html        page markup (with __STYLES__ / __CLIENT__ slots)
-      styles.css.txt    styling
-      client.js.txt     client-side app (vanilla JS, no deps)
+web/                    React console (Vite + Tailwind + TanStack Query)
+  main.tsx  App.tsx  index.css  scope.tsx
+  lib/ (api, queries, format, utils)   components/ (Layout, Drawer, ...)   pages/
+index.html              Vite entry (loads /web/main.tsx)
+vite.config.ts          builds web/ → web-dist/
 ```
 
-The CSS/JS assets use a `.txt` suffix so the bundler ships them verbatim as
-strings; esbuild's built-in `.css`/`.js` loaders would otherwise process them.
+The worker handles `/health`, `/manifest/*`, `/assets` (OTA bundle), `/download`
+and `/console/api/*`; every other path is served from `web-dist` (the React SPA).
 
 **2. In the admin panel** — System → **OTA Updates**, backed by `api-server`
 `GET/POST /api/admin/ota/*` (uses the existing admin auth/session). Same

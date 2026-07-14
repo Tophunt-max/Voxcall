@@ -3,13 +3,14 @@ main = "src/index.ts"
 compatibility_date = "2024-12-18"
 compatibility_flags = ["nodejs_compat"]
 
-# The web console ships as real files under src/console/assets/ (shell.html,
-# styles.css.txt, client.js.txt), imported as strings by src/console/page.ts and
-# bundled verbatim — so the worker needs no separate frontend build/asset step.
-# They use `.html`/`.txt`, which wrangler already treats as Text modules by
-# default (no custom rule needed). The CSS/JS carry a `.txt` suffix because
-# esbuild's built-in .css/.js loaders would otherwise process them (and can't be
-# overridden), instead of handing back the file contents as a string.
+# The web console is a React app (web/) built by Vite into ./web-dist and served
+# by THIS worker as static assets — one worker, one deploy. The Worker handles
+# the API + Expo endpoints; everything else falls through to the SPA (see
+# serveConsoleApp in src/index.ts). Build with `pnpm run build` (vite build),
+# deploy with `wrangler deploy`.
+[assets]
+directory = "./web-dist"
+binding = "ASSETS"
 
 # Self-hosted Expo Updates (OTA) server. Serves JS/asset updates for the two
 # Expo apps (voxlink = "user", voxlink-host = "host") straight out of the

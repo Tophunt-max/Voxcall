@@ -6,6 +6,8 @@
 
 export interface Env {
   STORAGE: R2Bucket;
+  /** Static-assets binding — serves the built React console (web-dist). */
+  ASSETS: Fetcher;
   /** PKCS8 PEM private key. When set (secret) + the client asks, manifests are signed. */
   CODE_SIGNING_PRIVATE_KEY?: string;
   /** keyid advertised in the expo-signature header (default "root"). */
