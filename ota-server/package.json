@@ -8,7 +8,7 @@
     "build": "wrangler deploy --dry-run --outdir dist",
     "deploy": "wrangler deploy",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "publish-update": "node scripts/publish.mjs"
+    "publish-update": "node publish.mjs"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241218.0",

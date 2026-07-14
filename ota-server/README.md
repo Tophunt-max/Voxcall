@@ -32,8 +32,9 @@ ota/updates/<app>/<updateId>/assets/<hash>             ← images, fonts, etc.
 ota/channels/<app>/<channel>/<runtimeVersion>.json     ← { updateId } pointer (what's live)
 ```
 
-The publish script precomputes every hash/key, uploads the files, and flips the
-channel pointer **last** — so a client never sees a half-uploaded update.
+The publish script (`ota-server/publish.mjs`) precomputes every hash/key, uploads
+the files, and flips the channel pointer **last** — so a client never sees a
+half-uploaded update.
 
 ---
 
@@ -82,9 +83,9 @@ After making JS-only changes (screens, logic, styles, strings, images):
 
 ```bash
 # User app
-node ota-server/scripts/publish.mjs --app user
-# Host app
-node ota-server/scripts/publish.mjs --app host
+node ota-server/publish.mjs --app user
+# Host app  (add --force for a mandatory update, --message "notes")
+node ota-server/publish.mjs --app host
 
 # or:
 pnpm --filter @workspace/ota-server run publish-update -- --app user

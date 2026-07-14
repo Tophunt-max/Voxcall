@@ -14,6 +14,7 @@ import { Platform } from "react-native";
 import { configurePushNotifications } from "@/services/NotificationService";
 import { onForegroundMessage, setupBackgroundMessageHandler } from "@/services/fcm";
 import { setupGlobalErrorHandler } from "@/services/ErrorReporter";
+import { OtaUpdateGate } from "@/components/OtaUpdateGate";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { loadHostSettings, getHostSettingsSync } from "@/utils/hostSettings";
@@ -355,6 +356,7 @@ function RootLayoutNav() {
   return (
     <>
       <AppBridge />
+      <OtaUpdateGate />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index" />
         <Stack.Screen name="(tabs)" />

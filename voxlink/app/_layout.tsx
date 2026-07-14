@@ -14,6 +14,7 @@ import { configurePushNotifications } from "@/services/NotificationService";
 import { onForegroundMessage } from "@/services/fcm";
 import { logEngagement } from "@/services/engagement";
 import { setupGlobalErrorHandler } from "@/services/ErrorReporter";
+import { OtaUpdateGate } from "@/components/OtaUpdateGate";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
@@ -374,6 +375,7 @@ function RootLayoutNav() {
   return (
     <>
       <AppBridge />
+      <OtaUpdateGate />
       <DailyRewardGate />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index" />
