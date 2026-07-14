@@ -1,0 +1,86 @@
+name: Deploy OTA Server (Cloudflare Workers)
+
+# Deploys the self-hosted Expo Updates worker (voxcall-ota), which serves OTA
+# manifests/assets from the shared R2 bucket and hosts the built-in web console
+# at /console. Publishing update BUNDLES stays in the CLI/CI publish flow
+# (needs `expo export`); this only ships the worker code.
+#
+# Required GitHub secrets / variables (Settings -> Secrets and variables):
+#   - secrets.CLOUDFLARE_API_TOKEN         Workers + R2: Edit scope (same token
+#                                          the backend deploy uses).
+#   - secrets.OTA_CONSOLE_PASSWORD         (optional) Unlocks the /console UI.
+#   - secrets.OTA_CODE_SIGNING_PRIVATE_KEY (optional) PKCS8 PEM to sign manifests.
+# Optional secrets are only pushed when present, so a partially-configured repo
+# still deploys the worker code without wiping existing secrets.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'ota-server/**'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - '.github/workflows/deploy-ota.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-ota
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to Cloudflare Workers
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CONSOLE_PASSWORD_VALUE: ${{ secrets.OTA_CONSOLE_PASSWORD }}
+      CODE_SIGNING_PRIVATE_KEY_VALUE: ${{ secrets.OTA_CODE_SIGNING_PRIVATE_KEY }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        # Version comes from `packageManager` in root package.json.
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --filter '@workspace/ota-server...'
+
+      - name: Typecheck
+        working-directory: ota-server
+        run: pnpm run typecheck
+
+      - name: Deploy Worker
+        working-directory: ota-server
+        run: pnpm exec wrangler deploy
+
+      # ── Runtime secrets (only pushed when the GitHub secret is present) ──────
+      - name: Set CONSOLE_PASSWORD
+        if: ${{ env.CONSOLE_PASSWORD_VALUE != '' }}
+        working-directory: ota-server
+        run: printf '%s' "$CONSOLE_PASSWORD_VALUE" | pnpm exec wrangler secret put CONSOLE_PASSWORD
+
+      - name: Set CODE_SIGNING_PRIVATE_KEY
+        if: ${{ env.CODE_SIGNING_PRIVATE_KEY_VALUE != '' }}
+        working-directory: ota-server
+        run: printf '%s' "$CODE_SIGNING_PRIVATE_KEY_VALUE" | pnpm exec wrangler secret put CODE_SIGNING_PRIVATE_KEY
+
+      - name: Health check
+        # Post-deploy sanity check against the worker's /health endpoint.
+        # Non-fatal — logs a warning if the expected subdomain differs.
+        run: |
+          echo "Probing OTA worker /health..."
+          STATUS=$(curl -s -m 20 https://voxcall-ota.ssunilkumarmohanta3.workers.dev/health || echo '{}')
+          echo "$STATUS"
+          echo "$STATUS" | grep -q '"service":"voxcall-ota"' \
+            && echo "::notice::OTA worker is live. Console at /console." \
+            || echo "::warning::Health check did not confirm voxcall-ota (check the workers.dev subdomain in this workflow)."
