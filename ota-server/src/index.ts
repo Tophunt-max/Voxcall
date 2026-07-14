@@ -31,6 +31,7 @@ import {
   APPS,
   UPDATES_PREFIX,
   CHANNELS_PREFIX,
+  METRICS_PREFIX,
   sanitize,
   json,
 } from './shared';
@@ -39,7 +40,7 @@ import { renderConsolePage, handleConsoleApi } from './console';
 export type { Env };
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     const path = url.pathname.replace(/\/+$/, '') || '/';
 
@@ -68,14 +69,14 @@ export default {
     const m = path.match(/^\/manifest\/([a-z0-9_-]+)$/i);
     if (m) {
       if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405);
-      return serveManifest(request, env, url, m[1]);
+      return serveManifest(request, env, url, m[1], ctx);
     }
     return json({ error: 'Not found' }, 404);
   },
 };
 
 // ─── Manifest endpoint (the Expo Updates request) ───────────────────────────
-async function serveManifest(request: Request, env: Env, url: URL, app: string): Promise<Response> {
+async function serveManifest(request: Request, env: Env, url: URL, app: string, ctx: ExecutionContext): Promise<Response> {
   if (!APPS.has(app)) return json({ error: 'Unknown app' }, 404);
 
   // Protocol negotiation — we only speak v1.
@@ -93,6 +94,14 @@ async function serveManifest(request: Request, env: Env, url: URL, app: string):
   const channel =
     url.searchParams.get('channel') || request.headers.get('expo-channel-name') || 'production';
   const currentUpdateId = request.headers.get('expo-current-update-id');
+  const clientId = request.headers.get('eas-client-id') || '';
+
+  // Best-effort adoption metric: remember which update this device is currently
+  // running (one object per install, overwritten each check). Fire-and-forget —
+  // it must never add latency to, or fail, the manifest response.
+  if (clientId) {
+    ctx.waitUntil(recordAdoption(env, app, clientId, currentUpdateId, runtimeVersion, platform));
+  }
 
   const commonHeaders: Record<string, string> = {
     'expo-protocol-version': PROTOCOL_VERSION,
@@ -125,9 +134,8 @@ async function serveManifest(request: Request, env: Env, url: URL, app: string):
   if (rollout < 100) {
     // expo-updates sends a persistent per-install id; fall back to the current
     // update id, and fail-open (serve) only if we truly have no identifier.
-    const clientId =
-      request.headers.get('eas-client-id') || request.headers.get('expo-current-update-id') || '';
-    if (clientId && hashPercent(`${clientId}:${pointer.updateId}`) >= rollout) {
+    const bucketId = clientId || currentUpdateId || '';
+    if (bucketId && hashPercent(`${bucketId}:${pointer.updateId}`) >= rollout) {
       return noUpdate(commonHeaders);
     }
   }
@@ -212,6 +220,34 @@ async function serveManifest(request: Request, env: Env, url: URL, app: string):
 // running whatever it already has (a prior update or the embedded bundle).
 function noUpdate(headers: Record<string, string>): Response {
   return new Response(null, { status: 204, headers });
+}
+
+// Best-effort adoption record: one R2 object per install (overwritten each
+// check) whose customMetadata carries the update it's running. The console
+// tallies these by listing with customMetadata — no per-object reads, and one
+// object per device means counts never inflate with stale entries. Any failure
+// is swallowed; metrics must never affect update delivery.
+async function recordAdoption(
+  env: Env,
+  app: string,
+  clientId: string,
+  currentUpdateId: string | null,
+  runtimeVersion: string,
+  platform: string,
+): Promise<void> {
+  try {
+    const key = `${METRICS_PREFIX}/${app}/clients/${sanitize(clientId)}`;
+    await env.STORAGE.put(key, '', {
+      customMetadata: {
+        u: currentUpdateId || 'embedded',
+        rv: runtimeVersion,
+        p: platform,
+        t: String(Date.now()),
+      },
+    });
+  } catch {
+    // ignore — best-effort telemetry
+  }
 }
 
 // Map a string to a stable bucket 0..99 (FNV-1a 32-bit). Used for staged

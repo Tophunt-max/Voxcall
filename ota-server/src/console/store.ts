@@ -8,6 +8,7 @@ import {
   type UpdateRecord,
   CHANNELS_PREFIX,
   UPDATES_PREFIX,
+  METRICS_PREFIX,
   sanitize,
 } from '../shared';
 
@@ -409,6 +410,62 @@ export async function saveUploadedBuild(
     httpMetadata: { contentType: 'application/json' },
   });
   return rec;
+}
+
+// ─── Adoption metrics ───────────────────────────────────────────────────────
+// Tally the per-install adoption records the manifest endpoint writes (one R2
+// object per device, customMetadata = { u:updateId, rv, p:platform, t:ts }).
+// Uses list({ include:['customMetadata'] }) so counting needs no per-object
+// reads. Bounded so a huge install base can never hang the request.
+
+export interface MetricsSummary {
+  total: number;
+  active24h: number;
+  active7d: number;
+  byUpdate: Record<string, number>;
+  byPlatform: Record<string, number>;
+  truncated: boolean;
+}
+
+export async function getMetrics(env: Env, app: string): Promise<MetricsSummary> {
+  const prefix = `${METRICS_PREFIX}/${app}/clients/`;
+  const byUpdate: Record<string, number> = {};
+  const byPlatform: Record<string, number> = {};
+  let total = 0;
+  let active24h = 0;
+  let active7d = 0;
+  let truncated = false;
+  const now = Date.now();
+  const DAY = 86400000;
+  let cursor: string | undefined;
+  for (let i = 0; i < 20; i++) {
+    // `include: ['customMetadata']` is a valid R2 runtime option; the installed
+    // workers-types just omits it from R2ListOptions, so widen the type here.
+    const res = await env.STORAGE.list({
+      prefix,
+      cursor,
+      limit: 1000,
+      include: ['customMetadata'],
+    } as R2ListOptions & { include: ('httpMetadata' | 'customMetadata')[] });
+    for (const o of res.objects) {
+      total++;
+      const md = (o as { customMetadata?: Record<string, string> }).customMetadata || {};
+      const u = md.u || 'embedded';
+      byUpdate[u] = (byUpdate[u] || 0) + 1;
+      const p = md.p || 'unknown';
+      byPlatform[p] = (byPlatform[p] || 0) + 1;
+      const t = Number(md.t || 0);
+      if (t) {
+        if (now - t < DAY) active24h++;
+        if (now - t < 7 * DAY) active7d++;
+      }
+    }
+    if (!res.truncated) break;
+    cursor = (res as { cursor?: string }).cursor;
+    if (!cursor) break;
+    if (i === 19) truncated = true;
+  }
+  return { total, active24h, active7d, byUpdate, byPlatform, truncated };
 }
 
 /** Delete a build (its record + any uploaded binary). */

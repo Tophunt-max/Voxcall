@@ -258,6 +258,26 @@ live*. Omitting `--rollout` (or 100%) releases to everyone immediately.
 
 ---
 
+## Adoption metrics
+
+The console shows **how many devices are running each update** — no app changes
+required. On every manifest check the worker records (fire-and-forget) one tiny
+R2 object per install at `ota/metrics/<app>/clients/<EAS-Client-ID>`, whose
+`customMetadata` holds the update the device is on, its runtime version,
+platform and a timestamp. One object per device (overwritten each check), so
+counts reflect *current* adoption and never inflate with stale entries.
+
+`GET /console/api/metrics?app=` tallies them via a single bounded list (using
+`customMetadata`, so no per-object reads) into totals, per-update counts,
+per-platform counts, and active-in-24h / 7d. The dashboard surfaces an **Active
+devices (7d)** stat and a **“N devs”** badge on each update — so you can watch a
+staged rollout actually reach devices before widening it.
+
+Metrics are best-effort telemetry: any failure is swallowed and never affects
+update delivery.
+
+---
+
 ## Rollback
 
 Re-publish the previous known-good JS (fastest), **or** repoint the channel to an

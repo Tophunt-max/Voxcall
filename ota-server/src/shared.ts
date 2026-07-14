@@ -23,6 +23,7 @@ export const PROTOCOL_VERSION = '1';
 export const APPS = new Set(['user', 'host']);
 export const UPDATES_PREFIX = 'ota/updates';
 export const CHANNELS_PREFIX = 'ota/channels';
+export const METRICS_PREFIX = 'ota/metrics';
 
 export interface AssetRecord {
   key: string;

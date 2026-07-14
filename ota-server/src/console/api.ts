@@ -9,6 +9,7 @@ import { authorizeConsole } from './auth';
 import {
   getConsoleState,
   getUpdateDetail,
+  getMetrics,
   promoteUpdate,
   setForceFlag,
   setRollout,
@@ -42,6 +43,12 @@ export async function handleConsoleApi(request: Request, env: Env, url: URL, pat
     const app = url.searchParams.get('app') || 'user';
     if (!APPS.has(app)) return json({ error: 'invalid app' }, 400);
     return json({ app, ...(await getConsoleState(env, app)) });
+  }
+
+  if (sub === 'metrics' && request.method === 'GET') {
+    const app = url.searchParams.get('app') || 'user';
+    if (!APPS.has(app)) return json({ error: 'invalid app' }, 400);
+    return json({ app, ...(await getMetrics(env, app)) });
   }
 
   if (sub === 'update' && request.method === 'GET') {
