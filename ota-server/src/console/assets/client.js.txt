@@ -6,6 +6,9 @@
   var filter = "";
   var data = { channels: [], updates: [], builds: [], metrics: {} };
   var byId = function (id) { return document.getElementById(id); };
+  // Real-time state: silent background polling every POLL_SECONDS.
+  var auto = true, lastUpdated = 0, refreshing = false, tick = 0;
+  var POLL_SECONDS = 8;
 
   function esc(s) {
     return String(s == null ? "" : s)
@@ -22,6 +25,14 @@
     if (s < 3600) return Math.floor(s / 60) + "m ago";
     if (s < 86400) return Math.floor(s / 3600) + "h ago";
     return Math.floor(s / 86400) + "d ago";
+  }
+  function agoShort(ts) {
+    if (!ts) return "";
+    var s = Math.floor((Date.now() - ts) / 1000);
+    if (s < 2) return "just now";
+    if (s < 60) return s + "s ago";
+    if (s < 3600) return Math.floor(s / 60) + "m ago";
+    return Math.floor(s / 3600) + "h ago";
   }
 
   var toastTimer;
@@ -387,20 +398,65 @@
     openModal(h);
   }
 
+  // ── Live data ─────────────────────────────────────────────────────────
+  function setLive(state) {
+    var d = byId("liveDot");
+    if (d) d.className = "livedot" + (state === "err" ? " err" : state === "off" ? " off" : "");
+  }
+  // Re-render the current view, but never yank focus while the user is typing
+  // in a field (search / rollout inputs) during a background refresh.
+  function reRenderSafe() {
+    var ae = document.activeElement;
+    if (ae && ae.tagName && /^(INPUT|SELECT|TEXTAREA)$/.test(ae.tagName)) return;
+    renderView();
+  }
+  function applyData(res) {
+    data = {
+      channels: res[0].channels || [], updates: res[0].updates || [],
+      builds: (res[1] && res[1].builds) || [], metrics: res[2] || {}
+    };
+    lastUpdated = Date.now();
+  }
+  function fetchAll() {
+    return Promise.all([
+      api("GET", "state?app=" + app),
+      api("GET", "builds?app=" + app).catch(function () { return { builds: [] }; }),
+      api("GET", "metrics?app=" + app).catch(function () { return {}; })
+    ]);
+  }
+  // Full load (with spinner) — first paint, app switch, login.
   function load() {
     byId("err").classList.add("hidden");
     byId("content").innerHTML = "";
     byId("loading").classList.remove("hidden");
-    Promise.all([
-      api("GET", "state?app=" + app),
-      api("GET", "builds?app=" + app).catch(function () { return { builds: [] }; }),
-      api("GET", "metrics?app=" + app).catch(function () { return {}; })
-    ]).then(function (res) {
-      var s = res[0], b = res[1], m = res[2];
-      data = { channels: s.channels || [], updates: s.updates || [], builds: (b && b.builds) || [], metrics: m || {} };
+    fetchAll().then(function (res) {
+      applyData(res);
       byId("loading").classList.add("hidden");
+      setLive("live");
       setView(view);
     }).catch(handleErr);
+  }
+  // Silent background refresh — no spinner, no flicker (real-time updates).
+  function refresh() {
+    if (!token || refreshing || byId("shell").classList.contains("hidden")) return;
+    refreshing = true;
+    fetchAll().then(function (res) {
+      applyData(res);
+      refreshing = false;
+      byId("err").classList.add("hidden");
+      reRenderSafe();
+      setLive("live");
+    }).catch(function (e) {
+      refreshing = false;
+      if (e && (e.code === 401 || e.code === 503)) { handleErr(e); return; }
+      setLive("err");
+    });
+  }
+  function updateAutoBtn() {
+    var b = byId("autoBtn");
+    if (!b) return;
+    b.textContent = auto ? "⏸ Live" : "▶ Paused";
+    b.classList.toggle("primary", auto);
   }
 
   window.OTA = {
@@ -498,7 +554,26 @@
   byId("loginBtn").addEventListener("click", login);
   byId("token").addEventListener("keydown", function (e) { if (e.key === "Enter") login(); });
   byId("logoutBtn").addEventListener("click", logout);
-  byId("refreshBtn").addEventListener("click", load);
+  byId("refreshBtn").addEventListener("click", function () {
+    var b = byId("refreshBtn"); b.classList.add("spin"); refresh();
+    setTimeout(function () { b.classList.remove("spin"); }, 700);
+  });
+  byId("autoBtn").addEventListener("click", function () {
+    auto = !auto; updateAutoBtn();
+    if (auto) { tick = 0; refresh(); }
+  });
+  document.addEventListener("visibilitychange", function () {
+    if (!document.hidden && auto) { tick = 0; refresh(); }
+  });
+  // 1s heartbeat: updates the "updated Xs ago" label and drives auto-refresh.
+  setInterval(function () {
+    if (byId("shell").classList.contains("hidden")) return;
+    var t = byId("liveTxt");
+    if (t) t.textContent = lastUpdated ? ("updated " + agoShort(lastUpdated)) : "connecting…";
+    if (!auto || document.hidden) return;
+    tick++;
+    if (tick >= POLL_SECONDS) { tick = 0; refresh(); }
+  }, 1000);
   byId("overlay").addEventListener("click", closeDetail);
   byId("modalWrap").addEventListener("click", function (e) { if (e.target === byId("modalWrap")) closeModal(); });
   document.addEventListener("keydown", function (e) { if (e.key === "Escape") { closeDetail(); closeModal(); } });
@@ -515,5 +590,6 @@
     filter = ""; closeDetail(); load();
   });
 
+  updateAutoBtn();
   if (token) { showApp(); load(); } else { showAuth(); }
 })();
