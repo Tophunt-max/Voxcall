@@ -138,11 +138,29 @@ whose `runtimeVersion` matches its own. Both apps set it in `app.json`:
 
 ## Web console
 
-The admin panel has an **OTA Updates** page (System → OTA Updates) backed by
-`api-server` `GET/POST /api/admin/ota/*`. It reads the same `ota/` R2 objects to
-show update history + live channel pointers, and lets an operator **promote /
-roll back** a channel to any update and **toggle the mandatory flag** — no CLI
-needed. Publishing new bundles still runs from the CLI/CI (it needs `expo export`).
+Two equivalent consoles read the same `ota/` R2 objects and let an operator view
+update history + live channel pointers, **promote / roll back** a channel to any
+update, and **toggle the mandatory flag** — no CLI needed. Publishing new bundles
+still runs from the CLI/CI (it needs `expo export`).
+
+**1. Built into this worker — `https://<your-worker>/console`.** A self-contained
+page (no separate deploy) gated by a bearer token. Enable it by setting the
+secret:
+
+```bash
+wrangler secret put CONSOLE_PASSWORD    # (in ota-server/)
+# local dev: put CONSOLE_PASSWORD=... in ota-server/.dev.vars
+```
+
+While `CONSOLE_PASSWORD` is unset the console's endpoints return `503` — so the
+worker never ships an open control surface. The page prompts for the password
+and keeps it in `sessionStorage`; every request sends `Authorization: Bearer …`.
+Endpoints: `GET /console/api/state?app=`, `POST /console/api/promote`,
+`POST /console/api/force`.
+
+**2. In the admin panel** — System → **OTA Updates**, backed by `api-server`
+`GET/POST /api/admin/ota/*` (uses the existing admin auth/session). Same
+capabilities; use whichever fits your workflow.
 
 ---
 

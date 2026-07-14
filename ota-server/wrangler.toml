@@ -29,6 +29,11 @@ CODE_SIGNING_KEY_ID = "root"
 # Leave unset to serve unsigned manifests (simplest; fine while the app has NO
 # codeSigningCertificate configured).
 
+# Web console (built-in UI at /console). Set this secret to unlock it:
+#   wrangler secret put CONSOLE_PASSWORD
+# While UNSET the console's data + management endpoints return 503 — so there
+# is never an open rollback/force switch. For local dev put it in .dev.vars.
+
 [dev]
 port = 8790
 local_protocol = "http"
