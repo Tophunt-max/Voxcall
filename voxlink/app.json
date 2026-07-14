@@ -13,7 +13,7 @@
     },
     "updates": {
       "enabled": true,
-      "url": "https://ota.YOUR-SUBDOMAIN.workers.dev/manifest/user",
+      "url": "https://ota.ssunilkumarmohanta3.workers.dev/manifest/user",
       "checkAutomatically": "ON_LOAD",
       "fallbackToCacheTimeout": 0,
       "requestHeaders": {
