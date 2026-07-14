@@ -1,18 +1,27 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Smartphone, Download, Copy, Trash2, Plus } from 'lucide-react';
+import { Smartphone, Download, Copy, Trash2, Plus, Rocket, Github, Zap } from 'lucide-react';
 import { useScope } from '@/scope';
 import { useBuilds } from '@/lib/queries';
-import { rel, humanSize, shortId } from '@/lib/format';
+import { rel, humanSize } from '@/lib/format';
 import { api, type AppId, type Build } from '@/lib/api';
 import { Spinner } from '@/components/bits';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/Modal';
 
+// GitHub Actions workflows that build + auto-publish the apps (Expo-style CI/CD).
+const REPO = 'Tophunt-max/Voxcall';
+const ANDROID_WORKFLOW = `https://github.com/${REPO}/actions/workflows/build-android.yml`;
+const IOS_WORKFLOW = `https://github.com/${REPO}/actions/workflows/build-ios.yml`;
+
 function copy(t: string) {
   if (navigator.clipboard) navigator.clipboard.writeText(t).then(() => toast.success('Copied'), () => toast.error('Copy failed'));
+}
+
+function isCiBuild(b: Build): boolean {
+  return (b.notes || '').startsWith('CI build');
 }
 
 function BuildCard({ b, onDelete }: { b: Build; onDelete: (id: string) => void }) {
@@ -20,17 +29,19 @@ function BuildCard({ b, onDelete }: { b: Build; onDelete: (id: string) => void }
   const ver = (b.version || '') + (b.buildNumber ? ` (${b.buildNumber})` : '');
   const meta = [b.size ? humanSize(b.size) : b.externalUrl ? 'external link' : '', rel(b.createdAt)].filter(Boolean).join(' · ');
   const dl = b.downloadUrl || '';
+  const ci = isCiBuild(b);
   return (
     <div className="rounded-xl border border-border bg-gradient-to-b from-card to-card2 p-4">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Badge tone="plat"><Smartphone size={11} /> {plat}</Badge>
           {ver && <span className="font-mono text-[12.5px]">{ver}</span>}
+          {ci && <Badge tone="channel"><Zap size={10} /> CI</Badge>}
         </div>
         <button onClick={() => onDelete(b.id)} title="Delete build" className="text-muted-foreground hover:text-red-300"><Trash2 size={15} /></button>
       </div>
       {b.filename && <div className="mt-1.5 break-all font-mono text-xs text-muted-foreground">{b.filename}</div>}
-      {b.notes && <div className="mt-1.5 text-[12.5px]">{b.notes}</div>}
+      {b.notes && !ci && <div className="mt-1.5 text-[12.5px]">{b.notes}</div>}
       <div className="mt-1.5 text-xs text-muted-foreground">{meta}</div>
       <div className="mt-3 flex items-center gap-2">
         {dl && (
@@ -67,14 +78,48 @@ export function Downloads() {
 
   return (
     <>
+      {/* How it works — builds are produced by CI/CD and land here automatically. */}
+      <div className="mb-4 rounded-xl border border-primary/25 bg-primary/[0.07] p-4">
+        <div className="flex items-start gap-3">
+          <div className="grad flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg shadow-lg shadow-primary/30">
+            <Rocket size={16} className="text-white" />
+          </div>
+          <div className="min-w-0">
+            <div className="text-[13.5px] font-semibold">Builds come from CI/CD — no manual upload</div>
+            <p className="mt-0.5 text-[12.5px] text-muted-foreground">
+              Trigger a build on GitHub Actions. It builds on EAS (Expo) in the cloud and, once finished,
+              the installable APK / IPA is published here automatically — ready to download &amp; share with testers.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <a href={ANDROID_WORKFLOW} target="_blank" rel="noopener"
+                className="grad inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-medium text-white shadow-lg shadow-primary/30 hover:brightness-110">
+                <Rocket size={14} /> Build Android
+              </a>
+              <a href={IOS_WORKFLOW} target="_blank" rel="noopener"
+                className="grad inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-medium text-white shadow-lg shadow-primary/30 hover:brightness-110">
+                <Rocket size={14} /> Build iOS
+              </a>
+              <a href={`https://github.com/${REPO}/actions`} target="_blank" rel="noopener"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-2 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground">
+                <Github size={14} /> View runs
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div className="mb-4 flex items-center justify-between gap-3">
-        <span className="text-[12.5px] text-muted-foreground">Installable production &amp; test builds (APK / IPA). Share the link with testers.</span>
-        <Button size="sm" onClick={() => setOpen(true)}><Plus size={14} /> Add build</Button>
+        <span className="text-[12.5px] text-muted-foreground">Installable production &amp; test builds (APK / IPA) for the {app} app.</span>
+        <Button size="sm" variant="outline" onClick={() => setOpen(true)}><Plus size={14} /> Add manually</Button>
       </div>
 
       {list.length === 0 ? (
-        <div className="rounded-xl border border-border bg-card p-10 text-center text-sm text-muted-foreground">
-          No builds yet. Click “Add build” to upload an APK/IPA or paste an install link.
+        <div className="rounded-xl border border-dashed border-border bg-card p-10 text-center">
+          <div className="text-sm font-medium">No builds yet</div>
+          <p className="mx-auto mt-1.5 max-w-md text-[12.5px] text-muted-foreground">
+            Run the <b>Build Android</b> or <b>Build iOS</b> workflow above. When the EAS build finishes it lands
+            here automatically. You can also “Add manually” to paste a link or upload a file.
+          </p>
         </div>
       ) : (
         order.map((ch) => (
@@ -123,7 +168,8 @@ function AddBuildModal({ app, open, onClose, onDone }: { app: AppId; open: boole
   const inputCls = 'w-full rounded-lg border border-border bg-card2 px-3 py-2 text-sm outline-none focus:border-primary';
   return (
     <Modal open={open} onClose={onClose}>
-      <h3 className="mb-4 text-[17px] font-semibold">Add build</h3>
+      <h3 className="mb-1 text-[17px] font-semibold">Add build manually</h3>
+      <p className="mb-4 text-[12.5px] text-muted-foreground">Fallback for one-off builds. Normally builds publish here automatically from CI/CD.</p>
       <div className="mb-3.5 flex gap-1.5 rounded-xl border border-border bg-card2 p-1">
         {(['upload', 'link'] as const).map((s) => (
           <button key={s} onClick={() => setSrc(s)} className={`flex-1 rounded-lg py-2 text-[12.5px] ${src === s ? 'grad text-white' : 'text-muted-foreground'}`}>
