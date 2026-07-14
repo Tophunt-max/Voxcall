@@ -240,3 +240,142 @@ export async function setForceFlag(
   await env.STORAGE.put(key, JSON.stringify(rec, null, 2), { httpMetadata: { contentType: 'application/json' } });
   return { ok: true };
 }
+
+// ─── App builds (installable APK/IPA distribution) ──────────────────────────
+// Stored under ota/builds/<app>/<buildId>/ — either an uploaded binary + a
+// build.json record, or a build.json that just points at an external URL (a
+// store / EAS / CDN link). Downloads are served publicly via the worker's
+// /download route (the buildId is an unguessable UUID), so testers can install
+// without the console token — the standard way ad-hoc/test builds are shared.
+
+const BUILDS_PREFIX = 'ota/builds';
+
+export interface BuildRecord {
+  id: string;
+  app: string;
+  channel: string; // 'production' | 'preview' | 'staging' | …
+  platform: string; // 'android' | 'ios'
+  version: string;
+  buildNumber: string;
+  notes: string;
+  createdAt: string;
+  storageKey?: string; // set when the binary was uploaded to R2
+  externalUrl?: string; // set when registered by URL instead of uploaded
+  filename?: string;
+  size?: number;
+  contentType?: string;
+}
+
+export interface BuildInput {
+  channel: string;
+  platform: string;
+  version: string;
+  buildNumber: string;
+  notes: string;
+  filename?: string;
+  externalUrl?: string;
+  contentType?: string;
+}
+
+function mimeForFilename(name: string): string {
+  const ext = (name.split('.').pop() || '').toLowerCase();
+  if (ext === 'apk') return 'application/vnd.android.package-archive';
+  // .aab and .ipa have no universally-honored install MIME; octet-stream is safe.
+  return 'application/octet-stream';
+}
+
+/** Download URL for a build: the worker /download route (uploaded) or the external link. */
+export function buildDownloadUrl(rec: BuildRecord, origin: string): string {
+  if (rec.storageKey) {
+    const name = rec.filename ? `&name=${encodeURIComponent(rec.filename)}` : '';
+    return `${origin}/download?key=${encodeURIComponent(rec.storageKey)}${name}`;
+  }
+  return rec.externalUrl || '';
+}
+
+export async function listBuilds(env: Env, app: string): Promise<BuildRecord[]> {
+  const base = `${BUILDS_PREFIX}/${app}/`;
+  const dirs = await listDelimited(env, base);
+  const recs = await Promise.all(
+    dirs.map((dir) => {
+      const id = dir.slice(base.length).replace(/\/$/, '');
+      return readJsonKey<BuildRecord>(env, `${base}${id}/build.json`);
+    }),
+  );
+  return recs
+    .filter((r): r is BuildRecord => r !== null)
+    .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''));
+}
+
+/** Register a build that lives at an external URL (store / EAS / CDN link). */
+export async function registerBuild(env: Env, app: string, input: BuildInput): Promise<BuildRecord> {
+  const id = crypto.randomUUID();
+  const rec: BuildRecord = {
+    id,
+    app,
+    channel: input.channel,
+    platform: input.platform,
+    version: input.version,
+    buildNumber: input.buildNumber,
+    notes: input.notes,
+    createdAt: new Date().toISOString(),
+    externalUrl: input.externalUrl,
+    filename: input.filename || undefined,
+  };
+  await env.STORAGE.put(`${BUILDS_PREFIX}/${app}/${id}/build.json`, JSON.stringify(rec, null, 2), {
+    httpMetadata: { contentType: 'application/json' },
+  });
+  return rec;
+}
+
+/** Stream an uploaded binary to R2 and write its build.json record. */
+export async function saveUploadedBuild(
+  env: Env,
+  app: string,
+  input: BuildInput,
+  body: ReadableStream,
+): Promise<BuildRecord> {
+  const id = crypto.randomUUID();
+  const safeName = sanitize(input.filename || 'app.bin');
+  const storageKey = `${BUILDS_PREFIX}/${app}/${id}/${safeName}`;
+  const contentType =
+    input.contentType && input.contentType !== 'application/octet-stream'
+      ? input.contentType
+      : mimeForFilename(safeName);
+  const put = await env.STORAGE.put(storageKey, body, { httpMetadata: { contentType } });
+  const rec: BuildRecord = {
+    id,
+    app,
+    channel: input.channel,
+    platform: input.platform,
+    version: input.version,
+    buildNumber: input.buildNumber,
+    notes: input.notes,
+    createdAt: new Date().toISOString(),
+    storageKey,
+    filename: safeName,
+    size: (put as { size?: number })?.size,
+    contentType,
+  };
+  await env.STORAGE.put(`${BUILDS_PREFIX}/${app}/${id}/build.json`, JSON.stringify(rec, null, 2), {
+    httpMetadata: { contentType: 'application/json' },
+  });
+  return rec;
+}
+
+/** Delete a build (its record + any uploaded binary). */
+export async function deleteBuild(env: Env, app: string, id: string): Promise<MutationResult> {
+  const base = `${BUILDS_PREFIX}/${app}/${sanitize(id)}/`;
+  const keys: string[] = [];
+  let cursor: string | undefined;
+  for (let i = 0; i < 20; i++) {
+    const res = await env.STORAGE.list({ prefix: base, cursor, limit: 1000 });
+    for (const o of res.objects) keys.push(o.key);
+    if (!res.truncated) break;
+    cursor = (res as { cursor?: string }).cursor;
+    if (!cursor) break;
+  }
+  if (!keys.length) return { ok: false, status: 404, error: 'build not found' };
+  await Promise.all(keys.map((k) => env.STORAGE.delete(k)));
+  return { ok: true };
+}

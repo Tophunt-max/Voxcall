@@ -4,7 +4,7 @@
   var app = "user";
   var view = "overview";
   var filter = "";
-  var data = { channels: [], updates: [] };
+  var data = { channels: [], updates: [], builds: [] };
   var byId = function (id) { return document.getElementById(id); };
 
   function esc(s) {
@@ -87,7 +87,8 @@
   var TITLES = {
     overview: ["Overview", "Deployment status at a glance"],
     updates: ["Updates", "Every published update for this app"],
-    channels: ["Channels", "Which update is live on each channel + runtime"]
+    channels: ["Channels", "Which update is live on each channel + runtime"],
+    downloads: ["Downloads", "Installable production & test builds (APK / IPA)"]
   };
 
   function setView(v) {
@@ -102,7 +103,8 @@
   function renderView() {
     if (view === "overview") renderOverview();
     else if (view === "updates") renderUpdates();
-    else renderChannels();
+    else if (view === "channels") renderChannels();
+    else renderDownloads();
   }
 
   function statCard(n, l) { return '<div class="stat"><div class="n">' + n + '</div><div class="l">' + esc(l) + '</div></div>'; }
@@ -127,6 +129,7 @@
       statCard(Object.keys(names).length || 0, "Channels") +
       statCard(Object.keys(rtvs).length || 0, "Runtime versions") +
       statCard(mand, "Mandatory") +
+      statCard((data.builds || []).length, "Builds") +
       '</div>';
 
     html += '<div class="between"><h3 class="sec" style="margin:0">Live now</h3><span class="muted" style="font-size:12px">last publish ' + esc(last) + '</span></div>';
@@ -292,12 +295,93 @@
     byId("drawer").querySelector(".db").innerHTML = h;
   }
 
+  // ── Downloads (installable builds) ────────────────────────────────────────
+  function humanSize(n) {
+    if (!n) return "";
+    var u = ["B", "KB", "MB", "GB"]; var i = 0; n = Number(n);
+    while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+    return (i ? n.toFixed(1) : String(n)) + " " + u[i];
+  }
+
+  function buildCard(b) {
+    var plat = b.platform === "ios" ? "iOS" : "Android";
+    var ver = (b.version || "") + (b.buildNumber ? " (" + b.buildNumber + ")" : "");
+    var meta = [];
+    if (b.size) meta.push(humanSize(b.size));
+    else if (b.externalUrl) meta.push("external link");
+    meta.push(rel(b.createdAt));
+    var dl = b.downloadUrl || "";
+    var h = '<div class="card">';
+    h += '<div class="between"><div class="row"><span class="badge b-plat">' + esc(plat) + '</span>' +
+      (ver ? '<span class="mono" style="font-size:12.5px">' + esc(ver) + '</span>' : '') + '</div>' +
+      '<button class="ghost sm" title="Delete build" onclick="OTA.delBuild(\'' + esc(b.id) + '\')">✕</button></div>';
+    if (b.filename) h += '<div class="mono muted" style="font-size:12px;margin-top:6px;word-break:break-all">' + esc(b.filename) + '</div>';
+    if (b.notes) h += '<div style="font-size:12.5px;margin-top:6px">' + esc(b.notes) + '</div>';
+    h += '<div class="muted" style="font-size:12px;margin-top:6px">' + esc(meta.join(" · ")) + '</div>';
+    h += '<div class="row" style="margin-top:12px">';
+    if (dl) {
+      h += '<a class="btnlink" href="' + esc(dl) + '"' + (b.storageKey ? '' : ' target="_blank" rel="noopener"') + '>⇩ Download</a>';
+      h += '<button class="sm" onclick="OTA_copy(\'' + esc(dl) + '\')">Copy link</button>';
+    } else {
+      h += '<span class="muted" style="font-size:12px">No download URL</span>';
+    }
+    h += '</div></div>';
+    return h;
+  }
+
+  function renderDownloads() {
+    var builds = data.builds || [];
+    var html = '<div class="toolbar" style="justify-content:space-between;align-items:center">' +
+      '<span class="muted" style="font-size:12.5px">Installable production &amp; test builds (APK / IPA). Share the link with testers to install.</span>' +
+      '<button class="primary sm" onclick="OTA.addBuild()">+ Add build</button></div>';
+    if (!builds.length) {
+      html += '<div class="card empty">No builds yet. Click “Add build” to upload an APK/IPA or paste an install link (store / EAS / CDN).</div>';
+      byId("content").innerHTML = html;
+      return;
+    }
+    var groups = {};
+    for (var i = 0; i < builds.length; i++) { var b = builds[i]; (groups[b.channel] = groups[b.channel] || []).push(b); }
+    var order = Object.keys(groups).sort(function (a, c) { if (a === "production") return -1; if (c === "production") return 1; return a < c ? -1 : 1; });
+    for (var g = 0; g < order.length; g++) {
+      var ch = order[g]; var list = groups[ch];
+      html += '<h3 class="sec">' + esc(ch) + ' · ' + list.length + '</h3><div class="grid">';
+      for (var j = 0; j < list.length; j++) html += buildCard(list[j]);
+      html += '</div>';
+    }
+    byId("content").innerHTML = html;
+  }
+
+  // ── Add-build modal ───────────────────────────────────────────────────────
+  function openModal(html) { byId("modalCard").innerHTML = html; byId("modalWrap").classList.remove("hidden"); }
+  function closeModal() { byId("modalWrap").classList.add("hidden"); byId("modalCard").innerHTML = ""; }
+
+  function addBuildForm() {
+    var h = '<h3>Add build</h3>';
+    h += '<div class="seg"><button id="srcUpload" class="active" onclick="OTA.buildSrc(\'upload\')">Upload file</button>' +
+      '<button id="srcLink" onclick="OTA.buildSrc(\'link\')">Paste link</button></div>';
+    h += '<div class="field"><label>Platform</label><select id="bPlatform"><option value="android">Android (APK / AAB)</option><option value="ios">iOS (IPA)</option></select></div>';
+    h += '<div class="field"><label>Channel</label><select id="bChannel"><option value="production">production</option><option value="preview">preview (test)</option><option value="staging">staging</option></select></div>';
+    h += '<div class="row"><div class="field grow"><label>Version</label><input id="bVersion" placeholder="1.0.0" /></div>' +
+      '<div class="field grow"><label>Build number</label><input id="bBuild" placeholder="e.g. 42" /></div></div>';
+    h += '<div class="field"><label>Notes (optional)</label><textarea id="bNotes" placeholder="What changed in this build?"></textarea></div>';
+    h += '<div class="field" id="fUpload"><label>File (.apk / .aab / .ipa)</label><input id="bFile" type="file" accept=".apk,.aab,.ipa" /></div>';
+    h += '<div class="field hidden" id="fLink"><label>Install URL (https)</label><input id="bUrl" placeholder="https://…" /></div>';
+    h += '<div id="bProgress" class="muted" style="font-size:12.5px;margin:4px 0 10px"></div>';
+    h += '<div class="row" style="justify-content:flex-end"><button class="ghost sm" onclick="OTA.closeModal()">Cancel</button>' +
+      '<button class="primary sm" id="bSubmit" onclick="OTA.submitBuild()">Add build</button></div>';
+    openModal(h);
+  }
+
   function load() {
     byId("err").classList.add("hidden");
     byId("content").innerHTML = "";
     byId("loading").classList.remove("hidden");
-    api("GET", "state?app=" + app).then(function (d) {
-      data = { channels: d.channels || [], updates: d.updates || [] };
+    Promise.all([
+      api("GET", "state?app=" + app),
+      api("GET", "builds?app=" + app).catch(function () { return { builds: [] }; })
+    ]).then(function (res) {
+      var s = res[0], b = res[1];
+      data = { channels: s.channels || [], updates: s.updates || [], builds: (b && b.builds) || [] };
       byId("loading").classList.add("hidden");
       setView(view);
     }).catch(handleErr);
@@ -324,6 +408,54 @@
       api("POST", "force", { app: app, updateId: id, force: next })
         .then(function () { toast(next ? "Marked mandatory" : "Mandatory flag removed"); closeDetail(); load(); })
         .catch(function (e) { toast(e.message || "Failed", true); });
+    },
+    addBuild: function () { addBuildForm(); },
+    closeModal: closeModal,
+    buildSrc: function (which) {
+      var up = which === "upload";
+      byId("srcUpload").classList.toggle("active", up);
+      byId("srcLink").classList.toggle("active", !up);
+      byId("fUpload").classList.toggle("hidden", !up);
+      byId("fLink").classList.toggle("hidden", up);
+    },
+    submitBuild: function () {
+      var platform = byId("bPlatform").value;
+      var channel = byId("bChannel").value;
+      var version = byId("bVersion").value.trim();
+      var buildNumber = byId("bBuild").value.trim();
+      var notes = byId("bNotes").value.trim();
+      var isUpload = byId("srcUpload").classList.contains("active");
+      var submit = byId("bSubmit"), prog = byId("bProgress");
+      submit.disabled = true;
+      if (isUpload) {
+        var f = byId("bFile").files[0];
+        if (!f) { prog.textContent = "Choose a file first."; submit.disabled = false; return; }
+        prog.textContent = "Uploading " + f.name + " (" + humanSize(f.size) + ")… please keep this tab open.";
+        var qs = "app=" + app + "&channel=" + encodeURIComponent(channel) + "&platform=" + platform +
+          "&version=" + encodeURIComponent(version) + "&buildNumber=" + encodeURIComponent(buildNumber) +
+          "&notes=" + encodeURIComponent(notes) + "&filename=" + encodeURIComponent(f.name);
+        fetch("/console/api/builds/upload?" + qs, {
+          method: "POST",
+          headers: { "Authorization": "Bearer " + token, "Content-Type": f.type || "application/octet-stream" },
+          body: f
+        }).then(function (r) {
+          return r.json().catch(function () { return {}; }).then(function (j) { if (!r.ok) throw new Error(j.error || ("HTTP " + r.status)); return j; });
+        }).then(function () { closeModal(); toast("Build uploaded"); load(); })
+          .catch(function (e) { prog.textContent = ""; submit.disabled = false; toast(e.message || "Upload failed", true); });
+      } else {
+        var urlv = byId("bUrl").value.trim();
+        if (!/^https:\/\//i.test(urlv)) { prog.textContent = "Enter an https URL."; submit.disabled = false; return; }
+        api("POST", "builds", { app: app, channel: channel, platform: platform, version: version, buildNumber: buildNumber, notes: notes, externalUrl: urlv })
+          .then(function () { closeModal(); toast("Build added"); load(); })
+          .catch(function (e) { submit.disabled = false; toast(e.message || "Failed", true); });
+      }
+    },
+    delBuild: function (id) {
+      if (!confirm("Delete this build? The file is removed from storage and its download link stops working.")) return;
+      fetch("/console/api/builds?app=" + app + "&id=" + encodeURIComponent(id), { method: "DELETE", headers: { "Authorization": "Bearer " + token } })
+        .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { if (!r.ok) throw new Error(j.error || ("HTTP " + r.status)); }); })
+        .then(function () { toast("Build deleted"); load(); })
+        .catch(function (e) { toast(e.message || "Delete failed", true); });
     }
   };
 
@@ -333,7 +465,8 @@
   byId("logoutBtn").addEventListener("click", logout);
   byId("refreshBtn").addEventListener("click", load);
   byId("overlay").addEventListener("click", closeDetail);
-  document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeDetail(); });
+  byId("modalWrap").addEventListener("click", function (e) { if (e.target === byId("modalWrap")) closeModal(); });
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape") { closeDetail(); closeModal(); } });
 
   var navs = document.querySelectorAll(".navitem[data-view]");
   for (var i = 0; i < navs.length; i++) navs[i].addEventListener("click", function (e) { setView(e.currentTarget.getAttribute("data-view")); });

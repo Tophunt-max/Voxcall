@@ -49,6 +49,12 @@ export default {
     if (path === '/assets') {
       return serveAsset(request, env, url);
     }
+    // Public installable-build download (APK/IPA). The key holds an unguessable
+    // build UUID; served as an attachment so testers can install via a shared
+    // link/QR without the console token (same model as ad-hoc/TestFlight links).
+    if (path === '/download') {
+      return serveDownload(request, env, url);
+    }
     // Built-in web console: the static single-page dashboard (no auth to view
     // the shell) plus JSON endpoints that read/manage the ota/ objects (auth-gated).
     if (path === '/console') {
@@ -211,6 +217,28 @@ async function serveAsset(_request: Request, env: Env, url: URL): Promise<Respon
   }
   // OTA assets are content-addressed (hash-verified by the client) and immutable.
   headers.set('cache-control', 'public, max-age=31536000, immutable');
+  headers.set('etag', obj.httpEtag);
+  return new Response(obj.body, { headers });
+}
+
+// ─── Build download endpoint ─────────────────────────────────────────────────
+// Serves an uploaded installable build (APK/IPA) from R2 as an attachment.
+// Restricted to the ota/builds/ prefix so it can never read other R2 objects.
+async function serveDownload(_request: Request, env: Env, url: URL): Promise<Response> {
+  const key = url.searchParams.get('key');
+  if (!key || !key.startsWith('ota/builds/') || key.includes('..')) {
+    return json({ error: 'Invalid download key' }, 400);
+  }
+  const obj = await env.STORAGE.get(key);
+  if (!obj) return json({ error: 'Build not found' }, 404);
+
+  const headers = new Headers();
+  obj.writeHttpMetadata(headers);
+  if (!headers.has('content-type')) headers.set('content-type', 'application/octet-stream');
+  const rawName = url.searchParams.get('name') || key.split('/').pop() || 'download';
+  const safeName = rawName.replace(/[^a-zA-Z0-9._-]/g, '_');
+  headers.set('content-disposition', `attachment; filename="${safeName}"`);
+  headers.set('cache-control', 'private, max-age=300');
   headers.set('etag', obj.httpEtag);
   return new Response(obj.body, { headers });
 }

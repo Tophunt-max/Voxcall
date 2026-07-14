@@ -164,8 +164,35 @@ wrangler secret put CONSOLE_PASSWORD    # (in ota-server/)
 While `CONSOLE_PASSWORD` is unset the console's endpoints return `503` — so the
 worker never ships an open control surface. The page prompts for the password
 and keeps it in `sessionStorage`; every request sends `Authorization: Bearer …`.
+Console views: **Overview** (stats + live-now), **Updates** (searchable history +
+detail slide-over), **Channels** (promote/rollback), and **Downloads** (below).
+
 Endpoints: `GET /console/api/state?app=`, `GET /console/api/update?app=&id=`,
-`POST /console/api/promote`, `POST /console/api/force`.
+`POST /console/api/promote`, `POST /console/api/force`,
+`GET|POST|DELETE /console/api/builds`, `POST /console/api/builds/upload`.
+
+### App downloads (installable APK / IPA)
+
+The **Downloads** tab distributes the actual installable app builds (separate
+from OTA JS updates — those only patch an already-installed build). For each
+channel (production / preview / staging) and platform you can:
+
+- **Upload** an `.apk` / `.aab` / `.ipa` — streamed to R2 under
+  `ota/builds/<app>/<buildId>/`, or
+- **Register a link** — an https URL to a store / EAS / CDN build (nothing is
+  copied; the console just records the pointer).
+
+Each build gets a **download link** testers can open on-device to install:
+
+- Uploaded builds are served by the worker at `GET /download?key=…` as an
+  attachment (restricted to the `ota/builds/` prefix). The link is **public and
+  unguessable** (random build UUID) so testers install without the console
+  password — the same model as ad-hoc / TestFlight / Diawi links. Delete the
+  build to revoke the link.
+- Registered builds link straight to their external URL.
+
+Publishing/uploading builds requires the console token; only the resulting
+download link is public.
 
 Source layout (no frontend build step — the assets are imported as strings and
 bundled into the worker):

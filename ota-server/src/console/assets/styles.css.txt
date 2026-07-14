@@ -101,5 +101,26 @@
   .toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); background: var(--panel2); border: 1px solid var(--border);
            padding: 10px 16px; border-radius: 10px; box-shadow: 0 10px 34px rgba(0,0,0,.55); opacity: 0; transition: opacity .2s; z-index: 40; }
   .toast.show { opacity: 1; }
+
+  /* Downloads / builds */
+  a.btnlink { display: inline-flex; align-items: center; gap: 6px; text-decoration: none; cursor: pointer; border-radius: 9px;
+              border: 1px solid var(--accent); background: var(--accent); color: #fff; padding: 7px 12px; font-size: 13px; }
+  a.btnlink:hover { background: var(--accent2); text-decoration: none; }
+
+  /* Centered modal */
+  .modalwrap { position: fixed; inset: 0; z-index: 30; display: flex; align-items: center; justify-content: center; padding: 20px;
+               background: rgba(0,0,0,.55); }
+  .modalcard { width: 100%; max-width: 440px; max-height: 90vh; overflow-y: auto; background: var(--panel);
+               border: 1px solid var(--border); border-radius: 16px; padding: 22px; }
+  .modalcard h3 { margin: 0 0 14px; font-size: 16px; }
+  .field { margin-bottom: 12px; }
+  .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 5px; }
+  .field input, .field select, .field textarea { width: 100%; }
+  .field textarea { resize: vertical; min-height: 54px; }
+  .seg { display: flex; gap: 6px; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 3px; margin-bottom: 12px; }
+  .seg button { flex: 1; border: none; background: transparent; color: var(--muted); border-radius: 8px; padding: 7px; font-size: 12.5px; }
+  .seg button.active { background: var(--accent); color: #fff; }
+  .grow { flex: 1; }
+
   .hidden { display: none !important; }
   @media (max-width: 720px) { .shell { grid-template-columns: 1fr; } .side { position: static; height: auto; flex-direction: row; flex-wrap: wrap; } .side .bottom { margin: 0; } nav { flex-direction: row; } }
