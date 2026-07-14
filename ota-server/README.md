@@ -144,8 +144,17 @@ update, and **toggle the mandatory flag** — no CLI needed. Publishing new bund
 still runs from the CLI/CI (it needs `expo export`).
 
 **1. Built into this worker — `https://<your-worker>/console`.** A self-contained
-page (no separate deploy) gated by a bearer token. Enable it by setting the
-secret:
+Expo-style dashboard (no separate deploy, no build step) gated by a bearer token:
+
+- **Overview** — stat cards (updates, channels, runtime versions, mandatory) plus
+  a "live now" grid and recent updates.
+- **Updates** — searchable history; click any row for a detail slide-over showing
+  full metadata, per-platform launch bundle + asset list with download links, and
+  actions (promote/rollback per channel, toggle mandatory, copy IDs/URLs).
+- **Channels** — each channel's runtime-version pointers + a picker to set any
+  update live (roll forward or back).
+
+Enable it by setting the secret:
 
 ```bash
 wrangler secret put CONSOLE_PASSWORD    # (in ota-server/)
@@ -155,8 +164,8 @@ wrangler secret put CONSOLE_PASSWORD    # (in ota-server/)
 While `CONSOLE_PASSWORD` is unset the console's endpoints return `503` — so the
 worker never ships an open control surface. The page prompts for the password
 and keeps it in `sessionStorage`; every request sends `Authorization: Bearer …`.
-Endpoints: `GET /console/api/state?app=`, `POST /console/api/promote`,
-`POST /console/api/force`.
+Endpoints: `GET /console/api/state?app=`, `GET /console/api/update?app=&id=`,
+`POST /console/api/promote`, `POST /console/api/force`.
 
 **2. In the admin panel** — System → **OTA Updates**, backed by `api-server`
 `GET/POST /api/admin/ota/*` (uses the existing admin auth/session). Same
