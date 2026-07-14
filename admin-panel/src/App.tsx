@@ -50,6 +50,7 @@ const Deposits = lazy(() => import('@/pages/Deposits'));
 const HealthMonitor = lazy(() => import('@/pages/HealthMonitor'));
 const Alerts = lazy(() => import('@/pages/Alerts'));
 const Risk = lazy(() => import('@/pages/Risk'));
+const OtaUpdates = lazy(() => import('@/pages/OtaUpdates'));
 
 function PageLoader() {
   return (
@@ -121,6 +122,7 @@ function ProtectedApp() {
         <Route path="/deposits" component={Deposits} />
         <Route path="/payment-gateways" component={PaymentGateways} />
         <Route path="/health" component={HealthMonitor} />
+        <Route path="/ota" component={OtaUpdates} />
         <Route path="/alerts" component={Alerts} />
         <Route path="/settings" component={SettingsPage} />
           <Route component={() => <Redirect to="/dashboard" />} />

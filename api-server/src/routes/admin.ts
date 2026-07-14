@@ -19,6 +19,7 @@ import { findActiveBan } from '../lib/bans';
 import { pushCoinUpdate, notifyUser, pushBanState, pushToUser, broadcastDataChanged } from '../lib/realtime';
 import { maybeUnlockReferral, clawbackReferrals, approveReviewReferral, rejectReviewReferral } from '../lib/referral';
 import { assessUserRisk } from '../lib/riskScore';
+import { isOtaApp, getOtaState, promotePointer, setForce } from '../lib/otaStore';
 import type { Env, JWTPayload } from '../types';
 
 const admin = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
@@ -4348,6 +4349,56 @@ admin.get('/free-minutes-stats', async (c) => {
     console.warn('[admin/free-minutes-stats] failed:', e);
     return c.json({ free_minutes_used_total: 0, free_calls: 0, users_tried_free: 0, free_minutes_outstanding: 0, users_with_free_balance: 0, converted_to_paid: 0, conversion_pct: 0 });
   }
+});
+
+// ─── OTA update console (self-hosted Expo Updates) ──────────────────────────
+// Manage the same `ota/` R2 objects that ota-server/publish.mjs writes and the
+// OTA Worker serves. Read-only history/pointers + two mutations (promote or
+// rollback a channel pointer, toggle the forced-update flag). Publishing new
+// bundles stays in the CLI/CI (it needs `expo export`); see ota-server/README.
+
+// GET /api/admin/ota/state?app=user|host — live channel pointers + history.
+admin.get('/ota/state', async (c) => {
+  const app = c.req.query('app') ?? 'user';
+  if (!isOtaApp(app)) return c.json({ error: 'invalid app (expected "user" or "host")' }, 400);
+  try {
+    const state = await getOtaState(c.env, app);
+    return c.json({ app, ...state });
+  } catch (e) {
+    console.warn('[admin/ota/state] failed:', e);
+    return c.json({ error: 'failed to read OTA state' }, 500);
+  }
+});
+
+// POST /api/admin/ota/promote { app, channel, runtimeVersion, updateId }
+// Points a channel/runtimeVersion at an update — roll forward OR back.
+admin.post('/ota/promote', async (c) => {
+  const body = await c.req.json<Record<string, unknown>>().catch(() => ({}) as Record<string, unknown>);
+  const app = String(body.app ?? '');
+  const channel = String(body.channel ?? '').trim();
+  const runtimeVersion = String(body.runtimeVersion ?? '').trim();
+  const updateId = String(body.updateId ?? '').trim();
+  if (!isOtaApp(app)) return c.json({ error: 'invalid app (expected "user" or "host")' }, 400);
+  if (!channel || !runtimeVersion || !updateId) {
+    return c.json({ error: 'channel, runtimeVersion and updateId are required' }, 400);
+  }
+  const res = await promotePointer(c.env, app, channel, runtimeVersion, updateId);
+  if (!res.ok) return c.json({ error: res.error }, res.status);
+  return c.json({ ok: true, app, channel, runtimeVersion, updateId });
+});
+
+// POST /api/admin/ota/force { app, updateId, force: boolean }
+// Toggles the mandatory-update flag on an already-published update.
+admin.post('/ota/force', async (c) => {
+  const body = await c.req.json<Record<string, unknown>>().catch(() => ({}) as Record<string, unknown>);
+  const app = String(body.app ?? '');
+  const updateId = String(body.updateId ?? '').trim();
+  const force = body.force === true ? true : body.force === false ? false : null;
+  if (!isOtaApp(app)) return c.json({ error: 'invalid app (expected "user" or "host")' }, 400);
+  if (!updateId || force === null) return c.json({ error: 'updateId and force (boolean) are required' }, 400);
+  const res = await setForce(c.env, app, updateId, force);
+  if (!res.ok) return c.json({ error: res.error }, res.status);
+  return c.json({ ok: true, app, updateId, forceUpdate: force });
 });
 
 export default admin;

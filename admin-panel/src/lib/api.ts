@@ -410,4 +410,29 @@ export const api = {
     error?: string;
     message?: string;
   }>('POST', '/admin/seed-coin-economy', {}),
+
+  // ─── OTA update console (self-hosted Expo Updates) ────────────────────────
+  // Manage the same ota/ R2 objects that ota-server/publish.mjs writes and the
+  // OTA Worker serves: view update history + live channel pointers, promote or
+  // roll back a pointer, and toggle the mandatory-update flag on an update.
+  // Publishing new bundles stays in the CLI/CI (needs `expo export`).
+  otaState: (app: 'user' | 'host') =>
+    req<{
+      app: 'user' | 'host';
+      channels: { channel: string; runtimeVersion: string; updateId: string; createdAt: string | null }[];
+      updates: {
+        id: string;
+        createdAt: string | null;
+        runtimeVersion: string | null;
+        forceUpdate: boolean;
+        message: string | null;
+        gitCommit: string | null;
+        platforms: string[];
+        liveOn: string[];
+      }[];
+    }>('GET', `/admin/ota/state?app=${app}`),
+  otaPromote: (data: { app: 'user' | 'host'; channel: string; runtimeVersion: string; updateId: string }) =>
+    req<{ ok: boolean }>('POST', '/admin/ota/promote', data),
+  otaSetForce: (data: { app: 'user' | 'host'; updateId: string; force: boolean }) =>
+    req<{ ok: boolean; forceUpdate: boolean }>('POST', '/admin/ota/force', data),
 };
