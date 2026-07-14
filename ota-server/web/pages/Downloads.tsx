@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Smartphone, Download, Copy, Trash2, Plus, Rocket, Github, Zap, ExternalLink } from 'lucide-react';
+import { Smartphone, Download, Copy, Trash2, Plus, Rocket, Zap, ExternalLink } from 'lucide-react';
 import { useScope } from '@/scope';
 import { useBuilds } from '@/lib/queries';
 import { rel, humanSize } from '@/lib/format';
@@ -10,11 +10,6 @@ import { Spinner } from '@/components/bits';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/Modal';
-
-// GitHub Actions workflows that build + auto-publish the apps (Expo-style CI/CD).
-const REPO = 'Tophunt-max/Voxcall';
-const ANDROID_WORKFLOW = `https://github.com/${REPO}/actions/workflows/build-android.yml`;
-const IOS_WORKFLOW = `https://github.com/${REPO}/actions/workflows/build-ios.yml`;
 
 function copy(t: string) {
   if (navigator.clipboard) navigator.clipboard.writeText(t).then(() => toast.success('Copied'), () => toast.error('Copy failed'));
@@ -93,25 +88,11 @@ export function Downloads() {
           <div className="min-w-0">
             <div className="text-[13.5px] font-semibold">Builds publish here automatically — no manual upload</div>
             <p className="mt-0.5 text-[12.5px] text-muted-foreground">
-              Trigger a build below (GitHub Actions) or with <span className="font-mono">eas build --local</span> on
-              your machine. Builds run <b>free</b> on the CI runner — <span className="font-mono">eas build --local</span> uses
-              no EAS credits — and the finished APK / IPA is uploaded here automatically, ready to download &amp; share.
-              Cloud <span className="font-mono">eas build</span> (via the EAS webhook) also lands here. GitHub is optional.
+              Trigger a build on <b>Codemagic</b> (the <span className="font-mono">android</span> workflow) or run
+              <span className="font-mono"> eas build --local</span> on your machine. Builds run <b>free</b> — no EAS
+              credits — and the finished APK / IPA is uploaded here automatically, ready to download &amp; share.
+              A cloud <span className="font-mono">eas build</span> (via the EAS webhook) also lands here.
             </p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <a href={ANDROID_WORKFLOW} target="_blank" rel="noopener"
-                className="grad inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-medium text-white shadow-lg shadow-primary/30 hover:brightness-110">
-                <Rocket size={14} /> Build Android
-              </a>
-              <a href={IOS_WORKFLOW} target="_blank" rel="noopener"
-                className="grad inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] font-medium text-white shadow-lg shadow-primary/30 hover:brightness-110">
-                <Rocket size={14} /> Build iOS
-              </a>
-              <a href={`https://github.com/${REPO}/actions`} target="_blank" rel="noopener"
-                className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-2 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground">
-                <Github size={14} /> View runs
-              </a>
-            </div>
           </div>
         </div>
       </div>
@@ -125,8 +106,8 @@ export function Downloads() {
         <div className="rounded-xl border border-dashed border-border bg-card p-10 text-center">
           <div className="text-sm font-medium">No builds yet</div>
           <p className="mx-auto mt-1.5 max-w-md text-[12.5px] text-muted-foreground">
-            Run the <b>Build Android</b> or <b>Build iOS</b> workflow above. When the EAS build finishes it lands
-            here automatically. You can also “Add manually” to paste a link or upload a file.
+            Run the Codemagic <b>android</b> workflow (or <span className="font-mono">eas build --local</span>) and the
+            finished build lands here automatically. You can also “Add manually” to paste a link or upload a file.
           </p>
         </div>
       ) : (
