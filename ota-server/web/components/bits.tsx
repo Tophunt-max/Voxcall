@@ -1,13 +1,44 @@
 import { Smartphone } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { Badge } from './ui/badge';
+import { cn } from '@/lib/utils';
 import type { UpdateSummary } from '@/lib/api';
 
-export function StatCard({ n, label }: { n: number | string; label: string }) {
+type StatTone = 'purple' | 'blue' | 'green' | 'orange' | 'cyan' | 'red';
+
+const TONE_GRADIENT: Record<StatTone, string> = {
+  purple: 'gradient-purple',
+  blue: 'gradient-blue',
+  green: 'gradient-green',
+  orange: 'gradient-orange',
+  cyan: 'gradient-cyan',
+  red: 'gradient-red',
+};
+
+export function StatCard({
+  n,
+  label,
+  icon: Icon,
+  tone = 'purple',
+}: {
+  n: number | string;
+  label: string;
+  icon?: LucideIcon;
+  tone?: StatTone;
+}) {
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-border bg-gradient-to-b from-card to-card2 p-4 transition-transform hover:-translate-y-0.5">
-      <div className="grad absolute inset-x-0 top-0 h-0.5 opacity-60" />
-      <div className="text-[28px] font-extrabold tracking-tight">{n}</div>
-      <div className="mt-1 text-[11.5px] uppercase tracking-wide text-muted-foreground">{label}</div>
+    <div className="group relative overflow-hidden rounded-2xl border border-border bg-gradient-to-b from-card to-card2 p-4 transition-all hover:-translate-y-0.5 hover:border-primary/40">
+      <div className="flex items-start justify-between">
+        <div>
+          <div className="text-[28px] font-extrabold leading-none tracking-tight">{n}</div>
+          <div className="mt-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</div>
+        </div>
+        {Icon && (
+          <div className={cn('flex h-9 w-9 items-center justify-center rounded-xl text-white shadow-lg', TONE_GRADIENT[tone])}>
+            <Icon size={17} />
+          </div>
+        )}
+      </div>
     </div>
   );
 }

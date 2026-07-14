@@ -6,6 +6,7 @@ import type { UpdateSummary } from '@/lib/api';
 import { StatCard, UpdateBadges, RolloutBadge, Spinner } from '@/components/bits';
 import { Badge } from '@/components/ui/badge';
 import { UpdateDrawer } from '@/components/UpdateDrawer';
+import { UploadCloud, GitBranch, Layers, ShieldAlert, Package, Smartphone } from 'lucide-react';
 
 export function Overview() {
   const { app } = useScope();
@@ -29,12 +30,12 @@ export function Overview() {
   return (
     <>
       <div className="mb-7 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <StatCard n={updates.length} label="Updates" />
-        <StatCard n={distinctCh} label="Channels" />
-        <StatCard n={distinctRtv} label="Runtime versions" />
-        <StatCard n={mandatory} label="Mandatory" />
-        <StatCard n={(builds.data?.builds ?? []).length} label="Builds" />
-        <StatCard n={m.active7d ?? 0} label="Active devices (7d)" />
+        <StatCard n={updates.length} label="Updates" icon={UploadCloud} tone="purple" />
+        <StatCard n={distinctCh} label="Channels" icon={GitBranch} tone="blue" />
+        <StatCard n={distinctRtv} label="Runtime versions" icon={Layers} tone="cyan" />
+        <StatCard n={mandatory} label="Mandatory" icon={ShieldAlert} tone="red" />
+        <StatCard n={(builds.data?.builds ?? []).length} label="Builds" icon={Package} tone="orange" />
+        <StatCard n={m.active7d ?? 0} label="Active devices (7d)" icon={Smartphone} tone="green" />
       </div>
 
       <div className="mb-3 flex items-center justify-between">
