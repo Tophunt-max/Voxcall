@@ -21,6 +21,12 @@ binding = "ASSETS"
 [observability]
 enabled = true
 
+# Daily retention sweep (see scheduled() in src/index.ts). Runs at 03:00 UTC;
+# prunes updates/builds older than RETENTION_DAYS (live + newest are always
+# kept). No-op unless RETENTION_DAYS is set, so this trigger is safe to leave on.
+[triggers]
+crons = ["0 3 * * *"]
+
 # Reuses the SAME R2 bucket as the API worker. All OTA objects live under the
 # `ota/` key prefix so they never collide with app media/uploads.
 [[r2_buckets]]
@@ -54,6 +60,23 @@ CODE_SIGNING_KEY_ID = "root"
 #   eas webhook:create --event BUILD \
 #     --url "https://<this-worker-host>/console/hooks/eas?app=host" --secret "<secret>"
 # While UNSET the /console/hooks/eas endpoint returns 503 (disabled).
+
+# Scoped write-only token for CI / scripts (build endpoints only — never
+# rollback/promote). Keep it separate from CONSOLE_PASSWORD:
+#   wrangler secret put PUBLISH_TOKEN
+
+# Optional event notifications (Slack / Discord / generic incoming webhook).
+# Fires on promote / rollback / auto-rollback / new build / retention:
+#   wrangler secret put NOTIFY_WEBHOOK_URL
+
+# Retention: prune updates/builds older than N days (live + newest kept):
+#   RETENTION_DAYS = "60"   (set as a [vars] value or secret; unset = disabled)
+
+# Auto-rollback (opt-in): if a live update's client-reported failure rate
+# crosses AUTO_ROLLBACK_FAILURE_PCT over >= AUTO_ROLLBACK_MIN_SAMPLE reports,
+# it is rolled back to embedded automatically. Unset = record health only.
+#   AUTO_ROLLBACK_FAILURE_PCT = "25"
+#   AUTO_ROLLBACK_MIN_SAMPLE  = "20"
 
 [dev]
 port = 8790

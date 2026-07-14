@@ -10,6 +10,7 @@ import { Overview } from '@/pages/Overview';
 import { Updates } from '@/pages/Updates';
 import { Channels } from '@/pages/Channels';
 import { Downloads } from '@/pages/Downloads';
+import { Audit } from '@/pages/Audit';
 
 export default function App() {
   const [authed, setAuthed] = useState(!!getToken());
@@ -43,6 +44,7 @@ export default function App() {
               <Route path="/updates" component={Updates} />
               <Route path="/channels" component={Channels} />
               <Route path="/downloads" component={Downloads} />
+              <Route path="/audit" component={Audit} />
               <Route component={Overview} />
             </Switch>
           </Layout>

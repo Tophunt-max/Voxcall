@@ -13,3 +13,9 @@ export function useMetrics(app: AppId) {
 export function useBuilds(app: AppId) {
   return useQuery({ queryKey: ['builds', app], queryFn: () => api.builds(app), ...LIVE });
 }
+export function useHealth(app: AppId) {
+  return useQuery({ queryKey: ['health', app], queryFn: () => api.health(app), ...LIVE });
+}
+export function useAudit(app: AppId) {
+  return useQuery({ queryKey: ['audit', app], queryFn: () => api.audit(app), ...LIVE });
+}

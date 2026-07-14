@@ -133,6 +133,7 @@ export async function handleEasWebhook(request: Request, env: Env, url: URL): Pr
     notes: `EAS build · ${md.buildProfile || channel}${payload.buildDetailsPageUrl ? ` · ${payload.buildDetailsPageUrl}` : ''}`,
     externalUrl: downloadUrl,
     filename: filenameFor(downloadUrl, app, platform, version),
+    bundleId: (md.appIdentifier || '').trim() || undefined,
   });
 
   return json({ ok: true, build: { ...rec, downloadUrl: buildDownloadUrl(rec, url.origin) } });

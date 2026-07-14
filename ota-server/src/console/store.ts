@@ -9,6 +9,8 @@ import {
   CHANNELS_PREFIX,
   UPDATES_PREFIX,
   METRICS_PREFIX,
+  BUILDS_PREFIX,
+  HEALTH_PREFIX,
   sanitize,
 } from '../shared';
 
@@ -18,6 +20,7 @@ export interface ConsolePointer {
   updateId: string;
   createdAt: string | null;
   rollout: number; // 1..100 — percentage of devices this pointer is served to
+  rollBackToEmbedded?: boolean; // channel is serving a "roll back to embedded" directive
 }
 
 export interface ConsoleUpdate {
@@ -86,8 +89,17 @@ async function listConsolePointers(env: Env, app: string): Promise<ConsolePointe
       for (const o of res.objects) {
         if (!o.key.endsWith('.json')) continue;
         const rv = o.key.slice(dir.length).replace(/\.json$/, '');
-        const ptr = await readJsonKey<{ updateId?: string; createdAt?: string; rollout?: number }>(env, o.key);
-        if (ptr?.updateId) {
+        const ptr = await readJsonKey<{ updateId?: string; createdAt?: string; rollout?: number; rollBackToEmbedded?: boolean }>(env, o.key);
+        if (ptr?.rollBackToEmbedded) {
+          results.push({
+            channel,
+            runtimeVersion: rv,
+            updateId: '',
+            createdAt: ptr.createdAt ?? null,
+            rollout: 100,
+            rollBackToEmbedded: true,
+          });
+        } else if (ptr?.updateId) {
           results.push({
             channel,
             runtimeVersion: rv,
@@ -296,8 +308,7 @@ export async function setForceFlag(
 // store / EAS / CDN link). Downloads are served publicly via the worker's
 // /download route (the buildId is an unguessable UUID), so testers can install
 // without the console token — the standard way ad-hoc/test builds are shared.
-
-const BUILDS_PREFIX = 'ota/builds';
+// (BUILDS_PREFIX is defined in ../shared.)
 
 export interface BuildRecord {
   id: string;
@@ -313,6 +324,7 @@ export interface BuildRecord {
   filename?: string;
   size?: number;
   contentType?: string;
+  bundleId?: string; // app bundle identifier (for the iOS itms-services manifest)
 }
 
 export interface BuildInput {
@@ -324,6 +336,7 @@ export interface BuildInput {
   filename?: string;
   externalUrl?: string;
   contentType?: string;
+  bundleId?: string;
 }
 
 function mimeForFilename(name: string): string {
@@ -370,6 +383,7 @@ export async function registerBuild(env: Env, app: string, input: BuildInput): P
     createdAt: new Date().toISOString(),
     externalUrl: input.externalUrl,
     filename: input.filename || undefined,
+    bundleId: input.bundleId || undefined,
   };
   await env.STORAGE.put(`${BUILDS_PREFIX}/${app}/${id}/build.json`, JSON.stringify(rec, null, 2), {
     httpMetadata: { contentType: 'application/json' },
@@ -405,6 +419,7 @@ export async function saveUploadedBuild(
     filename: safeName,
     size: (put as { size?: number })?.size,
     contentType,
+    bundleId: input.bundleId || undefined,
   };
   await env.STORAGE.put(`${BUILDS_PREFIX}/${app}/${id}/build.json`, JSON.stringify(rec, null, 2), {
     httpMetadata: { contentType: 'application/json' },
@@ -483,4 +498,174 @@ export async function deleteBuild(env: Env, app: string, id: string): Promise<Mu
   if (!keys.length) return { ok: false, status: 404, error: 'build not found' };
   await Promise.all(keys.map((k) => env.STORAGE.delete(k)));
   return { ok: true };
+}
+
+
+// ─── Rollback to embedded (kill-switch) ─────────────────────────────────────
+// Rewrites every live pointer under a channel to a "rollBackToEmbedded"
+// directive. Clients currently running an OTA update revert to the bundle
+// embedded in their installed build on their next check — the safest way to
+// pull a bad update. Returns the runtime versions affected.
+export async function setRollbackToEmbedded(
+  env: Env,
+  app: string,
+  channel: string,
+): Promise<MutationResult<{ runtimeVersions: string[] }>> {
+  const dir = `${CHANNELS_PREFIX}/${app}/${sanitize(channel)}/`;
+  const keys: string[] = [];
+  let cursor: string | undefined;
+  for (let i = 0; i < 20; i++) {
+    const res = await env.STORAGE.list({ prefix: dir, cursor, limit: 1000 });
+    for (const o of res.objects) if (o.key.endsWith('.json')) keys.push(o.key);
+    if (!res.truncated) break;
+    cursor = (res as { cursor?: string }).cursor;
+    if (!cursor) break;
+  }
+  if (!keys.length) return { ok: false, status: 404, error: 'no live pointer for this channel' };
+  const commitTime = new Date().toISOString();
+  const runtimeVersions: string[] = [];
+  await Promise.all(
+    keys.map(async (k) => {
+      runtimeVersions.push(k.slice(dir.length).replace(/\.json$/, ''));
+      await env.STORAGE.put(
+        k,
+        JSON.stringify({ rollBackToEmbedded: true, commitTime, createdAt: commitTime }),
+        { httpMetadata: { contentType: 'application/json' } },
+      );
+    }),
+  );
+  return { ok: true, runtimeVersions };
+}
+
+// ─── Update health (client-reported apply/launch outcomes) ──────────────────
+// The app posts to /report after applying/launching an update; we keep a small
+// aggregate per update (best-effort, read-modify-write like the adoption metric).
+export interface UpdateHealth {
+  ok: number;
+  err: number;
+  lastError: string | null;
+  updatedAt: string;
+}
+
+export async function recordUpdateResult(
+  env: Env,
+  app: string,
+  updateId: string,
+  outcome: 'ok' | 'error',
+  message?: string,
+): Promise<UpdateHealth> {
+  const key = `${HEALTH_PREFIX}/${app}/${sanitize(updateId)}.json`;
+  const cur =
+    (await readJsonKey<UpdateHealth>(env, key)) ?? { ok: 0, err: 0, lastError: null, updatedAt: '' };
+  if (outcome === 'error') {
+    cur.err += 1;
+    if (message) cur.lastError = message.slice(0, 300);
+  } else {
+    cur.ok += 1;
+  }
+  cur.updatedAt = new Date().toISOString();
+  await env.STORAGE.put(key, JSON.stringify(cur), { httpMetadata: { contentType: 'application/json' } });
+  return cur;
+}
+
+export async function getHealthMap(env: Env, app: string): Promise<Record<string, UpdateHealth>> {
+  const prefix = `${HEALTH_PREFIX}/${app}/`;
+  const out: Record<string, UpdateHealth> = {};
+  let cursor: string | undefined;
+  for (let i = 0; i < 20; i++) {
+    const res = await env.STORAGE.list({ prefix, cursor, limit: 1000 });
+    for (const o of res.objects) {
+      if (!o.key.endsWith('.json')) continue;
+      const id = o.key.slice(prefix.length).replace(/\.json$/, '');
+      const h = await readJsonKey<UpdateHealth>(env, o.key);
+      if (h) out[id] = h;
+    }
+    if (!res.truncated) break;
+    cursor = (res as { cursor?: string }).cursor;
+    if (!cursor) break;
+  }
+  return out;
+}
+
+// Opt-in auto-rollback. When a live update's failure rate crosses the configured
+// threshold (over a minimum sample) every channel serving it is rolled back to
+// embedded. Returns the channels rolled back (empty ⇒ disabled or below limits).
+export async function maybeAutoRollback(
+  env: Env,
+  app: string,
+  updateId: string,
+  health: UpdateHealth,
+): Promise<string[]> {
+  const pct = Number(env.AUTO_ROLLBACK_FAILURE_PCT);
+  if (!Number.isFinite(pct) || pct <= 0) return []; // disabled
+  const minSample = Number(env.AUTO_ROLLBACK_MIN_SAMPLE) || 20;
+  const total = health.ok + health.err;
+  if (total < minSample) return [];
+  if ((health.err / total) * 100 < pct) return [];
+
+  const pointers = await listConsolePointers(env, app);
+  const channels = [...new Set(pointers.filter((p) => p.updateId === updateId).map((p) => p.channel))];
+  for (const ch of channels) await setRollbackToEmbedded(env, app, ch);
+  return channels;
+}
+
+// ─── Retention / cleanup ────────────────────────────────────────────────────
+// Deletes updates + builds older than `days`, but ALWAYS keeps anything that is
+// currently live on a channel plus the newest `keepRecent` of each kind.
+async function deletePrefix(env: Env, prefix: string): Promise<void> {
+  let cursor: string | undefined;
+  for (let i = 0; i < 40; i++) {
+    const res = await env.STORAGE.list({ prefix, cursor, limit: 1000 });
+    if (res.objects.length) await Promise.all(res.objects.map((o) => env.STORAGE.delete(o.key)));
+    if (!res.truncated) break;
+    cursor = (res as { cursor?: string }).cursor;
+    if (!cursor) break;
+  }
+}
+
+export async function pruneOld(
+  env: Env,
+  app: string,
+  days: number,
+  keepRecent = 20,
+): Promise<{ updatesDeleted: number; buildsDeleted: number }> {
+  const cutoff = Date.now() - days * 86400000;
+  let updatesDeleted = 0;
+  let buildsDeleted = 0;
+
+  const pointers = await listConsolePointers(env, app);
+  const live = new Set(pointers.map((p) => p.updateId).filter(Boolean));
+
+  // Updates
+  const uBase = `${UPDATES_PREFIX}/${app}/`;
+  const uDirs = await listDelimited(env, uBase);
+  const updates = await Promise.all(
+    uDirs.map(async (dir) => {
+      const id = dir.slice(uBase.length).replace(/\/$/, '');
+      const rec = await readJsonKey<UpdateRecord>(env, `${uBase}${id}/update.json`);
+      return { id, createdAt: rec?.createdAt ?? null };
+    }),
+  );
+  updates.sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''));
+  const uKeep = new Set(updates.slice(0, keepRecent).map((u) => u.id));
+  for (const u of updates) {
+    if (live.has(u.id) || uKeep.has(u.id)) continue;
+    const t = u.createdAt ? Date.parse(u.createdAt) : 0;
+    if (t && t >= cutoff) continue;
+    await deletePrefix(env, `${uBase}${u.id}/`);
+    updatesDeleted++;
+  }
+
+  // Builds
+  const bBase = `${BUILDS_PREFIX}/${app}/`;
+  const builds = await listBuilds(env, app);
+  const bKeep = new Set(builds.slice(0, keepRecent).map((b) => b.id));
+  for (const b of builds) {
+    if (bKeep.has(b.id)) continue;
+    const t = b.createdAt ? Date.parse(b.createdAt) : 0;
+    if (t && t >= cutoff) continue;
+    await deletePrefix(env, `${bBase}${sanitize(b.id)}/`);
+    buildsDeleted++;
+  }
+  return { updatesDeleted, buildsDeleted };
 }

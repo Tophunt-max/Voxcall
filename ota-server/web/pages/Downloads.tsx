@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Smartphone, Download, Copy, Trash2, Plus, Rocket, Github, Zap } from 'lucide-react';
+import { Smartphone, Download, Copy, Trash2, Plus, Rocket, Github, Zap, ExternalLink } from 'lucide-react';
 import { useScope } from '@/scope';
 import { useBuilds } from '@/lib/queries';
 import { rel, humanSize } from '@/lib/format';
@@ -27,7 +27,7 @@ function isAutoBuild(b: Build): boolean {
   return n.startsWith('CI build') || n.startsWith('EAS build') || n.startsWith('Local build');
 }
 
-function BuildCard({ b, onDelete }: { b: Build; onDelete: (id: string) => void }) {
+function BuildCard({ b, app, onDelete }: { b: Build; app: AppId; onDelete: (id: string) => void }) {
   const plat = b.platform === 'ios' ? 'iOS' : 'Android';
   const ver = (b.version || '') + (b.buildNumber ? ` (${b.buildNumber})` : '');
   const meta = [b.size ? humanSize(b.size) : b.externalUrl ? 'external link' : '', rel(b.createdAt)].filter(Boolean).join(' · ');
@@ -51,6 +51,9 @@ function BuildCard({ b, onDelete }: { b: Build; onDelete: (id: string) => void }
           <>
             <a href={dl} target={b.storageKey ? undefined : '_blank'} rel="noopener" className="grad inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[13px] text-white shadow-lg shadow-primary/30 hover:brightness-110">
               <Download size={14} /> Download
+            </a>
+            <a href={`/install/${app}/${b.id}`} target="_blank" rel="noopener" title="Mobile install page (iOS OTA / Android)" className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-2 text-[13px] text-muted-foreground transition-colors hover:text-foreground">
+              <ExternalLink size={13} /> Install page
             </a>
             <Button size="sm" variant="outline" onClick={() => copy(dl)}><Copy size={13} /> Copy link</Button>
           </>
@@ -131,7 +134,7 @@ export function Downloads() {
           <div key={ch}>
             <h3 className="mb-3 mt-5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{ch} · {groups[ch].length}</h3>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {groups[ch].map((b) => <BuildCard key={b.id} b={b} onDelete={del} />)}
+              {groups[ch].map((b) => <BuildCard key={b.id} b={b} app={app} onDelete={del} />)}
             </div>
           </div>
         ))

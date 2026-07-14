@@ -64,6 +64,29 @@ export interface Pointer {
   updateId: string;
   createdAt: string | null;
   rollout: number;
+  rollBackToEmbedded?: boolean;
+}
+
+export interface AuditEntry {
+  ts: string;
+  app: string;
+  action: string;
+  actor: string;
+  detail: Record<string, unknown>;
+}
+export interface AuditResp {
+  app: string;
+  entries: AuditEntry[];
+}
+export interface UpdateHealth {
+  ok: number;
+  err: number;
+  lastError: string | null;
+  updatedAt: string;
+}
+export interface HealthResp {
+  app: string;
+  health: Record<string, UpdateHealth>;
 }
 export interface UpdateSummary {
   id: string;
@@ -103,6 +126,7 @@ export interface Build {
   filename?: string;
   size?: number;
   downloadUrl?: string;
+  bundleId?: string;
 }
 export interface BuildsResp {
   app: string;
@@ -139,6 +163,8 @@ export interface UpdateDetail {
 export const api = {
   state: (app: AppId) => req<StateResp>('GET', `/state?app=${app}`),
   metrics: (app: AppId) => req<MetricsResp>('GET', `/metrics?app=${app}`),
+  health: (app: AppId) => req<HealthResp>('GET', `/health?app=${app}`),
+  audit: (app: AppId) => req<AuditResp>('GET', `/audit?app=${app}`),
   builds: (app: AppId) => req<BuildsResp>('GET', `/builds?app=${app}`),
   update: (app: AppId, id: string) => req<UpdateDetail>('GET', `/update?app=${app}&id=${encodeURIComponent(id)}`),
   promote: (d: { app: AppId; channel: string; updateId: string; rollout: number }) =>
@@ -147,6 +173,8 @@ export const api = {
     req<{ ok: boolean; rollout: number }>('POST', '/rollout', d),
   setForce: (d: { app: AppId; updateId: string; force: boolean }) =>
     req<{ ok: boolean; forceUpdate: boolean }>('POST', '/force', d),
+  rollbackEmbedded: (d: { app: AppId; channel: string }) =>
+    req<{ ok: boolean; runtimeVersions: string[] }>('POST', '/rollback', d),
   registerBuild: (d: {
     app: AppId; channel: string; platform: string; version: string; buildNumber: string; notes: string; externalUrl: string;
   }) => req<{ ok: boolean; build: Build }>('POST', '/builds', d),

@@ -30,6 +30,33 @@ export interface Env {
    * `…/console/hooks/eas?app=user` and `…?app=host`.
    */
   EAS_WEBHOOK_SECRET?: string;
+  /**
+   * Write-only "publish" token for CI / scripts. When set, it authorizes ONLY
+   * the build endpoints (register/upload) — never rollback/force/promote. Keep
+   * it separate from CONSOLE_PASSWORD (the human login) so a leaked CI token
+   * can't flip production. `wrangler secret put PUBLISH_TOKEN`.
+   */
+  PUBLISH_TOKEN?: string;
+  /**
+   * Optional incoming-webhook URL (Slack / Discord / generic). When set, the
+   * server posts a short message on notable events (promote, rollback,
+   * auto-rollback, new build). `wrangler secret put NOTIFY_WEBHOOK_URL`.
+   */
+  NOTIFY_WEBHOOK_URL?: string;
+  /**
+   * Retention: updates/builds older than this many days are pruned by the
+   * daily cron (live pointers + the newest few are always kept). Unset/0 ⇒
+   * cleanup disabled. e.g. RETENTION_DAYS = "60".
+   */
+  RETENTION_DAYS?: string;
+  /**
+   * Auto-rollback tuning (opt-in). When AUTO_ROLLBACK_FAILURE_PCT is set (1-100)
+   * a live update whose client-reported failure rate exceeds it — over at least
+   * AUTO_ROLLBACK_MIN_SAMPLE reports — is automatically rolled back to embedded.
+   * Unset ⇒ health is only recorded (manual rollback from the console).
+   */
+  AUTO_ROLLBACK_FAILURE_PCT?: string;
+  AUTO_ROLLBACK_MIN_SAMPLE?: string;
 }
 
 export const PROTOCOL_VERSION = '1';
@@ -37,6 +64,9 @@ export const APPS = new Set(['user', 'host']);
 export const UPDATES_PREFIX = 'ota/updates';
 export const CHANNELS_PREFIX = 'ota/channels';
 export const METRICS_PREFIX = 'ota/metrics';
+export const BUILDS_PREFIX = 'ota/builds';
+export const AUDIT_PREFIX = 'ota/audit';
+export const HEALTH_PREFIX = 'ota/health';
 
 export interface AssetRecord {
   key: string;

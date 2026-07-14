@@ -1,11 +1,12 @@
 // ============================================================================
-// Console JSON API — /console/api/*. Every call is gated behind the console
-// bearer token (see auth.ts). HTTP routing/validation only; the actual R2 work
-// lives in store.ts.
+// Console JSON API — /console/api/*. Reads/writes are gated behind the console
+// bearer token (see auth.ts); the build endpoints also accept the scoped
+// PUBLISH_TOKEN. Every mutation is written to the audit log, and notable ones
+// fire a notification. HTTP routing/validation only; R2 work lives in store.ts.
 // ============================================================================
 
 import { type Env, APPS, json } from '../shared';
-import { authorizeConsole } from './auth';
+import { authorizeConsole, authorizePublish } from './auth';
 import {
   getConsoleState,
   getUpdateDetail,
@@ -13,12 +14,16 @@ import {
   promoteUpdate,
   setForceFlag,
   setRollout,
+  setRollbackToEmbedded,
+  getHealthMap,
   listBuilds,
   registerBuild,
   saveUploadedBuild,
   deleteBuild,
   buildDownloadUrl,
 } from './store';
+import { appendAudit, listAudit } from './audit';
+import { notify } from '../notify';
 
 function isPlatform(p: string): boolean {
   return p === 'android' || p === 'ios';
@@ -33,25 +38,48 @@ async function readJsonBody(request: Request): Promise<Record<string, unknown>> 
 }
 
 /** Handle a request under `/console/api/`. `path` is the full request pathname. */
-export async function handleConsoleApi(request: Request, env: Env, url: URL, path: string): Promise<Response> {
-  const auth = authorizeConsole(request, env);
+export async function handleConsoleApi(
+  request: Request,
+  env: Env,
+  url: URL,
+  path: string,
+  ctx: ExecutionContext,
+): Promise<Response> {
+  const sub = path.slice('/console/api/'.length);
+  const method = request.method;
+
+  // Build register/upload also accept the scoped publish token; everything else
+  // requires the full console login.
+  const publishRoute = method === 'POST' && (sub === 'builds' || sub === 'builds/upload');
+  const auth = publishRoute ? authorizePublish(request, env) : authorizeConsole(request, env);
   if (!auth.ok) return json({ error: auth.error }, auth.status);
 
-  const sub = path.slice('/console/api/'.length);
-
-  if (sub === 'state' && request.method === 'GET') {
+  if (sub === 'state' && method === 'GET') {
     const app = url.searchParams.get('app') || 'user';
     if (!APPS.has(app)) return json({ error: 'invalid app' }, 400);
     return json({ app, ...(await getConsoleState(env, app)) });
   }
 
-  if (sub === 'metrics' && request.method === 'GET') {
+  if (sub === 'metrics' && method === 'GET') {
     const app = url.searchParams.get('app') || 'user';
     if (!APPS.has(app)) return json({ error: 'invalid app' }, 400);
     return json({ app, ...(await getMetrics(env, app)) });
   }
 
-  if (sub === 'update' && request.method === 'GET') {
+  if (sub === 'health' && method === 'GET') {
+    const app = url.searchParams.get('app') || 'user';
+    if (!APPS.has(app)) return json({ error: 'invalid app' }, 400);
+    return json({ app, health: await getHealthMap(env, app) });
+  }
+
+  if (sub === 'audit' && method === 'GET') {
+    const app = url.searchParams.get('app') || 'user';
+    if (!APPS.has(app)) return json({ error: 'invalid app' }, 400);
+    const limit = Math.min(200, Math.max(1, Number(url.searchParams.get('limit')) || 100));
+    return json({ app, entries: await listAudit(env, app, limit) });
+  }
+
+  if (sub === 'update' && method === 'GET') {
     const app = url.searchParams.get('app') || 'user';
     const id = (url.searchParams.get('id') || '').trim();
     if (!APPS.has(app)) return json({ error: 'invalid app' }, 400);
@@ -61,7 +89,7 @@ export async function handleConsoleApi(request: Request, env: Env, url: URL, pat
     return json(detail);
   }
 
-  if (sub === 'promote' && request.method === 'POST') {
+  if (sub === 'promote' && method === 'POST') {
     const body = await readJsonBody(request);
     const app = String(body.app ?? '');
     const channel = String(body.channel ?? '').trim();
@@ -71,11 +99,13 @@ export async function handleConsoleApi(request: Request, env: Env, url: URL, pat
     const rollout = typeof body.rollout === 'number' ? body.rollout : 100;
     const res = await promoteUpdate(env, app, channel, updateId, rollout);
     if (!res.ok) return json({ error: res.error }, res.status);
+    await appendAudit(env, { app, action: 'promote', actor: 'console', detail: { channel, updateId, rollout: res.rollout } });
+    ctx.waitUntil(notify(env, `🚀 Promote (${app}): ${updateId.slice(0, 8)} → "${channel}" @ ${res.rollout}%`));
     return json({ ok: true, app, channel, updateId, runtimeVersions: res.runtimeVersions, rollout: res.rollout });
   }
 
   // Change the rollout % of a channel's current release (widen a staged rollout).
-  if (sub === 'rollout' && request.method === 'POST') {
+  if (sub === 'rollout' && method === 'POST') {
     const body = await readJsonBody(request);
     const app = String(body.app ?? '');
     const channel = String(body.channel ?? '').trim();
@@ -85,10 +115,25 @@ export async function handleConsoleApi(request: Request, env: Env, url: URL, pat
     if (!Number.isFinite(rollout)) return json({ error: 'rollout must be a number (1-100)' }, 400);
     const res = await setRollout(env, app, channel, rollout);
     if (!res.ok) return json({ error: res.error }, res.status);
+    await appendAudit(env, { app, action: 'rollout', actor: 'console', detail: { channel, rollout: res.rollout } });
     return json({ ok: true, app, channel, rollout: res.rollout });
   }
 
-  if (sub === 'force' && request.method === 'POST') {
+  // Roll a channel back to the embedded bundle (kill-switch).
+  if (sub === 'rollback' && method === 'POST') {
+    const body = await readJsonBody(request);
+    const app = String(body.app ?? '');
+    const channel = String(body.channel ?? '').trim();
+    if (!APPS.has(app)) return json({ error: 'invalid app' }, 400);
+    if (!channel) return json({ error: 'channel is required' }, 400);
+    const res = await setRollbackToEmbedded(env, app, channel);
+    if (!res.ok) return json({ error: res.error }, res.status);
+    await appendAudit(env, { app, action: 'rollback', actor: 'console', detail: { channel, runtimeVersions: res.runtimeVersions } });
+    ctx.waitUntil(notify(env, `⏪ Rollback to embedded (${app}): channel "${channel}" (${res.runtimeVersions.length} runtime version(s)).`));
+    return json({ ok: true, app, channel, runtimeVersions: res.runtimeVersions });
+  }
+
+  if (sub === 'force' && method === 'POST') {
     const body = await readJsonBody(request);
     const app = String(body.app ?? '');
     const updateId = String(body.updateId ?? '').trim();
@@ -97,11 +142,12 @@ export async function handleConsoleApi(request: Request, env: Env, url: URL, pat
     if (!updateId || force === null) return json({ error: 'updateId and force (boolean) are required' }, 400);
     const res = await setForceFlag(env, app, updateId, force);
     if (!res.ok) return json({ error: res.error }, res.status);
+    await appendAudit(env, { app, action: 'force', actor: 'console', detail: { updateId, force } });
     return json({ ok: true, app, updateId, forceUpdate: force });
   }
 
   // ── App builds (installable APK/IPA distribution) ─────────────────────────
-  if (sub === 'builds' && request.method === 'GET') {
+  if (sub === 'builds' && method === 'GET') {
     const app = url.searchParams.get('app') || 'user';
     if (!APPS.has(app)) return json({ error: 'invalid app' }, 400);
     const builds = (await listBuilds(env, app)).map((b) => ({ ...b, downloadUrl: buildDownloadUrl(b, url.origin) }));
@@ -109,7 +155,7 @@ export async function handleConsoleApi(request: Request, env: Env, url: URL, pat
   }
 
   // Register a build that lives at an external https URL (store / EAS / CDN).
-  if (sub === 'builds' && request.method === 'POST') {
+  if (sub === 'builds' && method === 'POST') {
     const body = await readJsonBody(request);
     const app = String(body.app ?? '');
     const platform = String(body.platform ?? '').trim();
@@ -126,12 +172,15 @@ export async function handleConsoleApi(request: Request, env: Env, url: URL, pat
       notes: String(body.notes ?? '').trim(),
       externalUrl,
       filename: String(body.filename ?? '').trim(),
+      bundleId: String(body.bundleId ?? '').trim(),
     });
+    await appendAudit(env, { app, action: 'build.add', actor: 'ci', detail: { id: rec.id, platform, channel, version: rec.version } });
+    ctx.waitUntil(notify(env, `📦 New build (${app} · ${platform} · ${channel}) ${rec.version || ''}`.trim()));
     return json({ ok: true, build: { ...rec, downloadUrl: buildDownloadUrl(rec, url.origin) } });
   }
 
   // Upload a binary (raw request body streamed to R2). Metadata via query string.
-  if (sub === 'builds/upload' && request.method === 'POST') {
+  if (sub === 'builds/upload' && method === 'POST') {
     const app = url.searchParams.get('app') || 'user';
     const platform = (url.searchParams.get('platform') || '').trim();
     const channel = (url.searchParams.get('channel') || 'production').trim() || 'production';
@@ -149,19 +198,23 @@ export async function handleConsoleApi(request: Request, env: Env, url: URL, pat
         notes: (url.searchParams.get('notes') || '').trim(),
         filename: (url.searchParams.get('filename') || 'app.bin').trim(),
         contentType: request.headers.get('content-type') || '',
+        bundleId: (url.searchParams.get('bundleId') || '').trim(),
       },
       request.body,
     );
+    await appendAudit(env, { app, action: 'build.add', actor: 'ci', detail: { id: rec.id, platform, channel, version: rec.version, uploaded: true } });
+    ctx.waitUntil(notify(env, `📦 New build (${app} · ${platform} · ${channel}) ${rec.version || ''}`.trim()));
     return json({ ok: true, build: { ...rec, downloadUrl: buildDownloadUrl(rec, url.origin) } });
   }
 
-  if (sub === 'builds' && request.method === 'DELETE') {
+  if (sub === 'builds' && method === 'DELETE') {
     const app = url.searchParams.get('app') || 'user';
     const id = (url.searchParams.get('id') || '').trim();
     if (!APPS.has(app)) return json({ error: 'invalid app' }, 400);
     if (!id) return json({ error: 'id is required' }, 400);
     const res = await deleteBuild(env, app, id);
     if (!res.ok) return json({ error: res.error }, res.status);
+    await appendAudit(env, { app, action: 'build.delete', actor: 'console', detail: { id } });
     return json({ ok: true, app, id });
   }
 

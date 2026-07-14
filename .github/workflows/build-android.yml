@@ -131,6 +131,8 @@ jobs:
         if: steps.gate.outputs.run == 'true'
         env:
           OTA_SERVER_URL: ${{ secrets.OTA_SERVER_URL }}
+          # Prefer the scoped publish token; fall back to the console password.
+          OTA_PUBLISH_TOKEN: ${{ secrets.OTA_PUBLISH_TOKEN }}
           OTA_CONSOLE_PASSWORD: ${{ secrets.OTA_CONSOLE_PASSWORD }}
           APP_KEY: ${{ matrix.key }}
           APP_DIR: ${{ matrix.dir }}
@@ -138,8 +140,9 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
-          if [ -z "${OTA_SERVER_URL:-}" ] || [ -z "${OTA_CONSOLE_PASSWORD:-}" ]; then
-            echo "::warning::OTA_SERVER_URL / OTA_CONSOLE_PASSWORD not set — skipping upload. Artifact left in the runner ($OUT_FILE)."
+          TOKEN="${OTA_PUBLISH_TOKEN:-${OTA_CONSOLE_PASSWORD:-}}"
+          if [ -z "${OTA_SERVER_URL:-}" ] || [ -z "$TOKEN" ]; then
+            echo "::warning::OTA_SERVER_URL / publish token not set — skipping upload. Artifact left in the runner ($OUT_FILE)."
             exit 0
           fi
           [ -f "$OUT_FILE" ] || { echo "::error::Build artifact missing ($OUT_FILE)."; exit 1; }
@@ -156,7 +159,7 @@ jobs:
           qs="app=${APP_KEY}&platform=android&channel=${PROFILE}&version=${version}&buildNumber=${build_number}&notes=${notes}&filename=${filename}"
           code=$(curl -sS -o "$RUNNER_TEMP/ota-resp.json" -w '%{http_code}' -X POST \
             "${OTA_SERVER_URL%/}/console/api/builds/upload?${qs}" \
-            -H "Authorization: Bearer $OTA_CONSOLE_PASSWORD" \
+            -H "Authorization: Bearer $TOKEN" \
             -H "Content-Type: $ct" \
             --data-binary @"$OUT_FILE")
           echo "OTA server response ($code):"; cat "$RUNNER_TEMP/ota-resp.json" || true

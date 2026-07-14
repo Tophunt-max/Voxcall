@@ -32,10 +32,14 @@ import {
   UPDATES_PREFIX,
   CHANNELS_PREFIX,
   METRICS_PREFIX,
+  BUILDS_PREFIX,
   sanitize,
   json,
 } from './shared';
 import { handleConsoleApi, handleEasWebhook } from './console';
+import { recordUpdateResult, maybeAutoRollback, pruneOld, buildDownloadUrl, type BuildRecord } from './console/store';
+import { appendAudit } from './console/audit';
+import { notify } from './notify';
 
 export type { Env };
 
@@ -58,6 +62,18 @@ export default {
     if (path === '/download') {
       return serveDownload(request, env, url);
     }
+    // Public install landing page for a build (mobile-friendly): Android taps
+    // the APK; iOS installs over-the-air via an itms-services manifest plist.
+    //   /install/<app>/<buildId>            → HTML page
+    //   /install/<app>/<buildId>/manifest.plist → iOS OTA manifest
+    {
+      const im = path.match(/^\/install\/([a-z0-9_-]+)\/([a-z0-9-]+)(\/manifest\.plist)?$/i);
+      if (im) return serveInstall(env, url, im[1], im[2], Boolean(im[3]));
+    }
+    // Client update-outcome report (best-effort health + optional auto-rollback).
+    if (path === '/report') {
+      return handleReport(request, env, ctx);
+    }
     // EAS Build webhook — auto-publishes finished builds to Downloads. Verified
     // by HMAC signature (not the console token), so it lives before the console
     // API auth gate. Works for builds triggered anywhere (local / dashboard / CI).
@@ -66,7 +82,7 @@ export default {
     }
     // Console API (same origin as the served SPA — no CORS needed).
     if (path.startsWith('/console/api/')) {
-      return handleConsoleApi(request, env, url, path);
+      return handleConsoleApi(request, env, url, path, ctx);
     }
     const m = path.match(/^\/manifest\/([a-z0-9_-]+)$/i);
     if (m) {
@@ -75,6 +91,19 @@ export default {
     }
     // Everything else → the React console (static assets), with SPA fallback.
     return serveConsoleApp(request, env);
+  },
+
+  // Daily retention sweep (cron in wrangler.toml). Prunes updates/builds older
+  // than RETENTION_DAYS, always keeping live + newest. Disabled when unset.
+  async scheduled(_controller: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
+    const days = Number(env.RETENTION_DAYS);
+    if (!Number.isFinite(days) || days <= 0) return;
+    for (const app of APPS) {
+      const r = await pruneOld(env, app, days);
+      if (r.updatesDeleted || r.buildsDeleted) {
+        await notify(env, `🧹 Retention (${app}): pruned ${r.updatesDeleted} update(s), ${r.buildsDeleted} build(s) older than ${days}d.`);
+      }
+    }
   },
 };
 
@@ -127,11 +156,20 @@ async function serveManifest(request: Request, env: Env, url: URL, app: string, 
   const pointerKey = `${CHANNELS_PREFIX}/${app}/${sanitize(channel)}/${sanitize(runtimeVersion)}.json`;
   const pointerObj = await env.STORAGE.get(pointerKey);
   if (!pointerObj) return noUpdate(commonHeaders); // nothing published → embedded update runs
-  let pointer: { updateId?: string; rollout?: number };
+  let pointer: { updateId?: string; rollout?: number; rollBackToEmbedded?: boolean; commitTime?: string };
   try {
-    pointer = (await pointerObj.json()) as { updateId?: string; rollout?: number };
+    pointer = (await pointerObj.json()) as typeof pointer;
   } catch {
     return noUpdate(commonHeaders);
+  }
+  // Kill-switch: tell the client to revert to the bundle embedded in its build.
+  if (pointer.rollBackToEmbedded) {
+    return serveDirective(
+      request,
+      env,
+      { type: 'rollBackToEmbedded', parameters: { commitTime: pointer.commitTime || new Date().toISOString() } },
+      commonHeaders,
+    );
   }
   if (!pointer.updateId) return noUpdate(commonHeaders);
 
@@ -233,6 +271,158 @@ async function serveManifest(request: Request, env: Env, url: URL, app: string, 
 // running whatever it already has (a prior update or the embedded bundle).
 function noUpdate(headers: Record<string, string>): Response {
   return new Response(null, { status: 204, headers });
+}
+
+// Serve an Expo Updates "directive" (e.g. rollBackToEmbedded) as multipart/mixed.
+// Signed with the same key as manifests when the client asks for a signature.
+async function serveDirective(
+  request: Request,
+  env: Env,
+  directive: unknown,
+  headers: Record<string, string>,
+): Promise<Response> {
+  const bodyStr = JSON.stringify(directive);
+  let signaturePart = '';
+  if (request.headers.get('expo-expect-signature')) {
+    if (!env.CODE_SIGNING_PRIVATE_KEY) {
+      return json({ error: 'Code signing requested but server has no signing key' }, 500);
+    }
+    try {
+      const sig = await signRsaSha256(bodyStr, env.CODE_SIGNING_PRIVATE_KEY);
+      const keyid = env.CODE_SIGNING_KEY_ID || 'root';
+      signaturePart = `expo-signature: sig="${sig}", keyid="${keyid}", alg="rsa-v1_5-sha256"\r\n`;
+    } catch {
+      return json({ error: 'Directive signing failed' }, 500);
+    }
+  }
+  const boundary = `voxcall-${crypto.randomUUID()}`;
+  const body =
+    `--${boundary}\r\n` +
+    `Content-Disposition: form-data; name="directive"\r\n` +
+    `Content-Type: application/json\r\n` +
+    signaturePart +
+    `\r\n` +
+    bodyStr +
+    `\r\n` +
+    `--${boundary}--\r\n`;
+  return new Response(body, {
+    status: 200,
+    headers: { ...headers, 'content-type': `multipart/mixed; boundary=${boundary}` },
+  });
+}
+
+// ─── Client update-outcome report → health + optional auto-rollback ─────────
+async function handleReport(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
+  let body: Record<string, unknown>;
+  try {
+    body = (await request.json()) as Record<string, unknown>;
+  } catch {
+    return json({ error: 'Invalid JSON' }, 400);
+  }
+  const app = String(body.app ?? '');
+  const updateId = String(body.updateId ?? '').trim();
+  const status = String(body.status ?? '').toLowerCase();
+  if (!APPS.has(app)) return json({ error: 'invalid app' }, 400);
+  if (!updateId) return json({ ok: true }); // running the embedded bundle — nothing to record
+  const outcome = status === 'error' || status === 'fail' || status === 'failed' ? 'error' : 'ok';
+  const message = typeof body.message === 'string' ? body.message : undefined;
+  const health = await recordUpdateResult(env, app, updateId, outcome, message);
+  if (outcome === 'error') {
+    const rolled = await maybeAutoRollback(env, app, updateId, health);
+    if (rolled.length) {
+      ctx.waitUntil(
+        notify(
+          env,
+          `⚠️ Auto-rollback (${app}): update ${updateId.slice(0, 8)} failed ${health.err}/${health.ok + health.err} — rolled back: ${rolled.join(', ')}`,
+        ),
+      );
+      ctx.waitUntil(
+        appendAudit(env, { app, action: 'auto-rollback', actor: 'auto', detail: { updateId, channels: rolled, health } }),
+      );
+    }
+  }
+  return json({ ok: true });
+}
+
+// ─── Public install landing page for a build ─────────────────────────────────
+function esc(s: string): string {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string));
+}
+
+async function serveInstall(env: Env, url: URL, app: string, buildId: string, plist: boolean): Promise<Response> {
+  if (!APPS.has(app)) return new Response('Unknown app', { status: 404 });
+  const rec = await readBuild(env, app, buildId);
+  if (!rec) return new Response('Build not found', { status: 404 });
+  const dl = buildDownloadUrl(rec, url.origin);
+  const version = rec.version || '';
+  const bundleId = rec.bundleId || `com.voxcall.${app}`;
+  const title = `VoxCall ${app === 'host' ? 'Host' : 'User'}`;
+
+  // iOS OTA manifest (itms-services). Requires an ad-hoc-signed .ipa on a
+  // registered device; App Store builds won't install this way.
+  if (plist) {
+    const pl =
+      `<?xml version="1.0" encoding="UTF-8"?>\n` +
+      `<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n` +
+      `<plist version="1.0"><dict><key>items</key><array><dict>` +
+      `<key>assets</key><array><dict>` +
+      `<key>kind</key><string>software-package</string>` +
+      `<key>url</key><string>${esc(dl)}</string>` +
+      `</dict></array>` +
+      `<key>metadata</key><dict>` +
+      `<key>bundle-identifier</key><string>${esc(bundleId)}</string>` +
+      `<key>bundle-version</key><string>${esc(version || '1.0.0')}</string>` +
+      `<key>kind</key><string>software</string>` +
+      `<key>title</key><string>${esc(title)}</string>` +
+      `</dict></dict></array></dict></plist>`;
+    return new Response(pl, { headers: { 'content-type': 'application/xml', 'cache-control': 'no-store' } });
+  }
+
+  const isIos = rec.platform === 'ios';
+  const plistUrl = `${url.origin}/install/${app}/${buildId}/manifest.plist`;
+  const iosHref = `itms-services://?action=download-manifest&url=${encodeURIComponent(plistUrl)}`;
+  const primaryHref = isIos ? iosHref : dl;
+  const meta = [rec.platform === 'ios' ? 'iOS' : 'Android', version && `v${version}${rec.buildNumber ? ` (${rec.buildNumber})` : ''}`, rec.channel]
+    .filter(Boolean)
+    .join(' · ');
+
+  const html =
+    `<!doctype html><html lang="en"><head><meta charset="utf-8">` +
+    `<meta name="viewport" content="width=device-width,initial-scale=1">` +
+    `<title>Install ${esc(title)}</title><style>` +
+    `*{box-sizing:border-box}body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;` +
+    `font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;` +
+    `background:radial-gradient(900px 500px at 100% -10%,rgba(124,92,255,.18),transparent 60%),#0a0b12;color:#e6e8f2}` +
+    `.card{width:100%;max-width:380px;margin:20px;padding:28px;border-radius:20px;background:linear-gradient(180deg,#12131c,#0d0e16);` +
+    `border:1px solid #22243a;box-shadow:0 20px 60px rgba(0,0,0,.5);text-align:center}` +
+    `.logo{width:64px;height:64px;border-radius:18px;margin:0 auto 16px;display:flex;align-items:center;justify-content:center;` +
+    `background:linear-gradient(135deg,#7c5cff,#5b8cff);font-size:28px;font-weight:800;color:#fff}` +
+    `h1{font-size:20px;margin:0 0 4px}.meta{color:#9aa0b8;font-size:13px;margin-bottom:22px}` +
+    `.btn{display:block;width:100%;padding:15px;border-radius:14px;font-size:16px;font-weight:600;text-decoration:none;color:#fff;` +
+    `background:linear-gradient(135deg,#7c5cff,#5b8cff);box-shadow:0 10px 30px rgba(124,92,255,.35)}` +
+    `.hint{margin-top:16px;font-size:12px;color:#7e849c;line-height:1.5}a.alt{color:#9d7bff}` +
+    `</style></head><body><div class="card">` +
+    `<div class="logo">V</div><h1>${esc(title)}</h1><div class="meta">${esc(meta)}</div>` +
+    `<a class="btn" href="${esc(primaryHref)}">${isIos ? 'Install on iPhone' : 'Download &amp; install APK'}</a>` +
+    `<div class="hint">` +
+    (isIos
+      ? `Open this page in Safari on the device. After tapping Install, allow the app in Settings › General › VPN &amp; Device Management. Ad-hoc builds only install on registered devices.`
+      : `If the install is blocked, allow "Install unknown apps" for your browser, then open the downloaded file.`) +
+    `<br><br><a class="alt" href="${esc(dl)}">Direct download link</a></div>` +
+    `</div></body></html>`;
+  return new Response(html, { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' } });
+}
+
+async function readBuild(env: Env, app: string, buildId: string): Promise<BuildRecord | null> {
+  const safe = sanitize(buildId);
+  const obj = await env.STORAGE.get(`${BUILDS_PREFIX}/${app}/${safe}/build.json`);
+  if (!obj) return null;
+  try {
+    return (await obj.json()) as BuildRecord;
+  } catch {
+    return null;
+  }
 }
 
 // Best-effort adoption record: one R2 object per install (overwritten each
