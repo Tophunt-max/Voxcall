@@ -35,7 +35,7 @@ import {
   sanitize,
   json,
 } from './shared';
-import { handleConsoleApi } from './console';
+import { handleConsoleApi, handleEasWebhook } from './console';
 
 export type { Env };
 
@@ -57,6 +57,12 @@ export default {
     // link/QR without the console token (same model as ad-hoc/TestFlight links).
     if (path === '/download') {
       return serveDownload(request, env, url);
+    }
+    // EAS Build webhook — auto-publishes finished builds to Downloads. Verified
+    // by HMAC signature (not the console token), so it lives before the console
+    // API auth gate. Works for builds triggered anywhere (local / dashboard / CI).
+    if (path === '/console/hooks/eas') {
+      return handleEasWebhook(request, env, url);
     }
     // Console API (same origin as the served SPA — no CORS needed).
     if (path.startsWith('/console/api/')) {

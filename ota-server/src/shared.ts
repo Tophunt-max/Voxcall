@@ -19,6 +19,17 @@ export interface Env {
    * worker never exposes an open rollback/force switch.
    */
   CONSOLE_PASSWORD?: string;
+  /**
+   * Shared secret for the EAS Build webhook (`POST /console/hooks/eas`). When
+   * set (`wrangler secret put EAS_WEBHOOK_SECRET`), EAS-signed build-finished
+   * events are verified (HMAC-SHA1) and the finished APK/IPA is auto-published
+   * to the Downloads page — no matter how the build was triggered (local
+   * `eas build`, the expo.dev dashboard, or CI). Unset ⇒ the webhook is
+   * disabled (503). This is the GitHub-Actions-independent, "just like Expo"
+   * path; create one webhook per Expo project pointing at
+   * `…/console/hooks/eas?app=user` and `…?app=host`.
+   */
+  EAS_WEBHOOK_SECRET?: string;
 }
 
 export const PROTOCOL_VERSION = '1';

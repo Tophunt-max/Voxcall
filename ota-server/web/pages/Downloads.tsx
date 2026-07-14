@@ -20,8 +20,11 @@ function copy(t: string) {
   if (navigator.clipboard) navigator.clipboard.writeText(t).then(() => toast.success('Copied'), () => toast.error('Copy failed'));
 }
 
-function isCiBuild(b: Build): boolean {
-  return (b.notes || '').startsWith('CI build');
+// Builds that were published automatically (EAS webhook, CI, or the local
+// build script) rather than uploaded by hand — surfaced with an "auto" badge.
+function isAutoBuild(b: Build): boolean {
+  const n = b.notes || '';
+  return n.startsWith('CI build') || n.startsWith('EAS build') || n.startsWith('Local build');
 }
 
 function BuildCard({ b, onDelete }: { b: Build; onDelete: (id: string) => void }) {
@@ -29,19 +32,19 @@ function BuildCard({ b, onDelete }: { b: Build; onDelete: (id: string) => void }
   const ver = (b.version || '') + (b.buildNumber ? ` (${b.buildNumber})` : '');
   const meta = [b.size ? humanSize(b.size) : b.externalUrl ? 'external link' : '', rel(b.createdAt)].filter(Boolean).join(' · ');
   const dl = b.downloadUrl || '';
-  const ci = isCiBuild(b);
+  const auto = isAutoBuild(b);
   return (
     <div className="rounded-xl border border-border bg-gradient-to-b from-card to-card2 p-4">
       <div className="flex items-center justify-between">
         <div className="flex flex-wrap items-center gap-2">
           <Badge tone="plat"><Smartphone size={11} /> {plat}</Badge>
           {ver && <span className="font-mono text-[12.5px]">{ver}</span>}
-          {ci && <Badge tone="channel"><Zap size={10} /> CI</Badge>}
+          {auto && <Badge tone="channel"><Zap size={10} /> auto</Badge>}
         </div>
         <button onClick={() => onDelete(b.id)} title="Delete build" className="text-muted-foreground hover:text-red-300"><Trash2 size={15} /></button>
       </div>
       {b.filename && <div className="mt-1.5 break-all font-mono text-xs text-muted-foreground">{b.filename}</div>}
-      {b.notes && !ci && <div className="mt-1.5 text-[12.5px]">{b.notes}</div>}
+      {b.notes && !auto && <div className="mt-1.5 text-[12.5px]">{b.notes}</div>}
       <div className="mt-1.5 text-xs text-muted-foreground">{meta}</div>
       <div className="mt-3 flex items-center gap-2">
         {dl && (
@@ -85,10 +88,12 @@ export function Downloads() {
             <Rocket size={16} className="text-white" />
           </div>
           <div className="min-w-0">
-            <div className="text-[13.5px] font-semibold">Builds come from CI/CD — no manual upload</div>
+            <div className="text-[13.5px] font-semibold">Builds publish here automatically — no manual upload</div>
             <p className="mt-0.5 text-[12.5px] text-muted-foreground">
-              Trigger a build on GitHub Actions. It builds on EAS (Expo) in the cloud and, once finished,
-              the installable APK / IPA is published here automatically — ready to download &amp; share with testers.
+              Builds run on EAS (Expo) in the cloud — just like Expo. Trigger one however you like:
+              GitHub Actions below, <span className="font-mono">eas build</span> from your machine, or the
+              expo.dev dashboard. When it finishes, the installable APK / IPA lands here automatically
+              (via the EAS webhook) — ready to download &amp; share with testers. GitHub is optional.
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
               <a href={ANDROID_WORKFLOW} target="_blank" rel="noopener"
