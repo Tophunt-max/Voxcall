@@ -53,8 +53,8 @@ cd ota-server
 pnpm run deploy
 ```
 
-Note the deployed URL, e.g. `https://voxcall-ota.<your-subdomain>.workers.dev`.
-Check it: `curl https://voxcall-ota.<your-subdomain>.workers.dev/health`.
+Note the deployed URL, e.g. `https://ota.<your-subdomain>.workers.dev`.
+Check it: `curl https://ota.<your-subdomain>.workers.dev/health`.
 
 ### 2. Point the apps at it
 

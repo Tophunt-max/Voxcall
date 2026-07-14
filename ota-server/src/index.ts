@@ -45,7 +45,7 @@ export default {
     const path = url.pathname.replace(/\/+$/, '') || '/';
 
     if (path === '/' || path === '/health') {
-      return json({ status: 'ok', service: 'voxcall-ota', protocol: PROTOCOL_VERSION, console: '/console' });
+      return json({ status: 'ok', service: 'ota', protocol: PROTOCOL_VERSION, console: '/console' });
     }
     if (path === '/assets') {
       return serveAsset(request, env, url);
