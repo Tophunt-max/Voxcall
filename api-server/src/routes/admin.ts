@@ -4370,21 +4370,21 @@ admin.get('/ota/state', async (c) => {
   }
 });
 
-// POST /api/admin/ota/promote { app, channel, runtimeVersion, updateId }
-// Points a channel/runtimeVersion at an update — roll forward OR back.
+// POST /api/admin/ota/promote { app, channel, updateId }
+// Makes an update live on a channel — roll forward OR back. Writes a pointer
+// for every runtimeVersion the update covers (both platforms under fingerprint).
 admin.post('/ota/promote', async (c) => {
   const body = await c.req.json<Record<string, unknown>>().catch(() => ({}) as Record<string, unknown>);
   const app = String(body.app ?? '');
   const channel = String(body.channel ?? '').trim();
-  const runtimeVersion = String(body.runtimeVersion ?? '').trim();
   const updateId = String(body.updateId ?? '').trim();
   if (!isOtaApp(app)) return c.json({ error: 'invalid app (expected "user" or "host")' }, 400);
-  if (!channel || !runtimeVersion || !updateId) {
-    return c.json({ error: 'channel, runtimeVersion and updateId are required' }, 400);
+  if (!channel || !updateId) {
+    return c.json({ error: 'channel and updateId are required' }, 400);
   }
-  const res = await promotePointer(c.env, app, channel, runtimeVersion, updateId);
+  const res = await promotePointer(c.env, app, channel, updateId);
   if (!res.ok) return c.json({ error: res.error }, res.status);
-  return c.json({ ok: true, app, channel, runtimeVersion, updateId });
+  return c.json({ ok: true, app, channel, updateId, runtimeVersions: res.runtimeVersions });
 });
 
 // POST /api/admin/ota/force { app, updateId, force: boolean }

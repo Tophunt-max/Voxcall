@@ -3,7 +3,7 @@
 // ============================================================================
 // Implements https://docs.expo.dev/technical-specs/expo-updates-1/ as a
 // Cloudflare Worker, serving updates published to the shared R2 bucket by
-// `scripts/publish.mjs`. One deployment serves BOTH apps:
+// `ota-server/publish.mjs`. One deployment serves BOTH apps:
 //   • voxlink       → /manifest/user
 //   • voxlink-host  → /manifest/host
 //
@@ -11,6 +11,8 @@
 //   ota/updates/<app>/<updateId>/update.json     ← precomputed manifest record
 //   ota/updates/<app>/<updateId>/<bundle+assets>  ← the exported files
 //   ota/channels/<app>/<channel>/<runtimeVersion>.json  ← { updateId } pointer
+//     (under the fingerprint policy there is one pointer per platform's
+//      fingerprint, all pointing at the same updateId)
 //
 // The publish script precomputes every hash/key so the Worker only assembles,
 // (optionally) signs, and serves — no heavy work on the hot path.
@@ -37,6 +39,12 @@ interface AssetRecord {
   storageKey: string;
 }
 interface PlatformRecord {
+  /**
+   * The runtimeVersion this platform's bundle was built against. Present when
+   * the publisher used the "fingerprint" policy (iOS/Android can differ). When
+   * absent (appVersion policy) the record's top-level runtimeVersion applies.
+   */
+  runtimeVersion?: string;
   launchAsset: AssetRecord;
   assets: AssetRecord[];
 }
@@ -128,7 +136,10 @@ async function serveManifest(request: Request, env: Env, url: URL, app: string):
   const manifest = {
     id: record.id,
     createdAt: record.createdAt,
-    runtimeVersion: record.runtimeVersion,
+    // A client only launches a manifest whose runtimeVersion matches its build.
+    // Under the fingerprint policy that value is per-platform; fall back to the
+    // record's top-level value (appVersion policy) when not set.
+    runtimeVersion: plat.runtimeVersion ?? record.runtimeVersion,
     launchAsset: {
       key: plat.launchAsset.key,
       contentType: plat.launchAsset.contentType,

@@ -42,7 +42,7 @@ export interface OtaUpdateRecord {
     publishedAt?: string;
     [k: string]: unknown;
   };
-  platforms?: Record<string, unknown>;
+  platforms?: Record<string, { runtimeVersion?: string } | undefined>;
 }
 
 export interface OtaPointer {
@@ -56,11 +56,25 @@ export interface OtaUpdateSummary {
   id: string;
   createdAt: string | null;
   runtimeVersion: string | null;
+  runtimeVersions: string[]; // distinct across platforms (fingerprint policy → may be >1)
   forceUpdate: boolean;
   message: string | null;
   gitCommit: string | null;
   platforms: string[];
   liveOn: string[]; // "channel @ runtimeVersion" entries where this update is live
+}
+
+// Every distinct runtimeVersion an update covers: its top-level value plus any
+// per-platform values (the fingerprint policy stores one per platform).
+function updateRuntimeVersions(rec: OtaUpdateRecord): string[] {
+  const set = new Set<string>();
+  if (rec.runtimeVersion) set.add(rec.runtimeVersion);
+  if (rec.platforms) {
+    for (const p of Object.values(rec.platforms)) {
+      if (p?.runtimeVersion) set.add(p.runtimeVersion);
+    }
+  }
+  return [...set];
 }
 
 type MutationResult = { ok: true } | { ok: false; error: string; status: 400 | 404 };
@@ -150,6 +164,7 @@ export async function getOtaState(
       id: r.id,
       createdAt: r.rec.createdAt ?? null,
       runtimeVersion: r.rec.runtimeVersion ?? null,
+      runtimeVersions: updateRuntimeVersions(r.rec),
       forceUpdate: r.rec.extra?.forceUpdate === true,
       message: typeof r.rec.extra?.message === 'string' ? r.rec.extra.message : null,
       gitCommit: typeof r.rec.extra?.gitCommit === 'string' ? r.rec.extra.gitCommit : null,
@@ -163,31 +178,34 @@ export async function getOtaState(
 }
 
 /**
- * Point a channel/runtimeVersion at a given update — this is both "promote"
- * (roll forward) and "rollback" (point back at an older update). Writing the
- * pointer is the single atomic act that makes an update go live, exactly like
- * the last step of publish.mjs.
+ * Make an update live on a channel — this is both "promote" (roll forward) and
+ * "rollback" (point back at an older update). We write one pointer per
+ * runtimeVersion the update covers, so both platforms roll together even under
+ * the fingerprint policy (where iOS/Android runtimeVersions differ). Writing
+ * the pointer is the single atomic act that makes an update go live, exactly
+ * like the last step of publish.mjs.
  */
 export async function promotePointer(
   env: Env,
   app: OtaApp,
   channel: string,
-  runtimeVersion: string,
   updateId: string,
-): Promise<MutationResult> {
+): Promise<{ ok: true; runtimeVersions: string[] } | { ok: false; error: string; status: 400 | 404 }> {
   const rec = await readJson<OtaUpdateRecord>(env, updateKey(app, updateId));
   if (!rec) return { ok: false, error: 'update not found', status: 404 };
-  // A client only accepts a manifest whose runtimeVersion matches its build.
-  // Refuse to point a channel/runtimeVersion at an update built for a
-  // different runtimeVersion — that update would be silently unreachable.
-  if (rec.runtimeVersion && sanitize(rec.runtimeVersion) !== sanitize(runtimeVersion)) {
-    return { ok: false, error: `runtimeVersion mismatch: update ${updateId} targets ${rec.runtimeVersion}`, status: 400 };
+  const runtimeVersions = updateRuntimeVersions(rec);
+  if (runtimeVersions.length === 0) {
+    return { ok: false, error: `update ${updateId} has no runtimeVersion and cannot be promoted`, status: 400 };
   }
   const createdAt = new Date().toISOString();
-  await env.STORAGE.put(pointerKey(app, channel, runtimeVersion), JSON.stringify({ updateId, createdAt, runtimeVersion }), {
-    httpMetadata: { contentType: 'application/json' },
-  });
-  return { ok: true };
+  await Promise.all(
+    runtimeVersions.map((rv) =>
+      env.STORAGE.put(pointerKey(app, channel, rv), JSON.stringify({ updateId, createdAt, runtimeVersion: rv }), {
+        httpMetadata: { contentType: 'application/json' },
+      }),
+    ),
+  );
+  return { ok: true, runtimeVersions };
 }
 
 /**

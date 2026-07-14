@@ -424,6 +424,7 @@ export const api = {
         id: string;
         createdAt: string | null;
         runtimeVersion: string | null;
+        runtimeVersions: string[];
         forceUpdate: boolean;
         message: string | null;
         gitCommit: string | null;
@@ -431,8 +432,8 @@ export const api = {
         liveOn: string[];
       }[];
     }>('GET', `/admin/ota/state?app=${app}`),
-  otaPromote: (data: { app: 'user' | 'host'; channel: string; runtimeVersion: string; updateId: string }) =>
-    req<{ ok: boolean }>('POST', '/admin/ota/promote', data),
+  otaPromote: (data: { app: 'user' | 'host'; channel: string; updateId: string }) =>
+    req<{ ok: boolean; runtimeVersions: string[] }>('POST', '/admin/ota/promote', data),
   otaSetForce: (data: { app: 'user' | 'host'; updateId: string; force: boolean }) =>
     req<{ ok: boolean; forceUpdate: boolean }>('POST', '/admin/ota/force', data),
 };

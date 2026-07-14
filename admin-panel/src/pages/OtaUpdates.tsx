@@ -20,6 +20,7 @@ type Update = {
   id: string;
   createdAt: string | null;
   runtimeVersion: string | null;
+  runtimeVersions: string[];
   forceUpdate: boolean;
   message: string | null;
   gitCommit: string | null;
@@ -78,26 +79,30 @@ export default function OtaUpdates() {
     return [...set].sort();
   }, [channels]);
 
+  function isLiveOnChannel(u: Update, channel: string) {
+    return u.liveOn.some((l) => l.startsWith(`${channel} @ `));
+  }
+
   async function promote(u: Update, channel: string) {
-    if (!u.runtimeVersion) {
+    if (u.runtimeVersions.length === 0) {
       toast.error('This update has no runtimeVersion and cannot be promoted.');
       return;
     }
-    const isLiveHere = u.liveOn.includes(`${channel} @ ${u.runtimeVersion}`);
-    if (isLiveHere) {
-      toast.info(`Already live on ${channel} @ ${u.runtimeVersion}.`);
+    if (isLiveOnChannel(u, channel)) {
+      toast.info(`Already live on ${channel}.`);
       return;
     }
+    const rtvLabel = u.runtimeVersions.map((r) => short(r)).join(', ');
     const ok = await confirm({
       title: `Make this update live on "${channel}"?`,
-      description: `Clients on ${app} with runtimeVersion ${u.runtimeVersion} on the "${channel}" channel will receive update ${short(u.id)} on their next check. Use this to roll forward or to roll back to an older update.`,
+      description: `Clients on ${app} with runtimeVersion ${rtvLabel} on the "${channel}" channel will receive update ${short(u.id)} on their next check. Use this to roll forward or to roll back to an older update.`,
       confirmLabel: 'Set live',
     });
     if (!ok) return;
     setBusy(u.id);
     try {
-      await api.otaPromote({ app, channel, runtimeVersion: u.runtimeVersion, updateId: u.id });
-      toast.success(`Live on ${channel} @ ${u.runtimeVersion}`);
+      const res = await api.otaPromote({ app, channel, updateId: u.id });
+      toast.success(`Live on ${channel} (rtv ${res.runtimeVersions.map((r) => short(r)).join(', ')})`);
       load();
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : 'Promote failed');
@@ -212,7 +217,9 @@ export default function OtaUpdates() {
                     <div key={u.id} className="p-4 rounded-xl border border-border bg-card">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="text-sm font-mono font-semibold">{short(u.id)}</span>
-                        <span className="text-xs text-muted-foreground">rtv {u.runtimeVersion ?? '—'}</span>
+                        <span className="text-xs text-muted-foreground font-mono" title={u.runtimeVersions.join(', ')}>
+                          rtv {u.runtimeVersions.length ? u.runtimeVersions.map((r) => short(r)).join(', ') : '—'}
+                        </span>
                         {u.platforms.map((p) => (
                           <span key={p} className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
                             <Smartphone size={10} /> {p}
@@ -243,7 +250,7 @@ export default function OtaUpdates() {
                       {/* Actions */}
                       <div className="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t border-border">
                         {channelNames.map((ch) => {
-                          const liveHere = u.runtimeVersion ? u.liveOn.includes(`${ch} @ ${u.runtimeVersion}`) : false;
+                          const liveHere = isLiveOnChannel(u, ch);
                           return (
                             <button
                               key={ch}

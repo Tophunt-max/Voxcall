@@ -17,9 +17,10 @@ One deployment serves both apps:
 
 > **OTA updates JS + assets only.** Any **native** change (new native module,
 > Expo SDK bump, permissions, `app.json` native config, icon/splash) needs a new
-> **store build**. `runtimeVersion` (policy `appVersion`) enforces this: a build
-> only accepts updates published under its own runtime version, so an old native
-> build can never pull incompatible JS.
+> **store build**. `runtimeVersion` enforces this: a build only accepts updates
+> published under its own runtime version, so an old native build can never pull
+> incompatible JS. Both apps use the **`fingerprint`** policy (see
+> [Runtime version strategy](#runtime-version-strategy)).
 
 ---
 
@@ -31,6 +32,10 @@ ota/updates/<app>/<updateId>/_expo/static/js/…         ← the JS/Hermes bundl
 ota/updates/<app>/<updateId>/assets/<hash>             ← images, fonts, etc.
 ota/channels/<app>/<channel>/<runtimeVersion>.json     ← { updateId } pointer (what's live)
 ```
+
+Under the `fingerprint` policy iOS and Android can resolve to different runtime
+versions, so a single publish writes **one pointer per platform fingerprint**,
+all pointing at the same `updateId`.
 
 The publish script (`ota-server/publish.mjs`) precomputes every hash/key, uploads
 the files, and flips the channel pointer **last** — so a client never sees a
@@ -91,15 +96,53 @@ node ota-server/publish.mjs --app host
 pnpm --filter @workspace/ota-server run publish-update -- --app user
 ```
 
-The script runs `expo export`, hashes + uploads everything to R2, and makes the
-update live on the `production` channel for the current `runtimeVersion`
-(= the app's `version` in `app.json`). Installed apps pick it up on their next
+The script runs `expo export`, hashes + uploads everything to R2, resolves the
+`runtimeVersion` from `app.json` **per platform** (see below), and makes the
+update live on the `production` channel. Installed apps pick it up on their next
 launch (downloaded in the background; applied on the following restart because
 `fallbackToCacheTimeout: 0`).
 
 Options:
 - `--channel preview` — publish to a separate channel (see below).
-- `--runtime-version 1.2.0` — override (defaults to `app.json` version).
+- `--runtime-version 1.2.0` — override the policy with an explicit value (both platforms).
+- `--force` — mark the update **mandatory** (client shows a blocking updater and reloads immediately).
+- `--message "notes"` — release notes (stored in `manifest.extra.message`; defaults to the git subject).
+
+---
+
+## Runtime version strategy
+
+`runtimeVersion` is the native/JS compatibility key: a build only runs an update
+whose `runtimeVersion` matches its own. Both apps set it in `app.json`:
+
+```jsonc
+"runtimeVersion": { "policy": "fingerprint" }
+```
+
+- **`fingerprint` (active).** `@expo/fingerprint` hashes the native layer
+  (dependencies, native code, config) into a runtime version. `publish.mjs`
+  resolves it per platform via `npx expo-updates fingerprint:generate --platform
+  <ios|android>` and stores it at `platforms.<p>.runtimeVersion`; the Worker
+  serves that per-platform value in the manifest. Change anything native and the
+  fingerprint changes automatically, so a stale update can never reach an
+  incompatible build — no manual version bump needed.
+- **`appVersion` (fallback).** Ties the runtime version to `expo.version`. Simpler
+  and requires no fingerprint tooling, but you must bump `expo.version` on every
+  native change yourself. To use it, set `"runtimeVersion": { "policy": "appVersion" }`.
+  `publish.mjs` honors whichever policy `app.json` declares.
+
+> The fingerprint is computed from a fully-installed app project; run `publish.mjs`
+> where `pnpm install` has been run for the app (locally or in CI).
+
+---
+
+## Web console
+
+The admin panel has an **OTA Updates** page (System → OTA Updates) backed by
+`api-server` `GET/POST /api/admin/ota/*`. It reads the same `ota/` R2 objects to
+show update history + live channel pointers, and lets an operator **promote /
+roll back** a channel to any update and **toggle the mandatory flag** — no CLI
+needed. Publishing new bundles still runs from the CLI/CI (it needs `expo export`).
 
 ---
 
