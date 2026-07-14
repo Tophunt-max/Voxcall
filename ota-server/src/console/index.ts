@@ -11,3 +11,4 @@
 // ============================================================================
 
 export { handleConsoleApi } from './api';
+export { handleEasWebhook } from './webhook';

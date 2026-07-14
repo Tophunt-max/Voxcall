@@ -10,7 +10,8 @@
     "check:worker": "wrangler deploy --dry-run --outdir dist",
     "deploy": "wrangler deploy",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.web.json --noEmit",
-    "publish-update": "node publish.mjs"
+    "publish-update": "node publish.mjs",
+    "build-app": "node build.mjs"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241218.0",

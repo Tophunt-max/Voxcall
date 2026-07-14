@@ -3,7 +3,7 @@ import { Link, useLocation } from 'wouter';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   LayoutGrid, UploadCloud, GitBranch, Download, LogOut, RefreshCw,
-  Zap, Menu, X, ChevronRight, Smartphone,
+  Zap, Menu, X, ChevronRight, Smartphone, ScrollText,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { agoShort } from '@/lib/format';
@@ -16,12 +16,14 @@ const NAV = [
   { href: '/updates', label: 'Updates', icon: UploadCloud, section: 'deploy' },
   { href: '/channels', label: 'Channels', icon: GitBranch, section: 'deploy' },
   { href: '/downloads', label: 'Downloads', icon: Download, section: 'artifacts' },
+  { href: '/audit', label: 'Activity', icon: ScrollText, section: 'insights' },
 ];
 
 const SECTIONS: Record<string, string> = {
   overview: 'OVERVIEW',
   deploy: 'DEPLOYMENTS',
   artifacts: 'ARTIFACTS',
+  insights: 'INSIGHTS',
 };
 
 const TITLES: Record<string, [string, string]> = {
@@ -29,6 +31,7 @@ const TITLES: Record<string, [string, string]> = {
   '/updates': ['Updates', 'Every published update for this app'],
   '/channels': ['Channels', 'Which update is live on each channel + runtime'],
   '/downloads': ['Downloads', 'Installable production & test builds (APK / IPA)'],
+  '/audit': ['Activity', 'Audit log of every deployment action'],
 };
 
 function useNow() {
