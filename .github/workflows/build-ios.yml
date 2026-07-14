@@ -1,35 +1,32 @@
-name: Build iOS (EAS)
+name: Build iOS (local · free)
 
-# On-demand iOS builds for BOTH Expo apps via EAS Build (cloud):
-#   - user app  (voxlink)      -> EAS project "vixcalls"
-#   - host app  (voxlink-host) -> EAS project "voxlink-host"
+# On-demand iOS builds for BOTH Expo apps — built on a GitHub macOS runner with
+# `eas build --local` (no EAS cloud build credits consumed).
 #
-# Manual (workflow_dispatch) only. iOS builds run on EAS's macOS cloud (there is
-# no free local equivalent) and REQUIRE Apple Developer credentials configured
-# in EAS (`eas credentials` or an App Store Connect API key stored in EAS). This
-# workflow just triggers the cloud build; signing is handled by EAS.
-#   - profile "preview"    -> ad-hoc / internal distribution build
-#   - profile "production" -> App Store build
+# COST NOTES (read before enabling):
+#   - `eas build --local` uses ZERO EAS build credits — the build runs here.
+#   - iOS builds REQUIRE a macOS runner. On GitHub, macOS minutes are free for
+#     public repos, but count 10x against the free-minutes budget for PRIVATE
+#     repos — so a few builds/month are fine, heavy use may need paid minutes.
+#   - An Apple Developer Program membership ($99/yr) plus a Distribution
+#     certificate + provisioning profile are required for ANY iOS distribution,
+#     regardless of build method. `eas build --local` fetches those credentials
+#     from EAS (needs EXPO_TOKEN + Apple creds configured via `eas credentials`).
 #
-# AGORA: react-native-agora autolinks during the EAS prebuild (CocoaPods) — no
-# extra config or secret needed. The Agora join token is fetched from the
-# backend at runtime. Ensure the iOS Info.plist mic/camera usage strings are
-# present (they are declared in app.json).
+# Profiles (from eas.json):
+#   - "preview"    -> ad-hoc / internal build — installable by registered devices
+#   - "production" -> App Store build — for submission, NOT directly installable
 #
-# AUTO-PUBLISH (Expo-style): the job WAITS for the EAS cloud build, grabs the
-# .ipa artifact URL, and registers it on the OTA server's Downloads page via
-# POST /console/api/builds. Result: trigger a build here and it appears as a
-# downloadable build in the console automatically — no manual upload.
-# NOTE: only ad-hoc / internal (profile "preview") iOS builds are installable
-# straight from the link; App Store ("production") builds are for submission.
+# AUTO-PUBLISH: after the build, the .ipa is uploaded to the OTA server's
+# Downloads page (POST /console/api/builds/upload) so it appears automatically.
 #
 # Required GitHub secrets:
 #   - secrets.EXPO_TOKEN            Expo access token.
-#   - secrets.OTA_SERVER_URL        Base URL of the OTA worker, e.g. https://ota.<subdomain>.workers.dev
-#   - secrets.OTA_CONSOLE_PASSWORD  The worker's CONSOLE_PASSWORD (bearer token for the console API).
-# If OTA_SERVER_URL / OTA_CONSOLE_PASSWORD are missing the registration step is
-# skipped with a warning (backwards compatible).
-# Plus Apple credentials configured inside EAS for the target bundle id.
+#   - secrets.OTA_SERVER_URL        Base URL of the OTA worker.
+#   - secrets.OTA_CONSOLE_PASSWORD  The worker's CONSOLE_PASSWORD.
+# If the OTA secrets are missing, the upload step is skipped with a warning.
+#
+# NOTE: uploads go through the worker (~100 MB body limit on Cloudflare Free).
 
 on:
   workflow_dispatch:
@@ -40,7 +37,7 @@ on:
         default: both
         options: [both, user, host]
       profile:
-        description: 'EAS build profile'
+        description: 'Build profile'
         type: choice
         default: preview
         options: [preview, production]
@@ -52,10 +49,8 @@ concurrency:
 jobs:
   build:
     name: ${{ matrix.label }}
-    runs-on: ubuntu-latest
-    # We now WAIT for the EAS cloud build to finish so we can auto-register the
-    # resulting .ipa on the OTA server. iOS builds run on EAS's macOS cloud and
-    # can queue, so give the job plenty of head-room.
+    # iOS needs macOS (Xcode). This runner consumes 10x minutes on private repos.
+    runs-on: macos-latest
     timeout-minutes: 90
     strategy:
       fail-fast: false
@@ -86,7 +81,6 @@ jobs:
       - name: Setup pnpm
         if: steps.gate.outputs.run == 'true'
         uses: pnpm/action-setup@v4
-        # Version comes from `packageManager` in root package.json.
 
       - name: Setup Node.js
         if: steps.gate.outputs.run == 'true'
@@ -95,7 +89,7 @@ jobs:
           node-version: '22'
           cache: 'pnpm'
 
-      - name: Setup EAS
+      - name: Setup EAS CLI
         if: steps.gate.outputs.run == 'true'
         uses: expo/expo-github-action@v8
         with:
@@ -106,80 +100,56 @@ jobs:
         if: steps.gate.outputs.run == 'true'
         run: pnpm install --frozen-lockfile
 
-      - name: EAS build (iOS · ${{ inputs.profile }})
+      - name: Build iOS locally (${{ inputs.profile }})
         if: steps.gate.outputs.run == 'true'
         working-directory: ${{ matrix.dir }}
-        # Wait for the cloud build and emit the finished build as JSON. Signing
-        # is performed by EAS using the Apple credentials configured for the app.
-        run: |
-          set -euo pipefail
-          eas build --platform ios --profile "${{ inputs.profile }}" --non-interactive --wait --json > "$RUNNER_TEMP/eas-build.json"
-          echo "EAS build finished. Raw output:"
-          cat "$RUNNER_TEMP/eas-build.json"
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          PROFILE: ${{ inputs.profile }}
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/voxcall-${{ matrix.key }}-ios.ipa"
+          echo "OUT_FILE=$out" >> "$GITHUB_ENV"
+          echo "▶ eas build --local (iOS · $PROFILE) — runs on this macOS runner, no EAS credits."
+          eas build --platform ios --profile "$PROFILE" --local --non-interactive --output "$out"
+          ls -lh "$out"
 
-      - name: Register build on OTA server
+      - name: Upload build to OTA Downloads
         if: steps.gate.outputs.run == 'true'
         env:
           OTA_SERVER_URL: ${{ secrets.OTA_SERVER_URL }}
           OTA_CONSOLE_PASSWORD: ${{ secrets.OTA_CONSOLE_PASSWORD }}
           APP_KEY: ${{ matrix.key }}
+          APP_DIR: ${{ matrix.dir }}
           PROFILE: ${{ inputs.profile }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
           if [ -z "${OTA_SERVER_URL:-}" ] || [ -z "${OTA_CONSOLE_PASSWORD:-}" ]; then
-            echo "::warning::OTA_SERVER_URL / OTA_CONSOLE_PASSWORD not set — skipping auto-registration. Build is still available on expo.dev."
+            echo "::warning::OTA_SERVER_URL / OTA_CONSOLE_PASSWORD not set — skipping upload. Artifact left in the runner ($OUT_FILE)."
             exit 0
           fi
-
-          build_json="$RUNNER_TEMP/eas-build.json"
-          # eas build --json emits an array of build objects; take the first.
-          url=$(jq -r 'first(.[]?) | (.artifacts.applicationArchiveUrl // .artifacts.buildUrl // empty)' "$build_json")
-          version=$(jq -r 'first(.[]?) | (.appVersion // "")' "$build_json")
-          build_number=$(jq -r 'first(.[]?) | (.appBuildVersion // "")' "$build_json")
-          status=$(jq -r 'first(.[]?) | (.status // "")' "$build_json")
-
-          if [ "$status" != "FINISHED" ] && [ -n "$status" ]; then
-            echo "::error::EAS build status is '$status' (expected FINISHED) — nothing to register."
-            exit 1
+          [ -f "$OUT_FILE" ] || { echo "::error::Build artifact missing ($OUT_FILE)."; exit 1; }
+          size=$(stat -f%z "$OUT_FILE" 2>/dev/null || stat -c%s "$OUT_FILE")
+          if [ "$size" -gt 104857600 ]; then
+            echo "::warning::Artifact is $((size/1048576)) MB — larger than the ~100 MB Workers upload limit; upload may fail."
           fi
-          if [ -z "$url" ] || [ "$url" = "null" ]; then
-            echo "::error::Could not find an artifact download URL in the EAS output."
-            exit 1
-          fi
-
-          # Filename from the artifact URL path (…/application-xxxx.ipa), with a fallback.
-          filename=$(basename "${url%%\?*}")
-          case "$filename" in *.ipa) ;; *) filename="${APP_KEY}-ios-${version:-build}.ipa" ;; esac
-
-          payload=$(jq -n \
-            --arg app "$APP_KEY" \
-            --arg channel "$PROFILE" \
-            --arg platform "ios" \
-            --arg version "$version" \
-            --arg buildNumber "$build_number" \
-            --arg notes "CI build · $PROFILE · $RUN_URL" \
-            --arg externalUrl "$url" \
-            --arg filename "$filename" \
-            '{app:$app, channel:$channel, platform:$platform, version:$version, buildNumber:$buildNumber, notes:$notes, externalUrl:$externalUrl, filename:$filename}')
-
+          version=$(jq -r '.expo.version // ""' "$GITHUB_WORKSPACE/$APP_DIR/app.json")
+          build_number=$(jq -r '(.expo.ios.buildNumber // "") | tostring' "$GITHUB_WORKSPACE/$APP_DIR/app.json")
+          [ "$build_number" = "null" ] && build_number=""
+          filename="voxcall-${APP_KEY}-ios-${version:-build}.ipa"
+          notes=$(jq -rn --arg s "CI local build · $PROFILE · $RUN_URL" '$s|@uri')
+          qs="app=${APP_KEY}&platform=ios&channel=${PROFILE}&version=${version}&buildNumber=${build_number}&notes=${notes}&filename=${filename}"
           code=$(curl -sS -o "$RUNNER_TEMP/ota-resp.json" -w '%{http_code}' -X POST \
-            "${OTA_SERVER_URL%/}/console/api/builds" \
+            "${OTA_SERVER_URL%/}/console/api/builds/upload?${qs}" \
             -H "Authorization: Bearer $OTA_CONSOLE_PASSWORD" \
-            -H "Content-Type: application/json" \
-            -d "$payload")
-          echo "OTA server response ($code):"
-          cat "$RUNNER_TEMP/ota-resp.json" || true
-          if [ "$code" != "200" ]; then
-            echo "::error::OTA registration failed (HTTP $code)."
-            exit 1
-          fi
-
+            -H "Content-Type: application/octet-stream" \
+            --data-binary @"$OUT_FILE")
+          echo "OTA server response ($code):"; cat "$RUNNER_TEMP/ota-resp.json" || true
+          if [ "$code" != "200" ]; then echo "::error::OTA upload failed (HTTP $code)."; exit 1; fi
           {
             echo "## iOS build published (${{ matrix.label }})"
-            echo "- Profile: \`$PROFILE\`  ·  Version: \`${version:-?}\` (${build_number:-?})"
-            echo "- Registered on the OTA Downloads page ✔"
-            echo "- [Download / install link]($url)"
+            echo "- Profile: \`$PROFILE\`  ·  Version: \`${version:-?}\` (${build_number:-?})  ·  $((size/1048576)) MB"
+            echo "- Built with \`eas build --local\` (no EAS build credits) and uploaded to the OTA Downloads page ✔"
+            echo "- Reminder: only \`preview\` (ad-hoc) builds install directly; \`production\` is for App Store submission."
           } >> "$GITHUB_STEP_SUMMARY"

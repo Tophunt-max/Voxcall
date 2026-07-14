@@ -1,30 +1,35 @@
-name: Build Android (EAS)
+name: Build Android (local · free)
 
-# On-demand Android builds for BOTH Expo apps via EAS Build (cloud):
-#   - user app  (voxlink)      -> EAS project "vixcalls"
-#   - host app  (voxlink-host) -> EAS project "voxlink-host"
+# On-demand Android builds for BOTH Expo apps — built FREE on the GitHub runner.
+#   - user app  (voxlink)
+#   - host app  (voxlink-host)
 #
-# Manual (workflow_dispatch) only, on purpose: native builds consume EAS quota,
-# so we don't fire one on every push. Pick the app(s) and profile when running.
-#   - profile "preview"    -> installable APK (internal distribution)
-#   - profile "production" -> Play Store AAB (app-bundle)
+# COST: this uses `eas build --local`, which runs the SAME EAS build process on
+# this GitHub runner instead of Expo's paid cloud. It consumes ZERO EAS build
+# credits — only free GitHub Actions minutes (Linux runners are free for public
+# repos, and count against the generous free minutes for private ones).
+# EXPO_TOKEN is used ONLY to fetch the app's signing keystore, not build quota.
 #
-# AGORA: react-native-agora is a native module that autolinks during the EAS
-# prebuild — no config plugin or extra secret is needed. Calls fetch their Agora
-# join token from the backend at runtime, so nothing Agora-specific is baked in.
+# Profiles (from eas.json):
+#   - "preview"    -> installable APK (internal distribution) — best for testers
+#   - "production" -> Play Store AAB (app-bundle)
 #
-# AUTO-PUBLISH (Expo-style): the job WAITS for the EAS cloud build, grabs the
-# artifact download URL, and registers it on the OTA server's Downloads page via
-# POST /console/api/builds. Result: you trigger a build here and it shows up as
-# a downloadable build in the console automatically — no manual upload.
+# AGORA: react-native-agora autolinks during the prebuild — no extra config.
+#
+# AUTO-PUBLISH: after the local build finishes, the artifact is uploaded to the
+# OTA server's Downloads page (POST /console/api/builds/upload) so it appears as
+# a downloadable build automatically — no manual upload.
 #
 # Required GitHub secrets:
 #   - secrets.EXPO_TOKEN            Expo access token (expo.dev -> Account -> Access Tokens).
 #   - secrets.OTA_SERVER_URL        Base URL of the OTA worker, e.g. https://ota.<subdomain>.workers.dev
 #   - secrets.OTA_CONSOLE_PASSWORD  The worker's CONSOLE_PASSWORD (bearer token for the console API).
 # If OTA_SERVER_URL / OTA_CONSOLE_PASSWORD are missing the build still runs; the
-# registration step is skipped with a warning (backwards compatible).
-# The app must already be configured on EAS (eas.json + google-services.json).
+# upload step is skipped with a warning (the artifact stays in the runner).
+#
+# NOTE: uploads go through the worker, whose request-body limit is ~100 MB
+# (Cloudflare Free plan). Preview APKs usually fit; if a build is larger the
+# step warns — build a slimmer APK or upload the artifact to R2 directly.
 
 on:
   workflow_dispatch:
@@ -35,7 +40,7 @@ on:
         default: both
         options: [both, user, host]
       profile:
-        description: 'EAS build profile'
+        description: 'Build profile'
         type: choice
         default: preview
         options: [preview, production]
@@ -48,10 +53,8 @@ jobs:
   build:
     name: ${{ matrix.label }}
     runs-on: ubuntu-latest
-    # We now WAIT for the EAS cloud build to finish so we can auto-register the
-    # resulting APK/AAB on the OTA server. EAS builds run ~15-25 min (plus queue
-    # time on shared tiers), so give the job plenty of head-room.
-    timeout-minutes: 90
+    # Local Gradle build (+ first-run tool downloads) — give it head-room.
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -81,7 +84,6 @@ jobs:
       - name: Setup pnpm
         if: steps.gate.outputs.run == 'true'
         uses: pnpm/action-setup@v4
-        # Version comes from `packageManager` in root package.json.
 
       - name: Setup Node.js
         if: steps.gate.outputs.run == 'true'
@@ -90,7 +92,14 @@ jobs:
           node-version: '22'
           cache: 'pnpm'
 
-      - name: Setup EAS
+      - name: Setup Java (JDK 17)
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup EAS CLI
         if: steps.gate.outputs.run == 'true'
         uses: expo/expo-github-action@v8
         with:
@@ -101,81 +110,59 @@ jobs:
         if: steps.gate.outputs.run == 'true'
         run: pnpm install --frozen-lockfile
 
-      - name: EAS build (Android · ${{ inputs.profile }})
+      - name: Build Android locally (${{ inputs.profile }})
         if: steps.gate.outputs.run == 'true'
         working-directory: ${{ matrix.dir }}
-        # Wait for the cloud build and emit the finished build as JSON so the
-        # next step can read the artifact URL. --json implies non-interactive
-        # and prints the completed build array to stdout on success.
-        run: |
-          set -euo pipefail
-          eas build --platform android --profile "${{ inputs.profile }}" --non-interactive --wait --json > "$RUNNER_TEMP/eas-build.json"
-          echo "EAS build finished. Raw output:"
-          cat "$RUNNER_TEMP/eas-build.json"
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          PROFILE: ${{ inputs.profile }}
+        run: |
+          set -euo pipefail
+          # production -> app-bundle (.aab); everything else -> installable APK.
+          if [ "$PROFILE" = "production" ]; then ext="aab"; else ext="apk"; fi
+          out="$RUNNER_TEMP/voxcall-${{ matrix.key }}-android.$ext"
+          echo "OUT_FILE=$out" >> "$GITHUB_ENV"
+          echo "ARTIFACT_EXT=$ext" >> "$GITHUB_ENV"
+          echo "▶ eas build --local (Android · $PROFILE) — free on this runner, no EAS credits."
+          eas build --platform android --profile "$PROFILE" --local --non-interactive --output "$out"
+          ls -lh "$out"
 
-      - name: Register build on OTA server
+      - name: Upload build to OTA Downloads
         if: steps.gate.outputs.run == 'true'
         env:
           OTA_SERVER_URL: ${{ secrets.OTA_SERVER_URL }}
           OTA_CONSOLE_PASSWORD: ${{ secrets.OTA_CONSOLE_PASSWORD }}
           APP_KEY: ${{ matrix.key }}
+          APP_DIR: ${{ matrix.dir }}
           PROFILE: ${{ inputs.profile }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
           if [ -z "${OTA_SERVER_URL:-}" ] || [ -z "${OTA_CONSOLE_PASSWORD:-}" ]; then
-            echo "::warning::OTA_SERVER_URL / OTA_CONSOLE_PASSWORD not set — skipping auto-registration. Build is still available on expo.dev."
+            echo "::warning::OTA_SERVER_URL / OTA_CONSOLE_PASSWORD not set — skipping upload. Artifact left in the runner ($OUT_FILE)."
             exit 0
           fi
-
-          build_json="$RUNNER_TEMP/eas-build.json"
-          # eas build --json emits an array of build objects; take the first.
-          url=$(jq -r 'first(.[]?) | (.artifacts.applicationArchiveUrl // .artifacts.buildUrl // empty)' "$build_json")
-          version=$(jq -r 'first(.[]?) | (.appVersion // "")' "$build_json")
-          build_number=$(jq -r 'first(.[]?) | (.appBuildVersion // "")' "$build_json")
-          status=$(jq -r 'first(.[]?) | (.status // "")' "$build_json")
-
-          if [ "$status" != "FINISHED" ] && [ -n "$status" ]; then
-            echo "::error::EAS build status is '$status' (expected FINISHED) — nothing to register."
-            exit 1
+          [ -f "$OUT_FILE" ] || { echo "::error::Build artifact missing ($OUT_FILE)."; exit 1; }
+          size=$(stat -c%s "$OUT_FILE" 2>/dev/null || stat -f%z "$OUT_FILE")
+          if [ "$size" -gt 104857600 ]; then
+            echo "::warning::Artifact is $((size/1048576)) MB — larger than the ~100 MB Workers upload limit; upload may fail."
           fi
-          if [ -z "$url" ] || [ "$url" = "null" ]; then
-            echo "::error::Could not find an artifact download URL in the EAS output."
-            exit 1
-          fi
-
-          # Filename from the artifact URL path (…/application-xxxx.apk|aab), with a fallback.
-          filename=$(basename "${url%%\?*}")
-          case "$filename" in *.apk|*.aab) ;; *) filename="${APP_KEY}-android-${version:-build}.apk" ;; esac
-
-          payload=$(jq -n \
-            --arg app "$APP_KEY" \
-            --arg channel "$PROFILE" \
-            --arg platform "android" \
-            --arg version "$version" \
-            --arg buildNumber "$build_number" \
-            --arg notes "CI build · $PROFILE · $RUN_URL" \
-            --arg externalUrl "$url" \
-            --arg filename "$filename" \
-            '{app:$app, channel:$channel, platform:$platform, version:$version, buildNumber:$buildNumber, notes:$notes, externalUrl:$externalUrl, filename:$filename}')
-
+          version=$(jq -r '.expo.version // ""' "$GITHUB_WORKSPACE/$APP_DIR/app.json")
+          build_number=$(jq -r '(.expo.android.versionCode // "") | tostring' "$GITHUB_WORKSPACE/$APP_DIR/app.json")
+          [ "$build_number" = "null" ] && build_number=""
+          filename="voxcall-${APP_KEY}-android-${version:-build}.${ARTIFACT_EXT}"
+          if [ "$ARTIFACT_EXT" = "apk" ]; then ct="application/vnd.android.package-archive"; else ct="application/octet-stream"; fi
+          notes=$(jq -rn --arg s "CI local build · $PROFILE · $RUN_URL" '$s|@uri')
+          qs="app=${APP_KEY}&platform=android&channel=${PROFILE}&version=${version}&buildNumber=${build_number}&notes=${notes}&filename=${filename}"
           code=$(curl -sS -o "$RUNNER_TEMP/ota-resp.json" -w '%{http_code}' -X POST \
-            "${OTA_SERVER_URL%/}/console/api/builds" \
+            "${OTA_SERVER_URL%/}/console/api/builds/upload?${qs}" \
             -H "Authorization: Bearer $OTA_CONSOLE_PASSWORD" \
-            -H "Content-Type: application/json" \
-            -d "$payload")
-          echo "OTA server response ($code):"
-          cat "$RUNNER_TEMP/ota-resp.json" || true
-          if [ "$code" != "200" ]; then
-            echo "::error::OTA registration failed (HTTP $code)."
-            exit 1
-          fi
-
+            -H "Content-Type: $ct" \
+            --data-binary @"$OUT_FILE")
+          echo "OTA server response ($code):"; cat "$RUNNER_TEMP/ota-resp.json" || true
+          if [ "$code" != "200" ]; then echo "::error::OTA upload failed (HTTP $code)."; exit 1; fi
           {
             echo "## Android build published (${{ matrix.label }})"
-            echo "- Profile: \`$PROFILE\`  ·  Version: \`${version:-?}\` (${build_number:-?})"
-            echo "- Registered on the OTA Downloads page ✔"
-            echo "- [Download / install link]($url)"
+            echo "- Profile: \`$PROFILE\`  ·  Version: \`${version:-?}\` (${build_number:-?})  ·  $((size/1048576)) MB"
+            echo "- Built FREE on the CI runner (no EAS build credits) and uploaded to the OTA Downloads page ✔"
           } >> "$GITHUB_STEP_SUMMARY"

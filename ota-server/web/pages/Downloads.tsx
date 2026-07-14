@@ -90,10 +90,10 @@ export function Downloads() {
           <div className="min-w-0">
             <div className="text-[13.5px] font-semibold">Builds publish here automatically — no manual upload</div>
             <p className="mt-0.5 text-[12.5px] text-muted-foreground">
-              Builds run on EAS (Expo) in the cloud — just like Expo. Trigger one however you like:
-              GitHub Actions below, <span className="font-mono">eas build</span> from your machine, or the
-              expo.dev dashboard. When it finishes, the installable APK / IPA lands here automatically
-              (via the EAS webhook) — ready to download &amp; share with testers. GitHub is optional.
+              Trigger a build below (GitHub Actions) or with <span className="font-mono">eas build --local</span> on
+              your machine. Builds run <b>free</b> on the CI runner — <span className="font-mono">eas build --local</span> uses
+              no EAS credits — and the finished APK / IPA is uploaded here automatically, ready to download &amp; share.
+              Cloud <span className="font-mono">eas build</span> (via the EAS webhook) also lands here. GitHub is optional.
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
               <a href={ANDROID_WORKFLOW} target="_blank" rel="noopener"
