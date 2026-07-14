@@ -3,6 +3,14 @@ main = "src/index.ts"
 compatibility_date = "2024-12-18"
 compatibility_flags = ["nodejs_compat"]
 
+# The web console ships as real files under src/console/assets/ (shell.html,
+# styles.css.txt, client.js.txt), imported as strings by src/console/page.ts and
+# bundled verbatim — so the worker needs no separate frontend build/asset step.
+# They use `.html`/`.txt`, which wrangler already treats as Text modules by
+# default (no custom rule needed). The CSS/JS carry a `.txt` suffix because
+# esbuild's built-in .css/.js loaders would otherwise process them (and can't be
+# overridden), instead of handing back the file contents as a string.
+
 # Self-hosted Expo Updates (OTA) server. Serves JS/asset updates for the two
 # Expo apps (voxlink = "user", voxlink-host = "host") straight out of the
 # existing R2 bucket — no extra infrastructure or per-MAU billing.

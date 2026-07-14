@@ -167,6 +167,28 @@ and keeps it in `sessionStorage`; every request sends `Authorization: Bearer …
 Endpoints: `GET /console/api/state?app=`, `GET /console/api/update?app=&id=`,
 `POST /console/api/promote`, `POST /console/api/force`.
 
+Source layout (no frontend build step — the assets are imported as strings and
+bundled into the worker):
+
+```
+src/
+  index.ts              worker entry: routing + Expo manifest/asset endpoints
+  shared.ts             shared types, constants, helpers
+  console/
+    index.ts            barrel (renderConsolePage, handleConsoleApi)
+    auth.ts             bearer-token authorization
+    api.ts              /console/api/* request handler
+    store.ts            R2 read/manage data layer
+    page.ts             assembles the page from assets/
+    assets/
+      shell.html        page markup (with __STYLES__ / __CLIENT__ slots)
+      styles.css.txt    styling
+      client.js.txt     client-side app (vanilla JS, no deps)
+```
+
+The CSS/JS assets use a `.txt` suffix so the bundler ships them verbatim as
+strings; esbuild's built-in `.css`/`.js` loaders would otherwise process them.
+
 **2. In the admin panel** — System → **OTA Updates**, backed by `api-server`
 `GET/POST /api/admin/ota/*` (uses the existing admin auth/session). Same
 capabilities; use whichever fits your workflow.
