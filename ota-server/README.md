@@ -106,7 +106,16 @@ Options:
 - `--channel preview` — publish to a separate channel (see below).
 - `--runtime-version 1.2.0` — override the policy with an explicit value (both platforms).
 - `--force` — mark the update **mandatory** (client shows a blocking updater and reloads immediately).
+- `--rollout N` — stage the release to ~N% of devices (default 100; see [Staged rollout](#staged-rollout-percentage)).
 - `--message "notes"` — release notes (stored in `manifest.extra.message`; defaults to the git subject).
+
+### From CI (GitHub Action)
+
+You can also publish without a laptop via the **Publish OTA Update** workflow
+(`.github/workflows/publish-ota.yml`): GitHub → Actions → *Publish OTA Update* →
+**Run workflow**, and pick the app, channel, rollout %, mandatory flag and notes.
+It runs the same `publish.mjs` in CI. Requires the `CLOUDFLARE_API_TOKEN` repo
+secret (Workers + R2: Edit).
 
 ---
 

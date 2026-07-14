@@ -1,0 +1,103 @@
+name: Publish OTA Update
+
+# Manually publish an over-the-air JS/asset update to the self-hosted Expo
+# Updates server (voxcall-ota), from CI instead of a laptop. Runs the same
+# ota-server/publish.mjs flow: `expo export` → hash → upload to R2 → flip the
+# channel pointer (with optional staged rollout / forced update).
+#
+# This does NOT ship native builds — a native/SDK/permissions change still needs
+# a store build. See ota-server/README.md.
+#
+# Required GitHub secret:
+#   - secrets.CLOUDFLARE_API_TOKEN     Workers + R2: Edit (same token the worker
+#                                      deploy uses). Needed by wrangler r2 put.
+# Optional:
+#   - secrets.CLOUDFLARE_ACCOUNT_ID    Only if the token can see >1 account.
+
+on:
+  workflow_dispatch:
+    inputs:
+      app:
+        description: Which app to publish
+        type: choice
+        options: [user, host]
+        default: user
+        required: true
+      channel:
+        description: Channel (production / preview / staging)
+        type: string
+        default: production
+        required: true
+      rollout:
+        description: Staged rollout % (1-100). 100 = everyone.
+        type: string
+        default: '100'
+        required: true
+      force:
+        description: Mark the update mandatory (blocking updater + immediate reload)
+        type: boolean
+        default: false
+      message:
+        description: Release notes (defaults to the latest git commit subject)
+        type: string
+        default: ''
+
+concurrency:
+  # Serialize publishes per app so two runs can't race the channel pointer.
+  group: publish-ota-${{ github.event.inputs.app }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish (${{ github.event.inputs.app }} → ${{ github.event.inputs.channel }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          # Full history so publish.mjs can read the commit subject/hash for metadata.
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        # Version comes from `packageManager` in root package.json.
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        # Full workspace install: publish.mjs runs `expo export` in the app and
+        # `wrangler` in ota-server, so both need their deps.
+        run: pnpm install --frozen-lockfile
+
+      - name: Publish OTA update
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          IN_APP: ${{ github.event.inputs.app }}
+          IN_CHANNEL: ${{ github.event.inputs.channel }}
+          IN_ROLLOUT: ${{ github.event.inputs.rollout }}
+          IN_FORCE: ${{ github.event.inputs.force }}
+          IN_MESSAGE: ${{ github.event.inputs.message }}
+        # Build args as an array from env vars (never interpolate inputs into the
+        # shell) to avoid any command injection.
+        run: |
+          set -euo pipefail
+          ARGS=(--app "$IN_APP" --channel "$IN_CHANNEL" --rollout "$IN_ROLLOUT")
+          if [ "$IN_FORCE" = "true" ]; then ARGS+=(--force); fi
+          if [ -n "$IN_MESSAGE" ]; then ARGS+=(--message "$IN_MESSAGE"); fi
+          echo "node ota-server/publish.mjs ${ARGS[*]}"
+          node ota-server/publish.mjs "${ARGS[@]}"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "### OTA publish" >> "$GITHUB_STEP_SUMMARY"
+          echo "- app: \`${{ github.event.inputs.app }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- channel: \`${{ github.event.inputs.channel }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- rollout: \`${{ github.event.inputs.rollout }}%\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- mandatory: \`${{ github.event.inputs.force }}\`" >> "$GITHUB_STEP_SUMMARY"
