@@ -38,6 +38,7 @@ packages:
   - admin-panel
   - api-server
   - ota-server
+  - ota-console
   - voxlink
   - voxlink-host
   - lib/*

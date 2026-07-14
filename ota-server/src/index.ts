@@ -64,7 +64,11 @@ export default {
       });
     }
     if (path.startsWith('/console/api/')) {
-      return handleConsoleApi(request, env, url, path);
+      // The console front-end (ota-console) is a separate Cloudflare Pages app,
+      // so its API calls are cross-origin. Auth is a bearer token (no cookies),
+      // so a permissive CORS policy is safe here.
+      if (request.method === 'OPTIONS') return corsPreflight(request);
+      return handleConsoleApi(request, env, url, path).then((res) => withCors(res, request));
     }
     const m = path.match(/^\/manifest\/([a-z0-9_-]+)$/i);
     if (m) {
@@ -220,6 +224,26 @@ async function serveManifest(request: Request, env: Env, url: URL, app: string, 
 // running whatever it already has (a prior update or the embedded bundle).
 function noUpdate(headers: Record<string, string>): Response {
   return new Response(null, { status: 204, headers });
+}
+
+// ─── CORS (console API only) ─────────────────────────────────────────────────
+function corsHeaders(request: Request): Record<string, string> {
+  return {
+    'access-control-allow-origin': request.headers.get('origin') || '*',
+    'access-control-allow-methods': 'GET,POST,DELETE,OPTIONS',
+    'access-control-allow-headers': 'authorization, content-type',
+    'access-control-max-age': '86400',
+    vary: 'origin',
+  };
+}
+function corsPreflight(request: Request): Response {
+  return new Response(null, { status: 204, headers: corsHeaders(request) });
+}
+function withCors(res: Response, request: Request): Response {
+  const headers = new Headers(res.headers);
+  const cors = corsHeaders(request);
+  for (const k in cors) headers.set(k, cors[k]);
+  return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
 }
 
 // Best-effort adoption record: one R2 object per install (overwritten each
