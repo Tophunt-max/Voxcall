@@ -11,6 +11,7 @@ import {
   getUpdateDetail,
   promoteUpdate,
   setForceFlag,
+  setRollout,
   listBuilds,
   registerBuild,
   saveUploadedBuild,
@@ -60,9 +61,24 @@ export async function handleConsoleApi(request: Request, env: Env, url: URL, pat
     const updateId = String(body.updateId ?? '').trim();
     if (!APPS.has(app)) return json({ error: 'invalid app' }, 400);
     if (!channel || !updateId) return json({ error: 'channel and updateId are required' }, 400);
-    const res = await promoteUpdate(env, app, channel, updateId);
+    const rollout = typeof body.rollout === 'number' ? body.rollout : 100;
+    const res = await promoteUpdate(env, app, channel, updateId, rollout);
     if (!res.ok) return json({ error: res.error }, res.status);
-    return json({ ok: true, app, channel, updateId, runtimeVersions: res.runtimeVersions });
+    return json({ ok: true, app, channel, updateId, runtimeVersions: res.runtimeVersions, rollout: res.rollout });
+  }
+
+  // Change the rollout % of a channel's current release (widen a staged rollout).
+  if (sub === 'rollout' && request.method === 'POST') {
+    const body = await readJsonBody(request);
+    const app = String(body.app ?? '');
+    const channel = String(body.channel ?? '').trim();
+    const rollout = Number(body.rollout);
+    if (!APPS.has(app)) return json({ error: 'invalid app' }, 400);
+    if (!channel) return json({ error: 'channel is required' }, 400);
+    if (!Number.isFinite(rollout)) return json({ error: 'rollout must be a number (1-100)' }, 400);
+    const res = await setRollout(env, app, channel, rollout);
+    if (!res.ok) return json({ error: res.error }, res.status);
+    return json({ ok: true, app, channel, rollout: res.rollout });
   }
 
   if (sub === 'force' && request.method === 'POST') {

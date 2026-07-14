@@ -16,6 +16,7 @@ export interface ConsolePointer {
   runtimeVersion: string;
   updateId: string;
   createdAt: string | null;
+  rollout: number; // 1..100 — percentage of devices this pointer is served to
 }
 
 export interface ConsoleUpdate {
@@ -84,9 +85,15 @@ async function listConsolePointers(env: Env, app: string): Promise<ConsolePointe
       for (const o of res.objects) {
         if (!o.key.endsWith('.json')) continue;
         const rv = o.key.slice(dir.length).replace(/\.json$/, '');
-        const ptr = await readJsonKey<{ updateId?: string; createdAt?: string }>(env, o.key);
+        const ptr = await readJsonKey<{ updateId?: string; createdAt?: string; rollout?: number }>(env, o.key);
         if (ptr?.updateId) {
-          results.push({ channel, runtimeVersion: rv, updateId: ptr.updateId, createdAt: ptr.createdAt ?? null });
+          results.push({
+            channel,
+            runtimeVersion: rv,
+            updateId: ptr.updateId,
+            createdAt: ptr.createdAt ?? null,
+            rollout: typeof ptr.rollout === 'number' ? ptr.rollout : 100,
+          });
         }
       }
       if (!res.truncated) break;
@@ -205,22 +212,63 @@ export async function promoteUpdate(
   app: string,
   channel: string,
   updateId: string,
-): Promise<MutationResult<{ runtimeVersions: string[] }>> {
+  rollout = 100,
+): Promise<MutationResult<{ runtimeVersions: string[]; rollout: number }>> {
   const rec = await readJsonKey<UpdateRecord>(env, `${UPDATES_PREFIX}/${app}/${updateId}/update.json`);
   if (!rec) return { ok: false, status: 404, error: 'update not found' };
   const runtimeVersions = updateRuntimeVersions(rec);
   if (runtimeVersions.length === 0) return { ok: false, status: 400, error: 'update has no runtimeVersion' };
+  const pct = clampRollout(rollout);
   const createdAt = new Date().toISOString();
   await Promise.all(
     runtimeVersions.map((rv) =>
       env.STORAGE.put(
         `${CHANNELS_PREFIX}/${app}/${sanitize(channel)}/${sanitize(rv)}.json`,
-        JSON.stringify({ updateId, createdAt, runtimeVersion: rv }),
+        JSON.stringify({ updateId, createdAt, runtimeVersion: rv, rollout: pct }),
         { httpMetadata: { contentType: 'application/json' } },
       ),
     ),
   );
-  return { ok: true, runtimeVersions };
+  return { ok: true, runtimeVersions, rollout: pct };
+}
+
+function clampRollout(n: number): number {
+  if (!Number.isFinite(n)) return 100;
+  return Math.max(1, Math.min(100, Math.round(n)));
+}
+
+/**
+ * Change the rollout percentage of a channel's current release (every pointer
+ * under that channel). Use this to gradually widen a staged rollout to 100%
+ * without re-publishing. Rewrites each pointer's `rollout` field in place.
+ */
+export async function setRollout(
+  env: Env,
+  app: string,
+  channel: string,
+  rollout: number,
+): Promise<MutationResult<{ rollout: number }>> {
+  const dir = `${CHANNELS_PREFIX}/${app}/${sanitize(channel)}/`;
+  const pct = clampRollout(rollout);
+  const keys: string[] = [];
+  let cursor: string | undefined;
+  for (let i = 0; i < 20; i++) {
+    const res = await env.STORAGE.list({ prefix: dir, cursor, limit: 1000 });
+    for (const o of res.objects) if (o.key.endsWith('.json')) keys.push(o.key);
+    if (!res.truncated) break;
+    cursor = (res as { cursor?: string }).cursor;
+    if (!cursor) break;
+  }
+  if (!keys.length) return { ok: false, status: 404, error: 'no live pointer for this channel' };
+  await Promise.all(
+    keys.map(async (k) => {
+      const ptr = await readJsonKey<Record<string, unknown>>(env, k);
+      if (!ptr) return;
+      ptr.rollout = pct;
+      await env.STORAGE.put(k, JSON.stringify(ptr), { httpMetadata: { contentType: 'application/json' } });
+    }),
+  );
+  return { ok: true, rollout: pct };
 }
 
 /**

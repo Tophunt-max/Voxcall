@@ -231,6 +231,33 @@ build whose `app.json` sets that header to `preview`, then publish with
 
 ---
 
+## Staged rollout (percentage)
+
+Ship an update to a fraction of devices first, watch, then widen to everyone —
+like CodePush's gradual rollout. Publish with a percentage:
+
+```bash
+node ota-server/publish.mjs --app user --rollout 10   # start at ~10%
+```
+
+The channel pointer stores `rollout` (1–100). On each manifest request the
+worker buckets the device deterministically — `hash(EAS-Client-ID + updateId)
+% 100` — and serves the update only when the bucket is below the rollout
+percentage; other devices stay on what they have (HTTP 204). Because the bucket
+is stable per install, **raising the percentage only ever adds devices** — a
+device that already got the update never loses it.
+
+Widen (or narrow) the rollout **without re-publishing** from the console's
+**Channels** tab: set a new % and press *Update*, or *Roll out to 100%*. Or via
+the API: `POST /console/api/rollout { app, channel, rollout }`. When you
+promote from the console you can also set an initial rollout % next to *Set
+live*. Omitting `--rollout` (or 100%) releases to everyone immediately.
+
+> Requires the client to send an `EAS-Client-ID` header (expo-updates does by
+> default). If it's ever absent the worker fails open and serves the update.
+
+---
+
 ## Rollback
 
 Re-publish the previous known-good JS (fastest), **or** repoint the channel to an

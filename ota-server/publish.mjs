@@ -64,13 +64,17 @@ const sanitize = (s) => String(s).replace(/[^a-zA-Z0-9._-]/g, '_');
 
 const app = argValue('app');
 if (!APP_DIRS[app]) {
-  console.error('Usage: publish.mjs --app <user|host> [--channel production] [--runtime-version X] [--force] [--message "..."]\n  runtimeVersion is taken from the app.json policy (appVersion | fingerprint); --runtime-version overrides it.');
+  console.error('Usage: publish.mjs --app <user|host> [--channel production] [--runtime-version X] [--force] [--rollout N] [--message "..."]\n  runtimeVersion is taken from the app.json policy (appVersion | fingerprint); --runtime-version overrides it.\n  --rollout N stages the release to ~N% of devices (default 100); widen it later from the console.');
   process.exit(1);
 }
 const channel = argValue('channel', 'production');
 // `--force` marks the update MANDATORY — the client shows a blocking updater
 // and reloads immediately instead of applying silently on the next restart.
 const forceUpdate = hasFlag('force');
+// `--rollout N` stages the release to ~N% of devices (deterministic per install).
+// Widen it later from the console's Channels tab; omit for a full 100% release.
+const rolloutArg = argValue('rollout', null);
+const rollout = rolloutArg ? Math.max(1, Math.min(100, Math.round(Number(rolloutArg)) || 100)) : 100;
 const git = gitInfo();
 const message = argValue('message', git.subject || '');
 const appDir = path.join(REPO_ROOT, APP_DIRS[app]);
@@ -93,7 +97,7 @@ const distDir = path.join(appDir, '.ota-export');
 console.log(`\n📦 OTA publish — app="${app}" (${APP_DIRS[app]})`);
 console.log(`   channel=${channel}  updateId=${updateId}`);
 console.log(`   runtimeVersion=${rtvOverride ? `${rtvOverride} (cli override)` : `<per-platform · policy=${rtvPolicy}>`}`);
-console.log(`   force=${forceUpdate}${message ? `  message="${message}"` : ''}${git.commit ? `  git=${git.commit}` : ''}\n`);
+console.log(`   force=${forceUpdate}${rollout < 100 ? `  rollout=${rollout}%` : ''}${message ? `  message="${message}"` : ''}${git.commit ? `  git=${git.commit}` : ''}\n`);
 
 // Resolve the runtimeVersion for a platform, honoring app.json's policy exactly
 // like Expo's own build tooling:
@@ -244,11 +248,11 @@ for (const [key, meta] of entries) {
 // One pointer per distinct runtimeVersion (fingerprint policy can yield two).
 for (const rtv of runtimeVersions) {
   const pointerLocal = path.join(distDir, `pointer-${sanitize(rtv)}.json`);
-  fs.writeFileSync(pointerLocal, JSON.stringify({ updateId, createdAt, runtimeVersion: rtv }));
+  fs.writeFileSync(pointerLocal, JSON.stringify({ updateId, createdAt, runtimeVersion: rtv, rollout }));
   putObject(`ota/channels/${app}/${sanitize(channel)}/${sanitize(rtv)}.json`, pointerLocal, 'application/json');
 }
 
-console.log(`\n✅ Published ${updateId} → channel "${channel}".`);
+console.log(`\n✅ Published ${updateId} → channel "${channel}"${rollout < 100 ? ` (staged rollout ${rollout}%)` : ''}.`);
 console.log(`   runtimeVersion(s): ${runtimeVersions.join(', ')}`);
 console.log('   Clients on a matching runtimeVersion + channel get it on their next update check.\n');
 

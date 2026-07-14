@@ -105,9 +105,9 @@ async function serveManifest(request: Request, env: Env, url: URL, app: string):
   const pointerKey = `${CHANNELS_PREFIX}/${app}/${sanitize(channel)}/${sanitize(runtimeVersion)}.json`;
   const pointerObj = await env.STORAGE.get(pointerKey);
   if (!pointerObj) return noUpdate(commonHeaders); // nothing published → embedded update runs
-  let pointer: { updateId?: string };
+  let pointer: { updateId?: string; rollout?: number };
   try {
-    pointer = (await pointerObj.json()) as { updateId?: string };
+    pointer = (await pointerObj.json()) as { updateId?: string; rollout?: number };
   } catch {
     return noUpdate(commonHeaders);
   }
@@ -115,6 +115,22 @@ async function serveManifest(request: Request, env: Env, url: URL, app: string):
 
   // 2. Already on the latest? Tell the client there's nothing new.
   if (currentUpdateId && currentUpdateId === pointer.updateId) return noUpdate(commonHeaders);
+
+  // 2b. Staged rollout. When the pointer targets only a fraction of devices,
+  // decide deterministically per device: hash(EAS-Client-ID + updateId) → 0..99.
+  // A device in the bucket gets the update; one outside stays on what it has
+  // (204). The mapping is stable, so bumping the % only ever ADDS devices — a
+  // device that once qualified never loses the update on a later check.
+  const rollout = typeof pointer.rollout === 'number' ? pointer.rollout : 100;
+  if (rollout < 100) {
+    // expo-updates sends a persistent per-install id; fall back to the current
+    // update id, and fail-open (serve) only if we truly have no identifier.
+    const clientId =
+      request.headers.get('eas-client-id') || request.headers.get('expo-current-update-id') || '';
+    if (clientId && hashPercent(`${clientId}:${pointer.updateId}`) >= rollout) {
+      return noUpdate(commonHeaders);
+    }
+  }
 
   // 3. Load the precomputed update record.
   const recObj = await env.STORAGE.get(`${UPDATES_PREFIX}/${app}/${pointer.updateId}/update.json`);
@@ -196,6 +212,18 @@ async function serveManifest(request: Request, env: Env, url: URL, app: string):
 // running whatever it already has (a prior update or the embedded bundle).
 function noUpdate(headers: Record<string, string>): Response {
   return new Response(null, { status: 204, headers });
+}
+
+// Map a string to a stable bucket 0..99 (FNV-1a 32-bit). Used for staged
+// rollout: the same device+update always lands in the same bucket, so raising
+// the rollout percentage only ever adds devices, never revokes.
+function hashPercent(s: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+  }
+  return h % 100;
 }
 
 // ─── Asset endpoint ─────────────────────────────────────────────────────────
