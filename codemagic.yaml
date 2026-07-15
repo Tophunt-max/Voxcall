@@ -62,6 +62,13 @@ workflows:
       - name: Build Android & publish to OTA Downloads
         script: |
           set -e
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "❌ EXPO_TOKEN is not set — 'eas build --local' needs it to fetch the Android signing keystore."
+            echo "   Fix: Codemagic → your app → Settings → Environment variables →"
+            echo "        create a group named exactly 'ota' and add EXPO_TOKEN (mark Secure)."
+            echo "   Get a token at: expo.dev → Account settings → Access tokens."
+            exit 1
+          fi
           if [ "$PROFILE" = "production" ]; then
             EXT=aab; CT="application/octet-stream"
           else
