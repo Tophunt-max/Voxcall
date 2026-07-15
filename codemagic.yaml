@@ -1,41 +1,41 @@
 # ============================================================================
-# Codemagic CI/CD — build + OTA (CodePush), all on Codemagic.
+# Codemagic CI/CD — one Android workflow for build, distribute AND OTA.
 # ============================================================================
-# Two workflows:
-#   • android      — build installable APKs (eas build --local, no EAS credits)
-#                    and email them to testers (over-the-air install).
-#   • ota-android  — publish a JavaScript OTA update via Codemagic CodePush
-#                    (no rebuild / no store review) using @codemagic/code-push-cli.
+# A single workflow whose MODE variable decides what runs:
+#   MODE=build  → build installable APK (eas build --local, no EAS credits) and
+#                 email it to testers (over-the-air install of the binary).
+#   MODE=ota    → publish a JS-only CodePush OTA update (no rebuild, no store
+#                 review) via @codemagic/code-push-cli.
+#   MODE=both   → build a fresh binary AND push an OTA to users on that version.
 #
 # CodePush note: OTA only updates the JS layer. Native changes (new modules,
-# permissions, RN upgrade) still require a new `android` build + store release.
-# The app must already be built WITH the CodePush SDK (see plugins/withCodePush)
-# and installed on the device, otherwise an OTA release has no client to reach.
+# permissions, RN upgrade) require MODE=build + a store release. The installed
+# app must already contain the CodePush SDK for an OTA to reach it.
 #
 # ── One-time setup in Codemagic ─────────────────────────────────────────────
-# Env var group "expo"     (Secure): EXPO_TOKEN  (for eas build --local keystore)
-# Env var group "codepush" (Secure): CODEPUSH_ACCESS_KEY  (from codemagic.io → OTA Updates → access keys)
-# Register the CodePush apps once (locally or in a build):
-#   code-push app add VoxLink-Android
-#   code-push app add VoxLinkHost-Android
-# Put each deployment key into the build env (CODEPUSH_DEPLOYMENT_KEY_ANDROID)
-# so the config plugin embeds it — see plugins/withCodePush.js.
+# Env var group "expo"     (Secure): EXPO_TOKEN            (needed for MODE build/both)
+# Env var group "codepush" (Secure): CODEPUSH_ACCESS_KEY   (needed for MODE ota/both)
+#                                     CODEPUSH_DEPLOYMENT_KEY_ANDROID (embedded in the build)
+# Register the CodePush apps once: code-push app add VoxLink-Android / VoxLinkHost-Android
+# Edit publishing.email.recipients below with your testers' emails.
 # ============================================================================
 
 workflows:
-  # ──────────────────────────────────────────────────────────────────────────
-  # BUILD — installable APK, emailed to testers (OTA install of the binary)
-  # ──────────────────────────────────────────────────────────────────────────
   android:
-    name: Android — build & distribute
+    name: Android — build / OTA
     instance_type: linux_x2
     max_build_duration: 90
     environment:
       groups:
         - expo                        # EXPO_TOKEN
+        - codepush                    # CODEPUSH_ACCESS_KEY, CODEPUSH_DEPLOYMENT_KEY_ANDROID
       vars:
-        APPS: "user host"
-        PROFILE: "preview"
+        MODE: "build"                # "build" | "ota" | "both"
+        APPS: "user host"            # "user host" | "user" | "host"
+        PROFILE: "preview"            # "preview" = APK, "production" = .aab
+        DEPLOYMENT: "Staging"        # OTA target: "Staging" then promote → "Production"
+        MANDATORY: "false"           # OTA: "true" to force-apply on next resume
+        ROLLOUT: "100"               # OTA: percentage of users (1-100)
       node: 22
       java: 17
     cache:
@@ -44,32 +44,59 @@ workflows:
         - $HOME/.gradle/caches
         - $HOME/.npm
     scripts:
-      - name: Enable pnpm + EAS CLI
+      - name: Enable pnpm + CLIs
         script: |
           set -e
-          npm install -g pnpm@10.26.1 eas-cli --force
-          pnpm --version && eas --version
+          # Codemagic images ship pnpm → --force avoids the pnpx EEXIST clash.
+          npm install -g pnpm@10.26.1 eas-cli @codemagic/code-push-cli --force
+          pnpm --version && eas --version && code-push --version
+
       - name: Install dependencies
         script: pnpm install --frozen-lockfile
-      - name: Build Android
+
+      - name: Build and/or OTA
         script: |
           set -e
-          if [ -z "$EXPO_TOKEN" ]; then
-            echo "❌ EXPO_TOKEN is not set — 'eas build --local' needs it to fetch the Android keystore."
-            echo "   Fix: Codemagic → Environment variables → group 'expo' → add EXPO_TOKEN (Secure)."
-            exit 1
+          DO_BUILD=false; DO_OTA=false
+          case "$MODE" in
+            build) DO_BUILD=true ;;
+            ota)   DO_OTA=true ;;
+            both)  DO_BUILD=true; DO_OTA=true ;;
+            *) echo "❌ Invalid MODE '$MODE' — use build | ota | both"; exit 1 ;;
+          esac
+
+          if [ "$DO_BUILD" = true ] && [ -z "$EXPO_TOKEN" ]; then
+            echo "❌ EXPO_TOKEN missing (needed to build) — add it to the 'expo' env group."; exit 1
           fi
+          if [ "$DO_OTA" = true ] && [ -z "$CODEPUSH_ACCESS_KEY" ]; then
+            echo "❌ CODEPUSH_ACCESS_KEY missing (needed for OTA) — add it to the 'codepush' env group."; exit 1
+          fi
+
           if [ "$PROFILE" = "production" ]; then EXT=aab; else EXT=apk; fi
+          [ "$DO_OTA" = true ] && code-push login "https://codepush.pro" --access-key "$CODEPUSH_ACCESS_KEY"
+
           for APP_KEY in $APPS; do
             case "$APP_KEY" in
-              user) APP_DIR=voxlink ;;
-              host) APP_DIR=voxlink-host ;;
+              user) APP_DIR=voxlink;      CP_APP=VoxLink-Android ;;
+              host) APP_DIR=voxlink-host; CP_APP=VoxLinkHost-Android ;;
               *) echo "Unknown app '$APP_KEY' — skipping."; continue ;;
             esac
-            OUT="$CM_BUILD_DIR/voxcall-$APP_KEY-android.$EXT"
-            echo "▶ Building $APP_KEY ($APP_DIR) · profile=$PROFILE · local build (no EAS credits)"
-            ( cd "$APP_DIR" && eas build --platform android --profile "$PROFILE" --local --non-interactive --output "$OUT" )
-            ls -lh "$OUT"
+            VERSION=$(node -p "require('$CM_BUILD_DIR/$APP_DIR/app.json').expo.version")
+
+            if [ "$DO_BUILD" = true ]; then
+              OUT="$CM_BUILD_DIR/voxcall-$APP_KEY-android.$EXT"
+              echo "▶ BUILD $APP_KEY ($APP_DIR) · profile=$PROFILE · local build (no EAS credits)"
+              ( cd "$APP_DIR" && eas build --platform android --profile "$PROFILE" --local --non-interactive --output "$OUT" )
+              ls -lh "$OUT"
+            fi
+
+            if [ "$DO_OTA" = true ]; then
+              echo "▶ OTA $CP_APP android → $DEPLOYMENT (target $VERSION · rollout $ROLLOUT%)"
+              FLAGS="-d $DEPLOYMENT --targetBinaryVersion $VERSION --rollout $ROLLOUT --description \"Codemagic OTA $(date -u +%FT%TZ)\""
+              [ "$MANDATORY" = "true" ] && FLAGS="$FLAGS --mandatory"
+              ( cd "$APP_DIR" && eval code-push release-react "$CP_APP" android $FLAGS )
+              echo "✅ OTA released to $DEPLOYMENT. Promote with: code-push promote $CP_APP Staging Production"
+            fi
           done
     artifacts:
       - voxcall-*-android.apk
@@ -81,51 +108,3 @@ workflows:
         notify:
           success: true
           failure: true
-
-  # ──────────────────────────────────────────────────────────────────────────
-  # OTA — publish a JS-only CodePush update (no rebuild, no store review)
-  # ──────────────────────────────────────────────────────────────────────────
-  ota-android:
-    name: Android — OTA update (CodePush)
-    instance_type: linux_x2
-    max_build_duration: 45
-    environment:
-      groups:
-        - codepush                    # CODEPUSH_ACCESS_KEY
-      vars:
-        APP_KEY: "user"              # "user" or "host"
-        DEPLOYMENT: "Staging"        # "Staging" then promote → "Production"
-        MANDATORY: "false"           # "true" to force-apply on next resume
-        ROLLOUT: "100"               # percentage of users (1-100)
-      node: 22
-    cache:
-      cache_paths:
-        - $HOME/.pnpm-store
-        - $HOME/.npm
-    scripts:
-      - name: Enable pnpm + CodePush CLI
-        script: |
-          set -e
-          npm install -g pnpm@10.26.1 @codemagic/code-push-cli --force
-          pnpm --version && code-push --version
-      - name: Install dependencies
-        script: pnpm install --frozen-lockfile
-      - name: Release OTA update
-        script: |
-          set -e
-          if [ -z "$CODEPUSH_ACCESS_KEY" ]; then
-            echo "❌ CODEPUSH_ACCESS_KEY is not set — add it to the Codemagic 'codepush' env group."
-            exit 1
-          fi
-          case "$APP_KEY" in
-            user) APP_DIR=voxlink;      CP_APP=VoxLink-Android ;;
-            host) APP_DIR=voxlink-host; CP_APP=VoxLinkHost-Android ;;
-            *) echo "Unknown APP_KEY '$APP_KEY'"; exit 1 ;;
-          esac
-          VERSION=$(node -p "require('$CM_BUILD_DIR/$APP_DIR/app.json').expo.version")
-          code-push login "https://codepush.pro" --access-key "$CODEPUSH_ACCESS_KEY"
-          FLAGS="-d $DEPLOYMENT --targetBinaryVersion $VERSION --rollout $ROLLOUT --description \"Codemagic OTA $(date -u +%FT%TZ)\""
-          [ "$MANDATORY" = "true" ] && FLAGS="$FLAGS --mandatory"
-          echo "▶ Releasing OTA: $CP_APP android → $DEPLOYMENT (target $VERSION, rollout $ROLLOUT%)"
-          ( cd "$APP_DIR" && eval code-push release-react "$CP_APP" android $FLAGS )
-          echo "✅ OTA update released to $DEPLOYMENT. Promote with: code-push promote $CP_APP Staging Production"
