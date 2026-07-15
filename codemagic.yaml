@@ -21,6 +21,11 @@
 #   GOOGLE_SERVICES_JSON_USER        (base64 of voxlink/google-services.json)
 #   GOOGLE_SERVICES_JSON_HOST        (base64 of voxlink-host/google-services.json)
 #     produce with:  base64 -w0 google-services.json   (Linux)  /  base64 -i google-services.json (macOS)
+#   ANDROID_KEYSTORE_USER / ANDROID_KEYSTORE_HOST  (base64 of each app's release .jks)
+#   ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS / ANDROID_KEY_PASSWORD  (signing secrets)
+#     no keystore yet? generate one, then base64 it:
+#       keytool -genkeypair -v -keystore release.jks -alias voxcall -keyalg RSA -keysize 2048 -validity 10000
+#     signing is LOCAL (eas.json credentialsSource: local) — no EAS-stored keystore needed.
 # The group MUST exist in Codemagic or you'll see "unknown variable group(s)".
 # Register the CodePush apps once: code-push app add VoxLink-Android / VoxLinkHost-Android
 # Edit publishing.email.recipients below with your testers' emails.
@@ -104,6 +109,27 @@ workflows:
                 echo "   google-services.json as env var GOOGLE_SERVICES_JSON_$(echo "$APP_KEY" | tr a-z A-Z) in the 'voxcall' group."
                 exit 1
               fi
+
+              # Signing keystore via local credentials (eas.json credentialsSource
+              # is "local") — no EAS-stored keystore needed. Provide the keystore
+              # as base64 + passwords in the 'voxcall' group.
+              case "$APP_KEY" in
+                user) KS_B64="$ANDROID_KEYSTORE_USER" ;;
+                host) KS_B64="$ANDROID_KEYSTORE_HOST" ;;
+              esac
+              if [ -z "$KS_B64" ] || [ -z "$ANDROID_KEYSTORE_PASSWORD" ] || [ -z "$ANDROID_KEY_ALIAS" ]; then
+                echo "❌ Signing keystore not configured for '$APP_KEY'. In the 'voxcall' group add:"
+                echo "   ANDROID_KEYSTORE_$(echo "$APP_KEY" | tr a-z A-Z)  (base64 of the .jks), plus"
+                echo "   ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD."
+                echo "   No keystore yet? Generate one:"
+                echo "   keytool -genkeypair -v -keystore release.jks -alias voxcall -keyalg RSA -keysize 2048 -validity 10000"
+                exit 1
+              fi
+              mkdir -p "$APP_DIR/credentials"
+              printf '%s' "$KS_B64" | base64 -d > "$APP_DIR/credentials/release.jks"
+              node -e "require('fs').writeFileSync(process.argv[1], JSON.stringify({android:{keystore:{keystorePath:'credentials/release.jks',keystorePassword:process.env.ANDROID_KEYSTORE_PASSWORD,keyAlias:process.env.ANDROID_KEY_ALIAS,keyPassword:process.env.ANDROID_KEY_PASSWORD||process.env.ANDROID_KEYSTORE_PASSWORD}}},null,2))" "$APP_DIR/credentials.json"
+              echo "✓ wrote $APP_DIR/credentials.json (local signing)"
+
               OUT="$CM_BUILD_DIR/voxcall-$APP_KEY-android.$EXT"
               echo "▶ BUILD $APP_KEY ($APP_DIR) · profile=$PROFILE · local build (no EAS credits)"
               ( cd "$APP_DIR" && eas build --platform android --profile "$PROFILE" --local --non-interactive --output "$OUT" )
