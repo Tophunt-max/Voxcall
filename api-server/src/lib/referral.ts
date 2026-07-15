@@ -438,8 +438,13 @@ export async function clawbackReferrals(env: Env, referredUserId: string, reason
       if (ops.length) await db.batch(ops);
       try {
         if (rr > 0) {
+          // Use 'spend' (an allowed coin_transactions.type CHECK value) for the
+          // clawback debit. 'adjustment' is NOT in the CHECK set
+          // ('purchase','spend','bonus','refund','withdrawal'), so on a DB that
+          // enforces it this insert silently failed — clawing back coins from
+          // the wallet with no ledger row and creating coin drift.
           await db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
-            .bind(crypto.randomUUID(), r.referrer_id, 'adjustment', -rr, `Referral reward reversed (${reason})`, r.id).run();
+            .bind(crypto.randomUUID(), r.referrer_id, 'spend', -rr, `Referral reward reversed (${reason})`, r.id).run();
         }
       } catch (e) { console.warn('[referral] clawback ledger failed:', e); }
       // Live-update the referrer's balance.

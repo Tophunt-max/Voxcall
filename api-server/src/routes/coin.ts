@@ -476,7 +476,13 @@ coin.post('/withdraw', async (c) => {
     ).bind(
       crypto.randomUUID(),
       sub,
-      'withdrawal_pending',
+      // Must be one of the coin_transactions.type CHECK values
+      // ('purchase','spend','bonus','refund','withdrawal'). 'withdrawal_pending'
+      // is NOT allowed, so on any DB where the CHECK is enforced this insert
+      // silently failed (best-effort catch below) — debiting the wallet with no
+      // ledger row and creating coin drift. The "pending" nuance lives in the
+      // withdrawal_requests row + the description, not the ledger type.
+      'withdrawal',
       -coinsReq,
       `Withdrawal request frozen — ${coinsReq} coins (pending admin approval)`,
       withdrawId

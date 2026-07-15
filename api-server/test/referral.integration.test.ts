@@ -337,8 +337,10 @@ describe('clawbackReferrals', () => {
     expect(await coins('referrer')).toBe(0);
     expect(await held('referrer')).toBe(0);
     expect(await coins('fraudster')).toBe(0);
-    // Reversal ledger row written.
-    const adj = await db.prepare("SELECT amount FROM coin_transactions WHERE user_id = 'referrer' AND type = 'adjustment'").first<{ amount: number }>();
+    // Reversal ledger row written. Uses the allowed 'spend' type (the
+    // coin_transactions.type CHECK does not permit 'adjustment'); the clawback
+    // description disambiguates it from a normal spend.
+    const adj = await db.prepare("SELECT amount FROM coin_transactions WHERE user_id = 'referrer' AND type = 'spend' AND description LIKE 'Referral reward reversed%'").first<{ amount: number }>();
     expect(adj?.amount).toBe(-100);
   });
 
