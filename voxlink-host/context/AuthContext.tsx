@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useState, useCallback, use
 import { AppState } from "react-native";
 import { setItem, getItem, removeItem, StorageKeys } from "@/utils/storage";
 import { secureSet, secureGet, secureRemove } from "@/utils/storage";
-import { apiRequest } from "@/services/api";
+import { apiRequest, resolveMediaUrl } from "@/services/api";
 import type { HostStreakCredit } from "@/services/api";
 import { registerForPushNotifications } from "@/services/NotificationService";
 import { onTokenRefresh } from "@/services/fcm";
@@ -73,7 +73,10 @@ async function fetchFreshProfile(): Promise<Partial<UserProfile> | null> {
       phone: me.phone,
       bio: me.bio,
       gender: me.gender,
-      avatar: me.avatar_url,
+      // Resolve to an absolute URL at the source so every `user.avatar` render
+      // (profile setup/edit, headers, etc.) works on web — the backend stores
+      // avatars as relative paths, which otherwise 404 against the page origin.
+      avatar: resolveMediaUrl(me.avatar_url),
     };
 
     // For approved hosts, also merge host-specific stats

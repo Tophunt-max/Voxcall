@@ -16,7 +16,7 @@ import { SvgIcon } from "@/components/SvgIcon";
 import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import * as ImagePicker from "expo-image-picker";
 import { appendFileToFormData } from "@/utils/fileUpload";
-import { API } from "@/services/api";
+import { API, resolveMediaUrl } from "@/services/api";
 
 const BG     = "#0A0B1E";
 const DARK   = "#111329";
@@ -114,7 +114,10 @@ export default function HostProfileSetupScreen() {
   const [gender, setGender]           = useState(user?.gender ?? "");
   const [phone, setPhone]             = useState(user?.phone ?? "");
   const [loading, setLoading]         = useState(false);
-  const [avatarUri, setAvatarUri]     = useState<string | null>(user?.avatar ?? null);
+  // Resolve the stored (possibly relative) avatar to an absolute URL for the
+  // initial preview. A locally picked image (file://) set later via
+  // setAvatarUri stays untouched, so the picker preview still works.
+  const [avatarUri, setAvatarUri]     = useState<string | null>(resolveMediaUrl(user?.avatar) ?? user?.avatar ?? null);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [avatarUrl, setAvatarUrl]     = useState<string | null>(null);
   const [showNativePicker, setShowNativePicker] = useState(false);

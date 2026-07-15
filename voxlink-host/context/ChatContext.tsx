@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from "react";
-import { API } from "@/services/api";
+import { API, resolveMediaUrl } from "@/services/api";
 import socketService from "@/services/SocketService";
 import { SocketEvents } from "@/constants/events";
 import { showErrorToast } from "@/components/Toast";
@@ -195,7 +195,9 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           id: r.id,
           participantId: r.host_id ?? r.user_id,
           participantName: r.other_name ?? "Host",
-          participantAvatar: r.other_avatar ?? undefined,
+          // Resolve relative avatar paths to absolute so chat list + thread
+          // avatars render on web instead of 404-ing to a blank circle.
+          participantAvatar: resolveMediaUrl(r.other_avatar) ?? undefined,
           participantUserId: r.other_user_id ?? undefined,
           participantIsOnline: !!(r.other_is_online),
           isVip: !!r.other_is_vip,
