@@ -49,7 +49,11 @@ workflows:
       - name: Enable pnpm + EAS CLI
         script: |
           set -e
-          npm install -g pnpm eas-cli
+          # Codemagic images already ship pnpm, so a plain `npm i -g pnpm`
+          # clashes on the existing /usr/local/bin/pnpx symlink (EEXIST).
+          # --force overwrites it (npm's own suggested fix), and pinning
+          # @10.26.1 matches the repo's packageManager + lockfileVersion 9.0.
+          npm install -g pnpm@10.26.1 eas-cli --force
           pnpm --version && eas --version
 
       - name: Install dependencies
