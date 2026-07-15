@@ -4131,10 +4131,16 @@ admin.get('/monitoring/health', async (c) => {
     dbA.prepare('SELECT COUNT(*) AS n FROM call_sessions WHERE created_at > ?').bind(now - hour).first<{ n: number }>().catch(() => ({ n: 0 })),
     dbA.prepare("SELECT value FROM app_settings WHERE key = 'fx_rates_last_updated'").first<{ value: string }>().catch(() => null),
 
-    // Coin reconciliation — issued (bonus + purchase) − burned (call + withdrawal) = in_wallets ± tolerance
-    dbA.prepare("SELECT COALESCE(SUM(amount),0) AS n FROM coin_transactions WHERE type IN ('bonus','purchase','reward','refund')").first<{ n: number }>().catch(() => ({ n: 0 })),
-    dbA.prepare('SELECT COALESCE(SUM(coins),0) AS n FROM users').first<{ n: number }>().catch(() => ({ n: 0 })),
-    dbA.prepare("SELECT COALESCE(SUM(amount),0) AS n FROM coin_transactions WHERE type IN ('call','withdrawal','tip','gift')").first<{ n: number }>().catch(() => ({ n: 0 })),
+    // Coin reconciliation — issued (all credits) − burned (all debits) = ledger
+    // net, which should equal wallet coins ± the acknowledged legacy baseline.
+    // We key on the SIGN of the amount (not a hand-picked type list) so this
+    // stays correct as new ledger types are added and matches the hourly
+    // watchdog (maybeReconcileCoins), which sums the whole ledger. The previous
+    // type IN (...) filters missed 'spend' (the main debit type) and 'deposit'
+    // (a credit type), so the tile showed a bogus delta.
+    dbA.prepare('SELECT COALESCE(SUM(amount),0) AS n FROM coin_transactions WHERE amount > 0').first<{ n: number }>().catch(() => ({ n: 0 })),
+    dbA.prepare("SELECT COALESCE(SUM(coins),0) AS n FROM users WHERE COALESCE(status,'active') != 'deleted'").first<{ n: number }>().catch(() => ({ n: 0 })),
+    dbA.prepare('SELECT COALESCE(-SUM(amount),0) AS n FROM coin_transactions WHERE amount < 0').first<{ n: number }>().catch(() => ({ n: 0 })),
 
     listMigrationStatusForHealth(dbA).catch(() => ({ total: 0, applied: [], pending: [] })),
 
@@ -4165,13 +4171,24 @@ admin.get('/monitoring/health', async (c) => {
     fxAgeSec > 24 * hour ? 'bad' : fxAgeSec > 6 * hour ? 'warn' : 'ok';
 
   // ── Coin reconciliation ───────────────────────────────────────────────
-  // Perfect balance: issued − burned = in_wallets. Small drift is expected
-  // (welcome bonuses that predate the ledger fix, active call holds).
+  // Perfect balance: ledger net (issued − burned) == wallet coins. The
+  // residual = (wallets − ledger) − baseline is what we alert on; a fixed
+  // legacy offset the operator acknowledged (coin_recon_baseline) is excluded
+  // so the tile agrees with the hourly watchdog instead of showing permanent
+  // red on historical drift.
   const issued = Number(coinsIssued?.n ?? 0);
   const inWallets = Number(coinsInWallets?.n ?? 0);
   const burned = Number(coinsBurned?.n ?? 0);
-  const reconciliationDelta = issued - burned - inWallets;
-  const reconTolerancePct = issued > 0 ? Math.abs(reconciliationDelta) / issued * 100 : 0;
+  const ledgerNet = issued - burned;
+  const baselineRow = await dbA
+    .prepare("SELECT value FROM app_settings WHERE key = 'coin_recon_baseline'")
+    .first<{ value: string }>()
+    .catch(() => null);
+  const coinBaseline = parseInt(baselineRow?.value ?? '', 10) || 0;
+  const coinDrift = inWallets - ledgerNet;
+  const reconciliationDelta = coinDrift - coinBaseline; // residual beyond baseline
+  const reconDenom = Math.max(Math.abs(ledgerNet), Math.abs(inWallets), 1);
+  const reconTolerancePct = Math.abs(reconciliationDelta) / reconDenom * 100;
   const reconTone: 'ok' | 'warn' | 'bad' =
     reconTolerancePct > 2 ? 'bad' : reconTolerancePct > 0.5 ? 'warn' : 'ok';
 
@@ -4206,6 +4223,9 @@ admin.get('/monitoring/health', async (c) => {
       issued,
       in_wallets: inWallets,
       burned,
+      ledger_net: ledgerNet,
+      baseline: coinBaseline,
+      drift: coinDrift,
       reconciliation_delta: reconciliationDelta,
       tolerance_pct: Math.round(reconTolerancePct * 100) / 100,
     },

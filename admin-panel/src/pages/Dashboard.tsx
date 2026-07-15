@@ -904,9 +904,10 @@ function FraudMonitoringStrip({ health }: { health: any }) {
       {(health.coins?.reconciliation_delta ?? 0) !== 0 && (
         <div className="px-4 pb-3">
           <p className="text-[11px] text-muted-foreground">
-            <strong>Coin drift:</strong> issued − burned − in_wallets = {compact(health.coins?.reconciliation_delta ?? 0)}
-            {' '}({(health.coins?.tolerance_pct ?? 0).toFixed(2)}% of issued).
-            Small drift is expected for legacy welcome bonuses that predate the ledger fix.
+            <strong>Coin drift:</strong> residual (wallets − ledger, beyond baseline) = {compact(health.coins?.reconciliation_delta ?? 0)}
+            {' '}({(health.coins?.tolerance_pct ?? 0).toFixed(2)}%).
+            {(health.coins?.baseline ?? 0) !== 0 && ` Baseline ${compact(health.coins?.baseline ?? 0)} acknowledged.`}
+            {' '}Small residual drift is expected for legacy bonuses that predate the ledger fix.
           </p>
         </div>
       )}
