@@ -13,9 +13,12 @@
 # app must already contain the CodePush SDK for an OTA to reach it.
 #
 # ── One-time setup in Codemagic ─────────────────────────────────────────────
-# Env var group "expo"     (Secure): EXPO_TOKEN            (needed for MODE build/both)
-# Env var group "codepush" (Secure): CODEPUSH_ACCESS_KEY   (needed for MODE ota/both)
-#                                     CODEPUSH_DEPLOYMENT_KEY_ANDROID (embedded in the build)
+# Create ONE environment variable group named "voxcall" (Settings → Environment
+# variables), all marked Secure, containing:
+#   EXPO_TOKEN                       (needed for MODE build/both — eas build --local)
+#   CODEPUSH_ACCESS_KEY              (needed for MODE ota/both — code-push login)
+#   CODEPUSH_DEPLOYMENT_KEY_ANDROID  (embedded into the build by plugins/withCodePush)
+# The group MUST exist in Codemagic or you'll see "unknown variable group(s)".
 # Register the CodePush apps once: code-push app add VoxLink-Android / VoxLinkHost-Android
 # Edit publishing.email.recipients below with your testers' emails.
 # ============================================================================
@@ -27,8 +30,7 @@ workflows:
     max_build_duration: 90
     environment:
       groups:
-        - expo                        # EXPO_TOKEN
-        - codepush                    # CODEPUSH_ACCESS_KEY, CODEPUSH_DEPLOYMENT_KEY_ANDROID
+        - voxcall                     # EXPO_TOKEN, CODEPUSH_ACCESS_KEY, CODEPUSH_DEPLOYMENT_KEY_ANDROID
       vars:
         MODE: "build"                # "build" | "ota" | "both"
         APPS: "user host"            # "user host" | "user" | "host"
