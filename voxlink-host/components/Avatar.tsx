@@ -2,10 +2,14 @@
 // Reusable user/host avatar with online status ring, size variants
 
 // FIX #6+7: expo-image (better caching) + React.memo (prevent list re-renders)
-import React, { memo } from "react";
+import React, { memo, useEffect, useState } from "react";
 import { View, StyleSheet, ViewStyle } from "react-native";
 import { Image } from "expo-image";
 import { useColors } from "@/hooks/useColors";
+
+// Bundled fallback shown when the avatar URL is missing or fails to load
+// (e.g. a deleted/404'd R2 object). Prevents a blank grey box.
+const AVATAR_PLACEHOLDER = require("@/assets/images/avatar_placeholder.png");
 
 type AvatarSize = "xs" | "sm" | "md" | "lg" | "xl" | "xxl";
 type StatusType = "online" | "offline" | "busy" | "none";
@@ -50,6 +54,12 @@ const Avatar = memo(function Avatar({
   const badgeDim = BADGE_SIZE_MAP[size];
   const radius = dim / 2;
 
+  // Fall back to the bundled placeholder when the remote image is missing or
+  // errors (404). Reset on uri change so a new/valid avatar gets retried.
+  const [failed, setFailed] = useState(false);
+  useEffect(() => { setFailed(false); }, [uri]);
+  const source = !uri || failed ? AVATAR_PLACEHOLDER : { uri };
+
   const statusColors: Record<StatusType, string> = {
     online: colors.online,
     offline: colors.offline,
@@ -72,10 +82,11 @@ const Avatar = memo(function Avatar({
       ]}
     >
       <Image
-        source={{ uri }}
+        source={source}
         style={[styles.img, { width: dim, height: dim, borderRadius: radius }]}
         contentFit="cover"
         cachePolicy="memory-disk"
+        onError={() => setFailed(true)}
       />
       {status !== "none" && (
         <View

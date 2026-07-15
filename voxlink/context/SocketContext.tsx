@@ -14,7 +14,7 @@ import socketService from "@/services/SocketService";
 import { SocketEvents } from "@/constants/events";
 import { useAuth } from "@/context/AuthContext";
 import { API } from "@/services/api";
-import { getItem, StorageKeys } from "@/utils/storage";
+import { secureGet, StorageKeys } from "@/utils/storage";
 
 interface SocketContextValue {
   isConnected: boolean;
@@ -32,10 +32,14 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!isLoggedIn || !user?.id) return;
 
-    // FIX: pass explicit <string> generic so TS narrows the result type for
-    // socketService.connect(token: string | undefined) — without it T defaults to
-    // `{}` and the call rejects with "type {} not assignable to string | undefined".
-    getItem<string>(StorageKeys.AUTH_TOKEN).then((token) => {
+    // Read the token from SECURE storage — the same place api.ts writes the
+    // freshest token to (login + silent refresh use secureSet). The old
+    // getItem() read a different AsyncStorage location that secureSet never
+    // writes, so it returned null/stale and the socket connected WITHOUT a
+    // valid token → the server rejected the upgrade (401) → close-without-open
+    // → token refresh → reconnect, i.e. a guaranteed fail-then-reconnect on
+    // every boot. Using secureGet lets the first attempt succeed.
+    secureGet(StorageKeys.AUTH_TOKEN).then((token) => {
       socketService.connect(user.id, token ?? undefined);
     });
 
