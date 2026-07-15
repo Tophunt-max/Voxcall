@@ -177,6 +177,10 @@ export const api = {
   }>('GET', `/admin/notification-analytics${days ? `?days=${days}` : ''}`),
   streakAnalytics: () => req<any>('GET', '/admin/streak-analytics'),
   coinReconciliation: () => req<any>('GET', '/admin/coin-reconciliation'),
+  // Accept the current aggregate drift as the "known legacy" baseline (or clear
+  // it) so the hourly watchdog alerts only on NEW residual drift.
+  setCoinReconBaseline: (action: 'accept' | 'clear') =>
+    req<{ success: boolean; action: string; baseline: number }>('POST', '/admin/coin-reconciliation/baseline', { action }),
   alerts: (context?: string) =>
     req<{
       alerts: { id: number; user_id: string | null; message: string; context: string; platform: string; app_version: string; created_at: number }[];

@@ -1249,6 +1249,10 @@ async function maybeRecomputeChurn(env: Env): Promise<void> {
 // floor — never on any non-zero drift. Both thresholds are admin-tunable via
 // app_settings ('coin_recon_alert_pct' default 2%, 'coin_recon_alert_min_abs'
 // default 1000 coins; interval via 'coin_recon_interval_sec' default 3600s).
+// When the legacy baseline is sizeable, the operator records it in
+// 'coin_recon_baseline' (via POST /admin/coin-reconciliation/baseline) and the
+// watchdog alerts only on the RESIDUAL drift beyond it — so a fixed historical
+// offset stops crying wolf while a real new mint/burn bug still pages.
 async function maybeReconcileCoins(env: Env): Promise<void> {
   try {
     const now = Math.floor(Date.now() / 1000);
@@ -1271,33 +1275,59 @@ async function maybeReconcileCoins(env: Env): Promise<void> {
     const inWallets = Number(walletRow?.n ?? 0);
     const ledgerNet = Number(ledgerRow?.n ?? 0);
     const drift = inWallets - ledgerNet;
+
+    // Baseline = the KNOWN, operator-acknowledged legacy drift. Coins granted
+    // before every credit path wrote a coin_transactions row (early welcome
+    // bonuses etc.) live in wallets with no matching ledger entry, producing a
+    // large but FIXED offset. Without a baseline the watchdog re-fires a
+    // CRITICAL alert every hour on that static offset, drowning out a real
+    // mint/burn bug (alert fatigue). We alert on the RESIDUAL drift beyond the
+    // baseline, so only NEW, unexplained divergence trips the alarm. An
+    // operator sets/clears the baseline via POST /admin/coin-reconciliation/baseline
+    // after confirming (top_drifters, ledger_by_type) the current drift is legacy.
+    const baseline = parseInt((await readSetting('coin_recon_baseline')) ?? '', 10) || 0;
+    const residual = drift - baseline;
     const denom = Math.max(Math.abs(ledgerNet), Math.abs(inWallets), 1);
+    const residualPct = (Math.abs(residual) / denom) * 100;
+    // Raw drift % is kept for display/logging so the operator still sees the
+    // true gap even when a baseline is masking it.
     const driftPct = (Math.abs(drift) / denom) * 100;
 
     const badPct = parseFloat((await readSetting('coin_recon_alert_pct')) ?? '') || 2;
     const minAbs = parseInt((await readSetting('coin_recon_alert_min_abs')) ?? '', 10) || 1000;
     const tone: 'ok' | 'warn' | 'bad' =
-      (driftPct > badPct && Math.abs(drift) >= minAbs) ? 'bad'
-      : driftPct > badPct / 4 ? 'warn'
+      (residualPct > badPct && Math.abs(residual) >= minAbs) ? 'bad'
+      : residualPct > badPct / 4 ? 'warn'
       : 'ok';
 
-    const snapshot = { ts: now, in_wallets: inWallets, ledger_net: ledgerNet, drift, drift_pct: Math.round(driftPct * 1000) / 1000, tone };
+    const snapshot = {
+      ts: now,
+      in_wallets: inWallets,
+      ledger_net: ledgerNet,
+      drift,
+      baseline,
+      residual,
+      drift_pct: Math.round(driftPct * 1000) / 1000,
+      residual_pct: Math.round(residualPct * 1000) / 1000,
+      tone,
+    };
     await env.DB.prepare(
       "INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('coin_recon_last', ?, unixepoch())"
     ).bind(JSON.stringify(snapshot)).run().catch((e) => console.warn('[Cron] coin recon snapshot write failed:', e));
 
     if (tone === 'bad') {
-      console.error(`[Cron] COIN RECONCILIATION ALERT — drift ${drift} (${driftPct.toFixed(2)}%) wallets=${inWallets} ledger=${ledgerNet}`);
+      console.error(`[Cron] COIN RECONCILIATION ALERT — residual ${residual} (${residualPct.toFixed(2)}%) drift=${drift} baseline=${baseline} wallets=${inWallets} ledger=${ledgerNet}`);
       // Persist + optionally page an operator (webhook). Surfaces in the admin
       // alerts feed + dashboard error count even with no dashboard open.
+      const baselineNote = baseline ? ` baseline=${baseline} residual=${residual}` : '';
       await raiseAdminAlert(env.DB, {
         context: 'coin_reconciliation',
         severity: 'critical',
         platform: 'cron',
-        message: `Coin reconciliation imbalance: wallets=${inWallets} ledger_net=${ledgerNet} drift=${drift} (${driftPct.toFixed(2)}%). Investigate for a mint/burn bug.`,
+        message: `Coin reconciliation imbalance: wallets=${inWallets} ledger_net=${ledgerNet} drift=${drift}${baselineNote} (${residualPct.toFixed(2)}%). Investigate for a mint/burn bug.`,
       });
     } else {
-      console.log(`[Cron] coin reconciliation ok — drift ${drift} (${driftPct.toFixed(2)}%)`);
+      console.log(`[Cron] coin reconciliation ok — residual ${residual} (${residualPct.toFixed(2)}%) drift=${drift} baseline=${baseline}`);
     }
   } catch (e) {
     console.error('[Cron] coin reconciliation error:', e);

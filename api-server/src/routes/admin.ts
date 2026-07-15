@@ -3503,15 +3503,75 @@ admin.get('/coin-reconciliation', async (c) => {
     null as null | { ts: number; in_wallets: number; ledger_net: number; drift: number; drift_pct: number; tone: string },
   );
 
+  // Operator-acknowledged legacy drift. The watchdog subtracts this from the
+  // raw drift and only alerts on the residual, so a fixed historical offset
+  // (coins granted before the ledger-writing code existed) stops re-firing a
+  // CRITICAL alert every hour. Set/cleared via POST .../baseline below.
+  const baseline = await safe(
+    async () => {
+      const row = await database.prepare("SELECT value FROM app_settings WHERE key = 'coin_recon_baseline'").first<{ value: string }>();
+      const n = parseInt(row?.value ?? '', 10);
+      return Number.isFinite(n) ? n : 0;
+    },
+    0,
+  );
+
+  const aggregateDrift = (circ.total_coins ?? 0) - (net.net ?? 0);
+
   return c.json({
     circulation: { users: circ.users ?? 0, total_coins: circ.total_coins ?? 0 },
     ledger_net: net.net ?? 0,
-    aggregate_drift: (circ.total_coins ?? 0) - (net.net ?? 0),
+    aggregate_drift: aggregateDrift,
+    // Drift the watchdog considers "expected" (acknowledged legacy offset) and
+    // the residual it actually alerts on.
+    baseline,
+    residual_drift: aggregateDrift - baseline,
     ledger_by_type: byType ?? [],
     top_drifters: drifters ?? [],
     last_auto_check: lastAuto,
-    note: 'Drift is expected for accounts whose welcome/legacy bonuses predate the ledger fix. Large unexplained drift on recent activity is the signal to investigate. The hourly watchdog (last_auto_check) raises an admin error-feed alert when drift breaches the configured tolerance.',
+    note: 'Drift is expected for accounts whose welcome/legacy bonuses predate the ledger fix. Once you confirm the current drift is legacy (see top_drifters), "accept" it as the baseline — the hourly watchdog then alerts only on NEW residual drift (a real mint/burn bug). Large unexplained residual drift on recent activity is the signal to investigate.',
   });
+});
+
+// POST /api/admin/coin-reconciliation/baseline — record (or clear) the
+// acknowledged legacy drift so the hourly watchdog stops alerting on a fixed
+// historical offset and only pages on NEW residual drift.
+//   body { action: 'accept' }  → baseline := current aggregate drift
+//   body { action: 'clear'  }  → baseline := 0 (alert on the full drift again)
+admin.post('/coin-reconciliation/baseline', async (c) => {
+  const u = c.get('user');
+  const database = db(c);
+  const body = await c.req.json().catch(() => ({}));
+  const action = body?.action === 'clear' ? 'clear' : 'accept';
+
+  let baseline = 0;
+  if (action === 'accept') {
+    // Recompute the current aggregate drift the same way the read endpoint /
+    // watchdog do, so the accepted baseline exactly matches what's displayed.
+    const [walletRow, ledgerRow] = await Promise.all([
+      database.prepare("SELECT COALESCE(SUM(coins),0) AS n FROM users WHERE COALESCE(status,'active') != 'deleted'").first<{ n: number }>().catch(() => ({ n: 0 })),
+      database.prepare('SELECT COALESCE(SUM(amount),0) AS n FROM coin_transactions').first<{ n: number }>().catch(() => ({ n: 0 })),
+    ]);
+    baseline = Number(walletRow?.n ?? 0) - Number(ledgerRow?.n ?? 0);
+  }
+
+  await database.prepare(
+    "INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('coin_recon_baseline', ?, unixepoch())"
+  ).bind(String(baseline)).run();
+
+  await auditLog(
+    database,
+    u?.sub ?? 'unknown',
+    u?.name ?? 'Admin',
+    u?.email ?? '',
+    action === 'clear' ? 'coin_recon_baseline_clear' : 'coin_recon_baseline_accept',
+    'coin_reconciliation',
+    'baseline',
+    `Coin reconciliation baseline ${action === 'clear' ? 'cleared' : `set to ${baseline}`}`,
+    c.req.header('cf-connecting-ip') || '',
+  );
+
+  return c.json({ success: true, action, baseline });
 });
 
 // GET /api/admin/alerts — operational alert feed (app_errors).

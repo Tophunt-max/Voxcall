@@ -6,6 +6,7 @@ import {
   BarChart, Bar, AreaChart, Area, PieChart, Pie, Cell
 } from 'recharts';
 import { TrendingUp, Users, Clock, Coins, Activity, UserCheck, Gift } from 'lucide-react';
+import { toast } from '@/hooks/use-toast';
 
 const COLORS = ['#7C3AED', '#06B6D4', '#10B981', '#F59E0B', '#EF4444'];
 
@@ -36,6 +37,7 @@ export default function Analytics() {
   const [freeMin, setFreeMin] = useState<any>(null);
   const [range, setRange] = useState<'7d' | '30d'>('7d');
   const [loading, setLoading] = useState(true);
+  const [savingBaseline, setSavingBaseline] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -56,6 +58,28 @@ export default function Analytics() {
       setFreeMin(fm);
     }).finally(() => setLoading(false));
   }, [range]);
+
+  // Accept the current drift as the known-legacy baseline (or clear it) so the
+  // hourly watchdog stops alerting on a fixed historical offset and only pages
+  // on NEW residual drift. Refreshes the recon panel afterwards.
+  const handleBaseline = async (action: 'accept' | 'clear') => {
+    setSavingBaseline(true);
+    try {
+      const res = await api.setCoinReconBaseline(action);
+      const fresh = await api.coinReconciliation().catch(() => null);
+      if (fresh) setRecon(fresh);
+      toast({
+        title: action === 'clear' ? 'Baseline cleared' : 'Baseline updated',
+        description: action === 'clear'
+          ? 'The watchdog now alerts on the full drift again.'
+          : `Legacy drift of ${(res.baseline ?? 0).toLocaleString()} coins accepted. Alerts now fire only on new residual drift.`,
+      });
+    } catch (e: any) {
+      toast({ title: 'Could not update baseline', description: e?.message ?? 'Request failed', variant: 'destructive' });
+    } finally {
+      setSavingBaseline(false);
+    }
+  };
 
   const weekly: any[] = analytics?.weekly ?? [];
   const avgDuration = analytics?.avg_call_duration ?? 0;
@@ -338,6 +362,43 @@ export default function Analytics() {
               ))}
             </div>
           )}
+          {/* ── Legacy-drift baseline control ─────────────────────────── */}
+          <div className="mt-4 rounded-xl border border-border bg-background p-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Watchdog baseline (acknowledged legacy drift)</p>
+                <p className="font-bold text-sm">
+                  Baseline: {(recon.baseline ?? 0).toLocaleString()}
+                  <span className="mx-1.5 text-muted-foreground">·</span>
+                  Residual (alerted on):{' '}
+                  <span className={Math.abs(recon.residual_drift ?? recon.aggregate_drift ?? 0) > 0 ? 'text-amber-600' : 'text-green-600'}>
+                    {(recon.residual_drift ?? recon.aggregate_drift ?? 0).toLocaleString()}
+                  </span>
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => handleBaseline('accept')}
+                  disabled={savingBaseline}
+                  className="text-xs font-medium px-3 py-1.5 rounded-lg bg-primary text-primary-foreground disabled:opacity-50"
+                >
+                  {savingBaseline ? 'Saving…' : 'Accept current drift as baseline'}
+                </button>
+                {(recon.baseline ?? 0) !== 0 && (
+                  <button
+                    onClick={() => handleBaseline('clear')}
+                    disabled={savingBaseline}
+                    className="text-xs font-medium px-3 py-1.5 rounded-lg border border-border disabled:opacity-50"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+            </div>
+            <p className="text-[11px] text-muted-foreground mt-2">
+              Only accept the baseline after confirming the current drift is legacy (see below). The hourly watchdog then alerts only on NEW drift beyond this baseline — a real mint/burn bug.
+            </p>
+          </div>
           <p className="text-[11px] text-muted-foreground italic mt-3">{recon.note}</p>
         </div>
       )}
