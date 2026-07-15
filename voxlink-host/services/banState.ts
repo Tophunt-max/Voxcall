@@ -5,6 +5,7 @@
 // until the ban is lifted or expires.
 
 import { apiRequest } from "@/services/api";
+import { secureGet, StorageKeys } from "@/utils/storage";
 
 export interface BanInfo {
   reason?: string | null;
@@ -34,6 +35,14 @@ export function subscribeBanState(l: (b: BanInfo | null) => void): () => void {
 // ban-blocking middleware), so the popup persists across restarts and
 // auto-dismisses when the ban lifts. Returns true if currently banned.
 export async function checkBanStatus(): Promise<boolean> {
+  // Skip the network call when there's no auth token yet (app boot, login/
+  // onboarding screens). Without a token the endpoint returns 400 "Token
+  // required" — noisy but benign — and an unauthenticated user can't be banned.
+  const token = await secureGet(StorageKeys.AUTH_TOKEN);
+  if (!token) {
+    if (current) setBanState(null);
+    return false;
+  }
   try {
     const res = await apiRequest<{ banned: boolean; reason?: string | null; expires_at?: string | null }>(
       "POST",
