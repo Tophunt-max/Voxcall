@@ -408,7 +408,7 @@ function MaybeKeyboardProvider({ children }: { children: React.ReactNode }) {
   return <KeyboardProvider>{children}</KeyboardProvider>;
 }
 
-export default function RootLayout() {
+function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
     Poppins_400Regular,
     Poppins_500Medium,
@@ -466,3 +466,22 @@ export default function RootLayout() {
     </SafeAreaProvider>
   );
 }
+
+
+// ─── CodePush (OTA) — native only ────────────────────────────────────────────
+// The CodePush native module isn't available on web, and `expo export --platform
+// web` must not import it, so we require it lazily on native and wrap the root.
+// On app resume CodePush checks the server, downloads a new JS bundle, and
+// applies it on the next restart. Web falls back to the plain root component.
+let codePush: any = null;
+if (Platform.OS !== "web") {
+  try {
+    codePush = require("@code-push-next/react-native-code-push").default;
+  } catch {}
+}
+
+const RootWithCodePush = codePush
+  ? codePush({ checkFrequency: codePush.CheckFrequency.ON_APP_RESUME })(RootLayout)
+  : RootLayout;
+
+export default RootWithCodePush;

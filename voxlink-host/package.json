@@ -62,6 +62,7 @@
     "zod-validation-error": "^3.4.0"
   },
   "dependencies": {
+    "@code-push-next/react-native-code-push": "^10.4.2",
     "@expo-google-fonts/poppins": "^0.4.1",
     "@react-native-community/datetimepicker": "^8.4.4",
     "@react-native-firebase/app": "^24.0.0",

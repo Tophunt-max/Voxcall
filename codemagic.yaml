@@ -1,38 +1,41 @@
 # ============================================================================
-# Codemagic CI/CD — build + distribute the Expo apps, all on Codemagic.
+# Codemagic CI/CD — build + OTA (CodePush), all on Codemagic.
 # ============================================================================
-# Builds voxlink (user) + voxlink-host (host) with `eas build --local` (the
-# build runs ON Codemagic's machine — NO EAS cloud credits, only Codemagic
-# minutes) and distributes the installable APK to testers over the air via
-# Codemagic's built-in email distribution (each tester gets an install link).
+# Two workflows:
+#   • android      — build installable APKs (eas build --local, no EAS credits)
+#                    and email them to testers (over-the-air install).
+#   • ota-android  — publish a JavaScript OTA update via Codemagic CodePush
+#                    (no rebuild / no store review) using @codemagic/code-push-cli.
 #
-# NOTE on "OTA": Codemagic distributes the BUILD (APK/IPA) to devices. It does
-# NOT do JS code-push (updating a live app without a new build) — that is an
-# Expo Updates / EAS Update feature, not a Codemagic one.
+# CodePush note: OTA only updates the JS layer. Native changes (new modules,
+# permissions, RN upgrade) still require a new `android` build + store release.
+# The app must already be built WITH the CodePush SDK (see plugins/withCodePush)
+# and installed on the device, otherwise an OTA release has no client to reach.
 #
 # ── One-time setup in Codemagic ─────────────────────────────────────────────
-# 1) Environment variables → create a group named exactly "expo" (Secure) with:
-#      EXPO_TOKEN   Expo access token (expo.dev → Account → Access tokens).
-#                   Used only to fetch the Android signing keystore, not build quota.
-# 2) Edit the `publishing.email.recipients` list below with your testers' emails.
-#
-# ── Run ─────────────────────────────────────────────────────────────────────
-# Start the "android" workflow from the Codemagic UI. Override at start time:
-#   APPS     "user host" (default) | "user" | "host"
-#   PROFILE  "preview" (installable APK, default) | "production" (.aab)
+# Env var group "expo"     (Secure): EXPO_TOKEN  (for eas build --local keystore)
+# Env var group "codepush" (Secure): CODEPUSH_ACCESS_KEY  (from codemagic.io → OTA Updates → access keys)
+# Register the CodePush apps once (locally or in a build):
+#   code-push app add VoxLink-Android
+#   code-push app add VoxLinkHost-Android
+# Put each deployment key into the build env (CODEPUSH_DEPLOYMENT_KEY_ANDROID)
+# so the config plugin embeds it — see plugins/withCodePush.js.
 # ============================================================================
 
 workflows:
+  # ──────────────────────────────────────────────────────────────────────────
+  # BUILD — installable APK, emailed to testers (OTA install of the binary)
+  # ──────────────────────────────────────────────────────────────────────────
   android:
     name: Android — build & distribute
-    instance_type: linux_x2          # Android needs no Mac → cheaper Linux machine
+    instance_type: linux_x2
     max_build_duration: 90
     environment:
       groups:
-        - expo                        # must contain EXPO_TOKEN
+        - expo                        # EXPO_TOKEN
       vars:
-        APPS: "user host"            # or "user" / "host"
-        PROFILE: "preview"            # "preview" = installable APK, "production" = .aab
+        APPS: "user host"
+        PROFILE: "preview"
       node: 22
       java: 17
     cache:
@@ -44,26 +47,19 @@ workflows:
       - name: Enable pnpm + EAS CLI
         script: |
           set -e
-          # Codemagic images already ship pnpm, so a plain `npm i -g pnpm`
-          # clashes on the existing /usr/local/bin/pnpx symlink (EEXIST).
-          # --force overwrites it; pinning @10.26.1 matches packageManager +
-          # lockfileVersion 9.0.
           npm install -g pnpm@10.26.1 eas-cli --force
           pnpm --version && eas --version
-
       - name: Install dependencies
         script: pnpm install --frozen-lockfile
-
       - name: Build Android
         script: |
           set -e
           if [ -z "$EXPO_TOKEN" ]; then
-            echo "❌ EXPO_TOKEN is not set — 'eas build --local' needs it to fetch the Android signing keystore."
+            echo "❌ EXPO_TOKEN is not set — 'eas build --local' needs it to fetch the Android keystore."
             echo "   Fix: Codemagic → Environment variables → group 'expo' → add EXPO_TOKEN (Secure)."
             exit 1
           fi
           if [ "$PROFILE" = "production" ]; then EXT=aab; else EXT=apk; fi
-
           for APP_KEY in $APPS; do
             case "$APP_KEY" in
               user) APP_DIR=voxlink ;;
@@ -79,11 +75,57 @@ workflows:
       - voxcall-*-android.apk
       - voxcall-*-android.aab
     publishing:
-      # Codemagic emails the build (with an install link) to these testers —
-      # this is the "over-the-air" distribution. Replace with real addresses.
       email:
         recipients:
           - you@example.com
         notify:
           success: true
           failure: true
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # OTA — publish a JS-only CodePush update (no rebuild, no store review)
+  # ──────────────────────────────────────────────────────────────────────────
+  ota-android:
+    name: Android — OTA update (CodePush)
+    instance_type: linux_x2
+    max_build_duration: 45
+    environment:
+      groups:
+        - codepush                    # CODEPUSH_ACCESS_KEY
+      vars:
+        APP_KEY: "user"              # "user" or "host"
+        DEPLOYMENT: "Staging"        # "Staging" then promote → "Production"
+        MANDATORY: "false"           # "true" to force-apply on next resume
+        ROLLOUT: "100"               # percentage of users (1-100)
+      node: 22
+    cache:
+      cache_paths:
+        - $HOME/.pnpm-store
+        - $HOME/.npm
+    scripts:
+      - name: Enable pnpm + CodePush CLI
+        script: |
+          set -e
+          npm install -g pnpm@10.26.1 @codemagic/code-push-cli --force
+          pnpm --version && code-push --version
+      - name: Install dependencies
+        script: pnpm install --frozen-lockfile
+      - name: Release OTA update
+        script: |
+          set -e
+          if [ -z "$CODEPUSH_ACCESS_KEY" ]; then
+            echo "❌ CODEPUSH_ACCESS_KEY is not set — add it to the Codemagic 'codepush' env group."
+            exit 1
+          fi
+          case "$APP_KEY" in
+            user) APP_DIR=voxlink;      CP_APP=VoxLink-Android ;;
+            host) APP_DIR=voxlink-host; CP_APP=VoxLinkHost-Android ;;
+            *) echo "Unknown APP_KEY '$APP_KEY'"; exit 1 ;;
+          esac
+          VERSION=$(node -p "require('$CM_BUILD_DIR/$APP_DIR/app.json').expo.version")
+          code-push login "https://codepush.pro" --access-key "$CODEPUSH_ACCESS_KEY"
+          FLAGS="-d $DEPLOYMENT --targetBinaryVersion $VERSION --rollout $ROLLOUT --description \"Codemagic OTA $(date -u +%FT%TZ)\""
+          [ "$MANDATORY" = "true" ] && FLAGS="$FLAGS --mandatory"
+          echo "▶ Releasing OTA: $CP_APP android → $DEPLOYMENT (target $VERSION, rollout $ROLLOUT%)"
+          ( cd "$APP_DIR" && eval code-push release-react "$CP_APP" android $FLAGS )
+          echo "✅ OTA update released to $DEPLOYMENT. Promote with: code-push promote $CP_APP Staging Production"

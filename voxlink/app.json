@@ -12,13 +12,7 @@
       "policy": "fingerprint"
     },
     "updates": {
-      "enabled": true,
-      "url": "https://ota.ssunilkumarmohanta3.workers.dev/manifest/user",
-      "checkAutomatically": "ON_LOAD",
-      "fallbackToCacheTimeout": 0,
-      "requestHeaders": {
-        "expo-channel-name": "production"
-      }
+      "enabled": false
     },
     "splash": {
       "image": "./assets/images/splash-icon.png",
@@ -84,6 +78,7 @@
       "favicon": "./assets/images/icon.png"
     },
     "plugins": [
+      "./plugins/withCodePush",
       [
         "expo-router",
         {
