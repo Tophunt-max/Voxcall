@@ -181,6 +181,18 @@ export const api = {
   // it) so the hourly watchdog alerts only on NEW residual drift.
   setCoinReconBaseline: (action: 'accept' | 'clear') =>
     req<{ success: boolean; action: string; baseline: number }>('POST', '/admin/coin-reconciliation/baseline', { action }),
+  // Reconcile the audit trail by writing per-user opening-balance ledger rows so
+  // the ledger matches wallets (drift → ~0). Dry-run by default; pass confirm to
+  // apply. Dry-run returns { dry_run, users_to_adjust, total_amount }.
+  backfillCoinRecon: (confirm: boolean) =>
+    req<{
+      dry_run?: boolean;
+      success?: boolean;
+      users_to_adjust?: number;
+      users_adjusted?: number;
+      users_matched?: number;
+      total_amount: number;
+    }>('POST', '/admin/coin-reconciliation/backfill', { confirm }),
   alerts: (context?: string) =>
     req<{
       alerts: { id: number; user_id: string | null; message: string; context: string; platform: string; app_version: string; created_at: number }[];

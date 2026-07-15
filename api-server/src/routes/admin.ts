@@ -3574,6 +3574,95 @@ admin.post('/coin-reconciliation/baseline', async (c) => {
   return c.json({ success: true, action, baseline });
 });
 
+// POST /api/admin/coin-reconciliation/backfill — reconcile the audit trail by
+// writing a per-user "opening balance" ledger row equal to each user's
+// outstanding drift (wallet balance − sum of their existing ledger rows). This
+// makes SUM(coin_transactions.amount) match SUM(users.coins), so the watchdog
+// drift returns to ~0 and NO baseline masking is needed going forward.
+//
+// This is the permanent fix for coins granted before every credit path wrote a
+// ledger row (early welcome bonuses). It is a deliberate, operator-gated,
+// one-off action:
+//   • default (no confirm) → DRY RUN: returns a preview and writes nothing.
+//   • { confirm: true }    → applies the adjustment rows (chunked batches),
+//                            clears coin_recon_baseline, and audit-logs.
+//
+// Idempotent by construction: it only ever writes the CURRENT gap, so a second
+// run finds drift≈0 and writes nothing. The rows use the allowed 'bonus' type
+// (the CHECK constraint on coin_transactions.type permits purchase/spend/bonus/
+// refund/withdrawal) with a clear description so they're auditable. Because a
+// backfill would ALSO absorb a genuine NEW mint/burn bug, review top_drifters
+// (GET /coin-reconciliation) before confirming.
+admin.post('/coin-reconciliation/backfill', async (c) => {
+  const u = c.get('user');
+  const database = db(c);
+  const body = await c.req.json().catch(() => ({}));
+  const confirm = body?.confirm === true;
+
+  // Per-user outstanding drift, non-deleted users only (matches the watchdog
+  // and top_drifters). Only rows with a non-zero gap need an adjustment.
+  const rows = (await database.prepare(
+    `SELECT u.id AS user_id, (u.coins - COALESCE(t.sum, 0)) AS drift
+       FROM users u
+       LEFT JOIN (SELECT user_id, SUM(amount) AS sum FROM coin_transactions GROUP BY user_id) t
+         ON t.user_id = u.id
+      WHERE COALESCE(u.status, 'active') != 'deleted'
+        AND (u.coins - COALESCE(t.sum, 0)) != 0`,
+  ).all<{ user_id: string; drift: number }>().catch(() => ({ results: [] as Array<{ user_id: string; drift: number }> }))).results ?? [];
+
+  const affected = rows.length;
+  const totalAmount = rows.reduce((s, r) => s + Number(r.drift || 0), 0);
+
+  if (!confirm) {
+    return c.json({
+      dry_run: true,
+      users_to_adjust: affected,
+      total_amount: totalAmount,
+      note: 'Preview only — no ledger rows written. Re-send with { confirm: true } to apply. Review top_drifters first to be sure this drift is legacy, not a live bug.',
+    });
+  }
+
+  // Apply: one 'bonus' (opening-balance reconciliation) ledger row per drifting
+  // user, in chunked batches to stay within D1's per-batch statement cap.
+  let written = 0;
+  const CHUNK = 50;
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    const slice = rows.slice(i, i + CHUNK);
+    const stmts = slice.map((r) =>
+      database
+        .prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description) VALUES (?, ?, ?, ?, ?)')
+        .bind(crypto.randomUUID(), r.user_id, 'bonus', Number(r.drift), 'Legacy balance reconciliation (opening balance)'),
+    );
+    try {
+      await database.batch(stmts);
+      written += slice.length;
+    } catch (e) {
+      console.error('[coin-recon-backfill] batch failed at offset', i, e);
+      break;
+    }
+  }
+
+  // Ledger now matches wallets — clear any acknowledged baseline so the watchdog
+  // measures against a clean ledger from here on.
+  await database.prepare(
+    "INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('coin_recon_baseline', '0', unixepoch())"
+  ).run().catch((e) => console.warn('[coin-recon-backfill] baseline clear failed:', e));
+
+  await auditLog(
+    database,
+    u?.sub ?? 'unknown',
+    u?.name ?? 'Admin',
+    u?.email ?? '',
+    'coin_recon_backfill',
+    'coin_reconciliation',
+    'backfill',
+    `Backfilled ${written}/${affected} reconciliation ledger rows totaling ${totalAmount} coins; baseline cleared`,
+    c.req.header('cf-connecting-ip') || '',
+  );
+
+  return c.json({ success: true, users_adjusted: written, users_matched: affected, total_amount: totalAmount });
+});
+
 // GET /api/admin/alerts — operational alert feed (app_errors).
 // Surfaces the actual alert ROWS an operator needs to act on — coin-drift
 // watchdog, payment amount/currency mismatches, client crashes, etc. — not

@@ -7,6 +7,7 @@ import {
 } from 'recharts';
 import { TrendingUp, Users, Clock, Coins, Activity, UserCheck, Gift } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
+import { useConfirm } from '@/components/ConfirmDialog';
 
 const COLORS = ['#7C3AED', '#06B6D4', '#10B981', '#F59E0B', '#EF4444'];
 
@@ -38,6 +39,8 @@ export default function Analytics() {
   const [range, setRange] = useState<'7d' | '30d'>('7d');
   const [loading, setLoading] = useState(true);
   const [savingBaseline, setSavingBaseline] = useState(false);
+  const [backfilling, setBackfilling] = useState(false);
+  const { confirm } = useConfirm();
 
   useEffect(() => {
     setLoading(true);
@@ -78,6 +81,40 @@ export default function Analytics() {
       toast({ title: 'Could not update baseline', description: e?.message ?? 'Request failed', variant: 'destructive' });
     } finally {
       setSavingBaseline(false);
+    }
+  };
+
+  // Permanent fix: write per-user opening-balance ledger rows so the ledger
+  // matches wallets (drift → ~0). We first run a DRY RUN to preview the impact,
+  // then ask for confirmation before applying, since this mutates the ledger.
+  const handleBackfill = async () => {
+    setBackfilling(true);
+    try {
+      const preview = await api.backfillCoinRecon(false);
+      const users = preview.users_to_adjust ?? 0;
+      if (users === 0) {
+        toast({ title: 'Nothing to reconcile', description: 'The ledger already matches wallet balances.' });
+        return;
+      }
+      const ok = await confirm({
+        title: 'Reconcile coin ledger?',
+        description: `This writes ${users.toLocaleString()} opening-balance ledger rows totaling ${(preview.total_amount ?? 0).toLocaleString()} coins so the ledger matches wallets. Only do this after confirming the drift is legacy (see top drifters below). This mutates the ledger and cannot be auto-undone.`,
+        confirmLabel: 'Reconcile now',
+        cancelLabel: 'Cancel',
+        variant: 'destructive',
+      });
+      if (!ok) return;
+      const res = await api.backfillCoinRecon(true);
+      const fresh = await api.coinReconciliation().catch(() => null);
+      if (fresh) setRecon(fresh);
+      toast({
+        title: 'Ledger reconciled',
+        description: `Wrote ${(res.users_adjusted ?? 0).toLocaleString()} adjustment rows. Drift should now be ~0 and the watchdog alerts only on new drift.`,
+      });
+    } catch (e: any) {
+      toast({ title: 'Reconciliation failed', description: e?.message ?? 'Request failed', variant: 'destructive' });
+    } finally {
+      setBackfilling(false);
     }
   };
 
@@ -393,10 +430,17 @@ export default function Analytics() {
                     Clear
                   </button>
                 )}
+                <button
+                  onClick={handleBackfill}
+                  disabled={backfilling}
+                  className="text-xs font-medium px-3 py-1.5 rounded-lg border border-emerald-300 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+                >
+                  {backfilling ? 'Reconciling…' : 'Reconcile ledger (backfill)'}
+                </button>
               </div>
             </div>
             <p className="text-[11px] text-muted-foreground mt-2">
-              Only accept the baseline after confirming the current drift is legacy (see below). The hourly watchdog then alerts only on NEW drift beyond this baseline — a real mint/burn bug.
+              <strong>Accept baseline</strong> masks the current drift so the watchdog only alerts on NEW drift. <strong>Reconcile ledger</strong> permanently fixes it by writing opening-balance ledger rows so the ledger matches wallets (drift → ~0). Only do either after confirming the drift is legacy (see below), not a live mint/burn bug.
             </p>
           </div>
           <p className="text-[11px] text-muted-foreground italic mt-3">{recon.note}</p>
