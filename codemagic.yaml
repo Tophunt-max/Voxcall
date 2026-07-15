@@ -1,30 +1,25 @@
 # ============================================================================
-# Codemagic CI/CD — Android builds for both Expo apps (iOS added later).
+# Codemagic CI/CD — Android builds for both Expo apps.
 # ============================================================================
 # Builds voxlink (user) + voxlink-host (host) with `eas build --local`, which
 # runs the EAS build ON Codemagic's Linux machine — it consumes NO EAS build
-# credits (only Codemagic build minutes). The finished APK is then uploaded to
-# the OTA server's Downloads page (POST /console/api/builds/upload) so it shows
-# up as a downloadable build automatically — same flow as the GitHub Actions.
+# credits (only Codemagic build minutes). The finished APK is exposed as a
+# downloadable build artifact on the Codemagic build page.
 #
 # ── One-time setup in Codemagic ─────────────────────────────────────────────
-# Create an environment variable GROUP named "ota" (Teams → Environment
-# variables) with these variables (mark them Secure):
-#   EXPO_TOKEN            Expo access token — used by `eas build --local` only to
-#                         fetch the Android signing keystore (NOT build quota).
-#   OTA_SERVER_URL        e.g. https://ota.<subdomain>.workers.dev
-#   OTA_PUBLISH_TOKEN     the worker's PUBLISH_TOKEN (preferred), or …
-#   OTA_CONSOLE_PASSWORD  … the CONSOLE_PASSWORD (used if PUBLISH_TOKEN is unset)
+# Create an environment variable GROUP named "expo" (Teams → Environment
+# variables) and add (mark Secure):
+#   EXPO_TOKEN   Expo access token — used by `eas build --local` to fetch the
+#                Android signing keystore (expo.dev → Account → Access tokens).
 #
 # ── How to run ──────────────────────────────────────────────────────────────
-# Start the "android" workflow from the Codemagic UI (or via API/schedule).
-# Override variables at start time if needed:
+# Start the "android" workflow from the Codemagic UI. Override at start time:
 #   APPS     which apps to build — "user host" (default), "user", or "host"
 #   PROFILE  eas.json profile — "preview" (installable APK, default) or
 #            "production" (Play Store .aab)
 #
-# NOTE: Android needs no Mac, so this uses a Linux instance. iOS will be a
-# separate macOS workflow added later.
+# Download the APK/AAB from the Codemagic build page (Artifacts section) once
+# the build finishes.
 # ============================================================================
 
 workflows:
@@ -34,7 +29,7 @@ workflows:
     max_build_duration: 90
     environment:
       groups:
-        - ota
+        - expo
       vars:
         APPS: "user host"      # override to "user" or "host" to build just one
         PROFILE: "preview"      # "preview" = installable APK, "production" = .aab
@@ -51,30 +46,25 @@ workflows:
           set -e
           # Codemagic images already ship pnpm, so a plain `npm i -g pnpm`
           # clashes on the existing /usr/local/bin/pnpx symlink (EEXIST).
-          # --force overwrites it (npm's own suggested fix), and pinning
-          # @10.26.1 matches the repo's packageManager + lockfileVersion 9.0.
+          # --force overwrites it; pinning @10.26.1 matches the repo's
+          # packageManager + lockfileVersion 9.0.
           npm install -g pnpm@10.26.1 eas-cli --force
           pnpm --version && eas --version
 
       - name: Install dependencies
         script: pnpm install --frozen-lockfile
 
-      - name: Build Android & publish to OTA Downloads
+      - name: Build Android
         script: |
           set -e
           if [ -z "$EXPO_TOKEN" ]; then
             echo "❌ EXPO_TOKEN is not set — 'eas build --local' needs it to fetch the Android signing keystore."
-            echo "   Fix: Codemagic → your app → Settings → Environment variables →"
-            echo "        create a group named exactly 'ota' and add EXPO_TOKEN (mark Secure)."
+            echo "   Fix: Codemagic → Settings → Environment variables →"
+            echo "        create a group named exactly 'expo' and add EXPO_TOKEN (mark Secure)."
             echo "   Get a token at: expo.dev → Account settings → Access tokens."
             exit 1
           fi
-          if [ "$PROFILE" = "production" ]; then
-            EXT=aab; CT="application/octet-stream"
-          else
-            EXT=apk; CT="application/vnd.android.package-archive"
-          fi
-          TOKEN="${OTA_PUBLISH_TOKEN:-$OTA_CONSOLE_PASSWORD}"
+          if [ "$PROFILE" = "production" ]; then EXT=aab; else EXT=apk; fi
 
           for APP_KEY in $APPS; do
             case "$APP_KEY" in
@@ -82,32 +72,10 @@ workflows:
               host) APP_DIR=voxlink-host ;;
               *) echo "Unknown app '$APP_KEY' — skipping."; continue ;;
             esac
-
             OUT="$CM_BUILD_DIR/voxcall-$APP_KEY-android.$EXT"
             echo "▶ Building $APP_KEY ($APP_DIR) · profile=$PROFILE · free local build (no EAS credits)"
             ( cd "$APP_DIR" && eas build --platform android --profile "$PROFILE" --local --non-interactive --output "$OUT" )
             ls -lh "$OUT"
-
-            if [ -z "$OTA_SERVER_URL" ] || [ -z "$TOKEN" ]; then
-              echo "::warning:: OTA_SERVER_URL / token not set — skipping upload for $APP_KEY (APK kept as artifact)."
-              continue
-            fi
-
-            VERSION=$(node -p "require('$CM_BUILD_DIR/$APP_DIR/app.json').expo.version || ''")
-            BUILD_NUMBER=$(node -p "(require('$CM_BUILD_DIR/$APP_DIR/app.json').expo.android||{}).versionCode || ''")
-            FILENAME="voxcall-$APP_KEY-android-${VERSION:-build}.$EXT"
-            QS="app=$APP_KEY&platform=android&channel=$PROFILE&version=$VERSION&buildNumber=$BUILD_NUMBER&notes=Codemagic-$PROFILE&filename=$FILENAME"
-
-            CODE=$(curl -sS -o /tmp/ota-resp.json -w '%{http_code}' -X POST \
-              "${OTA_SERVER_URL%/}/console/api/builds/upload?$QS" \
-              -H "Authorization: Bearer $TOKEN" \
-              -H "Content-Type: $CT" \
-              --data-binary @"$OUT")
-            echo "OTA response ($CODE):"; cat /tmp/ota-resp.json || true; echo
-            if [ "$CODE" != "200" ]; then
-              echo "OTA upload failed ($CODE) for $APP_KEY"; exit 1
-            fi
-            echo "✅ Published $APP_KEY ($VERSION) to OTA Downloads."
           done
     artifacts:
       - voxcall-*-android.apk

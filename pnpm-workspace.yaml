@@ -37,7 +37,6 @@ minimumReleaseAgeExclude:
 packages:
   - admin-panel
   - api-server
-  - ota-server
   - voxlink
   - voxlink-host
   - lib/*
