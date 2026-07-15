@@ -26,9 +26,10 @@ export const authMiddleware = createMiddleware<{ Bindings: Env; Variables: Varia
     // Prefer the Authorization: Bearer header (mobile apps + legacy admin
     // localStorage flow). Fall back to the admin panel's httpOnly session
     // cookie so the cookie-based admin auth (routes/adminAuth.ts) works against
-    // the /api/admin/* routes too. The cookie is SameSite=Strict so this
-    // fallback is not CSRF-exposed, and adminMiddleware still enforces
-    // role === 'admin' downstream.
+    // the /api/admin/* routes too. The cookie is SameSite=None; Secure (needed
+    // for the cross-site admin panel → API calls); CSRF is mitigated by the
+    // credentialed-CORS allowlist (preflight fails for non-allowlisted origins),
+    // and adminMiddleware still enforces role === 'admin' downstream.
     const token =
       extractBearer(c.req.header('Authorization') ?? null) ??
       extractAdminSessionCookie(c.req.header('Cookie') ?? null);

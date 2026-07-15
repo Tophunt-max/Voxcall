@@ -5,8 +5,16 @@
 // SECURITY FIX: The admin panel previously stored the JWT in localStorage,
 // which is accessible to any JavaScript running on the page (XSS, malicious
 // browser extensions). These endpoints issue/validate/clear an httpOnly +
-// Secure + SameSite=Strict session cookie instead, removing the token from
-// JS-accessible storage entirely.
+// Secure session cookie instead, removing the token from JS-accessible
+// storage entirely.
+//
+// CROSS-SITE NOTE: The admin panel and the API are hosted on different sites
+// (e.g. *.pages.dev vs *.workers.dev), so the session cookie must be
+// `SameSite=None; Secure` in production — otherwise the browser never sends it
+// back and every authenticated request 401s. CSRF exposure from SameSite=None
+// is mitigated by the credentialed-CORS allowlist: state-changing admin calls
+// use JSON/PATCH/DELETE which trigger a CORS preflight that fails for any
+// non-allowlisted origin, so the request is never sent from an attacker page.
 //
 // Flow:
 //   1. POST /api/admin-auth/login   → validates creds, sets httpOnly cookie
@@ -36,22 +44,34 @@ const COOKIE_NAME = '__Host-admin_session';
 // 7 days in seconds (matches JWT TTL)
 const COOKIE_MAX_AGE = 7 * 24 * 60 * 60;
 
+// The admin panel (e.g. voxcalladmin.pages.dev) and the API
+// (voxlink-api.*.workers.dev) are served from DIFFERENT registrable sites, so
+// every admin panel → API call is a CROSS-SITE request. Browsers only attach a
+// cookie to cross-site requests when it is `SameSite=None; Secure`. With
+// SameSite=Strict/Lax the cookie is set on login but NEVER sent back on
+// /session, /refresh, or /api/admin/*, producing 401 everywhere.
+//
+// In local dev the admin panel talks to the API through the Vite proxy on the
+// same origin over HTTP, where `Secure` cookies can't be set — so dev keeps a
+// plain SameSite=Lax cookie without Secure.
+function cookieAttributes(isProduction: boolean): string {
+  return isProduction ? '; SameSite=None; Secure' : '; SameSite=Lax';
+}
+
 function setSessionCookie(c: any, token: string, env: Env): void {
   const isProduction = env.ENVIRONMENT === 'production';
-  // __Host- prefix requires Secure=true, Path=/, no Domain attribute.
-  // In local dev (HTTP), we fall back to a non-prefixed name without Secure
-  // so wrangler dev still works (localhost over HTTP can't set Secure cookies).
+  // __Host- prefix requires Secure=true, Path=/, no Domain attribute (satisfied
+  // by SameSite=None; Secure in production). In local dev (HTTP) we fall back to
+  // a non-prefixed name without Secure so wrangler dev still works.
   const name = isProduction ? COOKIE_NAME : 'admin_session';
-  const secure = isProduction ? '; Secure' : '';
-  const cookie = `${name}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${COOKIE_MAX_AGE}${secure}`;
+  const cookie = `${name}=${token}; HttpOnly; Path=/; Max-Age=${COOKIE_MAX_AGE}${cookieAttributes(isProduction)}`;
   c.header('Set-Cookie', cookie);
 }
 
 function clearSessionCookie(c: any, env: Env): void {
   const isProduction = env.ENVIRONMENT === 'production';
   const name = isProduction ? COOKIE_NAME : 'admin_session';
-  const secure = isProduction ? '; Secure' : '';
-  const cookie = `${name}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${secure}`;
+  const cookie = `${name}=; HttpOnly; Path=/; Max-Age=0${cookieAttributes(isProduction)}`;
   c.header('Set-Cookie', cookie);
 }
 
