@@ -1,0 +1,89 @@
+# ============================================================================
+# Codemagic CI/CD — build + distribute the Expo apps, all on Codemagic.
+# ============================================================================
+# Builds voxlink (user) + voxlink-host (host) with `eas build --local` (the
+# build runs ON Codemagic's machine — NO EAS cloud credits, only Codemagic
+# minutes) and distributes the installable APK to testers over the air via
+# Codemagic's built-in email distribution (each tester gets an install link).
+#
+# NOTE on "OTA": Codemagic distributes the BUILD (APK/IPA) to devices. It does
+# NOT do JS code-push (updating a live app without a new build) — that is an
+# Expo Updates / EAS Update feature, not a Codemagic one.
+#
+# ── One-time setup in Codemagic ─────────────────────────────────────────────
+# 1) Environment variables → create a group named exactly "expo" (Secure) with:
+#      EXPO_TOKEN   Expo access token (expo.dev → Account → Access tokens).
+#                   Used only to fetch the Android signing keystore, not build quota.
+# 2) Edit the `publishing.email.recipients` list below with your testers' emails.
+#
+# ── Run ─────────────────────────────────────────────────────────────────────
+# Start the "android" workflow from the Codemagic UI. Override at start time:
+#   APPS     "user host" (default) | "user" | "host"
+#   PROFILE  "preview" (installable APK, default) | "production" (.aab)
+# ============================================================================
+
+workflows:
+  android:
+    name: Android — build & distribute
+    instance_type: linux_x2          # Android needs no Mac → cheaper Linux machine
+    max_build_duration: 90
+    environment:
+      groups:
+        - expo                        # must contain EXPO_TOKEN
+      vars:
+        APPS: "user host"            # or "user" / "host"
+        PROFILE: "preview"            # "preview" = installable APK, "production" = .aab
+      node: 22
+      java: 17
+    cache:
+      cache_paths:
+        - $HOME/.pnpm-store
+        - $HOME/.gradle/caches
+        - $HOME/.npm
+    scripts:
+      - name: Enable pnpm + EAS CLI
+        script: |
+          set -e
+          # Codemagic images already ship pnpm, so a plain `npm i -g pnpm`
+          # clashes on the existing /usr/local/bin/pnpx symlink (EEXIST).
+          # --force overwrites it; pinning @10.26.1 matches packageManager +
+          # lockfileVersion 9.0.
+          npm install -g pnpm@10.26.1 eas-cli --force
+          pnpm --version && eas --version
+
+      - name: Install dependencies
+        script: pnpm install --frozen-lockfile
+
+      - name: Build Android
+        script: |
+          set -e
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "❌ EXPO_TOKEN is not set — 'eas build --local' needs it to fetch the Android signing keystore."
+            echo "   Fix: Codemagic → Environment variables → group 'expo' → add EXPO_TOKEN (Secure)."
+            exit 1
+          fi
+          if [ "$PROFILE" = "production" ]; then EXT=aab; else EXT=apk; fi
+
+          for APP_KEY in $APPS; do
+            case "$APP_KEY" in
+              user) APP_DIR=voxlink ;;
+              host) APP_DIR=voxlink-host ;;
+              *) echo "Unknown app '$APP_KEY' — skipping."; continue ;;
+            esac
+            OUT="$CM_BUILD_DIR/voxcall-$APP_KEY-android.$EXT"
+            echo "▶ Building $APP_KEY ($APP_DIR) · profile=$PROFILE · local build (no EAS credits)"
+            ( cd "$APP_DIR" && eas build --platform android --profile "$PROFILE" --local --non-interactive --output "$OUT" )
+            ls -lh "$OUT"
+          done
+    artifacts:
+      - voxcall-*-android.apk
+      - voxcall-*-android.aab
+    publishing:
+      # Codemagic emails the build (with an install link) to these testers —
+      # this is the "over-the-air" distribution. Replace with real addresses.
+      email:
+        recipients:
+          - you@example.com
+        notify:
+          success: true
+          failure: true
