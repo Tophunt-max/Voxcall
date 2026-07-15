@@ -18,6 +18,9 @@
 #   EXPO_TOKEN                       (needed for MODE build/both — eas build --local)
 #   CODEPUSH_ACCESS_KEY              (needed for MODE ota/both — code-push login)
 #   CODEPUSH_DEPLOYMENT_KEY_ANDROID  (embedded into the build by plugins/withCodePush)
+#   GOOGLE_SERVICES_JSON_USER        (base64 of voxlink/google-services.json)
+#   GOOGLE_SERVICES_JSON_HOST        (base64 of voxlink-host/google-services.json)
+#     produce with:  base64 -w0 google-services.json   (Linux)  /  base64 -i google-services.json (macOS)
 # The group MUST exist in Codemagic or you'll see "unknown variable group(s)".
 # Register the CodePush apps once: code-push app add VoxLink-Android / VoxLinkHost-Android
 # Edit publishing.email.recipients below with your testers' emails.
@@ -86,6 +89,21 @@ workflows:
             VERSION=$(node -p "require('$CM_BUILD_DIR/$APP_DIR/app.json').expo.version")
 
             if [ "$DO_BUILD" = true ]; then
+              # google-services.json is gitignored (per-app, keyed by package
+              # name), so provide it from a base64 secure env var before the
+              # build — otherwise the prebuild inside `eas build` fails.
+              case "$APP_KEY" in
+                user) GS_B64="$GOOGLE_SERVICES_JSON_USER" ;;
+                host) GS_B64="$GOOGLE_SERVICES_JSON_HOST" ;;
+              esac
+              if [ -n "$GS_B64" ]; then
+                printf '%s' "$GS_B64" | base64 -d > "$APP_DIR/google-services.json"
+                echo "✓ wrote $APP_DIR/google-services.json"
+              else
+                echo "❌ google-services.json missing for '$APP_KEY'. Add the base64 of that app's"
+                echo "   google-services.json as env var GOOGLE_SERVICES_JSON_$(echo "$APP_KEY" | tr a-z A-Z) in the 'voxcall' group."
+                exit 1
+              fi
               OUT="$CM_BUILD_DIR/voxcall-$APP_KEY-android.$EXT"
               echo "▶ BUILD $APP_KEY ($APP_DIR) · profile=$PROFILE · local build (no EAS credits)"
               ( cd "$APP_DIR" && eas build --platform android --profile "$PROFILE" --local --non-interactive --output "$OUT" )
