@@ -64,7 +64,7 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
   const callType = body.type || body.call_type || 'audio';
 
   // BUG #1 FIX: Use body.host_id instead of body.host_i[...]
-  const host = await db.prepare('SELECT id, coins_per_minute, audio_coins_per_minute, video_coins_per_minute, user_id FROM hosts WHERE id = ? AND is_online = 1 AND is_active = 1').bind(body.host_id).first<HostData>();
+  const host = await db.prepare('SELECT id, coins_per_minute, audio_coins_per_minute, video_coins_per_minute, user_id, level FROM hosts WHERE id = ? AND is_online = 1 AND is_active = 1').bind(body.host_id).first<HostData & { level?: number }>();
   if (!host) return apiError(c, ErrorCode.HOST_UNAVAILABLE, 404, 'Host not available');
 
   // Self-call check
@@ -334,12 +334,20 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
   // Includes the caller's free-minute pool so a free-trial call gets its full
   // affordable window rather than being capped at coins alone.
   const maxSeconds = affordableCallSeconds(spendableCoins, callerFreeMinutes, ratePerMin);
+  // Host's NET earning per minute = their level-based share of the caller's
+  // rate. The host UI shows THIS (not the gross rate the caller pays) on the
+  // live "+X coins/min" badge so it matches the coins actually credited at
+  // settlement (hostShareOf = floor(coinsCharged × earning_share)). Keeps the
+  // in-call badge consistent with the post-call summary's host_earnings.
+  const earnLevelCfg = await getLevelConfig(db);
+  const hostEarnShare = getEarningShare((host as any).level ?? 1, earnLevelCfg);
+  const hostEarnPerMinute = Math.max(1, Math.round(ratePerMin * hostEarnShare));
   try {
     const notifId = c.env.NOTIFICATION_HUB.idFromName(host.user_id);
     const notifStub = c.env.NOTIFICATION_HUB.get(notifId);
     await notifStub.fetch('https://dummy/notify', {
       method: 'POST',
-      body: JSON.stringify({ type: 'incoming_call', session_id: sessionId, caller_id: sub, call_type: callType, caller_name: caller.name ?? 'Caller', rate_per_minute: ratePerMin, max_seconds: maxSeconds, caller_is_vip: vipStatus.isVip, caller_vip_tier: vipStatus.tier }),
+      body: JSON.stringify({ type: 'incoming_call', session_id: sessionId, caller_id: sub, call_type: callType, caller_name: caller.name ?? 'Caller', rate_per_minute: ratePerMin, host_earn_per_minute: hostEarnPerMinute, max_seconds: maxSeconds, caller_is_vip: vipStatus.isVip, caller_vip_tier: vipStatus.tier }),
     });
   } catch (e) {
     // BUG #8 FIX: Log notification failures instead of silently swallowing
@@ -369,6 +377,8 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
     session_id: sessionId,
     host_coins_per_minute: ratePerMin,
     rate_per_minute: ratePerMin,
+    // Host's net earning per minute (level-based share of the rate) — display-only.
+    host_earn_per_minute: hostEarnPerMinute,
     call_type: callType,
     max_seconds: maxSeconds,
     // Free-trial pool for THIS caller (first_call_free / VIP daily / streak
@@ -1244,7 +1254,7 @@ function sanitizeMetric(v: unknown, lo: number, hi: number): number | null {
 call.get('/pending-for-host', async (c) => {
   const { sub } = c.get('user');
   const db = c.env.DB;
-  const host = await db.prepare('SELECT id FROM hosts WHERE user_id = ?').bind(sub).first<{ id: string }>();
+  const host = await db.prepare('SELECT id, level FROM hosts WHERE user_id = ?').bind(sub).first<{ id: string; level: number }>();
   if (!host) return c.json(null);
   const cutoff = Math.floor(Date.now() / 1000) - 90;
   // FIX: also fetch caller.coins so we can compute max_seconds — without it the host
@@ -1263,9 +1273,14 @@ call.get('/pending-for-host', async (c) => {
   const rate = session.rate_per_minute ?? DEFAULT_AUDIO_RATE;
   const callerCoins = session.caller_coins ?? 0;
   const max_seconds = affordableCallSeconds(callerCoins, session.caller_free_minutes ?? 0, rate);
+  // Host's NET earning per minute (level-based share) — the host call UI shows
+  // this on the "+X coins/min" badge so the live rate matches what's actually
+  // credited at settlement, consistent with the incoming_call WS payload.
+  const levelCfg = await getLevelConfig(db);
+  const host_earn_per_minute = Math.max(1, Math.round(rate * getEarningShare(host.level ?? 1, levelCfg)));
   // Strip internal-only fields from the response and append max_seconds
   const { caller_coins, caller_free_minutes, ...rest } = session;
-  return c.json({ ...rest, max_seconds });
+  return c.json({ ...rest, max_seconds, host_earn_per_minute });
 });
 
 call.get('/active', async (c) => {

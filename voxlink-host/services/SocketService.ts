@@ -190,7 +190,10 @@ class SocketService {
           callerId: msg.caller_id,
           callerName: msg.caller_name ?? "Caller",
           callerAvatar: msg.caller_avatar ?? undefined,
-          coinsPerMinute: msg.rate_per_minute,
+          // Prefer the host's NET earning/min (level-based share) so the live
+          // call badge shows what the host actually earns, not the gross rate
+          // the caller pays. Falls back to the gross rate for older servers.
+          coinsPerMinute: msg.host_earn_per_minute ?? msg.rate_per_minute,
           // FIX: server now sends max_seconds — propagate it so the host call
           // timer has a real upper bound (no UI overshoot past caller's balance).
           maxSeconds: msg.max_seconds,

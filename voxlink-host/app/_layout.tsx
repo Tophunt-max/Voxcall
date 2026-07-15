@@ -244,7 +244,9 @@ function AppBridge() {
             },
             (pending.call_type as "audio" | "video") ?? "audio",
             pending.id,
-            pending.rate_per_minute,
+            // Host's NET earning/min (level-based share) — falls back to the
+            // gross rate for older servers that don't send host_earn_per_minute.
+            pending.host_earn_per_minute ?? pending.rate_per_minute,
             pending.max_seconds
           );
           router.push("/calls/incoming");

@@ -16,7 +16,7 @@ import { PermissionDialog, PERMISSION_CONFIGS } from "@/components/PermissionDia
 import { useWebRTC } from "@/hooks/useWebRTC";
 import { useSocket } from "@/context/SocketContext";
 import { SocketEvents } from "@/constants/events";
-import { API } from "@/services/api";
+import { API, resolveMediaUrl } from "@/services/api";
 import { RtcVideoView } from "@/components/RtcVideoView";
 import { showErrorToast } from "@/components/Toast";
 import { GiftPickerSheet, type GiftCatalogItem } from "@/components/GiftPickerSheet";
@@ -560,7 +560,7 @@ export default function VideoCallScreen() {
     }
   })();
 
-  const remoteAvatarUri = activeCall?.participant.avatar ??
+  const remoteAvatarUri = resolveMediaUrl(activeCall?.participant.avatar) ||
     `https://api.dicebear.com/7.x/avataaars/png?seed=${activeCall?.participant.id ?? "host"}`;
 
   const handleFlip = () => {

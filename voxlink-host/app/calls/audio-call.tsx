@@ -13,7 +13,7 @@ import { PermissionDialog, PERMISSION_CONFIGS } from "@/components/PermissionDia
 import { useWebRTC } from "@/hooks/useWebRTC";
 import { useSocket } from "@/context/SocketContext";
 import { SocketEvents } from "@/constants/events";
-import { API } from "@/services/api";
+import { API, resolveMediaUrl } from "@/services/api";
 import { API_BASE_URL } from "@/constants/config";
 import { GiftAnimation, type GiftAnim } from "@/components/GiftAnimation";
 import * as Haptics from "expo-haptics";
@@ -453,7 +453,7 @@ export default function AudioCallScreen() {
         <Animated.View style={[styles.avatarRing, { transform: [{ scale: pulse }] }]}>
           <View style={styles.avatarInner}>
             <Image
-              source={{ uri: activeCall?.participant.avatar ?? `https://api.dicebear.com/7.x/avataaars/png?seed=${activeCall?.participant.id}` }}
+              source={{ uri: resolveMediaUrl(activeCall?.participant.avatar) || `https://api.dicebear.com/7.x/avataaars/png?seed=${activeCall?.participant.id}` }}
               style={styles.avatar}
             />
           </View>
