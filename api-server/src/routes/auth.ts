@@ -739,9 +739,49 @@ async function quickLoginHandler(c: any, deviceId: string | null, referralCode: 
   // mint a fresh bonus.
   const guestFreeMinutes = await readFreeCallMinutesSetting(db);
   const welcomeBonus = await readRegistrationBonus(db);
-  await db.prepare(
-    `INSERT INTO users (id, name, email, password_hash, coins, is_verified, role, device_id, country, currency, free_call_minutes) VALUES (?, ?, ?, '', ?, 0, 'user', ?, ?, ?, ?)`
-  ).bind(quickId, quickName, quickEmail, welcomeBonus, deviceId ?? null, detectedCountry, detectedCurrency, guestFreeMinutes).run();
+  // RACE FIX: the SELECT-by-device_id above and this INSERT are two separate
+  // round-trips (TOCTOU). Two concurrent quick-login calls from the SAME
+  // device can both see "no existing row" and both reach this INSERT,
+  // minting two guest accounts — each with its own fresh welcome bonus — for
+  // one physical device. Migration 0063 adds a partial UNIQUE INDEX on
+  // users(device_id) (mirroring the existing utr_id/payment_ref race fixes)
+  // so the LOSER's INSERT now raises a constraint failure instead of
+  // silently succeeding. We catch that failure and resolve to the row that
+  // won the race, returning THAT account (with no extra bonus minted) so the
+  // loser's request still completes successfully instead of 500ing.
+  try {
+    await db.prepare(
+      `INSERT INTO users (id, name, email, password_hash, coins, is_verified, role, device_id, country, currency, free_call_minutes) VALUES (?, ?, ?, '', ?, 0, 'user', ?, ?, ?, ?)`
+    ).bind(quickId, quickName, quickEmail, welcomeBonus, deviceId ?? null, detectedCountry, detectedCurrency, guestFreeMinutes).run();
+  } catch (e: any) {
+    const msg = String(e?.message || '').toLowerCase();
+    if (msg.includes('unique') || msg.includes('constraint')) {
+      const winner = await db.prepare(
+        'SELECT id, name, email, role, coins, avatar_url, country, currency FROM users WHERE device_id = ? LIMIT 1'
+      ).bind(deviceId).first();
+      if (winner) {
+        const token = await signToken({ sub: winner.id, role: winner.role, name: winner.name, email: winner.email }, c.env.JWT_SECRET);
+        return c.json({
+          token,
+          user: {
+            id: winner.id,
+            name: winner.name,
+            email: winner.email,
+            role: winner.role,
+            coins: winner.coins,
+            avatar_url: winner.avatar_url,
+            country: winner.country ?? null,
+            currency: winner.currency ?? null,
+            is_guest: true,
+          },
+          is_returning: true,
+        });
+      }
+      console.error('[quick-login] unique violation on device_id but winner row not findable:', e);
+      return c.json({ error: 'Concurrent login conflict, please retry' }, 409);
+    }
+    throw e;
+  }
   await writeCoinLedger(db, quickId, 'bonus', welcomeBonus, 'Welcome bonus (Quick-Login signup)');
   // Referral attribution for Quick-Login sign-ups (pending until genuine — a
   // recharge or PAID calls unlock it via lib/referral.ts). The same-device
