@@ -1070,10 +1070,12 @@ rewards.post('/redeem-coupon', async (c) => {
   if (coupon.max_uses != null && Number(coupon.used_count) >= Number(coupon.max_uses)) return c.json({ error: 'coupon_exhausted' }, 410);
 
   // Fast-path per-user-limit check (avoids doing the atomic CAS below when
-  // the answer is obviously "no"). The AUTHORITATIVE per-user check happens
-  // inside Phase 1 via the INSERT into user_coupon_redemptions (which has a
-  // UNIQUE index on (user_id, coupon_id) enforcing per_user_limit = 1 for
-  // the vast majority of coupons in production).
+  // the answer is obviously "no" — saves a write to reward_coupons.used_count
+  // for the common "already redeemed" case). The AUTHORITATIVE, race-safe
+  // per-user check happens later via the atomic INSERT...SELECT...WHERE
+  // guard (see below) — this table has NO unique index on (user_id, coupon_id)
+  // (its PK includes redeemed_at), so that atomic guard is what actually
+  // prevents a concurrent double-redemption, not this fast-path COUNT.
   const priorRedemptions = await db
     .prepare('SELECT COUNT(*) AS n FROM user_coupon_redemptions WHERE user_id = ? AND coupon_id = ?')
     .bind(sub, coupon.id)
@@ -1110,25 +1112,36 @@ rewards.post('/redeem-coupon', async (c) => {
     return c.json({ error: 'coupon_exhausted' }, 410);
   }
 
-  // Also enforce the per-user limit atomically. We PRE-INSERT the
-  // redemption row (with a placeholder coins_awarded that Phase 2 will
-  // finalise — but the row's mere existence blocks a concurrent
-  // redemption from the same user thanks to the SELECT COUNT check
-  // seeing this row too on retry). We use INSERT OR IGNORE if there's a
-  // UNIQUE index; otherwise the row is inserted unconditionally and
-  // per-user-limit is enforced only by the earlier COUNT check + rate
-  // limit. Note: the per_user_limit fast-path above catches the common
-  // case where the same user tries twice with a per_user_limit = 1
-  // coupon; the extra safety here is for a genuine concurrent redeem-
-  // twice-in-flight edge case.
-  try {
-    await db
-      .prepare('INSERT INTO user_coupon_redemptions (user_id, coupon_id, code, coins_awarded, redeemed_at) VALUES (?, ?, ?, ?, ?)')
-      .bind(sub, coupon.id, code, coinsAwarded, now)
-      .run();
-  } catch (err) {
+  // FIX (double-credit race): user_coupon_redemptions has NO unique index on
+  // (user_id, coupon_id) — its PK is (user_id, coupon_id, redeemed_at), so two
+  // concurrent redemptions from the SAME user that land even one second apart
+  // (very plausible for two overlapping requests, e.g. a double-tap or retry)
+  // produce two DISTINCT rows: both pass the earlier non-atomic COUNT check
+  // (each sees 0 prior redemptions before either INSERT lands), a plain
+  // unconditional INSERT never rejects either one, and both proceed to Phase 2
+  // and credit coins — a genuine double-credit on a per_user_limit=1 coupon,
+  // despite the per-user-limit check above. The old code (and its own
+  // comments) incorrectly assumed a UNIQUE(user_id, coupon_id) index existed.
+  //
+  // Fixed by making the per-user-limit check ATOMIC: fold the COUNT check
+  // into the INSERT itself via INSERT...SELECT...WHERE, which SQLite/D1
+  // executes as a single serialized statement — eliminating the TOCTOU
+  // window between "check count" and "insert row" entirely (same pattern as
+  // lib/transfers.ts's claimWithdrawal). insertResult.meta.changes === 0
+  // means the per-user limit was already reached (lost the race or the
+  // fast-path check above was stale).
+  const insertResult = await db
+    .prepare(
+      `INSERT INTO user_coupon_redemptions (user_id, coupon_id, code, coins_awarded, redeemed_at)
+       SELECT ?, ?, ?, ?, ?
+       WHERE (SELECT COUNT(*) FROM user_coupon_redemptions WHERE user_id = ? AND coupon_id = ?) < ?`,
+    )
+    .bind(sub, coupon.id, code, coinsAwarded, now, sub, coupon.id, Number(coupon.per_user_limit))
+    .run();
+
+  if (!insertResult.meta?.changes) {
     // Roll back the global counter we just consumed.
-    console.warn('[rewards] coupon redemption row insert failed; rolling back counter:', err);
+    console.warn('[rewards] coupon per-user limit reached atomically; rolling back counter');
     await db
       .prepare('UPDATE reward_coupons SET used_count = MAX(0, used_count - 1) WHERE id = ?')
       .bind(coupon.id)
