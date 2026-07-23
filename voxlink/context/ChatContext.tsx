@@ -426,6 +426,9 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     const roomId = convo?.roomId ?? conversationId;
     if (!roomId) return null;
 
+    // Stable idempotency key for THIS send — a network retry reuses it so the
+    // server never double-charges coins for one tap.
+    const idemKey = `gift-${roomId}-${gift.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const tempId = "tmp_gift_" + Date.now();
     const tempMsg: Message = {
       id: tempId,
@@ -450,7 +453,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     );
 
     try {
-      const res = await API.sendGift(roomId, gift.id);
+      const res = await API.sendGift(roomId, gift.id, idemKey);
       setConversations((prev) =>
         prev.map((c) => {
           if (c.id !== conversationId && c.roomId !== conversationId) return c;

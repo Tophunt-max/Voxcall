@@ -443,16 +443,17 @@ export const API = {
     apiRequest<{ id?: string; sender_id?: string; content?: string; created_at?: number }>('POST', `/api/chat/rooms/${room_id}/messages`, { content, media_url, media_type }),
   // Chat gifts — coin-priced gifts sent inside a chat (credited to the host).
   getGifts: () => apiRequest<any[]>('GET', '/api/gifts', undefined, false),
-  sendGift: (room_id: string, gift_id: string) =>
-    apiRequest<{ success: boolean; message_id: string; room_id: string; gift: { id: string; name: string; icon: string; amount: number }; created_at: number; new_balance: number }>(
-      'POST', '/api/gifts/send', { room_id, gift_id }
+  sendGift: (room_id: string, gift_id: string, idempotency_key?: string) =>
+    apiRequest<{ success: boolean; duplicate?: boolean; message_id: string; room_id: string; gift: { id: string; name: string; icon: string; amount: number }; created_at: number; new_balance: number }>(
+      'POST', '/api/gifts/send', { room_id, gift_id, idempotency_key }
     ),
   // Send a gift DURING a call — resolves/creates the chat room server-side from
   // host_id (an active call is the unlock) and relays a call_gift animation to
-  // the host's call screen.
-  sendCallGift: (host_id: string, gift_id: string, session_id?: string) =>
-    apiRequest<{ success: boolean; message_id: string; room_id: string; gift: { id: string; name: string; icon: string; amount: number }; created_at: number; new_balance: number }>(
-      'POST', '/api/gifts/send', { host_id, gift_id, session_id }
+  // the host's call screen. idempotency_key makes a network retry safe (no
+  // double-charge).
+  sendCallGift: (host_id: string, gift_id: string, session_id?: string, idempotency_key?: string) =>
+    apiRequest<{ success: boolean; duplicate?: boolean; message_id: string; room_id: string; gift: { id: string; name: string; icon: string; amount: number }; created_at: number; new_balance: number }>(
+      'POST', '/api/gifts/send', { host_id, gift_id, session_id, idempotency_key }
     ),
   // Typing indicator — best-effort, server relays a chat_typing event to the
   // other room participant via NotificationHub. Caller should debounce.

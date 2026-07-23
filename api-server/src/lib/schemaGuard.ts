@@ -964,6 +964,9 @@ const GIFT_MESSAGE_COLUMNS: ReadonlyArray<{ name: string; ddl: string }> = [
   { name: 'gift_icon',   ddl: 'ALTER TABLE messages ADD COLUMN gift_icon TEXT' },
   { name: 'gift_name',   ddl: 'ALTER TABLE messages ADD COLUMN gift_name TEXT' },
   { name: 'gift_amount', ddl: 'ALTER TABLE messages ADD COLUMN gift_amount INTEGER' },
+  // Idempotency key for gift sends (see migration 0065) — prevents a retried
+  // gift-send from double-charging. Healed here for lagging-migration DBs.
+  { name: 'idempotency_key', ddl: 'ALTER TABLE messages ADD COLUMN idempotency_key TEXT' },
 ];
 
 export function ensureGiftSchema(db: D1Database): Promise<boolean> {
@@ -1006,6 +1009,12 @@ export function ensureGiftSchema(db: D1Database): Promise<boolean> {
           await db.prepare(col.ddl).run().catch((e) => console.warn(`[schemaGuard] gift col ${col.name}:`, e));
         }
       }
+      // Idempotency uniqueness for gift sends (partial index — only non-null
+      // keys are constrained). Best-effort; safe/idempotent to re-run.
+      await db
+        .prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_idempotency_key ON messages(idempotency_key) WHERE idempotency_key IS NOT NULL')
+        .run()
+        .catch((e) => console.warn('[schemaGuard] gift idempotency index:', e));
       return true;
     } catch (err) {
       console.error('[schemaGuard] ensureGiftSchema failed:', err);

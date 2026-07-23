@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { atomicGiftTransfer, claimWithdrawal } from '../src/lib/transfers';
+import { atomicGiftTransfer, reverseGiftTransfer, claimWithdrawal } from '../src/lib/transfers';
 import { createTestDb, type FakeD1 } from './helpers/d1';
 
 // Exercises the REAL SQL of two money-critical peer transfers against an actual
@@ -82,6 +82,42 @@ describe('atomicGiftTransfer', () => {
     expect(await coins('sender')).toBe(0);
     expect(await atomicGiftTransfer(db as any, { senderId: 'sender', hostUserId: 'host', amount: 1 })).toBe(false);
     expect(await coins('host')).toBe(100); // only the first gift landed
+  });
+});
+
+// ─── reverseGiftTransfer (gift compensation) ─────────────────────────────────
+// When gift-send's post-transfer persistence (message + ledger) fails, the
+// coin move must be reversed so a sender is never charged for a gift that did
+// not save. A transfer + its reversal must net to zero on both wallets.
+describe('reverseGiftTransfer', () => {
+  beforeEach(() => {
+    db.applySchema("INSERT INTO users (id, coins, coins_held) VALUES ('sender', 100, 0), ('host', 0, 0);");
+  });
+
+  it('a transfer followed by its reversal nets to zero on both wallets', async () => {
+    expect(await atomicGiftTransfer(db as any, { senderId: 'sender', hostUserId: 'host', amount: 40 })).toBe(true);
+    expect(await coins('sender')).toBe(60);
+    expect(await coins('host')).toBe(40);
+
+    await reverseGiftTransfer(db as any, { senderId: 'sender', hostUserId: 'host', amount: 40 });
+    expect(await coins('sender')).toBe(100); // fully refunded
+    expect(await coins('host')).toBe(0);     // credit reversed
+  });
+
+  it('refunds the sender even if the host has already spent the credit (unconditional)', async () => {
+    await atomicGiftTransfer(db as any, { senderId: 'sender', hostUserId: 'host', amount: 40 }); // host: 40
+    db.applySchema("UPDATE users SET coins = 0 WHERE id = 'host';"); // host spent it all
+    await reverseGiftTransfer(db as any, { senderId: 'sender', hostUserId: 'host', amount: 40 });
+    expect(await coins('sender')).toBe(100); // sender STILL made whole
+    expect(await coins('host')).toBe(-40);   // host goes negative (owes it back)
+  });
+
+  it('is a no-op for self / non-positive amounts', async () => {
+    await reverseGiftTransfer(db as any, { senderId: 'sender', hostUserId: 'sender', amount: 40 });
+    await reverseGiftTransfer(db as any, { senderId: 'sender', hostUserId: 'host', amount: 0 });
+    await reverseGiftTransfer(db as any, { senderId: 'sender', hostUserId: 'host', amount: -5 });
+    expect(await coins('sender')).toBe(100);
+    expect(await coins('host')).toBe(0);
   });
 });
 

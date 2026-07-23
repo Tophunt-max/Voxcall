@@ -215,7 +215,8 @@ export default function VideoCallScreen() {
     setSendingGiftId(g.id);
     try { Haptics?.impactAsync?.(Haptics?.ImpactFeedbackStyle?.Medium); } catch { /* haptics best-effort */ }
     try {
-      const res = await API.sendCallGift(hostId, g.id, activeCall?.sessionId);
+      const idemKey = `gift-${hostId}-${g.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const res = await API.sendCallGift(hostId, g.id, activeCall?.sessionId, idemKey);
       if (typeof res?.new_balance === "number") updateCoins(res.new_balance);
       setGiftOpen(false);
       giftKeyRef.current += 1;

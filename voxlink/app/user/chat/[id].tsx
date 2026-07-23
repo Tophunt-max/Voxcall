@@ -37,7 +37,7 @@ export default function ChatScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { user, refreshBalance } = useAuth();
+  const { user, refreshBalance, updateCoins } = useAuth();
   const { conversations, sendMessage, sendGift, retryMessage, editMessage, deleteMessage, markRead, loadMessages, sendTyping, setActiveRoom } = useChat();
   const { t } = useLanguage();
   const [text, setText] = useState("");
@@ -271,6 +271,9 @@ export default function ChatScreen() {
       setGiftPickerOpen(false);
       giftKeyRef.current += 1;
       setGiftAnim({ icon: gift.icon, name: gift.name, key: giftKeyRef.current });
+      // Apply the server's authoritative balance immediately (in-call path does
+      // the same); refreshBalance stays as a best-effort reconcile.
+      updateCoins?.(newBalance);
       try { await refreshBalance?.(); } catch { /* balance refresh best-effort */ }
       showSuccessToast(`Sent ${gift.name} ${gift.icon}`);
       setTimeout(() => listRef.current?.scrollToOffset({ offset: 0, animated: true }), 100);

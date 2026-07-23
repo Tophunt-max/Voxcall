@@ -156,9 +156,30 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       };
       const preview = type === "text" ? incoming.content : type === "gift" ? `🎁 ${incoming.giftName ?? "Gift"}` : (type === "image" ? "📷 Photo" : "🎤 Voice");
       const viewingThisRoom = activeRoomRef.current != null && (activeRoomRef.current === roomId);
-      setConversations((prev) =>
-        prev.map((c) => {
-          if (c.id !== roomId && c.roomId !== roomId) return c;
+      setConversations((prev) => {
+        const idx = prev.findIndex((c) => c.id === roomId || c.roomId === roomId);
+        if (idx === -1) {
+          // FIX: unknown room — e.g. a first-ever in-call GIFT creates the chat
+          // room server-side. Previously prev.map() ignored it, so the gift
+          // (and any first message in a new room) only appeared after a reload.
+          // Create the conversation live; loadConversations() later enriches it.
+          const newConvo: Conversation = {
+            id: roomId,
+            participantId: incoming.senderId,
+            participantName: data.senderName ?? "User",
+            participantUserId: incoming.senderId,
+            participantIsOnline: false,
+            isTyping: false,
+            lastMessage: preview,
+            lastMessageTime: incoming.timestamp,
+            unreadCount: viewingThisRoom ? 0 : 1,
+            messages: [viewingThisRoom ? { ...incoming, isRead: true } : incoming],
+            roomId,
+          };
+          return [newConvo, ...prev];
+        }
+        return prev.map((c, i) => {
+          if (i !== idx) return c;
           if (c.messages.some((m) => m.id === incoming.id)) return c; // dedupe
           const viewing = viewingThisRoom || (activeRoomRef.current != null && activeRoomRef.current === c.id);
           return {
@@ -170,8 +191,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
             // the user is already viewing — the chat screen shows it live.
             unreadCount: viewing ? c.unreadCount : c.unreadCount + 1,
           };
-        }),
-      );
+        });
+      });
       // Persist read state so the server badge + sender receipt stay in sync.
       if (viewingThisRoom) API.markChatRead(roomId).catch(() => {});
     });

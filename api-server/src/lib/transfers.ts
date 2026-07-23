@@ -42,6 +42,35 @@ export async function atomicGiftTransfer(
   return !!res.meta?.changes;
 }
 
+/**
+ * Compensating reversal of a gift transfer: refund the sender and debit the
+ * host UNCONDITIONALLY (single atomic UPDATE). Used when the post-transfer
+ * persistence (gift message + ledger) fails, so a sender is never charged for
+ * a gift that didn't save. Unlike the forward transfer this does NOT guard on
+ * balance — the refund must always land; the host debit reverses coins they
+ * were credited moments earlier.
+ */
+export async function reverseGiftTransfer(
+  db: D1Database,
+  params: { senderId: string; hostUserId: string; amount: number },
+): Promise<void> {
+  const amount = Math.floor(Number(params.amount));
+  const { senderId, hostUserId } = params;
+  if (!senderId || !hostUserId || senderId === hostUserId) return;
+  if (!Number.isFinite(amount) || amount <= 0) return;
+  await db
+    .prepare(
+      `UPDATE users SET coins = coins + CASE id
+         WHEN ? THEN ?
+         WHEN ? THEN -?
+         ELSE 0
+       END, updated_at = unixepoch()
+       WHERE id IN (?, ?)`,
+    )
+    .bind(senderId, amount, hostUserId, amount, senderId, hostUserId)
+    .run();
+}
+
 export type WithdrawalClaim = { ok: true } | { ok: false; reason: 'pending' | 'insufficient' };
 
 /**

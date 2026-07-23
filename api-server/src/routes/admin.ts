@@ -2024,12 +2024,16 @@ admin.post('/gifts', async (c) => {
   const icon = String(b.icon || '').trim();
   if (!name) return c.json({ error: 'Gift name is required' }, 400);
   if (!icon) return c.json({ error: 'Gift icon (emoji) is required' }, 400);
+  // Price must be >= 1: gifts.ts rejects amount <= 0, so a 0-price gift would
+  // be a dead catalog item (shows in the picker but can never be sent).
+  const price = parseInt(b.price_coins);
+  if (!Number.isFinite(price) || price < 1) return c.json({ error: 'Gift price must be at least 1 coin' }, 400);
   const id = crypto.randomUUID();
   await db(c).prepare(
     'INSERT INTO gifts (id, name, icon, price_coins, sort_order, is_active) VALUES (?, ?, ?, ?, ?, ?)'
   ).bind(
     id, name, icon.slice(0, 8),
-    Math.max(0, parseInt(b.price_coins) || 0),
+    price,
     Math.trunc(Number(b.sort_order) || 0),
     b.is_active === 0 || b.is_active === false ? 0 : 1,
   ).run();
@@ -2043,7 +2047,11 @@ admin.patch('/gifts/:id', async (c) => {
   const vals: any[] = [];
   if (b.name !== undefined) { sets.push('name = ?'); vals.push(String(b.name).trim()); }
   if (b.icon !== undefined) { sets.push('icon = ?'); vals.push(String(b.icon).trim().slice(0, 8)); }
-  if (b.price_coins !== undefined) { sets.push('price_coins = ?'); vals.push(Math.max(0, parseInt(b.price_coins) || 0)); }
+  if (b.price_coins !== undefined) {
+    const price = parseInt(b.price_coins);
+    if (!Number.isFinite(price) || price < 1) return c.json({ error: 'Gift price must be at least 1 coin' }, 400);
+    sets.push('price_coins = ?'); vals.push(price);
+  }
   if (b.sort_order !== undefined) { sets.push('sort_order = ?'); vals.push(Math.trunc(Number(b.sort_order) || 0)); }
   if (b.is_active !== undefined) { sets.push('is_active = ?'); vals.push(b.is_active ? 1 : 0); }
   if (!sets.length) return c.json({ error: 'Nothing to update' }, 400);

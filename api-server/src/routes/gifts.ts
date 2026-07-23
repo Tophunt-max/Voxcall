@@ -3,7 +3,7 @@ import { authMiddleware } from '../middleware/auth';
 import { checkRateLimit } from '../lib/rateLimit';
 import { sendFCMPush } from '../lib/fcm';
 import { applyLevelUp } from '../lib/levelService';
-import { atomicGiftTransfer } from '../lib/transfers';
+import { atomicGiftTransfer, reverseGiftTransfer } from '../lib/transfers';
 import type { Env, JWTPayload } from '../types';
 
 // ============================================================================
@@ -46,14 +46,39 @@ gifts.get('/', async (c) => {
 gifts.post('/send', async (c) => {
   const { sub, name: senderName } = c.get('user');
   const db = c.env.DB;
-  const body = await c.req.json().catch(() => ({})) as { room_id?: string; host_id?: string; session_id?: string; gift_id?: string };
+  const body = await c.req.json().catch(() => ({})) as { room_id?: string; host_id?: string; session_id?: string; gift_id?: string; idempotency_key?: string };
   if (!body.gift_id || (!body.room_id && !body.host_id)) {
     return c.json({ error: 'gift_id and (room_id or host_id) are required' }, 400);
   }
+  // Idempotency: a client sends the same key for a send + any automatic retry
+  // (network timeout, 401 refresh). A key that already produced a gift returns
+  // that gift WITHOUT charging again.
+  const idemKey = typeof body.idempotency_key === 'string' && body.idempotency_key.trim().length > 0
+    ? body.idempotency_key.trim().slice(0, 100)
+    : null;
 
   // Anti-spam: cap gift sends per user (fail-open if rate_limits is missing).
   const rl = await checkRateLimit(db, `gift-send:${sub}`, 30, 60);
   if (rl.limited) return c.json({ error: 'Too many gifts. Please slow down.', code: 'RATE_LIMITED' }, 429);
+
+  // Idempotency fast-path — a retried send returns the original result, no charge.
+  if (idemKey) {
+    const prior = await db.prepare(
+      'SELECT id, room_id, gift_icon, gift_name, gift_amount, created_at FROM messages WHERE idempotency_key = ? AND sender_id = ? LIMIT 1'
+    ).bind(idemKey, sub).first<any>().catch(() => null);
+    if (prior) {
+      const bal = await db.prepare('SELECT coins FROM users WHERE id = ?').bind(sub).first<{ coins: number }>();
+      return c.json({
+        success: true,
+        duplicate: true,
+        message_id: prior.id,
+        room_id: prior.room_id,
+        gift: { id: body.gift_id, name: prior.gift_name, icon: prior.gift_icon, amount: Number(prior.gift_amount) || 0 },
+        created_at: prior.created_at ?? Math.floor(Date.now() / 1000),
+        new_balance: Number(bal?.coins) || 0,
+      });
+    }
+  }
 
   // The sender must be the room's regular user; the recipient is the host.
   // (Gifts only flow user → host — a host can't gift coins to a user.)
@@ -80,8 +105,16 @@ gifts.post('/send', async (c) => {
       const hostRow = await db.prepare('SELECT id, user_id FROM hosts WHERE id = ?').bind(body.host_id).first<{ id: string; user_id: string }>();
       if (!hostRow) return c.json({ error: 'Host not found' }, 404);
       const newRoomId = crypto.randomUUID();
-      await db.prepare('INSERT INTO chat_rooms (id, user_id, host_id) VALUES (?, ?, ?)').bind(newRoomId, sub, body.host_id).run();
-      room = { id: newRoomId, user_id: sub, host_id: body.host_id, host_user_id: hostRow.user_id };
+      // ON CONFLICT so two concurrent first-time gifts can't 500 on the
+      // UNIQUE(user_id, host_id) constraint — then re-select the surviving row.
+      await db.prepare('INSERT INTO chat_rooms (id, user_id, host_id) VALUES (?, ?, ?) ON CONFLICT(user_id, host_id) DO NOTHING')
+        .bind(newRoomId, sub, body.host_id).run();
+      const resolved = await db.prepare(
+        `SELECT cr.id, cr.user_id, cr.host_id, h.user_id AS host_user_id
+         FROM chat_rooms cr JOIN hosts h ON h.id = cr.host_id
+         WHERE cr.user_id = ? AND cr.host_id = ?`
+      ).bind(sub, body.host_id).first<any>();
+      room = resolved ?? { id: newRoomId, user_id: sub, host_id: body.host_id, host_user_id: hostRow.user_id };
     }
   }
   if (!room) return c.json({ error: 'Room not found' }, 404);
@@ -112,35 +145,56 @@ gifts.post('/send', async (c) => {
   const now = Math.floor(Date.now() / 1000);
   const preview = `🎁 ${gift.name}`;
 
-  // CRITICAL: persist the gift MESSAGE row + room preview. This is what makes
-  // the gift render in both chats (live + on reload). Kept as its own awaited
-  // step (NOT bundled with the best-effort ledger below) so an accounting
-  // hiccup can never silently drop the gift message. The gift columns are
-  // auto-healed by ensureGiftSchema on every request, so this INSERT won't fail
-  // on a lagging-migration DB — the original "gift not showing" cause.
+  // ATOMIC persistence. The coins have already moved (atomicGiftTransfer), so
+  // the gift MESSAGE + both ledger rows + host earnings MUST persist together —
+  // previously the message and ledger were separate best-effort steps, so a
+  // failure left the user charged with NO gift and/or a broken reconciliation
+  // ledger. If this batch fails, we REVERSE the coin move so a sender is never
+  // charged for a gift that didn't save. The idempotency_key makes a concurrent
+  // duplicate collide on the UNIQUE index (caught below → reversed).
   try {
     await db.batch([
       db.prepare(
-        `INSERT INTO messages (id, room_id, sender_id, content, msg_kind, gift_icon, gift_name, gift_amount)
-         VALUES (?, ?, ?, ?, 'gift', ?, ?, ?)`
-      ).bind(msgId, roomId, sub, preview, gift.icon, gift.name, amount),
+        `INSERT INTO messages (id, room_id, sender_id, content, msg_kind, gift_icon, gift_name, gift_amount, idempotency_key)
+         VALUES (?, ?, ?, ?, 'gift', ?, ?, ?, ?)`
+      ).bind(msgId, roomId, sub, preview, gift.icon, gift.name, amount, idemKey),
       db.prepare('UPDATE chat_rooms SET last_message = ?, last_message_at = ? WHERE id = ?')
         .bind(preview, now, roomId),
+      db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
+        .bind(crypto.randomUUID(), sub, 'spend', -amount, `Gift sent: ${gift.name}`, msgId),
+      db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
+        .bind(crypto.randomUUID(), hostUserId, 'bonus', amount, `Gift received: ${gift.name}`, msgId),
+      // Gifts count toward the host's lifetime earnings (feeds level-up).
+      db.prepare('UPDATE hosts SET total_earnings = total_earnings + ? WHERE id = ?')
+        .bind(amount, room.host_id),
     ]);
-  } catch (e) {
-    console.error('[gifts/send] CRITICAL: gift message persist failed (coins already moved):', e);
+  } catch (e: any) {
+    // Persist failed → refund the sender (and reverse the host credit) so the
+    // charge never happens without a matching gift + ledger.
+    await reverseGiftTransfer(db, { senderId: sub, hostUserId, amount })
+      .catch((re) => console.error('[gifts/send] CRITICAL: reversal after persist failure FAILED:', re));
+    // A UNIQUE(idempotency_key) collision means a concurrent identical send
+    // already recorded this gift — return that original (net single charge).
+    if (idemKey && /unique|constraint/i.test(String(e?.message || ''))) {
+      const prior = await db.prepare(
+        'SELECT id, room_id, gift_icon, gift_name, gift_amount, created_at FROM messages WHERE idempotency_key = ? AND sender_id = ? LIMIT 1'
+      ).bind(idemKey, sub).first<any>().catch(() => null);
+      if (prior) {
+        const bal = await db.prepare('SELECT coins FROM users WHERE id = ?').bind(sub).first<{ coins: number }>();
+        return c.json({
+          success: true,
+          duplicate: true,
+          message_id: prior.id,
+          room_id: prior.room_id,
+          gift: { id: body.gift_id, name: prior.gift_name, icon: prior.gift_icon, amount: Number(prior.gift_amount) || 0 },
+          created_at: prior.created_at ?? now,
+          new_balance: Number(bal?.coins) || 0,
+        });
+      }
+    }
+    console.error('[gifts/send] persist failed — coins refunded:', e);
+    return c.json({ error: 'Could not send gift. Your coins were not charged.', code: 'GIFT_FAILED' }, 500);
   }
-
-  // Ledger + host earnings — non-fatal accounting (coins already moved).
-  await db.batch([
-    db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
-      .bind(crypto.randomUUID(), sub, 'spend', -amount, `Gift sent: ${gift.name}`, msgId),
-    db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
-      .bind(crypto.randomUUID(), hostUserId, 'bonus', amount, `Gift received: ${gift.name}`, msgId),
-    // Gifts count toward the host's lifetime earnings (feeds level-up).
-    db.prepare('UPDATE hosts SET total_earnings = total_earnings + ? WHERE id = ?')
-      .bind(amount, room.host_id),
-  ]).catch((e) => console.warn('[gifts/send] ledger write failed (coins already moved):', e));
 
   // A big gift can cross an earnings threshold — re-evaluate level in the
   // background (idempotent; no-op when no promotion is due).
