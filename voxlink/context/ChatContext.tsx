@@ -83,6 +83,9 @@ interface ChatContextValue {
    * idle period or on send).
    */
   sendTyping: (conversationId: string, isTyping: boolean) => void;
+  /** Tell the context which room is currently open on screen (null when none)
+   *  so inbound messages for it don't inflate the unread badge. */
+  setActiveRoom: (roomId: string | null) => void;
   totalUnread: number;
 }
 
@@ -99,6 +102,11 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   // One auto-clear timer per (roomId or convoId) — refreshed on every
   // MESSAGE_TYPING event we receive for that room.
   const typingClearTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  // roomId the user currently has OPEN. Inbound messages for this room must not
+  // bump the unread badge (they're already on screen) — the chat screen sets
+  // this on focus and clears it on blur. Null = no thread open (safe default).
+  const activeRoomRef = useRef<string | null>(null);
+  const setActiveRoom = useCallback((roomId: string | null) => { activeRoomRef.current = roomId; }, []);
 
   const totalUnread = conversations.reduce((sum, c) => sum + c.unreadCount, 0);
 
@@ -184,19 +192,25 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         ...(isGift ? { giftIcon: data.giftIcon, giftName: data.giftName, giftAmount: data.giftAmount } : {}),
       };
       const preview = type === "text" ? incoming.content : type === "gift" ? `🎁 ${incoming.giftName ?? "Gift"}` : (type === "image" ? "📷 Photo" : "🎤 Voice");
+      const viewingThisRoom = activeRoomRef.current != null && (activeRoomRef.current === roomId);
       setConversations((prev) =>
         prev.map((c) => {
           if (c.id !== roomId && c.roomId !== roomId) return c;
           if (c.messages.some((m) => m.id === incoming.id)) return c; // dedupe
+          const viewing = viewingThisRoom || (activeRoomRef.current != null && activeRoomRef.current === c.id);
           return {
             ...c,
-            messages: [...c.messages, incoming],
+            messages: [...c.messages, viewing ? { ...incoming, isRead: true } : incoming],
             lastMessage: preview,
             lastMessageTime: incoming.timestamp,
-            unreadCount: c.unreadCount + 1,
+            // FIX (unread flicker/off-by-one): don't bump the badge for a room
+            // the user is already viewing — the chat screen shows it live.
+            unreadCount: viewing ? c.unreadCount : c.unreadCount + 1,
           };
         }),
       );
+      // Persist read state so the server badge + sender receipt stay in sync.
+      if (viewingThisRoom) API.markChatRead(roomId).catch(() => {});
     });
 
     // ─── Realtime: read receipt ──────────────────────────────────────────
@@ -626,6 +640,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         loadMessages,
         getOrCreateConversation,
         sendTyping,
+        setActiveRoom,
         totalUnread,
       }}
     >

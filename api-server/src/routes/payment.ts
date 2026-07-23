@@ -196,10 +196,14 @@ async function approveDeposit(
   }
 
   let totalCoins = (purchase.coins || 0) + (purchase.bonus_coins || 0);
-  // Atomic CAS: only update if status is still not 'success' — prevents double-credit on concurrent webhook retries.
+  // Atomic CAS: only credit a deposit that is still awaiting payment. Using
+  // `status != 'success'` was WRONG — a late/duplicate webhook (or admin "Mark
+  // Success") arriving after a REFUND/REJECT/FAIL matched the guard and
+  // re-credited the coins, reversing refunds and defeating fraud rejection.
+  // Restrict to non-terminal states so only genuine pending deposits credit.
   // The winner of this CAS is the ONLY caller that proceeds to credit + promo consumption below.
   const casUpdate = await db.prepare(
-    "UPDATE coin_purchases SET status = 'success', payment_method = COALESCE(payment_method, ?), updated_at = unixepoch() WHERE id = ? AND status != 'success'"
+    "UPDATE coin_purchases SET status = 'success', payment_method = COALESCE(payment_method, ?), updated_at = unixepoch() WHERE id = ? AND status NOT IN ('success', 'refunded', 'failed', 'rejected')"
   ).bind(source, purchaseId).run();
   if (!casUpdate.meta?.changes || casUpdate.meta.changes === 0) {
     // Another webhook already processed this purchase

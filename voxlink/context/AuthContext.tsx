@@ -131,35 +131,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     })();
   }, []);
 
-  // Refresh balance when app comes back to foreground; also detect token expiry
+  // Refresh balance when app comes back to foreground; also detect token expiry.
+  // Guard via a ref instead of running the async side effect inside a setState
+  // updater (updaters must be pure; the old pattern double-fired the balance
+  // fetch under StrictMode/concurrent React).
+  const isLoggedInRef = useRef(false);
+  useEffect(() => { isLoggedInRef.current = state.isLoggedIn; }, [state.isLoggedIn]);
+
   useEffect(() => {
     const sub = AppState.addEventListener("change", (nextState) => {
-      if (nextState === "active") {
-        setState((prev) => {
-          if (!prev.isLoggedIn || !prev.user) return prev;
-          fetchFreshBalance().then((balResult) => {
-            if (balResult.tokenExpired) {
-              // Token expired while app was backgrounded — auto-logout
-              Promise.all([
-                removeItem(StorageKeys.AUTH_TOKEN),
-                removeItem(StorageKeys.USER),
-              ]).then(() => {
-                setState({ user: null, isLoggedIn: false, isLoading: false });
-              });
-              return;
-            }
-            if (balResult.coins !== null) {
-              setState((p) => {
-                if (!p.user) return p;
-                const updated = { ...p.user, coins: balResult.coins! };
-                setItem(StorageKeys.USER, updated);
-                return { ...p, user: updated };
-              });
-            }
+      if (nextState !== "active" || !isLoggedInRef.current) return;
+      fetchFreshBalance().then((balResult) => {
+        if (balResult.tokenExpired) {
+          // Token expired while app was backgrounded — auto-logout
+          Promise.all([
+            removeItem(StorageKeys.AUTH_TOKEN),
+            removeItem(StorageKeys.USER),
+          ]).then(() => {
+            setState({ user: null, isLoggedIn: false, isLoading: false });
           });
-          return prev;
-        });
-      }
+          return;
+        }
+        if (balResult.coins !== null) {
+          setState((p) => {
+            if (!p.user) return p;
+            const updated = { ...p.user, coins: balResult.coins! };
+            setItem(StorageKeys.USER, updated);
+            return { ...p, user: updated };
+          });
+        }
+      });
     });
     return () => sub.remove();
   }, []);

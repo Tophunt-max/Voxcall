@@ -38,7 +38,7 @@ export default function ChatScreen() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user, refreshBalance } = useAuth();
-  const { conversations, sendMessage, sendGift, retryMessage, editMessage, deleteMessage, markRead, loadMessages, sendTyping } = useChat();
+  const { conversations, sendMessage, sendGift, retryMessage, editMessage, deleteMessage, markRead, loadMessages, sendTyping, setActiveRoom } = useChat();
   const { t } = useLanguage();
   const [text, setText] = useState("");
   // Gift picker state.
@@ -88,6 +88,13 @@ export default function ChatScreen() {
       loadMessages(id, id).catch(() => { showErrorToast(t.chatScreen.failedLoadMessages); }).finally(() => setLoading(false));
     }
   }, [id]);
+
+  // Mark this room active while the thread is open so inbound messages for it
+  // don't inflate the unread badge; clear on unmount.
+  useEffect(() => {
+    setActiveRoom(roomId || id || null);
+    return () => setActiveRoom(null);
+  }, [roomId, id, setActiveRoom]);
 
   const messages = convo?.messages ?? [];
   const reversedMessages = useMemo(() => [...messages].reverse(), [messages]);

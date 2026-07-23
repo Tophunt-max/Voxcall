@@ -323,9 +323,16 @@ admin.patch('/users/:id', async (c) => {
   const { coins, role, is_verified, status } = body;
   const sets: string[] = []; const vals: any[] = [];
   // SECURITY FIX: Validate all fields against allowlists to prevent arbitrary values
+  // Compute the signed delta so an admin balance edit writes a matching ledger
+  // row (below). Without it, an absolute `coins = ?` set mints/burns wallet
+  // coins with NO coin_transactions entry, breaking the money-reconciliation
+  // invariant (SUM(users.coins) == SUM(coin_transactions.amount)).
+  let coinDelta: number | null = null;
   if (coins !== undefined) {
     const coinVal = parseInt(coins);
     if (isNaN(coinVal) || coinVal < 0) return c.json({ error: 'coins must be a non-negative integer' }, 400);
+    const cur = await db(c).prepare('SELECT coins FROM users WHERE id = ?').bind(id).first<{ coins: number }>();
+    coinDelta = coinVal - (cur?.coins ?? 0);
     sets.push('coins = ?'); vals.push(coinVal);
   }
   if (role !== undefined) {
@@ -340,7 +347,18 @@ admin.patch('/users/:id', async (c) => {
   if (!sets.length) return c.json({ error: 'Nothing to update' }, 400);
   sets.push('updated_at = unixepoch()');
   vals.push(id);
-  await db(c).prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`).bind(...vals).run();
+  const userUpdateOps: any[] = [
+    db(c).prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`).bind(...vals),
+  ];
+  // Self-ledgering admin coin adjustment — keep the reconciliation invariant intact.
+  if (coinDelta !== null && coinDelta !== 0) {
+    userUpdateOps.push(
+      db(c).prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)').bind(
+        crypto.randomUUID(), id, coinDelta >= 0 ? 'bonus' : 'refund', coinDelta, 'Admin manual balance adjustment', null,
+      ),
+    );
+  }
+  await db(c).batch(userUpdateOps);
   // Audit the semantic change (coins/role/ban) — the middleware only records the
   // request envelope; this captures the actual values for forensics/compliance.
   const changes: Record<string, any> = {};
@@ -1045,6 +1063,67 @@ admin.get('/notifications', async (c) => {
   `).all();
   return c.json(result.results);
 });
+// Deliver an admin notification NOW: persist a per-user notifications row, push
+// a live `notification_new` event, and send FCM. Extracted so BOTH the
+// immediate-send route and the scheduled-notification cron reuse the exact same
+// fan-out (target resolution + chunked insert + push + FCM).
+export async function deliverAdminNotification(
+  env: Env,
+  database: D1Database,
+  opts: { title: string; body: string; type?: string; target?: string; userId?: string | null },
+): Promise<{ sent: number; pushed: number }> {
+  const { title, body: msgBody, type = 'system', target, userId } = opts;
+  const now = Math.floor(Date.now() / 1000);
+  let targetUsers: any[] = [];
+  if (target === 'all') {
+    targetUsers = (await database.prepare('SELECT id FROM users').all()).results;
+  } else if (target === 'hosts') {
+    targetUsers = (await database.prepare('SELECT u.id FROM users u INNER JOIN hosts h ON h.user_id = u.id').all()).results;
+  } else if (target === 'user' && userId) {
+    targetUsers = [{ id: userId }];
+  }
+  if (targetUsers.length === 0) return { sent: 0, pushed: 0 };
+
+  // Save to D1 notifications table in chunks of 90 (D1 batch limit is 100)
+  const DB_BATCH_SIZE = 90;
+  for (let i = 0; i < targetUsers.length; i += DB_BATCH_SIZE) {
+    const chunk = targetUsers.slice(i, i + DB_BATCH_SIZE);
+    const stmts = chunk.map((u: any) => {
+      const id = 'notif-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+      return database.prepare('INSERT INTO notifications (id, user_id, type, title, body, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+        .bind(id, u.id, type, title, msgBody, now);
+    });
+    await database.batch(stmts);
+    // Real-time: push notification_new so currently-open apps prepend it + bump
+    // the unread badge without waiting for a refetch.
+    await Promise.allSettled(chunk.map((u: any) =>
+      pushToUser(env, u.id, {
+        type: 'notification_new',
+        notification: { type, title, body: msgBody, is_read: 0, created_at: now },
+        timestamp: Date.now(),
+      }),
+    ));
+  }
+
+  // Send actual push notifications in batches of 100
+  let totalPushed = 0;
+  try {
+    const userIds = targetUsers.map((u: any) => u.id);
+    const batchSize = 100;
+    for (let i = 0; i < userIds.length; i += batchSize) {
+      const batch = userIds.slice(i, i + batchSize);
+      const tokens = await getFCMTokens(database, batch);
+      if (tokens.length > 0) {
+        const result = await sendFCMPush(env.FIREBASE_SERVICE_ACCOUNT, tokens, title, msgBody, { type, notif_type: type }, database);
+        totalPushed += result.sent;
+      }
+    }
+  } catch (err) {
+    console.error('[Push] deliverAdminNotification error:', err);
+  }
+  return { sent: targetUsers.length, pushed: totalPushed };
+}
+
 admin.post('/notifications/send', async (c) => {
   const body = await c.req.json() as any;
   const { title, body: msgBody, type = 'system', target, userId } = body;
@@ -1055,58 +1134,33 @@ admin.post('/notifications/send', async (c) => {
   if (typeof msgBody !== 'string' || msgBody.length === 0 || msgBody.length > 500) {
     return c.json({ error: 'body must be 1-500 chars' }, 400);
   }
-  const now = Math.floor(Date.now() / 1000);
-  let targetUsers: any[] = [];
-  if (target === 'all') {
-    const r = await db(c).prepare('SELECT id FROM users').all();
-    targetUsers = r.results;
-  } else if (target === 'hosts') {
-    const r = await db(c).prepare('SELECT u.id FROM users u INNER JOIN hosts h ON h.user_id = u.id').all();
-    targetUsers = r.results;
-  } else if (target === 'user' && userId) {
-    targetUsers = [{ id: userId }];
-  }
-  if (targetUsers.length === 0) return c.json({ sent: 0 });
 
-  // Save to D1 notifications table in chunks of 90 (D1 batch limit is 100)
-  const DB_BATCH_SIZE = 90;
-  for (let i = 0; i < targetUsers.length; i += DB_BATCH_SIZE) {
-    const chunk = targetUsers.slice(i, i + DB_BATCH_SIZE);
-    const stmts = chunk.map((u: any) => {
-      const id = 'notif-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
-      return db(c).prepare('INSERT INTO notifications (id, user_id, type, title, body, created_at) VALUES (?, ?, ?, ?, ?, ?)')
-        .bind(id, u.id, type, title, msgBody, now);
-    });
-    await db(c).batch(stmts);
-    // Real-time: push notification_new so currently-open apps prepend it + bump
-    // the unread badge without waiting for a refetch.
-    c.executionCtx?.waitUntil?.(Promise.allSettled(chunk.map((u: any) =>
-      pushToUser(c.env, u.id, {
-        type: 'notification_new',
-        notification: { type, title, body: msgBody, is_read: 0, created_at: now },
-        timestamp: Date.now(),
-      }),
-    )));
-  }
-
-  // Send actual Expo Push Notifications in batches of 100
-  try {
-    const userIds = targetUsers.map((u: any) => u.id);
-    const batchSize = 100;
-    let totalPushed = 0;
-    for (let i = 0; i < userIds.length; i += batchSize) {
-      const batch = userIds.slice(i, i + batchSize);
-      const tokens = await getFCMTokens(db(c), batch);
-      if (tokens.length > 0) {
-        const result = await sendFCMPush(c.env.FIREBASE_SERVICE_ACCOUNT, tokens, title, msgBody, { type, notif_type: type }, db(c));
-        totalPushed += result.sent;
-      }
+  // Scheduling: when the admin picks "Schedule for later", persist the intent
+  // and let the cron (deliverDueScheduledNotifications) fan it out when due,
+  // instead of the old behaviour of sending immediately while claiming it was
+  // scheduled. schedule_time is a unix timestamp in SECONDS.
+  const isScheduled = body.scheduled === true || body.scheduled === 1 || body.scheduled === '1';
+  const scheduleTime = Number(body.schedule_time) || 0;
+  if (isScheduled) {
+    const now = Math.floor(Date.now() / 1000);
+    if (!scheduleTime || scheduleTime <= now) {
+      return c.json({ error: 'schedule_time must be a future unix timestamp (seconds)' }, 400);
     }
-    return c.json({ sent: targetUsers.length, pushed: totalPushed });
-  } catch (err) {
-    console.error('[Push] admin send error:', err);
-    return c.json({ sent: targetUsers.length, pushed: 0 });
+    const id = 'schednotif-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+    try {
+      await db(c).prepare(
+        `INSERT INTO scheduled_notifications (id, title, body, type, target, user_id, schedule_time, status, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', unixepoch())`
+      ).bind(id, title, msgBody, type, target ?? 'all', userId ?? null, scheduleTime).run();
+    } catch (e) {
+      console.error('[notifications/send] failed to persist scheduled notification:', e);
+      return c.json({ error: 'Failed to schedule notification' }, 500);
+    }
+    return c.json({ scheduled: true, id, schedule_time: scheduleTime });
   }
+
+  const result = await deliverAdminNotification(c.env, db(c), { title, body: msgBody, type, target, userId });
+  return c.json(result);
 });
 
 // Call sessions
@@ -1345,12 +1399,20 @@ admin.patch('/deposits/:id', async (c) => {
     if (purchase.status === 'refunded') return c.json({ error: 'Deposit already refunded' }, 400);
     if (purchase.status !== 'success') return c.json({ error: 'Only successful deposits can be refunded' }, 400);
     const totalRefund = (purchase.coins || 0) + (purchase.bonus_coins || 0);
+    // FIX (idempotency): flip success→refunded via an atomic CAS so two
+    // concurrent refund requests can't BOTH pass the read-check above and
+    // double-deduct the user's coins. Only the winner (status actually changed)
+    // reverses the balance + writes the ledger row.
+    const noteVal = body.admin_note !== undefined ? body.admin_note : null;
+    const refundCas = await db(c).prepare(
+      "UPDATE coin_purchases SET status = 'refunded', admin_note = COALESCE(?, admin_note), updated_at = unixepoch() WHERE id = ? AND status = 'success'"
+    ).bind(noteVal, id).run();
+    if (!refundCas.meta?.changes) return c.json({ error: 'Deposit already refunded' }, 400);
     // FIX #11: Clamp the refund deduction at 0 so a user who already spent
     // the credited coins doesn't end up with a negative balance. Record the
     // ledger entry as a `refund` (not `spend`) with a negative amount, matching
     // the convention used by withdrawal refunds elsewhere in this file.
     await db(c).batch([
-      db(c).prepare(`UPDATE coin_purchases SET ${sets.join(', ')} WHERE id = ?`).bind(...vals),
       db(c).prepare('UPDATE users SET coins = MAX(0, coins - ?), updated_at = unixepoch() WHERE id = ?').bind(totalRefund, purchase.user_id),
       db(c).prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)').bind(
         crypto.randomUUID(), purchase.user_id, 'refund', -totalRefund, `Deposit refunded by admin (coins reversed)`, id

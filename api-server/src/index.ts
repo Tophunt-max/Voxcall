@@ -9,7 +9,7 @@ import { hostsRouter, hostRouter } from './routes/host';
 import coinRouter from './routes/coin';
 import chatRouter from './routes/chat';
 import callRouter from './routes/call';
-import adminRouter from './routes/admin';
+import adminRouter, { deliverAdminNotification } from './routes/admin';
 import { auditLogMiddleware } from './middleware/auditLog';
 import { dataChangeBroadcastMiddleware } from './middleware/dataChangeBroadcast';
 import uploadRouter from './routes/upload';
@@ -1334,11 +1334,47 @@ async function maybeReconcileCoins(env: Env): Promise<void> {
   }
 }
 
+// Deliver admin notifications whose scheduled send time has arrived. Each due
+// row is claimed atomically (pending → sending) so overlapping cron ticks
+// never double-send, then delivered via the same fan-out as an immediate send.
+async function deliverDueScheduledNotifications(env: Env): Promise<void> {
+  const db = env.DB;
+  const now = Math.floor(Date.now() / 1000);
+  try {
+    const due = await db.prepare(
+      `SELECT id, title, body, type, target, user_id FROM scheduled_notifications
+       WHERE status = 'pending' AND schedule_time <= ? ORDER BY schedule_time ASC LIMIT 20`
+    ).bind(now).all<any>();
+    if (!due.results?.length) return;
+    for (const row of due.results) {
+      // Atomic claim — only the tick that flips pending→sending delivers it.
+      const claim = await db.prepare(
+        "UPDATE scheduled_notifications SET status = 'sending' WHERE id = ? AND status = 'pending'"
+      ).bind(row.id).run();
+      if (!claim.meta?.changes) continue;
+      try {
+        const res = await deliverAdminNotification(env, db, {
+          title: row.title, body: row.body, type: row.type, target: row.target, userId: row.user_id,
+        });
+        await db.prepare("UPDATE scheduled_notifications SET status = 'sent', sent_count = ?, sent_at = ? WHERE id = ?")
+          .bind(res.sent, now, row.id).run();
+      } catch (e) {
+        await db.prepare("UPDATE scheduled_notifications SET status = 'failed' WHERE id = ?").bind(row.id).run().catch(() => {});
+        console.warn('[cron] scheduled notification delivery failed:', e);
+      }
+    }
+  } catch (e) {
+    console.warn('[cron] deliverDueScheduledNotifications failed (schema may lag):', e);
+  }
+}
+
 export default {
   fetch: app.fetch,
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil(reapStaleCalls(env));
     ctx.waitUntil(reconcileStuckEndedCalls(env));
+    // Deliver any admin notifications whose scheduled send time has arrived.
+    ctx.waitUntil(deliverDueScheduledNotifications(env).catch((e) => console.warn('[cron] deliverDueScheduledNotifications failed:', e)));
     // Release referral payout holds whose window has elapsed (held → released,
     // making the referrer reward withdrawable). Best-effort; idempotent.
     ctx.waitUntil(releaseExpiredReferralHolds(env).catch((e) => console.warn('[cron] releaseExpiredReferralHolds failed:', e)));

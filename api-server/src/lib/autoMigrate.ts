@@ -109,6 +109,7 @@ import m_0060 from '../../migrations/0060_vip_signup_bonus_claims.sql';
 import m_0061 from '../../migrations/0061_daily_free_minutes.sql';
 import m_0062 from '../../migrations/0062_coin_tx_type_no_check.sql';
 import m_0063 from '../../migrations/0063_users_device_id_unique.sql';
+import m_0064 from '../../migrations/0064_scheduled_notifications.sql';
 
 interface Migration {
   /**
@@ -184,6 +185,7 @@ const MIGRATIONS: ReadonlyArray<Migration> = [
   { name: '0061_daily_free_minutes.sql',            sql: m_0061 },
   { name: '0062_coin_tx_type_no_check.sql',         sql: m_0062 },
   { name: '0063_users_device_id_unique.sql',        sql: m_0063 },
+  { name: '0064_scheduled_notifications.sql',       sql: m_0064 },
 ];
 
 /**

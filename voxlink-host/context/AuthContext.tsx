@@ -167,24 +167,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     })();
   }, []);
 
+  // Keep a ref of auth status so the AppState handler can guard WITHOUT
+  // running a side effect inside a setState updater (updaters must be pure;
+  // the old pattern double-fired fetchFreshProfile under StrictMode/concurrent
+  // React).
+  const isLoggedInRef = useRef(false);
+  useEffect(() => { isLoggedInRef.current = state.isLoggedIn; }, [state.isLoggedIn]);
+
   useEffect(() => {
     const sub = AppState.addEventListener("change", (nextState) => {
-      if (nextState === "active") {
-        setState((prev) => {
-          if (!prev.isLoggedIn || !prev.user) return prev;
-          fetchFreshProfile().then((freshProfile) => {
-            if (freshProfile) {
-              setState((p) => {
-                if (!p.user) return p;
-                const updated = { ...p.user, ...freshProfile };
-                setItem(StorageKeys.USER, updated);
-                return { ...p, user: updated };
-              });
-            }
-          });
-          return prev;
+      if (nextState !== "active" || !isLoggedInRef.current) return;
+      fetchFreshProfile().then((freshProfile) => {
+        if (!freshProfile) return;
+        setState((p) => {
+          if (!p.user) return p;
+          const updated = { ...p.user, ...freshProfile };
+          setItem(StorageKeys.USER, updated);
+          return { ...p, user: updated };
         });
-      }
+      });
     });
     return () => sub.remove();
   }, []);

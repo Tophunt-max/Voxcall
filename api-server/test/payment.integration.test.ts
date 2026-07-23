@@ -202,3 +202,46 @@ describe('approveDeposit amount/currency verification', () => {
     expect(await alerts()).toBe(0);
   });
 });
+
+
+// ─── Webhook replay after a terminal state (money/security regression) ───────
+// A late or duplicate gateway webhook (or an admin "Mark Success") arriving
+// AFTER a deposit was refunded/rejected/failed must NOT re-credit the coins.
+// The CAS guard restricts crediting to non-terminal states; using
+// `status != 'success'` previously re-credited refunded/failed deposits,
+// reversing refunds and defeating fraud rejection.
+describe('approveDeposit does not re-credit terminal deposits', () => {
+  it('does NOT re-credit a refunded deposit', async () => {
+    db.applySchema(`
+      INSERT INTO coin_purchases (id, user_id, coins, bonus_coins, status)
+        VALUES ('pref', 'u1', 100, 20, 'refunded');
+    `);
+    const res = await approveDeposit(db as any, 'pref', 'razorpay');
+    expect(res.already).toBe(true); // CAS matched nothing → treated as duplicate
+    expect(await userCoins('u1')).toBe(0); // NOT credited
+    expect(await txCount()).toBe(0);
+    const p = await db.prepare("SELECT status FROM coin_purchases WHERE id = 'pref'").first<{ status: string }>();
+    expect(p?.status).toBe('refunded'); // status untouched
+  });
+
+  it('does NOT credit rejected or failed deposits', async () => {
+    db.applySchema(`
+      INSERT INTO coin_purchases (id, user_id, coins, bonus_coins, status) VALUES ('prej', 'u1', 100, 0, 'rejected');
+      INSERT INTO coin_purchases (id, user_id, coins, bonus_coins, status) VALUES ('pfail', 'u1', 50, 0, 'failed');
+    `);
+    await approveDeposit(db as any, 'prej', 'razorpay');
+    await approveDeposit(db as any, 'pfail', 'razorpay');
+    expect(await userCoins('u1')).toBe(0);
+    expect(await txCount()).toBe(0);
+  });
+
+  it('still credits a genuine pending deposit exactly once', async () => {
+    db.applySchema(`
+      INSERT INTO coin_purchases (id, user_id, coins, bonus_coins, status) VALUES ('pok', 'u1', 75, 0, 'pending');
+    `);
+    const res = await approveDeposit(db as any, 'pok', 'razorpay');
+    expect(res.ok).toBe(true);
+    expect(res.coins).toBe(75);
+    expect(await userCoins('u1')).toBe(75);
+  });
+});

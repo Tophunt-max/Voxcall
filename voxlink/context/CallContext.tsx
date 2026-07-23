@@ -188,6 +188,13 @@ export function CallProvider({ children }: { children: React.ReactNode }) {
   // BUG FIX #7: Improved duration handling with server validation
   const endCall = useCallback(async (autoEnded = false, reason?: CallEndReason) => {
     const call = activeCallRef.current;
+    // Re-entrancy guard (parity with host app): endCall is invoked from many
+    // sources — CALL_END socket listener, 25s heartbeat balance-end, 10s server
+    // poll, and the connection safety-net timers. A second invocation after
+    // activeCall is already null previously fell into the !wasActive branch and
+    // ran router.back(), POPPING the summary screen the first call just opened.
+    // Make the duplicate a no-op.
+    if (!call) return;
     const wasActive = !!(call?.startTime);
     const clientDuration = wasActive ? Math.floor((Date.now() - call!.startTime!) / 1000) : 0;
     updateCall(null);
