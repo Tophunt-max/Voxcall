@@ -210,6 +210,11 @@ export default function RewardsSpinScreen() {
         setLastWin({ label: res.segment_label, coins: res.coins_won, multiplier: res.multiplier });
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
         updateCoins(res.new_balance);
+        // FIX: sync the authoritative remaining-spin counts from the server
+        // response when present, so the optimistic decrement can't drift out
+        // of sync (e.g. a concurrent spin or a campaign-granted bonus spin).
+        if (res.free_spins_remaining != null) setFreeSpins(res.free_spins_remaining);
+        if (res.earned_spins_remaining != null) setEarnedSpins(res.earned_spins_remaining);
         showSuccessToast(`+${res.coins_won} coins!`, `${res.segment_label}${res.multiplier > 1 ? ` (×${res.multiplier})` : ""}`);
         setTotalSpins((n) => n + 1);
         setTotalWon((n) => n + res.coins_won);

@@ -403,17 +403,22 @@ export default function VideoCallScreen() {
   // on `status` — `status` now flips to "active" off the server startTime before
   // media is actually up, so gating on status would disable this safety net.
   useEffect(() => {
-    if (webrtc.isConnected) return;
+    // FIX (parity with audio-call): treat the call as connected if EITHER the
+    // aggregate connectionState is 'connected' OR a remote media stream has
+    // arrived. On web/mobile browsers connectionState can lag behind real
+    // media (stays 'connecting' while video already flows via Agora), so
+    // gating purely on isConnected force-ended calls that were actually working.
+    if (webrtc.isConnected || webrtc.remoteStream) return;
     if (!webrtcReady) return;
     const t = setTimeout(() => {
-      if (!webrtc.isConnected) {
+      if (!webrtc.isConnected && !webrtc.remoteStream) {
         console.warn("[video-call] Media did not connect within 30s — auto-ending");
         webrtc.cleanup();
-        endCall(true);
+        endCall(true, "connection");
       }
     }, 30000);
     return () => clearTimeout(t);
-  }, [webrtcReady, webrtc.isConnected, webrtc.cleanup, endCall]);
+  }, [webrtcReady, webrtc.isConnected, webrtc.remoteStream, webrtc.cleanup, endCall]);
 
   // FIX (call-disconnect propagation safety net #2): poll the server every 10s
   // while active. Catches sessions that ended server-side (cron reaper, /end
@@ -1095,7 +1100,7 @@ export default function VideoCallScreen() {
             </Text>
             <TouchableOpacity
               style={styles.rechargeBtn}
-              onPress={() => { dismissRechargePopup(); handleEndCall(); router.push("/user/screens/home/wallet"); }}
+              onPress={() => { dismissRechargePopup(); handleEndCall(); router.push("/user/payment/checkout"); }}
             >
               <Text style={styles.rechargeBtnText}>{t.calls.rechargeNow}</Text>
             </TouchableOpacity>

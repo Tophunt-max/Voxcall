@@ -29,9 +29,26 @@ export default function BulkNotifications() {
 
   const send = async () => {
     if (!title.trim() || !body.trim()) return;
+    // FIX: "Schedule for later" previously sent immediately with NO validation
+    // and still toasted "scheduled!". Validate the schedule time and forward
+    // the intent to the API so a future scheduled send is honored.
+    let scheduleTs: number | undefined;
+    if (scheduled) {
+      if (!scheduleTime) { toast.error('Please pick a date & time to schedule the notification.'); return; }
+      const ts = new Date(scheduleTime).getTime();
+      if (!Number.isFinite(ts) || ts <= Date.now()) { toast.error('Schedule time must be in the future.'); return; }
+      scheduleTs = Math.floor(ts / 1000);
+    }
     setSending(true);
     try {
-      const res = await api.sendNotification({ title, body: body, type: 'bulk', target: segment });
+      const res = await api.sendNotification({
+        title,
+        body,
+        type: 'bulk',
+        target: segment,
+        scheduled,
+        schedule_time: scheduleTs,
+      });
       const newEntry = {
         id: Date.now().toString(),
         title,
@@ -39,12 +56,15 @@ export default function BulkNotifications() {
         type: 'bulk',
         sent_to: res.sent || 0,
         created_at: Math.floor(Date.now() / 1000),
-        status: scheduled ? 'scheduled' : 'sent',
+        // Reflect what the SERVER actually did — only mark "scheduled" if the
+        // API confirms it deferred delivery. Prevents the old false "scheduled!"
+        // claim when the backend sent immediately.
+        status: res.scheduled ? 'scheduled' : 'sent',
       };
       setHistory(prev => [newEntry, ...prev]);
       setSent(true);
       setTitle(''); setBody(''); setSegment('all'); setScheduled(false); setScheduleTime('');
-      toast.success(scheduled ? 'Notification scheduled!' : `Notification sent to ${res.sent || 0} users!`);
+      toast.success(res.scheduled ? 'Notification scheduled!' : `Notification sent to ${res.sent || 0} users!`);
       setTimeout(() => setSent(false), 3000);
     } catch {
       toast.error('Failed to send notification');

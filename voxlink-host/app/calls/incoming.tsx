@@ -131,11 +131,18 @@ export default function IncomingCallScreen() {
   useEffect(() => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     const timeout = setTimeout(async () => {
+      // FIX (call kill bug): this screen stays MOUNTED underneath the call
+      // screen after the host accepts (acceptCall uses router.push, not
+      // replace). Without this guard the 45s no-answer timeout fired on an
+      // already-accepted, live call → declineCall() tore down the active call
+      // (and sent a spurious decline instead of a proper end). Only auto-decline
+      // while the call is genuinely still ringing (never accepted).
+      if (wasAcceptedRef.current || activeCall?.status === "active") return;
       await stopRing();
       declineCall();
     }, 45000);
     return () => clearTimeout(timeout);
-  }, [stopRing, declineCall]);
+  }, [stopRing, declineCall, activeCall?.status]);
 
   return (
     <View style={[styles.screen, { backgroundColor: "#1A1A2E", paddingTop: topPad, paddingBottom: bottomPad }]}>

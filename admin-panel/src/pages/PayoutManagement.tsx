@@ -65,13 +65,25 @@ export default function PayoutManagement() {
   };
 
   const exportCSV = () => {
-    const csv = ['Host,Email,Coins,Amount,Period,Status,Payment Method,Date', ...rows.map(r =>
-      `"${r.host_name || r.name || ''}","${r.host_email || ''}",${r.coins_earned || 0},${r.inr_amount || 0},"${r.period || ''}",${r.status},"${r.bank || ''}","${r.requested_at ? new Date(r.requested_at * 1000).toLocaleDateString() : ''}"`
-    )].join('\n');
+    // CSV-safe cell: quote + escape embedded quotes/newlines, and neutralize
+    // formula-injection (leading = + - @) so a crafted name can't execute in Excel.
+    const esc = (v: any) => {
+      let s = String(v ?? '');
+      if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+      return '"' + s.replace(/"/g, '""') + '"';
+    };
+    const rowsCsv = rows.map(r => [
+      r.host_name || r.name || '', r.host_email || '', r.coins_earned || 0,
+      r.inr_amount || 0, r.period || '', r.status, r.bank || '',
+      r.requested_at ? new Date(r.requested_at * 1000).toLocaleDateString() : '',
+    ].map(esc).join(','));
+    const csv = ['Host,Email,Coins,Amount,Period,Status,Payment Method,Date', ...rowsCsv].join('\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    a.href = url;
     a.download = 'payouts.csv';
     a.click();
+    URL.revokeObjectURL(url); // FIX: was leaked (never revoked)
   };
 
   const statusIcon = (s: string) => s === 'paid' ? <CheckCircle size={14} className="text-green-500" /> : s === 'approved' ? <Clock size={14} className="text-blue-500" /> : s === 'pending' ? <Clock size={14} className="text-amber-500" /> : <XCircle size={14} className="text-red-500" />;

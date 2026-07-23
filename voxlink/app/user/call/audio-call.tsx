@@ -636,7 +636,9 @@ export default function AudioCallScreen() {
               onPress={() => {
                 dismissRechargePopup();
                 handleEndCall();
-                router.push("/user/screens/home/wallet");
+                // FIX: /user/screens/home/wallet is the CALL-HISTORY tab (no
+                // purchase UI). The buy-coins screen is /user/payment/checkout.
+                router.push("/user/payment/checkout");
               }}
             >
               <Text style={styles.rechargeBtnText}>{t.calls.rechargeNow}</Text>

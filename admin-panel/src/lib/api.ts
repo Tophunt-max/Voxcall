@@ -99,7 +99,7 @@ export async function req<T>(method: string, path: string, body?: unknown): Prom
         const err = await retry.json().catch(() => ({ error: retry.statusText }));
         throw new Error((err as any).error || retry.statusText);
       }
-      return retry.json();
+      return parseBody<T>(retry);
     }
     handleSessionExpired();
     throw new Error('Session expired. Please log in again.');
@@ -109,7 +109,16 @@ export async function req<T>(method: string, path: string, body?: unknown): Prom
     const message = (err as any)?.error || r.statusText || `Request failed (${r.status})`;
     throw new Error(message);
   }
-  return r.json();
+  return parseBody<T>(r);
+}
+
+// Parse a successful response body. Some admin endpoints (DELETE / some PATCH)
+// return an empty body on success — r.json() throws on empty input, which
+// previously surfaced as a spurious error toast even though the operation
+// succeeded. Treat an empty body as an empty object.
+async function parseBody<T>(r: Response): Promise<T> {
+  const text = await r.text();
+  return (text ? JSON.parse(text) : {}) as T;
 }
 
 export const api = {

@@ -13,7 +13,9 @@ interface PlanCardProps { plan: any; onEdit: () => void; onDelete: () => void }
 
 function PlanCard({ plan, onEdit, onDelete }: PlanCardProps) {
   const gradients = ['gradient-purple', 'gradient-blue', 'gradient-green', 'gradient-orange', 'gradient-red', 'gradient-cyan'];
-  const g = gradients[plan.coins % gradients.length];
+  // FIX: guard against a missing/NaN `coins` — `NaN % len` is NaN, which
+  // indexes to undefined and renders an "undefined" gradient class.
+  const g = gradients[(Number(plan.coins) || 0) % gradients.length];
   return (
     <div className={`relative bg-card border-2 rounded-2xl overflow-hidden transition-shadow hover:shadow-lg ${plan.is_popular ? 'border-violet-500 shadow-violet-100' : 'border-border'}`}>
       {plan.is_popular && (
@@ -93,9 +95,9 @@ export default function CoinPlans() {
     const coinsVal = parseInt(form.coins);
     const priceVal = parseFloat(form.price);
     const bonusVal = parseInt(form.bonus_coins) || 0;
-    if (!form.name.trim()) { toast.success('Plan name is required'); return; }
-    if (isNaN(coinsVal) || coinsVal <= 0) { toast.success('Coins must be a positive number'); return; }
-    if (isNaN(priceVal) || priceVal <= 0) { toast.success('Price must be a positive number'); return; }
+    if (!form.name.trim()) { toast.error('Plan name is required'); return; }
+    if (isNaN(coinsVal) || coinsVal <= 0) { toast.error('Coins must be a positive number'); return; }
+    if (isNaN(priceVal) || priceVal <= 0) { toast.error('Price must be a positive number'); return; }
     setSaving(true);
     const data = { name: form.name.trim(), coins: coinsVal, price: priceVal, bonus_coins: bonusVal, currency: (form.currency || 'INR').toUpperCase(), is_popular: form.is_popular ? 1 : 0, is_active: form.is_active ? 1 : 0 };
     try {

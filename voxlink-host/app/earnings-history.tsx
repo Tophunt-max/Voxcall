@@ -89,9 +89,12 @@ export default function EarningsHistoryScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+    // FIX (stale closure): `load` closes over refreshProfile + tr — list them
+    // as deps so the localized error message and profile refresh don't go stale
+    // after a language change.
+  }, [refreshProfile, tr]);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [load]);
 
   const filtered = filterByTab(transactions, tab);
   // Bug 12 Fix: Use API-reported balance (from refreshBalance → user.coins) as the source of

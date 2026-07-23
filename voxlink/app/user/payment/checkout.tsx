@@ -583,7 +583,9 @@ export default function CheckoutScreen() {
               const stillThere = active.find((p) => p.id === prev.id);
               if (stillThere) return stillThere;
             }
-            return active.find((p) => p.is_popular) ?? active[1] ?? active[0] ?? null;
+            // FIX: fall back to the FIRST plan, not active[1] (which skipped
+            // the first package as the default selection when none was popular).
+            return active.find((p) => p.is_popular) ?? active[0] ?? null;
           });
         })
         .catch(() => { setPlans([]); errors.push("coin plans"); }),

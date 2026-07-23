@@ -151,7 +151,11 @@ export default function LiveCalls() {
   const totalCoinsPerMin = calls.reduce((a, c) => a + (c.coins_per_min || 0), 0);
   const voiceCalls = calls.filter(c => c.type === 'audio');
   const videoCalls = calls.filter(c => c.type === 'video');
-  const staleCalls = calls.filter(c => isStale(c.started_at ? c.started_at * 1000 : Date.now(), 1));
+  // NOTE: /admin/calls/live already returns started_at in milliseconds
+  // (backend does `r.started_at * 1000`). Do NOT multiply again here — doing so
+  // pushed the timestamp ~1000x into the future, so durations showed 00:00,
+  // "coins used" went negative, and stale detection never fired.
+  const staleCalls = calls.filter(c => isStale(c.started_at || Date.now(), 1));
 
   return (
     <div className="space-y-5">
@@ -237,7 +241,7 @@ export default function LiveCalls() {
           </div>
           <div className="divide-y divide-border">
             {calls.map(call => {
-              const startedAtMs = call.started_at ? call.started_at * 1000 : Date.now();
+              const startedAtMs = call.started_at || Date.now(); // already in ms from the API
               const coinsSoFar = Math.floor((Date.now() - startedAtMs) / 60000) * (call.coins_per_min || 0);
               const stale = isStale(startedAtMs, 1);
               const isEnding = endingId === call.id;
@@ -271,7 +275,7 @@ export default function LiveCalls() {
                     <div className="text-right space-y-1">
                       <div className="flex items-center gap-1 justify-end">
                         <Clock size={12} className="text-muted-foreground" />
-                        <Duration startedAt={call.started_at ? call.started_at * 1000 : Date.now()} />
+                        <Duration startedAt={startedAtMs} />
                       </div>
                       <p className="text-xs text-amber-600">~{coinsSoFar} coins used</p>
                     </div>

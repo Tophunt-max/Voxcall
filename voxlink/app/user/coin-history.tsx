@@ -45,8 +45,13 @@ function filterByTab(txs: Transaction[], tab: Tab): Transaction[] {
 function formatApiDate(ts: number, tr: Translations): string {
   const d = new Date(ts * 1000);
   const now = new Date();
-  const diffDays = Math.floor((now.getTime() - d.getTime()) / 86400000);
   const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  // FIX: compare CALENDAR days, not elapsed 24h windows. Dividing elapsed ms
+  // by 86.4M mislabels an 11pm transaction viewed at 1am as "Today", and a
+  // ~25h-old one as "Yesterday". Zero out the time on both dates first.
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const startOfDate = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const diffDays = Math.round((startOfToday - startOfDate) / 86400000);
   if (diffDays === 0) return `${tr.coinHistory.today}, ${time}`;
   if (diffDays === 1) return `${tr.coinHistory.yesterday}, ${time}`;
   return d.toLocaleDateString([], { month: "short", day: "numeric" }) + `, ${time}`;

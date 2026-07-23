@@ -218,7 +218,7 @@ export default function CallSummaryScreen() {
       {/* Recharge button only when the caller actually ran out of coins */}
       {isOutOfCoins && (
         <TouchableOpacity
-          onPress={() => router.replace("/user/screens/home/wallet")}
+          onPress={() => router.replace("/user/payment/checkout")}
           style={[s.actionBtn, { backgroundColor: "#A00EE7" }]}
           activeOpacity={0.85}
         >

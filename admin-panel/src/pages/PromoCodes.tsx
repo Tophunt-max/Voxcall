@@ -38,21 +38,21 @@ export default function PromoCodes() {
   };
 
   const save = async () => {
-    if (!form.code.trim()) { toast.success('Promo code cannot be empty'); return; }
+    if (!form.code.trim()) { toast.error('Promo code cannot be empty'); return; }
     if (form.type === 'percent') {
       const pct = Number(form.discount_pct);
       if (!Number.isFinite(pct) || pct < 1 || pct > 100) {
-        toast.success('Discount must be between 1% and 100%'); return;
+        toast.error('Discount must be between 1% and 100%'); return;
       }
     } else {
       const coins = Number(form.bonus_coins);
       if (!Number.isFinite(coins) || coins < 1) {
-        toast.success('Bonus coins must be at least 1'); return;
+        toast.error('Bonus coins must be at least 1'); return;
       }
     }
     const maxUses = Number(form.max_uses);
     if (!Number.isFinite(maxUses) || maxUses < 1) {
-      toast.success('Max uses must be at least 1'); return;
+      toast.error('Max uses must be at least 1'); return;
     }
     setSaving(true);
     try {

@@ -89,7 +89,7 @@ export default function HostApplicationsPage() {
   const handleReview = async (action: "approve" | "reject" | "under_review") => {
     if (!selected) return;
     if (action === "reject" && !rejectReason.trim()) {
-      toast.success("Please enter a rejection reason.");
+      toast.error("Please enter a rejection reason.");
       return;
     }
     setReviewing(true);
@@ -110,7 +110,7 @@ export default function HostApplicationsPage() {
       setShowRejectInput(false);
       await fetchApps();
     } catch (e: any) {
-      toast.success("Error: " + (e.message || "Something went wrong"));
+      toast.error("Error: " + (e.message || "Something went wrong"));
     } finally {
       setReviewing(false);
     }

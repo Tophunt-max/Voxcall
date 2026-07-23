@@ -87,7 +87,14 @@ function FCMNotificationTapBridge({ seenCallIds, activeCallRef }: { seenCallIds:
           receiveCall(
             { id: String(data.caller_id ?? ""), name: data.caller_name ?? "Caller", role: "user" },
             (data.call_type as "audio" | "video") ?? "audio",
-            callId
+            callId,
+            // FIX: forward the host's per-minute rate + max_seconds so a call
+            // opened via a push-notification tap gets a working balance-cap
+            // auto-end and cost badge (parity with the socket/polling paths,
+            // which pass host_earn_per_minute ?? rate_per_minute + max_seconds).
+            data.host_earn_per_minute != null ? Number(data.host_earn_per_minute)
+              : data.rate_per_minute != null ? Number(data.rate_per_minute) : undefined,
+            data.max_seconds != null ? Number(data.max_seconds) : undefined
           );
           router.push("/calls/incoming");
         }
@@ -144,7 +151,14 @@ function WebNotificationBridge({ seenCallIds, activeCallRef }: { seenCallIds: Re
           receiveCall(
             { id: String(data.caller_id ?? ""), name: data.caller_name ?? "Caller", role: "user" },
             (data.call_type as "audio" | "video") ?? "audio",
-            callId
+            callId,
+            // FIX: forward the host's per-minute rate + max_seconds so a call
+            // opened via a push-notification tap gets a working balance-cap
+            // auto-end and cost badge (parity with the socket/polling paths,
+            // which pass host_earn_per_minute ?? rate_per_minute + max_seconds).
+            data.host_earn_per_minute != null ? Number(data.host_earn_per_minute)
+              : data.rate_per_minute != null ? Number(data.rate_per_minute) : undefined,
+            data.max_seconds != null ? Number(data.max_seconds) : undefined
           );
           router.push("/calls/incoming");
         }

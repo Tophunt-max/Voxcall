@@ -78,7 +78,7 @@ export default function PaymentSuccessScreen() {
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.secondaryBtn, { borderColor: colors.border }]}
-          onPress={() => router.replace("/user/screens/home/wallet")}
+          onPress={() => router.replace("/user/coin-history")}
           activeOpacity={0.8}
         >
           <Text style={[styles.secondaryBtnText, { color: colors.text }]}>{t.successScreen.viewWallet}</Text>

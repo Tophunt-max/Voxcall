@@ -78,15 +78,28 @@ export default function Deposits() {
   };
 
   const exportCSV = () => {
+    // CSV-safe cell: quote + escape embedded quotes/newlines, and neutralize
+    // formula-injection (leading = + - @) so crafted fields can't execute in Excel.
+    const esc = (v: any) => {
+      let s = String(v ?? '');
+      if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+      return '"' + s.replace(/"/g, '""') + '"';
+    };
+    const rowsCsv = rows.map(r => [
+      r.id, r.user_name || '', r.user_email || '', r.user_phone || '', r.plan_name || '',
+      r.coins || 0, r.bonus_coins || 0, r.amount || 0, r.currency || 'INR',
+      r.gateway_name || '', r.payment_method || '', r.payment_ref || '', r.utr_id || '',
+      r.promo_code || '', r.status,
+      r.created_at ? new Date(r.created_at * 1000).toLocaleString() : '',
+    ].map(esc).join(','));
     const csv = ['ID,User,Email,Phone,Plan,Coins,Bonus,Amount,Currency,Gateway,Payment Method,Payment Ref,UTR ID,Promo Code,Status,Date',
-      ...rows.map(r =>
-        `"${r.id}","${r.user_name || ''}","${r.user_email || ''}","${r.user_phone || ''}","${r.plan_name || ''}",${r.coins || 0},${r.bonus_coins || 0},${r.amount || 0},"${r.currency || 'INR'}","${r.gateway_name || ''}","${r.payment_method || ''}","${r.payment_ref || ''}","${r.utr_id || ''}","${r.promo_code || ''}",${r.status},"${r.created_at ? new Date(r.created_at * 1000).toLocaleString() : ''}"`
-      )
-    ].join('\n');
+      ...rowsCsv].join('\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    a.href = url;
     a.download = 'deposits.csv';
     a.click();
+    URL.revokeObjectURL(url); // FIX: was leaked (never revoked)
   };
 
   const cols = [
