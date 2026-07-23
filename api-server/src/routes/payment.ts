@@ -654,8 +654,13 @@ payment.post('/verify-google-play', authMiddleware, async (c) => {
     const plan = plan_id ? await c.env.DB.prepare('SELECT * FROM coin_plans WHERE id = ? AND is_active = 1').bind(plan_id).first<any>() : null;
     let promoBonus = 0;
     if (promo_code && plan) {
-      const promo = await c.env.DB.prepare('SELECT * FROM promo_codes WHERE UPPER(code) = UPPER(?) AND active = 1').bind(promo_code.trim()).first<any>();
-      if (promo?.type === 'bonus') promoBonus = promo.bonus_coins ?? 0;
+      // FIX: enforce active + expiry + usage cap via the shared evaluatePromo
+      // helper (see /api/payment/initiate above). Previously this path only
+      // checked `active = 1` and ignored expires_at / max_uses, so an EXPIRED
+      // or fully-redeemed bonus promo code still granted its bonus on a
+      // Google Play purchase — inconsistent with every other credit path.
+      const promo = await c.env.DB.prepare('SELECT * FROM promo_codes WHERE UPPER(code) = UPPER(?) AND active = 1').bind(promo_code.trim()).first<PromoRow>();
+      ({ bonus: promoBonus } = evaluatePromo(promo, plan.price));
     }
     if (!purchaseId) {
       if (!plan) return c.json({ error: 'plan_id required for new purchase' }, 400);

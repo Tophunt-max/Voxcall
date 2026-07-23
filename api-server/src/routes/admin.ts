@@ -11,6 +11,7 @@ import {
 import { listMigrationStatus as listMigrationStatusForHealth } from '../lib/autoMigrate';
 import { getLevelConfig, normalizeLevelConfig, getDefaultCallRates, getEarningShare, MIN_LEVELS, MAX_LEVELS } from '../lib/levels';
 import { recalcAllHostLevels } from '../lib/levelService';
+import { chargeCallerWithFreePool, billedMinutes, coinsForCall } from '../lib/billing';
 import { resignIfPrivate } from '../lib/mediaSign';
 import { approveDeposit, validatePromoInput } from './payment';
 import { ensureAllMigrations, listMigrationStatus } from '../lib/autoMigrate';
@@ -2772,59 +2773,71 @@ admin.post('/calls/:id/force-end', async (c) => {
   const durationSec = session.started_at ? now - session.started_at : 0;
   // Round UP minutes (matches /api/calls/end). Floor would under-bill on
   // 1m30s calls — host gets 0 earnings even though they spoke for 90s.
-  const durationMin = durationSec > 0 ? Math.max(1, Math.ceil(durationSec / 60)) : 0;
+  const durationMin = billedMinutes(durationSec);
   const effectiveRate = session.rate_per_minute ?? 0;
   // Only charge if the call was actually `active` and had any duration.
   // A force-end on a still-`pending` call (caller cancelled, host never
   // accepted) must not bill anything.
-  const coinsCharged = (session.status === 'active' && durationSec > 0)
-    ? durationMin * effectiveRate
+  const coinsCharged = session.status === 'active'
+    ? coinsForCall({ status: session.status, durationSec, ratePerMinute: effectiveRate })
     : 0;
   // Use the host's LEVEL-BASED earning share (same as POST /api/calls/end),
   // not a hardcoded 0.7 — otherwise force-ending a high-level host's call
   // under-pays them (their configured share can be up to ~0.80).
   const levelCfg = await getLevelConfig(dbA);
   const earningShare = getEarningShare(session.host_level ?? 1, levelCfg);
-  const hostShare = Math.floor(coinsCharged * earningShare);
 
+  // FIX: previously this endpoint reimplemented the OLD all-or-nothing
+  // CASE+EXISTS transfer that lib/billing.ts's chargeCallerWithFreePool was
+  // written to replace — if the caller had overrun their balance (talked
+  // longer than they could afford, e.g. exactly the scenario an admin is
+  // force-ending), the transfer aborted entirely and the host earned ZERO
+  // for real talk-time. It also ignored the caller's free-minute pool
+  // entirely. We now delegate to the same shared helper used by every other
+  // settlement path (/api/calls/end, /api/calls/:id/end, /heartbeat, the
+  // cron reaper) so admin force-end bills identically: the caller is
+  // charged what they can afford (coins + free pool), and the host is
+  // always paid their share of whatever was actually collected.
   let actualCoinsCharged = 0;
   let actualHostShare = 0;
-
+  let freeMinutesUsed = 0;
   if (coinsCharged > 0 && session.host_user_id) {
-    const transfer = await dbA.prepare(
-      `UPDATE users
-         SET coins = coins + CASE id
-           WHEN ?1 THEN -?2
-           WHEN ?3 THEN ?4
-           ELSE 0
-         END
-         WHERE id IN (?1, ?3)
-           AND EXISTS (SELECT 1 FROM users WHERE id = ?1 AND coins >= ?2)`
-    ).bind(session.caller_id, coinsCharged, session.host_user_id, hostShare).run();
-
-    if (transfer.meta?.changes === 2) {
-      actualCoinsCharged = coinsCharged;
-      actualHostShare = hostShare;
-    } else {
-      // Caller had insufficient coins — call was running past balance.
-      // Force-end still succeeds (session marked ended) but no money moves.
-      console.warn('[admin/force-end] Atomic transfer failed (insufficient coins). call:', id, 'wanted:', coinsCharged);
+    const { charged, hostEarned, free_minutes_used } = await chargeCallerWithFreePool(dbA, {
+      callerId: session.caller_id,
+      hostUserId: session.host_user_id,
+      durationSec,
+      ratePerMinute: effectiveRate,
+      earningShare,
+    });
+    actualCoinsCharged = charged;
+    actualHostShare = hostEarned;
+    freeMinutesUsed = free_minutes_used;
+    if (charged === 0 && hostEarned === 0) {
+      console.warn('[admin/force-end] Caller had no coins/free-minutes to charge. call:', id, 'wanted:', coinsCharged);
     }
   }
 
   const batchOps: any[] = [
-    dbA.prepare('UPDATE call_sessions SET status = ?, duration_seconds = ?, coins_charged = ? WHERE id = ?')
-      .bind('ended', durationSec, actualCoinsCharged, id),
+    dbA.prepare('UPDATE call_sessions SET status = ?, duration_seconds = ?, coins_charged = ?, free_minutes_used = ? WHERE id = ?')
+      .bind('ended', durationSec, actualCoinsCharged, freeMinutesUsed, id),
   ];
-  if (actualCoinsCharged > 0) {
+  if (actualCoinsCharged > 0 || actualHostShare > 0) {
     batchOps.push(
       dbA.prepare('UPDATE hosts SET total_minutes = total_minutes + ?, total_earnings = total_earnings + ? WHERE id = ?')
         .bind(durationMin, actualHostShare, session.host_id),
-      dbA.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
-        .bind(crypto.randomUUID(), session.caller_id, 'spend', -actualCoinsCharged, `${session.type || 'audio'} call — admin force-end (${durationMin} min)`, id),
-      dbA.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
-        .bind(crypto.randomUUID(), session.host_user_id, 'bonus', actualHostShare, `${session.type || 'audio'} call — admin force-end (${durationMin} min)`, id),
     );
+    if (actualCoinsCharged > 0) {
+      batchOps.push(
+        dbA.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
+          .bind(crypto.randomUUID(), session.caller_id, 'spend', -actualCoinsCharged, `${session.type || 'audio'} call — admin force-end (${durationMin} min)`, id),
+      );
+    }
+    if (actualHostShare > 0) {
+      batchOps.push(
+        dbA.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
+          .bind(crypto.randomUUID(), session.host_user_id, 'bonus', actualHostShare, `${session.type || 'audio'} call — admin force-end (${durationMin} min)${freeMinutesUsed > 0 ? ` (${freeMinutesUsed} free)` : ''}`, id),
+      );
+    }
   }
   await dbA.batch(batchOps);
 
