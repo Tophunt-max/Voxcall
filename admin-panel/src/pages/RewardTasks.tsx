@@ -20,13 +20,35 @@ import { Plus, Trash2, Edit2, Eye, EyeOff, Coins, Users, Trophy } from 'lucide-r
 //   • watch_ad         — incremented via client `track` event
 //   • share_app        — incremented via client `track` event
 const TASK_TYPES = [
-  { id: 'daily_checkin',  label: 'Daily Check-in' },
-  { id: 'complete_calls', label: 'Complete N Calls' },
-  { id: 'spend_coins',    label: 'Spend N Coins' },
-  { id: 'refer_friend',   label: 'Invite N Friends' },
-  { id: 'watch_ad',       label: 'Watch a Rewarded Ad' },
-  { id: 'share_app',      label: 'Share the App' },
+  // ── Habit / core ──
+  { id: 'daily_checkin',   label: 'Daily Check-in' },
+  { id: 'login_streak',    label: '🔥 Daily Login Streak' },
+  { id: 'watch_ad',        label: 'Watch a Rewarded Ad' },
+  { id: 'share_app',       label: 'Share the App' },
+  // ── Engagement ──
+  { id: 'complete_calls',  label: '📞 Complete N Calls' },
+  { id: 'video_calls',     label: '🎥 Complete N Video Calls' },
+  { id: 'talk_minutes',    label: '⏱️ Talk N Minutes' },
+  { id: 'send_messages',   label: '💬 Send N Messages' },
+  // ── Monetization ──
+  { id: 'spend_coins',     label: '💸 Spend N Coins (calls)' },
+  { id: 'coin_topup',      label: '💰 Recharge N Coins (total bought)' },
+  { id: 'coin_topup_count',label: '🥇 Recharge N Times (First Recharge = 1)' },
+  { id: 'send_gifts',      label: '🎁 Send N Gifts' },
+  { id: 'spend_on_gifts',  label: '💎 Spend N Coins on Gifts' },
+  { id: 'subscribe_vip',   label: '👑 Subscribe to VIP' },
+  // ── Social ──
+  { id: 'refer_friend',    label: '👥 Invite N Friends' },
+  { id: 'add_favorites',   label: '⭐ Add N Favorites' },
+  { id: 'rate_calls',      label: '🌟 Rate N Calls' },
+  // ── Onboarding ──
+  { id: 'complete_profile',label: '👤 Complete Profile' },
+  { id: 'upload_avatar',   label: '🖼️ Upload Avatar' },
 ];
+
+// Types that behave as daily (24h cooldown, "daily" category) vs one-time.
+const DAILY_TASK_TYPES = ['daily_checkin', 'watch_ad', 'share_app', 'video_calls', 'talk_minutes', 'send_messages', 'add_favorites', 'rate_calls', 'send_gifts'];
+const ONE_TIME_TASK_TYPES = ['subscribe_vip', 'complete_profile', 'upload_avatar'];
 
 const CATEGORIES = [
   { id: 'daily',     label: 'Daily (repeatable each day)' },
@@ -155,14 +177,13 @@ export default function RewardTasks() {
   // Sensible defaults for cooldown when the admin switches task type.
   const onTaskTypeChange = (task_type: string) => {
     const cooldown_hours =
-      task_type === 'daily_checkin' ? 24 :
-      task_type === 'watch_ad'      ? 4  :
-      task_type === 'share_app'     ? 24 :
+      task_type === 'watch_ad' ? 4 :
+      DAILY_TASK_TYPES.includes(task_type) ? 24 :
       0;
     const category =
-      task_type === 'daily_checkin' || task_type === 'watch_ad' || task_type === 'share_app'
-        ? 'daily'
-        : (form.category === 'daily' ? 'ongoing' : form.category);
+      ONE_TIME_TASK_TYPES.includes(task_type) ? 'one_time' :
+      DAILY_TASK_TYPES.includes(task_type) ? 'daily' :
+      (form.category === 'daily' ? 'ongoing' : form.category);
     setForm({ ...form, task_type, cooldown_hours, category });
   };
 

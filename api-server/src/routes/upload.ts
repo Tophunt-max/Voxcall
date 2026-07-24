@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { authMiddleware } from '../middleware/auth';
 import { signedFileUrl } from '../lib/mediaSign';
+import { bumpRewardProgress } from './rewards';
 import type { Env, JWTPayload } from '../types';
 
 const upload = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
@@ -105,6 +106,11 @@ upload.post('/avatar', async (c) => {
 
   const url = `/api/files/${key}`;
   await c.env.DB.prepare('UPDATE users SET avatar_url = ?, updated_at = unixepoch() WHERE id = ?').bind(url, sub).run();
+
+  // Reward progress: uploading an avatar ticks the 'upload_avatar' task (and
+  // counts toward 'complete_profile'). Best-effort.
+  c.executionCtx?.waitUntil?.(bumpRewardProgress(c.env.DB, sub, 'upload_avatar', 1).catch(() => {}));
+  c.executionCtx?.waitUntil?.(bumpRewardProgress(c.env.DB, sub, 'complete_profile', 1).catch(() => {}));
 
   // Best-effort delete of the previous owned blob. Failures here are
   // non-fatal — orphan cleanup can also be done by a periodic job — but

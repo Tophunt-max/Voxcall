@@ -4,6 +4,7 @@ import { checkRateLimit } from '../lib/rateLimit';
 import { sendFCMPush } from '../lib/fcm';
 import { applyLevelUp } from '../lib/levelService';
 import { atomicGiftTransfer, reverseGiftTransfer } from '../lib/transfers';
+import { bumpRewardProgress } from './rewards';
 import type { Env, JWTPayload } from '../types';
 
 // ============================================================================
@@ -220,6 +221,11 @@ gifts.post('/send', async (c) => {
     console.error('[gifts/send] persist failed — coins refunded:', e);
     return c.json({ error: 'Could not send gift. Your coins were not charged.', code: 'GIFT_FAILED' }, 500);
   }
+
+  // Reward progress: sending a gift ticks 'send_gifts' (+1) and 'spend_on_gifts'
+  // (+coins spent) for the sender. Best-effort — never blocks the gift.
+  c.executionCtx?.waitUntil?.(bumpRewardProgress(db, sub, 'send_gifts', 1).catch(() => {}));
+  c.executionCtx?.waitUntil?.(bumpRewardProgress(db, sub, 'spend_on_gifts', amount).catch(() => {}));
 
   // A big gift can cross an earnings threshold — re-evaluate level in the
   // background (idempotent; no-op when no promotion is due).

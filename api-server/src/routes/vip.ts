@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { authMiddleware } from '../middleware/auth';
 import { getVipStatus } from '../lib/vip';
 import { pushCoinUpdate, notifyUser } from '../lib/realtime';
+import { bumpRewardProgress } from './rewards';
 import type { Env, JWTPayload } from '../types';
 
 const vip = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
@@ -167,6 +168,8 @@ vip.post('/subscribe', async (c) => {
   }
 
   const after = await db.prepare('SELECT coins FROM users WHERE id = ?').bind(sub).first<{ coins: number }>();
+  // Reward progress: subscribing to VIP ticks the 'subscribe_vip' task. Best-effort.
+  c.executionCtx?.waitUntil?.(bumpRewardProgress(db, sub, 'subscribe_vip', 1).catch(() => {}));
   // Real-time: sync the new balance to the user's other devices + confirm VIP.
   c.executionCtx?.waitUntil?.(pushCoinUpdate(c.env, sub));
   c.executionCtx?.waitUntil?.(notifyUser(

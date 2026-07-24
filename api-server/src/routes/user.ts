@@ -6,6 +6,7 @@ import { getStreakStatus, claimDailyStreak, repairStreak } from '../lib/streak';
 import { getDefaultCallRates } from '../lib/levels';
 import { checkRateLimit } from '../lib/rateLimit';
 import { getVipStatus } from '../lib/vip';
+import { bumpRewardProgress } from './rewards';
 import type { Env, JWTPayload } from '../types';
 
 const user = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
@@ -152,6 +153,12 @@ user.patch('/me', async (c) => {
   sets.push('updated_at = unixepoch()');
   vals.push(sub);
   await c.env.DB.prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`).bind(...vals).run();
+
+  // Reward progress: editing real profile fields (not just an fcm_token refresh)
+  // ticks the one-time 'complete_profile' task. Best-effort.
+  if (['name', 'bio', 'gender', 'avatar_url'].some((k) => body[k] !== undefined && body[k] !== null && String(body[k]).length > 0)) {
+    c.executionCtx?.waitUntil?.(bumpRewardProgress(c.env.DB, sub, 'complete_profile', 1).catch(() => {}));
+  }
   return c.json({ success: true });
 });
 
@@ -178,6 +185,11 @@ user.get('/streak', async (c) => {
 user.post('/streak/claim', async (c) => {
   const { sub } = c.get('user');
   const result = await claimDailyStreak(c.env.DB, sub);
+  // Reward progress: a successful daily-streak claim ticks the 'login_streak'
+  // task (once per day). Best-effort.
+  if (result.claimed) {
+    c.executionCtx?.waitUntil?.(bumpRewardProgress(c.env.DB, sub, 'login_streak', 1).catch(() => {}));
+  }
   return c.json(result);
 });
 
@@ -354,6 +366,8 @@ user.post('/favorites/:hostId', async (c) => {
         await db.prepare('UPDATE hosts SET favorite_count = favorite_count + 1 WHERE id = ?')
           .bind(hostId).run();
       } catch (e) { console.warn('[favorites:add] favorite_count bump failed:', e); }
+      // Reward progress: favoriting a NEW host ticks the 'add_favorites' task.
+      c.executionCtx?.waitUntil?.(bumpRewardProgress(db, sub, 'add_favorites', 1).catch(() => {}));
     }
     // Real-time: tell the host someone favorited them (live toast).
     try {

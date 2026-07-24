@@ -4,6 +4,7 @@ import { sendFCMPush } from '../lib/fcm';
 import { checkRateLimit } from '../lib/rateLimit';
 import { getVipStatus } from '../lib/vip';
 import { resignIfPrivate } from '../lib/mediaSign';
+import { bumpRewardProgress } from './rewards';
 import type { Env, JWTPayload } from '../types';
 
 // Fire-and-forget relay of a real-time event to a user's NotificationHub.
@@ -192,6 +193,10 @@ chat.post('/rooms/:id/messages', async (c) => {
     db.prepare('UPDATE chat_rooms SET last_message = ?, last_message_at = ? WHERE id = ?')
       .bind(content ?? '[media]', now, id),
   ]);
+
+  // Reward progress: sending a chat message ticks the 'send_messages' task.
+  // Best-effort, never blocks message delivery.
+  c.executionCtx?.waitUntil?.(bumpRewardProgress(db, sub, 'send_messages', 1).catch(() => {}));
 
   // Push notification to the other party in the room
   try {

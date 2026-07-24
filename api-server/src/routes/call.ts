@@ -522,6 +522,7 @@ call.post('/end', async (c) => {
     // to the client.
     if (durationSec > 0) {
       await bumpRewardProgress(db, session.caller_id, 'complete_calls', 1);
+      if (session.type === 'video') await bumpRewardProgress(db, session.caller_id, 'video_calls', 1);
       // Talk minutes are rounded down — a 90-second call counts as 1 minute.
       const minutes = Math.floor(durationSec / 60);
       if (minutes > 0) {
@@ -655,6 +656,7 @@ call.post('/rate', zValidator('json', rateSchema), async (c) => {
 
   await db.prepare('INSERT OR IGNORE INTO ratings (id, host_id, user_id, call_session_id, stars, comment) VALUES (?, ?, ?, ?, ?, ?)')
     .bind(crypto.randomUUID(), session.host_id, sub, sessionId, starsVal, body.comment ?? null).run();
+  c.executionCtx?.waitUntil?.(bumpRewardProgress(db, sub, 'rate_calls', 1).catch(() => {}));
 
   const avg = await db.prepare('SELECT AVG(stars) as avg, COUNT(*) as cnt FROM ratings WHERE host_id = ?').bind(session.host_id).first<{ avg: number; cnt: number }>();
   await db.prepare('UPDATE hosts SET rating = ?, review_count = ? WHERE id = ?').bind(
@@ -964,6 +966,7 @@ call.post('/:id/end', async (c) => {
     // (mirrors the main /end path). Best-effort, never blocks the response.
     if (durationSec > 0) {
       await bumpRewardProgress(db, session.caller_id, 'complete_calls', 1);
+      if (session.type === 'video') await bumpRewardProgress(db, session.caller_id, 'video_calls', 1);
       const minutes = Math.floor(durationSec / 60);
       if (minutes > 0) {
         await bumpRewardProgress(db, session.caller_id, 'talk_minutes', minutes);
@@ -1363,6 +1366,7 @@ call.post('/:id/rate', async (c) => {
   if (!session) return c.json({ error: 'Session not found' }, 404);
   await db.prepare('INSERT OR IGNORE INTO ratings (id, host_id, user_id, call_session_id, stars, comment) VALUES (?, ?, ?, ?, ?, ?)')
     .bind(crypto.randomUUID(), session.host_id, sub, sessionId, starsVal, body.comment ?? null).run();
+  c.executionCtx?.waitUntil?.(bumpRewardProgress(db, sub, 'rate_calls', 1).catch(() => {}));
   const avg = await db.prepare('SELECT AVG(stars) as avg, COUNT(*) as cnt FROM ratings WHERE host_id = ?').bind(session.host_id).first<{ avg: number; cnt: number }>();
   await db.prepare('UPDATE hosts SET rating = ?, review_count = ? WHERE id = ?').bind(
     Math.round((avg?.avg ?? starsVal) * 10) / 10, avg?.cnt ?? 1, session.host_id
