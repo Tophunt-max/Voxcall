@@ -1,8 +1,12 @@
 import { useState } from 'react';
-import { ListChecks, Crown, Gift } from 'lucide-react';
+import { ListChecks, Crown, Gift, CircleDollarSign, Zap, Ticket, Medal } from 'lucide-react';
 import RewardTasks from './RewardTasks';
 import RewardPass from './RewardPass';
 import VipPlans from './VipPlans';
+import RewardSpin from './RewardSpin';
+import RewardCampaigns from './RewardCampaigns';
+import RewardCoupons from './RewardCoupons';
+import RewardAchievements from './RewardAchievements';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Rewards & VIP — unified admin hub
@@ -16,12 +20,16 @@ import VipPlans from './VipPlans';
 // Each tab renders the existing, self-contained page component unchanged — this
 // is purely an organisational wrapper, so all three keep working standalone too.
 
-type TabId = 'tasks' | 'pass' | 'vip';
+type TabId = 'tasks' | 'pass' | 'vip' | 'spin' | 'campaigns' | 'coupons' | 'achievements';
 
 const TABS: { id: TabId; label: string; icon: typeof Gift; hint: string }[] = [
-  { id: 'tasks', label: 'Reward Tasks', icon: ListChecks, hint: 'Daily / monthly coin-earning tasks' },
-  { id: 'pass',  label: 'Monthly Pass Rewards (Free & VIP)', icon: Gift, hint: 'Tier rewards — Free (Common) users + VIP (Premium) users' },
-  { id: 'vip',   label: 'VIP Plans',    icon: Crown,       hint: 'Premium membership & perks' },
+  { id: 'tasks',        label: 'Reward Tasks', icon: ListChecks, hint: 'Daily / monthly coin-earning tasks' },
+  { id: 'pass',         label: 'Monthly Pass Rewards (Free & VIP)', icon: Gift, hint: 'Tier rewards — Free (Common) users + VIP (Premium) users' },
+  { id: 'vip',          label: 'VIP Plans',    icon: Crown,             hint: 'Premium membership & perks' },
+  { id: 'spin',         label: 'Lucky Spin',   icon: CircleDollarSign,  hint: 'Spin-the-wheel segments & odds' },
+  { id: 'campaigns',    label: 'Campaigns',    icon: Zap,               hint: 'Time-limited reward multipliers' },
+  { id: 'coupons',      label: 'Coupons',      icon: Ticket,            hint: 'Redeemable coin codes' },
+  { id: 'achievements', label: 'Achievements', icon: Medal,             hint: 'Milestone badges & rewards' },
 ];
 
 export default function RewardsCenter() {
@@ -66,9 +74,13 @@ export default function RewardsCenter() {
 
       {/* Panels — the existing self-contained pages, unchanged. */}
       <div>
-        {tab === 'tasks' && <RewardTasks />}
-        {tab === 'pass'  && <RewardPass />}
-        {tab === 'vip'   && <VipPlans />}
+        {tab === 'tasks'        && <RewardTasks />}
+        {tab === 'pass'         && <RewardPass />}
+        {tab === 'vip'          && <VipPlans />}
+        {tab === 'spin'         && <RewardSpin />}
+        {tab === 'campaigns'    && <RewardCampaigns />}
+        {tab === 'coupons'      && <RewardCoupons />}
+        {tab === 'achievements' && <RewardAchievements />}
       </div>
     </div>
   );
