@@ -187,8 +187,10 @@ gifts.post('/send', async (c) => {
       db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
         .bind(crypto.randomUUID(), hostUserId, 'bonus', hostShare, `Gift received: ${gift.name}`, msgId),
       // Gifts count toward the host's lifetime earnings (feeds level-up) — the
-      // host's NET share after platform commission.
-      db.prepare('UPDATE hosts SET total_earnings = total_earnings + ? WHERE id = ?')
+      // host's NET share after platform commission. gifts_received is a
+      // denormalized level metric (count of gifts + tips received); bumped in
+      // the same atomic batch so it can never drift from the ledger.
+      db.prepare('UPDATE hosts SET total_earnings = total_earnings + ?, gifts_received = COALESCE(gifts_received, 0) + 1 WHERE id = ?')
         .bind(hostShare, room.host_id),
     ]);
   } catch (e: any) {

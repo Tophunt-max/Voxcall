@@ -56,7 +56,10 @@ export type MetricKey =
   | 'online_minutes'   // lifetime time spent online/available
   | 'active_days'      // lifetime distinct active days (came online)
   | 'avg_call_minutes' // average call length = total_minutes / answered (derived)
-  | 'repeat_callers';  // answered_calls - unique_callers, i.e. repeat calls (derived)
+  | 'repeat_callers'   // answered_calls - unique_callers, i.e. repeat calls (derived)
+  | 'gifts_received'   // lifetime count of gifts + tips received
+  | 'successful_referrals' // lifetime count of unlocked referrals by this host
+  | 'languages_count'; // number of languages the host speaks (derived from JSON)
 
 /** Comparison operators a criterion may use. */
 export type CriterionOp = '>=' | '==';
@@ -104,6 +107,9 @@ export const METRIC_REGISTRY: MetricDef[] = [
   { key: 'active_days',      label: 'Active days (lifetime)',  kind: 'int', defaultOp: '>=' },
   { key: 'avg_call_minutes', label: 'Avg call length (min)',   kind: 'int', defaultOp: '>=' },
   { key: 'repeat_callers',   label: 'Repeat callers',          kind: 'int', defaultOp: '>=' },
+  { key: 'gifts_received',       label: 'Gifts + tips received', kind: 'int', defaultOp: '>=' },
+  { key: 'successful_referrals', label: 'Successful referrals',  kind: 'int', defaultOp: '>=' },
+  { key: 'languages_count',      label: 'Languages spoken',      kind: 'int', defaultOp: '>=' },
 ];
 
 const METRIC_BY_KEY: Record<string, MetricDef> = Object.fromEntries(
@@ -656,6 +662,12 @@ export interface HostLevelStats {
   online_minutes?: number;
   /** Lifetime distinct active days (hosts.active_days). */
   active_days?: number;
+  /** Lifetime count of gifts + tips received (hosts.gifts_received). */
+  gifts_received?: number;
+  /** Lifetime count of unlocked referrals (hosts.successful_referrals). */
+  successful_referrals?: number;
+  /** Number of languages the host speaks (derived from hosts.languages JSON). */
+  languages_count?: number;
   /** Optional "now" override (unix seconds) for deterministic tenure tests. */
   now?: number;
 }
@@ -663,6 +675,26 @@ export interface HostLevelStats {
 function num(v: unknown): number {
   const n = Number(v);
   return isFinite(n) && n > 0 ? n : 0;
+}
+
+/**
+ * Count the distinct, non-empty languages in a host's `languages` column
+ * (a JSON array string like '["English","Hindi"]'). Tolerates null/malformed
+ * values (returns 0). Used to derive the `languages_count` level metric without
+ * a dedicated column.
+ */
+export function countLanguages(languagesJson: string | null | undefined): number {
+  if (!languagesJson) return 0;
+  try {
+    const arr = JSON.parse(languagesJson);
+    if (!Array.isArray(arr)) return 0;
+    const set = new Set(
+      arr.map((l) => String(l).trim().toLowerCase()).filter((l) => l.length > 0),
+    );
+    return set.size;
+  } catch {
+    return 0;
+  }
 }
 
 /**
@@ -682,6 +714,9 @@ export function resolveMetricValue(stats: HostLevelStats, metric: MetricKey): nu
     case 'streak_max': return num(stats.streak_max);
     case 'online_minutes': return num(stats.online_minutes);
     case 'active_days': return num(stats.active_days);
+    case 'gifts_received': return num(stats.gifts_received);
+    case 'successful_referrals': return num(stats.successful_referrals);
+    case 'languages_count': return num(stats.languages_count);
     case 'kyc_verified': return num(stats.identity_verified) >= 1 ? 1 : 0;
     case 'avg_call_minutes': {
       // Average talk-time per answered call — an engagement-quality signal.

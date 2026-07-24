@@ -268,6 +268,18 @@ async function creditReferralInternal(
     .run();
   if (!claim.meta?.changes) return false; // already processed / lost race
 
+  // Level metric (denormalized): bump the referrer's successful_referrals if
+  // they are a host (no-op otherwise). The unlock CAS above fires exactly once
+  // per referral, so this can't double-count. Best-effort.
+  try {
+    await db
+      .prepare('UPDATE hosts SET successful_referrals = COALESCE(successful_referrals, 0) + 1 WHERE user_id = ?')
+      .bind(row.referrer_id)
+      .run();
+  } catch (e) {
+    console.warn('[referral] successful_referrals bump failed:', e);
+  }
+
   // Credit coins. Held referrer reward also bumps coins_held (locks it).
   const ops: D1PreparedStatement[] = [];
   if (newUserReward > 0) {
@@ -430,6 +442,17 @@ export async function clawbackReferrals(env: Env, referredUserId: string, reason
     for (const r of rows.results || []) {
       const claim = await db.prepare("UPDATE referral_uses SET reward_state = 'clawed_back', status = 'void', flag_reason = ? WHERE id = ? AND reward_state = 'held'").bind(`clawback:${reason}`, r.id).run();
       if (!claim.meta?.changes) continue;
+      // Level metric: reverse the successful_referrals bump for this now-voided
+      // referral (floored at 0). Keyed by referrer's user_id; no-op if not a
+      // host. Best-effort — never blocks the clawback.
+      try {
+        await db
+          .prepare('UPDATE hosts SET successful_referrals = MAX(0, COALESCE(successful_referrals, 0) - 1) WHERE user_id = ?')
+          .bind(r.referrer_id)
+          .run();
+      } catch (e) {
+        console.warn('[referral] successful_referrals clawback decrement failed:', e);
+      }
       const rr = Number(r.referrer_reward) || 0;
       const nr = Number(r.new_user_reward) || 0;
       const ops: D1PreparedStatement[] = [];

@@ -26,7 +26,7 @@
 // ============================================================================
 
 import type { Env } from '../types';
-import { getLevelConfig, evaluateLevel, type LevelDef } from './levels';
+import { getLevelConfig, evaluateLevel, countLanguages, type LevelDef } from './levels';
 import { sendFCMPush, getFCMTokens } from './fcm';
 
 export interface LevelUpResult {
@@ -86,6 +86,7 @@ export async function applyLevelUp(
               h.unique_callers, h.answered_calls, h.incoming_calls,
               h.favorite_count, h.streak_max, h.identity_verified, h.created_at,
               h.online_minutes, h.active_days,
+              h.gifts_received, h.successful_referrals, h.languages,
               h.is_active,
               u.status AS user_status
        FROM hosts h JOIN users u ON u.id = h.user_id
@@ -118,6 +119,9 @@ export async function applyLevelUp(
       created_at: Number(host.created_at) || 0,
       online_minutes: Number(host.online_minutes) || 0,
       active_days: Number(host.active_days) || 0,
+      gifts_received: Number(host.gifts_received) || 0,
+      successful_referrals: Number(host.successful_referrals) || 0,
+      languages_count: countLanguages(host.languages),
     },
     cfg,
   );

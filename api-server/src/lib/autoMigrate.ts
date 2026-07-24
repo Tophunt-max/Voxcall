@@ -113,6 +113,7 @@ import m_0064 from '../../migrations/0064_scheduled_notifications.sql';
 import m_0065 from '../../migrations/0065_gift_idempotency.sql';
 import m_0066 from '../../migrations/0066_host_level_metrics.sql';
 import m_0067 from '../../migrations/0067_host_online_metrics.sql';
+import m_0068 from '../../migrations/0068_host_gift_referral_metrics.sql';
 
 interface Migration {
   /**
@@ -192,6 +193,7 @@ const MIGRATIONS: ReadonlyArray<Migration> = [
   { name: '0065_gift_idempotency.sql',              sql: m_0065 },
   { name: '0066_host_level_metrics.sql',            sql: m_0066 },
   { name: '0067_host_online_metrics.sql',           sql: m_0067 },
+  { name: '0068_host_gift_referral_metrics.sql',    sql: m_0068 },
 ];
 
 /**

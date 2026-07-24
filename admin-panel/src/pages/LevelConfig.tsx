@@ -20,7 +20,8 @@ type MetricKey =
   | 'review_count' | 'rating' | 'total_minutes' | 'total_earnings'
   | 'unique_callers' | 'answer_rate' | 'favorite_count'
   | 'streak_max' | 'tenure_days' | 'kyc_verified'
-  | 'online_minutes' | 'active_days' | 'avg_call_minutes' | 'repeat_callers';
+  | 'online_minutes' | 'active_days' | 'avg_call_minutes' | 'repeat_callers'
+  | 'gifts_received' | 'successful_referrals' | 'languages_count';
 type CriterionOp = '>=' | '==';
 type MetricKind = 'int' | 'rating' | 'percent' | 'bool';
 
@@ -76,6 +77,9 @@ const FALLBACK_METRICS: MetricDef[] = [
   { key: 'active_days',      label: 'Active days (lifetime)',  kind: 'int', defaultOp: '>=' },
   { key: 'avg_call_minutes', label: 'Avg call length (min)',   kind: 'int', defaultOp: '>=' },
   { key: 'repeat_callers',   label: 'Repeat callers',          kind: 'int', defaultOp: '>=' },
+  { key: 'gifts_received',       label: 'Gifts + tips received', kind: 'int', defaultOp: '>=' },
+  { key: 'successful_referrals', label: 'Successful referrals',  kind: 'int', defaultOp: '>=' },
+  { key: 'languages_count',      label: 'Languages spoken',      kind: 'int', defaultOp: '>=' },
 ];
 
 const DEFAULT_CONFIG: LevelDef[] = [
@@ -483,7 +487,7 @@ export default function LevelConfig() {
         <Info size={16} className="text-blue-500 mt-0.5 flex-shrink-0" />
         <div className="text-blue-700 dark:text-blue-300">
           <strong>How levels work:</strong> Each level has a list of <strong>criteria</strong> (any number, different per level). Hosts are <strong>auto-promoted in real time</strong> when they meet <strong>ALL</strong> of a level's criteria, and the one-time Coin Reward is credited automatically.
-          Available metrics: rated calls, average rating, talk-minutes, coins earned, unique callers, answer rate, followers, daily streak, days on platform, KYC verified, total online-time, active days, avg call length &amp; repeat callers.
+          Available metrics: rated calls, average rating, talk-minutes, coins earned, unique callers, answer rate, followers, daily streak, days on platform, KYC verified, total online-time, active days, avg call length, repeat callers, gifts + tips received, successful referrals &amp; languages spoken.
           Level 1 is the starting level (no criteria). <strong>Perks</strong> per level: Max Audio/Video Rate, Earning Share and Rank Boost.
           A host can charge up to <strong>+{HOST_RATE_BONUS} coins/min</strong> above each cap.
           Use <strong>"Load Recommended"</strong> for a richer quality/trust ladder, then <strong>"Recalculate All Host Levels"</strong> to back-fill existing hosts.

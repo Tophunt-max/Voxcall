@@ -306,6 +306,7 @@ import {
   RECOMMENDED_LEVEL_CONFIG,
   resolveMetricValue,
   computeLevelProgress,
+  countLanguages,
   type Criterion,
 } from '../src/lib/levels';
 
@@ -544,5 +545,42 @@ describe('resolveMetricValue — new online / derived metrics', () => {
     const cfg = ladderWith([{ metric: 'avg_call_minutes', op: '>=', value: 8 }]);
     expect(evaluateLevel({ review_count: 0, rating: 0, total_minutes: 350, answered_calls: 50 }, cfg)).toBe(1); // avg 7 < 8
     expect(evaluateLevel({ review_count: 0, rating: 0, total_minutes: 400, answered_calls: 50 }, cfg)).toBe(2); // avg 8 >= 8
+  });
+});
+
+describe('resolveMetricValue — gift / referral / language metrics', () => {
+  it('gifts_received and successful_referrals read straight from stats', () => {
+    expect(resolveMetricValue({ review_count: 0, rating: 0, gifts_received: 120 }, 'gifts_received')).toBe(120);
+    expect(resolveMetricValue({ review_count: 0, rating: 0, successful_referrals: 7 }, 'successful_referrals')).toBe(7);
+  });
+
+  it('languages_count reads the derived value from stats', () => {
+    expect(resolveMetricValue({ review_count: 0, rating: 0, languages_count: 3 }, 'languages_count')).toBe(3);
+    expect(resolveMetricValue({ review_count: 0, rating: 0 }, 'languages_count')).toBe(0);
+  });
+
+  it('evaluateLevel can gate on gifts_received / successful_referrals / languages_count', () => {
+    const cfg = ladderWith([
+      { metric: 'gifts_received', op: '>=', value: 50 },
+      { metric: 'successful_referrals', op: '>=', value: 3 },
+      { metric: 'languages_count', op: '>=', value: 2 },
+    ]);
+    expect(evaluateLevel({ review_count: 0, rating: 0, gifts_received: 50, successful_referrals: 3, languages_count: 1 }, cfg)).toBe(1);
+    expect(evaluateLevel({ review_count: 0, rating: 0, gifts_received: 50, successful_referrals: 3, languages_count: 2 }, cfg)).toBe(2);
+  });
+});
+
+describe('countLanguages', () => {
+  it('counts distinct non-empty languages from a JSON array string', () => {
+    expect(countLanguages('["English","Hindi","Tamil"]')).toBe(3);
+    expect(countLanguages('["English","english"," English "]')).toBe(1); // case/trim dedupe
+    expect(countLanguages('[]')).toBe(0);
+  });
+
+  it('tolerates null / malformed values', () => {
+    expect(countLanguages(null)).toBe(0);
+    expect(countLanguages(undefined)).toBe(0);
+    expect(countLanguages('not json')).toBe(0);
+    expect(countLanguages('{"a":1}')).toBe(0);
   });
 });

@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth';
-import { getLevelConfig, computeLevelProgress, getHostAudioRateCeiling, getHostVideoRateCeiling, getRankBoost, buildLevelInfo, rankBoostCaseSql, ABSOLUTE_MAX_RATE, DEFAULT_AUDIO_RATE, DEFAULT_VIDEO_RATE, type LevelDef } from '../lib/levels';
+import { getLevelConfig, computeLevelProgress, countLanguages, getHostAudioRateCeiling, getHostVideoRateCeiling, getRankBoost, buildLevelInfo, rankBoostCaseSql, ABSOLUTE_MAX_RATE, DEFAULT_AUDIO_RATE, DEFAULT_VIDEO_RATE, type LevelDef } from '../lib/levels';
 import { creditHostStreakOnActivity, getHostStreakStatus } from '../lib/hostStreak';
 import { notifyFavoritersHostOnline } from '../lib/engagementNotify';
 import { scoreHosts, normalizeWeights, type CandidateHost, type UserAffinity } from '../lib/recommend';
@@ -759,6 +759,7 @@ hostProtected.get('/level', async (c) => {
             h.unique_callers, h.answered_calls, h.incoming_calls, h.favorite_count,
             h.streak_max, h.identity_verified, h.created_at,
             h.online_minutes, h.active_days,
+            h.gifts_received, h.successful_referrals, h.languages,
             COUNT(cs.id) AS total_calls
      FROM hosts h
      LEFT JOIN call_sessions cs ON cs.host_id = h.id AND cs.status = 'ended'
@@ -783,6 +784,9 @@ hostProtected.get('/level', async (c) => {
       created_at: Number(h.created_at) || 0,
       online_minutes: Number(h.online_minutes) || 0,
       active_days: Number(h.active_days) || 0,
+      gifts_received: Number(h.gifts_received) || 0,
+      successful_referrals: Number(h.successful_referrals) || 0,
+      languages_count: countLanguages(h.languages),
     },
     config,
     h.level,
@@ -806,6 +810,9 @@ hostProtected.get('/level', async (c) => {
       identity_verified: Number(h.identity_verified) || 0,
       online_minutes: Number(h.online_minutes) || 0,
       active_days: Number(h.active_days) || 0,
+      gifts_received: Number(h.gifts_received) || 0,
+      successful_referrals: Number(h.successful_referrals) || 0,
+      languages_count: countLanguages(h.languages),
     },
   });
 });
