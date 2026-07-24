@@ -85,6 +85,7 @@ export async function applyLevelUp(
               h.total_minutes, h.total_earnings,
               h.unique_callers, h.answered_calls, h.incoming_calls,
               h.favorite_count, h.streak_max, h.identity_verified, h.created_at,
+              h.online_minutes, h.active_days,
               h.is_active,
               u.status AS user_status
        FROM hosts h JOIN users u ON u.id = h.user_id
@@ -115,6 +116,8 @@ export async function applyLevelUp(
       streak_max: Number(host.streak_max) || 0,
       identity_verified: Number(host.identity_verified) || 0,
       created_at: Number(host.created_at) || 0,
+      online_minutes: Number(host.online_minutes) || 0,
+      active_days: Number(host.active_days) || 0,
     },
     cfg,
   );

@@ -199,11 +199,14 @@ export async function creditHostStreakOnActivity(db: D1Database, hostUserId: str
     const newStreak = continued ? current + 1 : 1;
     const { base, milestone } = computeReward(newStreak, cfg.schedule, cfg.milestones);
 
-    // Atomic CAS: only the first activity of the IST day wins.
+    // Atomic CAS: only the first activity of the IST day wins. The same guarded
+    // UPDATE also increments `active_days` (a lifetime count of distinct active
+    // days used by the level system) so it can never double-count for a day.
     const upd = await db
       .prepare(
         `UPDATE hosts SET streak_days = ?1, last_streak_day_at = ?2,
-                          streak_max = MAX(COALESCE(streak_max, 0), ?1), updated_at = unixepoch()
+                          streak_max = MAX(COALESCE(streak_max, 0), ?1),
+                          active_days = COALESCE(active_days, 0) + 1, updated_at = unixepoch()
          WHERE user_id = ?3 AND COALESCE(last_streak_day_at, 0) < ?4`,
       )
       .bind(newStreak, now, hostUserId, todayStart)

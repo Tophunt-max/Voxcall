@@ -495,16 +495,54 @@ describe('RECOMMENDED_LEVEL_CONFIG — richer opt-in ladder', () => {
       cfg,
     );
     expect(classicOnly).toBeLessThan(5);
-    // Supplying the quality/trust metrics unlocks Elite.
+    // Supplying the quality/trust metrics unlocks Elite (incl. online-time &
+    // active-days gates added to the recommended ladder).
     const full = evaluateLevel(
       {
         review_count: 5000, rating: 5, total_minutes: 9999, total_earnings: 999999,
         unique_callers: 500, answered_calls: 950, incoming_calls: 1000,
         favorite_count: 500, streak_max: 30, identity_verified: 1,
+        online_minutes: 9000, active_days: 60,
         created_at: 0, now: 400 * 86400,
       },
       cfg,
     );
     expect(full).toBe(5);
+  });
+
+  it('online-time & active-days gates block Elite until met', () => {
+    const cfg = normalizeLevelConfig(RECOMMENDED_LEVEL_CONFIG);
+    // Everything for Elite EXCEPT enough online-time (needs >= 6000).
+    const base = {
+      review_count: 5000, rating: 5, total_minutes: 9999, total_earnings: 999999,
+      unique_callers: 500, answered_calls: 950, incoming_calls: 1000,
+      favorite_count: 500, streak_max: 30, identity_verified: 1,
+      active_days: 60, created_at: 0, now: 400 * 86400,
+    };
+    expect(evaluateLevel({ ...base, online_minutes: 5000 }, cfg)).toBeLessThan(5);
+    expect(evaluateLevel({ ...base, online_minutes: 6000 }, cfg)).toBe(5);
+  });
+});
+
+describe('resolveMetricValue — new online / derived metrics', () => {
+  it('online_minutes and active_days read straight from stats', () => {
+    expect(resolveMetricValue({ review_count: 0, rating: 0, online_minutes: 1250 }, 'online_minutes')).toBe(1250);
+    expect(resolveMetricValue({ review_count: 0, rating: 0, active_days: 42 }, 'active_days')).toBe(42);
+  });
+
+  it('avg_call_minutes = total_minutes / answered_calls, 0 when no answered calls', () => {
+    expect(resolveMetricValue({ review_count: 0, rating: 0, total_minutes: 300, answered_calls: 60 }, 'avg_call_minutes')).toBe(5);
+    expect(resolveMetricValue({ review_count: 0, rating: 0, total_minutes: 300, answered_calls: 0 }, 'avg_call_minutes')).toBe(0);
+  });
+
+  it('repeat_callers = answered_calls - unique_callers, floored at 0', () => {
+    expect(resolveMetricValue({ review_count: 0, rating: 0, answered_calls: 100, unique_callers: 30 }, 'repeat_callers')).toBe(70);
+    expect(resolveMetricValue({ review_count: 0, rating: 0, answered_calls: 20, unique_callers: 50 }, 'repeat_callers')).toBe(0);
+  });
+
+  it('evaluateLevel can gate on a derived metric (avg_call_minutes)', () => {
+    const cfg = ladderWith([{ metric: 'avg_call_minutes', op: '>=', value: 8 }]);
+    expect(evaluateLevel({ review_count: 0, rating: 0, total_minutes: 350, answered_calls: 50 }, cfg)).toBe(1); // avg 7 < 8
+    expect(evaluateLevel({ review_count: 0, rating: 0, total_minutes: 400, answered_calls: 50 }, cfg)).toBe(2); // avg 8 >= 8
   });
 });

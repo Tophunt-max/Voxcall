@@ -49,10 +49,14 @@ export type MetricKey =
   | 'total_earnings' // lifetime coins earned
   | 'unique_callers' // distinct callers who reached a call
   | 'answer_rate'    // answered / incoming (0–1), derived
-  | 'favorite_count' // followers (favorites)
-  | 'streak_max'     // best consecutive-active-day streak
-  | 'tenure_days'    // days since the host account was created (derived)
-  | 'kyc_verified';  // identity verified flag (0/1)
+  | 'favorite_count'   // followers (favorites)
+  | 'streak_max'       // best consecutive-active-day streak
+  | 'tenure_days'      // days since the host account was created (derived)
+  | 'kyc_verified'     // identity verified flag (0/1)
+  | 'online_minutes'   // lifetime time spent online/available
+  | 'active_days'      // lifetime distinct active days (came online)
+  | 'avg_call_minutes' // average call length = total_minutes / answered (derived)
+  | 'repeat_callers';  // answered_calls - unique_callers, i.e. repeat calls (derived)
 
 /** Comparison operators a criterion may use. */
 export type CriterionOp = '>=' | '==';
@@ -96,6 +100,10 @@ export const METRIC_REGISTRY: MetricDef[] = [
   { key: 'streak_max',     label: 'Best daily streak',     kind: 'int',     defaultOp: '>=' },
   { key: 'tenure_days',    label: 'Days on platform',      kind: 'int',     defaultOp: '>=' },
   { key: 'kyc_verified',   label: 'KYC verified',          kind: 'bool',    defaultOp: '==' },
+  { key: 'online_minutes',   label: 'Total online-time (min)', kind: 'int', defaultOp: '>=' },
+  { key: 'active_days',      label: 'Active days (lifetime)',  kind: 'int', defaultOp: '>=' },
+  { key: 'avg_call_minutes', label: 'Avg call length (min)',   kind: 'int', defaultOp: '>=' },
+  { key: 'repeat_callers',   label: 'Repeat callers',          kind: 'int', defaultOp: '>=' },
 ];
 
 const METRIC_BY_KEY: Record<string, MetricDef> = Object.fromEntries(
@@ -291,6 +299,7 @@ export const RECOMMENDED_LEVEL_CONFIG: LevelDef[] = [
       { metric: 'favorite_count', op: '>=', value: 100 },
       { metric: 'tenure_days', op: '>=', value: 30 },
       { metric: 'streak_max', op: '>=', value: 7 },
+      { metric: 'online_minutes', op: '>=', value: 1200 },
     ],
     min_calls: 500, min_rating: 4.6, min_minutes: 1000, min_earnings: 15000,
     perks: { max_rate: 400, max_audio_rate: 400, max_video_rate: 400, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.75, rank_boost: 3 },
@@ -306,6 +315,8 @@ export const RECOMMENDED_LEVEL_CONFIG: LevelDef[] = [
       { metric: 'unique_callers', op: '>=', value: 200 },
       { metric: 'answer_rate', op: '>=', value: 0.85 },
       { metric: 'kyc_verified', op: '==', value: 1 },
+      { metric: 'online_minutes', op: '>=', value: 6000 },
+      { metric: 'active_days', op: '>=', value: 30 },
     ],
     min_calls: 1000, min_rating: 4.8, min_minutes: 2500, min_earnings: 50000,
     perks: { max_rate: 500, max_audio_rate: 500, max_video_rate: 500, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.80, rank_boost: 5 },
@@ -641,6 +652,10 @@ export interface HostLevelStats {
   created_at?: number;
   /** Identity verified flag (hosts.identity_verified, 0/1). */
   identity_verified?: number;
+  /** Cumulative online/available time in minutes (hosts.online_minutes). */
+  online_minutes?: number;
+  /** Lifetime distinct active days (hosts.active_days). */
+  active_days?: number;
   /** Optional "now" override (unix seconds) for deterministic tenure tests. */
   now?: number;
 }
@@ -665,7 +680,21 @@ export function resolveMetricValue(stats: HostLevelStats, metric: MetricKey): nu
     case 'unique_callers': return num(stats.unique_callers);
     case 'favorite_count': return num(stats.favorite_count);
     case 'streak_max': return num(stats.streak_max);
+    case 'online_minutes': return num(stats.online_minutes);
+    case 'active_days': return num(stats.active_days);
     case 'kyc_verified': return num(stats.identity_verified) >= 1 ? 1 : 0;
+    case 'avg_call_minutes': {
+      // Average talk-time per answered call — an engagement-quality signal.
+      // No answered calls yet → 0 (won't satisfy any positive threshold).
+      const answered = num(stats.answered_calls);
+      if (answered <= 0) return 0;
+      return num(stats.total_minutes) / answered;
+    }
+    case 'repeat_callers': {
+      // Repeat calls = answered calls beyond the count of distinct callers.
+      // A pure loyalty signal (high when the same fans keep coming back).
+      return Math.max(0, num(stats.answered_calls) - num(stats.unique_callers));
+    }
     case 'answer_rate': {
       const inc = num(stats.incoming_calls);
       const ans = num(stats.answered_calls);

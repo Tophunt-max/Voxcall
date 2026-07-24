@@ -515,8 +515,9 @@ hostProtected.patch('/status', zValidator('json', statusSchema), async (c) => {
   // is_online value lost ho jaata tha, DB mein undefined/falsy store hota tha
   const { is_online } = c.req.valid('json');
 
-  // host.id (hosts table PK) fetch karo — presence broadcast mein dono IDs chahiye
-  const hostRow = await c.env.DB.prepare('SELECT id FROM hosts WHERE user_id = ?').bind(sub).first<{ id: string }>();
+  // host.id (hosts table PK) fetch karo — presence broadcast mein dono IDs chahiye.
+  // online_since is used to accumulate the online-time level metric on toggle.
+  const hostRow = await c.env.DB.prepare('SELECT id, online_since FROM hosts WHERE user_id = ?').bind(sub).first<{ id: string; online_since: number | null }>();
 
   // FIX: previously the UPDATE was issued unconditionally and silently affected
   // 0 rows when the user had no hosts row (data inconsistency: role='host' but
@@ -540,6 +541,31 @@ hostProtected.patch('/status', zValidator('json', statusSchema), async (c) => {
   if (!updateResult.meta?.changes) {
     console.warn('[host/status] UPDATE affected 0 rows for user', sub);
     return c.json({ error: 'Failed to update status. Please try again.', code: 'UPDATE_FAILED' }, 500);
+  }
+
+  // Level metric (denormalized): accumulate the host's cumulative ONLINE time.
+  // Going online → stamp a fresh start (unconditionally, so a stuck-online
+  // session from a crashed app is discarded rather than over-counted — we only
+  // ever undercount, the safe direction for a promotion-only system). Going
+  // offline → add the elapsed minutes (capped at 24h to bound a single
+  // session) to online_minutes and clear the start. Best-effort: a failure
+  // here must never break the online/offline toggle itself.
+  try {
+    const nowSec = Math.floor(Date.now() / 1000);
+    if (is_online) {
+      await c.env.DB.prepare('UPDATE hosts SET online_since = ? WHERE user_id = ?')
+        .bind(nowSec, sub).run();
+    } else {
+      const since = Number(hostRow.online_since) || 0;
+      if (since > 0) {
+        const mins = Math.min(1440, Math.max(0, Math.floor((nowSec - since) / 60)));
+        await c.env.DB
+          .prepare('UPDATE hosts SET online_minutes = COALESCE(online_minutes, 0) + ?, online_since = 0 WHERE user_id = ?')
+          .bind(mins, sub).run();
+      }
+    }
+  } catch (e) {
+    console.warn('[host/status] online-time accounting failed:', e);
   }
 
   // FIX: presence broadcast moved to ctx.waitUntil() — was blocking the
@@ -732,6 +758,7 @@ hostProtected.get('/level', async (c) => {
     `SELECT h.id, h.level, h.rating, h.review_count, h.total_minutes, h.total_earnings,
             h.unique_callers, h.answered_calls, h.incoming_calls, h.favorite_count,
             h.streak_max, h.identity_verified, h.created_at,
+            h.online_minutes, h.active_days,
             COUNT(cs.id) AS total_calls
      FROM hosts h
      LEFT JOIN call_sessions cs ON cs.host_id = h.id AND cs.status = 'ended'
@@ -754,6 +781,8 @@ hostProtected.get('/level', async (c) => {
       streak_max: Number(h.streak_max) || 0,
       identity_verified: Number(h.identity_verified) || 0,
       created_at: Number(h.created_at) || 0,
+      online_minutes: Number(h.online_minutes) || 0,
+      active_days: Number(h.active_days) || 0,
     },
     config,
     h.level,
@@ -775,6 +804,8 @@ hostProtected.get('/level', async (c) => {
       favorite_count: Number(h.favorite_count) || 0,
       streak_max: Number(h.streak_max) || 0,
       identity_verified: Number(h.identity_verified) || 0,
+      online_minutes: Number(h.online_minutes) || 0,
+      active_days: Number(h.active_days) || 0,
     },
   });
 });
