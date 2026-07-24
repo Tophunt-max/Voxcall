@@ -20,7 +20,7 @@ type TabId = 'tasks' | 'pass' | 'vip';
 
 const TABS: { id: TabId; label: string; icon: typeof Gift; hint: string }[] = [
   { id: 'tasks', label: 'Reward Tasks', icon: ListChecks, hint: 'Daily / monthly coin-earning tasks' },
-  { id: 'pass',  label: 'Monthly Pass', icon: Gift,        hint: 'Tier progression (Common + VIP Premium)' },
+  { id: 'pass',  label: 'Monthly Pass Rewards (Free & VIP)', icon: Gift, hint: 'Tier rewards — Free (Common) users + VIP (Premium) users' },
   { id: 'vip',   label: 'VIP Plans',    icon: Crown,       hint: 'Premium membership & perks' },
 ];
 

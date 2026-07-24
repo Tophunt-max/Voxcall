@@ -112,8 +112,8 @@ export default function RewardPass() {
 
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="font-bold text-lg flex items-center gap-2"><Crown size={18} className="text-purple-500" /> Monthly Pass</h2>
-          <p className="text-sm text-muted-foreground">Battle-pass style rewards. Points are earned by claiming reward tasks and reset each month.</p>
+          <h2 className="font-bold text-lg flex items-center gap-2"><Crown size={18} className="text-purple-500" /> Monthly Pass Rewards (Free &amp; VIP)</h2>
+          <p className="text-sm text-muted-foreground">Set the tier rewards for both tracks: <strong>Free users</strong> claim the Common reward, <strong>VIP members</strong> unlock the Premium reward. Points are earned from reward tasks and reset each month.</p>
         </div>
         <button onClick={save} disabled={saving}
           className="flex items-center gap-1.5 bg-primary text-primary-foreground px-4 py-2 rounded-xl text-sm font-semibold hover:opacity-90 disabled:opacity-50">
@@ -183,7 +183,7 @@ export default function RewardPass() {
         ) : (
           <div className="space-y-2">
             <div className="grid grid-cols-[60px_1fr_90px_110px_120px_40px] gap-2 px-1 text-[11px] font-semibold text-muted-foreground">
-              <span>Level</span><span>Label</span><span>Points</span><span>Common coins</span><span>Premium coins</span><span></span>
+              <span>Level</span><span>Label</span><span>Points</span><span>Free reward 🆓</span><span>VIP reward 👑</span><span></span>
             </div>
             {cfg.tiers.map((t, idx) => (
               <div key={idx} className="grid grid-cols-[60px_1fr_90px_110px_120px_40px] gap-2 items-center">
