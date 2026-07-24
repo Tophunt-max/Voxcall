@@ -593,9 +593,11 @@ rewards.get('/', async (c) => {
         // A locked task can never be claimed regardless of progress state.
         claimable: state.claimable && !vipLocked,
       };
-    })
-    // Hide free-only tasks from VIP members; everything else stays visible.
-    .filter((t) => !(t.audience === 'free' && isVip));
+    });
+  // NOTE: VIP members get the FULL benefit — they see & claim every task
+  // ('all', 'free' AND 'vip'). Only VIP-only tasks are gated, and only for
+  // non-VIP users (shown locked as an upsell). 'free' tasks are visible +
+  // claimable to everyone, VIP included.
 
   const totalEarned = tasks.reduce((s, t) => s + t.total_earned, 0);
   const claimableCount = tasks.filter((t) => t.claimable).length;
@@ -812,15 +814,13 @@ rewards.post('/claim', async (c) => {
   if (!task) return c.json({ error: 'Task not found or inactive' }, 404);
 
   // VIP-only tasks can only be claimed by active VIP members (they're shown to
-  // free users as a locked upsell). Free-only tasks can't be claimed by VIP.
-  if (task.audience === 'vip' || task.audience === 'free') {
+  // free users as a locked upsell). 'free' and 'all' tasks are claimable by
+  // everyone — VIP members get the full benefit of all tracks.
+  if (task.audience === 'vip') {
     let claimantVip = false;
     try { claimantVip = (await getVipStatus(db, sub)).isVip; } catch { claimantVip = false; }
-    if (task.audience === 'vip' && !claimantVip) {
+    if (!claimantVip) {
       return c.json({ error: 'This is a VIP-only task. Subscribe to VIP to claim it.', code: 'VIP_REQUIRED' }, 403);
-    }
-    if (task.audience === 'free' && claimantVip) {
-      return c.json({ error: 'This task is for free users only.', code: 'FREE_ONLY' }, 403);
     }
   }
 

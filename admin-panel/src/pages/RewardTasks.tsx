@@ -40,7 +40,7 @@ const CATEGORIES = [
 const AUDIENCES = [
   { id: 'all',  label: 'All users' },
   { id: 'vip',  label: 'VIP only (free users see it locked 🔒)' },
-  { id: 'free', label: 'Free users only (hidden from VIP)' },
+  { id: 'free', label: 'Free-focused (VIP users also get it)' },
 ];
 
 const ICONS = ['calendar', 'call', 'invite', 'coin', 'video', 'share', 'gift'];
@@ -330,7 +330,7 @@ export default function RewardTasks() {
                     <span className="text-[10px] px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">{TASK_TYPES.find(x => x.id === t.task_type)?.label ?? t.task_type}</span>
                     <span className="text-[10px] px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">{t.category}</span>
                     {t.audience === 'vip' && <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-semibold">👑 VIP only</span>}
-                    {t.audience === 'free' && <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-semibold">🆓 Free only</span>}
+                    {t.audience === 'free' && <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-semibold">🆓 Free-focused</span>}
                   </div>
                   {t.description && <p className="text-xs text-muted-foreground">{t.description}</p>}
                   <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground flex-wrap">
