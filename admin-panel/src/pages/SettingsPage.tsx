@@ -70,6 +70,13 @@ const settingGroups: Array<{
     ],
   },
   {
+    group: 'Gifts & Tips Commission',
+    settings: [
+      { key: 'gift_commission_pct', label: 'Gift Platform Commission (%)', type: 'number', hint: 'Platform keeps this % of every gift a user sends; the host receives the rest. 0 = host keeps 100%. Also editable on the Chat Gifts page. Range 0–90.', step: '0.5' },
+      { key: 'tip_commission_pct', label: 'Tip Platform Commission (%)', type: 'number', hint: 'Platform keeps this % of every tip a user sends a host; the host receives the rest. 0 = host keeps 100%. Range 0–90.', step: '0.5' },
+    ],
+  },
+  {
     group: 'Call Rates (Agora)',
     settings: [
       { key: 'default_audio_rate', label: 'Default Audio Rate (Coins/min)', type: 'number', hint: 'Per-minute price for a VOICE call when a host has no explicit rate. RECOMMENDED 30 coins ≈ ₹6/min. A loss-proof floor is always enforced.', step: '1', preview: 'coins_per_min' },
@@ -117,6 +124,9 @@ const DEFAULTS: Record<string, string> = {
   coin_to_usd_rate: '0.001024', // ≈ coin_value_inr ÷ 83 — overwritten by live values on load
   host_revenue_share: '0.70',
   min_withdrawal_coins: '100',
+  // Gift + tip platform commission (percent). 0 = host keeps 100%.
+  gift_commission_pct: '0',
+  tip_commission_pct: '0',
   // Call rates.
   default_audio_rate: '30',
   default_video_rate: '50',

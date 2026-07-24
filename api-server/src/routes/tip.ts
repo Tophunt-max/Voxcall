@@ -5,10 +5,25 @@ import { authMiddleware } from '../middleware/auth';
 import { applyLevelUp } from '../lib/levelService';
 import { notifyUser } from '../lib/realtime';
 import { checkRateLimit } from '../lib/rateLimit';
+import { atomicGiftTransfer, reverseGiftTransfer } from '../lib/transfers';
 import type { Env, JWTPayload } from '../types';
 
 const tip = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
 tip.use('*', authMiddleware);
+
+// Platform commission on tips (percent, 0–90). Admin-set via
+// app_settings.tip_commission_pct (Admin → Settings → Gifts & Tips). Default 0
+// → host keeps 100% (historical behaviour) until an admin configures a cut.
+async function getTipCommissionPct(db: D1Database): Promise<number> {
+  try {
+    const r = await db.prepare("SELECT value FROM app_settings WHERE key = 'tip_commission_pct'").first<{ value: string }>();
+    const pct = Number(r?.value);
+    if (!Number.isFinite(pct)) return 0;
+    return Math.min(90, Math.max(0, pct));
+  } catch {
+    return 0; // setting/table absent → no commission
+  }
+}
 
 const sendTipSchema = z.object({
   host_id: z.string().min(1),
@@ -42,29 +57,26 @@ tip.post('/send', zValidator('json', sendTipSchema), async (c) => {
     return c.json({ error: 'Cannot send a tip to yourself' }, 400);
   }
 
-  // Atomic coin transfer: deduct from sender, credit to host
-  // Uses the same all-or-nothing pattern as call billing.
-  const tipId = crypto.randomUUID();
-  const transferResult = await db.prepare(
-    `UPDATE users SET coins = coins + CASE id
-       WHEN ? THEN -?
-       WHEN ? THEN ?
-       ELSE 0
-     END, updated_at = unixepoch()
-     WHERE id IN (?, ?)
-       AND EXISTS (SELECT 1 FROM users WHERE id = ? AND (coins - COALESCE(coins_held, 0)) >= ?)`
-  ).bind(
-    sub, body.amount,
-    host.user_id, body.amount,
-    sub, host.user_id,
-    sub, body.amount
-  ).run();
+  // Platform commission on tips (admin-set, mirrors gifts). The sender pays the
+  // full tip; the host receives amount − cut. The cut is the platform margin
+  // and leaves circulation (same model as gifts + the call earning-share).
+  const commissionPct = await getTipCommissionPct(db);
+  const platformCut = Math.floor((body.amount * commissionPct) / 100);
+  const hostShare = Math.max(0, body.amount - platformCut);
 
-  if (!transferResult.meta?.changes || transferResult.meta.changes === 0) {
+  // Atomic coin transfer: debit sender the full tip, credit host their share —
+  // only if the sender can afford it (spendable = coins - held).
+  const tipId = crypto.randomUUID();
+  const moved = await atomicGiftTransfer(db, { senderId: sub, hostUserId: host.user_id, amount: body.amount, hostAmount: hostShare });
+  if (!moved) {
     return c.json({ error: 'Insufficient coins' }, 402);
   }
 
-  // Record the tip + ledger entries
+  // ATOMIC persistence: the tip record + both ledger rows + host earnings must
+  // persist together. If it fails, REVERSE the coin move so the sender is never
+  // charged for a tip that didn't save (previously these were best-effort AFTER
+  // the transfer, so a failure meant a silent charge + a broken reconciliation
+  // ledger). Host bonus + earnings record the NET share after commission.
   try {
     await db.batch([
       db.prepare(
@@ -75,14 +87,17 @@ tip.post('/send', zValidator('json', sendTipSchema), async (c) => {
       ).bind(crypto.randomUUID(), sub, 'spend', -body.amount, `Tip to ${host.display_name || 'Host'}`, tipId),
       db.prepare(
         'INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)'
-      ).bind(crypto.randomUUID(), host.user_id, 'bonus', body.amount, `Tip received`, tipId),
-      // Tips count toward the host's lifetime earnings, so they feed the
-      // level-up system (earnings threshold) just like call earnings do.
+      ).bind(crypto.randomUUID(), host.user_id, 'bonus', hostShare, `Tip received`, tipId),
+      // Tips count toward the host's lifetime earnings (feeds level-up) — the
+      // host's NET share after platform commission.
       db.prepare('UPDATE hosts SET total_earnings = total_earnings + ? WHERE id = ?')
-        .bind(body.amount, host.id),
+        .bind(hostShare, host.id),
     ]);
   } catch (e) {
-    console.warn('[tip/send] ledger write failed (coins already moved):', e);
+    await reverseGiftTransfer(db, { senderId: sub, hostUserId: host.user_id, amount: body.amount, hostAmount: hostShare })
+      .catch((re) => console.error('[tip/send] CRITICAL: reversal after persist failure FAILED:', re));
+    console.error('[tip/send] persist failed — coins refunded:', e);
+    return c.json({ error: 'Could not send tip. Your coins were not charged.', code: 'TIP_FAILED' }, 500);
   }
 
   // A large tip can push the host across an earnings threshold — re-evaluate
