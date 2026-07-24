@@ -730,6 +730,8 @@ hostProtected.get('/level', async (c) => {
   const { sub } = c.get('user');
   const h = await c.env.DB.prepare(
     `SELECT h.id, h.level, h.rating, h.review_count, h.total_minutes, h.total_earnings,
+            h.unique_callers, h.answered_calls, h.incoming_calls, h.favorite_count,
+            h.streak_max, h.identity_verified, h.created_at,
             COUNT(cs.id) AS total_calls
      FROM hosts h
      LEFT JOIN call_sessions cs ON cs.host_id = h.id AND cs.status = 'ended'
@@ -745,6 +747,13 @@ hostProtected.get('/level', async (c) => {
       rating: Number(h.rating) || 0,
       total_minutes: Number(h.total_minutes) || 0,
       total_earnings: Number(h.total_earnings) || 0,
+      unique_callers: Number(h.unique_callers) || 0,
+      answered_calls: Number(h.answered_calls) || 0,
+      incoming_calls: Number(h.incoming_calls) || 0,
+      favorite_count: Number(h.favorite_count) || 0,
+      streak_max: Number(h.streak_max) || 0,
+      identity_verified: Number(h.identity_verified) || 0,
+      created_at: Number(h.created_at) || 0,
     },
     config,
     h.level,
@@ -760,6 +769,12 @@ hostProtected.get('/level', async (c) => {
       total_earnings: Number(h.total_earnings) || 0,
       rating: Number(h.rating) || 0,
       review_count: Number(h.review_count) || 0,
+      unique_callers: Number(h.unique_callers) || 0,
+      answered_calls: Number(h.answered_calls) || 0,
+      incoming_calls: Number(h.incoming_calls) || 0,
+      favorite_count: Number(h.favorite_count) || 0,
+      streak_max: Number(h.streak_max) || 0,
+      identity_verified: Number(h.identity_verified) || 0,
     },
   });
 });

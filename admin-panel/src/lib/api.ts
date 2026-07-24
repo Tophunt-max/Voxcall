@@ -318,6 +318,10 @@ export const api = {
   recalculateHostLevels: () => req<any>('POST', '/admin/hosts/recalculate-levels', {}),
   getLevelConfig: () => req<any[]>('GET', '/admin/level-config'),
   updateLevelConfig: (data: any[]) => req<any>('PUT', '/admin/level-config', data),
+  // Level-config editor support: metric catalog + preset ladders (default /
+  // recommended) served from the backend so the panel stays in sync with the
+  // server's METRIC_REGISTRY without duplicating it.
+  getLevelConfigMeta: () => req<any>('GET', '/admin/level-config/meta'),
 
   // ─── India coin economy seed ─────────────────────────────────────────────
   // Destructive: wipes coin_plans + replaces level_config + upserts the

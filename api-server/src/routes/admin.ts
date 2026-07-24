@@ -9,7 +9,7 @@ import {
   type EmergencyFlagKey,
 } from '../lib/emergencyFlags';
 import { listMigrationStatus as listMigrationStatusForHealth } from '../lib/autoMigrate';
-import { getLevelConfig, normalizeLevelConfig, getDefaultCallRates, getEarningShare, MIN_LEVELS, MAX_LEVELS } from '../lib/levels';
+import { getLevelConfig, normalizeLevelConfig, getDefaultCallRates, getEarningShare, clearLevelConfigCache, METRIC_REGISTRY, DEFAULT_LEVEL_CONFIG, RECOMMENDED_LEVEL_CONFIG, MIN_LEVELS, MAX_LEVELS } from '../lib/levels';
 import { recalcAllHostLevels } from '../lib/levelService';
 import { chargeCallerWithFreePool, billedMinutes, coinsForCall } from '../lib/billing';
 import { resignIfPrivate } from '../lib/mediaSign';
@@ -459,6 +459,21 @@ admin.get('/level-config', async (c) => {
   return c.json(config);
 });
 
+// GET /api/admin/level-config/meta — supporting data for the level-config
+// editor: the catalog of metrics a criterion may reference (single source of
+// truth for the admin panel's dropdowns/validation) plus the ready-made
+// preset ladders an admin can one-click load.
+admin.get('/level-config/meta', async (c) => {
+  return c.json({
+    metrics: METRIC_REGISTRY,
+    presets: {
+      default: DEFAULT_LEVEL_CONFIG,
+      recommended: RECOMMENDED_LEVEL_CONFIG,
+    },
+    limits: { min_levels: MIN_LEVELS, max_levels: MAX_LEVELS },
+  });
+});
+
 // PUT /api/admin/level-config
 admin.put('/level-config', async (c) => {
   const body = await c.req.json<unknown>();
@@ -476,6 +491,9 @@ admin.put('/level-config', async (c) => {
   const normalized = normalizeLevelConfig(body);
   await db(c).prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('level_config', ?, unixepoch())")
     .bind(JSON.stringify(normalized)).run();
+  // Invalidate the hot-path config cache so the new ladder takes effect on the
+  // very next read (rating/billing/matchmaking) instead of after the TTL.
+  clearLevelConfigCache();
   return c.json({ success: true, config: normalized });
 });
 
@@ -3212,6 +3230,10 @@ admin.post('/seed/india-defaults', async (c) => {
     console.error('[seed/india-defaults] batch failed:', err);
     return c.json({ error: 'Seed failed — partial state likely. Check logs.', details: String(err) }, 500);
   }
+
+  // The seed just replaced level_config — drop the hot-path cache so the new
+  // ladder is picked up immediately rather than after the TTL.
+  clearLevelConfigCache();
 
   await auditLog(
     database,

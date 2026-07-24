@@ -82,7 +82,10 @@ export async function applyLevelUp(
   const host = await db
     .prepare(
       `SELECT h.id, h.user_id, h.level, h.rating, h.review_count,
-              h.total_minutes, h.total_earnings, h.is_active,
+              h.total_minutes, h.total_earnings,
+              h.unique_callers, h.answered_calls, h.incoming_calls,
+              h.favorite_count, h.streak_max, h.identity_verified, h.created_at,
+              h.is_active,
               u.status AS user_status
        FROM hosts h JOIN users u ON u.id = h.user_id
        WHERE h.id = ?`,
@@ -105,6 +108,13 @@ export async function applyLevelUp(
       rating: Number(host.rating) || 0,
       total_minutes: Number(host.total_minutes) || 0,
       total_earnings: Number(host.total_earnings) || 0,
+      unique_callers: Number(host.unique_callers) || 0,
+      answered_calls: Number(host.answered_calls) || 0,
+      incoming_calls: Number(host.incoming_calls) || 0,
+      favorite_count: Number(host.favorite_count) || 0,
+      streak_max: Number(host.streak_max) || 0,
+      identity_verified: Number(host.identity_verified) || 0,
+      created_at: Number(host.created_at) || 0,
     },
     cfg,
   );
@@ -224,39 +234,69 @@ export interface RecalcResult {
  * "recalculate levels" endpoint and the daily cron safety net. Loads the
  * config once and runs applyLevelUp per host (idempotent, promotion-only).
  *
- * NOTE: This is O(N) in DB round-trips. It is only ever invoked from
- * admin-triggered or once-a-day scheduled contexts, never on the hot path.
+ * ── Scalability ────────────────────────────────────────────────────────────
+ * Two cheap optimizations keep this bounded as the host base grows into the
+ * hundreds of thousands:
+ *   1. SQL PRE-FILTER — hosts already at the top rung (`h.level >= maxLevel`)
+ *      can never be promoted further, so they're excluded up front. Over time
+ *      this is the bulk of the table, turning an O(all hosts) scan into
+ *      O(hosts-still-climbing).
+ *   2. KEYSET PAGINATION — candidates are streamed in `chunk`-sized pages
+ *      ordered by id, so we never materialize the whole result set in memory
+ *      and each page is an index-friendly `id > cursor` seek. `limit` bounds
+ *      total work per invocation so a cron run is always time-boxed.
+ * Per-host promotion is still one idempotent SELECT when nothing changed.
  */
 export async function recalcAllHostLevels(
   env: Env,
   reason: 'admin' | 'recalc' = 'recalc',
   limit = 5000,
+  chunk = 500,
 ): Promise<RecalcResult> {
   const db = env.DB;
   const cfg = await getLevelConfig(db);
-  const rows = await db
-    .prepare(
-      `SELECT h.id FROM hosts h JOIN users u ON u.id = h.user_id
-       WHERE h.is_active = 1 AND u.status = 'active'
-       ORDER BY h.review_count DESC LIMIT ?`,
-    )
-    .bind(limit)
-    .all<{ id: string }>();
+  // Highest rung that exists — hosts already here are skipped by the pre-filter.
+  const maxLevel = cfg.reduce((m, l) => Math.max(m, l.level), 1);
 
   let processed = 0;
   let promoted = 0;
   let coinsAwarded = 0;
-  for (const r of rows.results ?? []) {
-    processed++;
-    try {
-      const res = await applyLevelUp(env, r.id, reason, cfg);
-      if (res.leveledUp) {
-        promoted++;
-        coinsAwarded += res.coinsAwarded;
+  let cursor = '';
+  const pageSize = Math.max(1, Math.min(chunk, limit));
+
+  while (processed < limit) {
+    const remaining = limit - processed;
+    const take = Math.min(pageSize, remaining);
+    const page = await db
+      .prepare(
+        `SELECT h.id FROM hosts h JOIN users u ON u.id = h.user_id
+         WHERE h.is_active = 1 AND u.status = 'active'
+           AND COALESCE(h.level, 1) < ?
+           AND h.id > ?
+         ORDER BY h.id ASC LIMIT ?`,
+      )
+      .bind(maxLevel, cursor, take)
+      .all<{ id: string }>();
+
+    const results = page.results ?? [];
+    if (results.length === 0) break; // no more climbing candidates
+
+    for (const r of results) {
+      processed++;
+      cursor = r.id;
+      try {
+        const res = await applyLevelUp(env, r.id, reason, cfg);
+        if (res.leveledUp) {
+          promoted++;
+          coinsAwarded += res.coinsAwarded;
+        }
+      } catch (e) {
+        console.warn('[recalcAllHostLevels] host failed:', r.id, e);
       }
-    } catch (e) {
-      console.warn('[recalcAllHostLevels] host failed:', r.id, e);
     }
+
+    if (results.length < take) break; // last page
   }
+
   return { processed, promoted, coinsAwarded };
 }

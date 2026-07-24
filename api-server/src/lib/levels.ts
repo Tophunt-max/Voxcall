@@ -7,21 +7,107 @@
 // colors, coin rewards and PERKS are configurable by admins and persisted as
 // JSON in `app_settings.level_config`. Admins may add or remove rungs (within
 // MIN_LEVELS..MAX_LEVELS) — see the admin panel and `normalizeLevelConfig`.
+//
+// ── Flexible N-criteria model (v2) ──────────────────────────────────────────
+// Each level rung carries a `criteria` array of {metric, op, value} rules. A
+// host earns a level only when EVERY criterion on that rung is satisfied. This
+// replaces the old hardcoded 4-threshold model (min_calls / min_rating /
+// min_minutes / min_earnings) with an open-ended one — a rung can require any
+// number of metrics (0, 4, or 8) and different rungs can gate on different
+// metrics. See {@link METRIC_REGISTRY} for the supported metrics.
+//
+// The legacy `min_calls`/`min_rating`/`min_minutes`/`min_earnings` fields are
+// still emitted on every normalized rung (mirrored from the matching criteria)
+// so older readers — and the classic progress-bar keys — keep working. Configs
+// saved before v2 (which only had the legacy fields, no `criteria`) are
+// transparently upgraded by synthesizing criteria from those fields, so there
+// is NO data migration and NO behavioural change for existing ladders.
+//
 // This module centralizes:
 //
-//   • DEFAULT_LEVEL_CONFIG — the fallback ladder used when nothing is saved
-//   • getLevelConfig(db)   — loads (and validates) the saved config or default
-//   • evaluateLevel()      — the level a host has EARNED from their stats
-//   • computeLevelProgress — current/next level + progress % for the UI
-//   • perk helpers         — getLevelPerks / getEarningShare / getMaxRate
+//   • DEFAULT_LEVEL_CONFIG    — the fallback ladder used when nothing is saved
+//   • RECOMMENDED_LEVEL_CONFIG — a richer opt-in ladder (admin "load preset")
+//   • METRIC_REGISTRY         — the catalog of metrics a criterion may use
+//   • getLevelConfig(db)      — loads (and validates) the saved config or default
+//   • evaluateLevel()         — the level a host has EARNED from their stats
+//   • computeLevelProgress    — current/next level + progress % for the UI
+//   • perk helpers            — getLevelPerks / getEarningShare / getMaxRate
 //
-// The criteria a host must satisfy for a level (review_count >= min_calls AND
-// rating >= min_rating) is intentionally identical to the metric used by the
-// auto level-up engine (lib/levelService.ts) and the admin recalculation, so a
-// host's displayed progress bar always predicts exactly when they'll be
-// promoted. `min_calls` doubles as an anti-abuse sample-size guard — a host
-// can't reach a high level off a single 5★ review.
+// The criteria a host must satisfy is intentionally identical between the auto
+// level-up engine (lib/levelService.ts), the admin recalculation, and the
+// host-facing progress bar, so a host's displayed progress always predicts
+// exactly when they'll be promoted.
 // ============================================================================
+
+// ── Metric registry ─────────────────────────────────────────────────────────
+
+/** Every metric key a level criterion may reference. */
+export type MetricKey =
+  | 'review_count'   // rated calls
+  | 'rating'         // average rating 0–5
+  | 'total_minutes'  // lifetime talk-time (minutes)
+  | 'total_earnings' // lifetime coins earned
+  | 'unique_callers' // distinct callers who reached a call
+  | 'answer_rate'    // answered / incoming (0–1), derived
+  | 'favorite_count' // followers (favorites)
+  | 'streak_max'     // best consecutive-active-day streak
+  | 'tenure_days'    // days since the host account was created (derived)
+  | 'kyc_verified';  // identity verified flag (0/1)
+
+/** Comparison operators a criterion may use. */
+export type CriterionOp = '>=' | '==';
+
+/**
+ * How a metric is rendered/validated. Drives clamping in normalizeCriteria and
+ * formatting in the admin panel:
+ *   • int     — non-negative whole number
+ *   • rating  — 0..5, one decimal
+ *   • percent — 0..1 fraction (shown as %)
+ *   • bool    — 0 or 1
+ */
+export type MetricKind = 'int' | 'rating' | 'percent' | 'bool';
+
+export interface MetricDef {
+  key: MetricKey;
+  label: string;
+  kind: MetricKind;
+  defaultOp: CriterionOp;
+  /**
+   * The legacy LevelDef field this metric mirrors (for back-compat). Only the
+   * original four metrics have one; new metrics live purely in `criteria`.
+   */
+  legacyField?: 'min_calls' | 'min_rating' | 'min_minutes' | 'min_earnings';
+}
+
+/**
+ * Catalog of metrics a level criterion can gate on. The admin panel renders one
+ * row per registry entry; adding a new metric is a single entry here plus a
+ * case in {@link resolveMetricValue} (and, if it needs live tracking, a counter
+ * bump at the relevant choke point).
+ */
+export const METRIC_REGISTRY: MetricDef[] = [
+  { key: 'review_count',   label: 'Rated calls',           kind: 'int',     defaultOp: '>=', legacyField: 'min_calls' },
+  { key: 'rating',         label: 'Average rating',        kind: 'rating',  defaultOp: '>=', legacyField: 'min_rating' },
+  { key: 'total_minutes',  label: 'Total talk-minutes',    kind: 'int',     defaultOp: '>=', legacyField: 'min_minutes' },
+  { key: 'total_earnings', label: 'Total coins earned',    kind: 'int',     defaultOp: '>=', legacyField: 'min_earnings' },
+  { key: 'unique_callers', label: 'Unique callers',        kind: 'int',     defaultOp: '>=' },
+  { key: 'answer_rate',    label: 'Answer rate',           kind: 'percent', defaultOp: '>=' },
+  { key: 'favorite_count', label: 'Followers (favorites)', kind: 'int',     defaultOp: '>=' },
+  { key: 'streak_max',     label: 'Best daily streak',     kind: 'int',     defaultOp: '>=' },
+  { key: 'tenure_days',    label: 'Days on platform',      kind: 'int',     defaultOp: '>=' },
+  { key: 'kyc_verified',   label: 'KYC verified',          kind: 'bool',    defaultOp: '==' },
+];
+
+const METRIC_BY_KEY: Record<string, MetricDef> = Object.fromEntries(
+  METRIC_REGISTRY.map((m) => [m.key, m]),
+);
+
+/** A single threshold rule on a level rung. */
+export interface Criterion {
+  metric: MetricKey;
+  op: CriterionOp;
+  value: number;
+}
 
 /** Per-level benefits unlocked when a host reaches that level. */
 export interface LevelPerks {
@@ -56,13 +142,18 @@ export interface LevelDef {
   name: string;
   badge: string;
   color: string;
-  /** Min RATED calls (review_count) required. */
+  /**
+   * Flexible threshold rules — a host must satisfy ALL of them to earn this
+   * level. Always present (possibly empty for level 1) after normalization.
+   */
+  criteria: Criterion[];
+  /** Legacy mirror of the `review_count` criterion — Min RATED calls. */
   min_calls: number;
-  /** Min average rating (0–5) required. */
+  /** Legacy mirror of the `rating` criterion — Min average rating (0–5). */
   min_rating: number;
-  /** Min total talk-time in MINUTES required (hosts.total_minutes). */
+  /** Legacy mirror of the `total_minutes` criterion — Min talk-time (minutes). */
   min_minutes: number;
-  /** Min total coins EARNED required (hosts.total_earnings — calls + tips + chat). */
+  /** Legacy mirror of the `total_earnings` criterion — Min coins earned. */
   min_earnings: number;
   coin_reward: number;
   description: string;
@@ -113,23 +204,112 @@ export const MIN_LEVELS = 1;
  */
 export const MAX_LEVELS = 20;
 
+/** Build the classic 4-metric criteria list from legacy threshold values. */
+function classicCriteria(
+  min_calls: number,
+  min_rating: number,
+  min_minutes: number,
+  min_earnings: number,
+): Criterion[] {
+  const out: Criterion[] = [];
+  if (min_calls > 0) out.push({ metric: 'review_count', op: '>=', value: min_calls });
+  if (min_rating > 0) out.push({ metric: 'rating', op: '>=', value: min_rating });
+  if (min_minutes > 0) out.push({ metric: 'total_minutes', op: '>=', value: min_minutes });
+  if (min_earnings > 0) out.push({ metric: 'total_earnings', op: '>=', value: min_earnings });
+  return out;
+}
+
 /**
- * Fallback ladder — the seed shipped before admins could add/remove rungs.
+ * Fallback ladder — the seed shipped by default. Kept intentionally to the
+ * CLASSIC four work-based metrics so:
+ *   • existing production hosts are never suddenly blocked by a metric that has
+ *     no historical data, and
+ *   • the promotion-only engine behaves exactly as before on a fresh install.
  *
- * Perk tiers are intentionally conservative so existing low-level hosts see NO
- * regression: level 1 keeps the historical 70% share, and the level-1 rate cap
- * (100) is far above what new hosts realistically charge. Higher levels earn a
- * larger share, may charge more, and rank higher — the tangible reward ladder.
- *
- * Admins may now grow this ladder (up to {@link MAX_LEVELS}); rungs above the
- * default length are seeded by {@link generateLevelDefault} when missing.
+ * Admins who want richer gating (unique callers, answer rate, followers, KYC…)
+ * can one-click load {@link RECOMMENDED_LEVEL_CONFIG} from the admin panel, or
+ * add individual criteria per rung. Perk tiers are conservative so low-level
+ * hosts see no regression: level 1 keeps the historical 70% share.
  */
 export const DEFAULT_LEVEL_CONFIG: LevelDef[] = [
-  { level: 1, name: 'Newcomer', badge: '🌱', color: '#6B7280', min_calls: 0,    min_rating: 0.0, min_minutes: 0,    min_earnings: 0,     coin_reward: 0,    description: 'New to the platform',  perks: { max_rate: 100, max_audio_rate: 100, max_video_rate: 100, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.70, rank_boost: 0 } },
-  { level: 2, name: 'Rising',   badge: '⭐', color: '#F59E0B', min_calls: 50,   min_rating: 4.0, min_minutes: 50,   min_earnings: 500,   coin_reward: 100,  description: 'Getting established',   perks: { max_rate: 150, max_audio_rate: 150, max_video_rate: 150, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.70, rank_boost: 1 } },
-  { level: 3, name: 'Expert',   badge: '🔥', color: '#EF4444', min_calls: 200,  min_rating: 4.3, min_minutes: 300,  min_earnings: 3000,  coin_reward: 300,  description: 'Proven expertise',     perks: { max_rate: 250, max_audio_rate: 250, max_video_rate: 250, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.72, rank_boost: 2 } },
-  { level: 4, name: 'Pro',      badge: '💎', color: '#8B5CF6', min_calls: 500,  min_rating: 4.6, min_minutes: 1000, min_earnings: 15000, coin_reward: 500,  description: 'Professional tier',    perks: { max_rate: 400, max_audio_rate: 400, max_video_rate: 400, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.75, rank_boost: 3 } },
-  { level: 5, name: 'Elite',    badge: '👑', color: '#D97706', min_calls: 1000, min_rating: 4.8, min_minutes: 2500, min_earnings: 50000, coin_reward: 1000, description: 'Top performer',        perks: { max_rate: 500, max_audio_rate: 500, max_video_rate: 500, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.80, rank_boost: 5 } },
+  { level: 1, name: 'Newcomer', badge: '🌱', color: '#6B7280', min_calls: 0,    min_rating: 0.0, min_minutes: 0,    min_earnings: 0,     criteria: classicCriteria(0, 0.0, 0, 0),             coin_reward: 0,    description: 'New to the platform',  perks: { max_rate: 100, max_audio_rate: 100, max_video_rate: 100, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.70, rank_boost: 0 } },
+  { level: 2, name: 'Rising',   badge: '⭐', color: '#F59E0B', min_calls: 50,   min_rating: 4.0, min_minutes: 50,   min_earnings: 500,   criteria: classicCriteria(50, 4.0, 50, 500),         coin_reward: 100,  description: 'Getting established',   perks: { max_rate: 150, max_audio_rate: 150, max_video_rate: 150, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.70, rank_boost: 1 } },
+  { level: 3, name: 'Expert',   badge: '🔥', color: '#EF4444', min_calls: 200,  min_rating: 4.3, min_minutes: 300,  min_earnings: 3000,  criteria: classicCriteria(200, 4.3, 300, 3000),      coin_reward: 300,  description: 'Proven expertise',     perks: { max_rate: 250, max_audio_rate: 250, max_video_rate: 250, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.72, rank_boost: 2 } },
+  { level: 4, name: 'Pro',      badge: '💎', color: '#8B5CF6', min_calls: 500,  min_rating: 4.6, min_minutes: 1000, min_earnings: 15000, criteria: classicCriteria(500, 4.6, 1000, 15000),    coin_reward: 500,  description: 'Professional tier',    perks: { max_rate: 400, max_audio_rate: 400, max_video_rate: 400, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.75, rank_boost: 3 } },
+  { level: 5, name: 'Elite',    badge: '👑', color: '#D97706', min_calls: 1000, min_rating: 4.8, min_minutes: 2500, min_earnings: 50000, criteria: classicCriteria(1000, 4.8, 2500, 50000),   coin_reward: 1000, description: 'Top performer',        perks: { max_rate: 500, max_audio_rate: 500, max_video_rate: 500, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.80, rank_boost: 5 } },
+];
+
+/**
+ * Richer, opt-in ladder showcasing the N-criteria engine. Higher rungs gate on
+ * QUALITY + TRUST + CONSISTENCY (unique callers, answer rate, followers,
+ * tenure, streak, KYC) on top of the classic work metrics — not just volume
+ * and revenue. Admins load this from the panel; it is NEVER auto-applied, so no
+ * host is silently blocked before the denormalized metrics are backfilled.
+ */
+export const RECOMMENDED_LEVEL_CONFIG: LevelDef[] = [
+  {
+    level: 1, name: 'Newcomer', badge: '🌱', color: '#6B7280', coin_reward: 0,
+    description: 'New to the platform',
+    criteria: [],
+    min_calls: 0, min_rating: 0, min_minutes: 0, min_earnings: 0,
+    perks: { max_rate: 100, max_audio_rate: 100, max_video_rate: 100, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.70, rank_boost: 0 },
+  },
+  {
+    level: 2, name: 'Rising', badge: '⭐', color: '#F59E0B', coin_reward: 100,
+    description: 'Getting established',
+    criteria: [
+      { metric: 'review_count', op: '>=', value: 50 },
+      { metric: 'rating', op: '>=', value: 4.0 },
+      { metric: 'total_minutes', op: '>=', value: 50 },
+      { metric: 'total_earnings', op: '>=', value: 500 },
+    ],
+    min_calls: 50, min_rating: 4.0, min_minutes: 50, min_earnings: 500,
+    perks: { max_rate: 150, max_audio_rate: 150, max_video_rate: 150, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.70, rank_boost: 1 },
+  },
+  {
+    level: 3, name: 'Expert', badge: '🔥', color: '#EF4444', coin_reward: 300,
+    description: 'Proven expertise — genuine repeat audience',
+    criteria: [
+      { metric: 'review_count', op: '>=', value: 200 },
+      { metric: 'rating', op: '>=', value: 4.3 },
+      { metric: 'total_minutes', op: '>=', value: 300 },
+      { metric: 'total_earnings', op: '>=', value: 3000 },
+      { metric: 'unique_callers', op: '>=', value: 30 },
+      { metric: 'answer_rate', op: '>=', value: 0.70 },
+    ],
+    min_calls: 200, min_rating: 4.3, min_minutes: 300, min_earnings: 3000,
+    perks: { max_rate: 250, max_audio_rate: 250, max_video_rate: 250, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.72, rank_boost: 2 },
+  },
+  {
+    level: 4, name: 'Pro', badge: '💎', color: '#8B5CF6', coin_reward: 500,
+    description: 'Professional tier — loyal fan base & consistency',
+    criteria: [
+      { metric: 'review_count', op: '>=', value: 500 },
+      { metric: 'rating', op: '>=', value: 4.6 },
+      { metric: 'total_minutes', op: '>=', value: 1000 },
+      { metric: 'total_earnings', op: '>=', value: 15000 },
+      { metric: 'favorite_count', op: '>=', value: 100 },
+      { metric: 'tenure_days', op: '>=', value: 30 },
+      { metric: 'streak_max', op: '>=', value: 7 },
+    ],
+    min_calls: 500, min_rating: 4.6, min_minutes: 1000, min_earnings: 15000,
+    perks: { max_rate: 400, max_audio_rate: 400, max_video_rate: 400, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.75, rank_boost: 3 },
+  },
+  {
+    level: 5, name: 'Elite', badge: '👑', color: '#D97706', coin_reward: 1000,
+    description: 'Top performer — trusted, verified & in demand',
+    criteria: [
+      { metric: 'review_count', op: '>=', value: 1000 },
+      { metric: 'rating', op: '>=', value: 4.8 },
+      { metric: 'total_minutes', op: '>=', value: 2500 },
+      { metric: 'total_earnings', op: '>=', value: 50000 },
+      { metric: 'unique_callers', op: '>=', value: 200 },
+      { metric: 'answer_rate', op: '>=', value: 0.85 },
+      { metric: 'kyc_verified', op: '==', value: 1 },
+    ],
+    min_calls: 1000, min_rating: 4.8, min_minutes: 2500, min_earnings: 50000,
+    perks: { max_rate: 500, max_audio_rate: 500, max_video_rate: 500, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.80, rank_boost: 5 },
+  },
 ];
 
 /**
@@ -139,7 +319,7 @@ export const DEFAULT_LEVEL_CONFIG: LevelDef[] = [
  *
  * The values scale linearly off the last seeded rung (level 5) so call/rating
  * thresholds, rewards and rate caps keep climbing — but everything is also
- * clamped to safe bounds (max_rating <= 5, max_rate <= ABSOLUTE_MAX_RATE).
+ * clamped to safe bounds (min_rating <= 5, max_rate <= ABSOLUTE_MAX_RATE).
  */
 function generateLevelDefault(level: number): LevelDef {
   const base = DEFAULT_LEVEL_CONFIG[DEFAULT_LEVEL_CONFIG.length - 1];
@@ -176,6 +356,7 @@ function generateLevelDefault(level: number): LevelDef {
     min_rating,
     min_minutes,
     min_earnings,
+    criteria: classicCriteria(min_calls, min_rating, min_minutes, min_earnings),
     coin_reward,
     description: 'Custom tier — configure in admin panel',
     perks: {
@@ -242,15 +423,81 @@ function normalizePerks(input: any, fallback: LevelPerks): LevelPerks {
   };
 }
 
+/** Clamp a single criterion value into the safe band for its metric kind. */
+function clampCriterionValue(kind: MetricKind, raw: number): number {
+  if (!isFinite(raw)) return 0;
+  switch (kind) {
+    case 'rating':
+      return Math.min(5, Math.max(0, Math.round(raw * 10) / 10));
+    case 'percent':
+      // Accept either a 0–1 fraction or a 0–100 percentage typed by an admin.
+      return Math.min(1, Math.max(0, raw > 1 ? raw / 100 : raw));
+    case 'bool':
+      return raw >= 1 ? 1 : 0;
+    case 'int':
+    default:
+      return Math.max(0, Math.floor(raw));
+  }
+}
+
+/**
+ * Validate + clamp an arbitrary `criteria` array. Drops entries referencing
+ * unknown metrics, coerces the operator, clamps the value to the metric's kind,
+ * and de-duplicates by metric (last one wins) so a rung can't gate on the same
+ * metric twice.
+ */
+function normalizeCriteria(input: any): Criterion[] {
+  if (!Array.isArray(input)) return [];
+  const byMetric = new Map<MetricKey, Criterion>();
+  for (const raw of input) {
+    const key = String(raw?.metric) as MetricKey;
+    const def = METRIC_BY_KEY[key];
+    if (!def) continue; // unknown metric — ignore
+    const op: CriterionOp = raw?.op === '==' ? '==' : '>=';
+    const value = clampCriterionValue(def.kind, Number(raw?.value));
+    byMetric.set(key, { metric: key, op, value });
+  }
+  return Array.from(byMetric.values());
+}
+
+/** Read a legacy min_* mirror value off a criteria list (0 when absent). */
+function legacyMirror(criteria: Criterion[], metric: MetricKey): number {
+  const c = criteria.find((x) => x.metric === metric);
+  return c ? c.value : 0;
+}
+
+/**
+ * Resolve the effective criteria for a rung. Prefers an explicit `criteria`
+ * array; otherwise synthesizes the classic four from the legacy min_* fields.
+ * Used everywhere a rung is evaluated so both v2 and pre-v2 configs work — even
+ * when passed straight to evaluateLevel without going through
+ * normalizeLevelConfig (e.g. DEFAULT_LEVEL_CONFIG in unit tests).
+ */
+function criteriaForLevel(l: LevelDef | any): Criterion[] {
+  if (Array.isArray(l?.criteria) && l.criteria.length > 0) {
+    return normalizeCriteria(l.criteria);
+  }
+  return classicCriteria(
+    Math.max(0, parseInt(String(l?.min_calls)) || 0),
+    Math.min(5, Math.max(0, parseFloat(String(l?.min_rating)) || 0)),
+    Math.max(0, parseInt(String(l?.min_minutes)) || 0),
+    Math.max(0, parseInt(String(l?.min_earnings)) || 0),
+  );
+}
+
 /**
  * Normalize an arbitrary saved/posted config into a strict ascending ladder
  * of {@link MIN_LEVELS}..{@link MAX_LEVELS} entries. `level` is always
  * renumbered to match position (1..N) so admin-side reorders or deletions
  * never produce gaps. Missing/invalid fields fall back to the seeded default
  * for that slot — or a generated default for slots above the seeded length —
- * so a partially corrupted row can never crash a read path. Perks are
- * backfilled from the defaults when older saved configs predate the perks
- * field.
+ * so a partially corrupted row can never crash a read path.
+ *
+ * Criteria handling:
+ *   • If a rung supplies a `criteria` array, it is validated/clamped and used
+ *     verbatim; the legacy min_* fields are re-derived from it.
+ *   • If it has no `criteria` (a pre-v2 saved config), criteria are synthesized
+ *     from the legacy min_* fields — transparently upgrading old data.
  *
  * Inputs that are not arrays, are empty, or exceed {@link MAX_LEVELS} fall
  * back to the full {@link DEFAULT_LEVEL_CONFIG}.
@@ -260,6 +507,20 @@ export function normalizeLevelConfig(input: unknown): LevelDef[] {
   if (input.length < MIN_LEVELS || input.length > MAX_LEVELS) return DEFAULT_LEVEL_CONFIG;
   return input.map((l: any, i: number) => {
     const fallback = fallbackForSlot(i);
+    // New multi-metric thresholds. Missing on older saved configs → fall back
+    // to the seeded default for that slot, so the feature is active with
+    // sensible values without a data migration.
+    const legacyCalls = Math.max(0, parseInt(String(l?.min_calls)) || 0);
+    const legacyRating = Math.min(5, Math.max(0, parseFloat(String(l?.min_rating)) || 0));
+    const legacyMinutes = Math.max(0, parseInt(String(l?.min_minutes)) || (l?.min_minutes === 0 ? 0 : fallback.min_minutes));
+    const legacyEarnings = Math.max(0, parseInt(String(l?.min_earnings)) || (l?.min_earnings === 0 ? 0 : fallback.min_earnings));
+
+    // Explicit criteria win; otherwise synthesize from the (possibly
+    // backfilled) legacy thresholds so pre-v2 ladders keep their exact gating.
+    const criteria = Array.isArray(l?.criteria) && l.criteria.length > 0
+      ? normalizeCriteria(l.criteria)
+      : classicCriteria(legacyCalls, legacyRating, legacyMinutes, legacyEarnings);
+
     return {
       // Always renumber sequentially so add/remove operations on the admin
       // side don't leak gaps or duplicates into stored data.
@@ -267,13 +528,13 @@ export function normalizeLevelConfig(input: unknown): LevelDef[] {
       name: String(l?.name || fallback.name),
       badge: String(l?.badge || fallback.badge),
       color: String(l?.color || fallback.color),
-      min_calls: Math.max(0, parseInt(String(l?.min_calls)) || 0),
-      min_rating: Math.min(5, Math.max(0, parseFloat(String(l?.min_rating)) || 0)),
-      // New multi-metric thresholds. Missing on older saved configs → fall
-      // back to the seeded default for that slot (consistent with perks), so
-      // the feature is active with sensible values without a data migration.
-      min_minutes: Math.max(0, parseInt(String(l?.min_minutes)) || (l?.min_minutes === 0 ? 0 : fallback.min_minutes)),
-      min_earnings: Math.max(0, parseInt(String(l?.min_earnings)) || (l?.min_earnings === 0 ? 0 : fallback.min_earnings)),
+      criteria,
+      // Legacy mirrors — derived from the effective criteria so old readers and
+      // the classic progress keys stay in sync with the source of truth.
+      min_calls: legacyMirror(criteria, 'review_count'),
+      min_rating: legacyMirror(criteria, 'rating'),
+      min_minutes: legacyMirror(criteria, 'total_minutes'),
+      min_earnings: legacyMirror(criteria, 'total_earnings'),
       coin_reward: Math.max(0, parseInt(String(l?.coin_reward)) || 0),
       description: String(l?.description ?? ''),
       perks: normalizePerks(l?.perks, fallback.perks),
@@ -281,15 +542,37 @@ export function normalizeLevelConfig(input: unknown): LevelDef[] {
   });
 }
 
+// ── Config cache ──────────────────────────────────────────────────────────
+// getLevelConfig is called many times per request across routes (host listing,
+// matchmaking, rating, billing). Reading + parsing app_settings every time is
+// wasteful, so we cache the parsed ladder per worker isolate for a short TTL.
+// The cache is invalidated explicitly whenever an admin writes a new config
+// (see clearLevelConfigCache), and the short TTL bounds staleness for any
+// out-of-band write. This is the hot-path scalability win for the level system.
+const LEVEL_CONFIG_CACHE_TTL_MS = 30_000;
+let levelConfigCache: { at: number; cfg: LevelDef[] } | null = null;
+
+/** Drop the cached level config so the next read reloads from app_settings. */
+export function clearLevelConfigCache(): void {
+  levelConfigCache = null;
+}
+
 /** Load the saved level config from app_settings, or the default ladder. */
 export async function getLevelConfig(d: D1Database): Promise<LevelDef[]> {
+  const now = Date.now();
+  if (levelConfigCache && now - levelConfigCache.at < LEVEL_CONFIG_CACHE_TTL_MS) {
+    return levelConfigCache.cfg;
+  }
+  let cfg: LevelDef[] = DEFAULT_LEVEL_CONFIG;
   try {
     const row = await d.prepare("SELECT value FROM app_settings WHERE key = 'level_config'").first<any>();
-    if (row?.value) return normalizeLevelConfig(JSON.parse(row.value));
+    if (row?.value) cfg = normalizeLevelConfig(JSON.parse(row.value));
   } catch (err) {
     console.error('[getLevelConfig] Error fetching or parsing level_config:', err);
+    cfg = DEFAULT_LEVEL_CONFIG;
   }
-  return DEFAULT_LEVEL_CONFIG;
+  levelConfigCache = { at: now, cfg };
+  return cfg;
 }
 
 /**
@@ -344,30 +627,83 @@ export interface HostLevelStats {
   total_minutes?: number;
   /** Total coins earned (hosts.total_earnings — calls + tips + chat). Optional. */
   total_earnings?: number;
+  /** Distinct callers who reached an answered/completed call (hosts.unique_callers). */
+  unique_callers?: number;
+  /** Calls the host actually answered (hosts.answered_calls). */
+  answered_calls?: number;
+  /** Calls that ever reached the host (hosts.incoming_calls). */
+  incoming_calls?: number;
+  /** Current follower/favorite count (hosts.favorite_count). */
+  favorite_count?: number;
+  /** Best consecutive-active-day streak (hosts.streak_max). */
+  streak_max?: number;
+  /** Unix seconds — host account creation time, for tenure_days. */
+  created_at?: number;
+  /** Identity verified flag (hosts.identity_verified, 0/1). */
+  identity_verified?: number;
+  /** Optional "now" override (unix seconds) for deterministic tenure tests. */
+  now?: number;
+}
+
+function num(v: unknown): number {
+  const n = Number(v);
+  return isFinite(n) && n > 0 ? n : 0;
+}
+
+/**
+ * Resolve the current value of a metric for a host, including derived metrics
+ * (answer_rate from answered/incoming, tenure_days from created_at, kyc from
+ * identity_verified). This is the single place that maps a MetricKey to a
+ * number, shared by evaluation and progress display.
+ */
+export function resolveMetricValue(stats: HostLevelStats, metric: MetricKey): number {
+  switch (metric) {
+    case 'review_count': return num(stats.review_count);
+    case 'rating': return num(stats.rating);
+    case 'total_minutes': return num(stats.total_minutes);
+    case 'total_earnings': return num(stats.total_earnings);
+    case 'unique_callers': return num(stats.unique_callers);
+    case 'favorite_count': return num(stats.favorite_count);
+    case 'streak_max': return num(stats.streak_max);
+    case 'kyc_verified': return num(stats.identity_verified) >= 1 ? 1 : 0;
+    case 'answer_rate': {
+      const inc = num(stats.incoming_calls);
+      const ans = num(stats.answered_calls);
+      // No incoming calls yet → don't block a brand-new host on a ratio that
+      // has no denominator; other criteria (min calls) gate them instead.
+      if (inc <= 0) return 1;
+      return Math.min(1, ans / inc);
+    }
+    case 'tenure_days': {
+      if (!stats.created_at) return 0;
+      const nowSec = stats.now ?? Math.floor(Date.now() / 1000);
+      return Math.max(0, Math.floor((nowSec - stats.created_at) / 86400));
+    }
+    default:
+      return 0;
+  }
+}
+
+/** Whether a single criterion is satisfied by the host's stats. */
+function criterionMet(stats: HostLevelStats, c: Criterion): boolean {
+  const v = resolveMetricValue(stats, c.metric);
+  return c.op === '==' ? v === c.value : v >= c.value;
 }
 
 /**
  * The level a host has EARNED purely from their stats — the highest rung whose
- * thresholds (min_calls + min_rating + min_minutes + min_earnings) are ALL
- * satisfied. Level 1 is the floor. This is the authoritative promotion check
- * used by the auto level-up engine, so it must exactly match
- * computeLevelProgress's gating below.
+ * criteria are ALL satisfied. Level 1 is the floor. This is the authoritative
+ * promotion check used by the auto level-up engine, so it must exactly match
+ * computeLevelProgress's gating below. Works with both v2 (criteria) and pre-v2
+ * (legacy min_*) configs via {@link criteriaForLevel}.
  */
 export function evaluateLevel(stats: HostLevelStats, config: LevelDef[]): number {
   const ladder = asLadder(config);
-  const calls = Math.max(0, Number(stats.review_count) || 0);
-  const rating = Math.max(0, Number(stats.rating) || 0);
-  const minutes = Math.max(0, Number(stats.total_minutes) || 0);
-  const earnings = Math.max(0, Number(stats.total_earnings) || 0);
   let earned = 1;
   for (const lvl of ladder) {
     if (lvl.level === 1) continue;
-    if (
-      calls >= lvl.min_calls &&
-      rating >= lvl.min_rating &&
-      minutes >= (lvl.min_minutes || 0) &&
-      earnings >= (lvl.min_earnings || 0)
-    ) {
+    const criteria = criteriaForLevel(lvl);
+    if (criteria.every((c) => criterionMet(stats, c))) {
       earned = lvl.level;
     }
   }
@@ -478,8 +814,20 @@ export function rankBoostCaseSql(config: LevelDef[], levelCol = 'h.level'): stri
   return `CASE COALESCE(${levelCol},1) ${whens} ELSE 0 END`;
 }
 
+/** Per-criterion progress detail for the generic (N-metric) view. */
+export interface CriterionProgress {
+  metric: MetricKey;
+  label: string;
+  kind: MetricKind;
+  op: CriterionOp;
+  required: number;
+  current: number;
+  pct: number;
+  met: boolean;
+}
+
 export interface LevelProgress {
-  /** The host's current level number (1–5). */
+  /** The host's current level number. */
   level: number;
   /** Config entry for the current level. */
   current: LevelDef;
@@ -489,13 +837,19 @@ export interface LevelProgress {
   is_max_level: boolean;
   /** 0–100 progress towards the next level (min of all requirement %s). */
   progress_pct: number;
-  /** Per-requirement breakdown towards the next level. */
+  /**
+   * Classic per-requirement breakdown (calls/rating/minutes/earnings) — kept
+   * for backward compatibility with existing clients. Derived from the next
+   * rung's criteria; a metric the next rung doesn't gate on reports met=true.
+   */
   requirements: {
     calls: { current: number; required: number; pct: number; met: boolean };
     rating: { current: number; required: number; pct: number; met: boolean };
     minutes: { current: number; required: number; pct: number; met: boolean };
     earnings: { current: number; required: number; pct: number; met: boolean };
   };
+  /** Generic per-criterion breakdown for the next level (all N metrics). */
+  criteria: CriterionProgress[];
   /** Perks unlocked at the current level. */
   perks: LevelPerks;
 }
@@ -504,6 +858,29 @@ function clampPct(n: number): number {
   if (!isFinite(n) || n < 0) return 0;
   if (n > 100) return 100;
   return Math.round(n);
+}
+
+/** Progress % of a single criterion (== criteria are all-or-nothing). */
+function criterionPct(current: number, c: Criterion): number {
+  if (c.op === '==') return current === c.value ? 100 : 0;
+  if (c.value <= 0) return 100;
+  return clampPct((current / c.value) * 100);
+}
+
+/** Build the classic 4-key requirements block from a criteria list. */
+function classicRequirements(stats: HostLevelStats, criteria: Criterion[]) {
+  const build = (metric: MetricKey) => {
+    const c = criteria.find((x) => x.metric === metric);
+    const current = resolveMetricValue(stats, metric);
+    if (!c) return { current, required: 0, pct: 100, met: true };
+    return { current, required: c.value, pct: criterionPct(current, c), met: criterionMet(stats, c) };
+  };
+  return {
+    calls: build('review_count'),
+    rating: build('rating'),
+    minutes: build('total_minutes'),
+    earnings: build('total_earnings'),
+  };
 }
 
 /**
@@ -519,11 +896,6 @@ export function computeLevelProgress(
 ): LevelProgress {
   const ladder = asLadder(config);
 
-  const calls = Math.max(0, Number(stats.review_count) || 0);
-  const rating = Math.max(0, Number(stats.rating) || 0);
-  const minutes = Math.max(0, Number(stats.total_minutes) || 0);
-  const earnings = Math.max(0, Number(stats.total_earnings) || 0);
-
   const earned = evaluateLevel(stats, ladder);
   // Prefer the stored level when it is a valid rung; never show below earned.
   const stored = storedLevel && storedLevel >= 1 && storedLevel <= ladder.length ? storedLevel : earned;
@@ -534,6 +906,7 @@ export function computeLevelProgress(
   const is_max_level = next === null;
 
   if (!next) {
+    const criteria = criteriaForLevel(current);
     return {
       level: levelNum,
       current,
@@ -541,23 +914,40 @@ export function computeLevelProgress(
       is_max_level: true,
       progress_pct: 100,
       requirements: {
-        calls: { current: calls, required: current.min_calls, pct: 100, met: true },
-        rating: { current: rating, required: current.min_rating, pct: 100, met: true },
-        minutes: { current: minutes, required: current.min_minutes, pct: 100, met: true },
-        earnings: { current: earnings, required: current.min_earnings, pct: 100, met: true },
+        calls: { current: resolveMetricValue(stats, 'review_count'), required: current.min_calls, pct: 100, met: true },
+        rating: { current: resolveMetricValue(stats, 'rating'), required: current.min_rating, pct: 100, met: true },
+        minutes: { current: resolveMetricValue(stats, 'total_minutes'), required: current.min_minutes, pct: 100, met: true },
+        earnings: { current: resolveMetricValue(stats, 'total_earnings'), required: current.min_earnings, pct: 100, met: true },
       },
+      criteria: criteria.map((c) => {
+        const def = METRIC_BY_KEY[c.metric];
+        const cur = resolveMetricValue(stats, c.metric);
+        return { metric: c.metric, label: def?.label ?? c.metric, kind: def?.kind ?? 'int', op: c.op, required: c.value, current: cur, pct: 100, met: true };
+      }),
       perks: current.perks,
     };
   }
 
-  const nextMinutes = next.min_minutes || 0;
-  const nextEarnings = next.min_earnings || 0;
-  const callsPct = next.min_calls > 0 ? clampPct((calls / next.min_calls) * 100) : 100;
-  const ratingPct = next.min_rating > 0 ? clampPct((rating / next.min_rating) * 100) : 100;
-  const minutesPct = nextMinutes > 0 ? clampPct((minutes / nextMinutes) * 100) : 100;
-  const earningsPct = nextEarnings > 0 ? clampPct((earnings / nextEarnings) * 100) : 100;
+  const nextCriteria = criteriaForLevel(next);
+  const criteriaProgress: CriterionProgress[] = nextCriteria.map((c) => {
+    const def = METRIC_BY_KEY[c.metric];
+    const cur = resolveMetricValue(stats, c.metric);
+    return {
+      metric: c.metric,
+      label: def?.label ?? c.metric,
+      kind: def?.kind ?? 'int',
+      op: c.op,
+      required: c.value,
+      current: cur,
+      pct: criterionPct(cur, c),
+      met: criterionMet(stats, c),
+    };
+  });
+
   // Overall progress is gated by the slowest requirement — ALL must be met.
-  const progress_pct = Math.min(callsPct, ratingPct, minutesPct, earningsPct);
+  const progress_pct = criteriaProgress.length
+    ? Math.min(...criteriaProgress.map((c) => c.pct))
+    : 100;
 
   return {
     level: levelNum,
@@ -565,12 +955,8 @@ export function computeLevelProgress(
     next,
     is_max_level,
     progress_pct,
-    requirements: {
-      calls: { current: calls, required: next.min_calls, pct: callsPct, met: calls >= next.min_calls },
-      rating: { current: rating, required: next.min_rating, pct: ratingPct, met: rating >= next.min_rating },
-      minutes: { current: minutes, required: nextMinutes, pct: minutesPct, met: minutes >= nextMinutes },
-      earnings: { current: earnings, required: nextEarnings, pct: earningsPct, met: earnings >= nextEarnings },
-    },
+    requirements: classicRequirements(stats, nextCriteria),
+    criteria: criteriaProgress,
     perks: current.perks,
   };
 }

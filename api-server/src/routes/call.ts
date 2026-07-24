@@ -313,6 +313,19 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
     return c.json({ error: 'Host is currently busy. Please try again later.' }, 409);
   }
 
+  // Level metric (denormalized): every created call counts as an "incoming"
+  // call for the host. Paired with answered_calls (bumped on accept) this
+  // yields the answer_rate metric the level engine can gate on — computed as a
+  // cheap O(1) read instead of an aggregate over call_sessions. Best-effort.
+  try {
+    await db
+      .prepare('UPDATE hosts SET incoming_calls = incoming_calls + 1 WHERE id = ?')
+      .bind(body.host_id)
+      .run();
+  } catch (e) {
+    console.warn('[initiate] incoming_calls bump failed:', e);
+  }
+
   // Mark the originating random match as 'accepted' so the decline-cooldown
   // guard doesn't count it as a decline. Best-effort — failure here is not
   // user-visible, the call still proceeds.
@@ -721,6 +734,35 @@ call.post('/:id/answer', async (c) => {
   ).bind(now, sessionId).run();
   if (!acceptUpdate.meta?.changes || acceptUpdate.meta.changes === 0) {
     return c.json({ error: 'Call already answered or cancelled' }, 409);
+  }
+
+  // Level metrics (denormalized): the host just answered a call. Bump
+  // answered_calls, and if this caller has never reached a call with the host
+  // before, bump unique_callers too. Both feed the flexible level criteria
+  // (answer_rate, unique_callers) with O(1) reads at evaluation time. The
+  // prior-call check excludes THIS session (already flipped to 'active'), so a
+  // caller's very first answered call is counted exactly once. Best-effort — a
+  // failure here must never block the call from connecting.
+  try {
+    const priorCall = await db
+      .prepare(
+        `SELECT 1 as ok FROM call_sessions
+         WHERE host_id = ? AND caller_id = ? AND status IN ('active','ended') AND id != ?
+         LIMIT 1`,
+      )
+      .bind(session.host_id, session.caller_id, sessionId)
+      .first<{ ok: number }>();
+    const isNewCaller = !priorCall;
+    await db
+      .prepare(
+        `UPDATE hosts
+         SET answered_calls = answered_calls + 1${isNewCaller ? ', unique_callers = unique_callers + 1' : ''}
+         WHERE id = ?`,
+      )
+      .bind(session.host_id)
+      .run();
+  } catch (e) {
+    console.warn('[/:id/answer] level metric bump failed:', e);
   }
 
   // Item 2 — prepaid coin hold: reserve the caller's spendable coins for the

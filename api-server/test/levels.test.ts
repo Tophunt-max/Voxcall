@@ -296,3 +296,215 @@ describe('per-level random call rates', () => {
     }
   });
 });
+
+
+// ============================================================================
+// Flexible N-criteria engine (v2)
+// ============================================================================
+import {
+  METRIC_REGISTRY,
+  RECOMMENDED_LEVEL_CONFIG,
+  resolveMetricValue,
+  computeLevelProgress,
+  type Criterion,
+} from '../src/lib/levels';
+
+// A tiny ladder builder: level 1 floor + one gated rung with arbitrary
+// criteria. The legacy min_* fields are zeroed on the gated rung so an EMPTY
+// criteria array truly means "no gates" (otherwise normalizeLevelConfig would
+// synthesize the classic criteria from the spread legacy fields).
+function ladderWith(criteria: Criterion[]) {
+  return normalizeLevelConfig([
+    { ...DEFAULT_LEVEL_CONFIG[0], criteria: [] },
+    { ...DEFAULT_LEVEL_CONFIG[1], min_calls: 0, min_rating: 0, min_minutes: 0, min_earnings: 0, criteria },
+  ]);
+}
+
+describe('METRIC_REGISTRY', () => {
+  it('exposes the ten supported metrics with unique keys', () => {
+    const keys = METRIC_REGISTRY.map((m) => m.key);
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(keys).toContain('unique_callers');
+    expect(keys).toContain('answer_rate');
+    expect(keys).toContain('favorite_count');
+    expect(keys).toContain('streak_max');
+    expect(keys).toContain('tenure_days');
+    expect(keys).toContain('kyc_verified');
+  });
+});
+
+describe('resolveMetricValue — derived metrics', () => {
+  it('answer_rate = answered / incoming, clamped to 1, and 1 when no incoming', () => {
+    expect(resolveMetricValue({ review_count: 0, rating: 0, answered_calls: 85, incoming_calls: 100 }, 'answer_rate')).toBeCloseTo(0.85);
+    expect(resolveMetricValue({ review_count: 0, rating: 0, answered_calls: 0, incoming_calls: 0 }, 'answer_rate')).toBe(1);
+    expect(resolveMetricValue({ review_count: 0, rating: 0, answered_calls: 200, incoming_calls: 100 }, 'answer_rate')).toBe(1);
+  });
+
+  it('tenure_days = whole days since created_at (using the `now` override)', () => {
+    const now = 1_000_000_000;
+    const created = now - 30 * 86400;
+    expect(resolveMetricValue({ review_count: 0, rating: 0, created_at: created, now }, 'tenure_days')).toBe(30);
+    expect(resolveMetricValue({ review_count: 0, rating: 0, now }, 'tenure_days')).toBe(0);
+  });
+
+  it('kyc_verified normalizes identity_verified to 0/1', () => {
+    expect(resolveMetricValue({ review_count: 0, rating: 0, identity_verified: 1 }, 'kyc_verified')).toBe(1);
+    expect(resolveMetricValue({ review_count: 0, rating: 0, identity_verified: 0 }, 'kyc_verified')).toBe(0);
+  });
+});
+
+describe('evaluateLevel — arbitrary criteria', () => {
+  it('gates on a single non-classic metric (unique_callers)', () => {
+    const cfg = ladderWith([{ metric: 'unique_callers', op: '>=', value: 30 }]);
+    expect(evaluateLevel({ review_count: 999, rating: 5, unique_callers: 29 }, cfg)).toBe(1);
+    expect(evaluateLevel({ review_count: 0, rating: 0, unique_callers: 30 }, cfg)).toBe(2);
+  });
+
+  it('requires ALL criteria across mixed metric types', () => {
+    const cfg = ladderWith([
+      { metric: 'review_count', op: '>=', value: 100 },
+      { metric: 'answer_rate', op: '>=', value: 0.8 },
+      { metric: 'kyc_verified', op: '==', value: 1 },
+    ]);
+    // KYC missing → stays level 1
+    expect(evaluateLevel({ review_count: 100, rating: 0, answered_calls: 90, incoming_calls: 100, identity_verified: 0 }, cfg)).toBe(1);
+    // All three satisfied → promoted
+    expect(evaluateLevel({ review_count: 100, rating: 0, answered_calls: 90, incoming_calls: 100, identity_verified: 1 }, cfg)).toBe(2);
+  });
+
+  it('an == criterion is exact, not a floor', () => {
+    const cfg = ladderWith([{ metric: 'kyc_verified', op: '==', value: 1 }]);
+    expect(evaluateLevel({ review_count: 0, rating: 0, identity_verified: 1 }, cfg)).toBe(2);
+    expect(evaluateLevel({ review_count: 0, rating: 0, identity_verified: 0 }, cfg)).toBe(1);
+  });
+
+  it('a rung with zero criteria is reachable by anyone', () => {
+    const cfg = ladderWith([]);
+    expect(evaluateLevel({ review_count: 0, rating: 0 }, cfg)).toBe(2);
+  });
+});
+
+describe('normalizeLevelConfig — criteria validation', () => {
+  it('drops criteria referencing unknown metrics and clamps values by kind', () => {
+    const out = normalizeLevelConfig([
+      { ...DEFAULT_LEVEL_CONFIG[0], criteria: [] },
+      {
+        ...DEFAULT_LEVEL_CONFIG[1],
+        criteria: [
+          { metric: 'bogus_metric', op: '>=', value: 5 },        // dropped
+          { metric: 'rating', op: '>=', value: 9 },               // clamped to 5
+          { metric: 'answer_rate', op: '>=', value: 250 },        // 250 → treated as % → 1.0
+          { metric: 'kyc_verified', op: '>=', value: 3 },         // bool → 1
+          { metric: 'unique_callers', op: '>=', value: 12.9 },    // int floor → 12
+        ],
+      },
+    ]);
+    const crit = out[1].criteria;
+    expect(crit.find((c) => c.metric === ('bogus_metric' as any))).toBeUndefined();
+    expect(crit.find((c) => c.metric === 'rating')!.value).toBe(5);
+    expect(crit.find((c) => c.metric === 'answer_rate')!.value).toBe(1);
+    expect(crit.find((c) => c.metric === 'kyc_verified')!.value).toBe(1);
+    expect(crit.find((c) => c.metric === 'unique_callers')!.value).toBe(12);
+  });
+
+  it('accepts a 0–1 fraction for percent metrics as-is', () => {
+    const out = normalizeLevelConfig([
+      { ...DEFAULT_LEVEL_CONFIG[0], criteria: [] },
+      { ...DEFAULT_LEVEL_CONFIG[1], criteria: [{ metric: 'answer_rate', op: '>=', value: 0.85 }] },
+    ]);
+    expect(out[1].criteria[0].value).toBeCloseTo(0.85);
+  });
+
+  it('de-duplicates repeated metrics on a rung (last wins)', () => {
+    const out = normalizeLevelConfig([
+      { ...DEFAULT_LEVEL_CONFIG[0], criteria: [] },
+      { ...DEFAULT_LEVEL_CONFIG[1], criteria: [
+        { metric: 'review_count', op: '>=', value: 50 },
+        { metric: 'review_count', op: '>=', value: 99 },
+      ] },
+    ]);
+    const rc = out[1].criteria.filter((c) => c.metric === 'review_count');
+    expect(rc).toHaveLength(1);
+    expect(rc[0].value).toBe(99);
+  });
+
+  it('mirrors the classic legacy min_* fields from the effective criteria', () => {
+    const out = normalizeLevelConfig([
+      { ...DEFAULT_LEVEL_CONFIG[0], criteria: [] },
+      { ...DEFAULT_LEVEL_CONFIG[1], criteria: [
+        { metric: 'review_count', op: '>=', value: 120 },
+        { metric: 'rating', op: '>=', value: 4.2 },
+        { metric: 'unique_callers', op: '>=', value: 40 },
+      ] },
+    ]);
+    expect(out[1].min_calls).toBe(120);
+    expect(out[1].min_rating).toBe(4.2);
+    // No total_minutes / total_earnings criterion → legacy mirrors are 0.
+    expect(out[1].min_minutes).toBe(0);
+    expect(out[1].min_earnings).toBe(0);
+  });
+
+  it('synthesizes criteria from legacy min_* when no criteria array is present (pre-v2 config)', () => {
+    const out = normalizeLevelConfig([
+      { level: 1, name: 'A', badge: '', color: '', min_calls: 0, min_rating: 0, min_minutes: 0, min_earnings: 0, coin_reward: 0, description: '', perks: DEFAULT_LEVEL_CONFIG[0].perks },
+      { level: 2, name: 'B', badge: '', color: '', min_calls: 50, min_rating: 4, min_minutes: 50, min_earnings: 500, coin_reward: 100, description: '', perks: DEFAULT_LEVEL_CONFIG[1].perks },
+    ] as any);
+    expect(out[1].criteria).toEqual([
+      { metric: 'review_count', op: '>=', value: 50 },
+      { metric: 'rating', op: '>=', value: 4 },
+      { metric: 'total_minutes', op: '>=', value: 50 },
+      { metric: 'total_earnings', op: '>=', value: 500 },
+    ]);
+  });
+});
+
+describe('computeLevelProgress — generic criteria breakdown', () => {
+  it('reports per-criterion progress and gates overall % on the slowest one', () => {
+    const cfg = ladderWith([
+      { metric: 'review_count', op: '>=', value: 100 },
+      { metric: 'unique_callers', op: '>=', value: 50 },
+    ]);
+    const p = computeLevelProgress({ review_count: 100, rating: 0, unique_callers: 25 }, cfg, 1);
+    expect(p.level).toBe(1);
+    expect(p.criteria).toHaveLength(2);
+    const uc = p.criteria.find((c) => c.metric === 'unique_callers')!;
+    expect(uc.pct).toBe(50);
+    expect(uc.met).toBe(false);
+    // review_count is fully met (100/100) but unique_callers only 50% → overall 50.
+    expect(p.progress_pct).toBe(50);
+  });
+
+  it('keeps the classic 4 requirement keys for backward compatibility', () => {
+    const cfg = ladderWith([{ metric: 'review_count', op: '>=', value: 100 }]);
+    const p = computeLevelProgress({ review_count: 40, rating: 0 }, cfg, 1);
+    expect(p.requirements.calls.required).toBe(100);
+    expect(p.requirements.calls.current).toBe(40);
+    // A metric the next rung doesn't gate on reports met=true.
+    expect(p.requirements.minutes.met).toBe(true);
+  });
+});
+
+describe('RECOMMENDED_LEVEL_CONFIG — richer opt-in ladder', () => {
+  it('normalizes cleanly and gates high tiers on quality/trust metrics', () => {
+    const cfg = normalizeLevelConfig(RECOMMENDED_LEVEL_CONFIG);
+    expect(cfg).toHaveLength(5);
+    // A host with huge classic stats but no unique_callers/answer_rate/KYC
+    // must NOT reach Elite (level 5) — it stalls before the quality gates.
+    const classicOnly = evaluateLevel(
+      { review_count: 5000, rating: 5, total_minutes: 9999, total_earnings: 999999 },
+      cfg,
+    );
+    expect(classicOnly).toBeLessThan(5);
+    // Supplying the quality/trust metrics unlocks Elite.
+    const full = evaluateLevel(
+      {
+        review_count: 5000, rating: 5, total_minutes: 9999, total_earnings: 999999,
+        unique_callers: 500, answered_calls: 950, incoming_calls: 1000,
+        favorite_count: 500, streak_max: 30, identity_verified: 1,
+        created_at: 0, now: 400 * 86400,
+      },
+      cfg,
+    );
+    expect(full).toBe(5);
+  });
+});

@@ -111,6 +111,7 @@ import m_0062 from '../../migrations/0062_coin_tx_type_no_check.sql';
 import m_0063 from '../../migrations/0063_users_device_id_unique.sql';
 import m_0064 from '../../migrations/0064_scheduled_notifications.sql';
 import m_0065 from '../../migrations/0065_gift_idempotency.sql';
+import m_0066 from '../../migrations/0066_host_level_metrics.sql';
 
 interface Migration {
   /**
@@ -188,6 +189,7 @@ const MIGRATIONS: ReadonlyArray<Migration> = [
   { name: '0063_users_device_id_unique.sql',        sql: m_0063 },
   { name: '0064_scheduled_notifications.sql',       sql: m_0064 },
   { name: '0065_gift_idempotency.sql',              sql: m_0065 },
+  { name: '0066_host_level_metrics.sql',            sql: m_0066 },
 ];
 
 /**

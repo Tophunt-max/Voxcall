@@ -343,8 +343,18 @@ user.post('/favorites/:hostId', async (c) => {
     if ((Number(cntRow?.cnt) || 0) >= MAX_FAVORITES) {
       return c.json({ error: `You can favorite up to ${MAX_FAVORITES} hosts`, code: 'FAVORITES_LIMIT' }, 409);
     }
-    await db.prepare('INSERT OR IGNORE INTO user_favorites (id, user_id, host_id) VALUES (?, ?, ?)')
+    const ins = await db.prepare('INSERT OR IGNORE INTO user_favorites (id, user_id, host_id) VALUES (?, ?, ?)')
       .bind(crypto.randomUUID(), sub, hostId).run();
+    // Level metric (denormalized): keep hosts.favorite_count in sync with the
+    // number of followers so the level engine can gate on it via an O(1) read
+    // instead of COUNT(*) over user_favorites. Only bump when a row was
+    // actually inserted (INSERT OR IGNORE may no-op on a race). Best-effort.
+    if (ins.meta?.changes) {
+      try {
+        await db.prepare('UPDATE hosts SET favorite_count = favorite_count + 1 WHERE id = ?')
+          .bind(hostId).run();
+      } catch (e) { console.warn('[favorites:add] favorite_count bump failed:', e); }
+    }
     // Real-time: tell the host someone favorited them (live toast).
     try {
       const me = await db.prepare('SELECT name FROM users WHERE id = ?').bind(sub).first<{ name: string }>();
@@ -381,6 +391,15 @@ user.delete('/favorites/:hostId', async (c) => {
   const res = await db.prepare('DELETE FROM user_favorites WHERE user_id = ? AND host_id = ?')
     .bind(sub, hostId).run();
   const removed = (res.meta?.changes ?? 0) > 0;
+  // Level metric (denormalized): decrement the host's follower count when a
+  // favorite is actually removed. MAX(0, …) guards against ever going negative
+  // if a legacy row was deleted without a matching increment. Best-effort.
+  if (removed) {
+    try {
+      await db.prepare('UPDATE hosts SET favorite_count = MAX(0, favorite_count - 1) WHERE id = ?')
+        .bind(hostId).run();
+    } catch (e) { console.warn('[favorites:remove] favorite_count decrement failed:', e); }
+  }
   const total = await db.prepare('SELECT COUNT(*) as cnt FROM user_favorites WHERE user_id = ?')
     .bind(sub).first<{ cnt: number }>();
   return c.json({ success: true, removed, favorite: false, count: Number(total?.cnt) || 0 });
