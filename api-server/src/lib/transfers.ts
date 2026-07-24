@@ -19,13 +19,19 @@
  */
 export async function atomicGiftTransfer(
   db: D1Database,
-  params: { senderId: string; hostUserId: string; amount: number },
+  params: { senderId: string; hostUserId: string; amount: number; hostAmount?: number },
 ): Promise<boolean> {
   const { senderId, hostUserId } = params;
   const amount = Math.floor(Number(params.amount));
+  // Coins the HOST actually receives. Defaults to the full amount (100% — e.g.
+  // tips). A gift with a platform commission credits the host LESS than the
+  // sender pays; the difference is the platform margin and leaves circulation
+  // (mirrors call billing's earning-share). Must be within [0, amount].
+  const hostAmount = params.hostAmount != null ? Math.floor(Number(params.hostAmount)) : amount;
   // A gift only flows sender → a DISTINCT host, for a positive amount.
   if (!senderId || !hostUserId || senderId === hostUserId) return false;
   if (!Number.isFinite(amount) || amount <= 0) return false;
+  if (!Number.isFinite(hostAmount) || hostAmount < 0 || hostAmount > amount) return false;
 
   const res = await db
     .prepare(
@@ -37,7 +43,7 @@ export async function atomicGiftTransfer(
        WHERE id IN (?, ?)
          AND EXISTS (SELECT 1 FROM users WHERE id = ? AND (coins - COALESCE(coins_held, 0)) >= ?)`,
     )
-    .bind(senderId, amount, hostUserId, amount, senderId, hostUserId, senderId, amount)
+    .bind(senderId, amount, hostUserId, hostAmount, senderId, hostUserId, senderId, amount)
     .run();
   return !!res.meta?.changes;
 }
@@ -52,9 +58,12 @@ export async function atomicGiftTransfer(
  */
 export async function reverseGiftTransfer(
   db: D1Database,
-  params: { senderId: string; hostUserId: string; amount: number },
+  params: { senderId: string; hostUserId: string; amount: number; hostAmount?: number },
 ): Promise<void> {
   const amount = Math.floor(Number(params.amount));
+  // Reverse EXACTLY what was moved: refund the sender the full price and debit
+  // the host only what they were credited (hostAmount defaults to full amount).
+  const hostAmount = params.hostAmount != null ? Math.floor(Number(params.hostAmount)) : amount;
   const { senderId, hostUserId } = params;
   if (!senderId || !hostUserId || senderId === hostUserId) return;
   if (!Number.isFinite(amount) || amount <= 0) return;
@@ -67,7 +76,7 @@ export async function reverseGiftTransfer(
        END, updated_at = unixepoch()
        WHERE id IN (?, ?)`,
     )
-    .bind(senderId, amount, hostUserId, amount, senderId, hostUserId)
+    .bind(senderId, amount, hostUserId, hostAmount, senderId, hostUserId)
     .run();
 }
 

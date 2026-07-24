@@ -882,6 +882,8 @@ admin.patch('/settings', async (c) => {
     'instant_connect_load_window_min', 'instant_connect_weights',
     // Session Quality Auto-Router (lib/callQualityRouter.ts).
     'quality_router_enabled', 'quality_host_min_samples', 'quality_host_max_penalty', 'quality_thresholds',
+    // Gift platform commission (percent, 0–90). Host receives price − cut.
+    'gift_commission_pct',
   ];
   const stmts = Object.entries(processedBody)
     .filter(([k]) => ALLOWED_SETTINGS.includes(k))

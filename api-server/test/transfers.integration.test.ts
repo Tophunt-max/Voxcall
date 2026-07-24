@@ -83,6 +83,20 @@ describe('atomicGiftTransfer', () => {
     expect(await atomicGiftTransfer(db as any, { senderId: 'sender', hostUserId: 'host', amount: 1 })).toBe(false);
     expect(await coins('host')).toBe(100); // only the first gift landed
   });
+
+  it('applies a platform commission — sender pays full, host receives the net share (margin leaves circulation)', async () => {
+    // 100-coin gift with a 20% commission → host receives 80; 20 coins are the
+    // platform margin and are removed from circulation.
+    expect(await atomicGiftTransfer(db as any, { senderId: 'sender', hostUserId: 'host', amount: 100, hostAmount: 80 })).toBe(true);
+    expect(await coins('sender')).toBe(0);  // charged the full price
+    expect(await coins('host')).toBe(80);   // credited only the net share
+  });
+
+  it('rejects a host share greater than the price (guard against bad commission math)', async () => {
+    expect(await atomicGiftTransfer(db as any, { senderId: 'sender', hostUserId: 'host', amount: 50, hostAmount: 60 })).toBe(false);
+    expect(await coins('sender')).toBe(100); // untouched
+    expect(await coins('host')).toBe(0);
+  });
 });
 
 // ─── reverseGiftTransfer (gift compensation) ─────────────────────────────────
@@ -110,6 +124,15 @@ describe('reverseGiftTransfer', () => {
     await reverseGiftTransfer(db as any, { senderId: 'sender', hostUserId: 'host', amount: 40 });
     expect(await coins('sender')).toBe(100); // sender STILL made whole
     expect(await coins('host')).toBe(-40);   // host goes negative (owes it back)
+  });
+
+  it('reverses a COMMISSIONED gift exactly (refund full price, debit only the host share)', async () => {
+    await atomicGiftTransfer(db as any, { senderId: 'sender', hostUserId: 'host', amount: 100, hostAmount: 80 });
+    expect(await coins('sender')).toBe(0);
+    expect(await coins('host')).toBe(80);
+    await reverseGiftTransfer(db as any, { senderId: 'sender', hostUserId: 'host', amount: 100, hostAmount: 80 });
+    expect(await coins('sender')).toBe(100); // full price refunded
+    expect(await coins('host')).toBe(0);     // net share reversed
   });
 
   it('is a no-op for self / non-positive amounts', async () => {

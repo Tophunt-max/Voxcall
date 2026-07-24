@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { Modal } from '@/components/ui/Modal';
-import { Plus, Edit2, Trash2, Gift, Eye, EyeOff, Coins } from 'lucide-react';
+import { Plus, Edit2, Trash2, Gift, Eye, EyeOff, Coins, Percent } from 'lucide-react';
 
 // Admin-managed chat gift catalog. Users send these coin-priced gifts inside a
 // chat; coins move to the host (counting toward host earnings + levels).
@@ -21,12 +21,29 @@ export default function Gifts() {
   const [form, setForm] = useState<any>(blank());
   const [saving, setSaving] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  // Platform commission on gifts (percent). Persisted in app_settings.
+  const [commission, setCommission] = useState('0');
+  const [commissionSaving, setCommissionSaving] = useState(false);
 
   const load = () => {
     setLoading(true);
     api.gifts().then(d => { setRows(d); setFetchError(''); }).catch(() => setFetchError('Failed to load gifts')).finally(() => setLoading(false));
   };
   useEffect(load, []);
+  useEffect(() => {
+    api.settings().then(s => setCommission(String(s.gift_commission_pct ?? '0'))).catch(() => { /* keep default */ });
+  }, []);
+
+  const saveCommission = async () => {
+    const pct = parseFloat(commission);
+    if (!Number.isFinite(pct) || pct < 0 || pct > 90) { toast.error('Commission must be between 0 and 90%'); return; }
+    setCommissionSaving(true);
+    try {
+      await api.updateSettings({ gift_commission_pct: pct });
+      toast.success(`Gift commission set to ${pct}% — hosts now keep ${100 - pct}%`);
+    } catch (e: any) { toast.error(e?.message || 'Failed to save commission'); }
+    finally { setCommissionSaving(false); }
+  };
 
   const openCreate = () => { setEditing(null); setCreating(true); setForm(blank()); };
   const openEdit = (g: any) => {
@@ -94,6 +111,31 @@ export default function Gifts() {
           className="flex items-center gap-1.5 bg-primary text-primary-foreground px-3.5 py-2 rounded-xl text-sm font-semibold hover:opacity-90 transition-opacity">
           <Plus size={15} /> New Gift
         </button>
+      </div>
+
+      {/* Platform commission on gifts */}
+      <div className="bg-card border border-border rounded-2xl p-4 flex flex-wrap items-end gap-4">
+        <div className="flex-1 min-w-[220px]">
+          <label className="text-sm font-semibold flex items-center gap-1.5"><Percent size={14} className="text-violet-500" /> Platform commission on gifts</label>
+          <p className="text-xs text-muted-foreground mt-1">
+            The platform keeps this % of every gift; the host receives the rest.
+            e.g. <span className="font-medium">20%</span> → host keeps 80%. Set <span className="font-medium">0</span> for host keeps 100%.
+          </p>
+        </div>
+        <div className="flex items-end gap-2">
+          <div>
+            <label className="text-xs font-medium block mb-1">Commission %</label>
+            <input type="number" min={0} max={90} step="0.5" value={commission} onChange={e => setCommission(e.target.value)}
+              className="w-24 px-3 py-2 border border-border rounded-xl text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30" />
+          </div>
+          <button onClick={saveCommission} disabled={commissionSaving}
+            className="bg-primary text-primary-foreground px-4 py-2 rounded-xl text-sm font-semibold hover:opacity-90 disabled:opacity-50">
+            {commissionSaving ? 'Saving...' : 'Save'}
+          </button>
+        </div>
+        <div className="text-xs text-muted-foreground">
+          Host keeps <span className="font-semibold text-foreground">{Math.max(0, 100 - (parseFloat(commission) || 0))}%</span>
+        </div>
       </div>
 
       {loading ? (

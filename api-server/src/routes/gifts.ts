@@ -18,6 +18,20 @@ import type { Env, JWTPayload } from '../types';
 const gifts = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
 gifts.use('*', authMiddleware);
 
+// Platform commission on gifts (percent, 0–90). Admin-set via
+// app_settings.gift_commission_pct (Admin → Chat Gifts). Default 0 → host keeps
+// 100% (historical behaviour) until an admin configures a cut.
+async function getGiftCommissionPct(db: D1Database): Promise<number> {
+  try {
+    const r = await db.prepare("SELECT value FROM app_settings WHERE key = 'gift_commission_pct'").first<{ value: string }>();
+    const pct = Number(r?.value);
+    if (!Number.isFinite(pct)) return 0;
+    return Math.min(90, Math.max(0, pct));
+  } catch {
+    return 0; // setting/table absent → no commission
+  }
+}
+
 function serializeGift(g: any) {
   return {
     id: g.id,
@@ -134,9 +148,17 @@ gifts.post('/send', async (c) => {
   const amount = Math.max(0, Number(gift.price_coins) || 0);
   if (amount <= 0) return c.json({ error: 'Invalid gift price' }, 400);
 
-  // Atomic all-or-nothing transfer: debit sender, credit host — only if the
-  // sender can afford it (spendable = coins - held). Mirrors tips/billing.
-  const moved = await atomicGiftTransfer(db, { senderId: sub, hostUserId, amount });
+  // Platform commission: the sender pays the full price; the host receives
+  // amount − platformCut. The cut is the platform's margin (realized as fewer
+  // host coins → less payout) and leaves circulation, exactly like the call
+  // earning-share. Default 0% keeps the historical host-gets-100% behaviour.
+  const commissionPct = await getGiftCommissionPct(db);
+  const platformCut = Math.floor((amount * commissionPct) / 100);
+  const hostShare = Math.max(0, amount - platformCut);
+
+  // Atomic all-or-nothing transfer: debit sender the full price, credit host
+  // their share — only if the sender can afford it (spendable = coins - held).
+  const moved = await atomicGiftTransfer(db, { senderId: sub, hostUserId, amount, hostAmount: hostShare });
   if (!moved) {
     return c.json({ error: `Not enough coins. This gift costs ${amount} coins.`, code: 'INSUFFICIENT_COINS' }, 402);
   }
@@ -163,15 +185,16 @@ gifts.post('/send', async (c) => {
       db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
         .bind(crypto.randomUUID(), sub, 'spend', -amount, `Gift sent: ${gift.name}`, msgId),
       db.prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
-        .bind(crypto.randomUUID(), hostUserId, 'bonus', amount, `Gift received: ${gift.name}`, msgId),
-      // Gifts count toward the host's lifetime earnings (feeds level-up).
+        .bind(crypto.randomUUID(), hostUserId, 'bonus', hostShare, `Gift received: ${gift.name}`, msgId),
+      // Gifts count toward the host's lifetime earnings (feeds level-up) — the
+      // host's NET share after platform commission.
       db.prepare('UPDATE hosts SET total_earnings = total_earnings + ? WHERE id = ?')
-        .bind(amount, room.host_id),
+        .bind(hostShare, room.host_id),
     ]);
   } catch (e: any) {
     // Persist failed → refund the sender (and reverse the host credit) so the
     // charge never happens without a matching gift + ledger.
-    await reverseGiftTransfer(db, { senderId: sub, hostUserId, amount })
+    await reverseGiftTransfer(db, { senderId: sub, hostUserId, amount, hostAmount: hostShare })
       .catch((re) => console.error('[gifts/send] CRITICAL: reversal after persist failure FAILED:', re));
     // A UNIQUE(idempotency_key) collision means a concurrent identical send
     // already recorded this gift — return that original (net single charge).
