@@ -1143,3 +1143,121 @@ export function ensureSmartV2Schema(db: D1Database): Promise<boolean> {
 
   return smartV2SchemaReadyPromise;
 }
+
+
+// ============================================================================
+// Rewards Monthly Tasks + Monthly Pass schema guard — heal 0069 / 0070.
+// ============================================================================
+// The sequential auto-migrator (lib/autoMigrate.ts) STOPS at the first
+// migration it can't apply and never runs later ones. If any migration ahead
+// of 0069 is stuck on a given production DB, `user_reward_progress.period_key`
+// (0069) and the Monthly Pass tables (0070) never get created — and because
+// routes/rewards.ts selects `p.period_key`, the ENTIRE rewards endpoint 500s
+// (taking down both the classic Rewards page and the new Tasks page).
+//
+// This PRAGMA-based guard heals those objects directly on every cold start,
+// independent of migration ordering / d1_migrations state. Idempotent and
+// tolerant: it only adds what's missing and never clobbers admin-tuned data.
+
+let rewardsPassSchemaReadyPromise: Promise<boolean> | null = null;
+
+export function ensureRewardsPassSchema(db: D1Database): Promise<boolean> {
+  if (rewardsPassSchemaReadyPromise) return rewardsPassSchemaReadyPromise;
+
+  rewardsPassSchemaReadyPromise = (async () => {
+    try {
+      // ── 1. user_reward_progress.period_key (migration 0069) ──────────────
+      // Only heal when the base rewards table actually exists (PRAGMA on a
+      // missing table returns an empty list → size 0 → skip).
+      try {
+        const info = await db.prepare('PRAGMA table_info(user_reward_progress)').all<{ name: string }>();
+        const cols = new Set((info.results ?? []).map((r) => r.name));
+        if (cols.size > 0 && !cols.has('period_key')) {
+          try {
+            await db.prepare('ALTER TABLE user_reward_progress ADD COLUMN period_key TEXT').run();
+            console.log('[schemaGuard] added user_reward_progress.period_key');
+          } catch (err) {
+            console.warn('[schemaGuard] add user_reward_progress.period_key failed (may be a race):', err);
+          }
+        }
+        if (cols.size > 0) {
+          try {
+            await db.prepare('CREATE INDEX IF NOT EXISTS idx_user_reward_progress_period ON user_reward_progress(user_id, period_key)').run();
+          } catch { /* index is a nice-to-have */ }
+        }
+      } catch (err) {
+        console.warn('[schemaGuard] period_key heal skipped:', err);
+      }
+
+      // ── 2. Seed the default monthly tasks (migration 0069) ───────────────
+      // INSERT OR IGNORE — appears out-of-the-box but never duplicates.
+      const MONTHLY_TASK_SEEDS: ReadonlyArray<string> = [
+        `INSERT OR IGNORE INTO reward_tasks (id, code, title, description, icon, category, task_type, target_count, coins_reward, cooldown_hours, sort_order) VALUES ('rt_monthly_30_calls', 'monthly_30_calls', 'Complete 30 Calls', 'Complete 30 calls this month to earn a big bonus.', 'call', 'monthly', 'complete_calls', 30, 500, 0, 210)`,
+        `INSERT OR IGNORE INTO reward_tasks (id, code, title, description, icon, category, task_type, target_count, coins_reward, cooldown_hours, sort_order) VALUES ('rt_monthly_spend_1000', 'monthly_spend_1000', 'Spend 1000 Coins', 'Spend 1000 coins on calls this month for a monthly reward.', 'coin', 'monthly', 'spend_coins', 1000, 300, 0, 220)`,
+        `INSERT OR IGNORE INTO reward_tasks (id, code, title, description, icon, category, task_type, target_count, coins_reward, cooldown_hours, sort_order) VALUES ('rt_monthly_refer_3', 'monthly_refer_3', 'Invite 3 Friends', 'Invite 3 friends this month and earn a monthly bonus.', 'invite', 'monthly', 'refer_friend', 3, 400, 0, 230)`,
+      ];
+      for (const ddl of MONTHLY_TASK_SEEDS) {
+        try { await db.prepare(ddl).run(); } catch (err) { console.warn('[schemaGuard] monthly task seed failed:', err); }
+      }
+
+      // ── 3. Monthly Pass tables (migration 0070) ──────────────────────────
+      const PASS_DDL: ReadonlyArray<string> = [
+        `CREATE TABLE IF NOT EXISTS reward_pass (
+          id              TEXT PRIMARY KEY DEFAULT 'default',
+          enabled         INTEGER NOT NULL DEFAULT 1,
+          title           TEXT NOT NULL DEFAULT 'Monthly Pass',
+          description     TEXT NOT NULL DEFAULT '',
+          price_coins     INTEGER NOT NULL DEFAULT 1000,
+          vip_auto_unlock INTEGER NOT NULL DEFAULT 1,
+          tiers           TEXT NOT NULL DEFAULT '[]',
+          updated_at      INTEGER NOT NULL DEFAULT (unixepoch())
+        )`,
+        `CREATE TABLE IF NOT EXISTS user_pass_state (
+          user_id          TEXT NOT NULL,
+          period_key       TEXT NOT NULL,
+          points           INTEGER NOT NULL DEFAULT 0,
+          premium_unlocked INTEGER NOT NULL DEFAULT 0,
+          updated_at       INTEGER NOT NULL DEFAULT (unixepoch()),
+          PRIMARY KEY (user_id, period_key)
+        )`,
+        `CREATE TABLE IF NOT EXISTS user_pass_claims (
+          user_id       TEXT NOT NULL,
+          period_key    TEXT NOT NULL,
+          tier_level    INTEGER NOT NULL,
+          track         TEXT NOT NULL,
+          coins_awarded INTEGER NOT NULL DEFAULT 0,
+          claimed_at    INTEGER NOT NULL DEFAULT (unixepoch()),
+          PRIMARY KEY (user_id, period_key, tier_level, track)
+        )`,
+        `CREATE INDEX IF NOT EXISTS idx_user_pass_claims_user_period ON user_pass_claims(user_id, period_key)`,
+      ];
+      for (const ddl of PASS_DDL) {
+        try { await db.prepare(ddl).run(); } catch (err) { console.warn('[schemaGuard] pass ddl failed:', err); }
+      }
+
+      // Seed the default (enabled) pass config so the feature works instantly.
+      try {
+        await db
+          .prepare(
+            `INSERT OR IGNORE INTO reward_pass (id, enabled, title, description, price_coins, vip_auto_unlock, tiers)
+             VALUES ('default', 1, 'Monthly Pass', ?, 1000, 1, ?)`,
+          )
+          .bind(
+            'Complete tasks to earn Pass Points and unlock monthly rewards. Go VIP or buy the pass to claim Premium rewards too!',
+            '[{"level":1,"points":100,"label":"Tier 1","free_coins":50,"premium_coins":150},{"level":2,"points":300,"label":"Tier 2","free_coins":80,"premium_coins":250},{"level":3,"points":600,"label":"Tier 3","free_coins":120,"premium_coins":400},{"level":4,"points":1000,"label":"Tier 4","free_coins":180,"premium_coins":600},{"level":5,"points":1500,"label":"Tier 5","free_coins":250,"premium_coins":1000}]',
+          )
+          .run();
+      } catch (err) {
+        console.warn('[schemaGuard] seed reward_pass failed:', err);
+      }
+
+      return true;
+    } catch (err) {
+      console.error('[schemaGuard] ensureRewardsPassSchema failed:', err);
+      rewardsPassSchemaReadyPromise = null;
+      return false;
+    }
+  })();
+
+  return rewardsPassSchemaReadyPromise;
+}

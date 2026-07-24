@@ -529,20 +529,32 @@ rewards.get('/', async (c) => {
 
   const monthKey = utcMonthKey(now);
 
-  // Tasks (join with progress)
-  const taskRes = await db
-    .prepare(
-      `SELECT t.id, t.code, t.title, t.description, t.icon, t.category, t.task_type,
+  // Tasks (join with progress). Defense-in-depth: the `p.period_key` column is
+  // added by migration 0069 / schemaGuard. If a DB somehow hasn't been healed
+  // yet, selecting it throws "no such column" and would 500 the WHOLE rewards
+  // page — so we fall back to the same query without it (monthly reset simply
+  // degrades to "no reset yet" until the column exists, rather than breaking).
+  const TASK_SELECT_COLS = `t.id, t.code, t.title, t.description, t.icon, t.category, t.task_type,
               t.target_count, t.coins_reward, t.cooldown_hours, t.cta_link,
               t.active, t.sort_order,
-              p.current_count, p.claim_count, p.last_claimed_at, p.total_earned, p.period_key
-         FROM reward_tasks t
+              p.current_count, p.claim_count, p.last_claimed_at, p.total_earned`;
+  const TASK_FROM = `FROM reward_tasks t
          LEFT JOIN user_reward_progress p ON p.task_id = t.id AND p.user_id = ?
         WHERE t.active = 1
-        ORDER BY t.sort_order ASC, t.created_at ASC`,
-    )
-    .bind(sub)
-    .all<TaskRow>();
+        ORDER BY t.sort_order ASC, t.created_at ASC`;
+  let taskRes: D1Result<TaskRow>;
+  try {
+    taskRes = await db
+      .prepare(`SELECT ${TASK_SELECT_COLS}, p.period_key ${TASK_FROM}`)
+      .bind(sub)
+      .all<TaskRow>();
+  } catch (err) {
+    console.warn('[rewards] period_key column missing, using fallback query:', err);
+    taskRes = await db
+      .prepare(`SELECT ${TASK_SELECT_COLS}, NULL AS period_key ${TASK_FROM}`)
+      .bind(sub)
+      .all<TaskRow>();
+  }
 
   const tasks = (taskRes.results ?? []).map((r) => {
     const state = deriveState(r, now, monthKey);
