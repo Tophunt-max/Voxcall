@@ -1166,6 +1166,133 @@ export function ensureRewardsPassSchema(db: D1Database): Promise<boolean> {
 
   rewardsPassSchemaReadyPromise = (async () => {
     try {
+      // ── 0. Core rewards tables (migrations 0043–0046) ────────────────────
+      // If the migration queue is stuck BEFORE these, the whole rewards page
+      // 500s (missing reward_tasks / reward_campaigns / reward_spin_config /
+      // reward_achievements / …). Create them all idempotently so the feature
+      // self-heals regardless of migration state. CREATE TABLE IF NOT EXISTS
+      // never touches an existing table.
+      const CORE_REWARD_DDL: ReadonlyArray<string> = [
+        `CREATE TABLE IF NOT EXISTS reward_tasks (
+          id TEXT PRIMARY KEY, code TEXT NOT NULL UNIQUE, title TEXT NOT NULL,
+          description TEXT NOT NULL DEFAULT '', icon TEXT NOT NULL DEFAULT 'gift',
+          category TEXT NOT NULL DEFAULT 'daily', task_type TEXT NOT NULL,
+          target_count INTEGER NOT NULL DEFAULT 1, coins_reward INTEGER NOT NULL,
+          cooldown_hours INTEGER NOT NULL DEFAULT 0, cta_link TEXT NOT NULL DEFAULT '',
+          active INTEGER NOT NULL DEFAULT 1, sort_order INTEGER NOT NULL DEFAULT 100,
+          created_at INTEGER NOT NULL DEFAULT (unixepoch()), updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+        )`,
+        `CREATE TABLE IF NOT EXISTS user_reward_progress (
+          user_id TEXT NOT NULL, task_id TEXT NOT NULL, current_count INTEGER NOT NULL DEFAULT 0,
+          claim_count INTEGER NOT NULL DEFAULT 0, last_claimed_at INTEGER, total_earned INTEGER NOT NULL DEFAULT 0,
+          updated_at INTEGER NOT NULL DEFAULT (unixepoch()), period_key TEXT, PRIMARY KEY (user_id, task_id)
+        )`,
+        `CREATE TABLE IF NOT EXISTS reward_spin_config (
+          id TEXT PRIMARY KEY, enabled INTEGER NOT NULL DEFAULT 1, daily_free_spins INTEGER NOT NULL DEFAULT 1,
+          segments TEXT NOT NULL, updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+        )`,
+        `CREATE TABLE IF NOT EXISTS user_spin_state (
+          user_id TEXT PRIMARY KEY, free_spins_remaining INTEGER NOT NULL DEFAULT 0,
+          earned_spins_remaining INTEGER NOT NULL DEFAULT 0, last_free_reset_day TEXT NOT NULL DEFAULT '',
+          total_spins INTEGER NOT NULL DEFAULT 0, total_coins_won INTEGER NOT NULL DEFAULT 0,
+          last_win_amount INTEGER, last_spun_at INTEGER, updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+        )`,
+        `CREATE TABLE IF NOT EXISTS reward_campaigns (
+          id TEXT PRIMARY KEY, code TEXT NOT NULL UNIQUE, title TEXT NOT NULL,
+          description TEXT NOT NULL DEFAULT '', banner_image_url TEXT NOT NULL DEFAULT '',
+          starts_at INTEGER NOT NULL, ends_at INTEGER NOT NULL, multiplier REAL NOT NULL DEFAULT 1.0,
+          applies_to_task_types TEXT NOT NULL DEFAULT '', applies_to_spin INTEGER NOT NULL DEFAULT 1,
+          active INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL DEFAULT (unixepoch())
+        )`,
+        `CREATE TABLE IF NOT EXISTS reward_coupons (
+          id TEXT PRIMARY KEY, code TEXT NOT NULL UNIQUE, coins_reward INTEGER NOT NULL,
+          max_uses INTEGER, used_count INTEGER NOT NULL DEFAULT 0, per_user_limit INTEGER NOT NULL DEFAULT 1,
+          expires_at INTEGER, active INTEGER NOT NULL DEFAULT 1, note TEXT NOT NULL DEFAULT '',
+          created_at INTEGER NOT NULL DEFAULT (unixepoch())
+        )`,
+        `CREATE TABLE IF NOT EXISTS user_coupon_redemptions (
+          user_id TEXT NOT NULL, coupon_id TEXT NOT NULL, code TEXT NOT NULL,
+          coins_awarded INTEGER NOT NULL, redeemed_at INTEGER NOT NULL,
+          PRIMARY KEY (user_id, coupon_id, redeemed_at)
+        )`,
+        `CREATE TABLE IF NOT EXISTS reward_achievements (
+          id TEXT PRIMARY KEY, code TEXT NOT NULL UNIQUE, title TEXT NOT NULL,
+          description TEXT NOT NULL DEFAULT '', icon TEXT NOT NULL DEFAULT 'trophy',
+          tier TEXT NOT NULL DEFAULT 'bronze', trigger_type TEXT NOT NULL, trigger_threshold INTEGER NOT NULL,
+          coins_reward INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1,
+          sort_order INTEGER NOT NULL DEFAULT 100, created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+          duration_days INTEGER NOT NULL DEFAULT 0
+        )`,
+        `CREATE TABLE IF NOT EXISTS user_achievements (
+          user_id TEXT NOT NULL, achievement_id TEXT NOT NULL, unlocked_at INTEGER NOT NULL,
+          coins_awarded INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (user_id, achievement_id)
+        )`,
+        `CREATE TABLE IF NOT EXISTS user_trigger_counters (
+          user_id TEXT NOT NULL, trigger_type TEXT NOT NULL, count INTEGER NOT NULL DEFAULT 0,
+          updated_at INTEGER NOT NULL DEFAULT (unixepoch()), PRIMARY KEY (user_id, trigger_type)
+        )`,
+        `CREATE TABLE IF NOT EXISTS user_achievement_progress (
+          user_id TEXT NOT NULL, achievement_id TEXT NOT NULL, current_count INTEGER NOT NULL DEFAULT 0,
+          started_at INTEGER, updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+          PRIMARY KEY (user_id, achievement_id)
+        )`,
+        `CREATE TABLE IF NOT EXISTS reward_budget_daily (
+          day_key TEXT PRIMARY KEY, coins_paid INTEGER NOT NULL DEFAULT 0,
+          updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+        )`,
+      ];
+      for (const ddl of CORE_REWARD_DDL) {
+        try { await db.prepare(ddl).run(); } catch (err) { console.warn('[schemaGuard] core reward ddl failed:', err); }
+      }
+
+      // reward_achievements.duration_days (migration 0046) — heal if the table
+      // pre-existed WITHOUT the column.
+      try {
+        const achInfo = await db.prepare('PRAGMA table_info(reward_achievements)').all<{ name: string }>();
+        const achCols = new Set((achInfo.results ?? []).map((r) => r.name));
+        if (achCols.size > 0 && !achCols.has('duration_days')) {
+          try {
+            await db.prepare('ALTER TABLE reward_achievements ADD COLUMN duration_days INTEGER NOT NULL DEFAULT 0').run();
+            console.log('[schemaGuard] added reward_achievements.duration_days');
+          } catch (err) { console.warn('[schemaGuard] add duration_days failed (may be a race):', err); }
+        }
+      } catch { /* table absent — already created above */ }
+
+      // Seed feature flags + default spin wheel so the Rewards tab is populated.
+      const REWARD_SETTINGS: ReadonlyArray<[string, string]> = [
+        ['reward_daily_budget_cap', '0'],
+        ['reward_campaigns_enabled', 'true'],
+        ['reward_spin_enabled', 'true'],
+        ['reward_coupons_enabled', 'true'],
+        ['reward_achievements_enabled', 'true'],
+        ['reward_push_nudges_enabled', 'true'],
+      ];
+      for (const [k, v] of REWARD_SETTINGS) {
+        try { await db.prepare('INSERT OR IGNORE INTO app_settings (key, value) VALUES (?, ?)').bind(k, v).run(); }
+        catch (err) { console.warn(`[schemaGuard] seed app_settings.${k} failed:`, err); }
+      }
+      try {
+        await db.prepare(
+          `INSERT OR IGNORE INTO reward_spin_config (id, enabled, daily_free_spins, segments) VALUES ('default', 1, 1, ?)`,
+        ).bind(
+          '[{"label":"5 coins","coins":5,"weight":30,"color":"#8B5CF6","emoji":"🪙"},{"label":"10 coins","coins":10,"weight":25,"color":"#EC4899","emoji":"🪙"},{"label":"25 coins","coins":25,"weight":18,"color":"#F59E0B","emoji":"💰"},{"label":"50 coins","coins":50,"weight":12,"color":"#10B981","emoji":"💰"},{"label":"100 coins","coins":100,"weight":8,"color":"#3B82F6","emoji":"🎁"},{"label":"250 coins","coins":250,"weight":4,"color":"#EF4444","emoji":"🎁"},{"label":"500 coins","coins":500,"weight":2,"color":"#F97316","emoji":"👑"},{"label":"1000 coins","coins":1000,"weight":1,"color":"#D946EF","emoji":"💎"}]',
+        ).run();
+      } catch (err) { console.warn('[schemaGuard] seed reward_spin_config failed:', err); }
+
+      // Seed the default daily / one-time / ongoing reward tasks (migration 0043)
+      // so a healed DB has a working Tasks tab, not just monthly tasks.
+      const BASE_TASK_SEEDS: ReadonlyArray<string> = [
+        `INSERT OR IGNORE INTO reward_tasks (id, code, title, description, icon, category, task_type, target_count, coins_reward, cooldown_hours, sort_order) VALUES ('rt_daily_checkin','daily_checkin','Daily Check-in','Open the app and collect your daily bonus coins.','calendar','daily','daily_checkin',1,10,24,10)`,
+        `INSERT OR IGNORE INTO reward_tasks (id, code, title, description, icon, category, task_type, target_count, coins_reward, cooldown_hours, sort_order) VALUES ('rt_first_call','first_call','Make Your First Call','Complete your very first call and unlock a bonus.','call','one_time','complete_calls',1,50,0,20)`,
+        `INSERT OR IGNORE INTO reward_tasks (id, code, title, description, icon, category, task_type, target_count, coins_reward, cooldown_hours, sort_order) VALUES ('rt_ten_calls','ten_calls','Complete 10 Calls','Complete 10 calls to earn a bonus. Progress carries forward.','call','ongoing','complete_calls',10,100,0,30)`,
+        `INSERT OR IGNORE INTO reward_tasks (id, code, title, description, icon, category, task_type, target_count, coins_reward, cooldown_hours, sort_order) VALUES ('rt_refer_one','refer_1_friend','Invite 1 Friend','Invite a friend and both of you earn coins on their first login.','invite','ongoing','refer_friend',1,100,0,40)`,
+        `INSERT OR IGNORE INTO reward_tasks (id, code, title, description, icon, category, task_type, target_count, coins_reward, cooldown_hours, sort_order) VALUES ('rt_watch_ad','watch_ad','Watch a Video Ad','Watch a short video ad to earn coins.','video','daily','watch_ad',1,5,4,70)`,
+        `INSERT OR IGNORE INTO reward_tasks (id, code, title, description, icon, category, task_type, target_count, coins_reward, cooldown_hours, sort_order) VALUES ('rt_share_app','share_app','Share the App','Share the app with anyone — get bonus coins once per day.','share','daily','share_app',1,10,24,80)`,
+      ];
+      for (const ddl of BASE_TASK_SEEDS) {
+        try { await db.prepare(ddl).run(); } catch (err) { console.warn('[schemaGuard] base task seed failed:', err); }
+      }
+
       // ── 1. user_reward_progress.period_key (migration 0069) ──────────────
       // Only heal when the base rewards table actually exists (PRAGMA on a
       // missing table returns an empty list → size 0 → skip).

@@ -542,21 +542,29 @@ rewards.get('/', async (c) => {
          LEFT JOIN user_reward_progress p ON p.task_id = t.id AND p.user_id = ?
         WHERE t.active = 1
         ORDER BY t.sort_order ASC, t.created_at ASC`;
-  let taskRes: D1Result<TaskRow>;
+  let taskRows: TaskRow[] = [];
   try {
-    taskRes = await db
+    const r = await db
       .prepare(`SELECT ${TASK_SELECT_COLS}, p.period_key ${TASK_FROM}`)
       .bind(sub)
       .all<TaskRow>();
+    taskRows = r.results ?? [];
   } catch (err) {
     console.warn('[rewards] period_key column missing, using fallback query:', err);
-    taskRes = await db
-      .prepare(`SELECT ${TASK_SELECT_COLS}, NULL AS period_key ${TASK_FROM}`)
-      .bind(sub)
-      .all<TaskRow>();
+    try {
+      const r = await db
+        .prepare(`SELECT ${TASK_SELECT_COLS}, NULL AS period_key ${TASK_FROM}`)
+        .bind(sub)
+        .all<TaskRow>();
+      taskRows = r.results ?? [];
+    } catch (err2) {
+      // reward_tasks / user_reward_progress absent on a drifted DB — degrade to
+      // an empty task list rather than 500-ing the whole rewards page.
+      console.warn('[rewards] tasks query failed (reward schema missing?):', err2);
+    }
   }
 
-  const tasks = (taskRes.results ?? []).map((r) => {
+  const tasks = taskRows.map((r) => {
     const state = deriveState(r, now, monthKey);
     return {
       id: r.id, code: r.code, title: r.title, description: r.description,
@@ -572,15 +580,21 @@ rewards.get('/', async (c) => {
   const claimableCount = tasks.filter((t) => t.claimable).length;
 
   // Active campaigns (multiple; client shows a banner slider)
-  const campaignRes = await db
-    .prepare(
-      `SELECT * FROM reward_campaigns
-        WHERE active = 1 AND starts_at <= ? AND ends_at >= ?
-        ORDER BY multiplier DESC, created_at DESC`,
-    )
-    .bind(now, now)
-    .all<CampaignRow>();
-  const campaigns = (campaignRes.results ?? []).map((r) => ({
+  let campaignRows: CampaignRow[] = [];
+  try {
+    const campaignRes = await db
+      .prepare(
+        `SELECT * FROM reward_campaigns
+          WHERE active = 1 AND starts_at <= ? AND ends_at >= ?
+          ORDER BY multiplier DESC, created_at DESC`,
+      )
+      .bind(now, now)
+      .all<CampaignRow>();
+    campaignRows = campaignRes.results ?? [];
+  } catch (err) {
+    console.warn('[rewards] campaigns query failed (table missing?):', err);
+  }
+  const campaigns = campaignRows.map((r) => ({
     id: r.id, code: r.code, title: r.title, description: r.description,
     banner_image_url: r.banner_image_url,
     starts_at: Number(r.starts_at),
@@ -591,8 +605,8 @@ rewards.get('/', async (c) => {
     ends_in_sec: Math.max(0, Number(r.ends_at) - now),
   }));
 
-  // Spin state
-  const spinEnabled = await readSetting(db, 'reward_spin_enabled', true, parseBool);
+  // Spin state — guarded so a missing reward_spin_config / spin-state table on
+  // a drifted DB degrades to "no spin" instead of 500-ing the page.
   let spin: {
     enabled: boolean;
     free_spins_remaining: number;
@@ -601,28 +615,32 @@ rewards.get('/', async (c) => {
     total_spins: number;
     total_coins_won: number;
   } | null = null;
-  if (spinEnabled) {
-    const cfg = await db
-      .prepare('SELECT segments FROM reward_spin_config WHERE id = ?')
-      .bind('default')
-      .first<{ segments: string }>();
-    let segments: Array<{ label: string; coins: number; weight: number; color: string; emoji: string }> = [];
-    try { segments = JSON.parse(cfg?.segments ?? '[]'); } catch { segments = []; }
-    const s = await ensureSpinState(db, sub);
-    spin = {
-      enabled: true,
-      free_spins_remaining: s.free_spins_remaining,
-      earned_spins_remaining: s.earned_spins_remaining,
-      segments,
-      total_spins: s.total_spins,
-      total_coins_won: s.total_coins_won,
-    };
+  try {
+    const spinEnabled = await readSetting(db, 'reward_spin_enabled', true, parseBool);
+    if (spinEnabled) {
+      const cfg = await db
+        .prepare('SELECT segments FROM reward_spin_config WHERE id = ?')
+        .bind('default')
+        .first<{ segments: string }>();
+      let segments: Array<{ label: string; coins: number; weight: number; color: string; emoji: string }> = [];
+      try { segments = JSON.parse(cfg?.segments ?? '[]'); } catch { segments = []; }
+      const s = await ensureSpinState(db, sub);
+      spin = {
+        enabled: true,
+        free_spins_remaining: s.free_spins_remaining,
+        earned_spins_remaining: s.earned_spins_remaining,
+        segments,
+        total_spins: s.total_spins,
+        total_coins_won: s.total_coins_won,
+      };
+    }
+  } catch (err) {
+    console.warn('[rewards] spin state failed (schema missing?):', err);
   }
 
   // Achievements — hydrate with per-achievement PROGRESS + WINDOW state so
   // the client can render a live '27/50' progress bar AND an accurate
   // 'X days left' quest countdown for time-bound achievements.
-  const achEnabled = await readSetting(db, 'reward_achievements_enabled', true, parseBool);
   let achievements: Array<{
     id: string; code: string; title: string; description: string;
     icon: string; tier: string; trigger_type: string; sort_order: number;
@@ -636,6 +654,8 @@ rewards.get('/', async (c) => {
     window_expired: boolean;
     unlocked: boolean; unlocked_at: number | null;
   }> = [];
+  try {
+  const achEnabled = await readSetting(db, 'reward_achievements_enabled', true, parseBool);
   if (achEnabled) {
     // Joined single query: achievement config + unlock state + rolling window
     // state. Every locked achievement reports its per-user progress if it has
@@ -737,6 +757,9 @@ rewards.get('/', async (c) => {
       }
       return a.sort_order - b.sort_order;
     });
+  }
+  } catch (err) {
+    console.warn('[rewards] achievements query failed (schema missing?):', err);
   }
 
   return c.json({
