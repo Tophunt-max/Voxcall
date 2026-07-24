@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   ScrollView,
   ActivityIndicator,
-  Image,
   Platform,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
@@ -80,24 +79,6 @@ export default function MonthlyPassCard({ onChanged }: { onChanged?: () => void 
   const progressPct = maxPoints > 0 ? Math.min(100, Math.round((points / maxPoints) * 100)) : 0;
   const tiers: PassTier[] = useMemo(() => data?.tiers ?? [], [data]);
 
-  const purchase = useCallback(async () => {
-    if (busy) return;
-    setBusy("purchase");
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-    try {
-      const res = await API.purchasePass();
-      if (typeof res.coins === "number") updateCoins(res.coins);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-      showSuccessToast(res.already_unlocked ? "Premium already unlocked" : "Monthly Pass unlocked! 🎟️");
-      await load();
-      onChanged?.();
-    } catch (e: any) {
-      showErrorToast(e?.message ?? "Could not unlock the pass");
-    } finally {
-      setBusy(null);
-    }
-  }, [busy, updateCoins, load, onChanged]);
-
   const claim = useCallback(
     async (tier: PassTier, track: "common" | "premium") => {
       const key = `${tier.level}:${track}`;
@@ -157,38 +138,16 @@ export default function MonthlyPassCard({ onChanged }: { onChanged?: () => void 
         {/* Premium unlock state */}
         {premiumUnlocked ? (
           <View style={styles.unlockedRow}>
-            <Text style={styles.unlockedText}>
-              {data.premium_via_vip ? "👑 Premium unlocked with VIP" : "🎟️ Premium track unlocked"}
-            </Text>
+            <Text style={styles.unlockedText}>👑 Premium unlocked with VIP</Text>
           </View>
         ) : (
-          <View style={styles.unlockCtaRow}>
-            <TouchableOpacity
-              onPress={purchase}
-              disabled={busy === "purchase"}
-              activeOpacity={0.9}
-              style={styles.unlockBtn}
-            >
-              {busy === "purchase" ? (
-                <ActivityIndicator color="#6D28D9" size="small" />
-              ) : (
-                <>
-                  <Text style={styles.unlockBtnText}>Unlock Premium</Text>
-                  {data.price_coins ? (
-                    <View style={styles.unlockPriceChip}>
-                      <Image source={require("@/assets/icons/ic_coin.png")} style={styles.unlockPriceCoin} resizeMode="contain" />
-                      <Text style={styles.unlockPriceText}>{data.price_coins.toLocaleString()}</Text>
-                    </View>
-                  ) : null}
-                </>
-              )}
-            </TouchableOpacity>
-            {data.vip_auto_unlock ? (
-              <TouchableOpacity onPress={() => router.push("/user/vip" as any)} activeOpacity={0.85} style={styles.vipHintBtn}>
-                <Text style={styles.vipHintText}>or go VIP 👑</Text>
-              </TouchableOpacity>
-            ) : null}
-          </View>
+          <TouchableOpacity
+            onPress={() => router.push("/user/vip" as any)}
+            activeOpacity={0.9}
+            style={styles.unlockBtn}
+          >
+            <Text style={styles.unlockBtnText}>👑 Go VIP to unlock Premium</Text>
+          </TouchableOpacity>
         )}
       </LinearGradient>
 
@@ -335,14 +294,8 @@ const styles = StyleSheet.create({
   unlockedRow: { marginTop: 12, backgroundColor: "rgba(255,255,255,0.15)", borderRadius: 10, paddingVertical: 7, alignItems: "center" },
   unlockedText: { color: "#fff", fontSize: 12.5, fontFamily: "Poppins_600SemiBold" },
 
-  unlockCtaRow: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 12 },
-  unlockBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, backgroundColor: "#fff", paddingHorizontal: 14, height: 40, borderRadius: 12, flex: 1 },
+  unlockBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, backgroundColor: "#fff", paddingHorizontal: 14, height: 42, borderRadius: 12, marginTop: 12 },
   unlockBtnText: { color: "#6D28D9", fontSize: 14, fontFamily: "Poppins_700Bold" },
-  unlockPriceChip: { flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: "#FFB800", paddingHorizontal: 7, paddingVertical: 2, borderRadius: 9 },
-  unlockPriceCoin: { width: 12, height: 12 },
-  unlockPriceText: { color: "#5A2B00", fontSize: 11.5, fontFamily: "Poppins_700Bold" },
-  vipHintBtn: { paddingHorizontal: 4 },
-  vipHintText: { color: "#fff", fontSize: 12, fontFamily: "Poppins_600SemiBold", textDecorationLine: "underline" },
 
   tiersRow: { paddingHorizontal: 12, paddingVertical: 12, gap: 10 },
   tierCol: { width: 96, borderRadius: 14, borderWidth: 1.5, paddingVertical: 10, paddingHorizontal: 8, alignItems: "center", gap: 6 },

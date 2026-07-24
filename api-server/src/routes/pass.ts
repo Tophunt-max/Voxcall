@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { authMiddleware } from '../middleware/auth';
 import { getVipStatus } from '../lib/vip';
-import { pushCoinUpdate, notifyUser } from '../lib/realtime';
+import { pushCoinUpdate } from '../lib/realtime';
 import {
   passMonthKey,
   passMonthEndUnix,
@@ -19,10 +19,11 @@ import type { Env, JWTPayload } from '../types';
 // (see routes/rewards.ts → addPassPoints). Crossing a tier's point threshold
 // unlocks a reward on two tracks:
 //   • Common  — free, for everyone.
-//   • Premium — for active VIP members (auto), or anyone who buys the pass with
-//               coins for the current month.
-// Points / premium-unlock / claims all reset at the UTC month boundary because
-// they are keyed by period_key ('YYYY-MM').
+//   • Premium — EXCLUSIVELY for active VIP members. There is no coin purchase;
+//               the only way to unlock the Premium track is an active VIP
+//               subscription (see routes/vip.ts).
+// Points / claims reset at the UTC month boundary because they are keyed by
+// period_key ('YYYY-MM'). Premium access follows VIP status live.
 // ============================================================================
 
 const pass = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
@@ -65,21 +66,19 @@ pass.get('/', async (c) => {
 
   const tiers = parsePassTiers(cfg.tiers);
 
-  // User's month state (points + coin-purchased premium unlock).
+  // User's month points. Premium unlock is a VIP-only perk — coins cannot buy it.
   let points = 0;
-  let purchased = false;
   try {
     const st = await db
-      .prepare('SELECT points, premium_unlocked FROM user_pass_state WHERE user_id = ? AND period_key = ?')
+      .prepare('SELECT points FROM user_pass_state WHERE user_id = ? AND period_key = ?')
       .bind(sub, period)
-      .first<{ points: number; premium_unlocked: number }>();
+      .first<{ points: number }>();
     points = Number(st?.points) || 0;
-    purchased = !!Number(st?.premium_unlocked);
   } catch { /* un-migrated DB → defaults */ }
 
   const vip = await getVipStatus(db, sub);
-  const vipUnlock = !!Number(cfg.vip_auto_unlock) && vip.isVip;
-  const premiumUnlocked = purchased || vipUnlock;
+  // Premium track is unlocked ONLY for active VIP members.
+  const premiumUnlocked = vip.isVip;
 
   // Claim ledger for this month → "level:track" set.
   const claimed = new Set<string>();
@@ -116,12 +115,10 @@ pass.get('/', async (c) => {
     enabled: true,
     title: cfg.title,
     description: cfg.description,
-    price_coins: Number(cfg.price_coins) || 0,
-    vip_auto_unlock: !!Number(cfg.vip_auto_unlock),
     is_vip: vip.isVip,
     premium_unlocked: premiumUnlocked,
-    premium_via_vip: vipUnlock,
-    purchased,
+    premium_via_vip: premiumUnlocked,
+    premium_requires_vip: true,
     points,
     max_points: maxPoints,
     period_key: period,
@@ -133,70 +130,25 @@ pass.get('/', async (c) => {
 });
 
 // ── POST /api/user/pass/purchase ──────────────────────────────────────────
-// Unlock the Premium track for the CURRENT month by spending coins. VIP members
-// (when vip_auto_unlock is on) already have it and are never charged.
+// Premium is a VIP-only perk — it cannot be bought with coins. This endpoint
+// is kept for backward compatibility with older clients: VIP members get a
+// success response (already unlocked); everyone else is told to subscribe.
 pass.post('/purchase', async (c) => {
   const { sub } = c.get('user');
   const db = c.env.DB;
-  const now = Math.floor(Date.now() / 1000);
-  const period = passMonthKey(now);
 
   const cfg = await loadConfig(db);
   if (!cfg || !Number(cfg.enabled)) return c.json({ error: 'Monthly Pass is unavailable', code: 'PASS_DISABLED' }, 403);
 
-  // VIP members get the premium track for free.
   const vip = await getVipStatus(db, sub);
-  if (!!Number(cfg.vip_auto_unlock) && vip.isVip) {
+  if (vip.isVip) {
     return c.json({ success: true, already_unlocked: true, via: 'vip', premium_unlocked: true });
   }
-
-  // Already bought this month?
-  try {
-    const st = await db
-      .prepare('SELECT premium_unlocked FROM user_pass_state WHERE user_id = ? AND period_key = ?')
-      .bind(sub, period)
-      .first<{ premium_unlocked: number }>();
-    if (st && Number(st.premium_unlocked)) {
-      const u = await db.prepare('SELECT coins FROM users WHERE id = ?').bind(sub).first<{ coins: number }>();
-      return c.json({ success: true, already_unlocked: true, via: 'coins', premium_unlocked: true, coins: Number(u?.coins) || 0 });
-    }
-  } catch { /* fall through to purchase */ }
-
-  const price = Math.max(0, Number(cfg.price_coins) || 0);
-
-  // Atomic debit — the WHERE coins >= ? guard makes double-clicks safe.
-  if (price > 0) {
-    const upd = await db
-      .prepare('UPDATE users SET coins = coins - ?, updated_at = unixepoch() WHERE id = ? AND coins >= ?')
-      .bind(price, sub, price)
-      .run();
-    if (!upd.meta?.changes) {
-      return c.json({ error: `Not enough coins. The Monthly Pass costs ${price} coins.`, code: 'INSUFFICIENT_COINS' }, 402);
-    }
-  }
-
-  // Record the unlock for this month.
-  await db
-    .prepare(
-      `INSERT INTO user_pass_state (user_id, period_key, points, premium_unlocked, updated_at)
-       VALUES (?, ?, 0, 1, ?)
-       ON CONFLICT(user_id, period_key) DO UPDATE SET premium_unlocked = 1, updated_at = ?`,
-    )
-    .bind(sub, period, now, now)
-    .run();
-
-  if (price > 0) {
-    await db
-      .prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
-      .bind(crypto.randomUUID(), sub, 'spend', -price, `Monthly Pass (${period})`, `monthly_pass_${period}`)
-      .run()
-      .catch((e) => console.warn('[pass/purchase] ledger write failed (non-fatal):', e));
-  }
-
-  const after = await db.prepare('SELECT coins FROM users WHERE id = ?').bind(sub).first<{ coins: number }>();
-  c.executionCtx?.waitUntil?.(pushCoinUpdate(c.env, sub));
-  c.executionCtx?.waitUntil?.(notifyUser(c.env, sub, 'Monthly Pass unlocked 🎟️', 'Premium rewards are now yours to claim this month. Complete tasks to level up!', 'reward'));
-  return c.json({ success: true, premium_unlocked: true, via: 'coins', price_coins: price, coins: Number(after?.coins) || 0 });
+  return c.json({
+    error: 'Premium rewards are a VIP perk. Subscribe to VIP to unlock them.',
+    code: 'VIP_REQUIRED',
+    premium_unlocked: false,
+  }, 403);
 });
 
 // ── POST /api/user/pass/claim { tier_level, track } ────────────────────────
@@ -220,16 +172,14 @@ pass.post('/claim', async (c) => {
   const tier: PassTier | undefined = parsePassTiers(cfg.tiers).find((t) => t.level === tierLevel);
   if (!tier) return c.json({ error: 'Tier not found' }, 404);
 
-  // Current-month points + unlock state.
+  // Current-month points.
   let points = 0;
-  let purchased = false;
   try {
     const st = await db
-      .prepare('SELECT points, premium_unlocked FROM user_pass_state WHERE user_id = ? AND period_key = ?')
+      .prepare('SELECT points FROM user_pass_state WHERE user_id = ? AND period_key = ?')
       .bind(sub, period)
-      .first<{ points: number; premium_unlocked: number }>();
+      .first<{ points: number }>();
     points = Number(st?.points) || 0;
-    purchased = !!Number(st?.premium_unlocked);
   } catch { /* defaults */ }
 
   if (points < tier.points) {
@@ -239,11 +189,11 @@ pass.post('/claim', async (c) => {
   const coins = track === 'premium' ? tier.premium_coins : tier.free_coins;
   if (coins <= 0) return c.json({ error: 'No reward on this track for this tier', code: 'NO_REWARD' }, 400);
 
+  // Premium rewards are exclusively for active VIP members.
   if (track === 'premium') {
     const vip = await getVipStatus(db, sub);
-    const premiumUnlocked = purchased || (!!Number(cfg.vip_auto_unlock) && vip.isVip);
-    if (!premiumUnlocked) {
-      return c.json({ error: 'Unlock the Monthly Pass (or go VIP) to claim Premium rewards', code: 'PREMIUM_LOCKED' }, 403);
+    if (!vip.isVip) {
+      return c.json({ error: 'Premium rewards are a VIP perk. Subscribe to VIP to claim them.', code: 'VIP_REQUIRED' }, 403);
     }
   }
 

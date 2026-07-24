@@ -62,8 +62,6 @@ export default function RewardPass() {
         enabled: !!cfg.enabled,
         title: cfg.title,
         description: cfg.description,
-        price_coins: cfg.price_coins,
-        vip_auto_unlock: !!cfg.vip_auto_unlock,
         tiers: cfg.tiers,
       });
       toast.success('Monthly Pass saved');
@@ -147,28 +145,19 @@ export default function RewardPass() {
 
       {/* Config */}
       <div className="bg-card border border-border rounded-2xl p-5 space-y-4">
-        <div className="flex items-center gap-6 flex-wrap">
-          <label className="flex items-center gap-2 text-sm cursor-pointer">
-            <input type="checkbox" checked={!!cfg.enabled} onChange={(e) => setCfg({ ...cfg, enabled: e.target.checked })} />
-            <span className="font-semibold">Enabled (visible to users)</span>
-          </label>
-          <label className="flex items-center gap-2 text-sm cursor-pointer">
-            <input type="checkbox" checked={!!cfg.vip_auto_unlock} onChange={(e) => setCfg({ ...cfg, vip_auto_unlock: e.target.checked })} />
-            <span className="font-semibold">VIP members unlock Premium track for free</span>
-          </label>
+        <label className="flex items-center gap-2 text-sm cursor-pointer">
+          <input type="checkbox" checked={!!cfg.enabled} onChange={(e) => setCfg({ ...cfg, enabled: e.target.checked })} />
+          <span className="font-semibold">Enabled (visible to users)</span>
+        </label>
+
+        <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-purple-50 border border-purple-200 text-purple-800 text-xs">
+          <Crown size={14} className="mt-0.5 flex-shrink-0" />
+          <span>The <strong>Premium</strong> track is unlocked exclusively for active <strong>VIP members</strong>. There is no coin purchase — non-VIP users only get the Common (free) track.</span>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="text-sm font-semibold block mb-1.5">Title</label>
-            <input className={numInput} value={cfg.title} onChange={(e) => setCfg({ ...cfg, title: e.target.value })} />
-          </div>
-          <div>
-            <label className="text-sm font-semibold block mb-1.5">Premium price (coins)</label>
-            <input type="number" min={0} className={numInput} value={cfg.price_coins}
-              onChange={(e) => setCfg({ ...cfg, price_coins: Math.max(0, Number(e.target.value)) })} />
-            <p className="text-[10px] text-muted-foreground mt-1">Cost for non-VIP users to unlock the Premium track for the month.</p>
-          </div>
+        <div>
+          <label className="text-sm font-semibold block mb-1.5">Title</label>
+          <input className={numInput} value={cfg.title} onChange={(e) => setCfg({ ...cfg, title: e.target.value })} />
         </div>
 
         <div>
