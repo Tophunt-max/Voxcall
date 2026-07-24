@@ -3,6 +3,10 @@ export interface Env {
   STORAGE: R2Bucket;
   CHAT_ROOM: DurableObjectNamespace;
   NOTIFICATION_HUB: DurableObjectNamespace;
+  // Sharded "who is connected right now" index (see durable-objects/
+  // PresenceRegistry.ts). Lets broadcasts target only live sockets instead of
+  // fanning out to every user row.
+  PRESENCE_REGISTRY: DurableObjectNamespace;
   JWT_SECRET: string;
   // Agora RTC credentials — the ONLY media transport. Both MUST be set for
   // calls to work; AGORA_APP_CERTIFICATE must be a Worker SECRET (never a var).

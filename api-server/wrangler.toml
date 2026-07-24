@@ -45,7 +45,11 @@ preview_bucket_name = "voxlink-storage-preview"
 [durable_objects]
 bindings = [
   { name = "CHAT_ROOM", class_name = "ChatRoom" },
-  { name = "NOTIFICATION_HUB", class_name = "NotificationHub" }
+  { name = "NOTIFICATION_HUB", class_name = "NotificationHub" },
+  # Sharded connected-user registry — powers targeted realtime broadcasts so a
+  # `data_changed` / presence push reaches only users with a live socket
+  # instead of every user row (see durable-objects/PresenceRegistry.ts).
+  { name = "PRESENCE_REGISTRY", class_name = "PresenceRegistry" }
 ]
 
 [[migrations]]
@@ -58,6 +62,12 @@ new_sqlite_classes = ["ChatRoom", "CallSignaling", "NotificationHub"]
 [[migrations]]
 tag = "v2"
 deleted_classes = ["CallSignaling"]
+
+# v3 — add the sharded PresenceRegistry Durable Object. SQLite-backed so its
+# connected-user membership survives hibernation. Additive only; no data moves.
+[[migrations]]
+tag = "v3"
+new_sqlite_classes = ["PresenceRegistry"]
 
 # Stale call cleanup cron — runs every 1 minute.
 # Reaps call_sessions stuck in 'pending' (>2 min) and 'active' (>30 min) so

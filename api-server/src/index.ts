@@ -28,6 +28,7 @@ import giftsRouter from './routes/gifts';
 import smartRouter from './routes/smart';
 import { ChatRoom } from './durable-objects/ChatRoom';
 import { NotificationHub } from './durable-objects/NotificationHub';
+import { PresenceRegistry } from './durable-objects/PresenceRegistry';
 import { ensureUsersSchema, ensureRandomCallSchema, ensureStreakSchema, ensureHostStreakSchema, ensureFirstCallFreeSchema, ensureCallObservabilitySchema, ensureEngagementSchema, ensureWithdrawalSchema, ensureSmartV2Schema, ensureReferralIntegritySchema, ensureVipSignupBonusSchema, ensureGiftSchema } from './lib/schemaGuard';
 import { releaseExpiredReferralHolds } from './lib/referral';
 import { raiseAdminAlert } from './lib/alerts';
@@ -39,6 +40,7 @@ import { runReengagement } from './lib/reengagement';
 import { recomputeActiveHours } from './lib/bestTime';
 import { recomputeChurnRisk } from './lib/churn';
 import { runHealthProbes, storeHealthCheck, pruneHealthChecks } from './lib/healthCheck';
+import { pruneRetention } from './lib/retention';
 import { istContext } from './lib/streak';
 import { getFCMTokens, sendFCMPush } from './lib/fcm';
 import { notifyUser } from './lib/realtime';
@@ -46,7 +48,14 @@ import { notifyEngagement, isQuietHoursIST, engagementFeatureEnabled } from './l
 import { USD_TO_FOREIGN } from './lib/currency';
 
 // Re-export Durable Objects (required by wrangler)
-export { ChatRoom, NotificationHub };
+export { ChatRoom, NotificationHub, PresenceRegistry };
+
+// Max recipients a single push CAMPAIGN processes per cron tick. Bulk campaigns
+// (streak / near-level reminders) exclude already-notified users and resume on
+// the next tick, so this bounds each cron invocation's outbound push count well
+// under the Worker per-invocation subrequest limit (~1000) even at scale, while
+// the once-per-minute cron drains the full audience over the campaign's hour.
+const CAMPAIGN_MAX_PER_TICK = 300;
 
 // DEV-ONLY fallback origins. In production, set CORS_ALLOWED_ORIGINS to an
 // explicit allowlist (see buildExactAllowlist below). These broad patterns
@@ -742,22 +751,27 @@ async function maybeSendStreakReminders(env: Env): Promise<void> {
     const { hour: istHour, dayIndex, dayStart } = istContext(now);
     if (istHour !== reminderHour) return;
 
-    const lastDay = parseInt(cfg['last_streak_reminder_day'] ?? '', 10) || 0;
-    if (lastDay === dayIndex) return; // already sent today
-
-    // Claim the daily slot BEFORE sending so overlapping cron ticks don't double-send.
-    await env.DB.prepare(
-      "INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('last_streak_reminder_day', ?, unixepoch())",
-    ).bind(String(dayIndex)).run();
-
-    // Candidates: an active streak that hasn't been claimed yet today (IST).
+    // Candidates: an active streak that hasn't been claimed yet today (IST),
+    // EXCLUDING anyone already sent today's reminder. That exclusion makes the
+    // job resumable: instead of claiming a day-slot and blasting up to 5000
+    // pushes in one cron invocation (which would exceed the Worker's ~1000
+    // subrequest budget at scale), we process a bounded slice per tick and let
+    // the remaining ticks in the reminder hour drain the rest. Once everyone
+    // eligible has been notified the query returns empty and the rest of the
+    // hour's ticks are cheap no-ops. `dayIndex`/`cfg['last_streak_reminder_day']`
+    // are no longer used for gating but kept read above for backward-compat.
+    void dayIndex;
     const cand = await env.DB.prepare(
       `SELECT id FROM users
          WHERE COALESCE(streak_days, 0) > 0
            AND COALESCE(last_streak_claim_at, 0) < ?
            AND COALESCE(status, 'active') = 'active'
-         LIMIT 5000`,
-    ).bind(dayStart).all<{ id: string }>();
+           AND NOT EXISTS (
+             SELECT 1 FROM notifications n
+              WHERE n.user_id = users.id AND n.type = 'streak_reminder' AND n.created_at >= ?
+           )
+         LIMIT ?`,
+    ).bind(dayStart, dayStart, CAMPAIGN_MAX_PER_TICK).all<{ id: string }>();
     const ids = (cand.results ?? []).map((r) => r.id);
     if (ids.length === 0) return;
 
@@ -868,24 +882,26 @@ async function maybeSendNearLevelNudges(env: Env): Promise<void> {
     const parsedThreshold = parseInt(cfg['near_level_nudge_threshold'] ?? '', 10);
     const threshold = Number.isFinite(parsedThreshold) ? Math.min(99, Math.max(50, parsedThreshold)) : 80;
 
-    const { hour: istHour, dayIndex } = istContext(now);
+    const { hour: istHour, dayIndex, dayStart } = istContext(now);
     if (istHour !== nudgeHour) return;
-
-    const lastDay = parseInt(cfg['last_near_level_nudge_day'] ?? '', 10) || 0;
-    if (lastDay === dayIndex) return; // already sent today
-
-    // Claim the daily slot BEFORE sending so overlapping ticks don't double-send.
-    await env.DB.prepare(
-      "INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('last_near_level_nudge_day', ?, unixepoch())",
-    ).bind(String(dayIndex)).run();
+    // Resumable across the nudge hour's cron ticks (like streak reminders):
+    // exclude hosts already nudged today and cap sends per tick, so no single
+    // cron invocation exceeds the Worker subrequest budget. dayIndex/
+    // last_near_level_nudge_day are no longer used for gating (kept read above
+    // for backward-compat).
+    void dayIndex;
 
     const levelCfg = await getLevelConfig(env.DB);
     const hosts = await env.DB.prepare(
       `SELECT h.id, h.user_id, h.level, h.rating, h.review_count, h.total_minutes, h.total_earnings, u.fcm_token
        FROM hosts h JOIN users u ON u.id = h.user_id
        WHERE h.is_active = 1 AND u.status = 'active' AND u.fcm_token IS NOT NULL
+         AND NOT EXISTS (
+           SELECT 1 FROM notifications n
+            WHERE n.user_id = u.id AND n.type = 'near_level' AND n.created_at >= ?
+         )
        LIMIT 5000`,
-    ).all<any>();
+    ).bind(dayStart).all<any>();
 
     const targets: { userId: string; token: string; pct: number; nextName: string }[] = [];
     for (const h of hosts.results ?? []) {
@@ -906,7 +922,7 @@ async function maybeSendNearLevelNudges(env: Env): Promise<void> {
     if (targets.length === 0) return;
 
     let pushed = 0;
-    const cap = targets.slice(0, 1000); // safety cap on per-host pushes
+    const cap = targets.slice(0, CAMPAIGN_MAX_PER_TICK); // per-tick send cap; rest drain next tick
     for (const t of cap) {
       const title = '🚀 You\u2019re SO Close to Levelling Up!';
       const body = `Just ${t.pct}% away from ${t.nextName}! 🌟 Go online now and unlock your next level + bigger rewards. 🏆`;
@@ -1385,6 +1401,10 @@ export default {
     ctx.waitUntil(maybeRefreshFxRates(env));
     // Money-integrity watchdog — hourly self-gated; alerts on coin drift.
     ctx.waitUntil(maybeReconcileCoins(env).catch((e) => console.warn('[cron] maybeReconcileCoins failed:', e)));
+    // D1 retention sweep — keeps unbounded tables (call_sessions, notifications,
+    // messages, random_match_history, call_quality) under the 10 GB D1 ceiling.
+    // Self-gated to every 6h; excludes the coin_transactions ledger. Best-effort.
+    ctx.waitUntil(pruneRetention(env).catch((e) => console.warn('[cron] pruneRetention failed:', e)));
     ctx.waitUntil(maybeRunReengagement(env));
     ctx.waitUntil(maybeSendStreakReminders(env));
     ctx.waitUntil(maybeSendVipReminders(env));

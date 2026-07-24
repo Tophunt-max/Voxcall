@@ -2,6 +2,7 @@
 // Uses Cloudflare Hibernatable WebSocket API — the DO can sleep between events
 // without losing connected WebSocket clients (getWebSockets() survives hibernation).
 import type { Env } from '../types';
+import { registerConnected, unregisterConnected, broadcastToConnected } from '../lib/presence';
 
 // Negotiate the WebSocket subprotocol: clients now send the JWT as a
 // subprotocol (["jwt", "<token>"]) instead of a ?token= query param so the
@@ -75,6 +76,10 @@ export class NotificationHub {
     if (userId && this.state.getWebSockets().length === 1) {
       this.broadcastUserPresence(userId, true).catch((e) =>
         console.warn('[NotificationHub] connect presence failed:', e));
+      // Add this user to the connected-user registry so targeted broadcasts
+      // (admin `data_changed`, host presence) reach them. Best-effort.
+      this.registerPresence(userId).catch((e) =>
+        console.warn('[NotificationHub] registerPresence failed:', e));
     }
     const subprotocol = negotiateWsSubprotocol(request);
     const init: ResponseInit & { webSocket: WebSocket } = { status: 101, webSocket: client };
@@ -103,6 +108,23 @@ export class NotificationHub {
   async webSocketError(ws: WebSocket, _error: unknown): Promise<void> {
     try { ws.close(); } catch {}
     await this.handleDisconnect(ws);
+  }
+
+  // Register this user in the sharded connected-user registry. Looks up their
+  // role once (users.role) so broadcasts can filter by audience without a DB
+  // read per push. Best-effort — a failure just means this user might miss a
+  // live `data_changed` until their next reconnect.
+  private async registerPresence(userId: string): Promise<void> {
+    let role: 'user' | 'host' = 'user';
+    try {
+      const row = await this.env.DB.prepare('SELECT role FROM users WHERE id = ?')
+        .bind(userId)
+        .first<{ role: string }>();
+      if (row?.role === 'host') role = 'host';
+    } catch {
+      /* default to 'user' if the lookup fails */
+    }
+    await registerConnected(this.env, userId, role);
   }
 
   // Broadcast a regular user's chat presence (online/offline) to the hosts they
@@ -156,6 +178,10 @@ export class NotificationHub {
     await this.broadcastUserPresence(userId, false).catch((e) =>
       console.warn('[NotificationHub] disconnect presence failed:', e));
 
+    // Remove from the connected-user registry (best-effort).
+    await unregisterConnected(this.env, userId).catch((e) =>
+      console.warn('[NotificationHub] unregisterConnected failed:', e));
+
     try {
       const host = await this.env.DB.prepare(
         'SELECT id, is_online FROM hosts WHERE user_id = ?'
@@ -167,26 +193,15 @@ export class NotificationHub {
         'UPDATE hosts SET is_online = 0, updated_at = unixepoch() WHERE user_id = ?'
       ).bind(userId).run();
 
-      // Broadcast presence change to recent users so their UI updates immediately
-      const recentUsers = await this.env.DB.prepare(
-        `SELECT id FROM users WHERE role = 'user' ORDER BY updated_at DESC LIMIT 100`
-      ).all<{ id: string }>();
-
-      const presenceMsg = JSON.stringify({
-        type: 'presence',
-        user_id: userId,
-        host_id: host.id,
-        is_online: false,
-      });
-      await Promise.allSettled(
-        (recentUsers.results ?? []).map(async (u) => {
-          try {
-            const stub = this.env.NOTIFICATION_HUB.get(this.env.NOTIFICATION_HUB.idFromName(u.id));
-            await stub.fetch('https://dummy/notify', { method: 'POST', body: presenceMsg });
-          } catch (e) {
-            console.warn('[NotificationHub] presence broadcast to', u.id, 'failed:', e);
-          }
-        })
+      // Broadcast the host-offline presence change to CONNECTED users only.
+      // Previously this fanned out to "recent 100 users" (LIMIT 100), which
+      // both missed users beyond the newest 100 and wasted pushes on offline
+      // ones. Targeting the registry reaches exactly the users whose UI can
+      // act on it right now; everyone else re-reads presence on next fetch.
+      await broadcastToConnected(
+        this.env,
+        { type: 'presence', user_id: userId, host_id: host.id, is_online: false },
+        'user',
       );
     } catch (e) {
       console.error('[NotificationHub] handleDisconnect DB/presence error for user', userId, ':', e);

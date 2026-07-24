@@ -12,17 +12,20 @@
 // Clients decide what to refetch. This keeps the fan-out cheap even for a large
 // connected user base and avoids shipping stale/oversized data over the socket.
 //
-// Fan-out mirrors the existing settings broadcast: the NotificationHub is a
-// per-user Durable Object, so "broadcast to everyone" means iterating user ids
-// in chunks and POSTing to each hub. Admin catalog edits are rare, so the cost
-// is acceptable and it always runs via ctx.waitUntil (never blocks the response).
+// Fan-out targets only CONNECTED users via the sharded PresenceRegistry — a
+// `data_changed` push is useless to an offline user, so the old approach of
+// SELECTing up to 10 000 user ids and POSTing to every per-user hub was both
+// incomplete (LIMIT 10000 silently truncated) and unscalable (a push to each
+// offline user still burned a subrequest, blowing the ~1000/invocation cap).
+// The registry knows the small set with a live socket, so the broadcast is
+// bounded and complete regardless of total user count. Always runs via
+// ctx.waitUntil so it never blocks the admin response.
 // ============================================================================
 
 import type { Env } from '../types';
+import { broadcastToConnected } from './presence';
 
 export type BroadcastAudience = 'all' | 'user' | 'host';
-
-const CHUNK_SIZE = 50;
 
 export async function broadcastDataChanged(
   env: Env,
@@ -30,35 +33,11 @@ export async function broadcastDataChanged(
   audience: BroadcastAudience = 'all',
 ): Promise<void> {
   try {
-    let where = "status != 'deleted'";
-    if (audience === 'user') where += " AND role = 'user'";
-    else if (audience === 'host') where += " AND role = 'host'";
-
-    const rows = await env.DB.prepare(
-      `SELECT id FROM users WHERE ${where} LIMIT 10000`,
-    ).all<{ id: string }>();
-    const users = rows.results ?? [];
-    if (users.length === 0) return;
-
-    const msg = JSON.stringify({
-      type: 'data_changed',
-      resource,
-      timestamp: Date.now(),
-    });
-
-    for (let i = 0; i < users.length; i += CHUNK_SIZE) {
-      const chunk = users.slice(i, i + CHUNK_SIZE);
-      await Promise.allSettled(
-        chunk.map(async (u) => {
-          try {
-            const stub = env.NOTIFICATION_HUB.get(env.NOTIFICATION_HUB.idFromName(u.id));
-            await stub.fetch('https://dummy/notify', { method: 'POST', body: msg });
-          } catch {
-            /* one hub failing must not abort the rest of the broadcast */
-          }
-        }),
-      );
-    }
+    await broadcastToConnected(
+      env,
+      { type: 'data_changed', resource, timestamp: Date.now() },
+      audience,
+    );
   } catch (e) {
     // A broadcast failure must never surface to the admin request.
     console.warn('[realtime] broadcastDataChanged failed for', resource, e);

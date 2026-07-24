@@ -51,6 +51,7 @@ import {
   type MatchWeights,
 } from '../lib/matchWeight';
 import { getVipStatus } from '../lib/vip';
+import { getCachedSetting, getCachedIntSetting, getCachedBoolSetting } from '../lib/settingsCache';
 import type { Env, JWTPayload } from '../types';
 
 const match = new Hono<{ Bindings: Env; Variables: { user: JWTPayload } }>();
@@ -81,21 +82,17 @@ function safeJson<T>(s: string | null | undefined, fallback: T): T {
  * anti-abuse knobs (daily cap, decline cooldown, no-repeat window) so an
  * un-configured deployment behaves like the historical "no limits" build.
  */
+// NOTE: these delegate to the per-isolate app_settings cache (lib/settingsCache)
+// so this HOT endpoint (polled every ~2.5s while a user searches, reading ~6
+// keys per request) collapses repeated reads to one D1 hit per key per ~30s
+// instead of hammering D1 on every poll. Config here changes rarely, so the
+// short TTL is invisible to users.
 async function readIntSetting(
   db: D1Database,
   key: string,
   fallback: number,
 ): Promise<number> {
-  try {
-    const row = await db
-      .prepare('SELECT value FROM app_settings WHERE key = ?')
-      .bind(key)
-      .first<{ value: string }>();
-    const n = parseInt(row?.value ?? '');
-    return Number.isFinite(n) && n >= 0 ? n : fallback;
-  } catch {
-    return fallback;
-  }
+  return getCachedIntSetting(db, key, fallback);
 }
 
 /**
@@ -107,16 +104,7 @@ async function readBoolSetting(
   key: string,
   fallbackEnabled: boolean,
 ): Promise<boolean> {
-  try {
-    const row = await db
-      .prepare('SELECT value FROM app_settings WHERE key = ?')
-      .bind(key)
-      .first<{ value: string }>();
-    if (row?.value == null) return fallbackEnabled;
-    return row.value !== '0';
-  } catch {
-    return fallbackEnabled;
-  }
+  return getCachedBoolSetting(db, key, fallbackEnabled);
 }
 
 /**
@@ -655,16 +643,7 @@ match.post('/find', async (c) => {
   //    migration-0026 column never crashes the route.
   const [weightingEnabled, matchWeightsRaw] = await Promise.all([
     readBoolSetting(db, 'match_weighting_enabled', true),
-    (async () => {
-      try {
-        const row = await db
-          .prepare("SELECT value FROM app_settings WHERE key = 'match_weights'")
-          .first<{ value: string }>();
-        return row?.value ?? null;
-      } catch {
-        return null;
-      }
-    })(),
+    getCachedSetting(db, 'match_weights'),
   ]);
   let matchWeights: MatchWeights;
   try {

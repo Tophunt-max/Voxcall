@@ -10,6 +10,7 @@ import {
 } from '../lib/emergencyFlags';
 import { listMigrationStatus as listMigrationStatusForHealth } from '../lib/autoMigrate';
 import { getLevelConfig, normalizeLevelConfig, getDefaultCallRates, getEarningShare, clearLevelConfigCache, METRIC_REGISTRY, DEFAULT_LEVEL_CONFIG, RECOMMENDED_LEVEL_CONFIG, MIN_LEVELS, MAX_LEVELS } from '../lib/levels';
+import { clearAllSettingsCache } from '../lib/settingsCache';
 import { recalcAllHostLevels } from '../lib/levelService';
 import { chargeCallerWithFreePool, billedMinutes, coinsForCall } from '../lib/billing';
 import { resignIfPrivate } from '../lib/mediaSign';
@@ -910,6 +911,10 @@ admin.patch('/settings', async (c) => {
     );
   if (!stmts.length) return c.json({ error: 'No valid settings to update' }, 400);
   await db(c).batch(stmts);
+  // Invalidate the per-isolate app_settings cache so the new values take effect
+  // on the very next read (matchmaking / economy / feature flags) instead of
+  // waiting out the short TTL. Cheap: just clears an in-memory Map.
+  clearAllSettingsCache();
   
   // REAL-TIME UPDATE: Broadcast settings change to ALL connected users via WebSocket
   // This enables live updates in ALL apps (user app, host app, admin panel) without page refresh
