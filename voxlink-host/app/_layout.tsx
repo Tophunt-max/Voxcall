@@ -28,7 +28,7 @@ import { AuthProvider } from "@/context/AuthContext";
 import { CallProvider } from "@/context/CallContext";
 import { ChatProvider } from "@/context/ChatContext";
 import { LanguageProvider } from "@/context/LanguageContext";
-import { SocketProvider, useSocketEvent } from "@/context/SocketContext";
+import { SocketProvider, useSocketEvent, useSocket } from "@/context/SocketContext";
 import { SocketEvents } from "@/constants/events";
 import { useCall } from "@/context/CallContext";
 import { useAuth } from "@/context/AuthContext";
@@ -190,8 +190,12 @@ const HOST_CATALOG_QUERY_KEYS: Record<string, (string | number)[][]> = {
 function AppBridge() {
   const { receiveCall, activeCall } = useCall();
   const { user, isLoggedIn, refreshProfile, setOnlineStatus } = useAuth();
+  const { isConnected: socketConnected } = useSocket();
   const queryClient = useQueryClient();
   const activeCallRef = useRef(activeCall);
+  // Track WS connectivity in a ref so the polling-fallback interval closure can
+  // read the latest value WITHOUT restarting the interval on every reconnect.
+  const socketConnectedRef = useRef(socketConnected);
   const seenCallIds = useRef(new Set<string>());
 
   // Real-time catalog updates — admin add/edit/delete reflects immediately.
@@ -208,6 +212,7 @@ function AppBridge() {
   const autoOnlineRunRef = useRef(false);
 
   useEffect(() => { activeCallRef.current = activeCall; }, [activeCall]);
+  useEffect(() => { socketConnectedRef.current = socketConnected; }, [socketConnected]);
 
   // seenCallIds logout pe clear karo
   useEffect(() => {
@@ -238,12 +243,19 @@ function AppBridge() {
     });
   }, [isLoggedIn, user?.id, user?.role, user?.isOnline, setOnlineStatus]);
 
-  // Polling fallback — fires every 4 s while logged in.
+  // Polling fallback for incoming calls — ONLY runs when the notification
+  // WebSocket is down. The WS (SocketEvents.CALL_INCOMING below) is the primary,
+  // instant delivery path; when it's connected this poll is pure redundant load
+  // (every online host hitting GET /api/calls/pending-for-host on a tight loop),
+  // so we skip it. When the WS drops, this poll takes over at a relaxed cadence
+  // so incoming calls are still delivered until the socket reconnects.
   useEffect(() => {
     if (!isLoggedIn || !user?.id) return;
 
     const poll = async () => {
       if (activeCallRef.current) return;
+      // Skip while the WS is connected — it already delivers incoming calls.
+      if (socketConnectedRef.current) return;
       try {
         const pending = await API.getPendingCall();
         if (pending?.id && !seenCallIds.current.has(pending.id)) {
@@ -268,7 +280,10 @@ function AppBridge() {
       } catch {}
     };
 
-    const interval = setInterval(poll, 4000);
+    // 15s cadence: this is a fallback (WS is primary + instant), so it doesn't
+    // need a tight 4s loop. Cuts backend load massively at scale while keeping
+    // a reasonable worst-case delivery latency when the socket is down.
+    const interval = setInterval(poll, 15000);
     return () => clearInterval(interval);
   }, [isLoggedIn, user?.id]);
 
