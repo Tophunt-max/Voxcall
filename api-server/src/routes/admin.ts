@@ -11,6 +11,7 @@ import {
 import { listMigrationStatus as listMigrationStatusForHealth } from '../lib/autoMigrate';
 import { getLevelConfig, normalizeLevelConfig, getDefaultCallRates, getEarningShare, clearLevelConfigCache, METRIC_REGISTRY, DEFAULT_LEVEL_CONFIG, RECOMMENDED_LEVEL_CONFIG, MIN_LEVELS, MAX_LEVELS } from '../lib/levels';
 import { clearAllSettingsCache } from '../lib/settingsCache';
+import { getArchivedLedgerNet } from '../lib/archive';
 import { recalcAllHostLevels } from '../lib/levelService';
 import { chargeCallerWithFreePool, billedMinutes, coinsForCall } from '../lib/billing';
 import { resignIfPrivate } from '../lib/mediaSign';
@@ -3574,10 +3575,14 @@ admin.get('/coin-reconciliation', async (c) => {
     { users: 0, total_coins: 0 },
   );
 
-  const net = await safe(
+  const liveNet = await safe(
     () => database.prepare('SELECT COALESCE(SUM(amount), 0) AS net FROM coin_transactions').first<{ net: number }>(),
     { net: 0 },
   );
+  // Rows archived to R2 + removed from D1 (lib/archive.ts) still count toward
+  // the ledger; add their net so the dashboard drift matches the cron watchdog.
+  const archivedNet = await getArchivedLedgerNet(database).catch(() => 0);
+  const net = { net: (liveNet.net ?? 0) + archivedNet };
 
   const byType = await safe(
     async () =>

@@ -64,13 +64,30 @@ function enrichHost(h: any, config: LevelDef[]) {
 // Map hosts.level → its configured rank_boost perk for ORDER BY (see levels.ts).
 const rankBoostCase = (config: LevelDef[]) => rankBoostCaseSql(config);
 
+// ── D1 read-replication helper ───────────────────────────────────────────────
+// Public host discovery (featured + the main grid) is READ-ONLY and fully
+// stale-tolerant (it's already CDN-cached for 30–120s), so it's the ideal place
+// to serve reads from a nearby D1 read replica instead of the single primary.
+// `withSession()` == "first-unconstrained": the query runs on whatever replica
+// is closest, cutting read latency for far-away users and offloading the
+// primary's read throughput. This is BACKWARD-COMPATIBLE — until read
+// replication is enabled on the database (Cloudflare dashboard → D1 → your DB →
+// Settings → Enable Read Replication, or the REST API read_replication.mode=auto),
+// the session simply routes to the primary exactly as before. No bookmark
+// round-trip is needed here because these lists are global (not the caller's
+// own writes), so `first-unconstrained` is the right consistency level.
+function readReplica(env: Env) {
+  return env.DB.withSession();
+}
+
 // GET /api/hosts/featured — top-rated/featured hosts (must be before /:id)
 // OPTIMIZATION #3: Cache-Control lets Cloudflare CDN cache this for 2 min (featured rarely changes)
 host.get('/featured', async (c) => {
   const config = await getLevelConfig(c.env.DB);
   // LEVEL PERK: rank_boost ranks higher-level hosts earlier (after the
   // top-rated flag), making the perk actually visible on the featured rail.
-  const result = await c.env.DB.prepare(
+  // Served from a read replica (see readReplica) — read-only + already cached.
+  const result = await readReplica(c.env).prepare(
     `SELECT h.*, u.name, u.avatar_url, u.gender, u.bio FROM hosts h
      JOIN users u ON u.id = h.user_id
      WHERE h.is_active = 1 AND h.rating >= 4.0
@@ -349,7 +366,8 @@ host.get('/', async (c) => {
   query += ` ORDER BY h.is_online DESC, ${rb} DESC, h.rating DESC, h.total_minutes DESC, h.id ASC LIMIT ?`;
   params.push(lim);
 
-  const result = await c.env.DB.prepare(query).bind(...params).all();
+  // Read-only, keyset-paged, CDN-cached listing → serve from a read replica.
+  const result = await readReplica(c.env).prepare(query).bind(...params).all();
   const rows = result.results.map((h) => enrichHost(h, config));
 
   // Build next cursor from last row

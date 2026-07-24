@@ -41,6 +41,7 @@ import { recomputeActiveHours } from './lib/bestTime';
 import { recomputeChurnRisk } from './lib/churn';
 import { runHealthProbes, storeHealthCheck, pruneHealthChecks } from './lib/healthCheck';
 import { pruneRetention } from './lib/retention';
+import { archiveOldCoinTransactions, getArchivedLedgerNet } from './lib/archive';
 import { istContext } from './lib/streak';
 import { getFCMTokens, sendFCMPush } from './lib/fcm';
 import { notifyUser } from './lib/realtime';
@@ -1289,7 +1290,11 @@ async function maybeReconcileCoins(env: Env): Promise<void> {
       env.DB.prepare('SELECT COALESCE(SUM(amount),0) AS n FROM coin_transactions').first<{ n: number }>().catch(() => ({ n: 0 })),
     ]);
     const inWallets = Number(walletRow?.n ?? 0);
-    const ledgerNet = Number(ledgerRow?.n ?? 0);
+    // Include the net of rows already archived to R2 + removed from D1 (see
+    // lib/archive.ts) so drift is measured against the FULL historical ledger,
+    // not just the rows still hot in D1. Zero unless archival is enabled.
+    const archivedNet = await getArchivedLedgerNet(env.DB).catch(() => 0);
+    const ledgerNet = Number(ledgerRow?.n ?? 0) + archivedNet;
     const drift = inWallets - ledgerNet;
 
     // Baseline = the KNOWN, operator-acknowledged legacy drift. Coins granted
@@ -1405,6 +1410,10 @@ export default {
     // messages, random_match_history, call_quality) under the 10 GB D1 ceiling.
     // Self-gated to every 6h; excludes the coin_transactions ledger. Best-effort.
     ctx.waitUntil(pruneRetention(env).catch((e) => console.warn('[cron] pruneRetention failed:', e)));
+    // Financial-ledger cold storage — archive old coin_transactions to R2 and
+    // remove from D1 (opt-in via coin_tx_archive_days). Keeps the money table
+    // bounded WITHOUT losing records or breaking coin reconciliation. Best-effort.
+    ctx.waitUntil(archiveOldCoinTransactions(env).catch((e) => console.warn('[cron] archiveOldCoinTransactions failed:', e)));
     ctx.waitUntil(maybeRunReengagement(env));
     ctx.waitUntil(maybeSendStreakReminders(env));
     ctx.waitUntil(maybeSendVipReminders(env));
