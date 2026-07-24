@@ -145,7 +145,7 @@ export default function TasksScreen() {
         ...t,
         cooldown_remaining_sec: remaining,
         already_claimed: remaining > 0,
-        claimable: remaining === 0 && (t.task_type === "daily_checkin" || t.current_count >= t.target_count),
+        claimable: remaining === 0 && !t.vip_locked && (t.task_type === "daily_checkin" || t.current_count >= t.target_count),
       };
     });
   }, [data, now]);
@@ -249,7 +249,9 @@ export default function TasksScreen() {
     }
   }, [couponCode, redeemingCoupon, updateCoins, load]);
 
-  const primaryAction = (task: RewardTask): { label: string; onPress: () => void; variant: "primary" | "secondary" | "disabled" } => {
+  const primaryAction = (task: RewardTask): { label: string; onPress: () => void; variant: "primary" | "secondary" | "disabled" | "vip" } => {
+    // VIP-only task shown to a free user → locked upsell CTA.
+    if (task.vip_locked) return { label: "🔒 Unlock with VIP", onPress: () => router.push("/user/vip" as any), variant: "vip" };
     if (task.claimable) return { label: `Claim +${task.coins_reward}`, onPress: () => claim(task), variant: "primary" };
     if (task.already_claimed) {
       const cooldownLabel = task.cooldown_hours > 0 && task.cooldown_remaining_sec > 0
@@ -284,7 +286,14 @@ export default function TasksScreen() {
             <Text style={styles.cardIconEmoji}>{ICON_EMOJI[task.icon] ?? "🎁"}</Text>
           </View>
           <View style={styles.cardTitleCol}>
-            <Text style={[styles.cardTitle, { color: colors.text }]} numberOfLines={1}>{task.title}</Text>
+            <View style={styles.cardTitleRow}>
+              <Text style={[styles.cardTitle, { color: colors.text }]} numberOfLines={1}>{task.title}</Text>
+              {task.audience === "vip" ? (
+                <View style={styles.vipTag}>
+                  <Text style={styles.vipTagText}>👑 VIP</Text>
+                </View>
+              ) : null}
+            </View>
             <Text style={[styles.cardDesc, { color: colors.subText }]} numberOfLines={2}>{task.description}</Text>
           </View>
           <View style={styles.cardRewardCol}>
@@ -311,6 +320,10 @@ export default function TasksScreen() {
           {action.variant === "primary" ? (
             <LinearGradient colors={ACCENT as any} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.actionBtn}>
               {claimingId === task.id ? <ActivityIndicator color="#fff" /> : <Text style={styles.actionBtnPrimaryText}>{action.label}</Text>}
+            </LinearGradient>
+          ) : action.variant === "vip" ? (
+            <LinearGradient colors={["#F59E0B", "#D97706"] as any} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.actionBtn}>
+              <Text style={styles.actionBtnPrimaryText}>{action.label}</Text>
             </LinearGradient>
           ) : action.variant === "disabled" ? (
             <View style={[styles.actionBtn, styles.actionBtnDisabled]}>
@@ -655,7 +668,10 @@ const styles = StyleSheet.create({
   cardIconBox: { width: 44, height: 44, borderRadius: 12, backgroundColor: "rgba(198,75,232,0.12)", alignItems: "center", justifyContent: "center" },
   cardIconEmoji: { fontSize: 24 },
   cardTitleCol: { flex: 1, minWidth: 0 },
+  cardTitleRow: { flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" },
   cardTitle: { fontSize: 14, fontFamily: "Poppins_700Bold" },
+  vipTag: { backgroundColor: "#FEF3C7", borderColor: "#F59E0B", borderWidth: 1, paddingHorizontal: 6, paddingVertical: 1, borderRadius: 8 },
+  vipTagText: { color: "#B45309", fontSize: 9.5, fontFamily: "Poppins_700Bold" },
   cardDesc: { fontSize: 11.5, fontFamily: "Poppins_400Regular", marginTop: 2, lineHeight: 15 },
   cardRewardCol: { flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: "#FFB800", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 },
   cardRewardCoin: { width: 13, height: 13 },

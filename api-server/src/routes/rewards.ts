@@ -3,6 +3,7 @@ import { authMiddleware } from '../middleware/auth';
 import { checkRateLimit } from '../lib/rateLimit';
 import { notifyUser } from '../lib/realtime';
 import { addPassPoints } from '../lib/pass';
+import { getVipStatus } from '../lib/vip';
 import type { Env, JWTPayload } from '../types';
 
 // ============================================================================
@@ -60,6 +61,9 @@ interface TaskRow {
   total_earned: number | null;
   // 'YYYY-MM' cycle the counters belong to (monthly tasks only; NULL otherwise).
   period_key: string | null;
+  // Who the task targets: 'all' | 'vip' | 'free'. Controls visibility + whether
+  // a non-VIP user sees it locked. NULL on a pre-audience DB → treated as 'all'.
+  audience: string | null;
 }
 
 interface CampaignRow {
@@ -545,15 +549,15 @@ rewards.get('/', async (c) => {
   let taskRows: TaskRow[] = [];
   try {
     const r = await db
-      .prepare(`SELECT ${TASK_SELECT_COLS}, p.period_key ${TASK_FROM}`)
+      .prepare(`SELECT ${TASK_SELECT_COLS}, p.period_key, t.audience ${TASK_FROM}`)
       .bind(sub)
       .all<TaskRow>();
     taskRows = r.results ?? [];
   } catch (err) {
-    console.warn('[rewards] period_key column missing, using fallback query:', err);
+    console.warn('[rewards] period_key/audience column missing, using fallback query:', err);
     try {
       const r = await db
-        .prepare(`SELECT ${TASK_SELECT_COLS}, NULL AS period_key ${TASK_FROM}`)
+        .prepare(`SELECT ${TASK_SELECT_COLS}, NULL AS period_key, 'all' AS audience ${TASK_FROM}`)
         .bind(sub)
         .all<TaskRow>();
       taskRows = r.results ?? [];
@@ -564,18 +568,35 @@ rewards.get('/', async (c) => {
     }
   }
 
-  const tasks = taskRows.map((r) => {
-    const state = deriveState(r, now, monthKey);
-    return {
-      id: r.id, code: r.code, title: r.title, description: r.description,
-      icon: r.icon, category: r.category, task_type: r.task_type,
-      target_count: Number(r.target_count),
-      coins_reward: Number(r.coins_reward),
-      cooldown_hours: Number(r.cooldown_hours),
-      cta_link: r.cta_link,
-      ...state,
-    };
-  });
+  // VIP status drives audience targeting: VIP-only tasks are shown to everyone
+  // but LOCKED (not claimable) for non-VIP users — a visible upsell. Free-only
+  // tasks are hidden from VIP members.
+  let isVip = false;
+  try { isVip = (await getVipStatus(db, sub)).isVip; } catch { isVip = false; }
+
+  const tasks = taskRows
+    .map((r) => {
+      const audience = (r.audience === 'vip' || r.audience === 'free') ? r.audience : 'all';
+      const state = deriveState(r, now, monthKey);
+      // VIP-only task + non-VIP viewer → visible but locked (can't claim).
+      const vipLocked = audience === 'vip' && !isVip;
+      return {
+        id: r.id, code: r.code, title: r.title, description: r.description,
+        icon: r.icon, category: r.category, task_type: r.task_type,
+        target_count: Number(r.target_count),
+        coins_reward: Number(r.coins_reward),
+        cooldown_hours: Number(r.cooldown_hours),
+        cta_link: r.cta_link,
+        audience,
+        vip_locked: vipLocked,
+        ...state,
+        // A locked task can never be claimed regardless of progress state.
+        claimable: state.claimable && !vipLocked,
+      };
+    })
+    // Hide free-only tasks from VIP members; everything else stays visible.
+    .filter((t) => !(t.audience === 'free' && isVip));
+
   const totalEarned = tasks.reduce((s, t) => s + t.total_earned, 0);
   const claimableCount = tasks.filter((t) => t.claimable).length;
 
@@ -789,6 +810,19 @@ rewards.post('/claim', async (c) => {
 
   const task = await db.prepare('SELECT * FROM reward_tasks WHERE id = ? AND active = 1').bind(taskId).first<TaskRow>();
   if (!task) return c.json({ error: 'Task not found or inactive' }, 404);
+
+  // VIP-only tasks can only be claimed by active VIP members (they're shown to
+  // free users as a locked upsell). Free-only tasks can't be claimed by VIP.
+  if (task.audience === 'vip' || task.audience === 'free') {
+    let claimantVip = false;
+    try { claimantVip = (await getVipStatus(db, sub)).isVip; } catch { claimantVip = false; }
+    if (task.audience === 'vip' && !claimantVip) {
+      return c.json({ error: 'This is a VIP-only task. Subscribe to VIP to claim it.', code: 'VIP_REQUIRED' }, 403);
+    }
+    if (task.audience === 'free' && claimantVip) {
+      return c.json({ error: 'This task is for free users only.', code: 'FREE_ONLY' }, 403);
+    }
+  }
 
   const progress = await db.prepare('SELECT * FROM user_reward_progress WHERE user_id = ? AND task_id = ?').bind(sub, taskId).first<TaskRow>();
 

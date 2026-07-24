@@ -35,6 +35,14 @@ const CATEGORIES = [
   { id: 'ongoing',   label: 'Ongoing (progress carries forward)' },
 ];
 
+// Who the task targets. VIP-only tasks stay VISIBLE to free users (rendered
+// locked 🔒) as an upsell; free-only tasks are hidden from VIP members.
+const AUDIENCES = [
+  { id: 'all',  label: 'All users' },
+  { id: 'vip',  label: 'VIP only (free users see it locked 🔒)' },
+  { id: 'free', label: 'Free users only (hidden from VIP)' },
+];
+
 const ICONS = ['calendar', 'call', 'invite', 'coin', 'video', 'share', 'gift'];
 
 function blank() {
@@ -51,6 +59,7 @@ function blank() {
     cta_link: '',
     active: true,
     sort_order: 100,
+    audience: 'all',
   };
 }
 
@@ -68,6 +77,7 @@ type Task = {
   cta_link: string;
   active: number | boolean;
   sort_order: number;
+  audience?: string;
   user_count?: number;
   claim_count?: number;
   coins_paid?: number;
@@ -195,6 +205,15 @@ export default function RewardTasks() {
         </div>
       </div>
 
+      <div>
+        <label className="text-sm font-semibold block mb-1.5">Audience 👥</label>
+        <select className="w-full px-3 py-2.5 border border-border rounded-xl text-sm bg-background focus:outline-none"
+          value={form.audience} onChange={e => setForm({ ...form, audience: e.target.value })}>
+          {AUDIENCES.map(a => <option key={a.id} value={a.id}>{a.label}</option>)}
+        </select>
+        <p className="text-[10px] text-muted-foreground mt-1">VIP-only tasks stay visible to free users with a 🔒 "Unlock with VIP" button — great for driving upgrades.</p>
+      </div>
+
       <div className="grid grid-cols-3 gap-3">
         <div>
           <label className="text-sm font-semibold block mb-1.5">Target Count</label>
@@ -310,6 +329,8 @@ export default function RewardTasks() {
                     <Badge variant={t.active ? 'active' : 'inactive'}>{t.active ? 'Active' : 'Inactive'}</Badge>
                     <span className="text-[10px] px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">{TASK_TYPES.find(x => x.id === t.task_type)?.label ?? t.task_type}</span>
                     <span className="text-[10px] px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">{t.category}</span>
+                    {t.audience === 'vip' && <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-semibold">👑 VIP only</span>}
+                    {t.audience === 'free' && <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-semibold">🆓 Free only</span>}
                   </div>
                   {t.description && <p className="text-xs text-muted-foreground">{t.description}</p>}
                   <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground flex-wrap">
@@ -333,6 +354,7 @@ export default function RewardTasks() {
                       target_count: Number(t.target_count), coins_reward: Number(t.coins_reward),
                       cooldown_hours: Number(t.cooldown_hours), cta_link: t.cta_link ?? '',
                       active: !!t.active, sort_order: Number(t.sort_order ?? 100),
+                      audience: t.audience ?? 'all',
                     }); }}
                     className="p-1.5 rounded-lg hover:bg-secondary transition-colors text-muted-foreground hover:text-primary" title="Edit">
                     <Edit2 size={15} />

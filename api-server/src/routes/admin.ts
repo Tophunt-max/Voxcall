@@ -2099,6 +2099,7 @@ admin.delete('/gifts/:id', async (c) => {
 const REWARD_TASK_FIELDS = [
   'code', 'title', 'description', 'icon', 'category', 'task_type',
   'target_count', 'coins_reward', 'cooldown_hours', 'cta_link', 'active', 'sort_order',
+  'audience',
 ];
 
 admin.get('/reward-tasks', async (c) => {
@@ -2135,8 +2136,8 @@ admin.post('/reward-tasks', async (c) => {
     await db(c).prepare(
       `INSERT INTO reward_tasks
          (id, code, title, description, icon, category, task_type,
-          target_count, coins_reward, cooldown_hours, cta_link, active, sort_order)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          target_count, coins_reward, cooldown_hours, cta_link, active, sort_order, audience)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).bind(
       id,
       String(body.code),
@@ -2151,6 +2152,7 @@ admin.post('/reward-tasks', async (c) => {
       String(body.cta_link ?? ''),
       body.active === false ? 0 : 1,
       Number(body.sort_order ?? 100),
+      ['all', 'vip', 'free'].includes(String(body.audience)) ? String(body.audience) : 'all',
     ).run();
     return c.json({ id, success: true }, 201);
   } catch (e: unknown) {

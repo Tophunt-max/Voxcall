@@ -1180,7 +1180,8 @@ export function ensureRewardsPassSchema(db: D1Database): Promise<boolean> {
           target_count INTEGER NOT NULL DEFAULT 1, coins_reward INTEGER NOT NULL,
           cooldown_hours INTEGER NOT NULL DEFAULT 0, cta_link TEXT NOT NULL DEFAULT '',
           active INTEGER NOT NULL DEFAULT 1, sort_order INTEGER NOT NULL DEFAULT 100,
-          created_at INTEGER NOT NULL DEFAULT (unixepoch()), updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+          created_at INTEGER NOT NULL DEFAULT (unixepoch()), updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+          audience TEXT NOT NULL DEFAULT 'all'
         )`,
         `CREATE TABLE IF NOT EXISTS user_reward_progress (
           user_id TEXT NOT NULL, task_id TEXT NOT NULL, current_count INTEGER NOT NULL DEFAULT 0,
@@ -1255,6 +1256,19 @@ export function ensureRewardsPassSchema(db: D1Database): Promise<boolean> {
             await db.prepare('ALTER TABLE reward_achievements ADD COLUMN duration_days INTEGER NOT NULL DEFAULT 0').run();
             console.log('[schemaGuard] added reward_achievements.duration_days');
           } catch (err) { console.warn('[schemaGuard] add duration_days failed (may be a race):', err); }
+        }
+      } catch { /* table absent — already created above */ }
+
+      // reward_tasks.audience (migration 0071) — heal if the table pre-existed
+      // without the VIP/free targeting column.
+      try {
+        const tInfo = await db.prepare('PRAGMA table_info(reward_tasks)').all<{ name: string }>();
+        const tCols = new Set((tInfo.results ?? []).map((r) => r.name));
+        if (tCols.size > 0 && !tCols.has('audience')) {
+          try {
+            await db.prepare("ALTER TABLE reward_tasks ADD COLUMN audience TEXT NOT NULL DEFAULT 'all'").run();
+            console.log('[schemaGuard] added reward_tasks.audience');
+          } catch (err) { console.warn('[schemaGuard] add reward_tasks.audience failed (may be a race):', err); }
         }
       } catch { /* table absent — already created above */ }
 

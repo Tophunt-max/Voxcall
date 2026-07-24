@@ -645,6 +645,10 @@ export const API = {
         cooldown_remaining_sec: number;
         claimable: boolean;
         already_claimed: boolean;
+        // Audience targeting: 'all' | 'vip' | 'free'.
+        audience: string;
+        // True when a VIP-only task is shown to a non-VIP user (locked upsell).
+        vip_locked: boolean;
       }>;
       total_earned: number;
       claimable_count: number;
