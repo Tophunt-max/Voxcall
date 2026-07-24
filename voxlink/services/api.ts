@@ -696,6 +696,10 @@ export const API = {
         sort_order: number;
       }>;
       server_time: number;
+      // Unix ts of the next UTC midnight — daily tasks reset then.
+      daily_reset: number;
+      // Unix ts of the UTC month end — monthly tasks reset then.
+      month_end: number;
     }>('GET', '/api/user/rewards'),
 
   claimReward: (task_id: string) =>
@@ -749,6 +753,63 @@ export const API = {
       new_balance: number;
       budget_cap: number;
     }>('POST', '/api/user/rewards/redeem-coupon', { code }),
+
+  // ── Monthly Pass ──────────────────────────────────────────────────────
+  // Chamet-style monthly battle pass. Pass Points are earned by claiming
+  // reward tasks; crossing a tier threshold unlocks a Common (free) and a
+  // Premium (VIP/paid) reward. Everything resets at the UTC month boundary.
+  getPass: () =>
+    apiRequest<{
+      enabled: boolean;
+      title?: string;
+      description?: string;
+      price_coins?: number;
+      vip_auto_unlock?: boolean;
+      is_vip?: boolean;
+      premium_unlocked?: boolean;
+      premium_via_vip?: boolean;
+      purchased?: boolean;
+      points?: number;
+      max_points?: number;
+      period_key?: string;
+      month_end: number;
+      server_time: number;
+      coins?: number;
+      tiers?: Array<{
+        level: number;
+        points: number;
+        label: string;
+        reached: boolean;
+        free_coins: number;
+        free_claimed: boolean;
+        free_claimable: boolean;
+        premium_coins: number;
+        premium_claimed: boolean;
+        premium_claimable: boolean;
+      }>;
+    }>('GET', '/api/user/pass'),
+
+  // Unlock the Premium track for the current month by spending coins. VIP
+  // members are auto-unlocked and never charged.
+  purchasePass: () =>
+    apiRequest<{
+      success: boolean;
+      premium_unlocked: boolean;
+      already_unlocked?: boolean;
+      via?: 'vip' | 'coins';
+      price_coins?: number;
+      coins?: number;
+    }>('POST', '/api/user/pass/purchase'),
+
+  // Claim a tier reward on the 'common' or 'premium' track.
+  claimPass: (tier_level: number, track: 'common' | 'premium') =>
+    apiRequest<{
+      success: boolean;
+      tier_level: number;
+      track: 'common' | 'premium';
+      coins_awarded: number;
+      coins: number;
+    }>('POST', '/api/user/pass/claim', { tier_level, track }),
 
   // Payment Gateways (public)
   getPaymentGateways: () =>

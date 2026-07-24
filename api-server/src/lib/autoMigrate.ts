@@ -114,6 +114,8 @@ import m_0065 from '../../migrations/0065_gift_idempotency.sql';
 import m_0066 from '../../migrations/0066_host_level_metrics.sql';
 import m_0067 from '../../migrations/0067_host_online_metrics.sql';
 import m_0068 from '../../migrations/0068_host_gift_referral_metrics.sql';
+import m_0069 from '../../migrations/0069_reward_monthly_tasks.sql';
+import m_0070 from '../../migrations/0070_reward_monthly_pass.sql';
 
 interface Migration {
   /**
@@ -194,6 +196,8 @@ const MIGRATIONS: ReadonlyArray<Migration> = [
   { name: '0066_host_level_metrics.sql',            sql: m_0066 },
   { name: '0067_host_online_metrics.sql',           sql: m_0067 },
   { name: '0068_host_gift_referral_metrics.sql',    sql: m_0068 },
+  { name: '0069_reward_monthly_tasks.sql',          sql: m_0069 },
+  { name: '0070_reward_monthly_pass.sql',           sql: m_0070 },
 ];
 
 /**

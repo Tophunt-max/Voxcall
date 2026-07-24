@@ -189,6 +189,7 @@ export default function ProfileScreen() {
   // ─── Only features that exist in THIS app ──────────────────────────────
   const quickActions: { icon: FeatherName; label: string; grad: readonly [string, string]; onPress: () => void }[] = [
     { icon: "gift", label: "Referral", grad: ["#A54DFF", "#7B2FF7"], onPress: () => router.push("/user/referral") },
+    { icon: "check-square", label: "Tasks", grad: ["#7C3AED", "#4F46E5"], onPress: () => router.push("/user/tasks") },
     { icon: "award", label: "Rewards", grad: ["#FFB347", "#F97316"], onPress: () => router.push("/user/rewards") },
     { icon: "target", label: "Lucky Spin", grad: ["#FF7EB3", "#DB2777"], onPress: () => router.push("/user/rewards-spin") },
     { icon: "credit-card", label: "Coin Trading", grad: ["#34D399", "#059669"], onPress: () => router.push("/user/coin-history") },

@@ -2213,6 +2213,95 @@ admin.delete('/reward-tasks/:id', async (c) => {
   return c.json({ success: true });
 });
 
+// ─── Monthly Pass config (single-row) ─────────────────────────────────────────
+// Admin-managed configuration for the Chamet-style Monthly Pass. Stored as one
+// row (id='default') in reward_pass. See migration 0070_reward_monthly_pass.sql.
+// The `tiers` column is a JSON array; we validate + normalise it on write.
+function normalisePassTiers(raw: unknown): { level: number; points: number; label: string; free_coins: number; premium_coins: number }[] {
+  let arr: unknown = raw;
+  if (typeof raw === 'string') { try { arr = JSON.parse(raw); } catch { return []; } }
+  if (!Array.isArray(arr)) return [];
+  return arr
+    .map((t, i) => {
+      const o = (t ?? {}) as Record<string, unknown>;
+      return {
+        level: Math.max(1, Math.floor(Number(o.level) || i + 1)),
+        points: Math.max(0, Math.floor(Number(o.points) || 0)),
+        label: String(o.label ?? `Tier ${i + 1}`).slice(0, 40),
+        free_coins: Math.max(0, Math.floor(Number(o.free_coins) || 0)),
+        premium_coins: Math.max(0, Math.floor(Number(o.premium_coins) || 0)),
+      };
+    })
+    .sort((a, b) => a.points - b.points || a.level - b.level);
+}
+
+admin.get('/reward-pass', async (c) => {
+  const d = db(c);
+  let cfg = await d.prepare('SELECT * FROM reward_pass WHERE id = ?').bind('default').first<Record<string, unknown>>();
+  if (!cfg) {
+    // Heal a missing config row so the admin always has something to edit.
+    await d.prepare(
+      `INSERT OR IGNORE INTO reward_pass (id, enabled, title, description, price_coins, vip_auto_unlock, tiers)
+       VALUES ('default', 1, 'Monthly Pass', '', 1000, 1, '[]')`,
+    ).run().catch(() => {});
+    cfg = await d.prepare('SELECT * FROM reward_pass WHERE id = ?').bind('default').first<Record<string, unknown>>();
+  }
+
+  // Aggregate stats for the CURRENT month so admins can gauge engagement.
+  const now = Math.floor(Date.now() / 1000);
+  const period = `${new Date(now * 1000).getUTCFullYear()}-${String(new Date(now * 1000).getUTCMonth() + 1).padStart(2, '0')}`;
+  let participants = 0, premiumUnlocks = 0, claims = 0, coinsPaid = 0;
+  try {
+    const s1 = await d.prepare(
+      'SELECT COUNT(*) AS n, SUM(CASE WHEN premium_unlocked = 1 THEN 1 ELSE 0 END) AS prem FROM user_pass_state WHERE period_key = ?',
+    ).bind(period).first<{ n: number; prem: number }>();
+    participants = Number(s1?.n ?? 0);
+    premiumUnlocks = Number(s1?.prem ?? 0);
+    const s2 = await d.prepare(
+      'SELECT COUNT(*) AS n, SUM(coins_awarded) AS coins FROM user_pass_claims WHERE period_key = ?',
+    ).bind(period).first<{ n: number; coins: number }>();
+    claims = Number(s2?.n ?? 0);
+    coinsPaid = Number(s2?.coins ?? 0);
+  } catch { /* un-migrated DB */ }
+
+  return c.json({
+    ...cfg,
+    tiers: normalisePassTiers(cfg?.tiers),
+    stats: { period, participants, premium_unlocks: premiumUnlocks, claims, coins_paid: coinsPaid },
+  });
+});
+
+admin.patch('/reward-pass', async (c) => {
+  const d = db(c);
+  const body = (await c.req.json()) as Record<string, unknown>;
+  const sets: string[] = [];
+  const vals: unknown[] = [];
+
+  if (body.enabled !== undefined) { sets.push('enabled = ?'); vals.push(body.enabled ? 1 : 0); }
+  if (body.vip_auto_unlock !== undefined) { sets.push('vip_auto_unlock = ?'); vals.push(body.vip_auto_unlock ? 1 : 0); }
+  if (body.title !== undefined) { sets.push('title = ?'); vals.push(String(body.title).slice(0, 80)); }
+  if (body.description !== undefined) { sets.push('description = ?'); vals.push(String(body.description).slice(0, 300)); }
+  if (body.price_coins !== undefined) {
+    const n = Number(body.price_coins);
+    if (!Number.isFinite(n) || n < 0) return c.json({ error: 'price_coins must be a non-negative number' }, 400);
+    sets.push('price_coins = ?'); vals.push(Math.floor(n));
+  }
+  if (body.tiers !== undefined) {
+    const tiers = normalisePassTiers(body.tiers);
+    sets.push('tiers = ?'); vals.push(JSON.stringify(tiers));
+  }
+  if (!sets.length) return c.json({ error: 'Nothing to update' }, 400);
+  sets.push('updated_at = unixepoch()');
+
+  // Ensure the row exists, then update.
+  await d.prepare(
+    `INSERT OR IGNORE INTO reward_pass (id, enabled, title, description, price_coins, vip_auto_unlock, tiers)
+     VALUES ('default', 1, 'Monthly Pass', '', 1000, 1, '[]')`,
+  ).run().catch(() => {});
+  await d.prepare(`UPDATE reward_pass SET ${sets.join(', ')} WHERE id = 'default'`).bind(...vals).run();
+  return c.json({ success: true });
+});
+
 // ─── Reward Spin Wheel (single-row config) ────────────────────────────────────
 // GET returns the current wheel config PLUS aggregate stats so admins can
 // see total spins, coins paid, and the win distribution across segments.

@@ -38,6 +38,7 @@ const nav = [
   { href: '/bulk-notifications', label: 'Bulk Notifications', icon: Megaphone, section: 'content' },
   { href: '/banners', label: 'Banners', icon: Image, section: 'content' },
   { href: '/reward-tasks', label: 'Reward Tasks', icon: Gift, section: 'content' },
+  { href: '/reward-pass', label: 'Monthly Pass', icon: Crown, section: 'content' },
   { href: '/reward-spin', label: 'Lucky Spin', icon: CircleDollarSign, section: 'content' },
   { href: '/reward-campaigns', label: 'Campaigns', icon: Zap, section: 'content' },
   { href: '/reward-coupons', label: 'Coupons', icon: Ticket, section: 'content' },

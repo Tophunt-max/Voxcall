@@ -267,6 +267,10 @@ export const api = {
   updateRewardTask: (id: string, data: any) => req('PATCH', `/admin/reward-tasks/${id}`, data),
   deleteRewardTask: (id: string) => req('DELETE', `/admin/reward-tasks/${id}`),
 
+  // Monthly Pass config (single-row battle pass)
+  rewardPass: () => req<any>('GET', '/admin/reward-pass'),
+  updateRewardPass: (data: any) => req('PATCH', '/admin/reward-pass', data),
+
   // Lucky Spin config
   rewardSpin: () => req<{ config: any; stats: any; distribution: any[] }>('GET', '/admin/reward-spin'),
   updateRewardSpin: (data: any) => req('PATCH', '/admin/reward-spin', data),

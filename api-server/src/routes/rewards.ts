@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { authMiddleware } from '../middleware/auth';
 import { checkRateLimit } from '../lib/rateLimit';
 import { notifyUser } from '../lib/realtime';
+import { addPassPoints } from '../lib/pass';
 import type { Env, JWTPayload } from '../types';
 
 // ============================================================================
@@ -57,6 +58,8 @@ interface TaskRow {
   claim_count: number | null;
   last_claimed_at: number | null;
   total_earned: number | null;
+  // 'YYYY-MM' cycle the counters belong to (monthly tasks only; NULL otherwise).
+  period_key: string | null;
 }
 
 interface CampaignRow {
@@ -107,6 +110,30 @@ interface AchievementRow {
 function utcDayKey(ts: number = Math.floor(Date.now() / 1000)): string {
   const d = new Date(ts * 1000);
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+}
+
+// ─── Monthly-task cycle helpers (UTC) ───────────────────────────────────────
+// Monthly tasks accumulate progress across the whole calendar month and reset
+// at the UTC month boundary. `period_key` on user_reward_progress records the
+// month a row's counters belong to; when it no longer matches the current
+// month the backend treats the progress as reset.
+
+/** 'YYYY-MM' in UTC — the current monthly cycle key. */
+function utcMonthKey(ts: number = Math.floor(Date.now() / 1000)): string {
+  const d = new Date(ts * 1000);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+/** Unix seconds of the start of NEXT UTC month (= end of the current month). */
+function monthEndUnix(ts: number = Math.floor(Date.now() / 1000)): number {
+  const d = new Date(ts * 1000);
+  return Math.floor(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1, 0, 0, 0) / 1000);
+}
+
+/** Unix seconds of the next UTC midnight (= end of the current daily cycle). */
+function nextUtcMidnightUnix(ts: number = Math.floor(Date.now() / 1000)): number {
+  const d = new Date(ts * 1000);
+  return Math.floor(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1, 0, 0, 0) / 1000);
 }
 
 /**
@@ -448,10 +475,35 @@ async function ensureSpinState(
 }
 
 // ─── Derive claimable / cooldown state for a task row ───────────────────────
-function deriveState(row: TaskRow, now: number) {
-  const currentCount = Number(row.current_count) || 0;
-  const claimCount = Number(row.claim_count) || 0;
-  const lastClaimedAt = row.last_claimed_at != null ? Number(row.last_claimed_at) : null;
+// `monthKey` is the current UTC monthly cycle key ('YYYY-MM'). For monthly
+// tasks whose stored period_key doesn't match it, the counters are treated as
+// reset (fresh month) so a leftover-but-unclaimed count from last month never
+// pays out and the UI shows 0/target again.
+function deriveState(row: TaskRow, now: number, monthKey: string) {
+  const isMonthly = row.category === 'monthly';
+  // Fresh month → last month's counters no longer count.
+  const staleMonth = isMonthly && row.period_key !== monthKey;
+
+  const currentCount = staleMonth ? 0 : Number(row.current_count) || 0;
+  const claimCount = staleMonth ? 0 : Number(row.claim_count) || 0;
+  const lastClaimedAt = staleMonth ? null : (row.last_claimed_at != null ? Number(row.last_claimed_at) : null);
+
+  if (isMonthly) {
+    // Monthly tasks: claim ONCE per calendar month once the target is met.
+    // No hourly cooldown — the cycle is the month itself.
+    const meetsTarget = currentCount >= Number(row.target_count);
+    const alreadyClaimed = claimCount > 0;
+    return {
+      current_count: currentCount,
+      claim_count: claimCount,
+      last_claimed_at: lastClaimedAt,
+      total_earned: Number(row.total_earned) || 0,
+      cooldown_remaining_sec: 0,
+      claimable: !alreadyClaimed && meetsTarget,
+      already_claimed: alreadyClaimed,
+    };
+  }
+
   const cooldownSec = Number(row.cooldown_hours) * 3600;
   const isOneTime = cooldownSec === 0;
   const cooldownRemaining = !isOneTime && lastClaimedAt ? Math.max(0, lastClaimedAt + cooldownSec - now) : 0;
@@ -475,13 +527,15 @@ rewards.get('/', async (c) => {
   const now = Math.floor(Date.now() / 1000);
   const db = c.env.DB;
 
+  const monthKey = utcMonthKey(now);
+
   // Tasks (join with progress)
   const taskRes = await db
     .prepare(
       `SELECT t.id, t.code, t.title, t.description, t.icon, t.category, t.task_type,
               t.target_count, t.coins_reward, t.cooldown_hours, t.cta_link,
               t.active, t.sort_order,
-              p.current_count, p.claim_count, p.last_claimed_at, p.total_earned
+              p.current_count, p.claim_count, p.last_claimed_at, p.total_earned, p.period_key
          FROM reward_tasks t
          LEFT JOIN user_reward_progress p ON p.task_id = t.id AND p.user_id = ?
         WHERE t.active = 1
@@ -491,7 +545,7 @@ rewards.get('/', async (c) => {
     .all<TaskRow>();
 
   const tasks = (taskRes.results ?? []).map((r) => {
-    const state = deriveState(r, now);
+    const state = deriveState(r, now, monthKey);
     return {
       id: r.id, code: r.code, title: r.title, description: r.description,
       icon: r.icon, category: r.category, task_type: r.task_type,
@@ -677,6 +731,10 @@ rewards.get('/', async (c) => {
     tasks, total_earned: totalEarned, claimable_count: claimableCount,
     campaigns, spin, achievements,
     server_time: now,
+    // Cycle boundaries so the client can render the "resets in" countdowns
+    // (daily tasks reset at UTC midnight; monthly tasks at the UTC month end).
+    daily_reset: nextUtcMidnightUnix(now),
+    month_end: monthEndUnix(now),
   });
 });
 
@@ -699,14 +757,17 @@ rewards.post('/claim', async (c) => {
 
   const progress = await db.prepare('SELECT * FROM user_reward_progress WHERE user_id = ? AND task_id = ?').bind(sub, taskId).first<TaskRow>();
 
+  const monthKey = utcMonthKey(now);
   const merged: TaskRow = {
     ...task,
     current_count: progress?.current_count ?? null,
     claim_count: progress?.claim_count ?? null,
     last_claimed_at: progress?.last_claimed_at ?? null,
     total_earned: progress?.total_earned ?? null,
+    period_key: progress?.period_key ?? null,
   };
-  const state = deriveState(merged, now);
+  const state = deriveState(merged, now, monthKey);
+  const isMonthly = task.category === 'monthly';
 
   if (state.already_claimed) {
     return c.json(
@@ -753,7 +814,27 @@ rewards.post('/claim', async (c) => {
   //   - Recurring tasks require the cooldown to be fully elapsed.
   //   - daily_checkin skips the target_count check; all others require the
   //     counter to have reached the target.
-  const claim = task.task_type === 'daily_checkin'
+  const claim = isMonthly
+    ? await db
+        .prepare(
+          // Monthly claim: allowed once per calendar month once the target is
+          // met. The `period_key = ?` guard means a leftover count from a
+          // PREVIOUS month can never be claimed — progress must belong to the
+          // current cycle (bumpRewardProgress rotates period_key on progress).
+          `UPDATE user_reward_progress
+              SET claim_count     = 1,
+                  last_claimed_at = ?,
+                  total_earned    = total_earned + ?,
+                  period_key      = ?,
+                  updated_at      = ?
+            WHERE user_id = ? AND task_id = ?
+              AND period_key = ?
+              AND claim_count = 0
+              AND current_count >= ?`,
+        )
+        .bind(now, coinsReward, monthKey, now, sub, taskId, monthKey, targetCount)
+        .run()
+    : task.task_type === 'daily_checkin'
     ? await db
         .prepare(
           `UPDATE user_reward_progress
@@ -839,7 +920,11 @@ rewards.post('/claim', async (c) => {
   }
 
   const updated = await db.prepare('SELECT coins FROM users WHERE id = ?').bind(sub).first<{ coins: number }>();
+  // Monthly Pass: earning coins from a task also earns Pass Points for the
+  // current month (points == coins claimed). Best-effort, never blocks/fails
+  // the claim response.
   if (coinsReward > 0) {
+    c.executionCtx?.waitUntil?.(addPassPoints(db, sub, coinsReward));
     c.executionCtx?.waitUntil?.(notifyUser(c.env, sub, '🎁 Reward Claimed!', `Nice work! You just earned ${coinsReward} coins from "${task.title}". Keep completing tasks for more! 💪`, 'reward'));
   }
   return c.json({
@@ -1218,26 +1303,49 @@ export async function bumpRewardProgress(
   }
 
   // 2) Bump matching active task rows so task cards update in real-time.
-  let tasks: { id: string }[] = [];
+  //    We also pull `category` so monthly tasks can be bumped with a
+  //    period-aware statement (progress rotates at the UTC month boundary).
+  let tasks: { id: string; category: string }[] = [];
   try {
     const res = await db
-      .prepare('SELECT id FROM reward_tasks WHERE task_type = ? AND active = 1')
+      .prepare('SELECT id, category FROM reward_tasks WHERE task_type = ? AND active = 1')
       .bind(triggerType)
-      .all<{ id: string }>();
+      .all<{ id: string; category: string }>();
     tasks = res.results ?? [];
   } catch (err) {
     console.warn('[rewards] bumpRewardProgress: task lookup failed', err);
   }
 
   if (tasks.length) {
+    const monthKey = utcMonthKey(now);
     const taskOps = tasks.map((t) =>
-      db
-        .prepare(
-          `INSERT INTO user_reward_progress (user_id, task_id, current_count, updated_at)
-           VALUES (?, ?, ?, ?)
-           ON CONFLICT(user_id, task_id) DO UPDATE SET current_count = current_count + ?, updated_at = ?`,
-        )
-        .bind(userId, t.id, deltaInt, now, deltaInt, now),
+      t.category === 'monthly'
+        ? // Monthly: if the stored period_key matches the current month, add to
+          // the running count; otherwise this is a NEW month — reset the count
+          // to just this delta and clear last month's claim so the task can be
+          // completed + claimed again.
+          db
+            .prepare(
+              `INSERT INTO user_reward_progress (user_id, task_id, current_count, period_key, updated_at)
+               VALUES (?, ?, ?, ?, ?)
+               ON CONFLICT(user_id, task_id) DO UPDATE SET
+                 current_count   = CASE WHEN period_key = excluded.period_key
+                                        THEN current_count + ? ELSE ? END,
+                 claim_count     = CASE WHEN period_key = excluded.period_key
+                                        THEN claim_count ELSE 0 END,
+                 last_claimed_at = CASE WHEN period_key = excluded.period_key
+                                        THEN last_claimed_at ELSE NULL END,
+                 period_key      = excluded.period_key,
+                 updated_at      = ?`,
+            )
+            .bind(userId, t.id, deltaInt, monthKey, now, deltaInt, deltaInt, now)
+        : db
+            .prepare(
+              `INSERT INTO user_reward_progress (user_id, task_id, current_count, updated_at)
+               VALUES (?, ?, ?, ?)
+               ON CONFLICT(user_id, task_id) DO UPDATE SET current_count = current_count + ?, updated_at = ?`,
+            )
+            .bind(userId, t.id, deltaInt, now, deltaInt, now),
     );
     try { await db.batch(taskOps); }
     catch (err) { console.warn('[rewards] bumpRewardProgress: task batch failed', err); }

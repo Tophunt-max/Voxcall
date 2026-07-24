@@ -30,6 +30,7 @@ const TASK_TYPES = [
 
 const CATEGORIES = [
   { id: 'daily',     label: 'Daily (repeatable each day)' },
+  { id: 'monthly',   label: 'Monthly (accumulates & resets each month)' },
   { id: 'one_time',  label: 'One-time (claim once, ever)' },
   { id: 'ongoing',   label: 'Ongoing (progress carries forward)' },
 ];
