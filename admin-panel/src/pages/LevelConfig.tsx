@@ -433,16 +433,19 @@ export default function LevelConfig() {
   return (
     <div className="max-w-5xl mx-auto space-y-6">
       {/* Header */}
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
-            <Trophy size={20} className="text-violet-500" /> Level System Configuration
-          </h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            Configure per-level criteria, coin rewards, and badges for each host level. Changes apply on next recalculation.
-          </p>
+      <div className="rounded-2xl border border-border bg-gradient-to-br from-violet-500/10 via-transparent to-transparent p-5 flex items-start justify-between gap-4 flex-wrap">
+        <div className="flex items-center gap-3">
+          <div className="w-11 h-11 rounded-xl gradient-purple flex items-center justify-center shadow-lg flex-shrink-0">
+            <Trophy size={20} className="text-white" />
+          </div>
+          <div>
+            <h2 className="text-lg font-bold text-foreground">Level System</h2>
+            <p className="text-sm text-muted-foreground">
+              <strong className="text-foreground">{config.length}</strong> levels · rates fixed per level · hosts auto-promote in real time
+            </p>
+          </div>
         </div>
-        <div className="flex gap-3 flex-wrap">
+        <div className="flex gap-2 flex-wrap">
           <button
             onClick={() => loadPreset('recommended')}
             className="flex items-center gap-2 px-4 py-2 rounded-xl border border-violet-300 dark:border-violet-800 bg-violet-50 dark:bg-violet-950/30 text-violet-700 dark:text-violet-300 text-sm font-medium transition-all hover:bg-violet-100 dark:hover:bg-violet-900/40"
@@ -481,12 +484,10 @@ export default function LevelConfig() {
       {/* Info box */}
       <div className="flex items-start gap-3 p-4 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800/40 rounded-xl text-sm">
         <Info size={16} className="text-blue-500 mt-0.5 flex-shrink-0" />
-        <div className="text-blue-700 dark:text-blue-300">
-          <strong>How levels work:</strong> Each level has a list of <strong>criteria</strong> (any number, different per level). Hosts are <strong>auto-promoted in real time</strong> when they meet <strong>ALL</strong> of a level's criteria, and the one-time Coin Reward is credited automatically.
-          Available metrics: rated calls, average rating, talk-minutes, coins earned, unique callers, answer rate, followers, daily streak, days on platform, KYC verified, total online-time, active days, avg call length, repeat callers, gifts + tips received, successful referrals &amp; languages spoken.
-          Level 1 is the starting level (no criteria). <strong>Perks</strong> per level: Max Audio/Video Rate, Earning Share and Rank Boost.
-          The per-minute rate is <strong>fixed by the level</strong> — hosts are charged exactly the level's Audio/Video rate and <strong>cannot edit it</strong>.
-          Use <strong>"Load Recommended"</strong> for a richer quality/trust ladder, then <strong>"Recalculate All Host Levels"</strong> to back-fill existing hosts.
+        <div className="text-blue-700 dark:text-blue-300 space-y-1.5">
+          <p><strong>Auto-promote:</strong> a host moves up in real time when they meet <strong>ALL</strong> of a level's criteria — the coin reward is granted once, automatically.</p>
+          <p><strong>Rates are fixed by the level</strong> 🔒 — hosts are charged exactly the level's Audio/Video rate and cannot edit it.</p>
+          <p>To apply to existing hosts: <strong>Load Recommended</strong> → <strong>Save</strong> → <strong>Recalculate All Host Levels</strong>.</p>
         </div>
       </div>
 
@@ -662,36 +663,31 @@ export default function LevelConfig() {
 
             {/* Perks / benefits grid */}
             <div className="px-5 pt-3">
-              <label className="block text-[11px] font-semibold text-muted-foreground mb-2 uppercase tracking-wide">
-                Perks / Benefits unlocked at this level
-              </label>
+              <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
+                <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+                  Perks unlocked at this level
+                </label>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-secondary text-[10px] font-semibold text-muted-foreground">
+                  🔒 Rates fixed by level — host can't edit
+                </span>
+              </div>
               <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div>
-                  <Field
-                    label="Max Audio Rate (coins/min)"
-                    value={lvl.perks.max_audio_rate}
-                    type="number"
-                    min={1}
-                    max={500}
-                    onChange={v => updatePerk(idx, 'max_audio_rate', v)}
-                  />
-                  <p className="mt-1 text-[11px] text-muted-foreground">
-                    Fixed — host is charged exactly <strong>{lvl.perks.max_audio_rate}</strong> coins/min (not editable).
-                  </p>
-                </div>
-                <div>
-                  <Field
-                    label="Max Video Rate (coins/min)"
-                    value={lvl.perks.max_video_rate}
-                    type="number"
-                    min={1}
-                    max={500}
-                    onChange={v => updatePerk(idx, 'max_video_rate', v)}
-                  />
-                  <p className="mt-1 text-[11px] text-muted-foreground">
-                    Fixed — host is charged exactly <strong>{lvl.perks.max_video_rate}</strong> coins/min (not editable).
-                  </p>
-                </div>
+                <Field
+                  label="Audio Rate (coins/min)"
+                  value={lvl.perks.max_audio_rate}
+                  type="number"
+                  min={1}
+                  max={500}
+                  onChange={v => updatePerk(idx, 'max_audio_rate', v)}
+                />
+                <Field
+                  label="Video Rate (coins/min)"
+                  value={lvl.perks.max_video_rate}
+                  type="number"
+                  min={1}
+                  max={500}
+                  onChange={v => updatePerk(idx, 'max_video_rate', v)}
+                />
                 <Field
                   label="Earning Share %"
                   value={Math.round(lvl.perks.earning_share * 100)}
@@ -775,7 +771,7 @@ export default function LevelConfig() {
                   </>
                 )}
                 {lvl.coin_reward > 0 && <> · Reward: <strong className="text-amber-600">{lvl.coin_reward} coins</strong></>}
-                {' '}· Perks: <strong className="text-emerald-600">{Math.round(lvl.perks.earning_share * 100)}% earnings</strong>, audio up to <strong>{lvl.perks.max_audio_rate}/min</strong>, video up to <strong>{lvl.perks.max_video_rate}/min</strong>, random <strong className="text-violet-600">{lvl.perks.random_audio_rate}/{lvl.perks.random_video_rate}</strong>, rank +{lvl.perks.rank_boost}
+                {' '}· Perks: <strong className="text-emerald-600">{Math.round(lvl.perks.earning_share * 100)}% earnings</strong>, audio <strong>{lvl.perks.max_audio_rate}/min</strong>, video <strong>{lvl.perks.max_video_rate}/min</strong> (fixed), random <strong className="text-violet-600">{lvl.perks.random_audio_rate}/{lvl.perks.random_video_rate}</strong>, rank +{lvl.perks.rank_boost}
               </span>
             </div>
           </div>
