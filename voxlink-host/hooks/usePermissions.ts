@@ -308,7 +308,7 @@ export function usePermissions() {
     if (Platform.OS === "web") {
       Alert.alert(
         "Enable in Browser Settings",
-        "To allow this permission:\n\n1. Tap the lock icon 🔒 in your browser's address bar\n2. Tap \"Site settings\" or \"Permissions\"\n3. Find the permission and set it to \"Allow\"\n4. Refresh the page",
+        "To allow this permission:\n\n1. Tap the lock icon in your browser's address bar\n2. Tap \"Site settings\" or \"Permissions\"\n3. Find the permission and set it to \"Allow\"\n4. Refresh the page",
         [{ text: "OK" }]
       );
       return;

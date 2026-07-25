@@ -294,7 +294,7 @@ function AppBridge() {
       // Host application approved — the host experience lives in the separate
       // Host app, so surface a live celebratory toast pointing them there.
       if (resource === "role") {
-        showSuccessToast("🎉 Your host application is approved! Open the VoxLink Host app to go online and start earning.");
+        showSuccessToast("Your host application is approved! Open the VoxLink Host app to go online and start earning.");
         return;
       }
       const keys = CATALOG_QUERY_KEYS[resource];

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { confirmDialog, alertDialog } from "@/utils/dialog";
-import { AppIcon } from "@/components/AppIcon";
+import { AppIcon, type AppIconName } from "@/components/AppIcon";
 import {
   View,
   Text,
@@ -177,12 +177,12 @@ function TalkNowSheet({
 }
 
 /* ─── Level config ─── */
-const LEVEL_CONFIG: Record<number, { name: string; badge: string; color: string }> = {
-  1: { name: "Newcomer", badge: "🌱", color: "#6B7280" },
-  2: { name: "Rising",   badge: "⭐", color: "#F59E0B" },
-  3: { name: "Expert",   badge: "🔥", color: "#EF4444" },
-  4: { name: "Pro",      badge: "💎", color: "#8B5CF6" },
-  5: { name: "Elite",    badge: "👑", color: "#D97706" },
+const LEVEL_CONFIG: Record<number, { name: string; badge: AppIconName; color: string }> = {
+  1: { name: "Newcomer", badge: "sprout", color: "#6B7280" },
+  2: { name: "Rising",   badge: "star",   color: "#F59E0B" },
+  3: { name: "Expert",   badge: "fire",   color: "#EF4444" },
+  4: { name: "Pro",      badge: "diamond", color: "#8B5CF6" },
+  5: { name: "Elite",    badge: "crown",   color: "#D97706" },
 };
 
 /* ═══════════════════ MAIN SCREEN ═══════════════════ */
@@ -544,7 +544,7 @@ export default function HostDetailScreen() {
             </View>
             {/* Level badge */}
             <View style={[s.levelBadge, { backgroundColor: levelInfo.color + "33", borderColor: levelInfo.color }]}>
-              <Text style={s.levelBadgeEmoji}>{levelInfo.badge}</Text>
+              <AppIcon name={levelInfo.badge} size={14} color={levelInfo.color} />
               <Text style={[s.levelBadgeTxt, { color: levelInfo.color }]}>{t.hostDetail.levelShort}{level} {levelInfo.name}</Text>
             </View>
             <Text style={s.heroName}>{hostName}</Text>

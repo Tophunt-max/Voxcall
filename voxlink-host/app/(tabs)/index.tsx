@@ -249,7 +249,7 @@ export default function HostHomeScreen() {
         queryClient.invalidateQueries({ queryKey: ['host-streak'] });
         if (credited.reward > 0) {
           queryClient.invalidateQueries({ queryKey: ['host-earnings'] });
-          showSuccessToast(`Day ${credited.streak_days} streak! +${credited.reward} coins`, "Streak kept 🔥");
+          showSuccessToast(`Day ${credited.streak_days} streak! +${credited.reward} coins`, "Streak kept");
         }
       }
     } catch (e: any) {

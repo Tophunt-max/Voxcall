@@ -16,6 +16,7 @@ import { useColors } from "@/hooks/useColors";
 import { useLanguage } from "@/context/LanguageContext";
 import { API } from "@/services/api";
 import { showErrorToast, showSuccessToast } from "@/components/Toast";
+import { AppIcon, type AppIconName } from "@/components/AppIcon";
 import { WEB_INPUT_RESET } from "@workspace/shared-ui/utils";
 
 type Method = "bank" | "upi" | "paytm" | "phonepe";
@@ -23,7 +24,7 @@ type Method = "bank" | "upi" | "paytm" | "phonepe";
 interface MethodConfig {
   id: Method;
   label: string;
-  emoji: string;
+  icon: AppIconName;
   fields: { key: string; label: string; placeholder: string; keyboardType?: "default" | "phone-pad" | "number-pad" }[];
 }
 
@@ -33,7 +34,7 @@ const METHODS: MethodConfig[] = [
   {
     id: "bank",
     label: "Bank Account",
-    emoji: "🏦",
+    icon: "bank",
     fields: [
       { key: "account_holder", label: "Account Holder Name", placeholder: "Full name on the account" },
       { key: "account_number", label: "Account Number", placeholder: "1234567890", keyboardType: "number-pad" },
@@ -44,7 +45,7 @@ const METHODS: MethodConfig[] = [
   {
     id: "upi",
     label: "UPI",
-    emoji: "💸",
+    icon: "money-send",
     fields: [
       { key: "upi_id", label: "UPI ID", placeholder: "yourname@okhdfcbank" },
     ],
@@ -52,7 +53,7 @@ const METHODS: MethodConfig[] = [
   {
     id: "paytm",
     label: "Paytm",
-    emoji: "📱",
+    icon: "device",
     fields: [
       { key: "phone_number", label: "Paytm Phone Number", placeholder: "9876543210", keyboardType: "phone-pad" },
     ],
@@ -60,7 +61,7 @@ const METHODS: MethodConfig[] = [
   {
     id: "phonepe",
     label: "PhonePe",
-    emoji: "💜",
+    icon: "device",
     fields: [
       { key: "phone_number", label: "PhonePe Phone Number", placeholder: "9876543210", keyboardType: "phone-pad" },
     ],
@@ -190,7 +191,7 @@ export default function PayoutMethodScreen() {
                 onPress={() => setSelected(m.id)}
                 activeOpacity={0.75}
               >
-                <Text style={styles.methodEmoji}>{m.emoji}</Text>
+                <AppIcon name={m.icon} size={22} color={colors.primary} />
                 <Text style={[styles.methodLabel, { color: colors.text }]}>{m.label}</Text>
                 <View
                   style={[

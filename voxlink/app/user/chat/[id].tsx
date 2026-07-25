@@ -14,6 +14,7 @@ import { GiftAnimation, type GiftAnim } from "@/components/GiftAnimation";
 import { alertDialog, confirmDialog } from "@/utils/dialog";
 import * as ImagePicker from "expo-image-picker";
 import { showErrorToast, showSuccessToast } from "@/components/Toast";
+import { AppIcon, type AppIconName } from "@/components/AppIcon";
 import * as Haptics from "expo-haptics";
 import { WEB_INPUT_RESET } from "@workspace/shared-ui/utils";
 
@@ -23,13 +24,13 @@ function formatTime(ts: number) {
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-function vipTierEmoji(tier?: string | null): string {
+function vipTierIcon(tier?: string | null): AppIconName {
   switch (tier) {
-    case "platinum": return "💎";
-    case "gold": return "👑";
-    case "silver": return "⭐";
-    case "weekly": return "🎫";
-    default: return "👑";
+    case "platinum": return "diamond";
+    case "gold": return "crown";
+    case "silver": return "star";
+    case "weekly": return "ticket";
+    default: return "crown";
   }
 }
 
@@ -294,9 +295,10 @@ export default function ChatScreen() {
             isMe ? { backgroundColor: colors.primary } : { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }
           ]}>
           {item.deleted ? (
-            <Text style={[styles.bubbleText, { fontStyle: "italic", color: isMe ? "rgba(255,255,255,0.7)" : colors.mutedForeground }]}>
-              🚫 This message was deleted
-            </Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+              <AppIcon name="blocked" size={13} color={isMe ? "rgba(255,255,255,0.7)" : colors.mutedForeground} />
+              <Text style={[styles.bubbleText, { fontStyle: "italic", color: isMe ? "rgba(255,255,255,0.7)" : colors.mutedForeground }]}>This message was deleted</Text>
+            </View>
           ) : item.type === "gift" ? (
             <View style={styles.giftInner}>
               <Text style={styles.giftEmoji}>{item.giftIcon ?? "🎁"}</Text>
@@ -359,8 +361,9 @@ export default function ChatScreen() {
           <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
             <Text style={[styles.headerName, { color: colors.foreground }]} numberOfLines={1}>{participantName}</Text>
             {convo?.isVip && (
-              <View style={styles.vipChip}>
-                <Text style={styles.vipChipText}>{vipTierEmoji(convo.vipTier)} {t.common.vip}</Text>
+              <View style={[styles.vipChip, { flexDirection: "row", alignItems: "center", gap: 3 }]}>
+                <AppIcon name={vipTierIcon(convo.vipTier)} size={11} color="#D97706" />
+                <Text style={styles.vipChipText}>{t.common.vip}</Text>
               </View>
             )}
           </View>
@@ -418,7 +421,7 @@ export default function ChatScreen() {
             )}
           </TouchableOpacity>
           <TouchableOpacity onPress={openGiftPicker} disabled={!!editingId} style={[styles.iconBtn, { backgroundColor: colors.muted }]} accessibilityRole="button" accessibilityLabel="Send a gift">
-            <Text style={{ fontSize: 18 }}>🎁</Text>
+            <AppIcon name="gift" size={18} color={colors.mutedForeground} />
           </TouchableOpacity>
           <View style={[styles.inputWrap, { backgroundColor: colors.muted }]}>
             <TextInput

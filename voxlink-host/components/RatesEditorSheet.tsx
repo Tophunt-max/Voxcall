@@ -9,6 +9,7 @@ import React, { useEffect, useState, useCallback } from "react";
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ActivityIndicator } from "react-native";
 import BottomSheet from "@/components/BottomSheet";
 import { useColors } from "@/hooks/useColors";
+import { AppIcon, type AppIconName } from "@/components/AppIcon";
 import { API } from "@/services/api";
 import { showErrorToast, showSuccessToast } from "@/components/Toast";
 import { WEB_INPUT_RESET } from "@workspace/shared-ui/utils";
@@ -47,7 +48,7 @@ interface RatesEditorSheetProps {
 }
 
 function RateStepper({
-  emoji,
+  icon,
   label,
   sublabel,
   value,
@@ -56,7 +57,7 @@ function RateStepper({
   onStep,
   onCommit,
 }: {
-  emoji: string;
+  icon: AppIconName;
   label: string;
   sublabel: string;
   value: string;
@@ -70,7 +71,7 @@ function RateStepper({
   return (
     <View style={[styles.rateCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
       <View style={styles.rateHead}>
-        <Text style={styles.rateEmoji}>{emoji}</Text>
+        <AppIcon name={icon} size={22} color={colors.text} />
         <View style={{ flex: 1 }}>
           <Text style={[styles.rateLabel, { color: colors.text }]}>{label}</Text>
           <Text style={[styles.rateSub, { color: colors.mutedForeground }]}>{sublabel}</Text>
@@ -192,7 +193,7 @@ export default function RatesEditorSheet({
         </Text>
 
         <RateStepper
-          emoji="🎙️"
+          icon="mic"
           label="Audio Call"
           sublabel="Per minute for voice calls"
           value={audio}
@@ -202,7 +203,7 @@ export default function RatesEditorSheet({
           onCommit={() => setAudio((prev) => String(clamp(parseInt(prev, 10) || 0, audioCap)))}
         />
         <RateStepper
-          emoji="📹"
+          icon="video"
           label="Video Call"
           sublabel="Per minute for video calls"
           value={video}

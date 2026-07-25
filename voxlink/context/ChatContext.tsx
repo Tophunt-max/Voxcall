@@ -191,7 +191,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         isRead: false,
         ...(isGift ? { giftIcon: data.giftIcon, giftName: data.giftName, giftAmount: data.giftAmount } : {}),
       };
-      const preview = type === "text" ? incoming.content : type === "gift" ? `🎁 ${incoming.giftName ?? "Gift"}` : (type === "image" ? "📷 Photo" : "🎤 Voice");
+      const preview = type === "text" ? incoming.content : type === "gift" ? (incoming.giftName ?? "Gift") : (type === "image" ? "Photo" : "Voice");
       const viewingThisRoom = activeRoomRef.current != null && (activeRoomRef.current === roomId);
       setConversations((prev) =>
         prev.map((c) => {
@@ -353,7 +353,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     const convo = conversations.find((c) => c.id === conversationId);
     const roomId = convo?.roomId ?? conversationId;
     const isMedia = type === "image" || type === "audio";
-    const preview = isMedia ? (type === "image" ? "📷 Photo" : "🎤 Voice") : content;
+    const preview = isMedia ? (type === "image" ? "Photo" : "Voice") : content;
 
     const tempId = "tmp_" + Date.now();
     const tempMsg: Message = {
@@ -443,7 +443,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       giftName: gift.name,
       giftAmount: gift.price_coins,
     };
-    const preview = `🎁 ${gift.name}`;
+    const preview = gift.name;
     setConversations((prev) =>
       prev.map((c) =>
         (c.id === conversationId || c.roomId === conversationId)

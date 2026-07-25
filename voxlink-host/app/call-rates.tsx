@@ -13,6 +13,7 @@ import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useLanguage } from "@/context/LanguageContext";
+import { AppIcon, type AppIconName } from "@/components/AppIcon";
 import { API } from "@/services/api";
 import { showErrorToast, showSuccessToast } from "@/components/Toast";
 import { WEB_INPUT_RESET } from "@workspace/shared-ui/utils";
@@ -34,7 +35,7 @@ function clamp(n: number, max: number = ABS_MAX_RATE): number {
 interface RateRowProps {
   label: string;
   sublabel: string;
-  emoji: string;
+  icon: AppIconName;
   value: string;
   max: number;
   onChange: (v: string) => void;
@@ -43,13 +44,13 @@ interface RateRowProps {
   colors: ReturnType<typeof useColors>;
 }
 
-function RateRow({ label, sublabel, emoji, value, max, onChange, onStep, onCommit, colors }: RateRowProps) {
+function RateRow({ label, sublabel, icon, value, max, onChange, onStep, onCommit, colors }: RateRowProps) {
   const { t: tr } = useLanguage();
   const over = (parseInt(value, 10) || 0) > max;
   return (
     <View style={[styles.rateCard, { backgroundColor: colors.card }]}>
       <View style={styles.rateHead}>
-        <Text style={styles.rateEmoji}>{emoji}</Text>
+        <AppIcon name={icon} size={24} color={colors.text} />
         <View style={{ flex: 1 }}>
           <Text style={[styles.rateLabel, { color: colors.text }]}>{label}</Text>
           <Text style={[styles.rateSub, { color: colors.mutedForeground }]}>{sublabel}</Text>
@@ -141,7 +142,7 @@ export default function CallRatesScreen() {
         setVideo(String(clamp(v, effVideo)));
         // /api/host/me returns `level` (number) and optionally `level_info`.
         const li = me?.level_info;
-        if (li?.name) setLevelLabel(`${li.badge ?? "⭐"} ${li.name}${tr.callRatesScreen.hostSuffix}`);
+        if (li?.name) setLevelLabel(`${li.name}${tr.callRatesScreen.hostSuffix}`);
         else if (me?.level) setLevelLabel(`${tr.callRatesScreen.levelWord} ${me.level}${tr.callRatesScreen.hostSuffix}`);
       } catch (e) {
         console.warn("[CallRates] getHostMe failed:", e);
@@ -233,7 +234,7 @@ export default function CallRatesScreen() {
         <RateRow
           label={tr.callRatesScreen.audioCall}
           sublabel={tr.callRatesScreen.audioSub}
-          emoji="🎙️"
+          icon="mic"
           value={audio}
           max={maxAudio}
           onChange={(t) => onChangeRate("audio", t)}
@@ -245,7 +246,7 @@ export default function CallRatesScreen() {
         <RateRow
           label={tr.callRatesScreen.videoCall}
           sublabel={tr.callRatesScreen.videoSub}
-          emoji="📹"
+          icon="video"
           value={video}
           max={maxVideo}
           onChange={(t) => onChangeRate("video", t)}

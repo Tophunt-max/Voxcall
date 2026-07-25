@@ -111,7 +111,7 @@ export default function MonthlyPassCard({ onChanged }: { onChanged?: () => void 
         const parts: string[] = [];
         if (res.host_minutes > 0) parts.push(`${res.host_minutes} host min`);
         if (res.random_minutes > 0) parts.push(`${res.random_minutes} random min`);
-        showSuccessToast(`+${parts.join(" + ")} 🎉`, `${tier.label} claimed`);
+        showSuccessToast(`+${parts.join(" + ")}`, `${tier.label} claimed`);
         await load();
         onChanged?.();
       } catch (e: any) {

@@ -154,7 +154,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         isRead: false,
         ...(isGift ? { giftIcon: data.giftIcon, giftName: data.giftName, giftAmount: data.giftAmount } : {}),
       };
-      const preview = type === "text" ? incoming.content : type === "gift" ? `🎁 ${incoming.giftName ?? "Gift"}` : (type === "image" ? "📷 Photo" : "🎤 Voice");
+      const preview = type === "text" ? incoming.content : type === "gift" ? (incoming.giftName ?? "Gift") : (type === "image" ? "Photo" : "Voice");
       const viewingThisRoom = activeRoomRef.current != null && (activeRoomRef.current === roomId);
       setConversations((prev) => {
         const idx = prev.findIndex((c) => c.id === roomId || c.roomId === roomId);

@@ -329,7 +329,7 @@ function AppBridge() {
     (data: any) => {
       const amt = Number(data?.amount) || 0;
       const who = data?.senderName || "Someone";
-      showSuccessToast(`💝 ${who} sent you ${amt} coins${data?.message ? `: ${data.message}` : ""}`);
+      showSuccessToast(`${who} sent you ${amt} coins${data?.message ? `: ${data.message}` : ""}`);
       refreshProfile().catch(() => {});
       queryClient.refetchQueries({ queryKey: ["host-earnings"] });
       queryClient.invalidateQueries({ queryKey: ["host-notif-unread"] });
@@ -342,7 +342,7 @@ function AppBridge() {
     SocketEvents.REVIEW_RECEIVED,
     (data: any) => {
       const stars = Number(data?.stars) || 0;
-      showSuccessToast(`⭐ You received a new ${stars}-star review!`);
+      showSuccessToast(`You received a new ${stars}-star review!`);
       refreshProfile().catch(() => {});
       queryClient.refetchQueries({ queryKey: ["host-me"] });
       queryClient.invalidateQueries({ queryKey: ["host-notif-unread"] });
@@ -354,7 +354,7 @@ function AppBridge() {
   useSocketEvent(
     SocketEvents.FAVORITED,
     (data: any) => {
-      showSuccessToast(`❤️ ${data?.byName || "Someone"} added you to favorites`);
+      showSuccessToast(`${data?.byName || "Someone"} added you to favorites`);
       queryClient.invalidateQueries({ queryKey: ["host-notif-unread"] });
     },
     [queryClient]

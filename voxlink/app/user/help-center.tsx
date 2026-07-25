@@ -82,7 +82,7 @@ export default function HelpCenterScreen() {
       const res = await API.createSupportTicket(subj, msg);
       showSuccessToast(
         res?.priority === "high"
-          ? "Your VIP priority request was sent — we'll respond fast. ⚡"
+          ? "Your VIP priority request was sent — we'll respond fast."
           : "Your request was sent. We'll get back to you soon.",
         "Request submitted",
       );
