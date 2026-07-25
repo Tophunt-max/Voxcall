@@ -34,6 +34,9 @@ const BANNER_BG = ["#7C3AED", "#DB2777"] as const;
 const COMMON_ACCENT = ["#A78BFA", "#8B5CF6"] as const;
 const VIP_ACCENT = ["#FBBF24", "#F97316"] as const;
 const NODE_REACHED = "#7C3AED";
+const RAIL_ACTIVE = "#7C3AED";       // progress rail — passed portion
+const RAIL_IDLE = "rgba(124,58,237,0.16)"; // progress rail — remaining portion
+const ROW_GAP = 16;                   // vertical gap between tier rows
 
 function formatDaysClock(sec: number): string {
   if (sec <= 0) return "0d 00:00:00";
@@ -186,12 +189,15 @@ export default function MonthlyPassCard({ onChanged }: { onChanged?: () => void 
               />
             </View>
 
-            {/* Center rail + node */}
+            {/* Center progress rail + node. The rail fills (solid purple) up to
+                the user's current tier and stays light beyond — a vertical
+                progress bar. The bottom half extends into the row gap so the
+                rail reads as one continuous line. */}
             <View style={styles.centerCol}>
-              <View style={[styles.rail, idx === 0 && styles.railHidden, { top: 0, bottom: "50%" }]} />
-              <View style={[styles.rail, idx === visibleTiers.length - 1 && styles.railHidden, { top: "50%", bottom: 0 }]} />
-              <View style={[styles.node, tier.reached ? styles.nodeReached : { backgroundColor: colors.border }]}>
-                <Text style={[styles.nodeText, { color: tier.reached ? "#fff" : colors.subText }]}>{tier.points}</Text>
+              <View style={[styles.rail, { top: 0, bottom: "50%", backgroundColor: tier.reached ? RAIL_ACTIVE : RAIL_IDLE }, idx === 0 && styles.railHidden]} />
+              <View style={[styles.rail, { top: "50%", bottom: -ROW_GAP, backgroundColor: (idx < visibleTiers.length - 1 && visibleTiers[idx + 1].reached) ? RAIL_ACTIVE : RAIL_IDLE }, idx === visibleTiers.length - 1 && styles.railHidden]} />
+              <View style={[styles.node, tier.reached ? styles.nodeReached : styles.nodeIdle]}>
+                <Text style={[styles.nodeText, { color: tier.reached ? "#fff" : "#9CA3AF" }]}>{tier.points}</Text>
               </View>
             </View>
 
@@ -390,14 +396,15 @@ const styles = StyleSheet.create({
 
   // Ladder
   ladder: { paddingHorizontal: 12, paddingBottom: 14 },
-  tierRow: { flexDirection: "row", alignItems: "center", gap: 8, minHeight: CELL_H },
+  tierRow: { flexDirection: "row", alignItems: "center", gap: 10, minHeight: CELL_H, marginBottom: ROW_GAP },
   trackCol: { flex: 1 },
-  centerCol: { width: 44, alignItems: "center", justifyContent: "center", alignSelf: "stretch" },
-  rail: { position: "absolute", width: 4, backgroundColor: "rgba(124,58,237,0.25)", left: 20 },
+  centerCol: { width: 46, alignItems: "center", justifyContent: "center", alignSelf: "stretch" },
+  rail: { position: "absolute", width: 6, borderRadius: 3, left: 20 },
   railHidden: { opacity: 0 },
-  node: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center", zIndex: 2, borderWidth: 2, borderColor: "#fff" },
-  nodeReached: { backgroundColor: NODE_REACHED },
-  nodeText: { fontSize: 11, fontFamily: "Poppins_700Bold" },
+  node: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", zIndex: 2, borderWidth: 3, borderColor: "#fff" },
+  nodeReached: { backgroundColor: NODE_REACHED, ...Platform.select({ ios: { shadowColor: NODE_REACHED, shadowOpacity: 0.5, shadowRadius: 4, shadowOffset: { width: 0, height: 1 } }, android: { elevation: 3 }, web: { boxShadow: "0 1px 5px rgba(124,58,237,0.5)" } as any }) },
+  nodeIdle: { backgroundColor: "#EDE9F6" },
+  nodeText: { fontSize: 11.5, fontFamily: "Poppins_700Bold" },
 
   // Reward cells
   rewardEmpty: { height: CELL_H - 12 },
