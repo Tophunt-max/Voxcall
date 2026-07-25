@@ -271,13 +271,13 @@ function RewardBox({
     <View style={styles.minRow}>
       {minutes > 0 ? (
         <View style={styles.minChipRow}>
-          <FreeMinutesCardIcon size={16} />
+          <FreeMinutesCardIcon size={19} />
           <Text style={[styles.minChip, { color }]}>{minutes}m</Text>
         </View>
       ) : null}
       {randomMinutes > 0 ? (
         <View style={styles.minChipRow}>
-          <RandomCardIcon size={16} />
+          <RandomCardIcon size={19} />
           <Text style={[styles.minChip, { color }]}>{randomMinutes}m</Text>
         </View>
       ) : null}
@@ -317,13 +317,13 @@ function RewardBox({
               <View style={styles.minRow}>
                 {minutes > 0 ? (
                   <View style={styles.minChipRow}>
-                    <FreeMinutesCardIcon size={15} />
+                    <FreeMinutesCardIcon size={17} />
                     <Text style={styles.rewardClaimCoins}>{minutes}</Text>
                   </View>
                 ) : null}
                 {randomMinutes > 0 ? (
                   <View style={styles.minChipRow}>
-                    <RandomCardIcon size={15} />
+                    <RandomCardIcon size={17} />
                     <Text style={styles.rewardClaimCoins}>{randomMinutes}</Text>
                   </View>
                 ) : null}
