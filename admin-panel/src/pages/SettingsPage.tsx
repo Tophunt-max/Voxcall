@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
-import { Save, Info, Calculator, TrendingUp, RefreshCw, Wifi, AlertTriangle, Activity } from 'lucide-react';
+import { Save, Info, Calculator, TrendingUp, RefreshCw, Wifi, AlertTriangle, Activity, Gift, Lightbulb } from 'lucide-react';
 
 // ============================================================================
 // Settings — focused on the Agora calling economy.
@@ -768,6 +768,10 @@ function PlatformEconomicsDashboard({ settings, inrRate }: { settings: Record<st
     // Downstream inputs used only in the economics strip
     minWithdraw: num('min_withdrawal_coins', 100),
     freeMinutes: parseFloat(settings.first_call_free_minutes || '0'),
+    // Gift/tip commission are percentages that can legitimately be 0 (host
+    // keeps 100%), so DON'T use num() (which rejects 0). Clamp to 0–90.
+    giftCommissionPct: Math.max(0, Math.min(90, parseFloat(settings.gift_commission_pct || '0') || 0)),
+    tipCommissionPct: Math.max(0, Math.min(90, parseFloat(settings.tip_commission_pct || '0') || 0)),
   };
   const hostShare = Math.min(0.95, Math.max(0, cfg.hostShareRaw));
 
@@ -822,6 +826,50 @@ function PlatformEconomicsDashboard({ settings, inrRate }: { settings: Record<st
   const audioBreakEvenSec = rows[0].est.userPays > 0
     ? Math.max(0, Math.min(60, Math.round((rows[0].est.gatewayFee + rows[0].est.agoraCost) / (rows[0].est.userPays / 60))))
     : 0;
+
+  // ── Gifts & Tips economics (per 100 coins) ────────────────────────────
+  // Gifting/tipping spends coins the user already bought (gateway + coin
+  // spread were already captured at purchase). At redemption the host cashes
+  // out their share at the payout ₹/coin, and the platform keeps its
+  // commission % of the coins PLUS the coin spread on the host's portion.
+  const GIFT_SAMPLE = 100;
+  const giftUserValue = GIFT_SAMPLE * cfg.purchase;                                   // ₹ value the user spent
+  const giftHostCash = GIFT_SAMPLE * (1 - cfg.giftCommissionPct / 100) * cfg.payout;  // ₹ the host can withdraw
+  const giftPlatformNet = giftUserValue - giftHostCash;                              // ₹ platform retains
+  const giftMarginPct = giftUserValue > 0 ? (giftPlatformNet / giftUserValue) * 100 : 0;
+  const tipHostCash = GIFT_SAMPLE * (1 - cfg.tipCommissionPct / 100) * cfg.payout;
+  const tipPlatformNet = giftUserValue - tipHostCash;
+  const tipMarginPct = giftUserValue > 0 ? (tipPlatformNet / giftUserValue) * 100 : 0;
+
+  // ── Smart suggestions ─────────────────────────────────────────────────
+  // Proactive, actionable recommendations (not just red warnings). Aim for a
+  // healthy 25% platform margin on calls, a sensible coin spread, and
+  // monetized gifting.
+  const TARGET_MARGIN = 0.25;
+  const recRate = (usdPer1000: number): number | null => {
+    const agora = agoraCostPerMin(usdPer1000);
+    // margin = (rate·purchase·(1−g) − rate·hostShare·payout − agora) / (rate·purchase) ≥ T
+    const denom = cfg.purchase * (1 - cfg.gatewayPct / 100) - hostShare * cfg.payout - TARGET_MARGIN * cfg.purchase;
+    if (denom <= 0) return null; // target unreachable at current coin/host economics
+    return Math.ceil(agora / denom);
+  };
+  const suggestions: Array<{ tone: 'ok' | 'tip'; msg: string }> = [];
+  rows.forEach((r) => {
+    const rec = recRate(r.usd);
+    if (rec && r.rate < rec) {
+      suggestions.push({ tone: 'tip', msg: `${r.label}: set ≥ ${rec} coins/min for a healthy 25% margin (now ${r.rate} → ${r.est.margin.toFixed(0)}%).` });
+    }
+  });
+  const payoutRatio = cfg.purchase > 0 ? cfg.payout / cfg.purchase : 0;
+  if (payoutRatio > 0.6) {
+    suggestions.push({ tone: 'tip', msg: `Host payout is ${(payoutRatio * 100).toFixed(0)}% of the purchase price — thin spread. Recommended ≤ 50% (e.g. payout ₹${(cfg.purchase * 0.45).toFixed(3)}/coin).` });
+  }
+  if (cfg.giftCommissionPct === 0) {
+    suggestions.push({ tone: 'tip', msg: 'Gift commission is 0% — hosts keep 100%. Set 10–30% to earn platform revenue on gifting.' });
+  }
+  if (suggestions.length === 0) {
+    suggestions.push({ tone: 'ok', msg: `Your coin economy looks healthy — audio ${rows[0].est.margin.toFixed(0)}% / video ${rows[1].est.margin.toFixed(0)}% margin, ${(payoutRatio * 100).toFixed(0)}% payout ratio.` });
+  }
 
   // ── Health aggregator ─────────────────────────────────────────────────
   const belowFloor  = rows.some((r) => r.rate < r.est.floor);
@@ -1001,6 +1049,47 @@ function PlatformEconomicsDashboard({ settings, inrRate }: { settings: Record<st
           value={audioBreakEvenSec > 0 ? `${audioBreakEvenSec}s` : '—'}
           tone="neutral"
         />
+      </div>
+
+      {/* ── Gifts & Tips economics (per 100 coins) ───────────────────── */}
+      <div className="px-4 py-3 border-t border-border bg-secondary/10">
+        <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5 mb-2">
+          <Gift size={13} className="text-pink-500" /> Gifts &amp; Tips — per 100 coins
+        </p>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <StatChip label="User spends" value={`₹${giftUserValue.toFixed(2)}`} tone="green" />
+          <StatChip label={`Gift · host gets (${(100 - cfg.giftCommissionPct).toFixed(0)}%)`} value={`₹${giftHostCash.toFixed(2)}`} tone="amber" />
+          <StatChip
+            label={`Gift · platform (${cfg.giftCommissionPct}%)`}
+            value={`₹${giftPlatformNet.toFixed(2)} (${giftMarginPct.toFixed(0)}%)`}
+            tone={giftMarginPct > 0 ? 'green' : 'amber'}
+          />
+          <StatChip
+            label={`Tip · platform (${cfg.tipCommissionPct}%)`}
+            value={`₹${tipPlatformNet.toFixed(2)} (${tipMarginPct.toFixed(0)}%)`}
+            tone={tipMarginPct > 0 ? 'green' : 'amber'}
+          />
+        </div>
+      </div>
+
+      {/* ── Smart suggestions ────────────────────────────────────────── */}
+      <div className="px-4 py-3 border-t border-border bg-violet-50/40 dark:bg-violet-950/10 space-y-2">
+        <p className="text-[11px] font-bold uppercase tracking-wide text-violet-700 dark:text-violet-400 flex items-center gap-1.5">
+          <Lightbulb size={13} /> Suggestions
+        </p>
+        {suggestions.map((s, i) => (
+          <div
+            key={i}
+            className={`flex items-start gap-2 rounded-xl border px-3 py-2 text-xs ${
+              s.tone === 'ok'
+                ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-900/50 dark:bg-green-950/30 dark:text-green-400'
+                : 'border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-900/50 dark:bg-violet-950/20 dark:text-violet-300'
+            }`}
+          >
+            <span className="mt-0.5 flex-shrink-0">{s.tone === 'ok' ? '✓' : '💡'}</span>
+            <p>{s.msg}</p>
+          </div>
+        ))}
       </div>
 
       {/* ── Warning banners (only when there's a real problem) ───────── */}
