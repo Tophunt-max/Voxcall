@@ -558,6 +558,14 @@ call.post('/end', async (c) => {
       await bumpRewardProgress(db, session.caller_id, 'spend_coins', actualCoinsCharged);
     }
 
+    // Instant level-up: this call just credited host minutes/earnings, which
+    // can cross a level threshold on their own (no new rating needed). Fire
+    // best-effort so a promotion + reward land immediately instead of waiting
+    // for the daily recalc cron. It's one SELECT when nothing qualifies.
+    if (actualHostShare > 0) {
+      c.executionCtx?.waitUntil?.(applyLevelUp(c.env, session.host_id, 'auto').catch(() => {}));
+    }
+
     // Best-effort: stamp the estimated Agora media cost (₹) for margin
     // analytics. Observability only — never affects the settlement above.
     try {
@@ -1001,6 +1009,14 @@ call.post('/:id/end', async (c) => {
     }
     if (actualCoinsCharged > 0) {
       await bumpRewardProgress(db, session.caller_id, 'spend_coins', actualCoinsCharged);
+    }
+
+    // Instant level-up: this call just credited host minutes/earnings, which
+    // can cross a level threshold on their own (no new rating needed). Fire
+    // best-effort so a promotion + reward land immediately instead of waiting
+    // for the daily recalc cron. It's one SELECT when nothing qualifies.
+    if (actualHostShare > 0) {
+      c.executionCtx?.waitUntil?.(applyLevelUp(c.env, session.host_id, 'auto').catch(() => {}));
     }
 
     // Best-effort: stamp the estimated Agora media cost (₹) for margin analytics.
