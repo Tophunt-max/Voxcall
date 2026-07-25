@@ -215,8 +215,17 @@ export function ToastContainer() {
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
   const show = useCallback((params: Omit<ToastMessage, "id">) => {
-    const id = `toast_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-    setToasts((prev) => [{ id, ...params }, ...prev].slice(0, 3));
+    setToasts((prev) => {
+      // Popups are modal-style, so only ONE shows at a time (never stack a
+      // column of cards). Also dedupe an identical message that's already on
+      // screen — this stops the same error piling up when a screen refetches
+      // on focus or on repeated socket events (e.g. the checkout screen).
+      if (prev.some((x) => x.type === params.type && x.title === params.title && x.message === params.message)) {
+        return prev;
+      }
+      const id = `toast_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+      return [{ id, ...params }];
+    });
   }, []);
 
   useEffect(() => {
