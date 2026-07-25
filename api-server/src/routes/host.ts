@@ -57,7 +57,7 @@ function enrichHost(h: any, config: LevelDef[]) {
     level: h.level ?? 1,
     level_info: buildLevelInfo(config, h.level ?? 1),
     audio_coins_per_minute: h.audio_coins_per_minute ?? h.coins_per_minute ?? DEFAULT_AUDIO_RATE,
-    video_coins_per_minute: h.video_coins_per_minute ?? (h.coins_per_minute ? h.coins_per_minute + 5 : DEFAULT_VIDEO_RATE),
+    video_coins_per_minute: h.video_coins_per_minute ?? h.coins_per_minute ?? DEFAULT_VIDEO_RATE,
   };
 }
 
