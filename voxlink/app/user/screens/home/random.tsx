@@ -112,10 +112,17 @@ function limitPopupContent(
 ): { emoji: string; message: string; subtext?: string; retryAfterSec?: number } {
   switch (res.code) {
     case "DAILY_LIMIT_REACHED": {
-      // Show usage (e.g. "5/5 · ") when the server reported it, plus the
-      // reset hint. No retry timer — the daily cap is a 24h rolling window.
+      // Show usage (e.g. "5/5 · ") when the server reported it, plus the reset
+      // hint. A LIVE countdown to the 24h rolling-window reset is shown when
+      // the server sends retry_after_sec (seconds until the oldest match ages
+      // out) — the MatchLimitSheet ticks it down as HH:MM:SS.
       const usage = res.used != null && res.daily_limit != null ? `${res.used}/${res.daily_limit} · ` : "";
-      return { emoji: "📅", message: tr.random.statusDailyLimit, subtext: `${usage}${tr.random.dailyLimitReset}` };
+      return {
+        emoji: "📅",
+        message: tr.random.statusDailyLimit,
+        subtext: `${usage}${tr.random.dailyLimitReset}`,
+        retryAfterSec: res.retry_after_sec,
+      };
     }
     case "DECLINE_COOLDOWN":
       return { emoji: "⏳", message: tr.random.statusDeclineCooldown, retryAfterSec: res.retry_after_sec };

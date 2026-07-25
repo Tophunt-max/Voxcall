@@ -40,8 +40,17 @@ interface Props {
   onClose: () => void;
 }
 
-/** mm:ss for >= 60s, otherwise "Ns". */
+/**
+ * Human countdown: "HH:MM:SS" for >= 1h (the 24h daily-cap reset), "M:SS" for
+ * >= 1m (decline cooldown), otherwise "Ns" (short rate-limit waits).
+ */
 function formatTime(totalSec: number): string {
+  if (totalSec >= 3600) {
+    const h = Math.floor(totalSec / 3600);
+    const m = Math.floor((totalSec % 3600) / 60);
+    const s = totalSec % 60;
+    return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  }
   if (totalSec >= 60) {
     const m = Math.floor(totalSec / 60);
     const s = totalSec % 60;
