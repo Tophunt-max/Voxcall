@@ -989,11 +989,9 @@ rewards.post('/claim', async (c) => {
   }
 
   const updated = await db.prepare('SELECT coins FROM users WHERE id = ?').bind(sub).first<{ coins: number }>();
-  // Monthly Pass: earning coins from a task also earns Pass Points for the
-  // current month (points == coins claimed). Best-effort, never blocks/fails
-  // the claim response.
+  // NOTE: Monthly Pass Points are NOT earned from task claims — they come only
+  // from burning (spending) and recharging coins (see bumpRewardProgress).
   if (coinsReward > 0) {
-    c.executionCtx?.waitUntil?.(addPassPoints(db, sub, coinsReward));
     c.executionCtx?.waitUntil?.(notifyUser(c.env, sub, '🎁 Reward Claimed!', `Nice work! You just earned ${coinsReward} coins from "${task.title}". Keep completing tasks for more! 💪`, 'reward'));
   }
   return c.json({
@@ -1369,6 +1367,16 @@ export async function bumpRewardProgress(
       .run();
   } catch (err) {
     console.warn('[rewards] trigger counter upsert failed:', err);
+  }
+
+  // 1b) Monthly Pass Points are earned ONLY by BURNING (spending) coins and by
+  //     RECHARGING — never by completing tasks. Points added == coins involved:
+  //       • spend_coins    — coins spent on calls
+  //       • spend_on_gifts — coins spent on gifts
+  //       • coin_topup     — coins bought (recharge)
+  //     Best-effort — addPassPoints swallows its own errors.
+  if (triggerType === 'spend_coins' || triggerType === 'spend_on_gifts' || triggerType === 'coin_topup') {
+    await addPassPoints(db, userId, deltaInt);
   }
 
   // 2) Bump matching active task rows so task cards update in real-time.

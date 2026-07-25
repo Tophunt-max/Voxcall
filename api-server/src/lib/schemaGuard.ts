@@ -1398,7 +1398,7 @@ export function ensureRewardsPassSchema(db: D1Database): Promise<boolean> {
              VALUES ('default', 1, 'Monthly Pass', ?, 1000, 1, ?)`,
           )
           .bind(
-            'Complete tasks to earn Pass Points and unlock monthly rewards. Go VIP or buy the pass to claim Premium rewards too!',
+            'Spend and recharge coins to earn Pass Points and unlock monthly rewards. Go VIP to claim the Premium track too!',
             '[{"level":1,"points":100,"label":"Tier 1","free_coins":50,"premium_coins":150},{"level":2,"points":300,"label":"Tier 2","free_coins":80,"premium_coins":250},{"level":3,"points":600,"label":"Tier 3","free_coins":120,"premium_coins":400},{"level":4,"points":1000,"label":"Tier 4","free_coins":180,"premium_coins":600},{"level":5,"points":1500,"label":"Tier 5","free_coins":250,"premium_coins":1000}]',
           )
           .run();

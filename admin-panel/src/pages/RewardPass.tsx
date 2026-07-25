@@ -113,7 +113,7 @@ export default function RewardPass() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="font-bold text-lg flex items-center gap-2"><Crown size={18} className="text-purple-500" /> Monthly Pass Rewards (Free &amp; VIP)</h2>
-          <p className="text-sm text-muted-foreground">Set the tier rewards for both tracks: <strong>Free users</strong> claim the Common reward, <strong>VIP members</strong> unlock the Premium reward. Points are earned from reward tasks and reset each month.</p>
+          <p className="text-sm text-muted-foreground">Set the tier rewards for both tracks: <strong>Free users</strong> claim the Common reward, <strong>VIP members</strong> unlock the Premium reward. Pass Points are earned by <strong>spending (burning) and recharging coins</strong> — not by completing tasks — and reset each month.</p>
         </div>
         <button onClick={save} disabled={saving}
           className="flex items-center gap-1.5 bg-primary text-primary-foreground px-4 py-2 rounded-xl text-sm font-semibold hover:opacity-90 disabled:opacity-50">
