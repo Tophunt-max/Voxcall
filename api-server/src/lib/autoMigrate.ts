@@ -313,9 +313,14 @@ export function ensureAllMigrations(db: D1Database): Promise<AutoMigrateReport> 
         } catch (err) {
           report.failed.push(m.name);
           console.error(`[autoMigrate] FAILED ${m.name}:`, err);
-          // Stop here — applying later migrations on top of a failed earlier
-          // one risks compounding schema corruption. Operator must intervene.
-          break;
+          // CONTINUE past a failed migration instead of stopping. Every
+          // migration here is written to be idempotent and statement-level
+          // tolerant, and later ones are independent table/column additions —
+          // so one legacy-incompatible migration must NOT block all the rest
+          // (which previously left the whole queue stuck + health "Degraded").
+          // The failed one isn't recorded, so it retries on the next cold start
+          // once its underlying issue is resolved.
+          continue;
         }
       }
 

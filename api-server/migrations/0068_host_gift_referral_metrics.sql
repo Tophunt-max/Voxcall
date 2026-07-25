@@ -24,7 +24,7 @@ UPDATE hosts SET gifts_received =
   (SELECT COUNT(*) FROM tips t WHERE t.host_id = hosts.id)
   + (SELECT COUNT(*) FROM messages m
        JOIN chat_rooms cr ON cr.id = m.room_id
-      WHERE cr.host_id = hosts.id AND m.type = 'gift');
+      WHERE cr.host_id = hosts.id AND m.msg_kind = 'gift');
 
 -- successful_referrals = referrals by this host's user that are unlocked.
 UPDATE hosts SET successful_referrals = (
