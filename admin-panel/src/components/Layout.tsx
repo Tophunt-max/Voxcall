@@ -9,7 +9,7 @@ import {
   IndianRupee, MessageSquare, Flag, ShieldOff, Megaphone,
   ScrollText, Image, Gift, Radio, Sliders, CreditCard,
   CircleDollarSign, Zap, Ticket, Medal, Crown, Sparkles, Rocket,
-  HeartPulse, ShieldAlert, Smartphone
+  HeartPulse, ShieldAlert, Smartphone, Shuffle
 } from 'lucide-react';
 
 const nav = [
@@ -21,6 +21,7 @@ const nav = [
   { href: '/ban-management', label: 'Ban Management', icon: ShieldOff, section: 'main' },
   { href: '/live-calls', label: 'Live Calls', icon: Radio, section: 'calls' },
   { href: '/calls', label: 'Call Sessions', icon: Phone, section: 'calls' },
+  { href: '/random-limits', label: 'Random Call Limits', icon: Shuffle, section: 'calls' },
   { href: '/ratings', label: 'Ratings', icon: Star, section: 'calls' },
   { href: '/withdrawals', label: 'Withdrawals', icon: Wallet, section: 'finance' },
   { href: '/payout-management', label: 'Payout Management', icon: IndianRupee, section: 'finance' },

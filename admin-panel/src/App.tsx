@@ -44,6 +44,7 @@ const RewardCoupons = lazy(() => import('@/pages/RewardCoupons'));
 const RewardAchievements = lazy(() => import('@/pages/RewardAchievements'));
 const ReferralSystem = lazy(() => import('@/pages/ReferralSystem'));
 const LiveCalls = lazy(() => import('@/pages/LiveCalls'));
+const RandomCallLimits = lazy(() => import('@/pages/RandomCallLimits'));
 const AppConfig = lazy(() => import('@/pages/AppConfig'));
 const EngagementNotifications = lazy(() => import('@/pages/EngagementNotifications'));
 const GrowthPromotions = lazy(() => import('@/pages/GrowthPromotions'));
@@ -103,6 +104,7 @@ function ProtectedApp() {
         <Route path="/host-applications" component={HostApplications} />
         <Route path="/ban-management" component={BanManagement} />
         <Route path="/live-calls" component={LiveCalls} />
+        <Route path="/random-limits" component={RandomCallLimits} />
         <Route path="/payout-management" component={PayoutManagement} />
         <Route path="/promo-codes" component={PromoCodes} />
         <Route path="/analytics" component={Analytics} />
