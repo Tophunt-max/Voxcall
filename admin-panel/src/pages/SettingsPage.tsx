@@ -1005,16 +1005,20 @@ function PlatformEconomicsDashboard({ settings, inrRate, baseEarningShare }: { s
           //  • Agora/Gateway/Net → ₹ cost expressed as its coin-equivalent at
           //    the coin purchase value (1 coin = ₹purchase), so every line
           //    reads in coins as well as rupees.
+          // Coins are annotated ONLY where the count is a true, unambiguous
+          // coin quantity: coins CHARGED to the caller (= the rate) and coins
+          // CREDITED to the host (= floor(rate × share) — this is the host
+          // share made visible). We deliberately DON'T tag Agora/Gateway/net:
+          // those are pure ₹ (Agora is a $ cost; the platform keeps rupees, not
+          // coins). Host coins redeem at a lower ₹ than the user paid, so the
+          // coin counts across lines are NOT meant to add up — mixing bases is
+          // what made the column look "broken".
           const fmtC = (n: number) => {
             const v = Math.round(n * 10) / 10;
             return Number.isInteger(v) ? String(v) : v.toFixed(1);
           };
-          const p = cfg.purchase > 0 ? cfg.purchase : 1;
           const chargedCoins = r.rate;
           const hostCoins = Math.floor(r.rate * hostShare);
-          const agoraCoins = r.est.agoraCost / p;
-          const gatewayCoins = r.est.gatewayFee / p;
-          const netCoins = r.est.net / p;
           const CoinTag = ({ children }: { children: string }) => (
             <span className="text-muted-foreground/60 font-normal mr-1.5">{children}c</span>
           );
@@ -1040,15 +1044,15 @@ function PlatformEconomicsDashboard({ settings, inrRate, baseEarningShare }: { s
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Agora</span>
-                  <span className="text-muted-foreground"><CoinTag>{fmtC(agoraCoins)}</CoinTag>−₹{r.est.agoraCost.toFixed(3)}</span>
+                  <span className="text-muted-foreground">−₹{r.est.agoraCost.toFixed(3)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Gateway</span>
-                  <span className="text-muted-foreground"><CoinTag>{fmtC(gatewayCoins)}</CoinTag>−₹{r.est.gatewayFee.toFixed(2)}</span>
+                  <span className="text-muted-foreground">−₹{r.est.gatewayFee.toFixed(2)}</span>
                 </div>
                 <div className="border-t border-border pt-1 mt-1 flex justify-between font-bold">
                   <span>Platform net</span>
-                  <span className={netColour}><CoinTag>{fmtC(netCoins)}</CoinTag>₹{r.est.net.toFixed(2)}/min</span>
+                  <span className={netColour}>₹{r.est.net.toFixed(2)}/min</span>
                 </div>
               </div>
               <div className="flex items-center justify-between text-[10px]">
@@ -1061,8 +1065,8 @@ function PlatformEconomicsDashboard({ settings, inrRate, baseEarningShare }: { s
           );
         })}
       </div>
-      <p className="px-4 -mt-1 pb-1 text-[10px] text-muted-foreground">
-        Host cash uses the Level&nbsp;1 host share ({(hostShare * 100).toFixed(0)}%){baseEarningShare != null ? ' from Level Config' : ' (global setting)'} — higher levels earn a bit more.
+      <p className="px-4 -mt-1 pb-1 text-[10px] text-muted-foreground leading-relaxed">
+        Coins shown = charged to user / credited to host. Host cash uses the Level&nbsp;1 share ({(hostShare * 100).toFixed(0)}%){baseEarningShare != null ? ' from Level Config' : ' (global setting)'} — higher levels earn a bit more. Host coins redeem at a lower ₹ than the buy price, so the lines don&apos;t sum in coins (the ₹ column does).
       </p>
 
       {/* ── Economics strip ──────────────────────────────────────────── */}
