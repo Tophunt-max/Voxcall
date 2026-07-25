@@ -3331,13 +3331,10 @@ admin.post('/seed/india-defaults', async (c) => {
   // Earning share matches DEFAULT_LEVEL_CONFIG (0.70 → 0.80) and per-level
   // random rates default to the canonical 25/40 so this seed stays consistent
   // with the rest of the economy. Admins can still tune per-level rates later.
-  const indiaLevelConfig = [
-    { level: 1, name: 'Newcomer', badge: '🌱', color: '#6B7280', min_calls: 0,    min_rating: 0.0, coin_reward: 0,    description: 'New to the platform',  perks: { max_rate: 100, max_audio_rate: 100, max_video_rate: 100, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.70, rank_boost: 0 } },
-    { level: 2, name: 'Rising',   badge: '⭐', color: '#F59E0B', min_calls: 50,   min_rating: 4.0, coin_reward: 100,  description: 'Getting established',   perks: { max_rate: 150, max_audio_rate: 150, max_video_rate: 150, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.70, rank_boost: 1 } },
-    { level: 3, name: 'Expert',   badge: '🔥', color: '#EF4444', min_calls: 200,  min_rating: 4.3, coin_reward: 300,  description: 'Proven expertise',      perks: { max_rate: 250, max_audio_rate: 250, max_video_rate: 250, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.72, rank_boost: 2 } },
-    { level: 4, name: 'Pro',      badge: '💎', color: '#8B5CF6', min_calls: 500,  min_rating: 4.6, coin_reward: 500,  description: 'Professional tier',     perks: { max_rate: 400, max_audio_rate: 400, max_video_rate: 400, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.75, rank_boost: 3 } },
-    { level: 5, name: 'Elite',    badge: '👑', color: '#D97706', min_calls: 1000, min_rating: 4.8, coin_reward: 1000, description: 'Top performer',         perks: { max_rate: 500, max_audio_rate: 500, max_video_rate: 500, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.80, rank_boost: 5 } },
-  ];
+  // Use the canonical, well-paced ladder from levels.ts so this seed always
+  // matches the shipped default (fast early rungs, quality gates later)
+  // instead of drifting to a stale inline copy.
+  const indiaLevelConfig = DEFAULT_LEVEL_CONFIG;
 
   // ─── Execute as a single batch (atomic at D1 batch level) ──────────────
   // If any step fails, none of the changes commit and the admin sees a
