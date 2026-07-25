@@ -816,7 +816,23 @@ admin.patch('/settings', async (c) => {
     // displayed ₹ never drifts and the FX cron can re-pin coin_to_usd_rate.
     processedBody.coin_value_inr = String(inrValue);
   }
-  
+
+  // Capture the PRE-SAVE coin purchase value so the coin-plan price recompute
+  // (further below) only fires when this value ACTUALLY changes. The admin
+  // panel posts the FULL settings object on every save, so without this guard
+  // saving ANY unrelated field would re-clobber manually-edited coin-plan
+  // prices (the bug where CoinPlans edits/adds "didn't stick").
+  let prevCoinPurchaseInr: number | null = null;
+  if (body.coin_purchase_inr !== undefined) {
+    try {
+      const row = await db(c)
+        .prepare("SELECT value FROM app_settings WHERE key = 'coin_purchase_inr'")
+        .first<{ value: string }>();
+      const p = Number(row?.value);
+      prevCoinPurchaseInr = Number.isFinite(p) ? p : null;
+    } catch { /* unknown → treated as "no change" below (safest: don't clobber) */ }
+  }
+
   // SECURITY FIX: Only allow known setting keys to prevent arbitrary key injection
   const ALLOWED_SETTINGS = [
     'min_coins_for_call', 'coin_to_usd_rate', 'coin_value_inr', 'host_revenue_share',
@@ -936,7 +952,12 @@ admin.patch('/settings', async (c) => {
   // Bonus coins are untouched (they remain the "extra" reward on bigger packs).
   if (changedKeys.includes('coin_purchase_inr')) {
     const rate = Number(processedBody['coin_purchase_inr']);
-    if (Number.isFinite(rate) && rate > 0) {
+    // Only recompute when the value ACTUALLY changed vs what was stored. This
+    // stops every unrelated settings save (panel posts all keys) from wiping
+    // manual coin-plan prices. First-ever set (prev unknown) is treated as
+    // "no change" so authored/seeded plan prices are preserved.
+    const actuallyChanged = prevCoinPurchaseInr !== null && Math.abs(prevCoinPurchaseInr - rate) > 1e-9;
+    if (Number.isFinite(rate) && rate > 0 && actuallyChanged) {
       try {
         await db(c)
           .prepare(
