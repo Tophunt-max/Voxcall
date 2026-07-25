@@ -63,7 +63,7 @@ const settingGroups: Array<{
   {
     group: 'Coin Economy',
     settings: [
-      { key: 'coin_purchase_inr', label: '💰 Coin Purchase Value (₹ per coin) — user buys', type: 'number', hint: 'What a user pays to BUY 1 coin. RECOMMENDED ₹0.20 (so ₹1 = 5 coins, 100 coins = ₹20). This is the revenue side — see the live calculator below.', step: '0.01', preview: 'inr_per_coin_user' },
+      { key: 'coin_purchase_inr', label: '💰 Coin Purchase Value (₹ per coin) — user buys', type: 'number', hint: 'What a user pays to BUY 1 coin. DRIVES EVERY PACKAGE PRICE: on save, each coin plan\'s price is recomputed = coins × this value (bonus coins stay). Example: 0.05 → 1,000 coins = ₹50, 4,000 = ₹200. Change reflects live in the app. Pack sizes + bonuses are still edited on the Coin Plans page.', step: '0.01', preview: 'inr_per_coin_user' },
       { key: 'coin_value_inr', label: '💸 Coin Payout Value (₹ per coin) — host redeems', type: 'number', hint: 'What a host redeems 1 coin for on withdrawal (host cash payout). RECOMMENDED ₹0.085. The gap vs the purchase value is the platform spread. Backend auto-converts to each host\'s currency.', step: '0.001', preview: 'inr_per_coin_host' },
       { key: 'host_revenue_share', label: 'Host Revenue Share', type: 'number', hint: '0.70 means hosts receive 70% of coins charged per call. Platform keeps the rest. Per-level overrides live in Level System Configuration.', step: '0.01', preview: 'share_ratio' },
       { key: 'min_withdrawal_coins', label: 'Minimum Withdrawal (Coins)', type: 'number', hint: 'Minimum coins a host must have to request a payout.', step: '1', preview: 'coins_absolute' },

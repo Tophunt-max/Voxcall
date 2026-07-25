@@ -927,7 +927,35 @@ admin.patch('/settings', async (c) => {
   // Reading the raw body here would broadcast the admin's STALE coin_to_usd_rate
   // (or nothing at all), so apps would never receive the new coin value.
   const changedKeys = Object.keys(processedBody).filter(k => ALLOWED_SETTINGS.includes(k));
-  
+
+  // Coin Purchase Value drives package PRICES. When the admin changes
+  // `coin_purchase_inr` (₹ a user pays per coin), recompute every active
+  // INR coin-plan's price = round(coins × ₹/coin) and persist it — so the new
+  // price shows everywhere the stored plan.price is read (Buy Coins list,
+  // checkout, purchase + deposit records, analytics), not just a preview.
+  // Bonus coins are untouched (they remain the "extra" reward on bigger packs).
+  if (changedKeys.includes('coin_purchase_inr')) {
+    const rate = Number(processedBody['coin_purchase_inr']);
+    if (Number.isFinite(rate) && rate > 0) {
+      try {
+        await db(c)
+          .prepare(
+            `UPDATE coin_plans
+                SET price = CAST(ROUND(coins * ?) AS INTEGER),
+                    currency = 'INR'
+              WHERE COALESCE(currency, 'INR') = 'INR'`,
+          )
+          .bind(rate)
+          .run();
+        // Push a lightweight data_changed('coin_plans') so every open Buy Coins
+        // screen refetches /coins/plans immediately (no app restart needed).
+        c.executionCtx?.waitUntil?.(broadcastDataChanged(c.env, 'coin_plans', 'all'));
+      } catch (e) {
+        console.warn('[admin/settings] coin-plan price recompute failed:', e);
+      }
+    }
+  }
+
   // Check if coin value changed - this is critical for real-time updates
   const coinValueChanged = changedKeys.includes('coin_to_usd_rate');
   const callRatesChanged = changedKeys.includes('default_audio_rate') || 
