@@ -145,6 +145,7 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
           ratePerMinute: rate,
           earningShare: getEarningShare(hostRow.level ?? 1, levelCfg),
           isRandom: !!(s as any).is_random_match,
+          freeMinutesCap: (s as any).type === 'video' ? 0 : 1,
         });
         actualCoinsCharged = charged; actualHostShare = hostEarned; freeMinutesUsed = free_minutes_used;
       }
@@ -212,13 +213,21 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
   let caller: (CallerData & { free_call_minutes?: number; coins_held?: number }) | null = null;
   try {
     caller = await db
-      .prepare('SELECT coins, name, COALESCE(free_call_minutes, 0) as free_call_minutes, COALESCE(coins_held, 0) as coins_held FROM users WHERE id = ?')
+      .prepare('SELECT coins, name, COALESCE(free_call_minutes, 0) as free_call_minutes, COALESCE(free_random_minutes, 0) as free_random_minutes, COALESCE(coins_held, 0) as coins_held FROM users WHERE id = ?')
       .bind(sub)
-      .first<CallerData & { free_call_minutes: number; coins_held: number }>();
+      .first<CallerData & { free_call_minutes: number; free_random_minutes: number; coins_held: number }>();
   } catch {
     caller = await db.prepare('SELECT coins, name FROM users WHERE id = ?').bind(sub).first<CallerData>();
   }
-  const callerFreeMinutes = Number((caller as any)?.free_call_minutes) || 0;
+  // Free-minute card pools. NEW RULE: cards apply ONLY to audio calls, and at
+  // most 1 free minute is granted PER CALL regardless of how many cards are
+  // held (extra cards are for other calls / hosts). Host calls burn the host
+  // pool, random calls the random pool — resolved once random-ness is known
+  // below; the gate here uses an over-estimate (either pool) so a card-holder
+  // can always start.
+  const callerHostFreeMin = Number((caller as any)?.free_call_minutes) || 0;
+  const callerRandomFreeMin = Number((caller as any)?.free_random_minutes) || 0;
+  const callerFreeMinutes = callType === 'video' ? 0 : (Math.max(callerHostFreeMin, callerRandomFreeMin) >= 1 ? 1 : 0);
   // Item 2 — spend against SPENDABLE coins (coins − held). Any prior call's hold
   // was released by self-heal above, but this stays correct even if one lingered.
   const spendableCoins = Math.max(0, (Number(caller?.coins) || 0) - (Number((caller as any)?.coins_held) || 0));
@@ -347,7 +356,10 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
   // running past the caller's balance on the host UI when the polling fallback is bypassed).
   // Includes the caller's free-minute pool so a free-trial call gets its full
   // affordable window rather than being capped at coins alone.
-  const maxSeconds = affordableCallSeconds(spendableCoins, callerFreeMinutes, ratePerMin);
+  // Precise per-call free minutes: correct pool (host vs random), audio-only,
+  // capped to 1 minute per the card rule.
+  const dispFreeMinutes = callType === 'video' ? 0 : Math.min(isRandomMatch ? callerRandomFreeMin : callerHostFreeMin, 1);
+  const maxSeconds = affordableCallSeconds(spendableCoins, dispFreeMinutes, ratePerMin);
   // Host's NET earning per minute = their level-based share of the caller's
   // rate. The host UI shows THIS (not the gross rate the caller pays) on the
   // live "+X coins/min" badge so it matches the coins actually credited at
@@ -399,8 +411,8 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
     // minutes). free_seconds = the talk-time covered by the free pool before
     // coins start being charged, so the client can show a "free minutes" chip
     // and count it down. 1 free minute always == 1 minute of talk-time.
-    free_minutes: callerFreeMinutes,
-    free_seconds: callerFreeMinutes * 60,
+    free_minutes: dispFreeMinutes,
+    free_seconds: dispFreeMinutes * 60,
     // Media transport for this call. Calls run on Agora RTC; the client joins
     // via GET /api/calls/:id/agora-token. Kept in the response so the client
     // can assert the provider it expects.
@@ -472,6 +484,7 @@ call.post('/end', async (c) => {
         ratePerMinute: effectiveRate,
         earningShare: getEarningShare(hostRow.level ?? 1, levelCfg),
         isRandom: !!(session as any).is_random_match,
+        freeMinutesCap: (session as any).type === 'video' ? 0 : 1,
       });
       actualCoinsCharged = charged;
       actualHostShare = hostEarned;
@@ -925,6 +938,7 @@ call.post('/:id/end', async (c) => {
         ratePerMinute: effectiveRate,
         earningShare: getEarningShare(hostRow.level ?? 1, levelCfg),
         isRandom: !!(session as any).is_random_match,
+        freeMinutesCap: (session as any).type === 'video' ? 0 : 1,
       });
       actualCoinsCharged = charged;
       actualHostShare = hostEarned;

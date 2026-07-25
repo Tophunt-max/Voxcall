@@ -448,6 +448,21 @@ export default function AudioCallScreen() {
     onAutoEnd: handleAutoEnd,
   });
 
+  // Free-minute card window: warn ~5s before the free minute ends, then real
+  // coins start deducting. (Cards apply to AUDIO only; freeSeconds is 0 for
+  // video, so this never fires there.)
+  const freeSeconds = activeCall?.freeSeconds ?? 0;
+  const freeWarnedRef = useRef(false);
+  useEffect(() => {
+    if (status !== "active" || freeSeconds <= 0) return;
+    if (!freeWarnedRef.current && elapsed >= freeSeconds - 5 && elapsed < freeSeconds) {
+      freeWarnedRef.current = true;
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+      showErrorToast("Your free minute is ending — real coins will be charged now.", "Heads up");
+    }
+  }, [elapsed, freeSeconds, status]);
+  const freeEndingSoon = freeSeconds > 0 && elapsed >= freeSeconds - 5 && elapsed < freeSeconds;
+
   const fmt = (s: number) =>
     `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 

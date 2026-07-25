@@ -256,6 +256,13 @@ export async function chargeCallerWithFreePool(
      * Keeps the two pools strictly separate.
      */
     isRandom?: boolean;
+    /**
+     * Max free MINUTES this single call may consume from the pool, regardless
+     * of how many the caller holds. Per the card rule: audio calls → 1 (one
+     * free minute per call/host), video calls → 0 (cards don't apply to video).
+     * Omitted = uncapped (legacy behaviour).
+     */
+    freeMinutesCap?: number;
   },
 ): Promise<{
   charged: number;
@@ -306,6 +313,11 @@ export async function chargeCallerWithFreePool(
       .first<{ coins: number; free_pool: number }>();
     callerCoins = Number(row?.coins) || 0;
     freePool = Math.max(0, Number(row?.free_pool) || 0);
+    // Cap the free minutes this call may use (audio → 1, video → 0). Extra
+    // cards stay in the pool for other calls / hosts.
+    if (params.freeMinutesCap !== undefined) {
+      freePool = Math.min(freePool, Math.max(0, Math.floor(params.freeMinutesCap)));
+    }
   } catch {
     // Column might not exist yet (healer race). Fall back to no-free-pool.
     const fallback = await db

@@ -388,6 +388,7 @@ async function reapStaleCalls(env: Env): Promise<void> {
           ratePerMinute: effectiveRate,
           earningShare: getEarningShare(call.host_level ?? 1, levelCfg),
           isRandom: !!call.is_random_match,
+          freeMinutesCap: (call as any).type === 'video' ? 0 : 1,
         });
         actualCoinsCharged = charged;
         actualHostEarnings = hostEarned;
