@@ -8,6 +8,7 @@ import { BlurView } from "expo-blur";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SvgIcon } from "@/components/SvgIcon";
 import { IconView } from "@/components/IconView";
+import { AppIcon } from "@/components/AppIcon";
 import { router } from "expo-router";
 import { useCall } from "@/context/CallContext";
 import { useLanguage } from "@/context/LanguageContext";
@@ -906,7 +907,7 @@ export default function VideoCallScreen() {
                       <Text style={uiS.liveText}>{t.videoCallScreen.live}</Text>
                     </View>
                     <Text style={uiS.timer}>{formatTime(elapsed)}</Text>
-                    {webrtc.remoteMuted && <Text style={{ fontSize: 12, marginLeft: 4 }}>🔇</Text>}
+                    {webrtc.remoteMuted && <AppIcon name="mute" size={12} color="#fff" style={{ marginLeft: 4 }} />}
                   </View>
                 ) : (
                   <Text style={uiS.headerSub} numberOfLines={1}>

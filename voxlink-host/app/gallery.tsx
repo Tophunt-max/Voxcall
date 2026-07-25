@@ -8,6 +8,7 @@ import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { appendFileToFormData } from "@/utils/fileUpload";
 import { useColors } from "@/hooks/useColors";
+import { AppIcon } from "@/components/AppIcon";
 import { API, resolveMediaUrl } from "@/services/api";
 import { showSuccessToast, showErrorToast } from "@/components/Toast";
 import { confirmDialog } from "@/utils/dialog";
@@ -115,7 +116,7 @@ export default function HostGalleryScreen() {
                   <Image source={{ uri: resolveMediaUrl(g.media_url) || g.media_url }} style={st.tileMedia} resizeMode="cover" />
                 )}
                 <TouchableOpacity onPress={() => removeItem(g.id)} style={st.removeBtn} accessibilityRole="button" accessibilityLabel="Remove highlight">
-                  <Text style={st.removeGlyph}>✕</Text>
+                  <AppIcon name="close" size={14} color="#fff" style={st.removeGlyph} />
                 </TouchableOpacity>
               </View>
             ))}

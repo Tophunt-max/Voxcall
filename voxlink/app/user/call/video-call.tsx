@@ -10,6 +10,7 @@ import { router } from "expo-router";
 import { useCall } from "@/context/CallContext";
 import { useAuth } from "@/context/AuthContext";
 import { useCallTimer } from "@/hooks/useCallTimer";
+import { AppIcon } from "@/components/AppIcon";
 import { useLanguage } from "@/context/LanguageContext";
 import { usePermissions } from "@/hooks/usePermissions";
 import { PermissionDialog, PERMISSION_CONFIGS } from "@/components/PermissionDialog";
@@ -978,9 +979,12 @@ export default function VideoCallScreen() {
                     </View>
                     <Text style={uiS.timer}>{formatTime(elapsed)}</Text>
                     {activeCall?.freeSeconds != null && activeCall.freeSeconds > 0 && elapsed < activeCall.freeSeconds && (
-                      <Text style={uiS.freeChip}>🎁 {t.calls.freeMin.replace("{count}", String(Math.ceil((activeCall.freeSeconds - elapsed) / 60)))}</Text>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
+                        <AppIcon name="gift" size={12} color="#FFD166" />
+                        <Text style={uiS.freeChip}>{t.calls.freeMin.replace("{count}", String(Math.ceil((activeCall.freeSeconds - elapsed) / 60)))}</Text>
+                      </View>
                     )}
-                    {webrtc.remoteMuted && <Text style={{ fontSize: 12, marginLeft: 4 }}>🔇</Text>}
+                    {webrtc.remoteMuted && <AppIcon name="mute" size={12} color="#fff" style={{ marginLeft: 4 }} />}
                   </View>
                 ) : (
                   <Text style={uiS.headerSub} numberOfLines={1}>
@@ -1020,7 +1024,7 @@ export default function VideoCallScreen() {
             button stays red + larger (dominant action). */}
         {status === "active" && (
           <TouchableOpacity onPress={openGifts} style={styles.giftFab} activeOpacity={0.85} accessibilityRole="button" accessibilityLabel="Send a gift">
-            <Text style={styles.giftFabEmoji}>🎁</Text>
+            <AppIcon name="gift" size={26} color="#fff" style={styles.giftFabEmoji} />
           </TouchableOpacity>
         )}
         <View style={uiS.controlRow} pointerEvents="box-none">
@@ -1094,7 +1098,7 @@ export default function VideoCallScreen() {
       <Modal visible={showRechargePopup} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.rechargeCard}>
-            <Text style={styles.rechargeEmoji}>💰</Text>
+            <AppIcon name="money" size={40} color="#FFA100" style={styles.rechargeEmoji} />
             <Text style={styles.rechargeTitle}>{t.calls.runningOutCoins}</Text>
             <Text style={styles.rechargeSubtitle}>
               {t.calls.autoDisconnectIn.replace("{time}", remaining != null ? `${remaining} ${remaining === 1 ? t.calls.second : t.calls.seconds}` : t.calls.fewSeconds)}

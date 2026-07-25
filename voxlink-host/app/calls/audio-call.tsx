@@ -4,6 +4,7 @@ import { View, Text, StyleSheet, Image, TouchableOpacity,
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SvgIcon } from "@/components/SvgIcon";
+import { AppIcon } from "@/components/AppIcon";
 import { router } from "expo-router";
 import { useCall } from "@/context/CallContext";
 import { useLanguage } from "@/context/LanguageContext";
@@ -467,7 +468,7 @@ export default function AudioCallScreen() {
         <View style={styles.badgeRow}>
           {activeCall?.coinsPerMinute ? (
             <View style={styles.costBadge}>
-              <Text style={styles.coinEmoji}>💰</Text>
+              <AppIcon name="money" size={13} color="#fff" style={styles.coinEmoji} />
               <Text style={styles.costText}>+{activeCall.coinsPerMinute} {t.audioCallScreen.coinsPerMin}</Text>
             </View>
           ) : null}

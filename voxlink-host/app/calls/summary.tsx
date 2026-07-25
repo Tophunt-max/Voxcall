@@ -7,6 +7,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SvgIcon } from "@/components/SvgIcon";
 import { useColors } from "@/hooks/useColors";
+import { AppIcon } from "@/components/AppIcon";
 import { useLanguage } from "@/context/LanguageContext";
 import { formatDuration } from "@/utils/format";
 import { StarRating } from "@/components/StarRating";
@@ -111,9 +112,10 @@ export default function CallSummaryScreen() {
           <View style={[s.statDiv, { backgroundColor: colors.border }]} />
 
           <View style={s.stat}>
-            <Text style={[s.statValue, { color: "#0BAF23" }]}>
-              +{coinsGained} 🪙
-            </Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
+              <Text style={[s.statValue, { color: "#0BAF23" }]}>+{coinsGained}</Text>
+              <AppIcon name="coin" size={14} color="#0BAF23" />
+            </View>
             <Text style={[s.statLabel, { color: colors.mutedForeground }]}>{t.callSummaryScreen.coinsEarned}</Text>
           </View>
 

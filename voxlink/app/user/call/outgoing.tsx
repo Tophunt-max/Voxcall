@@ -10,6 +10,7 @@ import { resolveMediaUrl, API } from "@/services/api";
 import { useCall } from "@/context/CallContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { useSocket } from "@/context/SocketContext";
+import { AppIcon } from "@/components/AppIcon";
 import { SocketEvents } from "@/constants/events";
 
 const useNativeDriverValue = Platform.OS !== "web";
@@ -327,7 +328,7 @@ export default function OutgoingCallScreen() {
           <View style={s.costRow}>
             {coinsPerMinute != null && (
               <View style={s.costBadge}>
-                <Text style={s.costEmoji}>🪙</Text>
+                <AppIcon name="coin" size={13} color="#FFA100" style={s.costEmoji} />
                 <Text style={s.costText}>
                   {coinsPerMinute} <Text style={s.costSubText}>{t.calls.coinsPerMin}</Text>
                 </Text>

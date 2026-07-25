@@ -8,6 +8,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { API } from "@/services/api";
 import { showErrorToast } from "@/components/Toast";
+import { AppIcon } from "@/components/AppIcon";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const useNativeDriverValue = Platform.OS !== "web";
@@ -188,7 +189,7 @@ export default function HostStatusScreen() {
                   <Image source={require("@/assets/icons/ic_check.png")} style={s.approvedIcon} tintColor="#fff" resizeMode="contain" />
                 </LinearGradient>
               </View>
-              <Text style={s.approvedEmoji}>🎉</Text>
+              <AppIcon name="celebrate" size={34} color="#16A34A" style={s.approvedEmoji} />
               <Text style={s.approvedTitle}>{t.statusScreen.approvedTitle}</Text>
               <Text style={s.approvedSub}>{t.statusScreen.approvedSub}</Text>
 

@@ -9,6 +9,7 @@ import { useFocusEffect } from "expo-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
+import { AppIcon } from "@/components/AppIcon";
 import { useAuth } from "@/context/AuthContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { API, resolveMediaUrl } from "@/services/api";
@@ -357,7 +358,7 @@ export default function HostHomeScreen() {
         onPress={() => router.push("/leaderboard")}
         style={[styles.leaderboardRow, { backgroundColor: colors.card, borderColor: colors.border }]}
       >
-        <Text style={{ fontSize: 20 }}>🏆</Text>
+        <AppIcon name="trophy" size={20} color="#F5B301" />
         <View style={{ flex: 1 }}>
           <Text style={[styles.leaderboardTitle, { color: colors.text }]}>Weekly Leaderboard</Text>
           <Text style={[styles.leaderboardSub, { color: colors.mutedForeground }]}>See the top hosts this week</Text>

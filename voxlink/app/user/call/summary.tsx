@@ -6,6 +6,7 @@ import {
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
+import { AppIcon } from "@/components/AppIcon";
 import { useLanguage } from "@/context/LanguageContext";
 import { formatDuration } from "@/utils/format";
 import { StarRating } from "@/components/StarRating";
@@ -117,17 +118,19 @@ export default function CallSummaryScreen() {
         {/* Free-minutes notice — how much of this call was covered by the
             free-trial pool (so the user sees the value they received). */}
         {freeMinUsed > 0 && (
-          <View style={s.freeBanner}>
-            <Text style={s.freeBannerText}>
-              🎁 {freeMinUsed} free {freeMinUsed === 1 ? "minute" : "minutes"} used{coinsUsed > 0 ? " — coins charged only after" : " — this call was free!"}
+          <View style={[s.freeBanner, { flexDirection: "row", alignItems: "center", gap: 6 }]}>
+            <AppIcon name="gift" size={13} color="#0B8F1C" />
+            <Text style={[s.freeBannerText, { flex: 1 }]}>
+              {freeMinUsed} free {freeMinUsed === 1 ? "minute" : "minutes"} used{coinsUsed > 0 ? " — coins charged only after" : " — this call was free!"}
             </Text>
           </View>
         )}
 
         {/* FIX BUG-5: Minimum billing notice — shown when actual call was < 1 min */}
         {durationSec > 0 && durationSec < 60 && (
-          <View style={s.minBillingBanner}>
-            <Text style={s.minBillingText}>⏱ {t.calls.minBilling}</Text>
+          <View style={[s.minBillingBanner, { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5 }]}>
+            <AppIcon name="timer" size={13} color="#B26B00" />
+            <Text style={s.minBillingText}>{t.calls.minBilling}</Text>
           </View>
         )}
 
@@ -143,9 +146,10 @@ export default function CallSummaryScreen() {
           <View style={[s.statDiv, { backgroundColor: colors.border }]} />
 
           <View style={s.stat}>
-            <Text style={[s.statValue, { color: colors.coinGold }]}>
-              {coinsUsed} 🪙
-            </Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
+              <Text style={[s.statValue, { color: colors.coinGold }]}>{coinsUsed}</Text>
+              <AppIcon name="coin" size={14} color={colors.coinGold} />
+            </View>
             <Text style={[s.statLabel, { color: colors.mutedForeground }]}>{t.calls.coinsSpent}</Text>
           </View>
 
@@ -191,9 +195,10 @@ export default function CallSummaryScreen() {
               {submitting ? (
                 <ActivityIndicator color="#fff" size="small" />
               ) : (
-                <Text style={[s.rateBtnText, { color: rating > 0 ? "#fff" : colors.mutedForeground }]}>
-                  ⭐ {t.calls.submitRating}
-                </Text>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <AppIcon name="star" size={15} color={rating > 0 ? "#fff" : colors.mutedForeground} />
+                  <Text style={[s.rateBtnText, { color: rating > 0 ? "#fff" : colors.mutedForeground }]}>{t.calls.submitRating}</Text>
+                </View>
               )}
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setRated(true)}>

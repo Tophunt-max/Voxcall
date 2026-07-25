@@ -12,6 +12,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { View, Text, StyleSheet, Modal, TouchableOpacity, Animated, Easing } from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
 import { useColors } from "@/hooks/useColors";
+import { AppIcon } from "@/components/AppIcon";
 import { useSocketEvent } from "@/context/SocketContext";
 import { useAuth } from "@/context/AuthContext";
 import { SocketEvents } from "@/constants/events";
@@ -74,7 +75,11 @@ export default function LevelUpCelebration() {
             { backgroundColor: colors.card, opacity, transform: [{ scale }], borderColor: accent },
           ]}
         >
-          <Text style={[styles.confetti]}>🎉✨🎊</Text>
+          <View style={[styles.confetti, { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6 }]}>
+            <AppIcon name="celebrate" size={22} color="#F59E0B" />
+            <AppIcon name="sparkles" size={18} color="#7C3AED" />
+            <AppIcon name="celebrate" size={22} color="#EF4444" />
+          </View>
           <View style={[styles.badgeCircle, { backgroundColor: accent }]}>
             <Text style={styles.badge}>{event.badge}</Text>
           </View>
@@ -88,7 +93,7 @@ export default function LevelUpCelebration() {
 
           {event.coinsAwarded > 0 ? (
             <View style={[styles.reward, { backgroundColor: colors.surfaceAlt }]}>
-              <Text style={styles.rewardEmoji}>🪙</Text>
+              <AppIcon name="coin" size={16} color={colors.coinGoldText} style={styles.rewardEmoji} />
               <Text style={[styles.rewardText, { color: colors.coinGoldText }]}>
                 +{event.coinsAwarded.toLocaleString()} coins reward
               </Text>
