@@ -23,7 +23,7 @@
 //   - Re-probe every RECHECK_MS while shown; hide as soon as a probe succeeds.
 
 import React, { useEffect, useState, useRef, useCallback } from "react";
-import { View, Text, StyleSheet, Animated, Platform } from "react-native";
+import { View, Text, StyleSheet, Animated, Platform, Modal } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { useSocket } from "@/context/SocketContext";
 import { useAuth } from "@/context/AuthContext";
@@ -134,7 +134,8 @@ export function OfflineBanner() {
   if (!showBanner) return null;
 
   return (
-    <Animated.View style={[styles.overlay, { opacity: fadeAnim }]}>
+    <Modal visible transparent statusBarTranslucent animationType="none" onRequestClose={() => {}}>
+      <Animated.View style={[styles.overlay, { opacity: fadeAnim }]}>
       <Animated.View style={[styles.card, { transform: [{ scale: scaleAnim }] }]}>
         <View style={styles.iconCircle}>
           <Feather name="wifi-off" size={32} color="#EF4444" />
@@ -148,7 +149,8 @@ export function OfflineBanner() {
           <Text style={styles.statusText}>Reconnecting…</Text>
         </View>
       </Animated.View>
-    </Animated.View>
+      </Animated.View>
+    </Modal>
   );
 }
 

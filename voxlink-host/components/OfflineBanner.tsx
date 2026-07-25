@@ -17,7 +17,7 @@
 // dimmed backdrop so the "no internet" state is clearly surfaced to the user.
 
 import React, { useEffect, useState, useRef } from "react";
-import { View, Text, StyleSheet, Animated, Platform } from "react-native";
+import { View, Text, StyleSheet, Animated, Platform, Modal } from "react-native";
 import { SvgIcon } from "@/components/SvgIcon";
 import { useSocket } from "@/context/SocketContext";
 import { useAuth } from "@/context/AuthContext";
@@ -84,7 +84,8 @@ export function OfflineBanner() {
   if (!showPopup) return null;
 
   return (
-    <Animated.View style={[styles.overlay, { opacity: fadeAnim }]}>
+    <Modal visible transparent statusBarTranslucent animationType="none" onRequestClose={() => {}}>
+      <Animated.View style={[styles.overlay, { opacity: fadeAnim }]}>
       <Animated.View style={[styles.card, { transform: [{ scale: scaleAnim }] }]}>
         <View style={styles.iconCircle}>
           <SvgIcon name="wifi-off" size={34} color="#EF4444" />
@@ -98,7 +99,8 @@ export function OfflineBanner() {
           <Text style={styles.statusText}>Reconnecting…</Text>
         </View>
       </Animated.View>
-    </Animated.View>
+      </Animated.View>
+    </Modal>
   );
 }
 

@@ -15,6 +15,7 @@ import {
   TouchableOpacity,
   Platform,
   Easing,
+  Modal,
   useColorScheme,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
@@ -200,15 +201,21 @@ export function ToastContainer() {
 
   if (toasts.length === 0) return null;
 
+  // Render inside a transparent RN Modal so the popup is ALWAYS top-most —
+  // above tab bars, screen content, and even full-screen call modals. A plain
+  // absolute View could get painted behind other stacking contexts (this is
+  // why toasts weren't visible on some screens like the wallet tab).
   return (
-    <View style={styles.overlay} pointerEvents="box-none">
-      <Backdrop />
-      <View style={styles.stack} pointerEvents="box-none">
-        {toasts.map((toast) => (
-          <ToastItem key={toast.id} toast={toast} onDismiss={dismiss} />
-        ))}
+    <Modal visible transparent statusBarTranslucent animationType="none" onRequestClose={() => {}}>
+      <View style={styles.overlay} pointerEvents="box-none">
+        <Backdrop />
+        <View style={styles.stack} pointerEvents="box-none">
+          {toasts.map((toast) => (
+            <ToastItem key={toast.id} toast={toast} onDismiss={dismiss} />
+          ))}
+        </View>
       </View>
-    </View>
+    </Modal>
   );
 }
 
