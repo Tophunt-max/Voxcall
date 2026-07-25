@@ -29,6 +29,7 @@ import PromoBannerCard from "@/components/PromoBannerCard";
 import { notifyPurchaseSuccess } from "@/services/NotificationService";
 import LoadingOverlay from "@/components/LoadingOverlay";
 import { showSuccessToast, showErrorToast } from "@/components/Toast";
+import { DepositStatusTimeline } from "@/components/DepositStatusTimeline";
 import { formatPrice, formatLocalAmount, getCurrencyCode, deriveCoinBuyValueInr } from "@/utils/currency";
 import { WEB_INPUT_RESET } from "@workspace/shared-ui/utils";
 
@@ -334,6 +335,9 @@ function ManualPayModal({ visible, plan, totalCoins, promoCode, onClose, onSucce
                   ? t.checkout.autoApprovedSub.replace("{count}", totalCoins.toLocaleString())
                   : t.checkout.underReviewSub}
               </Text>
+              <View style={[mStyles.timelineCard, { backgroundColor: colors.card }]}>
+                <DepositStatusTimeline credited={autoApproved} />
+              </View>
               <View style={[mStyles.infoCard, { backgroundColor: colors.card }]}>
                 <Text style={[mStyles.infoLabel, { color: colors.mutedForeground }]}>{t.checkout.package}</Text>
                 <Text style={[mStyles.infoValue, { color: colors.text }]}>{plan?.name} — {totalCoins.toLocaleString()} {t.wallet.coins}</Text>
@@ -519,6 +523,7 @@ const mStyles = StyleSheet.create({
   successIcon: { width: 80, height: 80, borderRadius: 40, alignItems: "center", justifyContent: "center" },
   successTitle: { fontSize: 20, fontFamily: "Poppins_700Bold", textAlign: "center" },
   successSub: { fontSize: 13, fontFamily: "Poppins_400Regular", textAlign: "center", lineHeight: 20 },
+  timelineCard: { borderRadius: 14, padding: 16, paddingBottom: 2, width: "100%" },
   infoCard: { borderRadius: 14, padding: 16, gap: 4, width: "100%" },
   infoLabel: { fontSize: 11, fontFamily: "Poppins_400Regular" },
   infoValue: { fontSize: 14, fontFamily: "Poppins_600SemiBold" },
