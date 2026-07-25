@@ -166,13 +166,19 @@ async function checkAbuseGuards(
 
     // VIP perk: no daily match cap. The decline-cooldown (anti-grief) still
     // applies so VIPs can't spam-decline hosts either.
-    // Daily cap — count successful matches (matched/accepted) in the last 24h.
+    // Daily cap — count EVERY random match in the last 24h, regardless of
+    // outcome. Each /match/find success inserts exactly one row, so a match
+    // counts the moment a host is assigned — even if the host never answers
+    // (declined / no-answer / skipped). This is the admin-requested rule:
+    // "host match hone se hi count hona chahiye, receive na kare tab bhi".
+    // (The decline-cooldown guard below still reads the 'declined'/'timeout'
+    // outcomes separately, so downgrading a row doesn't affect this count.)
     if (dailyLimit > 0 && !isVip) {
       const since = Math.floor(Date.now() / 1000) - 24 * 3600;
       const row = await db
         .prepare(
           `SELECT COUNT(*) as cnt FROM random_match_history
-           WHERE user_id = ? AND outcome IN ('matched','accepted') AND created_at >= ?`,
+           WHERE user_id = ? AND created_at >= ?`,
         )
         .bind(userId, since)
         .first<{ cnt: number }>();
@@ -200,7 +206,7 @@ async function checkAbuseGuards(
           const resetRow = await db
             .prepare(
               `SELECT MIN(created_at) as t FROM random_match_history
-               WHERE user_id = ? AND outcome IN ('matched','accepted') AND created_at >= ?`,
+               WHERE user_id = ? AND created_at >= ?`,
             )
             .bind(userId, since)
             .first<{ t: number }>();
