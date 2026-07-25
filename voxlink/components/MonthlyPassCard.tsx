@@ -83,6 +83,14 @@ export default function MonthlyPassCard({ onChanged }: { onChanged?: () => void 
   const maxPoints = data?.max_points ?? 0;
   const progressPct = maxPoints > 0 ? Math.min(100, Math.round((points / maxPoints) * 100)) : 0;
   const tiers: PassTier[] = useMemo(() => data?.tiers ?? [], [data]);
+  // Only show tiers that actually grant a reward on at least one track — drops
+  // the empty rows (0-minute tiers) that showed up as big blank gaps.
+  const visibleTiers = useMemo(
+    () => tiers.filter(
+      (t) => (t.free_minutes + t.free_random_minutes) > 0 || (t.premium_minutes + t.premium_random_minutes) > 0,
+    ),
+    [tiers],
+  );
   const premiumUnlocked = !!data?.premium_unlocked;
 
   const claim = useCallback(
@@ -161,7 +169,7 @@ export default function MonthlyPassCard({ onChanged }: { onChanged?: () => void 
 
       {/* ── Tier ladder ────────────────────────────────────────────── */}
       <View style={styles.ladder}>
-        {tiers.map((tier, idx) => (
+        {visibleTiers.map((tier, idx) => (
           <View key={tier.level} style={styles.tierRow}>
             {/* Common (free) */}
             <View style={styles.trackCol}>
@@ -181,7 +189,7 @@ export default function MonthlyPassCard({ onChanged }: { onChanged?: () => void 
             {/* Center rail + node */}
             <View style={styles.centerCol}>
               <View style={[styles.rail, idx === 0 && styles.railHidden, { top: 0, bottom: "50%" }]} />
-              <View style={[styles.rail, idx === tiers.length - 1 && styles.railHidden, { top: "50%", bottom: 0 }]} />
+              <View style={[styles.rail, idx === visibleTiers.length - 1 && styles.railHidden, { top: "50%", bottom: 0 }]} />
               <View style={[styles.node, tier.reached ? styles.nodeReached : { backgroundColor: colors.border }]}>
                 <Text style={[styles.nodeText, { color: tier.reached ? "#fff" : colors.subText }]}>{tier.points}</Text>
               </View>
@@ -271,25 +279,25 @@ function RewardBox({
     <View style={styles.minRow}>
       {minutes > 0 ? (
         <View style={styles.minChipRow}>
-          <FreeMinutesCardIcon size={19} />
+          <FreeMinutesCardIcon size={30} />
           <Text style={[styles.minChip, { color }]}>{minutes}m</Text>
         </View>
       ) : null}
       {randomMinutes > 0 ? (
         <View style={styles.minChipRow}>
-          <RandomCardIcon size={19} />
+          <RandomCardIcon size={30} />
           <Text style={[styles.minChip, { color }]}>{randomMinutes}m</Text>
         </View>
       ) : null}
     </View>
   );
 
-  // Already claimed → check badge.
+  // Already claimed → cards + a "Claimed" label underneath.
   if (claimed) {
     return (
       <View style={[styles.rewardBox, styles.rewardClaimed]}>
-        <Text style={styles.rewardClaimedTick}>✓</Text>
         <Chips color="#059669" />
+        <Text style={styles.rewardStatusClaimed}>✓ Claimed</Text>
       </View>
     );
   }
@@ -300,11 +308,12 @@ function RewardBox({
       <TouchableOpacity activeOpacity={0.85} onPress={onLockedPress} style={[styles.rewardBox, styles.rewardVipLocked]}>
         <View style={styles.lockChip}><Text style={styles.lockChipText}>🔒</Text></View>
         <Chips color="#B45309" />
+        <Text style={styles.rewardStatusVip}>🔒 VIP only</Text>
       </TouchableOpacity>
     );
   }
 
-  // Reached + unclaimed → claimable gradient button.
+  // Reached + unclaimed → claimable gradient button: cards on top, "Claim" below.
   if (claimable) {
     return (
       <TouchableOpacity activeOpacity={0.85} disabled={busy} onPress={onClaim} style={styles.rewardBtnWrap}>
@@ -313,21 +322,21 @@ function RewardBox({
             <ActivityIndicator color="#fff" size="small" />
           ) : (
             <>
-              <Text style={styles.rewardClaimLabel}>Claim</Text>
               <View style={styles.minRow}>
                 {minutes > 0 ? (
                   <View style={styles.minChipRow}>
-                    <FreeMinutesCardIcon size={17} />
-                    <Text style={styles.rewardClaimCoins}>{minutes}</Text>
+                    <FreeMinutesCardIcon size={30} />
+                    <Text style={styles.rewardClaimNum}>{minutes}m</Text>
                   </View>
                 ) : null}
                 {randomMinutes > 0 ? (
                   <View style={styles.minChipRow}>
-                    <RandomCardIcon size={17} />
-                    <Text style={styles.rewardClaimCoins}>{randomMinutes}</Text>
+                    <RandomCardIcon size={30} />
+                    <Text style={styles.rewardClaimNum}>{randomMinutes}m</Text>
                   </View>
                 ) : null}
               </View>
+              <Text style={styles.rewardClaimLabel}>Claim</Text>
             </>
           )}
         </LinearGradient>
@@ -345,7 +354,7 @@ function RewardBox({
   );
 }
 
-const CELL_H = 62;
+const CELL_H = 82;
 
 const styles = StyleSheet.create({
   loadingWrap: { height: 90, borderRadius: 16, borderWidth: 1, alignItems: "center", justifyContent: "center" },
@@ -392,25 +401,22 @@ const styles = StyleSheet.create({
 
   // Reward cells
   rewardEmpty: { height: CELL_H - 12 },
-  rewardBtnWrap: { borderRadius: 12, overflow: "hidden" },
-  rewardBox: { height: CELL_H - 12, borderRadius: 12, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 4 },
+  rewardBtnWrap: { borderRadius: 14, overflow: "hidden" },
+  rewardBox: { minHeight: CELL_H - 12, borderRadius: 14, alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 5, paddingVertical: 8, paddingHorizontal: 6 },
   rewardCommonIdle: { backgroundColor: "rgba(139,92,246,0.10)" },
   rewardVipIdle: { backgroundColor: "rgba(249,115,22,0.12)" },
   rewardVipLocked: { backgroundColor: "rgba(249,115,22,0.12)" },
   rewardClaimable: {},
   rewardClaimed: { backgroundColor: "rgba(16,185,129,0.14)" },
-  rewardClaimedTick: { color: "#059669", fontSize: 16, fontFamily: "Poppins_700Bold" },
-  rewardClaimedCoins: { color: "#059669", fontSize: 12, fontFamily: "Poppins_700Bold" },
-  rewardClaimLabel: { color: "#fff", fontSize: 11, fontFamily: "Poppins_700Bold" },
-  rewardClaimCoins: { color: "#fff", fontSize: 11, fontFamily: "Poppins_700Bold" },
-  minRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, flexWrap: "wrap" },
-  minChipRow: { flexDirection: "row", alignItems: "center", gap: 3 },
-  minChip: { fontSize: 11.5, fontFamily: "Poppins_700Bold" },
-  rewardCoinIcon: { fontSize: 13 },
-  rewardIdleCoins: { fontSize: 12.5, fontFamily: "Poppins_700Bold" },
-  rewardVipCoins: { color: "#B45309", fontSize: 12.5, fontFamily: "Poppins_700Bold" },
-  lockChip: { position: "absolute", top: 4, right: 6 },
-  lockChipText: { fontSize: 12 },
+  rewardStatusClaimed: { color: "#059669", fontSize: 11.5, fontFamily: "Poppins_700Bold" },
+  rewardStatusVip: { color: "#B45309", fontSize: 11.5, fontFamily: "Poppins_700Bold" },
+  rewardClaimLabel: { color: "#fff", fontSize: 14, fontFamily: "Poppins_700Bold", letterSpacing: 0.3 },
+  rewardClaimNum: { color: "#fff", fontSize: 13, fontFamily: "Poppins_700Bold" },
+  minRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, flexWrap: "wrap" },
+  minChipRow: { flexDirection: "row", alignItems: "center", gap: 4 },
+  minChip: { fontSize: 13, fontFamily: "Poppins_700Bold" },
+  lockChip: { position: "absolute", top: 5, right: 7 },
+  lockChipText: { fontSize: 13 },
 
   // VIP modal
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.55)", alignItems: "center", justifyContent: "center", padding: 28 },
