@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Image, Platform, Alert, Switch, ActivityIndicator, RefreshControl,
+  Image, Platform, Switch, ActivityIndicator, RefreshControl,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -17,6 +17,7 @@ import { PermissionDialog, PERMISSION_CONFIGS } from "@/components/PermissionDia
 import { useLanguage } from "@/context/LanguageContext";
 import { API, resolveMediaUrl } from "@/services/api";
 import { showErrorToast, showSuccessToast } from "@/components/Toast";
+import { confirmDialog, alertDialog } from "@/utils/dialog";
 
 type FeatherName = keyof typeof Feather.glyphMap;
 
@@ -74,13 +75,14 @@ export default function HostProfileScreen() {
   }, [loadStats]);
 
   const handleLogout = () => {
-    Alert.alert(t.profileScreen.signOut, t.profileScreen.signOutConfirm, [
-      { text: t.common.cancel, style: "cancel" },
-      {
-        text: t.profileScreen.signOut, style: "destructive",
-        onPress: async () => { await logout(); router.replace("/auth/login"); },
-      },
-    ]);
+    confirmDialog({
+      title: t.profileScreen.signOut,
+      message: t.profileScreen.signOutConfirm,
+      confirmText: t.profileScreen.signOut,
+      cancelText: t.common.cancel,
+      destructive: true,
+      onConfirm: async () => { await logout(); router.replace("/auth/login"); },
+    });
   };
 
   const copyId = async () => {
@@ -95,7 +97,7 @@ export default function HostProfileScreen() {
   const handleAvatarPress = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== "granted") {
-      Alert.alert(t.profileScreen.permRequiredTitle, t.profileScreen.permRequiredMsg);
+      alertDialog(t.profileScreen.permRequiredTitle, t.profileScreen.permRequiredMsg);
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -120,7 +122,7 @@ export default function HostProfileScreen() {
         showSuccessToast(t.profileScreen.photoUpdated, t.profileScreen.photoSaved);
       }
     } catch {
-      Alert.alert(t.profileScreen.uploadFailedTitle, t.profileScreen.uploadFailedMsg);
+      alertDialog(t.profileScreen.uploadFailedTitle, t.profileScreen.uploadFailedMsg);
       setAvatarUri(null);
     } finally {
       setUploadingAvatar(false);
@@ -146,10 +148,13 @@ export default function HostProfileScreen() {
     if (value) {
       if (notifBlocked || !notificationsGranted) setShowNotifDialog(true);
     } else {
-      Alert.alert(t.profileScreen.turnOffNotifTitle, t.profileScreen.turnOffNotifMsg, [
-        { text: t.common.cancel, style: "cancel" },
-        { text: t.profileScreen.openSettings, onPress: openSettings },
-      ]);
+      confirmDialog({
+        title: t.profileScreen.turnOffNotifTitle,
+        message: t.profileScreen.turnOffNotifMsg,
+        confirmText: t.profileScreen.openSettings,
+        cancelText: t.common.cancel,
+        onConfirm: openSettings,
+      });
     }
   };
 

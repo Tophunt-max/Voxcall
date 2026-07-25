@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, Image,
-  ScrollView, Switch, Alert, ImageSourcePropType
+  ScrollView, Switch, ImageSourcePropType
 } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -16,6 +16,7 @@ import { useLanguage } from "@/context/LanguageContext";
 import { LANGUAGES } from "@/localization";
 import { useHostSettings } from "@/utils/hostSettings";
 import { showErrorToast } from "@/components/Toast";
+import { confirmDialog } from "@/utils/dialog";
 
 // "14:30" → "2:30 PM" (defensive: empty for malformed input).
 function fmtTime(hhmm?: string | null): string {
@@ -194,57 +195,51 @@ export default function HostSettingsScreen() {
         setShowNotifDialog(true);
       }
     } else {
-      Alert.alert(
-        "Turn Off Notifications",
-        "To disable notifications, go to your phone's Settings and turn off notifications for VoxLink Host.",
-        [
-          { text: "Cancel", style: "cancel" },
-          { text: "Open Settings", onPress: openSettings },
-        ]
-      );
+      confirmDialog({
+        title: "Turn Off Notifications",
+        message: "To disable notifications, go to your phone's Settings and turn off notifications for VoxLink Host.",
+        confirmText: "Open Settings",
+        cancelText: "Cancel",
+        onConfirm: openSettings,
+      });
     }
   };
 
   const handleLogout = () => {
-    Alert.alert("Sign Out", "Are you sure you want to sign out?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Sign Out", style: "destructive",
-        onPress: async () => { await logout(); router.replace("/auth/login"); }
-      }
-    ]);
+    confirmDialog({
+      title: "Sign Out",
+      message: "Are you sure you want to sign out?",
+      confirmText: "Sign Out",
+      cancelText: "Cancel",
+      destructive: true,
+      onConfirm: async () => { await logout(); router.replace("/auth/login"); },
+    });
   };
 
   const handleDeleteAccount = () => {
-    Alert.alert(
-      "Delete Account",
-      "This action is permanent. Your host profile, earnings history, and all data will be erased.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete Account", style: "destructive",
-          onPress: () => {
-            Alert.alert(
-              "Final Confirmation",
-              "This cannot be undone. Are you absolutely sure?",
-              [
-                { text: "Cancel", style: "cancel" },
-                {
-                  text: "Yes, Delete", style: "destructive",
-                  onPress: async () => {
-                    try {
-                      await apiRequest("DELETE", "/api/user/me", undefined);
-                    } catch {}
-                    await logout();
-                    router.replace("/auth/login");
-                  },
-                },
-              ]
-            );
+    confirmDialog({
+      title: "Delete Account",
+      message: "This action is permanent. Your host profile, earnings history, and all data will be erased.",
+      confirmText: "Delete Account",
+      cancelText: "Cancel",
+      destructive: true,
+      onConfirm: () => {
+        confirmDialog({
+          title: "Final Confirmation",
+          message: "This cannot be undone. Are you absolutely sure?",
+          confirmText: "Yes, Delete",
+          cancelText: "Cancel",
+          destructive: true,
+          onConfirm: async () => {
+            try {
+              await apiRequest("DELETE", "/api/user/me", undefined);
+            } catch {}
+            await logout();
+            router.replace("/auth/login");
           },
-        },
-      ]
-    );
+        });
+      },
+    });
   };
 
   return (

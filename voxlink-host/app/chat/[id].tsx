@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity, Image, Platform, KeyboardAvoidingView, ActivityIndicator, Alert, Modal } from "react-native";
+import { View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity, Image, Platform, KeyboardAvoidingView, ActivityIndicator, Modal } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SvgIcon } from "@/components/SvgIcon";
@@ -8,6 +8,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useChat, Message } from "@/context/ChatContext";
 import { API, resolveMediaUrl } from "@/services/api";
 import { showErrorToast, showSuccessToast } from "@/components/Toast";
+import { confirmDialog } from "@/utils/dialog";
 import * as Haptics from "expo-haptics";
 import { useLanguage } from "@/context/LanguageContext";
 import { WEB_INPUT_RESET } from "@workspace/shared-ui/utils";
@@ -99,17 +100,13 @@ export default function ChatScreen() {
         showErrorToast("Couldn't report. Please try again.");
       }
     };
-    // Alert.alert works on native (the host app's primary surface); fall back
-    // to window.confirm on web (same pattern as gallery.tsx).
-    if (Platform.OS === "web") {
-      // eslint-disable-next-line no-alert
-      if (typeof window !== "undefined" && window.confirm("Report this message to moderation?")) void doReport();
-    } else {
-      Alert.alert("Report message?", "This message will be sent to our moderation team for review.", [
-        { text: "Cancel", style: "cancel" },
-        { text: "Report", style: "destructive", onPress: () => void doReport() },
-      ]);
-    }
+    confirmDialog({
+      title: "Report message?",
+      message: "This message will be sent to our moderation team for review.",
+      confirmText: "Report",
+      destructive: true,
+      onConfirm: () => void doReport(),
+    });
   };
 
   // ─── Typing indicator (debounced) ───────────────────────────────────────
@@ -140,15 +137,13 @@ export default function ChatScreen() {
   const confirmDelete = (item: Message) => {
     setActionMsg(null);
     const doDelete = () => { void deleteMessage(convo?.id ?? (id as string), item.id); };
-    if (Platform.OS === "web") {
-      // eslint-disable-next-line no-alert
-      if (typeof window !== "undefined" && window.confirm("Delete this message for everyone?")) doDelete();
-    } else {
-      Alert.alert("Delete message?", "This message will be removed for everyone.", [
-        { text: "Cancel", style: "cancel" },
-        { text: "Delete", style: "destructive", onPress: doDelete },
-      ]);
-    }
+    confirmDialog({
+      title: "Delete message?",
+      message: "This message will be removed for everyone.",
+      confirmText: "Delete",
+      destructive: true,
+      onConfirm: doDelete,
+    });
   };
 
   const handleSend = async () => {

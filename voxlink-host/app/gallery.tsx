@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Image, ActivityIndicator, TextInput, Alert, Platform,
+  Image, ActivityIndicator, TextInput,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { router } from "expo-router";
@@ -10,6 +10,7 @@ import { appendFileToFormData } from "@/utils/fileUpload";
 import { useColors } from "@/hooks/useColors";
 import { API, resolveMediaUrl } from "@/services/api";
 import { showSuccessToast, showErrorToast } from "@/components/Toast";
+import { confirmDialog } from "@/utils/dialog";
 import { WEB_INPUT_RESET } from "@workspace/shared-ui/utils";
 
 const MAX_ITEMS = 6;
@@ -66,17 +67,13 @@ export default function HostGalleryScreen() {
       try { await API.deleteGalleryItem(id); await load(); }
       catch { showErrorToast("Couldn't remove that item."); }
     };
-    // Alert.alert confirm works on native (the primary host-app surface). On
-    // web it's a no-op, so fall back to window.confirm there.
-    if (Platform.OS === "web") {
-      // eslint-disable-next-line no-alert
-      if (typeof window !== "undefined" && window.confirm("Remove this from your highlights?")) doDelete();
-    } else {
-      Alert.alert("Remove highlight", "Remove this from your highlights?", [
-        { text: "Cancel", style: "cancel" },
-        { text: "Remove", style: "destructive", onPress: doDelete },
-      ]);
-    }
+    confirmDialog({
+      title: "Remove highlight",
+      message: "Remove this from your highlights?",
+      confirmText: "Remove",
+      destructive: true,
+      onConfirm: doDelete,
+    });
   }, [load]);
 
   const saveIntro = useCallback(async () => {

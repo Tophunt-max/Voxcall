@@ -1,12 +1,13 @@
 import React, { useState } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Image, Alert, ActivityIndicator
+  Image, ActivityIndicator
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { appendFileToFormData } from "@/utils/fileUpload";
 import AppInput from "@/components/AppInput";
 import { showSuccessToast, showErrorToast } from "@/components/Toast";
+import { alertDialog } from "@/utils/dialog";
 import { router } from "expo-router";
 import { API, resolveMediaUrl } from "@/services/api";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -49,7 +50,7 @@ export default function EditHostProfileScreen() {
   const handleAvatarPress = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== "granted") {
-      Alert.alert(t.editProfileScreen.permRequired, t.editProfileScreen.permMsg);
+      alertDialog(t.editProfileScreen.permRequired, t.editProfileScreen.permMsg);
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -77,7 +78,7 @@ export default function EditHostProfileScreen() {
         showSuccessToast(t.editProfileScreen.photoUpdated, t.editProfileScreen.photoSaved);
       }
     } catch {
-      Alert.alert(t.editProfileScreen.uploadFailed, t.editProfileScreen.uploadFailedMsg);
+      alertDialog(t.editProfileScreen.uploadFailed, t.editProfileScreen.uploadFailedMsg);
       setAvatarUri(null);
     } finally {
       setUploadingAvatar(false);

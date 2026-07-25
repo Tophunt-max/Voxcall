@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  Image, KeyboardAvoidingView, Platform, ScrollView, Alert,
+  Image, KeyboardAvoidingView, Platform, ScrollView,
 } from "react-native";
 import AppInput from "@/components/AppInput";
 import { showErrorToast, showSuccessToast } from "@/components/Toast";
+import { alertDialog } from "@/utils/dialog";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -72,7 +73,7 @@ export default function ForgotPasswordScreen() {
       showSuccessToast(t.forgotPasswordScreen.resetSuccess, t.forgotPasswordScreen.successTitle);
       router.replace("/auth/login");
     } catch (err: any) {
-      Alert.alert(t.forgotPasswordScreen.errorTitle, err?.message || t.forgotPasswordScreen.resetFailed);
+      alertDialog(t.forgotPasswordScreen.errorTitle, err?.message || t.forgotPasswordScreen.resetFailed);
     } finally { setLoading(false); }
   };
 

@@ -1,12 +1,13 @@
 import React, { useState } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, Image,
-  ScrollView, Alert
+  ScrollView
 } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useLanguage } from "@/context/LanguageContext";
+import { alertDialog } from "@/utils/dialog";
 import { SupportedLanguage } from "@/localization";
 
 const ALL_LANGUAGES = [
@@ -33,7 +34,7 @@ export default function LanguageScreen() {
 
   async function handleSelect(code: string | null, name: string) {
     if (!code) {
-      Alert.alert(
+      alertDialog(
         "Coming Soon",
         `${name} translation is coming soon. The app will continue in English.`
       );

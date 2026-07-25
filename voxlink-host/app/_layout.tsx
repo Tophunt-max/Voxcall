@@ -21,6 +21,7 @@ import { loadHostSettings, getHostSettingsSync } from "@/utils/hostSettings";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ToastContainer, showSuccessToast } from "@/components/Toast";
+import { DialogHost } from "@/components/DialogHost";
 import { OfflineBanner } from "@/components/OfflineBanner";
 import MaintenanceGate from "@/components/MaintenanceGate";
 import { BanGate } from "@/components/BanGate";
@@ -424,6 +425,7 @@ function RootLayoutNav() {
         <Stack.Screen name="leaderboard" />
       </Stack>
       <ToastContainer />
+      <DialogHost />
       <OfflineBanner />
       {/* Admin maintenance gate — renders LAST so it overlays everything when
           maintenance_mode is ON in the admin panel. */}
