@@ -14,6 +14,7 @@ import {
 import { router, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
+import { AppIcon } from "@/components/AppIcon";
 import { useAuth } from "@/context/AuthContext";
 import { useCall } from "@/context/CallContext";
 import { useLanguage } from "@/context/LanguageContext";
@@ -830,7 +831,7 @@ export default function HomeScreen() {
             acquisition lever. */}
         {freeInfo.dailyAvailable && freeInfo.dailyMinutes > 0 && (
           <View style={{ flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: "#E6F9EA", borderWidth: 1, borderColor: "#0BAF2333", borderRadius: 16, padding: 14, marginBottom: 8 }}>
-            <Text style={{ fontSize: 28 }}>🎁</Text>
+            <AppIcon name="gift" size={28} color="#0B8F1C" />
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 14, fontFamily: "Poppins_700Bold", color: "#0B8F1C" }}>
                 {tr.home.dailyFreeTitle.replace("{count}", String(freeInfo.dailyMinutes))}
@@ -861,7 +862,7 @@ export default function HomeScreen() {
             accessibilityLabel={tr.home.freeMinutesA11y.replace("{count}", String(freeMinutes))}
             style={{ flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: "#F4E8FD", borderRadius: 16, padding: 14, marginBottom: 8 }}
           >
-            <Text style={{ fontSize: 28 }}>🎁</Text>
+            <AppIcon name="gift" size={28} color="#6A00B8" />
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 14, fontFamily: "Poppins_700Bold", color: "#6A00B8" }}>
                 {tr.home.freeMinutesTitle.replace("{count}", String(freeMinutes))}
@@ -884,7 +885,7 @@ export default function HomeScreen() {
             accessibilityLabel={`Low balance: ${(user?.coins ?? 0)} coins. Tap to top up.`}
             style={{ flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: "#FFF2D9", borderRadius: 16, padding: 14, marginBottom: 8 }}
           >
-            <Text style={{ fontSize: 26 }}>🪙</Text>
+            <AppIcon name="coin" size={26} color="#8A5B00" />
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 14, fontFamily: "Poppins_700Bold", color: "#8A5B00" }}>
                 {tr.home.lowOnCoins.replace("{count}", String(user?.coins ?? 0))}

@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Modal } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import Svg, { Circle } from "react-native-svg";
+import { AppIcon } from "@/components/AppIcon";
 
 // Brand gradient — matches the random-match screen's accent.
 const GRAD: [string, string] = ["#CF00FD", "#8400FF"];
@@ -139,7 +140,11 @@ export function MatchLimitSheet({
               </Svg>
               <View style={st.ringCenter} pointerEvents="none">
                 <Text style={st.ringEmoji}>{emoji}</Text>
-                <Text style={st.ringTime}>{remaining > 0 ? formatTime(remaining) : "✓"}</Text>
+                {remaining > 0 ? (
+                  <Text style={st.ringTime}>{formatTime(remaining)}</Text>
+                ) : (
+                  <AppIcon name="check" size={18} color="#0BAF23" />
+                )}
               </View>
             </View>
           ) : (

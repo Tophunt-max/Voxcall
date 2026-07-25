@@ -14,6 +14,7 @@ import {
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
+import { AppIcon } from "@/components/AppIcon";
 import { useAuth } from "@/context/AuthContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { API } from "@/services/api";
@@ -191,7 +192,7 @@ export default function ManualQRPaymentPage() {
       <View style={[s.root, { backgroundColor: colors.background, paddingTop: insets.top }]}>
         <Header colors={colors} />
         <View style={s.center}>
-          <Text style={{ fontSize: 48 }}>😔</Text>
+          <AppIcon name="sad" size={48} color={colors.mutedForeground} />
           <Text style={[s.errorTitle, { color: colors.text }]}>{t.checkout.notAvailable}</Text>
           <Text style={[s.errorSub, { color: colors.mutedForeground }]}>
             {t.checkout.manualUnavailable}
@@ -210,7 +211,7 @@ export default function ManualQRPaymentPage() {
         <Header colors={colors} />
         <View style={s.center}>
           <View style={[s.successCircle, { backgroundColor: autoApproved ? "#E8F5E9" : "#EDE7F6" }]}>
-            <Text style={{ fontSize: 52 }}>{autoApproved ? "🎉" : "⏳"}</Text>
+            {autoApproved ? <AppIcon name="celebrate" size={52} color="#0BAF23" /> : <AppIcon name="hourglass" size={52} color="#7C3AED" />}
           </View>
           {autoApproved && (
             <View style={s.autoBadge}>
@@ -305,7 +306,7 @@ export default function ManualQRPaymentPage() {
               />
             ) : (
               <View style={[s.qrPlaceholder, { backgroundColor: colors.surface }]}>
-                <Text style={{ fontSize: 40 }}>📱</Text>
+                <AppIcon name="device" size={40} color={colors.mutedForeground} />
                 <Text style={[s.placeholderText, { color: colors.mutedForeground }]}>{t.checkout.qrNotAvailable}</Text>
               </View>
             )}
@@ -376,7 +377,7 @@ export default function ManualQRPaymentPage() {
             />
             {utr.trim().length >= 6 && (
               <View style={s.checkMark}>
-                <Text style={{ color: "#4CAF50", fontSize: 16 }}>✓</Text>
+                <AppIcon name="check" size={16} color="#4CAF50" />
               </View>
             )}
           </View>
@@ -392,7 +393,7 @@ export default function ManualQRPaymentPage() {
 
         {/* ─── Info Note ─── */}
         <View style={[s.noteCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <Text style={[s.noteIcon]}>ℹ️</Text>
+          <AppIcon name="info" size={16} color={colors.mutedForeground} style={s.noteIcon} />
           <View style={{ flex: 1 }}>
             <Text style={[s.noteText, { color: colors.mutedForeground }]}>
               {t.checkout.verifyNote}

@@ -4,6 +4,7 @@ import React, { useEffect, useRef } from "react";
 import { View, Text, StyleSheet, Animated, TouchableOpacity, Image, Platform } from "react-native";
 import { router } from "expo-router";
 import { useColors } from "@/hooks/useColors";
+import { AppIcon } from "@/components/AppIcon";
 import { useAuth } from "@/context/AuthContext";
 import { useLanguage } from "@/context/LanguageContext";
 
@@ -42,7 +43,7 @@ export default function PaymentSuccessScreen() {
           ]}
         >
           <View style={[styles.checkInner, { backgroundColor: colors.accent }]}>
-            <Text style={styles.checkMark}>✓</Text>
+            <AppIcon name="check" size={36} color="#fff" />
           </View>
         </Animated.View>
 

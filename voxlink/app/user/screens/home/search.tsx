@@ -21,6 +21,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { useColors } from "@/hooks/useColors";
+import { AppIcon } from "@/components/AppIcon";
 import { useAuth } from "@/context/AuthContext";
 import { useCall } from "@/context/CallContext";
 import { useLanguage } from "@/context/LanguageContext";
@@ -739,7 +740,7 @@ export default function SearchScreen() {
         >
           {/* Emoji trophy is safe in the header — it isn't the flag emoji case
               that breaks on Android; the trophy renders cross-platform. */}
-          <Text style={styles.trophyEmoji}>🏆</Text>
+          <AppIcon name="trophy" size={20} color="#F5B301" style={styles.trophyEmoji} />
         </TouchableOpacity>
       </View>
 
@@ -798,7 +799,7 @@ export default function SearchScreen() {
           />
           {searchText.length > 0 && (
             <TouchableOpacity onPress={() => setSearchText("")} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <Text style={[styles.searchClear, { color: DESIGN.categoryInactive }]}>✕</Text>
+              <AppIcon name="close" size={16} color={DESIGN.categoryInactive} />
             </TouchableOpacity>
           )}
         </View>
@@ -815,7 +816,7 @@ export default function SearchScreen() {
         </View>
       ) : filtered.length === 0 ? (
         <View style={styles.centerWrap}>
-          <Text style={styles.emptyEmoji}>🔍</Text>
+          <AppIcon name="search" size={40} color={DESIGN.categoryInactive} style={styles.emptyEmoji} />
           <Text style={[styles.emptyText, { color: DESIGN.categoryActive }]}>No hosts found</Text>
           <Text style={[styles.emptySub, { color: DESIGN.categoryInactive }]}>Try another category, country, or search.</Text>
           {(activeCategory !== "Explore" || activeCountry !== "ALL" || searchText.length > 0 || selectedLang !== "All" || selectedTopic !== "All") && (

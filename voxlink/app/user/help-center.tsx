@@ -8,6 +8,7 @@ import {
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
+import { AppIcon } from "@/components/AppIcon";
 import { useLanguage } from "@/context/LanguageContext";
 import { API } from "@/services/api";
 import { fetchAppConfig } from "@/hooks/useAppConfig";
@@ -154,8 +155,9 @@ export default function HelpCenterScreen() {
           <View style={styles.requestHead}>
             <Text style={[styles.requestTitle, { color: colors.text }]}>{t.helpScreen.submitRequest}</Text>
             {vipPriority && (
-              <View style={styles.priorityPill}>
-                <Text style={styles.priorityPillText}>⚡ VIP priority</Text>
+              <View style={[styles.priorityPill, { flexDirection: "row", alignItems: "center", gap: 3 }]}>
+                <AppIcon name="zap" size={11} color="#fff" />
+                <Text style={styles.priorityPillText}>VIP priority</Text>
               </View>
             )}
           </View>

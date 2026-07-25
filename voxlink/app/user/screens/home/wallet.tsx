@@ -13,6 +13,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { useColors } from "@/hooks/useColors";
+import { AppIcon } from "@/components/AppIcon";
 import { useLanguage } from "@/context/LanguageContext";
 import { formatDuration, formatRelativeTime } from "@/utils/format";
 import { API, resolveMediaUrl } from "@/services/api";
@@ -157,10 +158,17 @@ export default function CallingHistoryScreen() {
                 </View>
               ) : null}
               {item.freeMinutesUsed > 0 ? (
-                <Text style={styles.freeTag}>🎁 {item.freeMinutesUsed} free</Text>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 3, marginTop: 2 }}>
+                  <AppIcon name="gift" size={11} color="#0B8F1C" />
+                  <Text style={[styles.freeTag, { marginTop: 0 }]}>{item.freeMinutesUsed} free</Text>
+                </View>
               ) : null}
               {item.rating ? (
-                <Text style={styles.stars}>{"★".repeat(item.rating)}</Text>
+                <View style={{ flexDirection: "row", alignItems: "center" }}>
+                  {Array.from({ length: item.rating }).map((_, i) => (
+                    <AppIcon key={i} name="star" size={11} color="#FFA100" />
+                  ))}
+                </View>
               ) : null}
             </View>
           </TouchableOpacity>

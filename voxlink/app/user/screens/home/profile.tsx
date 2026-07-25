@@ -21,6 +21,7 @@ import { router } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import * as Application from "expo-application";
 import { useColors } from "@/hooks/useColors";
+import { AppIcon } from "@/components/AppIcon";
 import { useAuth } from "@/context/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
 import { PermissionDialog, PERMISSION_CONFIGS } from "@/components/PermissionDialog";
@@ -324,7 +325,7 @@ export default function ProfileScreen() {
           <LinearGradient colors={vipGradient(vip)} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.vipBanner}>
             <View style={styles.vipDeco} pointerEvents="none" />
             <View style={styles.vipBadge}>
-              <Text style={{ fontSize: 22 }}>{vip?.is_vip ? (vip.badge || "👑") : "👑"}</Text>
+              {vip?.is_vip && vip.badge ? <Text style={{ fontSize: 22 }}>{vip.badge}</Text> : <AppIcon name="crown" size={22} color="#fff" />}
             </View>
             <View style={{ flex: 1 }}>
               {vip?.is_vip ? (

@@ -30,6 +30,7 @@ import { notifyPurchaseSuccess } from "@/services/NotificationService";
 import LoadingOverlay from "@/components/LoadingOverlay";
 import { showSuccessToast, showErrorToast } from "@/components/Toast";
 import { DepositStatusTimeline } from "@/components/DepositStatusTimeline";
+import { AppIcon } from "@/components/AppIcon";
 import { formatPrice, formatLocalAmount, getCurrencyCode, deriveCoinBuyValueInr } from "@/utils/currency";
 import { WEB_INPUT_RESET } from "@workspace/shared-ui/utils";
 
@@ -309,7 +310,7 @@ function ManualPayModal({ visible, plan, totalCoins, promoCode, onClose, onSucce
         {/* Header */}
         <View style={[mStyles.header, { borderBottomColor: colors.border }]}>
           <TouchableOpacity onPress={onClose} style={mStyles.closeBtn}>
-            <Text style={[mStyles.closeText, { color: colors.mutedForeground }]}>✕</Text>
+            <AppIcon name="close" size={18} color={colors.mutedForeground} />
           </TouchableOpacity>
           <Text style={[mStyles.title, { color: colors.text }]}>{t.checkout.manualUpiTitle}</Text>
           <View style={{ width: 40 }} />
@@ -320,7 +321,7 @@ function ManualPayModal({ visible, plan, totalCoins, promoCode, onClose, onSucce
             // ── Success State ──────────────────────────────────────────────
             <View style={mStyles.successWrap}>
               <View style={[mStyles.successIcon, { backgroundColor: autoApproved ? "#E8F5E9" : "#EDE7F6" }]}>
-                <Text style={{ fontSize: 44 }}>{autoApproved ? "🎉" : "✅"}</Text>
+                {autoApproved ? <AppIcon name="celebrate" size={44} color="#0BAF23" /> : <AppIcon name="check" size={44} color="#7C3AED" />}
               </View>
               {autoApproved && (
                 <View style={[mStyles.autoBadge, { backgroundColor: "#4CAF50" }]}>
@@ -358,7 +359,7 @@ function ManualPayModal({ visible, plan, totalCoins, promoCode, onClose, onSucce
             </View>
           ) : !currentQR ? (
             <View style={mStyles.loadingWrap}>
-              <Text style={{ fontSize: 40 }}>⚠️</Text>
+              <AppIcon name="warning" size={40} color="#F59E0B" />
               <Text style={[mStyles.successTitle, { color: colors.text }]}>{t.checkout.unavailable}</Text>
               <Text style={[mStyles.successSub, { color: colors.mutedForeground }]}>{t.checkout.unavailableSub}</Text>
             </View>
@@ -399,7 +400,7 @@ function ManualPayModal({ visible, plan, totalCoins, promoCode, onClose, onSucce
                     />
                   ) : (
                     <View style={[mStyles.qrPlaceholder, { backgroundColor: colors.surface }]}>
-                      <Text style={{ fontSize: 36 }}>📱</Text>
+                      <AppIcon name="device" size={36} color="#A00EE7" />
                     </View>
                   )}
                   {/* Rotate badge */}
@@ -794,8 +795,9 @@ export default function CheckoutScreen() {
               <Text style={styles.offerTitle} numberOfLines={2}>{smartOffer.label}</Text>
               <Text style={styles.offerDesc} numberOfLines={2}>{smartOffer.description}</Text>
               {offerSecondsLeft != null && offerSecondsLeft > 0 && (
-                <View style={styles.offerTimerPill}>
-                  <Text style={styles.offerTimerText}>⏳ Ends in {formatCountdown(offerSecondsLeft)}</Text>
+                <View style={[styles.offerTimerPill, { flexDirection: "row", alignItems: "center", gap: 4 }]}>
+                  <AppIcon name="hourglass" size={11} color="#fff" />
+                  <Text style={styles.offerTimerText}>Ends in {formatCountdown(offerSecondsLeft)}</Text>
                 </View>
               )}
             </View>
@@ -812,7 +814,7 @@ export default function CheckoutScreen() {
               ? { backgroundColor: "#FEE2E2", borderColor: "#FCA5A5" }
               : { backgroundColor: "#F3E8FF", borderColor: "#E9D5FF" },
           ]}>
-            <Text style={styles.recHintEmoji}>{recommendation.urgency === "critical" ? "⚠️" : "🪄"}</Text>
+            <AppIcon name={recommendation.urgency === "critical" ? "warning" : "wand"} size={16} color={recommendation.urgency === "critical" ? "#B91C1C" : "#7C3AED"} />
             <Text style={[
               styles.recHintText,
               { color: recommendation.urgency === "critical" ? "#B91C1C" : "#7C3AED" },
@@ -863,8 +865,9 @@ export default function CheckoutScreen() {
                   activeOpacity={0.82}
                 >
                   {isRecommended ? (
-                    <View style={styles.bestForYouTag}>
-                      <Text style={styles.bestForYouText}>⭐ Best for you</Text>
+                    <View style={[styles.bestForYouTag, { flexDirection: "row", alignItems: "center", gap: 3 }]}>
+                      <AppIcon name="star" size={9} color="#fff" />
+                      <Text style={styles.bestForYouText}>Best for you</Text>
                     </View>
                   ) : plan.is_popular ? (
                     <View style={[styles.popularTag, { backgroundColor: colors.coinGoldBg }]}>
@@ -919,7 +922,7 @@ export default function CheckoutScreen() {
                 style={[styles.methodCard, { backgroundColor: paymentMethod === "auto" ? colors.accent : colors.card, borderColor: paymentMethod === "auto" ? colors.accent : colors.border }]}
                 activeOpacity={0.82}
               >
-                <Text style={styles.methodEmoji}>💳</Text>
+                <AppIcon name="card" size={24} color={paymentMethod === "auto" ? "#fff" : colors.accent} />
                 <Text style={[styles.methodLabel, { color: paymentMethod === "auto" ? "#fff" : colors.text }]}>{t.checkout.online}</Text>
                 <Text style={[styles.methodSub, { color: paymentMethod === "auto" ? "rgba(255,255,255,0.75)" : colors.mutedForeground }]}>{t.checkout.autoGateway}</Text>
               </TouchableOpacity>
@@ -928,7 +931,7 @@ export default function CheckoutScreen() {
                 style={[styles.methodCard, { backgroundColor: paymentMethod === "manual" ? colors.accent : colors.card, borderColor: paymentMethod === "manual" ? colors.accent : colors.border }]}
                 activeOpacity={0.82}
               >
-                <Text style={styles.methodEmoji}>📲</Text>
+                <AppIcon name="device" size={24} color={paymentMethod === "manual" ? "#fff" : colors.accent} />
                 <Text style={[styles.methodLabel, { color: paymentMethod === "manual" ? "#fff" : colors.text }]}>{t.checkout.manualUpi}</Text>
                 <Text style={[styles.methodSub, { color: paymentMethod === "manual" ? "rgba(255,255,255,0.75)" : colors.mutedForeground }]}>{t.checkout.qrUpiId}</Text>
               </TouchableOpacity>
@@ -1000,7 +1003,7 @@ export default function CheckoutScreen() {
               {offerBonusCoins > 0 && (
                 <View style={styles.summaryRow}>
                   <Text style={[styles.summaryLabel, { color: "#A00EE7" }]} numberOfLines={1}>
-                    🎁 {smartOffer?.bonus_pct}% Offer Bonus
+                    {smartOffer?.bonus_pct}% Offer Bonus
                   </Text>
                   <Text style={[styles.summaryValue, { color: "#A00EE7" }]}>+{offerBonusCoins.toLocaleString()} {t.wallet.coins}</Text>
                 </View>
