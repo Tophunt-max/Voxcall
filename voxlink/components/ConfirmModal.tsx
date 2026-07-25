@@ -1,6 +1,7 @@
 import React from "react";
 import { Modal, View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { useColors } from "@/hooks/useColors";
+import { AppIcon, type AppIconName } from "@/components/AppIcon";
 
 interface Props {
   visible: boolean;
@@ -12,7 +13,9 @@ interface Props {
   destructive?: boolean;
   /** Hide the cancel button (info/alert mode — single OK button). */
   singleButton?: boolean;
-  /** Optional emoji shown above the title. */
+  /** Optional vector icon shown above the title. */
+  icon?: AppIconName;
+  /** @deprecated legacy emoji shown above the title — prefer `icon`. */
   emoji?: string;
   loading?: boolean;
   onConfirm: () => void;
@@ -31,6 +34,7 @@ export function ConfirmModal({
   cancelText = "Cancel",
   destructive = false,
   singleButton = false,
+  icon,
   emoji,
   loading = false,
   onConfirm,
@@ -41,7 +45,9 @@ export function ConfirmModal({
     <Modal visible={visible} transparent animationType="fade" statusBarTranslucent onRequestClose={onCancel}>
       <View style={styles.overlay}>
         <View style={[styles.card, { backgroundColor: colors.card }]}>
-          {emoji ? <Text style={styles.emoji}>{emoji}</Text> : null}
+          {icon ? (
+            <View style={styles.emoji}><AppIcon name={icon} size={40} color={colors.primary} /></View>
+          ) : emoji ? <Text style={styles.emoji}>{emoji}</Text> : null}
           <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
           {message ? <Text style={[styles.message, { color: colors.mutedForeground }]}>{message}</Text> : null}
           <View style={styles.btnRow}>

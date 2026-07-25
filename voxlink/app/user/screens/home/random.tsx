@@ -15,7 +15,7 @@ import type { Translations } from "@/localization/en";
 import { API, resolveMediaUrl } from "@/services/api";
 import { showErrorToast } from "@/components/Toast";
 import { InsufficientCoinsPopup } from "@/components/InsufficientCoinsPopup";
-import { AppIcon } from "@/components/AppIcon";
+import { AppIcon, type AppIconName } from "@/components/AppIcon";
 import { MatchLimitSheet } from "@/components/MatchLimitSheet";
 import { FreeMinutesBanner } from "@/components/FreeMinutesBanner";
 
@@ -110,7 +110,7 @@ function searchingMessageForCode(code: string | undefined, onlineCount: number, 
 function limitPopupContent(
   res: { code?: string; retry_after_sec?: number; used?: number; daily_limit?: number },
   tr: Translations,
-): { emoji: string; message: string; subtext?: string; retryAfterSec?: number } {
+): { icon: AppIconName; message: string; subtext?: string; retryAfterSec?: number } {
   switch (res.code) {
     case "DAILY_LIMIT_REACHED": {
       // Show usage (e.g. "5/5 · ") when the server reported it, plus the reset
@@ -119,18 +119,18 @@ function limitPopupContent(
       // out) — the MatchLimitSheet ticks it down as HH:MM:SS.
       const usage = res.used != null && res.daily_limit != null ? `${res.used}/${res.daily_limit} · ` : "";
       return {
-        emoji: "📅",
+        icon: "calendar" as AppIconName,
         message: tr.random.statusDailyLimit,
         subtext: `${usage}${tr.random.dailyLimitReset}`,
         retryAfterSec: res.retry_after_sec,
       };
     }
     case "DECLINE_COOLDOWN":
-      return { emoji: "⏳", message: tr.random.statusDeclineCooldown, retryAfterSec: res.retry_after_sec };
+      return { icon: "hourglass" as AppIconName, message: tr.random.statusDeclineCooldown, retryAfterSec: res.retry_after_sec };
     case "RATE_LIMITED":
-      return { emoji: "🚦", message: tr.random.statusRateLimited, retryAfterSec: res.retry_after_sec };
+      return { icon: "traffic" as AppIconName, message: tr.random.statusRateLimited, retryAfterSec: res.retry_after_sec };
     default:
-      return { emoji: "ℹ️", message: tr.random.statusGiveUp, retryAfterSec: res.retry_after_sec };
+      return { icon: "info" as AppIconName, message: tr.random.statusGiveUp, retryAfterSec: res.retry_after_sec };
   }
 }
 
@@ -266,10 +266,10 @@ function FiltersDialog({ visible, value, onChange, onClose }: {
   onClose: () => void;
 }) {
   const { t: tr } = useLanguage();
-  const genderOptions: { key: GenderFilter; label: string; emoji: string }[] = [
-    { key: "any", label: tr.random.genderAny, emoji: "✨" },
-    { key: "male", label: tr.random.genderMale, emoji: "👨" },
-    { key: "female", label: tr.random.genderFemale, emoji: "👩" },
+  const genderOptions: { key: GenderFilter; label: string; icon: AppIconName }[] = [
+    { key: "any", label: tr.random.genderAny, icon: "users" },
+    { key: "male", label: tr.random.genderMale, icon: "male" },
+    { key: "female", label: tr.random.genderFemale, icon: "female" },
   ];
   const ratingOptions: { key: RatingFilter; label: string }[] = [
     { key: 0, label: tr.random.ratingAny },
@@ -295,9 +295,10 @@ function FiltersDialog({ visible, value, onChange, onClose }: {
                   activeOpacity={0.85}
                   style={[styles.filterPill, active && styles.filterPillActive]}
                 >
-                  <Text style={[styles.filterPillTxt, active && styles.filterPillTxtActive]}>
-                    {opt.emoji}  {opt.label}
-                  </Text>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <AppIcon name={opt.icon} size={14} color={active ? "#fff" : "#6B7280"} />
+                    <Text style={[styles.filterPillTxt, active && styles.filterPillTxtActive]}>{opt.label}</Text>
+                  </View>
                 </TouchableOpacity>
               );
             })}
@@ -522,7 +523,7 @@ export default function RandomScreen() {
   // single-button info modal.
   const [showCoinsPopup, setShowCoinsPopup] = useState(false);
   const [requiredCoins, setRequiredCoins] = useState(0);
-  const [limitPopup, setLimitPopup] = useState<{ emoji: string; message: string; subtext?: string; retryAfterSec?: number } | null>(null);
+  const [limitPopup, setLimitPopup] = useState<{ icon: AppIconName; message: string; subtext?: string; retryAfterSec?: number } | null>(null);
 
   // Floating card hosts (real API)
   const [cardHosts, setCardHosts] = useState<HostCard[]>([]);
@@ -847,11 +848,14 @@ export default function RandomScreen() {
             disabled={phase === "searching"}
             accessibilityLabel="Match filters"
           >
-            <Text style={styles.filterChipTxt}>
-              ⚙️ {filters.gender === "any" && filters.minRating === 0
-                ? tr.random.filters
-                : `${tr.random.filters} (${[filters.gender !== "any" ? filters.gender : null, filters.minRating > 0 ? `${filters.minRating}★+` : null].filter(Boolean).join(" · ")})`}
-            </Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+              <AppIcon name="settings" size={13} color="#8400FF" />
+              <Text style={styles.filterChipTxt}>
+                {filters.gender === "any" && filters.minRating === 0
+                  ? tr.random.filters
+                  : `${tr.random.filters} (${[filters.gender !== "any" ? filters.gender : null, filters.minRating > 0 ? `${filters.minRating}★+` : null].filter(Boolean).join(" · ")})`}
+              </Text>
+            </View>
           </TouchableOpacity>
         </View>
 
@@ -914,7 +918,7 @@ export default function RandomScreen() {
           a retry window. */}
       <MatchLimitSheet
         visible={!!limitPopup}
-        emoji={limitPopup?.emoji ?? "ℹ️"}
+        icon={limitPopup?.icon ?? "info"}
         message={limitPopup?.message ?? ""}
         subtext={limitPopup?.subtext}
         retryAfterSec={limitPopup?.retryAfterSec}

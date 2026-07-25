@@ -28,7 +28,7 @@ export type AppIconName =
   | "heart-broken" | "wave" | "thanks"
   | "sad" | "search" | "heart" | "heart-outline" | "clock" | "chat"
   | "ticket" | "edit" | "wand" | "device" | "bank" | "money-send"
-  | "traffic" | "male" | "female" | "card";
+  | "traffic" | "male" | "female" | "card" | "settings";
 
 type Family = "mci" | "fe" | "fa5";
 
@@ -98,6 +98,7 @@ const ICON_MAP: Record<AppIconName, [Family, string]> = {
   male:          ["mci", "human-male"],
   female:        ["mci", "human-female"],
   card:          ["fe", "credit-card"],
+  settings:      ["fe", "settings"],
 };
 
 export interface AppIconProps {

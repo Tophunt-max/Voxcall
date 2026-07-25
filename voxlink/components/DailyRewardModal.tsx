@@ -625,7 +625,6 @@ function CoinSparkles() {
       angle: (Math.PI * 2 * i) / 7 + Math.random() * 0.5,
       dist: 44 + Math.random() * 22,
       delay: Math.random() * 1500,
-      char: i % 3 === 0 ? "⭐" : "✨",
       size: 9 + Math.random() * 7,
       anim: new Animated.Value(0),
     }))
@@ -655,12 +654,12 @@ function CoinSparkles() {
         const opacity = p.anim.interpolate({ inputRange: [0, 0.15, 0.7, 1], outputRange: [0, 1, 1, 0] });
         const scale = p.anim.interpolate({ inputRange: [0, 0.4, 1], outputRange: [0.3, 1, 0.5] });
         return (
-          <Animated.Text
+          <Animated.View
             key={p.key}
-            style={{ position: "absolute", fontSize: p.size, opacity, transform: [{ translateX }, { translateY }, { scale }] }}
+            style={{ position: "absolute", opacity, transform: [{ translateX }, { translateY }, { scale }] }}
           >
-            {p.char}
-          </Animated.Text>
+            <AppIcon name={p.key % 3 === 0 ? "star" : "sparkles"} size={p.size} color="#FFC93C" />
+          </Animated.View>
         );
       })}
     </View>
@@ -712,7 +711,10 @@ function MilestoneCelebration({ bonus }: { bonus: number }) {
         start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
         style={styles.milestoneCelebrate}
       >
-        <Text style={styles.milestoneCelebrateTxt}>🏆 +{bonus}</Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+          <AppIcon name="trophy" size={14} color="#7A4A00" />
+          <Text style={styles.milestoneCelebrateTxt}>+{bonus}</Text>
+        </View>
       </LinearGradient>
     </Animated.View>
   );

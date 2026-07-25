@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Modal } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import Svg, { Circle } from "react-native-svg";
-import { AppIcon } from "@/components/AppIcon";
+import { AppIcon, type AppIconName } from "@/components/AppIcon";
 
 // Brand gradient — matches the random-match screen's accent.
 const GRAD: [string, string] = ["#CF00FD", "#8400FF"];
@@ -17,8 +17,8 @@ const RING_CIRC = 2 * Math.PI * RING_R;
 
 interface Props {
   visible: boolean;
-  /** Leading emoji/icon for the sheet (e.g. 📅 / ⏳ / 🚦). */
-  emoji: string;
+  /** Leading vector icon for the sheet. */
+  icon: AppIconName;
   /** Main human-readable reason the search was stopped. */
   message: string;
   /** Optional secondary line (e.g. "3/5 · Resets tomorrow"). */
@@ -68,7 +68,7 @@ function formatTime(totalSec: number): string {
  */
 export function MatchLimitSheet({
   visible,
-  emoji,
+  icon,
   message,
   subtext,
   retryAfterSec,
@@ -139,7 +139,7 @@ export function MatchLimitSheet({
                 />
               </Svg>
               <View style={st.ringCenter} pointerEvents="none">
-                <Text style={st.ringEmoji}>{emoji}</Text>
+                <AppIcon name={icon} size={40} color={RING_FILL} />
                 {remaining > 0 ? (
                   <Text style={st.ringTime}>{formatTime(remaining)}</Text>
                 ) : (
@@ -148,7 +148,7 @@ export function MatchLimitSheet({
               </View>
             </View>
           ) : (
-            <Text style={st.emoji}>{emoji}</Text>
+            <AppIcon name={icon} size={44} color={RING_FILL} style={st.emoji} />
           )}
 
           <Text style={st.message}>{message}</Text>

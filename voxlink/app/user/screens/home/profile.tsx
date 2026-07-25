@@ -21,7 +21,7 @@ import { router } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import * as Application from "expo-application";
 import { useColors } from "@/hooks/useColors";
-import { AppIcon } from "@/components/AppIcon";
+import { AppIcon, type AppIconName } from "@/components/AppIcon";
 import { useAuth } from "@/context/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
 import { PermissionDialog, PERMISSION_CONFIGS } from "@/components/PermissionDialog";
@@ -181,11 +181,11 @@ export default function ProfileScreen() {
     `https://api.dicebear.com/7.x/avataaars/png?seed=${user?.id ?? "me"}`;
 
   const gender = user?.gender;
-  const genderPill =
+  const genderPill: { icon: AppIconName; bg: string; fg: string } | null =
     gender === "male"
-      ? { symbol: "♂", bg: "#DCE4FF", fg: "#3B5BDB" }
+      ? { icon: "male", bg: "#DCE4FF", fg: "#3B5BDB" }
       : gender === "female"
-      ? { symbol: "♀", bg: "#FCE0EF", fg: "#D6336C" }
+      ? { icon: "female", bg: "#FCE0EF", fg: "#D6336C" }
       : null;
 
   // ─── Only features that exist in THIS app ──────────────────────────────
@@ -229,7 +229,7 @@ export default function ProfileScreen() {
       >
         <ConfirmModal
           visible={showLogout}
-          emoji="👋"
+          icon="wave"
           title="Sign Out"
           message="Are you sure you want to sign out?"
           confirmText="Sign Out"
@@ -281,7 +281,7 @@ export default function ProfileScreen() {
               <Text style={[styles.name, { color: colors.text }]} numberOfLines={1}>{user?.name}</Text>
               {genderPill && (
                 <View style={[styles.genderPill, { backgroundColor: genderPill.bg }]}>
-                  <Text style={[styles.genderText, { color: genderPill.fg }]}>{genderPill.symbol}</Text>
+                  <AppIcon name={genderPill.icon} size={12} color={genderPill.fg} />
                 </View>
               )}
               {user?.role === "host" && (
