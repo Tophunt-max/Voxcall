@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Link } from 'wouter';
 import { api } from '@/lib/api';
 import { Save, Smartphone, AlertTriangle, Mail, RefreshCw, ArrowRight, Flame, Bell, ShieldAlert, Clock, LayoutList, Zap, Activity } from 'lucide-react';

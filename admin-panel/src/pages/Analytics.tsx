@@ -6,7 +6,7 @@ import {
   BarChart, Bar, AreaChart, Area, PieChart, Pie, Cell
 } from 'recharts';
 import { TrendingUp, Users, Clock, Coins, Activity, UserCheck, Gift } from 'lucide-react';
-import { toast } from '@/hooks/use-toast';
+import { toast } from '@/lib/toast';
 import { useConfirm } from '@/components/ConfirmDialog';
 
 const COLORS = ['#7C3AED', '#06B6D4', '#10B981', '#F59E0B', '#EF4444'];

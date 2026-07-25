@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { api } from '@/lib/api';
 import { Save, Rocket, Gift, Zap, Trophy, RotateCcw, Users, Clock, TrendingDown, Star, Signal, Sparkles, Wand2 } from 'lucide-react';
 

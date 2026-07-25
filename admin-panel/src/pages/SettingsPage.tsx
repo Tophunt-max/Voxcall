@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { api } from '@/lib/api';
 import { Save, Info, Calculator, TrendingUp, RefreshCw, Wifi, AlertTriangle, Activity, Gift, Lightbulb } from 'lucide-react';
 

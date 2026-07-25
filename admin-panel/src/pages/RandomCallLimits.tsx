@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '@/lib/api';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Shuffle, Save, Info, Crown, Ticket } from 'lucide-react';
 
 // ─────────────────────────────────────────────────────────────────────────────

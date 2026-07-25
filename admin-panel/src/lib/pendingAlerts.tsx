@@ -28,7 +28,7 @@
 // ============================================================================
 
 import { createContext, useContext, useEffect, useRef, useState, ReactNode, useCallback } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { api, req } from '@/lib/api';
 
 const POLL_MS = 15_000;      // how often we re-check the queues

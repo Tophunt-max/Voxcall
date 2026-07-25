@@ -5,7 +5,7 @@ import { Switch, Route, Router as WouterRouter, Redirect } from 'wouter';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider, useAuth } from '@/lib/auth';
 import { Layout } from '@/components/Layout';
-import { Toaster } from '@/components/ui/sonner';
+import { PopupToaster } from '@/lib/toast';
 import { ConfirmProvider } from '@/components/ConfirmDialog';
 import { PendingAlertsProvider } from '@/lib/pendingAlerts';
 import Login from '@/pages/Login';
@@ -149,7 +149,7 @@ export default function App() {
           </WouterRouter>
         </ConfirmProvider>
       </AuthProvider>
-      <Toaster richColors position="top-right" />
+      <PopupToaster />
     </QueryClientProvider>
   );
 }

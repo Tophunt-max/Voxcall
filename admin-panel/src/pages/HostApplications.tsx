@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { req } from "@/lib/api";
 import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
