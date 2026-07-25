@@ -24,6 +24,7 @@
 
 import React, { useEffect, useState, useRef, useCallback } from "react";
 import { View, Text, StyleSheet, Animated, Platform } from "react-native";
+import { Feather } from "@expo/vector-icons";
 import { useSocket } from "@/context/SocketContext";
 import { useAuth } from "@/context/AuthContext";
 
@@ -63,7 +64,8 @@ export function OfflineBanner() {
   const hasEverConnected = useRef(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recheckRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const slideAnim = useRef(new Animated.Value(-60)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const scaleAnim = useRef(new Animated.Value(0.9)).current;
 
   useEffect(() => {
     if (isConnected) hasEverConnected.current = true;
@@ -114,47 +116,107 @@ export function OfflineBanner() {
   }, [isConnected, isLoggedIn, clearTimers]);
 
   useEffect(() => {
-    Animated.timing(slideAnim, {
-      toValue: showBanner ? 0 : -60,
-      duration: 280,
-      useNativeDriver: useNativeDriverValue,
-    }).start();
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: showBanner ? 1 : 0,
+        duration: 220,
+        useNativeDriver: useNativeDriverValue,
+      }),
+      Animated.spring(scaleAnim, {
+        toValue: showBanner ? 1 : 0.9,
+        friction: 7,
+        tension: 80,
+        useNativeDriver: useNativeDriverValue,
+      }),
+    ]).start();
   }, [showBanner]);
 
   if (!showBanner) return null;
 
   return (
-    <Animated.View style={[styles.banner, { transform: [{ translateY: slideAnim }] }]}>
-      <View style={styles.dot} />
-      <Text style={styles.text}>No internet connection — reconnecting…</Text>
+    <Animated.View style={[styles.overlay, { opacity: fadeAnim }]}>
+      <Animated.View style={[styles.card, { transform: [{ scale: scaleAnim }] }]}>
+        <View style={styles.iconCircle}>
+          <Feather name="wifi-off" size={32} color="#EF4444" />
+        </View>
+        <Text style={styles.title}>No Internet Connection</Text>
+        <Text style={styles.message}>
+          You appear to be offline. Calls may be affected while we try to reconnect…
+        </Text>
+        <View style={styles.statusRow}>
+          <View style={styles.dot} />
+          <Text style={styles.statusText}>Reconnecting…</Text>
+        </View>
+      </Animated.View>
     </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
-  banner: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 9999,
-    backgroundColor: "#EF4444",
-    flexDirection: "row",
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.55)",
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 10,
-    paddingHorizontal: 16,
+    paddingHorizontal: 28,
+    zIndex: 9999,
+    ...(Platform.OS === "web" ? { position: "fixed" as any } : null),
+  },
+  card: {
+    width: "100%",
+    maxWidth: 360,
+    backgroundColor: "#fff",
+    borderRadius: 24,
+    paddingVertical: 28,
+    paddingHorizontal: 24,
+    alignItems: "center",
+    gap: 10,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 20,
+    elevation: 12,
+  },
+  iconCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: "rgba(239,68,68,0.10)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 4,
+  },
+  title: {
+    color: "#111827",
+    fontSize: 18,
+    fontFamily: "Poppins_600SemiBold",
+    textAlign: "center",
+  },
+  message: {
+    color: "#6B7280",
+    fontSize: 14,
+    fontFamily: "Poppins_400Regular",
+    textAlign: "center",
+    lineHeight: 20,
+  },
+  statusRow: {
+    flexDirection: "row",
+    alignItems: "center",
     gap: 8,
+    marginTop: 8,
+    backgroundColor: "rgba(239,68,68,0.08)",
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 999,
   },
   dot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: "#fff",
-    opacity: 0.8,
+    backgroundColor: "#EF4444",
   },
-  text: {
-    color: "#fff",
+  statusText: {
+    color: "#EF4444",
     fontSize: 13,
     fontFamily: "Poppins_500Medium",
   },
