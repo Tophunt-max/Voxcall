@@ -15,6 +15,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
 import { API } from "@/services/api";
 import { showErrorToast, showSuccessToast } from "@/components/Toast";
+import { FreeMinutesCardIcon, RandomCardIcon } from "@/components/MinuteCardIcons";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MonthlyPassCard — vertical two-track tier ladder.
@@ -265,11 +266,21 @@ function RewardBox({
   const total = (minutes || 0) + (randomMinutes || 0);
   if (total <= 0) return <View style={styles.rewardEmpty} />;
 
-  // 🎧 = host-call free minutes, 🎲 = random-call free minutes.
+  // Host-call free minutes → FreeMinutesCardIcon; random-call → RandomCardIcon.
   const Chips = ({ color }: { color: string }) => (
     <View style={styles.minRow}>
-      {minutes > 0 ? <Text style={[styles.minChip, { color }]}>🎧 {minutes}m</Text> : null}
-      {randomMinutes > 0 ? <Text style={[styles.minChip, { color }]}>🎲 {randomMinutes}m</Text> : null}
+      {minutes > 0 ? (
+        <View style={styles.minChipRow}>
+          <FreeMinutesCardIcon size={16} />
+          <Text style={[styles.minChip, { color }]}>{minutes}m</Text>
+        </View>
+      ) : null}
+      {randomMinutes > 0 ? (
+        <View style={styles.minChipRow}>
+          <RandomCardIcon size={16} />
+          <Text style={[styles.minChip, { color }]}>{randomMinutes}m</Text>
+        </View>
+      ) : null}
     </View>
   );
 
@@ -304,8 +315,18 @@ function RewardBox({
             <>
               <Text style={styles.rewardClaimLabel}>Claim</Text>
               <View style={styles.minRow}>
-                {minutes > 0 ? <Text style={styles.rewardClaimCoins}>🎧{minutes}</Text> : null}
-                {randomMinutes > 0 ? <Text style={styles.rewardClaimCoins}>🎲{randomMinutes}</Text> : null}
+                {minutes > 0 ? (
+                  <View style={styles.minChipRow}>
+                    <FreeMinutesCardIcon size={15} />
+                    <Text style={styles.rewardClaimCoins}>{minutes}</Text>
+                  </View>
+                ) : null}
+                {randomMinutes > 0 ? (
+                  <View style={styles.minChipRow}>
+                    <RandomCardIcon size={15} />
+                    <Text style={styles.rewardClaimCoins}>{randomMinutes}</Text>
+                  </View>
+                ) : null}
               </View>
             </>
           )}
@@ -383,6 +404,7 @@ const styles = StyleSheet.create({
   rewardClaimLabel: { color: "#fff", fontSize: 11, fontFamily: "Poppins_700Bold" },
   rewardClaimCoins: { color: "#fff", fontSize: 11, fontFamily: "Poppins_700Bold" },
   minRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, flexWrap: "wrap" },
+  minChipRow: { flexDirection: "row", alignItems: "center", gap: 3 },
   minChip: { fontSize: 11.5, fontFamily: "Poppins_700Bold" },
   rewardCoinIcon: { fontSize: 13 },
   rewardIdleCoins: { fontSize: 12.5, fontFamily: "Poppins_700Bold" },
