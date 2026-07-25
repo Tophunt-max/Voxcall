@@ -37,6 +37,9 @@ interface ToastMessage {
 interface ToastProps {
   toast: ToastMessage;
   onDismiss: (id: string) => void;
+  /** Lets the container trigger this toast's exit animation (fade-out) so a
+   *  newly-arriving popup can smoothly replace it instead of a hard swap. */
+  registerDismiss?: (fn: () => void) => void;
 }
 
 // ─── Per-type visual identity ──────────────────────────────────────────────
@@ -52,7 +55,7 @@ const TYPE_STYLE: Record<
   info:    { gradient: ["#7C3AED", "#B57BFF"], icon: "bell",         accent: "#7C3AED", defaultTitle: "New",     glow: "#7C3AED" },
 };
 
-function ToastItem({ toast, onDismiss }: ToastProps) {
+function ToastItem({ toast, onDismiss, registerDismiss }: ToastProps) {
   const colors = useColors();
   const anim = useRef(new Animated.Value(0)).current;        // entrance (0→1)
   const progress = useRef(new Animated.Value(1)).current;    // countdown bar (1→0)
@@ -74,6 +77,10 @@ function ToastItem({ toast, onDismiss }: ToastProps) {
   }, [anim, onDismiss, toast.id]);
 
   useEffect(() => {
+    // Expose this toast's exit animation to the container so a new popup can
+    // fade this one out before appearing.
+    registerDismiss?.(dismiss);
+
     // Haptic cue matched to severity — makes the popup *felt*, not just seen.
     if (toast.type === "success") successNotification();
     else if (toast.type === "error") errorNotification();
@@ -212,32 +219,51 @@ function Backdrop() {
 }
 
 export function ToastContainer() {
-  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  // Exactly ONE popup is visible at a time. A newly-arriving toast is stashed
+  // in `pendingRef` and the current one is asked to play its fade-out; once
+  // that finishes (onDismiss), the pending one is promoted and springs in.
+  const [visible, setVisible] = useState<ToastMessage | null>(null);
+  const visibleRef = useRef<ToastMessage | null>(null);
+  const pendingRef = useRef<ToastMessage | null>(null);
+  const currentDismissRef = useRef<(() => void) | null>(null);
+
+  const applyVisible = useCallback((item: ToastMessage | null) => {
+    visibleRef.current = item;
+    setVisible(item);
+  }, []);
 
   const show = useCallback((params: Omit<ToastMessage, "id">) => {
-    setToasts((prev) => {
-      // Popups are modal-style, so only ONE shows at a time (never stack a
-      // column of cards). Also dedupe an identical message that's already on
-      // screen — this stops the same error piling up when a screen refetches
-      // on focus or on repeated socket events (e.g. the checkout screen).
-      if (prev.some((x) => x.type === params.type && x.title === params.title && x.message === params.message)) {
-        return prev;
-      }
-      const id = `toast_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-      return [{ id, ...params }];
-    });
-  }, []);
+    const sameAs = (t: ToastMessage | null) =>
+      !!t && t.type === params.type && t.title === params.title && t.message === params.message;
+    // Dedupe an identical message that's already showing or already queued —
+    // stops the same error piling up when a screen refetches on focus / socket.
+    if (sameAs(visibleRef.current) || sameAs(pendingRef.current)) return;
+
+    const id = `toast_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    const item: ToastMessage = { id, ...params };
+
+    if (!visibleRef.current) {
+      applyVisible(item);
+    } else {
+      // Queue the newest and fade the current one out; onDismiss promotes it.
+      pendingRef.current = item;
+      currentDismissRef.current?.();
+    }
+  }, [applyVisible]);
 
   useEffect(() => {
     _showToast = show;
     return () => { _showToast = null; };
   }, [show]);
 
-  const dismiss = useCallback((id: string) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
-  }, []);
+  const handleDismissed = useCallback(() => {
+    currentDismissRef.current = null;
+    const next = pendingRef.current;
+    pendingRef.current = null;
+    applyVisible(next);
+  }, [applyVisible]);
 
-  if (toasts.length === 0) return null;
+  if (!visible) return null;
 
   // Render inside a transparent RN Modal so the popup is ALWAYS top-most —
   // above tab bars, screen content, and even full-screen call modals. A plain
@@ -248,9 +274,12 @@ export function ToastContainer() {
       <View style={styles.overlay} pointerEvents="box-none">
         <Backdrop />
         <View style={styles.stack} pointerEvents="box-none">
-          {toasts.map((toast) => (
-            <ToastItem key={toast.id} toast={toast} onDismiss={dismiss} />
-          ))}
+          <ToastItem
+            key={visible.id}
+            toast={visible}
+            onDismiss={handleDismissed}
+            registerDismiss={(fn) => { currentDismissRef.current = fn; }}
+          />
         </View>
       </View>
     </Modal>
