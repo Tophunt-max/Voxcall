@@ -11,7 +11,13 @@ import { Plus, Trash2, Save, Crown, Coins, Users, Trophy } from 'lucide-react';
 // tasks; crossing a tier threshold unlocks a Common (free) and Premium
 // (VIP/paid) reward. Everything resets each calendar month.
 
-type Tier = { level: number; points: number; label: string; free_coins: number; premium_coins: number };
+type Tier = {
+  level: number; points: number; label: string;
+  // Free-minute card rewards (1 = 1 minute). *_minutes = host-call minutes,
+  // *_random_minutes = random-call minutes.
+  free_minutes: number; free_random_minutes: number;
+  premium_minutes: number; premium_random_minutes: number;
+};
 
 type PassConfig = {
   enabled: number | boolean;
@@ -24,7 +30,7 @@ type PassConfig = {
 };
 
 function blankTier(level: number): Tier {
-  return { level, points: level * 200, label: `Tier ${level}`, free_coins: 50, premium_coins: 150 };
+  return { level, points: level * 200, label: `Tier ${level}`, free_minutes: 3, free_random_minutes: 2, premium_minutes: 8, premium_random_minutes: 5 };
 }
 
 export default function RewardPass() {
@@ -137,7 +143,7 @@ export default function RewardPass() {
             <p className="mt-2 font-bold text-xl">{cfg.stats.claims.toLocaleString()}</p>
           </div>
           <div className="bg-card border border-border rounded-2xl p-4">
-            <div className="flex items-center gap-2 text-xs text-muted-foreground"><Coins size={12} /> Coins paid ({cfg.stats.period})</div>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground"><Coins size={12} /> Free minutes granted ({cfg.stats.period})</div>
             <p className="mt-2 font-bold text-xl">{cfg.stats.coins_paid.toLocaleString()}</p>
           </div>
         </div>
@@ -171,7 +177,7 @@ export default function RewardPass() {
         <div className="flex items-center justify-between mb-3">
           <div>
             <h3 className="font-bold text-sm">Tiers</h3>
-            <p className="text-xs text-muted-foreground">Points needed + Common (free) and Premium (VIP/paid) coin rewards.</p>
+            <p className="text-xs text-muted-foreground">Points needed + free-minute rewards. 🎧 = host-call minutes, 🎲 = random-call minutes. Free track for all; VIP track for VIP members.</p>
           </div>
           <button onClick={addTier} className="flex items-center gap-1.5 border border-border px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-secondary">
             <Plus size={14} /> Add Tier
@@ -182,20 +188,24 @@ export default function RewardPass() {
           <p className="text-sm text-muted-foreground py-6 text-center">No tiers yet — add one to start the pass.</p>
         ) : (
           <div className="space-y-2">
-            <div className="grid grid-cols-[60px_1fr_90px_110px_120px_40px] gap-2 px-1 text-[11px] font-semibold text-muted-foreground">
-              <span>Level</span><span>Label</span><span>Points</span><span>Free reward 🆓</span><span>VIP reward 👑</span><span></span>
+            <div className="grid grid-cols-[52px_1fr_72px_70px_70px_70px_70px_36px] gap-2 px-1 text-[11px] font-semibold text-muted-foreground">
+              <span>Level</span><span>Label</span><span>Points</span><span>Free 🎧</span><span>Free 🎲</span><span>VIP 🎧</span><span>VIP 🎲</span><span></span>
             </div>
             {cfg.tiers.map((t, idx) => (
-              <div key={idx} className="grid grid-cols-[60px_1fr_90px_110px_120px_40px] gap-2 items-center">
+              <div key={idx} className="grid grid-cols-[52px_1fr_72px_70px_70px_70px_70px_36px] gap-2 items-center">
                 <input type="number" min={1} className={numInput} value={t.level}
                   onChange={(e) => updateTier(idx, { level: Math.max(1, Number(e.target.value)) })} />
                 <input className={numInput} value={t.label} onChange={(e) => updateTier(idx, { label: e.target.value })} />
                 <input type="number" min={0} className={numInput} value={t.points}
                   onChange={(e) => updateTier(idx, { points: Math.max(0, Number(e.target.value)) })} />
-                <input type="number" min={0} className={numInput} value={t.free_coins}
-                  onChange={(e) => updateTier(idx, { free_coins: Math.max(0, Number(e.target.value)) })} />
-                <input type="number" min={0} className={numInput} value={t.premium_coins}
-                  onChange={(e) => updateTier(idx, { premium_coins: Math.max(0, Number(e.target.value)) })} />
+                <input type="number" min={0} className={numInput} value={t.free_minutes}
+                  onChange={(e) => updateTier(idx, { free_minutes: Math.max(0, Number(e.target.value)) })} title="Free host-call minutes" />
+                <input type="number" min={0} className={numInput} value={t.free_random_minutes}
+                  onChange={(e) => updateTier(idx, { free_random_minutes: Math.max(0, Number(e.target.value)) })} title="Free random-call minutes" />
+                <input type="number" min={0} className={numInput} value={t.premium_minutes}
+                  onChange={(e) => updateTier(idx, { premium_minutes: Math.max(0, Number(e.target.value)) })} title="VIP host-call minutes" />
+                <input type="number" min={0} className={numInput} value={t.premium_random_minutes}
+                  onChange={(e) => updateTier(idx, { premium_random_minutes: Math.max(0, Number(e.target.value)) })} title="VIP random-call minutes" />
                 <button onClick={() => removeTier(idx)} className="p-1.5 rounded-lg hover:bg-red-50 text-muted-foreground hover:text-red-500" title="Remove tier">
                   <Trash2 size={15} />
                 </button>

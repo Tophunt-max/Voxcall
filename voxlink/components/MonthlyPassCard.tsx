@@ -92,9 +92,11 @@ export default function MonthlyPassCard({ onChanged }: { onChanged?: () => void 
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
       try {
         const res = await API.claimPass(tier.level, track);
-        updateCoins(res.coins);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-        showSuccessToast(`+${res.coins_awarded} coins!`, `${tier.label} claimed`);
+        const parts: string[] = [];
+        if (res.host_minutes > 0) parts.push(`${res.host_minutes} host min`);
+        if (res.random_minutes > 0) parts.push(`${res.random_minutes} random min`);
+        showSuccessToast(`+${parts.join(" + ")} 🎉`, `${tier.label} claimed`);
         await load();
         onChanged?.();
       } catch (e: any) {
@@ -163,7 +165,8 @@ export default function MonthlyPassCard({ onChanged }: { onChanged?: () => void 
             {/* Common (free) */}
             <View style={styles.trackCol}>
               <RewardBox
-                coins={tier.free_coins}
+                minutes={tier.free_minutes}
+                randomMinutes={tier.free_random_minutes}
                 reached={tier.reached}
                 claimed={tier.free_claimed}
                 claimable={tier.free_claimable}
@@ -186,7 +189,8 @@ export default function MonthlyPassCard({ onChanged }: { onChanged?: () => void 
             {/* Monthly Pass (VIP) */}
             <View style={styles.trackCol}>
               <RewardBox
-                coins={tier.premium_coins}
+                minutes={tier.premium_minutes}
+                randomMinutes={tier.premium_random_minutes}
                 reached={tier.reached}
                 claimed={tier.premium_claimed}
                 claimable={tier.premium_claimable}
@@ -234,7 +238,8 @@ export default function MonthlyPassCard({ onChanged }: { onChanged?: () => void 
 
 // ── Single reward cell (Common or VIP track) ──────────────────────────────────
 function RewardBox({
-  coins,
+  minutes,
+  randomMinutes,
   reached,
   claimed,
   claimable,
@@ -245,7 +250,8 @@ function RewardBox({
   onClaim,
   onLockedPress,
 }: {
-  coins: number;
+  minutes: number;
+  randomMinutes: number;
   reached: boolean;
   claimed: boolean;
   claimable: boolean;
@@ -256,14 +262,23 @@ function RewardBox({
   onClaim: () => void;
   onLockedPress?: () => void;
 }) {
-  if (coins <= 0) return <View style={styles.rewardEmpty} />;
+  const total = (minutes || 0) + (randomMinutes || 0);
+  if (total <= 0) return <View style={styles.rewardEmpty} />;
+
+  // 🎧 = host-call free minutes, 🎲 = random-call free minutes.
+  const Chips = ({ color }: { color: string }) => (
+    <View style={styles.minRow}>
+      {minutes > 0 ? <Text style={[styles.minChip, { color }]}>🎧 {minutes}m</Text> : null}
+      {randomMinutes > 0 ? <Text style={[styles.minChip, { color }]}>🎲 {randomMinutes}m</Text> : null}
+    </View>
+  );
 
   // Already claimed → check badge.
   if (claimed) {
     return (
       <View style={[styles.rewardBox, styles.rewardClaimed]}>
         <Text style={styles.rewardClaimedTick}>✓</Text>
-        <Text style={styles.rewardClaimedCoins}>+{coins}</Text>
+        <Chips color="#059669" />
       </View>
     );
   }
@@ -273,8 +288,7 @@ function RewardBox({
     return (
       <TouchableOpacity activeOpacity={0.85} onPress={onLockedPress} style={[styles.rewardBox, styles.rewardVipLocked]}>
         <View style={styles.lockChip}><Text style={styles.lockChipText}>🔒</Text></View>
-        <Text style={styles.rewardCoinIcon}>🪙</Text>
-        <Text style={styles.rewardVipCoins}>+{coins}</Text>
+        <Chips color="#B45309" />
       </TouchableOpacity>
     );
   }
@@ -289,7 +303,10 @@ function RewardBox({
           ) : (
             <>
               <Text style={styles.rewardClaimLabel}>Claim</Text>
-              <Text style={styles.rewardClaimCoins}>+{coins}</Text>
+              <View style={styles.minRow}>
+                {minutes > 0 ? <Text style={styles.rewardClaimCoins}>🎧{minutes}</Text> : null}
+                {randomMinutes > 0 ? <Text style={styles.rewardClaimCoins}>🎲{randomMinutes}</Text> : null}
+              </View>
             </>
           )}
         </LinearGradient>
@@ -297,13 +314,12 @@ function RewardBox({
     );
   }
 
-  // Not reached yet → simple greyed reward preview. NO lock icon here: the
-  // Free column is never "locked" (it's free — just not earned yet), and the
-  // VIP column only shows a lock via the `locked` branch above (non-VIP users).
+  // Not reached yet → greyed preview. NO lock icon: the Free column is never
+  // "locked" (free — just not earned yet); the VIP column only locks via the
+  // `locked` branch above (non-VIP users).
   return (
     <View style={[styles.rewardBox, vip ? styles.rewardVipIdle : styles.rewardCommonIdle]}>
-      <Text style={styles.rewardCoinIcon}>🪙</Text>
-      <Text style={[styles.rewardIdleCoins, { color: vip ? "#B45309" : "#6D28D9" }]}>+{coins}</Text>
+      <Chips color={vip ? "#B45309" : "#6D28D9"} />
     </View>
   );
 }
@@ -365,7 +381,9 @@ const styles = StyleSheet.create({
   rewardClaimedTick: { color: "#059669", fontSize: 16, fontFamily: "Poppins_700Bold" },
   rewardClaimedCoins: { color: "#059669", fontSize: 12, fontFamily: "Poppins_700Bold" },
   rewardClaimLabel: { color: "#fff", fontSize: 11, fontFamily: "Poppins_700Bold" },
-  rewardClaimCoins: { color: "#fff", fontSize: 12, fontFamily: "Poppins_700Bold" },
+  rewardClaimCoins: { color: "#fff", fontSize: 11, fontFamily: "Poppins_700Bold" },
+  minRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, flexWrap: "wrap" },
+  minChip: { fontSize: 11.5, fontFamily: "Poppins_700Bold" },
   rewardCoinIcon: { fontSize: 13 },
   rewardIdleCoins: { fontSize: 12.5, fontFamily: "Poppins_700Bold" },
   rewardVipCoins: { color: "#B45309", fontSize: 12.5, fontFamily: "Poppins_700Bold" },

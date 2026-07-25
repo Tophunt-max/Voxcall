@@ -33,8 +33,13 @@ export interface PassTier {
   level: number;
   points: number;
   label: string;
-  free_coins: number;
-  premium_coins: number;
+  // Rewards are FREE-MINUTE cards (1 = 1 minute), not coins:
+  //   *_minutes         → host-call free minutes (Free Minutes card)
+  //   *_random_minutes  → random-call free minutes (Random Call card)
+  free_minutes: number;
+  free_random_minutes: number;
+  premium_minutes: number;
+  premium_random_minutes: number;
 }
 
 /** Parse + normalise the JSON `tiers` blob into a sorted, sane array. */
@@ -49,12 +54,15 @@ export function parsePassTiers(raw: unknown): PassTier[] {
   const tiers = arr
     .map((t, i) => {
       const o = (t ?? {}) as Record<string, unknown>;
+      const int = (v: unknown) => Math.max(0, Math.floor(Number(v) || 0));
       return {
         level: Math.max(1, Math.floor(Number(o.level) || i + 1)),
         points: Math.max(0, Math.floor(Number(o.points) || 0)),
         label: String(o.label ?? `Tier ${i + 1}`),
-        free_coins: Math.max(0, Math.floor(Number(o.free_coins) || 0)),
-        premium_coins: Math.max(0, Math.floor(Number(o.premium_coins) || 0)),
+        free_minutes: int(o.free_minutes),
+        free_random_minutes: int(o.free_random_minutes),
+        premium_minutes: int(o.premium_minutes),
+        premium_random_minutes: int(o.premium_random_minutes),
       };
     })
     .sort((a, b) => a.points - b.points || a.level - b.level);

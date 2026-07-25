@@ -144,6 +144,7 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
           durationSec,
           ratePerMinute: rate,
           earningShare: getEarningShare(hostRow.level ?? 1, levelCfg),
+          isRandom: !!(s as any).is_random_match,
         });
         actualCoinsCharged = charged; actualHostShare = hostEarned; freeMinutesUsed = free_minutes_used;
       }
@@ -470,6 +471,7 @@ call.post('/end', async (c) => {
         durationSec,
         ratePerMinute: effectiveRate,
         earningShare: getEarningShare(hostRow.level ?? 1, levelCfg),
+        isRandom: !!(session as any).is_random_match,
       });
       actualCoinsCharged = charged;
       actualHostShare = hostEarned;
@@ -922,6 +924,7 @@ call.post('/:id/end', async (c) => {
         durationSec,
         ratePerMinute: effectiveRate,
         earningShare: getEarningShare(hostRow.level ?? 1, levelCfg),
+        isRandom: !!(session as any).is_random_match,
       });
       actualCoinsCharged = charged;
       actualHostShare = hostEarned;

@@ -344,6 +344,7 @@ async function reapStaleCalls(env: Env): Promise<void> {
     const staleCalls = await db
       .prepare(
         `SELECT cs.id, cs.caller_id, cs.host_id, cs.started_at, cs.created_at, cs.rate_per_minute, cs.type,
+                cs.is_random_match,
                 h.user_id as host_user_id, h.level as host_level,
                 cs.status
          FROM call_sessions cs
@@ -386,6 +387,7 @@ async function reapStaleCalls(env: Env): Promise<void> {
           durationSec,
           ratePerMinute: effectiveRate,
           earningShare: getEarningShare(call.host_level ?? 1, levelCfg),
+          isRandom: !!call.is_random_match,
         });
         actualCoinsCharged = charged;
         actualHostEarnings = hostEarned;

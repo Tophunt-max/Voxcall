@@ -1,13 +1,10 @@
 import { Hono } from 'hono';
 import { authMiddleware } from '../middleware/auth';
 import { getVipStatus } from '../lib/vip';
-import { pushCoinUpdate } from '../lib/realtime';
 import {
   passMonthKey,
   passMonthEndUnix,
   parsePassTiers,
-  passWouldExceedBudget,
-  passBudgetIncrementStmt,
   type PassTier,
 } from '../lib/pass';
 import type { Env, JWTPayload } from '../types';
@@ -94,21 +91,26 @@ pass.get('/', async (c) => {
     const reached = points >= t.points;
     const freeClaimed = claimed.has(`${t.level}:common`);
     const premiumClaimed = claimed.has(`${t.level}:premium`);
+    const freeHas = t.free_minutes > 0 || t.free_random_minutes > 0;
+    const premiumHas = t.premium_minutes > 0 || t.premium_random_minutes > 0;
     return {
       level: t.level,
       points: t.points,
       label: t.label,
       reached,
-      free_coins: t.free_coins,
+      // Free (Common) track — free-minute cards.
+      free_minutes: t.free_minutes,
+      free_random_minutes: t.free_random_minutes,
       free_claimed: freeClaimed,
-      free_claimable: reached && !freeClaimed && t.free_coins > 0,
-      premium_coins: t.premium_coins,
+      free_claimable: reached && !freeClaimed && freeHas,
+      // Premium (VIP) track.
+      premium_minutes: t.premium_minutes,
+      premium_random_minutes: t.premium_random_minutes,
       premium_claimed: premiumClaimed,
-      premium_claimable: reached && !premiumClaimed && t.premium_coins > 0 && premiumUnlocked,
+      premium_claimable: reached && !premiumClaimed && premiumHas && premiumUnlocked,
     };
   });
 
-  const u = await db.prepare('SELECT coins FROM users WHERE id = ?').bind(sub).first<{ coins: number }>();
   const maxPoints = tiers.length ? tiers[tiers.length - 1].points : 0;
 
   return c.json({
@@ -124,7 +126,6 @@ pass.get('/', async (c) => {
     period_key: period,
     month_end: monthEnd,
     server_time: now,
-    coins: Number(u?.coins) || 0,
     tiers: tierView,
   });
 });
@@ -186,8 +187,13 @@ pass.post('/claim', async (c) => {
     return c.json({ error: 'You have not reached this tier yet', code: 'TIER_LOCKED' }, 403);
   }
 
-  const coins = track === 'premium' ? tier.premium_coins : tier.free_coins;
-  if (coins <= 0) return c.json({ error: 'No reward on this track for this tier', code: 'NO_REWARD' }, 400);
+  // Rewards are FREE-MINUTE cards, not coins:
+  //   hostMin → host-call free minutes (free_call_minutes)
+  //   randMin → random-call free minutes (free_random_minutes)
+  const hostMin = track === 'premium' ? tier.premium_minutes : tier.free_minutes;
+  const randMin = track === 'premium' ? tier.premium_random_minutes : tier.free_random_minutes;
+  const totalMin = hostMin + randMin;
+  if (totalMin <= 0) return c.json({ error: 'No reward on this track for this tier', code: 'NO_REWARD' }, 400);
 
   // Premium rewards are exclusively for active VIP members.
   if (track === 'premium') {
@@ -197,14 +203,10 @@ pass.post('/claim', async (c) => {
     }
   }
 
-  // Shared daily reward budget cap (mirrors reward-task claims).
-  const budget = await passWouldExceedBudget(db, coins);
-  if (budget.exceeded) {
-    return c.json({ error: "Today's reward budget is exhausted. Try again tomorrow.", code: 'BUDGET_EXCEEDED' }, 429);
-  }
-
   // Atomic double-claim guard: the composite PK means the INSERT succeeds
   // (changes=1) only the first time this (user, month, tier, track) is claimed.
+  // We record the total minutes granted in coins_awarded (repurposed as a
+  // generic "amount awarded" column).
   let inserted = false;
   try {
     const ins = await db
@@ -212,7 +214,7 @@ pass.post('/claim', async (c) => {
         `INSERT OR IGNORE INTO user_pass_claims (user_id, period_key, tier_level, track, coins_awarded, claimed_at)
          VALUES (?, ?, ?, ?, ?, ?)`,
       )
-      .bind(sub, period, tierLevel, track, coins, now)
+      .bind(sub, period, tierLevel, track, totalMin, now)
       .run();
     inserted = !!ins.meta?.changes;
   } catch (e) {
@@ -223,18 +225,21 @@ pass.post('/claim', async (c) => {
     return c.json({ error: 'Reward already claimed', code: 'ALREADY_CLAIMED' }, 409);
   }
 
-  // Credit coins + ledger + budget in one batch. On failure, roll the claim
-  // back so the reward isn't silently lost.
+  // Credit the free-minute pools. On failure, roll the claim back so the
+  // reward isn't silently lost. Host + random pools are strictly separate.
   try {
-    await db.batch([
-      db.prepare('UPDATE users SET coins = coins + ?, updated_at = unixepoch() WHERE id = ?').bind(coins, sub),
-      db
-        .prepare('INSERT INTO coin_transactions (id, user_id, type, amount, description, ref_id) VALUES (?, ?, ?, ?, ?, ?)')
-        .bind(crypto.randomUUID(), sub, 'bonus', coins, `Monthly Pass ${track} reward — ${tier.label}`, `monthly_pass_${period}_${tierLevel}_${track}`),
-      passBudgetIncrementStmt(db, coins),
-    ]);
+    await db
+      .prepare(
+        `UPDATE users
+            SET free_call_minutes   = COALESCE(free_call_minutes, 0) + ?,
+                free_random_minutes = COALESCE(free_random_minutes, 0) + ?,
+                updated_at = unixepoch()
+          WHERE id = ?`,
+      )
+      .bind(hostMin, randMin, sub)
+      .run();
   } catch (e) {
-    console.warn('[pass/claim] credit batch failed, rolling back claim:', e);
+    console.warn('[pass/claim] minute credit failed, rolling back claim:', e);
     await db
       .prepare('DELETE FROM user_pass_claims WHERE user_id = ? AND period_key = ? AND tier_level = ? AND track = ?')
       .bind(sub, period, tierLevel, track)
@@ -243,14 +248,18 @@ pass.post('/claim', async (c) => {
     return c.json({ error: 'Could not credit reward, please retry' }, 500);
   }
 
-  const after = await db.prepare('SELECT coins FROM users WHERE id = ?').bind(sub).first<{ coins: number }>();
-  c.executionCtx?.waitUntil?.(pushCoinUpdate(c.env, sub));
+  const after = await db
+    .prepare('SELECT COALESCE(free_call_minutes,0) AS fm, COALESCE(free_random_minutes,0) AS frm FROM users WHERE id = ?')
+    .bind(sub)
+    .first<{ fm: number; frm: number }>();
   return c.json({
     success: true,
     tier_level: tierLevel,
     track,
-    coins_awarded: coins,
-    coins: Number(after?.coins) || 0,
+    host_minutes: hostMin,
+    random_minutes: randMin,
+    free_call_minutes: Number(after?.fm) || 0,
+    free_random_minutes: Number(after?.frm) || 0,
   });
 });
 

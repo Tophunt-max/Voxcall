@@ -784,10 +784,13 @@ export const API = {
         points: number;
         label: string;
         reached: boolean;
-        free_coins: number;
+        // Free-minute card rewards (host + random) per track.
+        free_minutes: number;
+        free_random_minutes: number;
         free_claimed: boolean;
         free_claimable: boolean;
-        premium_coins: number;
+        premium_minutes: number;
+        premium_random_minutes: number;
         premium_claimed: boolean;
         premium_claimable: boolean;
       }>;
@@ -805,14 +808,17 @@ export const API = {
       coins?: number;
     }>('POST', '/api/user/pass/purchase'),
 
-  // Claim a tier reward on the 'common' or 'premium' track.
+  // Claim a tier reward on the 'common' or 'premium' track. Rewards are
+  // free-minute cards (host + random), credited to the user's minute pools.
   claimPass: (tier_level: number, track: 'common' | 'premium') =>
     apiRequest<{
       success: boolean;
       tier_level: number;
       track: 'common' | 'premium';
-      coins_awarded: number;
-      coins: number;
+      host_minutes: number;
+      random_minutes: number;
+      free_call_minutes: number;
+      free_random_minutes: number;
     }>('POST', '/api/user/pass/claim', { tier_level, track }),
 
   // Payment Gateways (public)

@@ -2219,10 +2219,11 @@ admin.delete('/reward-tasks/:id', async (c) => {
 // Admin-managed configuration for the Chamet-style Monthly Pass. Stored as one
 // row (id='default') in reward_pass. See migration 0070_reward_monthly_pass.sql.
 // The `tiers` column is a JSON array; we validate + normalise it on write.
-function normalisePassTiers(raw: unknown): { level: number; points: number; label: string; free_coins: number; premium_coins: number }[] {
+function normalisePassTiers(raw: unknown): { level: number; points: number; label: string; free_minutes: number; free_random_minutes: number; premium_minutes: number; premium_random_minutes: number }[] {
   let arr: unknown = raw;
   if (typeof raw === 'string') { try { arr = JSON.parse(raw); } catch { return []; } }
   if (!Array.isArray(arr)) return [];
+  const int = (v: unknown) => Math.max(0, Math.floor(Number(v) || 0));
   return arr
     .map((t, i) => {
       const o = (t ?? {}) as Record<string, unknown>;
@@ -2230,8 +2231,11 @@ function normalisePassTiers(raw: unknown): { level: number; points: number; labe
         level: Math.max(1, Math.floor(Number(o.level) || i + 1)),
         points: Math.max(0, Math.floor(Number(o.points) || 0)),
         label: String(o.label ?? `Tier ${i + 1}`).slice(0, 40),
-        free_coins: Math.max(0, Math.floor(Number(o.free_coins) || 0)),
-        premium_coins: Math.max(0, Math.floor(Number(o.premium_coins) || 0)),
+        // Free-minute card rewards (1 = 1 minute). host + random pools.
+        free_minutes: int(o.free_minutes),
+        free_random_minutes: int(o.free_random_minutes),
+        premium_minutes: int(o.premium_minutes),
+        premium_random_minutes: int(o.premium_random_minutes),
       };
     })
     .sort((a, b) => a.points - b.points || a.level - b.level);

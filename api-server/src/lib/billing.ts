@@ -249,6 +249,13 @@ export async function chargeCallerWithFreePool(
      * behaves exactly like the legacy per-minute version.
      */
     granularitySec?: number;
+    /**
+     * When true this is a RANDOM call, so the free-minute pool consumed is
+     * `users.free_random_minutes` (Monthly Pass "Random Call card"). When
+     * false/omitted it's a host call and `users.free_call_minutes` is used.
+     * Keeps the two pools strictly separate.
+     */
+    isRandom?: boolean;
   },
 ): Promise<{
   charged: number;
@@ -284,15 +291,21 @@ export async function chargeCallerWithFreePool(
   // 1. Read caller balance + free-pool size in one round-trip. We tolerate
   //    a missing free_call_minutes column (legacy DB pre migration 0028)
   //    by defaulting to 0 free minutes — feature degrades gracefully.
+  // Random calls burn a SEPARATE free-minute pool (free_random_minutes) so a
+  // "Random Call card" only works on random calls and a "Free Minutes card"
+  // only on host calls. The column is a code-controlled literal (safe to
+  // interpolate — never user input).
+  const freeCol = params.isRandom ? 'free_random_minutes' : 'free_call_minutes';
+
   let callerCoins = 0;
   let freePool = 0;
   try {
     const row = await db
-      .prepare('SELECT coins, COALESCE(free_call_minutes, 0) as free_call_minutes FROM users WHERE id = ?')
+      .prepare(`SELECT coins, COALESCE(${freeCol}, 0) as free_pool FROM users WHERE id = ?`)
       .bind(params.callerId)
-      .first<{ coins: number; free_call_minutes: number }>();
+      .first<{ coins: number; free_pool: number }>();
     callerCoins = Number(row?.coins) || 0;
-    freePool = Math.max(0, Number(row?.free_call_minutes) || 0);
+    freePool = Math.max(0, Number(row?.free_pool) || 0);
   } catch {
     // Column might not exist yet (healer race). Fall back to no-free-pool.
     const fallback = await db
@@ -339,7 +352,7 @@ export async function chargeCallerWithFreePool(
   if (freeMinutesToDecrement > 0) {
     ops.push(
       db
-        .prepare('UPDATE users SET free_call_minutes = MAX(0, COALESCE(free_call_minutes, 0) - ?) WHERE id = ?')
+        .prepare(`UPDATE users SET ${freeCol} = MAX(0, COALESCE(${freeCol}, 0) - ?) WHERE id = ?`)
         .bind(freeMinutesToDecrement, params.callerId),
     );
   }

@@ -400,6 +400,10 @@ const REQUIRED_FIRST_CALL_USER_COLS: ReadonlyArray<{ name: string; ddl: string }
   // Last time the user claimed the recurring daily free-minutes reward (unix
   // seconds). Drives the once-per-day cooldown for daily_free_minutes_all.
   { name: 'free_minutes_daily_claim_at', ddl: 'ALTER TABLE users ADD COLUMN free_minutes_daily_claim_at INTEGER DEFAULT 0' },
+  // Separate free-minute pool for RANDOM calls (Monthly Pass "Random Call
+  // card"). Host-call free minutes live in free_call_minutes; random calls burn
+  // this pool instead (see lib/billing.ts). Migration 0073.
+  { name: 'free_random_minutes', ddl: 'ALTER TABLE users ADD COLUMN free_random_minutes INTEGER NOT NULL DEFAULT 0' },
 ];
 
 const REQUIRED_FIRST_CALL_SESSION_COLS: ReadonlyArray<{ name: string; ddl: string }> = [
@@ -1398,8 +1402,8 @@ export function ensureRewardsPassSchema(db: D1Database): Promise<boolean> {
              VALUES ('default', 1, 'Monthly Pass', ?, 1000, 1, ?)`,
           )
           .bind(
-            'Spend and recharge coins to earn Pass Points and unlock monthly rewards. Go VIP to claim the Premium track too!',
-            '[{"level":1,"points":100,"label":"Tier 1","free_coins":50,"premium_coins":150},{"level":2,"points":300,"label":"Tier 2","free_coins":80,"premium_coins":250},{"level":3,"points":600,"label":"Tier 3","free_coins":120,"premium_coins":400},{"level":4,"points":1000,"label":"Tier 4","free_coins":180,"premium_coins":600},{"level":5,"points":1500,"label":"Tier 5","free_coins":250,"premium_coins":1000}]',
+            'Spend and recharge coins to earn Pass Points and unlock free-minute rewards. Go VIP to claim the Premium track too!',
+            '[{"level":1,"points":100,"label":"Tier 1","free_minutes":2,"free_random_minutes":1,"premium_minutes":5,"premium_random_minutes":3},{"level":2,"points":300,"label":"Tier 2","free_minutes":3,"free_random_minutes":2,"premium_minutes":8,"premium_random_minutes":5},{"level":3,"points":600,"label":"Tier 3","free_minutes":5,"free_random_minutes":3,"premium_minutes":12,"premium_random_minutes":8},{"level":4,"points":1000,"label":"Tier 4","free_minutes":8,"free_random_minutes":5,"premium_minutes":20,"premium_random_minutes":12},{"level":5,"points":1500,"label":"Tier 5","free_minutes":12,"free_random_minutes":8,"premium_minutes":30,"premium_random_minutes":20}]',
           )
           .run();
       } catch (err) {
