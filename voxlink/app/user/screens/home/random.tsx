@@ -16,7 +16,7 @@ import { API, resolveMediaUrl } from "@/services/api";
 import { showErrorToast } from "@/components/Toast";
 import { InsufficientCoinsPopup } from "@/components/InsufficientCoinsPopup";
 import { MatchLimitSheet } from "@/components/MatchLimitSheet";
-import { CardMinuteBadge } from "@/components/CardMinuteBadge";
+import { RandomCardIcon } from "@/components/MinuteCardIcons";
 
 const { width: SW, height: SH } = Dimensions.get("window");
 const BG        = "#FBF1EA";
@@ -810,8 +810,21 @@ export default function RandomScreen() {
 
       {/* Bottom Buttons */}
       <View style={[styles.bottomBtns, { paddingBottom: insets.bottom + 16 }]}>
-        {callType === "audio" && phase !== "searching" && (
-          <CardMinuteBadge type="random" style={{ alignSelf: "center", marginBottom: 10 }} />
+        {callType === "audio" && phase !== "searching" && (user?.free_random_minutes ?? 0) > 0 && (
+          <View style={styles.freeCardBanner}>
+            <View style={styles.freeCardBannerIcon}>
+              <RandomCardIcon size={34} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.freeCardBannerTitle}>
+                {user?.free_random_minutes} free random-call minute{(user?.free_random_minutes ?? 0) === 1 ? "" : "s"}
+              </Text>
+              <Text style={styles.freeCardBannerSub}>1 minute FREE with each new host — no coins used</Text>
+            </View>
+            <View style={styles.freeCardBannerTag}>
+              <Text style={styles.freeCardBannerTagTxt}>FREE</Text>
+            </View>
+          </View>
         )}
         <View style={styles.bottomChipsRow}>
           <TouchableOpacity
@@ -964,6 +977,12 @@ const styles = StyleSheet.create({
   statusPillTxt: { fontSize: 12.5, fontFamily: "Poppins_500Medium", color: "#111329", textAlign: "center" },
   // Filter chip
   bottomChipsRow: { flexDirection: "row", alignItems: "center", gap: 8, justifyContent: "center" },
+  freeCardBanner: { flexDirection: "row", alignItems: "center", gap: 10, alignSelf: "stretch", marginHorizontal: 16, marginBottom: 12, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 14, backgroundColor: "rgba(249,115,22,0.10)", borderWidth: 1, borderColor: "rgba(249,115,22,0.35)" },
+  freeCardBannerIcon: { width: 44, height: 44, borderRadius: 12, backgroundColor: "rgba(249,115,22,0.14)", alignItems: "center", justifyContent: "center" },
+  freeCardBannerTitle: { color: "#EA580C", fontSize: 14, fontFamily: "Poppins_700Bold" },
+  freeCardBannerSub: { color: "#9A3412", fontSize: 11.5, fontFamily: "Poppins_500Medium", marginTop: 1 },
+  freeCardBannerTag: { backgroundColor: "#F97316", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 },
+  freeCardBannerTagTxt: { color: "#fff", fontSize: 11, fontFamily: "Poppins_700Bold", letterSpacing: 0.5 },
   filterChip: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 30, paddingVertical: 10, paddingHorizontal: 14, shadowColor: "#000", shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.1, shadowRadius: 18, elevation: 6 },
   filterChipTxt: { fontSize: 13, fontFamily: "Poppins_500Medium", color: "#111329" },
   // Filters sheet
