@@ -3,6 +3,12 @@ import { toast } from '@/lib/toast';
 import { api } from '@/lib/api';
 import { Modal } from '@/components/ui/Modal';
 import { Plus, Edit2, Trash2, Gift, Eye, EyeOff, Coins, Percent } from 'lucide-react';
+import {
+  GiftSvgPreview,
+  parseSvgGift,
+  ANIMATED_GIFT_NAMES,
+  ANIMATED_GIFT_LABELS,
+} from '@/components/GiftSvgPreview';
 
 // Admin-managed chat gift catalog. Users send these coin-priced gifts inside a
 // chat; coins move to the host (counting toward host earnings + levels).
@@ -153,9 +159,11 @@ export default function Gifts() {
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
           {rows.map(g => (
             <div key={g.id} className={`relative bg-card border rounded-2xl p-4 flex flex-col items-center text-center gap-2 ${g.is_active ? 'border-border' : 'border-border opacity-60'}`}>
-              {isImageUrl(g.icon)
-                ? <img src={g.icon} alt={g.name} className="w-12 h-12 object-contain mt-1" />
-                : <div className="text-5xl leading-none mt-1">{g.icon}</div>}
+              {parseSvgGift(g.icon)
+                ? <div className="mt-1"><GiftSvgPreview name={parseSvgGift(g.icon)!} size={48} /></div>
+                : isImageUrl(g.icon)
+                  ? <img src={g.icon} alt={g.name} className="w-12 h-12 object-contain mt-1" />
+                  : <div className="text-5xl leading-none mt-1">{g.icon}</div>}
               <p className="font-bold text-sm">{g.name}</p>
               <span className="flex items-center gap-1 text-xs font-semibold bg-amber-50 text-amber-700 px-2.5 py-1 rounded-full">
                 <Coins size={11} />{Number(g.price_coins).toLocaleString()}
@@ -176,9 +184,11 @@ export default function Gifts() {
       <Modal open={creating || !!editing} onClose={closeModal} title={editing ? 'Edit Gift' : 'New Gift'}>
         <div className="space-y-4">
           <div className="flex flex-col items-center gap-1">
-            {isImageUrl(form.icon)
-              ? <img src={form.icon} alt="preview" className="w-16 h-16 object-contain" />
-              : <div className="text-6xl leading-none">{form.icon || '🎁'}</div>}
+            {parseSvgGift(form.icon)
+              ? <GiftSvgPreview name={parseSvgGift(form.icon)!} size={64} />
+              : isImageUrl(form.icon)
+                ? <img src={form.icon} alt="preview" className="w-16 h-16 object-contain" />
+                : <div className="text-6xl leading-none">{form.icon || '🎁'}</div>}
             <p className="text-xs text-muted-foreground">Preview</p>
           </div>
 
@@ -186,8 +196,24 @@ export default function Gifts() {
             <label className="text-sm font-semibold block mb-1.5">Icon (emoji or image URL)</label>
             <input value={form.icon} onChange={e => setForm({ ...form, icon: e.target.value })}
               className="w-full px-3 py-2.5 border border-border rounded-xl text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30" placeholder="🌹 or https://…/gift.png" />
-            <p className="text-xs text-muted-foreground mt-1">Paste an image URL (PNG/SVG) for custom art, or tap an emoji below.</p>
-            <div className="flex flex-wrap gap-1.5 mt-2">
+            <p className="text-xs text-muted-foreground mt-1">Paste an image URL (PNG/SVG) for custom art, tap an animated icon, or an emoji below.</p>
+
+            <p className="text-[11px] font-semibold text-muted-foreground mt-3 mb-1 uppercase tracking-wide">Animated icons (recommended)</p>
+            <div className="flex flex-wrap gap-1.5">
+              {ANIMATED_GIFT_NAMES.map(n => {
+                const token = `svg:${n}`;
+                const active = form.icon === token;
+                return (
+                  <button key={n} type="button" title={ANIMATED_GIFT_LABELS[n]} onClick={() => setForm({ ...form, icon: token })}
+                    className={`w-11 h-11 rounded-lg border flex items-center justify-center transition-colors ${active ? 'border-primary bg-primary/10' : 'border-border hover:bg-secondary'}`}>
+                    <GiftSvgPreview name={n} size={30} animate={active} />
+                  </button>
+                );
+              })}
+            </div>
+
+            <p className="text-[11px] font-semibold text-muted-foreground mt-3 mb-1 uppercase tracking-wide">Emoji</p>
+            <div className="flex flex-wrap gap-1.5">
               {EMOJI_SUGGESTIONS.map(e => (
                 <button key={e} type="button" onClick={() => setForm({ ...form, icon: e })}
                   className={`text-xl w-9 h-9 rounded-lg border transition-colors ${form.icon === e ? 'border-primary bg-primary/10' : 'border-border hover:bg-secondary'}`}>{e}</button>

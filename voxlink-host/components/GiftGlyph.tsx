@@ -8,11 +8,25 @@
 
 import React from "react";
 import { Image, Text } from "react-native";
-import type { StyleProp, TextStyle, ImageStyle } from "react-native";
+import type { StyleProp, TextStyle, ImageStyle, ViewStyle } from "react-native";
 import { AppIcon, type AppIconName } from "@/components/AppIcon";
+import {
+  AnimatedGiftIcon,
+  ANIMATED_GIFT_NAMES,
+  type AnimatedGiftName,
+} from "@/components/AnimatedGiftIcon";
 
 export function isImageUrl(s?: string | null): boolean {
   return !!s && /^https?:\/\//i.test(s.trim());
+}
+
+/** Returns the animated-gift name if `icon` is a "svg:<name>" token, else null. */
+export function parseSvgGift(s?: string | null): AnimatedGiftName | null {
+  if (!s) return null;
+  const m = s.trim().match(/^svg:(.+)$/i);
+  if (!m) return null;
+  const name = m[1].toLowerCase() as AnimatedGiftName;
+  return ANIMATED_GIFT_NAMES.includes(name) ? name : null;
 }
 
 interface Props {
@@ -25,6 +39,10 @@ interface Props {
 }
 
 export function GiftGlyph({ icon, size = 24, fallback = "gift", fallbackColor = "#A00EE7", style }: Props) {
+  const svgGift = parseSvgGift(icon);
+  if (svgGift) {
+    return <AnimatedGiftIcon name={svgGift} size={size} style={style as StyleProp<ViewStyle>} />;
+  }
   if (isImageUrl(icon)) {
     return (
       <Image
