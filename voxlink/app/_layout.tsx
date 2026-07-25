@@ -5,6 +5,7 @@ import {
   Poppins_700Bold,
   useFonts,
 } from "@expo-google-fonts/poppins";
+import { Feather, MaterialCommunityIcons, FontAwesome5 } from "@expo/vector-icons";
 import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { Stack, router } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
@@ -435,6 +436,10 @@ function RootLayout() {
     Poppins_500Medium,
     Poppins_600SemiBold,
     Poppins_700Bold,
+    // AppIcon glyphs (crown/trophy/gift/fire/…) come from these families.
+    ...Feather.font,
+    ...MaterialCommunityIcons.font,
+    ...FontAwesome5.font,
   });
 
   // On web skip the font-loading gate entirely — system fallback fonts render

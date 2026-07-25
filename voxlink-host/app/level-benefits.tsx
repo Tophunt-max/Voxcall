@@ -12,6 +12,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { useColors } from "@/hooks/useColors";
+import { AppIcon, type AppIconName } from "@/components/AppIcon";
 import { API } from "@/services/api";
 import type { HostLevelResponse, HostLevelDef } from "@/services/api";
 
@@ -45,9 +46,10 @@ function cardShadow(color = "#000", opacity = 0.06) {
   });
 }
 
-function Chip({ label, bg, color }: { label: string; bg: string; color: string }) {
+function Chip({ icon, label, bg, color }: { icon?: AppIconName; label: string; bg: string; color: string }) {
   return (
     <View style={[styles.chip, { backgroundColor: bg }]}>
+      {icon ? <AppIcon name={icon} size={13} color={color} /> : null}
       <Text style={[styles.chipText, { color }]}>{label}</Text>
     </View>
   );
@@ -85,7 +87,7 @@ function LevelRow({
         {!isLast ? <View style={[styles.railLine, { backgroundColor: isUnlocked ? hexToRgba(accent, 0.35) : colors.border }]} /> : null}
         <View style={[styles.node, { backgroundColor: isUnlocked ? hexToRgba(accent, 0.16) : colors.muted, borderColor: isCurrent ? accent : colors.background }]}>
           <Text style={[styles.nodeBadge, { opacity: isUnlocked ? 1 : 0.45 }]}>{def.badge}</Text>
-          {!isUnlocked ? <View style={styles.lockDot}><Text style={{ fontSize: 9 }}>🔒</Text></View> : null}
+          {!isUnlocked ? <View style={styles.lockDot}><AppIcon name="lock" size={10} color="#6B7280" /></View> : null}
         </View>
       </View>
 
@@ -122,20 +124,20 @@ function LevelRow({
         {/* Requirements */}
         <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Requirements</Text>
         <View style={styles.chipsRow}>
-          <Chip label={`📞 ${def.min_calls.toLocaleString()} rated calls`} bg={hexToRgba("#2563EB", 0.12)} color="#2563EB" />
-          <Chip label={`⭐ ${def.min_rating.toFixed(1)} rating`} bg={hexToRgba("#F59E0B", 0.15)} color="#C77700" />
-          {def.min_minutes > 0 ? <Chip label={`⏱️ ${def.min_minutes.toLocaleString()} min`} bg={hexToRgba("#14B8A6", 0.14)} color="#0E9384" /> : null}
-          {def.min_earnings > 0 ? <Chip label={`🪙 ${def.min_earnings.toLocaleString()} earned`} bg={hexToRgba("#E0A106", 0.15)} color="#B07A00" /> : null}
+          <Chip icon="phone" label={`${def.min_calls.toLocaleString()} rated calls`} bg={hexToRgba("#2563EB", 0.12)} color="#2563EB" />
+          <Chip icon="star" label={`${def.min_rating.toFixed(1)} rating`} bg={hexToRgba("#F59E0B", 0.15)} color="#C77700" />
+          {def.min_minutes > 0 ? <Chip icon="timer" label={`${def.min_minutes.toLocaleString()} min`} bg={hexToRgba("#14B8A6", 0.14)} color="#0E9384" /> : null}
+          {def.min_earnings > 0 ? <Chip icon="coin" label={`${def.min_earnings.toLocaleString()} earned`} bg={hexToRgba("#E0A106", 0.15)} color="#B07A00" /> : null}
         </View>
 
         {/* Rewards + perks */}
         <Text style={[styles.sectionLabel, { color: colors.mutedForeground, marginTop: 10 }]}>Rewards & Perks</Text>
         <View style={styles.chipsRow}>
-          {def.coin_reward > 0 ? <Chip label={`🎁 +${def.coin_reward.toLocaleString()} coins`} bg={hexToRgba("#D9A406", 0.16)} color="#B07A00" /> : null}
-          <Chip label={`💰 ${sharePct}% earnings`} bg={hexToRgba("#16A34A", 0.13)} color="#15803D" />
-          <Chip label={`🎙️ Audio ${def.perks?.max_audio_rate ?? def.perks?.max_rate ?? 100}/min`} bg={hexToRgba("#2563EB", 0.12)} color="#2563EB" />
-          <Chip label={`📹 Video ${def.perks?.max_video_rate ?? def.perks?.max_rate ?? 100}/min`} bg={hexToRgba("#7C3AED", 0.13)} color="#7C3AED" />
-          {(def.perks?.rank_boost ?? 0) > 0 ? <Chip label="🚀 Higher visibility" bg={hexToRgba("#DB2777", 0.13)} color="#DB2777" /> : null}
+          {def.coin_reward > 0 ? <Chip icon="gift" label={`+${def.coin_reward.toLocaleString()} coins`} bg={hexToRgba("#D9A406", 0.16)} color="#B07A00" /> : null}
+          <Chip icon="money" label={`${sharePct}% earnings`} bg={hexToRgba("#16A34A", 0.13)} color="#15803D" />
+          <Chip icon="mic" label={`Audio ${def.perks?.max_audio_rate ?? def.perks?.max_rate ?? 100}/min`} bg={hexToRgba("#2563EB", 0.12)} color="#2563EB" />
+          <Chip icon="video" label={`Video ${def.perks?.max_video_rate ?? def.perks?.max_rate ?? 100}/min`} bg={hexToRgba("#7C3AED", 0.13)} color="#7C3AED" />
+          {(def.perks?.rank_boost ?? 0) > 0 ? <Chip icon="rocket" label="Higher visibility" bg={hexToRgba("#DB2777", 0.13)} color="#DB2777" /> : null}
         </View>
       </View>
     </View>
@@ -177,13 +179,19 @@ export default function LevelBenefitsScreen() {
 
           {data.is_max_level ? (
             <View style={styles.heroMaxPill}>
-              <Text style={styles.heroMaxText}>🏆 Top level reached — you're Elite!</Text>
+              <AppIcon name="trophy" size={15} color="#fff" />
+              <Text style={styles.heroMaxText}>Top level reached — you're Elite!</Text>
             </View>
           ) : (
             <View style={styles.heroProgressWrap}>
               <View style={styles.heroProgressLabels}>
                 <Text style={styles.heroProgressText}>{pct}% to {data.next?.name}</Text>
-                {data.next?.coin_reward ? <Text style={styles.heroProgressText}>🎁 +{data.next.coin_reward.toLocaleString()}</Text> : null}
+                {data.next?.coin_reward ? (
+                  <View style={styles.heroRewardChip}>
+                    <AppIcon name="gift" size={13} color="#fff" />
+                    <Text style={styles.heroProgressText}>+{data.next.coin_reward.toLocaleString()}</Text>
+                  </View>
+                ) : null}
               </View>
               <View style={styles.heroTrack}>
                 <View style={[styles.heroFill, { width: `${pct}%` }]} />
@@ -257,8 +265,9 @@ const styles = StyleSheet.create({
   heroBadge: { width: 64, height: 64, borderRadius: 20, backgroundColor: "rgba(255,255,255,0.2)", alignItems: "center", justifyContent: "center" },
   heroLevelLabel: { fontSize: 11, fontFamily: "Poppins_600SemiBold", color: "rgba(255,255,255,0.8)", letterSpacing: 1.5 },
   heroLevelName: { fontSize: 24, fontFamily: "Poppins_700Bold", color: "#fff", marginTop: 1 },
-  heroMaxPill: { marginTop: 16, backgroundColor: "rgba(255,255,255,0.18)", borderRadius: 14, paddingVertical: 10, alignItems: "center" },
+  heroMaxPill: { marginTop: 16, backgroundColor: "rgba(255,255,255,0.18)", borderRadius: 14, paddingVertical: 10, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 6 },
   heroMaxText: { fontSize: 13, fontFamily: "Poppins_600SemiBold", color: "#fff" },
+  heroRewardChip: { flexDirection: "row", alignItems: "center", gap: 4 },
   heroProgressWrap: { marginTop: 16 },
   heroProgressLabels: { flexDirection: "row", justifyContent: "space-between", marginBottom: 6 },
   heroProgressText: { fontSize: 12.5, fontFamily: "Poppins_600SemiBold", color: "#fff" },
@@ -294,7 +303,7 @@ const styles = StyleSheet.create({
   statusText: { fontSize: 11, fontFamily: "Poppins_600SemiBold" },
   sectionLabel: { fontSize: 10.5, fontFamily: "Poppins_600SemiBold", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 7 },
   chipsRow: { flexDirection: "row", flexWrap: "wrap", gap: 7 },
-  chip: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10 },
+  chip: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10 },
   chipText: { fontSize: 12, fontFamily: "Poppins_500Medium" },
   footnote: { fontSize: 12, fontFamily: "Poppins_400Regular", lineHeight: 18, marginTop: 4, paddingHorizontal: 16 },
 });

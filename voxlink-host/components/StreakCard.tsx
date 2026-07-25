@@ -8,6 +8,7 @@ import React from "react";
 import { View, Text, StyleSheet, Platform } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useColors } from "@/hooks/useColors";
+import { AppIcon } from "@/components/AppIcon";
 import type { HostStreakStatus } from "@/services/api";
 
 const FLAME_GRAD: readonly [string, string] = ["#F97316", "#EF4444"];
@@ -32,7 +33,7 @@ export default function StreakCard({ streak }: { streak?: HostStreakStatus | nul
   return (
     <View style={[styles.wrap, { backgroundColor: colors.card, borderColor: colors.border }, cardShadow()]}>
       <LinearGradient colors={FLAME_GRAD} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.flameBadge}>
-        <Text style={styles.flameEmoji}>🔥</Text>
+        <AppIcon name="fire" size={26} color="#fff" />
       </LinearGradient>
 
       <View style={{ flex: 1 }}>
@@ -46,11 +47,17 @@ export default function StreakCard({ streak }: { streak?: HostStreakStatus | nul
         </View>
 
         {streak.at_risk ? (
-          <Text style={styles.atRisk}>⏰ Come online today to keep your streak!</Text>
+          <View style={styles.streakLine}>
+            <AppIcon name="alarm" size={13} color="#EF4444" />
+            <Text style={styles.atRisk}>Come online today to keep your streak!</Text>
+          </View>
         ) : streak.active_today ? (
-          <Text style={[styles.sub, { color: colors.mutedForeground }]}>
-            ✅ Checked in today{milestone ? ` · ${toGo} day${toGo === 1 ? "" : "s"} to +${milestone.reward} coins` : ""}
-          </Text>
+          <View style={styles.streakLine}>
+            <AppIcon name="check" size={13} color="#16A34A" />
+            <Text style={[styles.sub, { color: colors.mutedForeground, marginTop: 0, flex: 1 }]}>
+              Checked in today{milestone ? ` · ${toGo} day${toGo === 1 ? "" : "s"} to +${milestone.reward} coins` : ""}
+            </Text>
+          </View>
         ) : (
           <Text style={[styles.sub, { color: colors.mutedForeground }]}>
             {days > 0
@@ -61,8 +68,9 @@ export default function StreakCard({ streak }: { streak?: HostStreakStatus | nul
 
         {milestone ? (
           <View style={styles.milestoneRow}>
+            <AppIcon name="target" size={12} color={colors.accent} />
             <Text style={[styles.milestoneText, { color: colors.accent }]}>
-              🎯 Day {milestone.day}: +{milestone.reward.toLocaleString()} coins
+              Day {milestone.day}: +{milestone.reward.toLocaleString()} coins
             </Text>
           </View>
         ) : null}
@@ -96,7 +104,8 @@ const styles = StyleSheet.create({
   dayText: { fontSize: 16, fontFamily: "Poppins_700Bold" },
   best: { fontSize: 11, fontFamily: "Poppins_500Medium" },
   sub: { fontSize: 12, fontFamily: "Poppins_400Regular", marginTop: 3, lineHeight: 17 },
-  atRisk: { fontSize: 12, fontFamily: "Poppins_600SemiBold", color: "#EF4444", marginTop: 3 },
-  milestoneRow: { marginTop: 6 },
+  atRisk: { fontSize: 12, fontFamily: "Poppins_600SemiBold", color: "#EF4444" },
+  streakLine: { flexDirection: "row", alignItems: "center", gap: 5, marginTop: 3 },
+  milestoneRow: { marginTop: 6, flexDirection: "row", alignItems: "center", gap: 5 },
   milestoneText: { fontSize: 11.5, fontFamily: "Poppins_600SemiBold" },
 });

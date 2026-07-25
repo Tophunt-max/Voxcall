@@ -10,6 +10,7 @@ import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Platform }
 import { LinearGradient } from "expo-linear-gradient";
 import type { HostLevelResponse } from "@/services/api";
 import { useColors } from "@/hooks/useColors";
+import { AppIcon, type AppIconName } from "@/components/AppIcon";
 
 interface LevelCardProps {
   data?: HostLevelResponse;
@@ -37,11 +38,11 @@ function rgba(hex: string, a: number): string {
 
 // Per-metric colour so the requirement pills are vibrant + scannable.
 const METRIC = {
-  calls: { tint: "#2563EB", icon: "📞" },
-  rating: { tint: "#F59E0B", icon: "⭐" },
-  minutes: { tint: "#14B8A6", icon: "⏱️" },
-  earnings: { tint: "#E0A106", icon: "🪙" },
-};
+  calls: { tint: "#2563EB", icon: "phone" },
+  rating: { tint: "#F59E0B", icon: "star" },
+  minutes: { tint: "#14B8A6", icon: "timer" },
+  earnings: { tint: "#E0A106", icon: "coin" },
+} as const;
 
 function cardShadow(color: string) {
   return Platform.select({
@@ -54,7 +55,7 @@ function cardShadow(color: string) {
 function ReqPill({
   label, icon, tint, current, required, met, isRating, textColor, mutedColor,
 }: {
-  label: string; icon: string; tint: string; current: number; required: number; met: boolean; isRating?: boolean;
+  label: string; icon: AppIconName; tint: string; current: number; required: number; met: boolean; isRating?: boolean;
   textColor: string; mutedColor: string;
 }) {
   const cur = isRating ? current.toFixed(1) : Math.round(current).toLocaleString();
@@ -62,11 +63,11 @@ function ReqPill({
   return (
     <View style={[reqStyles.pill, { backgroundColor: rgba(tint, 0.1), borderColor: rgba(tint, 0.22) }]}>
       <View style={reqStyles.pillTop}>
-        <Text style={reqStyles.pillIcon}>{icon}</Text>
+        <AppIcon name={icon} size={12} color={tint} />
         <Text style={[reqStyles.pillLabel, { color: tint }]} numberOfLines={1}>{label}</Text>
         <View style={{ flex: 1 }} />
         <View style={[reqStyles.check, { backgroundColor: met ? tint : "transparent", borderColor: met ? tint : rgba(tint, 0.5) }]}>
-          <Text style={[reqStyles.checkText, { color: met ? "#fff" : tint }]}>{met ? "✓" : ""}</Text>
+          {met ? <AppIcon name="check" size={10} color="#fff" /> : null}
         </View>
       </View>
       <Text style={[reqStyles.pillValue, { color: textColor }]}>
@@ -117,7 +118,8 @@ export default function LevelCard({ data, loading, onPress }: LevelCardProps) {
 
         {is_max_level ? (
           <View style={styles.maxBanner}>
-            <Text style={styles.maxText}>🏆 Top level reached — you're an Elite host!</Text>
+            <AppIcon name="trophy" size={15} color="#fff" />
+            <Text style={styles.maxText}>Top level reached — you're an Elite host!</Text>
           </View>
         ) : (
           <View style={styles.progressWrap}>
@@ -137,7 +139,8 @@ export default function LevelCard({ data, loading, onPress }: LevelCardProps) {
         <View style={styles.body}>
           {pct >= 80 && next ? (
             <View style={[styles.nudge, { backgroundColor: colors.accentLight ?? colors.muted }]}>
-              <Text style={[styles.nudgeText, { color: accent }]}>🔥 Almost there — {pct}% to {next.name}!</Text>
+              <AppIcon name="fire" size={13} color={accent} />
+              <Text style={[styles.nudgeText, { color: accent }]}>Almost there — {pct}% to {next.name}!</Text>
             </View>
           ) : null}
 
@@ -156,7 +159,7 @@ export default function LevelCard({ data, loading, onPress }: LevelCardProps) {
             <View style={[styles.rewardRow, { borderTopColor: colors.border }]}>
               <Text style={[styles.rewardText, { color: colors.mutedForeground }]}>Reach {next.name} to earn</Text>
               <View style={styles.rewardCoinWrap}>
-                <Text style={styles.rewardCoinEmoji}>🎁</Text>
+                <AppIcon name="gift" size={14} color={colors.coinGoldText} />
                 <Text style={[styles.rewardCoins, { color: colors.coinGoldText }]}>+{next.coin_reward.toLocaleString()}</Text>
               </View>
             </View>
@@ -181,7 +184,7 @@ const styles = StyleSheet.create({
   levelSub: { fontSize: 12, fontFamily: "Poppins_400Regular", color: "rgba(255,255,255,0.85)", marginTop: 2 },
   chevron: { fontSize: 26, fontFamily: "Poppins_400Regular", color: "rgba(255,255,255,0.9)", marginLeft: 4 },
 
-  maxBanner: { backgroundColor: "rgba(255,255,255,0.18)", borderRadius: 12, padding: 11, alignItems: "center" },
+  maxBanner: { backgroundColor: "rgba(255,255,255,0.18)", borderRadius: 12, padding: 11, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 6 },
   maxText: { fontSize: 13, fontFamily: "Poppins_600SemiBold", color: "#fff" },
 
   progressWrap: { gap: 7 },
@@ -192,7 +195,7 @@ const styles = StyleSheet.create({
   fill: { height: 10, borderRadius: 5, backgroundColor: "#fff" },
 
   body: { padding: 16, gap: 12 },
-  nudge: { borderRadius: 10, paddingVertical: 8, paddingHorizontal: 10, alignItems: "center" },
+  nudge: { borderRadius: 10, paddingVertical: 8, paddingHorizontal: 10, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 6 },
   nudgeText: { fontSize: 12, fontFamily: "Poppins_600SemiBold" },
   reqRow: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   rewardRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth },

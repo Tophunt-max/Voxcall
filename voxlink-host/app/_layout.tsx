@@ -5,7 +5,7 @@ import {
   Poppins_700Bold,
   useFonts,
 } from "@expo-google-fonts/poppins";
-import { Feather } from "@expo/vector-icons";
+import { Feather, MaterialCommunityIcons, FontAwesome5 } from "@expo/vector-icons";
 import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { Stack, router } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
@@ -451,6 +451,9 @@ function RootLayout() {
     // reliably (the host app hadn't used @expo/vector-icons before, so the
     // font was never registered → icons showed blank).
     ...Feather.font,
+    // AppIcon glyphs (crown/trophy/gift/fire/…) come from these families.
+    ...MaterialCommunityIcons.font,
+    ...FontAwesome5.font,
   });
 
   // On web skip the font-loading gate entirely — system fallback fonts render
