@@ -6,6 +6,7 @@ import {
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
+import { AppIcon } from "@/components/AppIcon";
 import { useLanguage } from "@/context/LanguageContext";
 import type { Translations } from "@/localization/en";
 import { API, resolveMediaUrl } from "@/services/api";
@@ -28,7 +29,7 @@ function Stars({ count }: { count: number }) {
   return (
     <View style={{ flexDirection: "row", gap: 2 }}>
       {[1,2,3,4,5].map(i => (
-        <Text key={i} style={{ color: i <= count ? "#FFA100" : "#E0E0E0", fontSize: 14 }}>★</Text>
+        <AppIcon key={i} name="star" size={14} color={i <= count ? "#FFA100" : "#E0E0E0"} />
       ))}
     </View>
   );
@@ -120,7 +121,7 @@ export default function AllReviewsScreen() {
               return (
                 <View key={star} style={styles.barRow}>
                   <Text style={[styles.barLabel, { color: colors.mutedForeground }]}>{star}</Text>
-                  <Text style={{ color: "#FFA100", fontSize: 11 }}>★</Text>
+                  <AppIcon name="star" size={11} color="#FFA100" />
                   <View style={[styles.barBg, { backgroundColor: colors.border }]}>
                     <View style={[styles.barFill, { width: `${pct * 100}%` as any, backgroundColor: "#FFA100" }]} />
                   </View>
@@ -144,7 +145,7 @@ export default function AllReviewsScreen() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#A00EE7" colors={["#A00EE7"]} />}
           ListEmptyComponent={
             <View style={{ alignItems: "center", paddingTop: 60, gap: 8 }}>
-              <Text style={{ fontSize: 40 }}>💬</Text>
+              <AppIcon name="chat" size={40} color={colors.mutedForeground} />
               <Text style={[styles.emptyText, { color: colors.text }]}>{t.reviews.noReviews}</Text>
               <Text style={{ color: colors.mutedForeground, fontSize: 13, fontFamily: "Poppins_400Regular" }}>
                 {t.reviews.beFirst}

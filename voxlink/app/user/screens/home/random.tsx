@@ -15,6 +15,7 @@ import type { Translations } from "@/localization/en";
 import { API, resolveMediaUrl } from "@/services/api";
 import { showErrorToast } from "@/components/Toast";
 import { InsufficientCoinsPopup } from "@/components/InsufficientCoinsPopup";
+import { AppIcon } from "@/components/AppIcon";
 import { MatchLimitSheet } from "@/components/MatchLimitSheet";
 import { FreeMinutesBanner } from "@/components/FreeMinutesBanner";
 
@@ -456,9 +457,11 @@ function ConnectingScreen({ host, callType, onAnswered, onNext }: {
           <Text style={styles.matchName}>{host.name}</Text>
 
           <View style={styles.matchRatingRow}>
-            <Text style={styles.matchStar}>⭐</Text>
+            <AppIcon name="star" size={14} color="#FFA100" style={styles.matchStar} />
             <Text style={styles.matchRating}>{(host.rating ?? 0).toFixed(1)}</Text>
-            <Text style={styles.matchCoins}>  •  🪙 {host.coins_per_minute}/min</Text>
+            <Text style={styles.matchCoins}>  •  </Text>
+            <AppIcon name="coin" size={12} color="#FFA100" />
+            <Text style={styles.matchCoins}> {host.coins_per_minute}/min</Text>
           </View>
 
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.matchTopicsRow}>
@@ -469,9 +472,10 @@ function ConnectingScreen({ host, callType, onAnswered, onNext }: {
             ))}
           </ScrollView>
 
-          <Text style={styles.matchCallType}>
-            {callType === "video" ? `🎥 ${tr.random.videoCall}` : `🎤 ${tr.random.voiceCall}`}
-          </Text>
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5 }}>
+            <AppIcon name={callType === "video" ? "video" : "mic"} size={14} color="#fff" />
+            <Text style={styles.matchCallType}>{callType === "video" ? tr.random.videoCall : tr.random.voiceCall}</Text>
+          </View>
 
           <View style={styles.connectingRow}>
             <ActivityIndicator color="#8400FF" />

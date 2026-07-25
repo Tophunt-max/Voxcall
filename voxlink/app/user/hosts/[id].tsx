@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { confirmDialog, alertDialog } from "@/utils/dialog";
+import { AppIcon } from "@/components/AppIcon";
 import {
   View,
   Text,
@@ -522,7 +523,7 @@ export default function HostDetailScreen() {
                 accessibilityRole="button"
                 accessibilityLabel={isFavorite ? `Remove ${hostName} from favorites` : `Add ${hostName} to favorites`}
               >
-                <Text style={{ fontSize: 17 }}>{isFavorite ? "❤️" : "🤍"}</Text>
+                <AppIcon name={isFavorite ? "heart" : "heart-outline"} size={18} color={isFavorite ? "#EF4444" : "#9CA3AF"} />
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={() => setReportModal(true)}
@@ -616,7 +617,7 @@ export default function HostDetailScreen() {
           {/* Availability window (host-set schedule) */}
           {scheduleText ? (
             <View style={s.scheduleRow}>
-              <Text style={s.scheduleClock}>🕒</Text>
+              <AppIcon name="clock" size={13} color={subColor} style={s.scheduleClock} />
               <Text style={[s.scheduleTxt, { color: subColor }]} numberOfLines={1}>{scheduleText}</Text>
             </View>
           ) : null}
