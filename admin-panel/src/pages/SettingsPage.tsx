@@ -978,6 +978,25 @@ function PlatformEconomicsDashboard({ settings, inrRate }: { settings: Record<st
             : r.est.margin < 10
             ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400'
             : 'bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-400';
+          // Coin annotations shown alongside each ₹ figure:
+          //  • User pays  → coins actually charged to the caller (= the rate).
+          //  • Host cash  → coins credited to the host = floor(rate × share).
+          //  • Agora/Gateway/Net → ₹ cost expressed as its coin-equivalent at
+          //    the coin purchase value (1 coin = ₹purchase), so every line
+          //    reads in coins as well as rupees.
+          const fmtC = (n: number) => {
+            const v = Math.round(n * 10) / 10;
+            return Number.isInteger(v) ? String(v) : v.toFixed(1);
+          };
+          const p = cfg.purchase > 0 ? cfg.purchase : 1;
+          const chargedCoins = r.rate;
+          const hostCoins = Math.floor(r.rate * hostShare);
+          const agoraCoins = r.est.agoraCost / p;
+          const gatewayCoins = r.est.gatewayFee / p;
+          const netCoins = r.est.net / p;
+          const CoinTag = ({ children }: { children: string }) => (
+            <span className="text-muted-foreground/60 font-normal mr-1.5">{children}c</span>
+          );
           return (
             <div key={r.key} className="rounded-xl border border-border bg-background p-3 space-y-2">
               <div className="flex items-center justify-between">
@@ -992,23 +1011,23 @@ function PlatformEconomicsDashboard({ settings, inrRate }: { settings: Record<st
               <div className="text-[11px] space-y-0.5 font-mono">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">User pays</span>
-                  <span className="text-green-600 dark:text-green-400">+₹{r.est.userPays.toFixed(2)}</span>
+                  <span className="text-green-600 dark:text-green-400"><CoinTag>{fmtC(chargedCoins)}</CoinTag>+₹{r.est.userPays.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Host cash</span>
-                  <span className="text-amber-600 dark:text-amber-400">−₹{r.est.hostPayout.toFixed(2)}</span>
+                  <span className="text-amber-600 dark:text-amber-400"><CoinTag>{fmtC(hostCoins)}</CoinTag>−₹{r.est.hostPayout.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Agora</span>
-                  <span className="text-muted-foreground">−₹{r.est.agoraCost.toFixed(3)}</span>
+                  <span className="text-muted-foreground"><CoinTag>{fmtC(agoraCoins)}</CoinTag>−₹{r.est.agoraCost.toFixed(3)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Gateway</span>
-                  <span className="text-muted-foreground">−₹{r.est.gatewayFee.toFixed(2)}</span>
+                  <span className="text-muted-foreground"><CoinTag>{fmtC(gatewayCoins)}</CoinTag>−₹{r.est.gatewayFee.toFixed(2)}</span>
                 </div>
                 <div className="border-t border-border pt-1 mt-1 flex justify-between font-bold">
                   <span>Platform net</span>
-                  <span className={netColour}>₹{r.est.net.toFixed(2)}/min</span>
+                  <span className={netColour}><CoinTag>{fmtC(netCoins)}</CoinTag>₹{r.est.net.toFixed(2)}/min</span>
                 </div>
               </div>
               <div className="flex items-center justify-between text-[10px]">
