@@ -263,11 +263,10 @@ const styles = StyleSheet.create({
   card: {
     width: "100%",
     borderRadius: 24,
-    paddingTop: 24,
-    paddingBottom: 22,
+    paddingTop: 26,
+    paddingBottom: 24,
     paddingHorizontal: 22,
     alignItems: "center",
-    gap: 8,
     overflow: "hidden",
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.28,
@@ -280,7 +279,7 @@ const styles = StyleSheet.create({
     borderRadius: 32,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 6,
+    marginBottom: 14,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.18,
@@ -291,6 +290,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontFamily: "Poppins_700Bold",
     textAlign: "center",
+    marginBottom: 8,
   },
   message: {
     fontSize: 13.5,
@@ -299,7 +299,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   dismissBtn: {
-    marginTop: 12,
+    marginTop: 20,
     paddingHorizontal: 34,
     paddingVertical: 11,
     borderRadius: 14,
@@ -315,5 +315,6 @@ const styles = StyleSheet.create({
     left: 0,
     height: 3,
     opacity: 0.65,
+    borderTopRightRadius: 3,
   },
 });
