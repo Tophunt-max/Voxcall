@@ -40,6 +40,7 @@ import MonthlyPassCard from "@/components/MonthlyPassCard";
 
 const ACCENT = ["#C64BE8", "#8A2BD8"] as const;
 const HEADER_BG = ["#7C3AED", "#4F46E5"] as const;
+const HERO_BG = ["#7C3AED", "#DB2777"] as const;
 const SPIN_BG = ["#F59E0B", "#EF4444"] as const;
 const CAMPAIGN_BG = ["#3B82F6", "#8B5CF6"] as const;
 const CHECKIN_BG = ["#10B981", "#059669"] as const;
@@ -174,6 +175,7 @@ export default function TasksScreen() {
 
   const dailyResetSec = data ? Math.max(0, data.daily_reset - now) : 0;
   const monthEndSec = data ? Math.max(0, data.month_end - now) : 0;
+  const claimableCount = liveTasks.filter((t) => t.claimable).length;
 
   const countDone = (list: RewardTask[]) => list.filter((t) => t.already_claimed).length;
 
@@ -396,9 +398,28 @@ export default function TasksScreen() {
         >
           {tab === "tasks" ? (
             <>
-              {/* ── Monthly Pass entry ─────────────────────────────────── */}
+              {/* ── Hero banner: season countdown + claimable + Pass CTA ── */}
               <View style={styles.section}>
-                <MonthlyPassCard onChanged={load} />
+                <LinearGradient colors={HERO_BG as any} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.hero}>
+                  <View style={styles.heroGlow} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.heroKicker}>SEASON REWARDS</Text>
+                    <Text style={styles.heroTitle}>Complete tasks, earn coins</Text>
+                    <View style={styles.heroCountdownRow}>
+                      <Text style={styles.heroCountdownIcon}>⏳</Text>
+                      <Text style={styles.heroCountdownText}>Ends in {formatDaysClock(monthEndSec)}</Text>
+                    </View>
+                    <View style={styles.heroChips}>
+                      <View style={styles.heroChip}>
+                        <Text style={styles.heroChipText}>🎁 {claimableCount} ready</Text>
+                      </View>
+                      <TouchableOpacity onPress={() => setTab("rewards")} activeOpacity={0.85} style={styles.heroPassBtn}>
+                        <Text style={styles.heroPassBtnText}>👑 View Pass →</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                  <Text style={styles.heroEmoji}>🏆</Text>
+                </LinearGradient>
               </View>
 
               {/* ── Daily Check-in ─────────────────────────────────────── */}
@@ -452,7 +473,16 @@ export default function TasksScreen() {
                 </View>
               )}
 
-              {dailyTasks.length === 0 && monthlyTasks.length === 0 && !checkinTask && (
+              {/* ── More Tasks (one-time / ongoing) — ALL tasks live here ── */}
+              {otherTasks.length > 0 && (
+                <View style={styles.section}>
+                  {sectionHeader("More Tasks", countDone(otherTasks), otherTasks.length, "", "")}
+                  <View style={{ height: 10 }} />
+                  {otherTasks.map(renderTaskCard)}
+                </View>
+              )}
+
+              {dailyTasks.length === 0 && monthlyTasks.length === 0 && otherTasks.length === 0 && !checkinTask && (
                 <View style={styles.emptyWrap}>
                   <Text style={[styles.emptyText, { color: colors.subText }]}>No tasks available right now. Check back soon!</Text>
                 </View>
@@ -460,6 +490,12 @@ export default function TasksScreen() {
             </>
           ) : (
             <>
+              {/* ── Monthly Pass tier ladder (Common + VIP) ────────────── */}
+              <View style={styles.section}>
+                <Text style={[styles.sectionTitle, { color: colors.text }]}>👑 Monthly Pass</Text>
+                <MonthlyPassCard onChanged={load} />
+              </View>
+
               {/* ── Active campaign banners (FOMO) ─────────────────────── */}
               {activeCampaigns.length > 0 && (
                 <View style={styles.section}>
@@ -533,14 +569,6 @@ export default function TasksScreen() {
                   </TouchableOpacity>
                 </View>
               </View>
-
-              {/* ── Other tasks (one-time / ongoing) ───────────────────── */}
-              {otherTasks.length > 0 && (
-                <View style={styles.section}>
-                  <Text style={[styles.sectionTitle, { color: colors.text }]}>Bonus Tasks</Text>
-                  {otherTasks.map(renderTaskCard)}
-                </View>
-              )}
 
               {/* ── Achievements ───────────────────────────────────────── */}
               {data?.achievements && data.achievements.length > 0 && (() => {
@@ -624,6 +652,21 @@ const styles = StyleSheet.create({
   sectionHeaderRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 6 },
   countdownPill: { backgroundColor: "rgba(124,58,237,0.12)", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 },
   countdownPillText: { color: "#7C3AED", fontSize: 11.5, fontFamily: "Poppins_600SemiBold" },
+
+  // Hero banner (top of Tasks tab)
+  hero: { flexDirection: "row", alignItems: "center", borderRadius: 20, padding: 18, overflow: "hidden", ...Platform.select({ ios: { shadowColor: "#7C3AED", shadowOpacity: 0.32, shadowRadius: 14, shadowOffset: { width: 0, height: 6 } }, android: { elevation: 5 }, web: { boxShadow: "0 6px 18px rgba(124,58,237,0.32)" } as any }) },
+  heroGlow: { position: "absolute", top: -40, right: -30, width: 130, height: 130, borderRadius: 65, backgroundColor: "rgba(255,255,255,0.12)" },
+  heroKicker: { color: "rgba(255,255,255,0.85)", fontSize: 10.5, fontFamily: "Poppins_700Bold", letterSpacing: 1.4 },
+  heroTitle: { color: "#fff", fontSize: 19, fontFamily: "Poppins_700Bold", marginTop: 3, marginBottom: 8 },
+  heroCountdownRow: { flexDirection: "row", alignItems: "center", gap: 5, alignSelf: "flex-start", backgroundColor: "rgba(0,0,0,0.22)", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 },
+  heroCountdownIcon: { fontSize: 12 },
+  heroCountdownText: { color: "#fff", fontSize: 12.5, fontFamily: "Poppins_700Bold" },
+  heroChips: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 12 },
+  heroChip: { backgroundColor: "rgba(255,255,255,0.2)", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12 },
+  heroChipText: { color: "#fff", fontSize: 12, fontFamily: "Poppins_600SemiBold" },
+  heroPassBtn: { backgroundColor: "#fff", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
+  heroPassBtnText: { color: "#7C3AED", fontSize: 12, fontFamily: "Poppins_700Bold" },
+  heroEmoji: { fontSize: 46, marginLeft: 8 },
 
   emptyWrap: { padding: 40, alignItems: "center" },
   emptyText: { fontSize: 13, fontFamily: "Poppins_500Medium", textAlign: "center" },
