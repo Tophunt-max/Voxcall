@@ -175,8 +175,24 @@ export default function SettingsPage() {
   const [dirty, setDirty] = useState<Record<string, boolean>>({});
   const [lastSynced, setLastSynced] = useState(0);
   const [now, setNow] = useState(Date.now());
+  // Base-level (Level 1) host earning share — what a NEW host actually earns
+  // per call. Real billing uses the PER-LEVEL earning_share (Level Config),
+  // NOT the legacy global host_revenue_share, so the economics dashboard uses
+  // this to keep "Host cash" accurate for a base-level host.
+  const [baseEarningShare, setBaseEarningShare] = useState<number | null>(null);
   const dirtyRef = useRef<Record<string, boolean>>({});
   useEffect(() => { dirtyRef.current = dirty; }, [dirty]);
+  useEffect(() => {
+    api.getLevelConfig()
+      .then((cfg) => {
+        if (!Array.isArray(cfg) || !cfg.length) return;
+        const sorted = [...cfg].sort((a: any, b: any) => (a.level ?? 0) - (b.level ?? 0));
+        const base: any = sorted[0];
+        const share = Number(base?.perks?.earning_share ?? base?.earning_share);
+        if (Number.isFinite(share) && share > 0) setBaseEarningShare(share);
+      })
+      .catch(() => { /* falls back to the global host_revenue_share */ });
+  }, []);
 
   const syncFromServer = useCallback(async (initial = false) => {
     try {
@@ -281,7 +297,7 @@ export default function SettingsPage() {
 
       {/* Live platform-economics dashboard — sits at the top so admin sees
         the money impact of every knob BEFORE scrolling to change one. */}
-      <PlatformEconomicsDashboard settings={settings} inrRate={inrRate} />
+      <PlatformEconomicsDashboard settings={settings} inrRate={inrRate} baseEarningShare={baseEarningShare} />
 
       {settingGroups.map(group => (
         <div key={group.group} className="bg-card border border-border rounded-2xl overflow-hidden">
@@ -742,7 +758,7 @@ function CoinChips({
 // Everything reads directly from the `settings` state map — so as soon as
 // admin edits ANY dependent input above, this whole dashboard recomputes
 // in the same render tick. No debounce, no manual "recalculate" button.
-function PlatformEconomicsDashboard({ settings, inrRate }: { settings: Record<string, string>; inrRate: number }) {
+function PlatformEconomicsDashboard({ settings, inrRate, baseEarningShare }: { settings: Record<string, string>; inrRate: number; baseEarningShare?: number | null }) {
   const num = (k: string, d: number) => {
     const n = parseFloat(settings[k] ?? '');
     return Number.isFinite(n) && n > 0 ? n : d;
@@ -758,10 +774,15 @@ function PlatformEconomicsDashboard({ settings, inrRate }: { settings: Record<st
     payout: num('coin_value_inr', num('coin_payout_inr', 0.085)),
     maxShare: Math.min(0.95, num('floor_max_host_share', 0.80)),
     safety: num('call_floor_safety_multiplier', 1.5),
-    // hostShare is a ratio — we DON'T clamp with num() (which would coerce
+    // hostShare is a ratio. Prefer the ACTUAL base-level (Level 1) earning
+    // share from Level Config — that's what a new host really earns per call —
+    // falling back to the legacy global host_revenue_share only if the level
+    // config hasn't loaded. We DON'T clamp with num() (which would coerce
     // 1.2 back to 0.7 because it's "invalid"), we let it through raw so the
     // warning banner below can flag it.
-    hostShareRaw: parseFloat(settings.host_revenue_share || '0.70'),
+    hostShareRaw: (baseEarningShare != null && baseEarningShare > 0)
+      ? baseEarningShare
+      : parseFloat(settings.host_revenue_share || '0.70'),
     audioRate: num('default_audio_rate', 30),
     videoRate: num('default_video_rate', 50),
     videoFhdRate: num('default_video_fhd_rate', 80),
@@ -1040,6 +1061,9 @@ function PlatformEconomicsDashboard({ settings, inrRate }: { settings: Record<st
           );
         })}
       </div>
+      <p className="px-4 -mt-1 pb-1 text-[10px] text-muted-foreground">
+        Host cash uses the Level&nbsp;1 host share ({(hostShare * 100).toFixed(0)}%){baseEarningShare != null ? ' from Level Config' : ' (global setting)'} — higher levels earn a bit more.
+      </p>
 
       {/* ── Economics strip ──────────────────────────────────────────── */}
       <div className="px-4 py-3 border-t border-border bg-secondary/20 grid grid-cols-2 sm:grid-cols-5 gap-2">
