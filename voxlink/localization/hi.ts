@@ -176,7 +176,7 @@ const hi = {
     statusNetworkError: "नेटवर्क त्रुटि, फिर से कोशिश हो रही…",
     statusServerUnreachable: "सर्वर तक नहीं पहुँच सके। कृपया फिर से प्रयास करें।",
     retryIn: "{time} में फिर से प्रयास करें",
-    dailyLimitReset: "कल रीसेट होगा",
+    dailyLimitReset: "24 घंटे बाद रीसेट होगा · Random Call कार्ड जमा करें और कॉल जारी रखें",
     hostBusy: "होस्ट अभी व्यस्त हो गया — दूसरा मैच खोज रहे हैं।",
     hostOffline: "होस्ट ऑफ़लाइन हो गया — दूसरा मैच खोज रहे हैं।",
     hostUnavailable: "होस्ट उपलब्ध नहीं — दूसरा मैच खोज रहे हैं।",

@@ -176,12 +176,44 @@ async function checkAbuseGuards(
         )
         .bind(userId, since)
         .first<{ cnt: number }>();
-      if ((row?.cnt ?? 0) >= dailyLimit) {
-        return {
-          ok: false,
-          code: 'DAILY_LIMIT_REACHED',
-          meta: { daily_limit: dailyLimit, used: row?.cnt ?? 0 },
-        };
+      const used = row?.cnt ?? 0;
+      if (used >= dailyLimit) {
+        // Free-card bypass — a user still holding Random Call free-minute cards
+        // can keep matching PAST the daily cap (each card is spent 1 min/call,
+        // then real coins). Only when they have NO cards left do we hard-stop
+        // with the "resets in 24h" popup. This is the admin-requested behaviour:
+        // "limit khatam ke baad free minutes card use ho sakta hai; free minutes
+        //  nahi hai to popup — 24 ghante baad reset".
+        let freeRandomCards = 0;
+        try {
+          const fr = await db
+            .prepare('SELECT COALESCE(free_random_minutes, 0) as m FROM users WHERE id = ?')
+            .bind(userId)
+            .first<{ m: number }>();
+          freeRandomCards = Number(fr?.m) || 0;
+        } catch {
+          // free_random_minutes column not healed yet → treat as no cards.
+        }
+        if (freeRandomCards <= 0) {
+          // Reset ≈ 24h after the OLDEST match still inside the rolling window
+          // ages out (that's when the count first drops below the cap).
+          const resetRow = await db
+            .prepare(
+              `SELECT MIN(created_at) as t FROM random_match_history
+               WHERE user_id = ? AND outcome IN ('matched','accepted') AND created_at >= ?`,
+            )
+            .bind(userId, since)
+            .first<{ t: number }>();
+          const now = Math.floor(Date.now() / 1000);
+          const resetAt = (Number(resetRow?.t) || now) + 24 * 3600;
+          return {
+            ok: false,
+            code: 'DAILY_LIMIT_REACHED',
+            retryAfterSec: Math.max(0, resetAt - now),
+            meta: { daily_limit: dailyLimit, used, reset_at: resetAt },
+          };
+        }
+        // else: has Random Call cards → fall through, matching stays allowed.
       }
     }
 
@@ -556,17 +588,21 @@ match.post('/find', async (c) => {
   //    Prior bug: this used a stale hardcoded 5/8 coins (from an old economy),
   //    far below the real 25/40 rates, so low-balance users matched then hit
   //    INSUFFICIENT_COINS at /call/initiate.
-  let caller: { coins: number; free_call_minutes?: number } | null = null;
+  // Random calls draw from the RANDOM free-minute pool (`free_random_minutes`),
+  // NOT the host-call pool — so the affordability gate must price the caller's
+  // random cards too, otherwise a user holding Random Call cards but few coins
+  // would be wrongly rejected with INSUFFICIENT_COINS before matching.
+  let caller: { coins: number; free_random_minutes?: number } | null = null;
   try {
     caller = await db
-      .prepare('SELECT coins, COALESCE(free_call_minutes, 0) as free_call_minutes FROM users WHERE id = ?')
+      .prepare('SELECT coins, COALESCE(free_random_minutes, 0) as free_random_minutes FROM users WHERE id = ?')
       .bind(sub)
-      .first<{ coins: number; free_call_minutes: number }>();
+      .first<{ coins: number; free_random_minutes: number }>();
   } catch {
     caller = await db.prepare('SELECT coins FROM users WHERE id = ?').bind(sub).first<{ coins: number }>();
   }
   const callerCoins = Number(caller?.coins) || 0;
-  const callerFreeMinutes = Number((caller as any)?.free_call_minutes) || 0;
+  const callerFreeMinutes = Number((caller as any)?.free_random_minutes) || 0;
   const level1Rate = callType === 'video'
     ? getRandomVideoRate(1, levelCfg)
     : getRandomAudioRate(1, levelCfg);

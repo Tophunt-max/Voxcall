@@ -114,6 +114,15 @@ const settingGroups: Array<{
       { key: 'daily_free_minutes_all', label: 'Daily free minutes (all users)', type: 'number', hint: 'Recurring reward every user can claim once per day (like the VIP daily bonus, for everyone). Drives daily return + free-call trials. 0 disables.', step: '1' },
     ],
   },
+  {
+    group: 'Random Call Limits',
+    settings: [
+      { key: 'random_calls_per_day_limit', label: 'Daily random-call limit (per user)', type: 'number', hint: 'Max random matches a FREE user can get in a rolling 24h window. 0 = unlimited. 👑 VIP users always bypass this cap. NOTE: after the limit, a user holding Random Call free-minute cards can KEEP matching (1 card = 1 min); only when they have no cards do they see the "resets in 24h" popup.', step: '1' },
+      { key: 'random_decline_cooldown_count', label: 'Decline cooldown — trigger count', type: 'number', hint: 'If a user\'s last N random matches were ALL declined / no-answer, a cooldown kicks in (anti-grief). 0 = disabled. Applies to VIP too. Typical: 3.', step: '1' },
+      { key: 'random_decline_cooldown_min', label: 'Decline cooldown — duration (minutes)', type: 'number', hint: 'How long the decline cooldown lasts once triggered. Only used when the trigger count above is > 0. Default 5.', step: '1' },
+      { key: 'random_match_repeat_block_min', label: 'No-repeat window (minutes)', type: 'number', hint: 'Block re-matching the SAME host for this many minutes. 0 = off (recommended for small host rosters, else users hit "no host available"). Demand is still spread softly via weighted selection.', step: '1' },
+    ],
+  },
 ];
 
 const DEFAULTS: Record<string, string> = {
@@ -150,6 +159,11 @@ const DEFAULTS: Record<string, string> = {
   low_balance_warn_seconds: '60',
   first_call_free_minutes: '5',
   daily_free_minutes_all: '0',
+  // Random-call anti-abuse limits (0 = off / unlimited).
+  random_calls_per_day_limit: '0',
+  random_decline_cooldown_count: '0',
+  random_decline_cooldown_min: '5',
+  random_match_repeat_block_min: '0',
 };
 
 const INR_PER_USD_FALLBACK = 83;

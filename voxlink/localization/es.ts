@@ -173,7 +173,7 @@ const es = {
     statusNetworkError: "Error de red, reintentando…",
     statusServerUnreachable: "No se pudo contactar el servidor. Inténtalo de nuevo.",
     retryIn: "Reintenta en {time}",
-    dailyLimitReset: "Se restablece mañana",
+    dailyLimitReset: "Se restablece en 24 horas · Reúne tarjetas de Llamada Aleatoria para seguir llamando",
     hostBusy: "El anfitrión está ocupado — buscando otro.",
     hostOffline: "El anfitrión se desconectó — buscando otro.",
     hostUnavailable: "Anfitrión no disponible — buscando otro.",
