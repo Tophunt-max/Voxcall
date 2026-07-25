@@ -120,17 +120,23 @@ export default function MonthlyPassCard({ onChanged }: { onChanged?: () => void 
       {/* ── Banner: countdown + points ─────────────────────────────── */}
       <LinearGradient colors={BANNER_BG as any} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.banner}>
         <View style={styles.bannerGlow} />
-        <View style={styles.bannerTopRow}>
+        <View style={styles.bannerGlow2} />
+        <View style={styles.bannerRow}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.bannerKicker}>MONTHLY END COUNTDOWN</Text>
+            <View style={styles.bannerTag}>
+              <Text style={styles.bannerTagText}>SEASON REWARDS</Text>
+            </View>
+            <Text style={styles.bannerKicker}>Monthly End Countdown</Text>
             <Text style={styles.bannerCountdown}>{formatDaysClock(monthEndSec)}</Text>
+            <View style={styles.pointsPill}>
+              <Text style={styles.pointsStar}>⭐</Text>
+              <Text style={styles.pointsText}>{points.toLocaleString()}</Text>
+              <Text style={styles.pointsMax}>/ {maxPoints.toLocaleString()} pts</Text>
+            </View>
           </View>
-          <Text style={styles.bannerEmoji}>🎁</Text>
-        </View>
-        <View style={styles.pointsPill}>
-          <Text style={styles.pointsStar}>⭐</Text>
-          <Text style={styles.pointsText}>{points.toLocaleString()}</Text>
-          <Text style={styles.pointsMax}>/ {maxPoints.toLocaleString()} pts</Text>
+          <View style={styles.giftBadge}>
+            <Text style={styles.giftEmoji}>🎁</Text>
+          </View>
         </View>
         <View style={styles.progressTrack}>
           <View style={[styles.progressFill, { width: `${progressPct}%` }]} />
@@ -140,13 +146,13 @@ export default function MonthlyPassCard({ onChanged }: { onChanged?: () => void 
       {/* ── Column headers ─────────────────────────────────────────── */}
       <View style={styles.colHeaderRow}>
         <View style={[styles.colHeader, styles.colHeaderCommon]}>
-          <Text style={styles.colHeaderCommonText}>Common</Text>
+          <Text style={styles.colHeaderCommonText}>🆓 Free User</Text>
         </View>
         <View style={styles.colHeaderCenter}>
           <Text style={styles.colHeaderStar}>⭐</Text>
         </View>
         <View style={[styles.colHeader, styles.colHeaderVip]}>
-          <Text style={styles.colHeaderVipText}>👑 Monthly Pass</Text>
+          <Text style={styles.colHeaderVipText}>👑 VIP User</Text>
         </View>
       </View>
 
@@ -291,10 +297,11 @@ function RewardBox({
     );
   }
 
-  // Not reached yet (or VIP-unlocked but target not met) → preview, small lock.
+  // Not reached yet → simple greyed reward preview. NO lock icon here: the
+  // Free column is never "locked" (it's free — just not earned yet), and the
+  // VIP column only shows a lock via the `locked` branch above (non-VIP users).
   return (
     <View style={[styles.rewardBox, vip ? styles.rewardVipIdle : styles.rewardCommonIdle]}>
-      {!reached && <View style={styles.lockChip}><Text style={styles.lockChipText}>🔒</Text></View>}
       <Text style={styles.rewardCoinIcon}>🪙</Text>
       <Text style={[styles.rewardIdleCoins, { color: vip ? "#B45309" : "#6D28D9" }]}>+{coins}</Text>
     </View>
@@ -308,12 +315,16 @@ const styles = StyleSheet.create({
   wrap: { borderRadius: 20, overflow: "hidden" },
 
   // Banner
-  banner: { padding: 16, borderTopLeftRadius: 20, borderTopRightRadius: 20, overflow: "hidden" },
-  bannerGlow: { position: "absolute", top: -30, right: -20, width: 120, height: 120, borderRadius: 60, backgroundColor: "rgba(255,255,255,0.12)" },
-  bannerTopRow: { flexDirection: "row", alignItems: "center" },
-  bannerKicker: { color: "rgba(255,255,255,0.85)", fontSize: 10.5, fontFamily: "Poppins_700Bold", letterSpacing: 1 },
-  bannerCountdown: { color: "#fff", fontSize: 20, fontFamily: "Poppins_700Bold", marginTop: 2 },
-  bannerEmoji: { fontSize: 40 },
+  banner: { padding: 18, borderRadius: 20, overflow: "hidden" },
+  bannerGlow: { position: "absolute", top: -34, right: -24, width: 130, height: 130, borderRadius: 65, backgroundColor: "rgba(255,255,255,0.13)" },
+  bannerGlow2: { position: "absolute", bottom: -40, left: -20, width: 100, height: 100, borderRadius: 50, backgroundColor: "rgba(255,255,255,0.08)" },
+  bannerRow: { flexDirection: "row", alignItems: "center" },
+  bannerTag: { alignSelf: "flex-start", backgroundColor: "rgba(0,0,0,0.22)", paddingHorizontal: 9, paddingVertical: 3, borderRadius: 8, marginBottom: 7 },
+  bannerTagText: { color: "#FCD34D", fontSize: 9.5, fontFamily: "Poppins_700Bold", letterSpacing: 1 },
+  bannerKicker: { color: "rgba(255,255,255,0.9)", fontSize: 12, fontFamily: "Poppins_600SemiBold" },
+  bannerCountdown: { color: "#fff", fontSize: 24, fontFamily: "Poppins_700Bold", marginTop: 1, letterSpacing: 0.5 },
+  giftBadge: { width: 66, height: 66, borderRadius: 33, backgroundColor: "rgba(255,255,255,0.18)", alignItems: "center", justifyContent: "center", marginLeft: 8 },
+  giftEmoji: { fontSize: 38 },
   pointsPill: { flexDirection: "row", alignItems: "center", gap: 5, alignSelf: "flex-start", backgroundColor: "rgba(0,0,0,0.2)", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14, marginTop: 12 },
   pointsStar: { fontSize: 14 },
   pointsText: { color: "#fff", fontSize: 15, fontFamily: "Poppins_700Bold" },

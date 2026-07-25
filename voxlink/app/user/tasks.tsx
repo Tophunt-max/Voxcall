@@ -490,9 +490,8 @@ export default function TasksScreen() {
             </>
           ) : (
             <>
-              {/* ── Monthly Pass tier ladder (Common + VIP) ────────────── */}
+              {/* ── Monthly Pass tier ladder (Free + VIP) ──────────────── */}
               <View style={styles.section}>
-                <Text style={[styles.sectionTitle, { color: colors.text }]}>👑 Monthly Pass</Text>
                 <MonthlyPassCard onChanged={load} />
               </View>
 
@@ -540,87 +539,6 @@ export default function TasksScreen() {
                 </View>
               )}
 
-              {/* ── Coupon redeem row ──────────────────────────────────── */}
-              <View style={styles.section}>
-                <Text style={[styles.sectionTitle, { color: colors.text }]}>Have a code?</Text>
-                <View style={[styles.couponRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                  <TextInput
-                    value={couponCode}
-                    onChangeText={(t) => setCouponCode(t.toUpperCase())}
-                    placeholder="Enter code (e.g. WELCOME50)"
-                    placeholderTextColor={colors.subText}
-                    autoCapitalize="characters"
-                    autoCorrect={false}
-                    style={[styles.couponInput, { color: colors.text }]}
-                    returnKeyType="done"
-                    onSubmitEditing={redeemCoupon}
-                    maxLength={40}
-                    editable={!redeemingCoupon}
-                  />
-                  <TouchableOpacity onPress={redeemCoupon} disabled={!couponCode.trim() || redeemingCoupon} activeOpacity={0.85} style={styles.couponBtnWrap}>
-                    <LinearGradient
-                      colors={couponCode.trim() && !redeemingCoupon ? (ACCENT as any) : (["#9CA3AF", "#6B7280"] as any)}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 0 }}
-                      style={styles.couponBtn}
-                    >
-                      {redeemingCoupon ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.couponBtnText}>Redeem</Text>}
-                    </LinearGradient>
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              {/* ── Achievements ───────────────────────────────────────── */}
-              {data?.achievements && data.achievements.length > 0 && (() => {
-                const sorted = [...data.achievements].sort((a, b) => {
-                  if (a.unlocked !== b.unlocked) return a.unlocked ? -1 : 1;
-                  if (!a.unlocked && !b.unlocked) return b.progress_pct - a.progress_pct;
-                  return (b.unlocked_at ?? 0) - (a.unlocked_at ?? 0);
-                });
-                const unlocked = data.achievements.filter((a) => a.unlocked).length;
-                const total = data.achievements.length;
-                return (
-                  <View style={styles.section}>
-                    <View style={styles.achHeaderRow}>
-                      <Text style={[styles.sectionTitle, { color: colors.text, marginBottom: 0 }]}>Achievements</Text>
-                      <Text style={[styles.achHeaderMeta, { color: colors.subText }]}>{unlocked}/{total} unlocked</Text>
-                    </View>
-                    <View style={styles.achGrid}>
-                      {sorted.map((a) => {
-                        const tierColor = TIER_COLORS[a.tier] ?? "#F59E0B";
-                        return (
-                          <View key={a.id} style={[styles.achCardV2, { backgroundColor: colors.card, borderColor: a.unlocked ? tierColor : colors.border }, a.unlocked && styles.achCardV2Unlocked]}>
-                            <View style={styles.achTopRow}>
-                              <View style={[styles.achIconBox, { backgroundColor: tierColor + "22" }]}>
-                                <Text style={[styles.achIconEmoji, !a.unlocked && styles.achIconLocked]}>{ICON_EMOJI[a.icon] ?? "🏆"}</Text>
-                              </View>
-                              <View style={[styles.achTierPill, { backgroundColor: tierColor }]}>
-                                <Text style={styles.achTierText}>{a.tier.toUpperCase()}</Text>
-                              </View>
-                            </View>
-                            <Text style={[styles.achTitleV2, { color: colors.text }]} numberOfLines={2}>{a.title}</Text>
-                            <Text style={[styles.achDescV2, { color: colors.subText }]} numberOfLines={2}>{a.description}</Text>
-                            <View style={styles.achProgressRow}>
-                              <View style={styles.achProgressTrack}>
-                                <View style={[styles.achProgressFill, { width: `${a.unlocked ? 100 : a.progress_pct}%`, backgroundColor: tierColor }]} />
-                              </View>
-                              <Text style={[styles.achProgressLabel, { color: colors.subText }]}>
-                                {a.unlocked ? "✓ Complete" : `${a.current_progress.toLocaleString()} / ${a.trigger_threshold.toLocaleString()}`}
-                              </Text>
-                            </View>
-                            <View style={styles.achRewardRow}>
-                              <View style={[styles.achRewardChip, a.unlocked ? styles.achRewardChipUnlocked : styles.achRewardChipLocked]}>
-                                <Image source={require("@/assets/icons/ic_coin.png")} style={styles.achRewardCoin} resizeMode="contain" />
-                                <Text style={[styles.achRewardText, !a.unlocked && { color: colors.subText }]}>+{a.coins_reward}</Text>
-                              </View>
-                            </View>
-                          </View>
-                        );
-                      })}
-                    </View>
-                  </View>
-                );
-              })()}
             </>
           )}
         </ScrollView>
