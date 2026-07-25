@@ -10,7 +10,7 @@ import {
 } from "react-native";
 import { Image } from "expo-image";
 import { useColors } from "@/hooks/useColors";
-import { CardMinuteBadge } from "@/components/CardMinuteBadge";
+import { FreeMinutesBanner } from "@/components/FreeMinutesBanner";
 import { Host } from "@/data/mockData";
 
 interface Props {
@@ -184,7 +184,7 @@ export function HostCard({ host, onPress, compact = false, onTalkNow, onAudioCal
         </View>
       </View>
 
-      {host.isOnline && <CardMinuteBadge type="free" compact size={16} style={{ marginBottom: 8, marginLeft: 2 }} />}
+      {host.isOnline && <FreeMinutesBanner type="free" variant="slim" style={{ marginHorizontal: 12, marginBottom: 8 }} />}
       {host.isOnline && (
         <View style={styles.callBtnsRow}>
           <TouchableOpacity

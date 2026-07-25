@@ -16,7 +16,7 @@ import {
   Animated,
   Easing,
 } from "react-native";
-import { CardMinuteBadge } from "@/components/CardMinuteBadge";
+import { FreeMinutesBanner } from "@/components/FreeMinutesBanner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
@@ -144,16 +144,14 @@ function TalkNowSheet({
           <Text style={[sht.title, { color: txtColor, borderBottomColor: dividerColor }]}>{t.hostDetail.selectCallType}</Text>
 
           {freeMinutes > 0 && (
-            <View style={sht.freeHint}>
-              <Text style={sht.freeHintText}>{t.hostDetail.freeFirstMinutes.replace("{count}", String(freeMinutes)).replace("{unit}", freeMinutes === 1 ? t.common.minute : t.common.minutes)}</Text>
-            </View>
+            <FreeMinutesBanner type="free" variant="full" minutesOverride={freeMinutes} style={sht.freeBanner} />
           )}
 
           <TouchableOpacity onPress={onAudio} style={sht.row} activeOpacity={0.8}>
             <Image source={require("@/assets/icons/ic_call_gradient.png")} style={sht.ico} resizeMode="contain" />
             <View style={{ flex: 1 }}>
               <Text style={[sht.label, { color: txtColor }]}>{t.hosts.audioCall}</Text>
-              {freeMinutes > 0 && <CardMinuteBadge type="free" size={18} style={{ marginTop: 4 }} />}
+              {freeMinutes > 0 && <Text style={sht.freeTagInline}>1st minute free · no coins</Text>}
             </View>
             <View style={sht.chip}>
               <Image source={require("@/assets/icons/ic_coin.png")} style={sht.chipIco} resizeMode="contain" />
@@ -1085,8 +1083,8 @@ const sht = StyleSheet.create({
   chip: { flexDirection: "row", alignItems: "center", backgroundColor: "#FFF8E7", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 16, gap: 4 },
   chipIco: { width: 16, height: 16 },
   chipTxt: { fontSize: 12, fontFamily: "Poppins_600SemiBold", color: ORANGE },
-  freeHint: { backgroundColor: "#E6F9EA", borderWidth: 1, borderColor: "#0BAF2333", borderRadius: 10, paddingVertical: 8, paddingHorizontal: 12, marginTop: 12, marginBottom: 2 },
-  freeHintText: { color: "#0B8F1C", fontSize: 13, fontFamily: "Poppins_700Bold", textAlign: "center" },
+  freeBanner: { marginHorizontal: 20, marginTop: 12, marginBottom: 4 },
+  freeTagInline: { color: "#7C3AED", fontSize: 11.5, fontFamily: "Poppins_600SemiBold", marginTop: 3 },
 });
 
 
