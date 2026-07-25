@@ -269,84 +269,82 @@ export const DEFAULT_LEVEL_CONFIG: LevelDef[] = [
  * and revenue. Admins load this from the panel; it is NEVER auto-applied, so no
  * host is silently blocked before the denormalized metrics are backfilled.
  */
-export const RECOMMENDED_LEVEL_CONFIG: LevelDef[] = [
-  {
-    level: 1, name: 'Newcomer', badge: '🌱', color: '#6B7280', coin_reward: 0,
-    description: 'New here — start taking calls',
-    criteria: [],
-    min_calls: 0, min_rating: 0, min_minutes: 0, min_earnings: 0,
-    perks: { max_rate: 100, max_audio_rate: 100, max_video_rate: 100, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.70, rank_boost: 0 },
-  },
-  {
-    level: 2, name: 'Riser', badge: '⭐', color: '#10B981', coin_reward: 50,
-    description: 'Your first calls — welcome aboard!',
-    // Fast first win — accumulating metrics only, no rating gate yet.
-    criteria: [
-      { metric: 'total_minutes', op: '>=', value: 5 },
-      { metric: 'unique_callers', op: '>=', value: 1 },
-    ],
-    min_calls: 0, min_rating: 0, min_minutes: 5, min_earnings: 0,
-    perks: { max_rate: 100, max_audio_rate: 100, max_video_rate: 100, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.70, rank_boost: 1 },
-  },
-  {
-    level: 3, name: 'Star', badge: '🌟', color: '#F59E0B', coin_reward: 150,
-    description: 'Building a real audience',
-    criteria: [
-      { metric: 'total_minutes', op: '>=', value: 60 },
-      { metric: 'unique_callers', op: '>=', value: 5 },
-      { metric: 'review_count', op: '>=', value: 3 },
-      { metric: 'rating', op: '>=', value: 3.5 },
-    ],
-    min_calls: 3, min_rating: 3.5, min_minutes: 60, min_earnings: 0,
-    perks: { max_rate: 150, max_audio_rate: 150, max_video_rate: 150, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.72, rank_boost: 2 },
-  },
-  {
-    level: 4, name: 'Expert', badge: '🔥', color: '#EF4444', coin_reward: 400,
-    description: 'Proven expertise — genuine repeat audience',
-    criteria: [
-      { metric: 'total_minutes', op: '>=', value: 300 },
-      { metric: 'unique_callers', op: '>=', value: 20 },
-      { metric: 'review_count', op: '>=', value: 10 },
-      { metric: 'rating', op: '>=', value: 4.0 },
-      { metric: 'total_earnings', op: '>=', value: 3000 },
-      { metric: 'favorite_count', op: '>=', value: 10 },
-    ],
-    min_calls: 10, min_rating: 4.0, min_minutes: 300, min_earnings: 3000,
-    perks: { max_rate: 250, max_audio_rate: 250, max_video_rate: 250, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.74, rank_boost: 3 },
-  },
-  {
-    level: 5, name: 'Pro', badge: '💎', color: '#8B5CF6', coin_reward: 800,
-    description: 'Professional tier — loyal fan base & consistency',
-    criteria: [
-      { metric: 'total_minutes', op: '>=', value: 1200 },
-      { metric: 'unique_callers', op: '>=', value: 60 },
-      { metric: 'review_count', op: '>=', value: 40 },
-      { metric: 'rating', op: '>=', value: 4.3 },
-      { metric: 'total_earnings', op: '>=', value: 15000 },
-      { metric: 'answer_rate', op: '>=', value: 0.70 },
-      { metric: 'favorite_count', op: '>=', value: 50 },
-      { metric: 'active_days', op: '>=', value: 15 },
-    ],
-    min_calls: 40, min_rating: 4.3, min_minutes: 1200, min_earnings: 15000,
-    perks: { max_rate: 400, max_audio_rate: 400, max_video_rate: 400, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.77, rank_boost: 4 },
-  },
-  {
-    level: 6, name: 'Elite', badge: '👑', color: '#D97706', coin_reward: 2000,
-    description: 'Top performer — trusted, verified & in demand',
-    criteria: [
-      { metric: 'total_minutes', op: '>=', value: 3500 },
-      { metric: 'unique_callers', op: '>=', value: 200 },
-      { metric: 'review_count', op: '>=', value: 150 },
-      { metric: 'rating', op: '>=', value: 4.6 },
-      { metric: 'total_earnings', op: '>=', value: 50000 },
-      { metric: 'answer_rate', op: '>=', value: 0.80 },
-      { metric: 'kyc_verified', op: '==', value: 1 },
-      { metric: 'active_days', op: '>=', value: 30 },
-    ],
-    min_calls: 150, min_rating: 4.6, min_minutes: 3500, min_earnings: 50000,
-    perks: { max_rate: 500, max_audio_rate: 500, max_video_rate: 500, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.80, rank_boost: 6 },
-  },
-];
+// Full 20-tier ladder — the ambitious, admin-loadable "Recommended" preset.
+// Difficulty curve: rungs 1-3 are quick first-session wins, 4-10 a steady
+// grind, and 11-20 ramp STEEPLY (top rungs take months; only a handful of
+// hosts ever reach them). Level 10+ also gates on KYC — the top half is
+// verified, trusted talent only. Every array below is indexed 0..19
+// (= levels 1..20); a 0 means "no gate on that metric at this rung".
+function buildRecommendedLadder(): LevelDef[] {
+  // [name, badge, color, description]
+  const TIERS: [string, string, string, string][] = [
+    ['Newcomer',    '🌱', '#6B7280', 'New here — start taking calls'],
+    ['Riser',       '⭐', '#10B981', 'Your first calls — welcome aboard!'],
+    ['Star',        '🌟', '#F59E0B', 'Building a real audience'],
+    ['Rising Star', '🔥', '#F97316', 'Gaining momentum'],
+    ['Performer',   '💫', '#EF4444', 'A dependable, rated performer'],
+    ['Skilled',     '🎯', '#EC4899', 'Skilled & consistent'],
+    ['Expert',      '🏅', '#8B5CF6', 'Proven expertise'],
+    ['Veteran',     '🎖️', '#7C3AED', 'Seasoned & reliable'],
+    ['Pro',         '💎', '#6366F1', 'Professional tier'],
+    ['Master',      '👑', '#3B82F6', 'Verified master — loyal fan base'],
+    ['Grandmaster', '🏆', '#0EA5E9', 'Among the platform’s best'],
+    ['Champion',    '⚡', '#06B6D4', 'Elite performer in high demand'],
+    ['Legend',      '🔱', '#14B8A6', 'Legendary consistency & trust'],
+    ['Icon',        '🌠', '#F59E0B', 'A recognised icon'],
+    ['Elite',       '🦅', '#D97706', 'Top 1% of hosts'],
+    ['Mythic',      '🐉', '#DC2626', 'Rarely reached — mythic status'],
+    ['Titan',       '💠', '#9333EA', 'A true platform titan'],
+    ['Celestial',   '🌌', '#4F46E5', 'Elite of the elite'],
+    ['Immortal',    '☀️', '#B45309', 'Almost no one gets here'],
+    ['Supreme',     '🪐', '#B91C1C', 'The absolute pinnacle'],
+  ];
+  const minutes  = [0,    5,   30,   90,  200,   400,   700,  1100,  1600,   2200,   3200,   4500,    6200,    8500,   11500,   15500,   21000,    28000,    38000,    50000];
+  const callers  = [0,    1,    5,   12,   25,    45,    70,   100,   140,    190,    270,    380,     520,     700,     950,    1300,    1750,     2400,     3200,     4500];
+  const rated    = [0,    0,    3,    8,   18,    35,    60,    95,   140,    200,    300,    440,     620,     850,    1150,    1550,    2100,     2800,     3800,     5000];
+  const rating   = [0,    0,  3.5,  3.8,  4.0,   4.1,   4.2,   4.3,   4.4,    4.5,    4.5,    4.6,     4.6,     4.7,     4.7,     4.8,     4.8,      4.8,      4.9,      4.9];
+  const earnings = [0,    0,    0,  800, 2500,  6000, 12000, 22000, 38000,  60000,  95000, 150000,  230000,  350000,  520000,  750000, 1050000,  1500000,  2100000,  3000000];
+  const favs     = [0,    0,    0,    0,   10,    20,    35,    55,    80,    120,    170,    240,     330,     450,     620,     850,    1150,     1550,     2100,     3000];
+  const answer   = [0,    0,    0,    0, 0.65,  0.68,  0.70,  0.72,  0.73,   0.75,   0.76,   0.78,    0.80,    0.80,    0.82,    0.83,    0.85,     0.86,     0.88,     0.90];
+  const actDays  = [0,    0,    0,    0,    0,     0,    10,    15,    20,     30,     40,     55,      75,     100,     130,     170,     220,      290,      380,      500];
+  const earnShr  = [0.70, 0.70,0.72, 0.73,0.74,  0.75,  0.76,  0.77,  0.78,   0.80,   0.81,   0.82,    0.83,    0.84,    0.85,    0.86,    0.87,     0.88,     0.90,     0.92];
+  const reward   = [0,   50,  150,  300,  500,   800,  1200,  1800,  2500,   4000,   6000,   8000,   11000,   15000,   20000,   27000,   36000,    48000,    65000,   100000];
+
+  const out: LevelDef[] = [];
+  for (let i = 0; i < TIERS.length; i++) {
+    const L = i + 1;
+    const [name, badge, color, description] = TIERS[i];
+    const criteria: Criterion[] = [];
+    if (minutes[i]  > 0) criteria.push({ metric: 'total_minutes',  op: '>=', value: minutes[i] });
+    if (callers[i]  > 0) criteria.push({ metric: 'unique_callers', op: '>=', value: callers[i] });
+    if (rated[i]    > 0) criteria.push({ metric: 'review_count',   op: '>=', value: rated[i] });
+    if (rating[i]   > 0) criteria.push({ metric: 'rating',         op: '>=', value: rating[i] });
+    if (earnings[i] > 0) criteria.push({ metric: 'total_earnings', op: '>=', value: earnings[i] });
+    if (favs[i]     > 0) criteria.push({ metric: 'favorite_count', op: '>=', value: favs[i] });
+    if (answer[i]   > 0) criteria.push({ metric: 'answer_rate',    op: '>=', value: answer[i] });
+    if (actDays[i]  > 0) criteria.push({ metric: 'active_days',    op: '>=', value: actDays[i] });
+    // Trust gate: every rung from Level 10 up requires a verified identity.
+    if (L >= 10) criteria.push({ metric: 'kyc_verified', op: '==', value: 1 });
+
+    // Rate cap climbs 100 → 500 (ABSOLUTE_MAX_RATE), reaching the ceiling at L17.
+    const cap = Math.min(ABSOLUTE_MAX_RATE, 100 + i * 25);
+    out.push({
+      level: L, name, badge, color,
+      criteria,
+      min_calls: rated[i], min_rating: rating[i], min_minutes: minutes[i], min_earnings: earnings[i],
+      coin_reward: reward[i],
+      description,
+      perks: {
+        max_rate: cap, max_audio_rate: cap, max_video_rate: cap,
+        random_audio_rate: 25, random_video_rate: 40,
+        earning_share: earnShr[i], rank_boost: i,
+      },
+    });
+  }
+  return out;
+}
+
+export const RECOMMENDED_LEVEL_CONFIG: LevelDef[] = buildRecommendedLadder();
 
 /**
  * Build a sensible default LevelDef for a rung that has no entry in
