@@ -504,8 +504,11 @@ admin.put('/level-config', async (c) => {
 // also grant the one-time coin reward, write the audit history, and notify the
 // host (in-app + push + real-time). Promotion-only (never demotes).
 admin.post('/hosts/recalculate-levels', async (c) => {
-  const config = await getLevelConfig(db(c));
+  // Read the FRESH ladder from D1 (drop any stale per-isolate cache) so a
+  // recalc right after "Save" uses the newly-saved caps, not an old cached one.
+  clearLevelConfigCache();
   const result = await recalcAllHostLevels(c.env, 'admin');
+  const config = await getLevelConfig(db(c));
   return c.json({ success: true, config, ...result });
 });
 

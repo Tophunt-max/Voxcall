@@ -26,7 +26,7 @@
 // ============================================================================
 
 import type { Env } from '../types';
-import { getLevelConfig, evaluateLevel, countLanguages, getMaxAudioRate, getMaxVideoRate, type LevelDef } from './levels';
+import { getLevelConfig, evaluateLevel, countLanguages, getMaxAudioRate, getMaxVideoRate, clearLevelConfigCache, type LevelDef } from './levels';
 import { sendFCMPush, getFCMTokens } from './fcm';
 
 export interface LevelUpResult {
@@ -275,6 +275,12 @@ export async function recalcAllHostLevels(
   chunk = 500,
 ): Promise<RecalcResult> {
   const db = env.DB;
+  // Drop this isolate's cached ladder so we read the JUST-SAVED config from D1.
+  // "Save" clears the cache only in the isolate that handled it; a recalc can
+  // run in a DIFFERENT isolate whose 30s cache still holds the OLD ladder —
+  // which would sync rates/levels to stale caps. Clearing here guarantees
+  // fresh caps.
+  clearLevelConfigCache();
   const cfg = await getLevelConfig(db);
   // Highest rung that exists — hosts already here are skipped by the pre-filter.
   const maxLevel = cfg.reduce((m, l) => Math.max(m, l.level), 1);
