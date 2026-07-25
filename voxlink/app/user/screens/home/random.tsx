@@ -16,6 +16,7 @@ import { API, resolveMediaUrl } from "@/services/api";
 import { showErrorToast } from "@/components/Toast";
 import { InsufficientCoinsPopup } from "@/components/InsufficientCoinsPopup";
 import { MatchLimitSheet } from "@/components/MatchLimitSheet";
+import { CardMinuteBadge } from "@/components/CardMinuteBadge";
 
 const { width: SW, height: SH } = Dimensions.get("window");
 const BG        = "#FBF1EA";
@@ -809,6 +810,9 @@ export default function RandomScreen() {
 
       {/* Bottom Buttons */}
       <View style={[styles.bottomBtns, { paddingBottom: insets.bottom + 16 }]}>
+        {callType === "audio" && phase !== "searching" && (
+          <CardMinuteBadge type="random" style={{ alignSelf: "center", marginBottom: 10 }} />
+        )}
         <View style={styles.bottomChipsRow}>
           <TouchableOpacity
             onPress={() => setDialog(true)}

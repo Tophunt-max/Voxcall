@@ -16,7 +16,7 @@ import {
   Animated,
   Easing,
 } from "react-native";
-import { FreeMinutesCardIcon } from "@/components/MinuteCardIcons";
+import { CardMinuteBadge } from "@/components/CardMinuteBadge";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
@@ -136,20 +136,6 @@ function TalkNowSheet({
   const txtColor = isDark ? colors.text : "#111329";
   const dividerColor = isDark ? colors.border : "#eee";
 
-  // Gentle pulse for the Free Minutes card badge on the audio row.
-  const cardPulse = React.useRef(new Animated.Value(1)).current;
-  useEffect(() => {
-    if (!visible || !(freeMinutes > 0)) return;
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(cardPulse, { toValue: 1.18, duration: 650, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-        Animated.timing(cardPulse, { toValue: 1, duration: 650, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [visible, freeMinutes, cardPulse]);
-
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <TouchableOpacity style={sht.overlay} activeOpacity={1} onPress={onClose}>
@@ -167,14 +153,7 @@ function TalkNowSheet({
             <Image source={require("@/assets/icons/ic_call_gradient.png")} style={sht.ico} resizeMode="contain" />
             <View style={{ flex: 1 }}>
               <Text style={[sht.label, { color: txtColor }]}>{t.hosts.audioCall}</Text>
-              {freeMinutes > 0 && (
-                <View style={sht.freeCardBadge}>
-                  <Animated.View style={{ transform: [{ scale: cardPulse }] }}>
-                    <FreeMinutesCardIcon size={18} />
-                  </Animated.View>
-                  <Text style={sht.freeCardTxt}>{freeMinutes} free min card{freeMinutes === 1 ? "" : "s"}</Text>
-                </View>
-              )}
+              {freeMinutes > 0 && <CardMinuteBadge type="free" size={18} style={{ marginTop: 4 }} />}
             </View>
             <View style={sht.chip}>
               <Image source={require("@/assets/icons/ic_coin.png")} style={sht.chipIco} resizeMode="contain" />
