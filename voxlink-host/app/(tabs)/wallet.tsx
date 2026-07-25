@@ -12,6 +12,7 @@ import { API } from "@/services/api";
 import { useSocketEvent } from "@/context/SocketContext";
 import { SocketEvents } from "@/constants/events";
 import { showSuccessToast, showErrorToast, showWarningToast } from "@/components/Toast";
+import { WithdrawalStatusModal } from "@/components/WithdrawalStatusModal";
 import { USD_TO_FOREIGN, coinsToLocalCurrency } from "@/utils/currency";
 import { useAppConfig } from "@/hooks/useAppConfig";
 import { WEB_INPUT_RESET } from "@workspace/shared-ui/utils";
@@ -131,6 +132,7 @@ export default function HostWalletScreen() {
   const [payoutMethod, setPayoutMethod] = useState<PayoutMethod | null>(null);
   const [payoutDetails, setPayoutDetails] = useState<Record<string, string>>({});
   const [withdrawing, setWithdrawing] = useState(false);
+  const [statusModalOpen, setStatusModalOpen] = useState(false);
   const [earnings, setEarnings] = useState<EarningTx[]>([]);
   const [stats, setStats] = useState<EarningsStats>({ thisWeek: 0, sessions: 0, withdrawn: 0, totalEarnings: 0 });
   // Full withdrawal-request list so the host can SEE the status of their
@@ -449,20 +451,53 @@ export default function HostWalletScreen() {
           )}
 
           <TouchableOpacity
-            style={[styles.withdrawBtn, { backgroundColor: (withdrawing || !!pendingWithdrawal) ? colors.mutedForeground : colors.primary }]}
-            onPress={handleWithdraw}
+            style={[
+              styles.withdrawBtn,
+              {
+                backgroundColor: withdrawing ? colors.mutedForeground : pendingWithdrawal ? colors.surface : colors.primary,
+                borderWidth: pendingWithdrawal && !withdrawing ? 1.5 : 0,
+                borderColor: colors.primary,
+              },
+            ]}
+            onPress={pendingWithdrawal ? () => setStatusModalOpen(true) : handleWithdraw}
             activeOpacity={0.85}
-            disabled={withdrawing || !!pendingWithdrawal}
+            disabled={withdrawing}
+            accessibilityRole="button"
+            accessibilityLabel={pendingWithdrawal ? "View withdrawal status" : "Request withdrawal"}
           >
             {withdrawing ? (
               <ActivityIndicator color="#fff" />
+            ) : pendingWithdrawal ? (
+              <>
+                <Image source={require("@/assets/icons/ic_withdraw.png")} style={styles.withdrawIcon} tintColor={colors.primary} resizeMode="contain" />
+                <Text style={[styles.withdrawBtnText, { color: colors.primary }]}>Withdrawal in progress</Text>
+              </>
             ) : (
               <>
                 <Image source={require("@/assets/icons/ic_withdraw.png")} style={styles.withdrawIcon} tintColor="#fff" resizeMode="contain" />
-                <Text style={styles.withdrawBtnText}>{pendingWithdrawal ? "Withdrawal in progress" : tr.walletScreen.requestWithdrawal}</Text>
+                <Text style={styles.withdrawBtnText}>{tr.walletScreen.requestWithdrawal}</Text>
               </>
             )}
           </TouchableOpacity>
+
+          {pendingWithdrawal && !withdrawing && (() => {
+            const meta = WITHDRAW_STATUS[pendingWithdrawal.status] ?? WITHDRAW_STATUS.pending;
+            return (
+              <TouchableOpacity
+                style={[styles.statusPill, { backgroundColor: meta.bg }]}
+                onPress={() => setStatusModalOpen(true)}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel="View withdrawal details"
+              >
+                <View style={[styles.statusPillDot, { backgroundColor: meta.color }]} />
+                <Text style={[styles.statusPillText, { color: meta.color }]} numberOfLines={1}>
+                  {meta.label} · {pendingWithdrawal.coins} coins
+                </Text>
+                <Text style={[styles.statusPillCta, { color: meta.color }]}>View details ›</Text>
+              </TouchableOpacity>
+            );
+          })()}
 
           <View style={[styles.noteCard, { backgroundColor: colors.coinGoldBg }]}>
             <Text style={[styles.noteTitle, { color: "#FFA100" }]}>{tr.walletScreen.note}</Text>
@@ -504,6 +539,16 @@ export default function HostWalletScreen() {
           </TouchableOpacity>
         </ScrollView>
       )}
+
+      <WithdrawalStatusModal
+        visible={statusModalOpen}
+        withdrawal={pendingWithdrawal ?? null}
+        payoutLabel={payoutMethod ? PAYOUT_LABELS[payoutMethod] : undefined}
+        payoutSummary={payoutMethod ? summarizePayout(payoutMethod, payoutDetails) : undefined}
+        payoutValue={pendingWithdrawal && payoutRate > 0 ? formatPayout(pendingWithdrawal.coins) : undefined}
+        onClose={() => setStatusModalOpen(false)}
+        onRequestNew={() => setTab("withdraw")}
+      />
     </View>
   );
 }
@@ -559,6 +604,10 @@ const styles = StyleSheet.create({
   withdrawBtn: { height: 54, borderRadius: 14, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 10 },
   withdrawIcon: { width: 20, height: 20 },
   withdrawBtnText: { color: "#fff", fontSize: 16, fontFamily: "Poppins_600SemiBold" },
+  statusPill: { flexDirection: "row", alignItems: "center", gap: 8, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, marginTop: 2 },
+  statusPillDot: { width: 8, height: 8, borderRadius: 4 },
+  statusPillText: { flex: 1, fontSize: 12.5, fontFamily: "Poppins_600SemiBold" },
+  statusPillCta: { fontSize: 12.5, fontFamily: "Poppins_600SemiBold" },
   noteCard: { borderRadius: 14, padding: 14, gap: 4 },
   noteTitle: { fontSize: 14, fontFamily: "Poppins_700Bold" },
   noteText: { fontSize: 13, fontFamily: "Poppins_400Regular", lineHeight: 18 },
