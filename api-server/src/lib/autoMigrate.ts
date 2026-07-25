@@ -119,6 +119,7 @@ import m_0070 from '../../migrations/0070_reward_monthly_pass.sql';
 import m_0071 from '../../migrations/0071_reward_task_audience.sql';
 import m_0072 from '../../migrations/0072_reward_task_seeds.sql';
 import m_0073 from '../../migrations/0073_pass_free_minutes.sql';
+import m_0074 from '../../migrations/0074_call_free_minutes_cap.sql';
 
 interface Migration {
   /**
@@ -204,6 +205,7 @@ const MIGRATIONS: ReadonlyArray<Migration> = [
   { name: '0071_reward_task_audience.sql',          sql: m_0071 },
   { name: '0072_reward_task_seeds.sql',             sql: m_0072 },
   { name: '0073_pass_free_minutes.sql',             sql: m_0073 },
+  { name: '0074_call_free_minutes_cap.sql',         sql: m_0074 },
 ];
 
 /**

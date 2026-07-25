@@ -119,7 +119,7 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
   // reaper (host still gets paid, caller charged only what they can afford). We
   // ONLY ever touch sessions where THIS user is the caller — never someone else's.
   const staleOwn = await db.prepare(
-    "SELECT id, host_id, started_at, rate_per_minute, type FROM call_sessions WHERE caller_id = ? AND status IN ('pending','active') AND ended_at IS NULL"
+    "SELECT id, host_id, started_at, rate_per_minute, type, is_random_match, free_minutes_cap FROM call_sessions WHERE caller_id = ? AND status IN ('pending','active') AND ended_at IS NULL"
   ).bind(sub).all<any>();
   if (staleOwn.results?.length) {
     const nowTs = Math.floor(Date.now() / 1000);
@@ -145,7 +145,7 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
           ratePerMinute: rate,
           earningShare: getEarningShare(hostRow.level ?? 1, levelCfg),
           isRandom: !!(s as any).is_random_match,
-          freeMinutesCap: (s as any).type === 'video' ? 0 : 1,
+          freeMinutesCap: Number((s as any).free_minutes_cap ?? ((s as any).type === 'video' ? 0 : 1)),
         });
         actualCoinsCharged = charged; actualHostShare = hostEarned; freeMinutesUsed = free_minutes_used;
       }
@@ -227,7 +227,10 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
   // can always start.
   const callerHostFreeMin = Number((caller as any)?.free_call_minutes) || 0;
   const callerRandomFreeMin = Number((caller as any)?.free_random_minutes) || 0;
-  const callerFreeMinutes = callType === 'video' ? 0 : (Math.max(callerHostFreeMin, callerRandomFreeMin) >= 1 ? 1 : 0);
+  // Per-call free-minute cap: VIP gets up to 3 free minutes per call, free
+  // users 1. Video calls never use free minutes.
+  const perCallFreeCap = vipStatus.isVip ? 3 : 1;
+  const callerFreeMinutes = callType === 'video' ? 0 : Math.min(Math.max(callerHostFreeMin, callerRandomFreeMin), perCallFreeCap);
   // Item 2 — spend against SPENDABLE coins (coins − held). Any prior call's hold
   // was released by self-heal above, but this stays correct even if one lingered.
   const spendableCoins = Math.max(0, (Number(caller?.coins) || 0) - (Number((caller as any)?.coins_held) || 0));
@@ -277,18 +280,22 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
     .first<{ id: string }>()
     .catch(() => null); // table missing in legacy DBs — treat as not random
   const isRandomMatch = recentMatchRow ? 1 : 0;
+  // Per-call free-minute cap stamped now (VIP status known): audio → 3 for VIP
+  // else 1; video → 0. Billing reads this so a card-holder gets the right free
+  // window per call.
+  const sessionFreeCap = callType === 'video' ? 0 : perCallFreeCap;
 
   const insertResult = await (async () => {
     try {
       return await db.prepare(
-        `INSERT INTO call_sessions (id, caller_id, host_id, type, status, rate_per_minute, is_random_match)
-         SELECT ?1, ?2, ?3, ?4, 'pending', ?5, ?6
+        `INSERT INTO call_sessions (id, caller_id, host_id, type, status, rate_per_minute, is_random_match, free_minutes_cap)
+         SELECT ?1, ?2, ?3, ?4, 'pending', ?5, ?6, ?7
          WHERE NOT EXISTS (
            SELECT 1 FROM call_sessions
            WHERE status IN ('pending', 'active')
              AND (caller_id = ?2 OR host_id = ?3)
          )`
-      ).bind(sessionId, sub, body.host_id, callType, ratePerMin, isRandomMatch).run();
+      ).bind(sessionId, sub, body.host_id, callType, ratePerMin, isRandomMatch, sessionFreeCap).run();
     } catch (err) {
       // is_random_match was added by migration 0026 — if the column isn't
       // there yet (deploy ran without applying migrations) we still want
@@ -358,7 +365,7 @@ call.post('/initiate', zValidator('json', initiateSchema), async (c) => {
   // affordable window rather than being capped at coins alone.
   // Precise per-call free minutes: correct pool (host vs random), audio-only,
   // capped to 1 minute per the card rule.
-  const dispFreeMinutes = callType === 'video' ? 0 : Math.min(isRandomMatch ? callerRandomFreeMin : callerHostFreeMin, 1);
+  const dispFreeMinutes = callType === 'video' ? 0 : Math.min(isRandomMatch ? callerRandomFreeMin : callerHostFreeMin, perCallFreeCap);
   const maxSeconds = affordableCallSeconds(spendableCoins, dispFreeMinutes, ratePerMin);
   // Host's NET earning per minute = their level-based share of the caller's
   // rate. The host UI shows THIS (not the gross rate the caller pays) on the
@@ -484,7 +491,7 @@ call.post('/end', async (c) => {
         ratePerMinute: effectiveRate,
         earningShare: getEarningShare(hostRow.level ?? 1, levelCfg),
         isRandom: !!(session as any).is_random_match,
-        freeMinutesCap: (session as any).type === 'video' ? 0 : 1,
+        freeMinutesCap: Number((session as any).free_minutes_cap ?? ((session as any).type === 'video' ? 0 : 1)),
       });
       actualCoinsCharged = charged;
       actualHostShare = hostEarned;
@@ -938,7 +945,7 @@ call.post('/:id/end', async (c) => {
         ratePerMinute: effectiveRate,
         earningShare: getEarningShare(hostRow.level ?? 1, levelCfg),
         isRandom: !!(session as any).is_random_match,
-        freeMinutesCap: (session as any).type === 'video' ? 0 : 1,
+        freeMinutesCap: Number((session as any).free_minutes_cap ?? ((session as any).type === 'video' ? 0 : 1)),
       });
       actualCoinsCharged = charged;
       actualHostShare = hostEarned;
@@ -1192,6 +1199,8 @@ call.post('/:id/heartbeat', async (c) => {
       durationSec,
       ratePerMinute: rate,
       earningShare: getEarningShare(hostRow.level ?? 1, levelCfg),
+      isRandom: !!(session as any).is_random_match,
+      freeMinutesCap: Number((session as any).free_minutes_cap ?? ((session as any).type === 'video' ? 0 : 1)),
     });
     actualCoinsCharged = charged;
     actualHostShare = hostEarned;

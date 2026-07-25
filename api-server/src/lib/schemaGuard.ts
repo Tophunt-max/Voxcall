@@ -408,6 +408,8 @@ const REQUIRED_FIRST_CALL_USER_COLS: ReadonlyArray<{ name: string; ddl: string }
 
 const REQUIRED_FIRST_CALL_SESSION_COLS: ReadonlyArray<{ name: string; ddl: string }> = [
   { name: 'free_minutes_used', ddl: 'ALTER TABLE call_sessions ADD COLUMN free_minutes_used INTEGER DEFAULT 0' },
+  // Per-call free-minute cap (0 video, 1 free user, 3 VIP) — migration 0074.
+  { name: 'free_minutes_cap', ddl: 'ALTER TABLE call_sessions ADD COLUMN free_minutes_cap INTEGER NOT NULL DEFAULT 1' },
 ];
 
 const FIRST_CALL_DEFAULT_SETTINGS: ReadonlyArray<{ key: string; value: string }> = [
