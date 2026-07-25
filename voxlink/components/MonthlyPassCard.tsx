@@ -16,6 +16,7 @@ import { useColors } from "@/hooks/useColors";
 import { API } from "@/services/api";
 import { showErrorToast, showSuccessToast } from "@/components/Toast";
 import { FreeMinutesCardIcon, RandomCardIcon } from "@/components/MinuteCardIcons";
+import { AppIcon } from "@/components/AppIcon";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MonthlyPassCard — vertical two-track tier ladder.
@@ -145,13 +146,13 @@ export default function MonthlyPassCard({ onChanged }: { onChanged?: () => void 
             <Text style={styles.bannerKicker}>Monthly End Countdown</Text>
             <Text style={styles.bannerCountdown}>{formatDaysClock(monthEndSec)}</Text>
             <View style={styles.pointsPill}>
-              <Text style={styles.pointsStar}>⭐</Text>
+              <AppIcon name="star" size={14} color="#FFD166" />
               <Text style={styles.pointsText}>{points.toLocaleString()}</Text>
               <Text style={styles.pointsMax}>/ {maxPoints.toLocaleString()} pts</Text>
             </View>
           </View>
           <View style={styles.giftBadge}>
-            <Text style={styles.giftEmoji}>🎁</Text>
+            <AppIcon name="gift" size={34} color="#fff" />
           </View>
         </View>
         <View style={styles.progressTrack}>
@@ -175,13 +176,19 @@ export default function MonthlyPassCard({ onChanged }: { onChanged?: () => void 
       {/* ── Column headers ─────────────────────────────────────────── */}
       <View style={styles.colHeaderRow}>
         <View style={[styles.colHeader, styles.colHeaderCommon]}>
-          <Text style={styles.colHeaderCommonText}>🆓 Free User</Text>
+          <View style={styles.colHeaderInner}>
+            <AppIcon name="users" size={12} color="#7C3AED" />
+            <Text style={styles.colHeaderCommonText}>Free User</Text>
+          </View>
         </View>
         <View style={styles.colHeaderCenter}>
-          <Text style={styles.colHeaderStar}>⭐</Text>
+          <AppIcon name="star" size={18} color="#F59E0B" />
         </View>
         <View style={[styles.colHeader, styles.colHeaderVip]}>
-          <Text style={styles.colHeaderVipText}>👑 VIP User</Text>
+          <View style={styles.colHeaderInner}>
+            <AppIcon name="crown" size={12} color="#EA580C" />
+            <Text style={styles.colHeaderVipText}>VIP User</Text>
+          </View>
         </View>
       </View>
 
@@ -241,7 +248,7 @@ export default function MonthlyPassCard({ onChanged }: { onChanged?: () => void 
         <View style={styles.modalOverlay}>
           <View style={[styles.modalCard, { backgroundColor: colors.card }]}>
             <LinearGradient colors={VIP_ACCENT as any} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.modalCrown}>
-              <Text style={{ fontSize: 30 }}>👑</Text>
+              <AppIcon name="crown" size={30} color="#fff" />
             </LinearGradient>
             <Text style={[styles.modalTitle, { color: colors.text }]}>Unlock the Monthly Pass</Text>
             <Text style={[styles.modalBody, { color: colors.subText }]}>
@@ -253,7 +260,8 @@ export default function MonthlyPassCard({ onChanged }: { onChanged?: () => void 
               style={styles.modalGoBtnWrap}
             >
               <LinearGradient colors={VIP_ACCENT as any} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.modalGoBtn}>
-                <Text style={styles.modalGoBtnText}>👑 Become VIP</Text>
+                <AppIcon name="crown" size={16} color="#fff" />
+                <Text style={styles.modalGoBtnText}>Become VIP</Text>
               </LinearGradient>
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setVipModal(false)} style={styles.modalClose}>
@@ -318,7 +326,10 @@ function RewardBox({
     return (
       <View style={[styles.rewardBox, styles.rewardClaimed]}>
         <Chips color="#059669" />
-        <Text style={styles.rewardStatusClaimed}>✓ Claimed</Text>
+        <View style={styles.rewardStatusRow}>
+          <AppIcon name="check" size={11} color="#059669" />
+          <Text style={styles.rewardStatusClaimed}>Claimed</Text>
+        </View>
       </View>
     );
   }
@@ -327,9 +338,12 @@ function RewardBox({
   if (locked) {
     return (
       <TouchableOpacity activeOpacity={0.85} onPress={onLockedPress} style={[styles.rewardBox, styles.rewardVipLocked]}>
-        <View style={styles.lockChip}><Text style={styles.lockChipText}>🔒</Text></View>
+        <View style={styles.lockChip}><AppIcon name="lock" size={12} color="#B45309" /></View>
         <Chips color="#B45309" />
-        <Text style={styles.rewardStatusVip}>🔒 VIP only</Text>
+        <View style={styles.rewardStatusRow}>
+          <AppIcon name="lock" size={11} color="#B45309" />
+          <Text style={styles.rewardStatusVip}>VIP only</Text>
+        </View>
       </TouchableOpacity>
     );
   }
@@ -408,6 +422,8 @@ const styles = StyleSheet.create({
   colHeader: { flex: 1, paddingVertical: 8, borderRadius: 12, alignItems: "center" },
   colHeaderCommon: { backgroundColor: "rgba(139,92,246,0.14)" },
   colHeaderCommonText: { color: "#7C3AED", fontSize: 13, fontFamily: "Poppins_700Bold" },
+  colHeaderInner: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4 },
+  rewardStatusRow: { flexDirection: "row", alignItems: "center", gap: 3 },
   colHeaderCenter: { width: 44, alignItems: "center" },
   colHeaderStar: { fontSize: 18 },
   colHeaderVip: { backgroundColor: "rgba(249,115,22,0.14)" },
@@ -451,7 +467,7 @@ const styles = StyleSheet.create({
   modalTitle: { fontSize: 18, fontFamily: "Poppins_700Bold", textAlign: "center" },
   modalBody: { fontSize: 13, fontFamily: "Poppins_400Regular", textAlign: "center", lineHeight: 19, marginTop: 8, marginBottom: 18 },
   modalGoBtnWrap: { width: "100%", borderRadius: 14, overflow: "hidden" },
-  modalGoBtn: { height: 48, alignItems: "center", justifyContent: "center" },
+  modalGoBtn: { height: 48, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
   modalGoBtnText: { color: "#fff", fontSize: 15, fontFamily: "Poppins_700Bold" },
   modalClose: { marginTop: 12, paddingVertical: 6 },
   modalCloseText: { fontSize: 13, fontFamily: "Poppins_600SemiBold" },

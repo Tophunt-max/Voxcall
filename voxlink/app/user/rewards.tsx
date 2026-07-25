@@ -22,6 +22,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
 import { API } from "@/services/api";
 import { showErrorToast, showSuccessToast } from "@/components/Toast";
+import { AppIcon, type AppIconName } from "@/components/AppIcon";
 import { WEB_INPUT_RESET } from "@workspace/shared-ui/utils";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -42,9 +43,9 @@ const HEADER_BG = ["#FFB800", "#FF6A00"] as const;
 const SPIN_BG = ["#F59E0B", "#EF4444"] as const;
 const CAMPAIGN_BG = ["#3B82F6", "#8B5CF6"] as const;
 
-const ICON_EMOJI: Record<string, string> = {
-  calendar: "📅", call: "📞", invite: "🎁", coin: "🪙",
-  video: "📺", share: "🔗", gift: "🎁", trophy: "🏆", flame: "🔥",
+const ICON_NAME: Record<string, AppIconName> = {
+  calendar: "calendar", call: "phone", invite: "gift", coin: "coin",
+  video: "tv", share: "link", gift: "gift", trophy: "trophy", flame: "fire",
 };
 
 const TIER_COLORS: Record<string, string> = {
@@ -312,7 +313,10 @@ export default function RewardsScreen() {
           {/* ── Active campaign banners (FOMO) ────────────────────────── */}
           {activeCampaigns.length > 0 && (
             <View style={styles.section}>
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>🔥 Limited time</Text>
+              <View style={styles.sectionTitleRow}>
+                <AppIcon name="fire" size={16} color="#EF4444" />
+                <Text style={[styles.sectionTitle, { color: colors.text, marginBottom: 0 }]}>Limited time</Text>
+              </View>
               {activeCampaigns.map((c) => (
                 <View key={c.id} style={styles.campaignCardWrap}>
                   <LinearGradient
@@ -329,7 +333,7 @@ export default function RewardsScreen() {
                       {c.description ? <Text style={styles.campaignDesc}>{c.description}</Text> : null}
                       <Text style={styles.campaignCountdown}>Ends in {formatCooldown(c.ends_in_sec) || "soon"}</Text>
                     </View>
-                    <Text style={styles.campaignEmoji}>⚡</Text>
+                    <AppIcon name="zap" size={34} color="#fff" />
                   </LinearGradient>
                 </View>
               ))}
@@ -363,7 +367,7 @@ export default function RewardsScreen() {
                     </Text>
                     <Text style={styles.spinCardSub}>Win up to 1,000 coins per spin</Text>
                   </View>
-                  <Text style={styles.spinCardEmoji}>🎡</Text>
+                  <AppIcon name="spin" size={42} color="#fff" />
                 </LinearGradient>
               </TouchableOpacity>
             </View>
@@ -417,7 +421,7 @@ export default function RewardsScreen() {
                   <View key={task.id} style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
                     <View style={styles.cardHead}>
                       <View style={styles.cardIconBox}>
-                        <Text style={styles.cardIconEmoji}>{ICON_EMOJI[task.icon] ?? "🎁"}</Text>
+                        <AppIcon name={ICON_NAME[task.icon] ?? "gift"} size={24} color="#8A2BD8" />
                       </View>
                       <View style={styles.cardTitleCol}>
                         <Text style={[styles.cardTitle, { color: colors.text }]} numberOfLines={1}>{task.title}</Text>
@@ -504,9 +508,12 @@ export default function RewardsScreen() {
                       >
                         <View style={styles.achTopRow}>
                           <View style={[styles.achIconBox, { backgroundColor: tierColor + "22" }]}>
-                            <Text style={[styles.achIconEmoji, !a.unlocked && styles.achIconLocked]}>
-                              {ICON_EMOJI[a.icon] ?? "🏆"}
-                            </Text>
+                            <AppIcon
+                              name={ICON_NAME[a.icon] ?? "trophy"}
+                              size={22}
+                              color={a.unlocked ? tierColor : "#9CA3AF"}
+                              style={!a.unlocked ? styles.achIconLocked : undefined}
+                            />
                           </View>
                           <View style={[styles.achTierPill, { backgroundColor: tierColor }]}>
                             <Text style={styles.achTierText}>{a.tier.toUpperCase()}</Text>
@@ -525,13 +532,14 @@ export default function RewardsScreen() {
                           const days = Math.floor(remainingSec / 86400);
                           const hours = Math.floor((remainingSec % 86400) / 3600);
                           const label = remainingSec === 0
-                            ? "⏱ Expired · resets on next progress"
+                            ? "Expired · resets on next progress"
                             : days > 0
-                              ? `⏱ ${days}d ${hours}h left`
-                              : `⏱ ${hours}h left`;
+                              ? `${days}d ${hours}h left`
+                              : `${hours}h left`;
                           const isUrgent = remainingSec > 0 && remainingSec < 86400;
                           return (
                             <View style={[styles.achDurationChip, isUrgent && styles.achDurationChipUrgent]}>
+                              <AppIcon name="timer" size={10} color={isUrgent ? "#DC2626" : "#2563EB"} />
                               <Text style={[styles.achDurationText, isUrgent && styles.achDurationTextUrgent]}>{label}</Text>
                             </View>
                           );
@@ -539,7 +547,8 @@ export default function RewardsScreen() {
                         {/* Duration hint for NOT-YET-STARTED time-bound quests. */}
                         {!a.unlocked && a.duration_days > 0 && a.started_at == null && (
                           <View style={styles.achDurationChip}>
-                            <Text style={styles.achDurationText}>⏱ {a.duration_days}-day quest — starts on first progress</Text>
+                            <AppIcon name="timer" size={10} color="#2563EB" />
+                            <Text style={styles.achDurationText}>{a.duration_days}-day quest — starts on first progress</Text>
                           </View>
                         )}
 
@@ -555,7 +564,7 @@ export default function RewardsScreen() {
                           </View>
                           <Text style={[styles.achProgressLabel, { color: colors.subText }]}>
                             {a.unlocked
-                              ? "✓ Complete"
+                              ? "Complete"
                               : `${a.current_progress.toLocaleString()} / ${a.trigger_threshold.toLocaleString()}`}
                           </Text>
                         </View>
@@ -606,6 +615,7 @@ const styles = StyleSheet.create({
 
   section: { paddingHorizontal: 14, paddingTop: 18 },
   sectionTitle: { fontSize: 15, fontFamily: "Poppins_700Bold", marginBottom: 10 },
+  sectionTitleRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 10 },
 
   // Campaign banner
   campaignCardWrap: { marginBottom: 10, borderRadius: 16, overflow: "hidden", ...Platform.select({ ios: { shadowColor: "#3B82F6", shadowOpacity: 0.25, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } }, android: { elevation: 3 }, web: { boxShadow: "0 3px 10px rgba(59,130,246,0.25)" } as any }) },
@@ -703,6 +713,9 @@ const styles = StyleSheet.create({
   achDescV2: { fontSize: 11, fontFamily: "Poppins_400Regular", lineHeight: 14, minHeight: 28 },
 
   achDurationChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
     alignSelf: "flex-start",
     paddingHorizontal: 8,
     paddingVertical: 3,

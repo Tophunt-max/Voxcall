@@ -18,6 +18,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router, Stack } from "expo-router";
 import * as Haptics from "expo-haptics";
+import { AppIcon, type AppIconName } from "@/components/AppIcon";
 import { useAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
 import { API } from "@/services/api";
@@ -45,9 +46,9 @@ const SPIN_BG = ["#F59E0B", "#EF4444"] as const;
 const CAMPAIGN_BG = ["#3B82F6", "#8B5CF6"] as const;
 const CHECKIN_BG = ["#10B981", "#059669"] as const;
 
-const ICON_EMOJI: Record<string, string> = {
-  calendar: "📅", call: "📞", invite: "🎁", coin: "🪙",
-  video: "📺", share: "🔗", gift: "🎁", trophy: "🏆", flame: "🔥",
+const ICON_NAME: Record<string, AppIconName> = {
+  calendar: "calendar", call: "phone", invite: "gift", coin: "coin",
+  video: "tv", share: "link", gift: "gift", trophy: "trophy", flame: "fire",
 };
 
 const TIER_COLORS: Record<string, string> = {
@@ -253,7 +254,7 @@ export default function TasksScreen() {
 
   const primaryAction = (task: RewardTask): { label: string; onPress: () => void; variant: "primary" | "secondary" | "disabled" | "vip" } => {
     // VIP-only task shown to a free user → locked upsell CTA.
-    if (task.vip_locked) return { label: "🔒 Unlock with VIP", onPress: () => router.push("/user/vip" as any), variant: "vip" };
+    if (task.vip_locked) return { label: "Unlock with VIP", onPress: () => router.push("/user/vip" as any), variant: "vip" };
     if (task.claimable) return { label: `Claim +${task.coins_reward}`, onPress: () => claim(task), variant: "primary" };
     if (task.already_claimed) {
       const cooldownLabel = task.cooldown_hours > 0 && task.cooldown_remaining_sec > 0
@@ -285,14 +286,15 @@ export default function TasksScreen() {
       <View key={task.id} style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <View style={styles.cardHead}>
           <View style={styles.cardIconBox}>
-            <Text style={styles.cardIconEmoji}>{ICON_EMOJI[task.icon] ?? "🎁"}</Text>
+            <AppIcon name={ICON_NAME[task.icon] ?? "gift"} size={24} color="#8A2BD8" />
           </View>
           <View style={styles.cardTitleCol}>
             <View style={styles.cardTitleRow}>
               <Text style={[styles.cardTitle, { color: colors.text }]} numberOfLines={1}>{task.title}</Text>
               {task.audience === "vip" ? (
                 <View style={styles.vipTag}>
-                  <Text style={styles.vipTagText}>👑 VIP</Text>
+                  <AppIcon name="crown" size={10} color="#B45309" />
+                  <Text style={styles.vipTagText}>VIP</Text>
                 </View>
               ) : null}
             </View>
@@ -406,19 +408,21 @@ export default function TasksScreen() {
                     <Text style={styles.heroKicker}>SEASON REWARDS</Text>
                     <Text style={styles.heroTitle}>Complete tasks, earn coins</Text>
                     <View style={styles.heroCountdownRow}>
-                      <Text style={styles.heroCountdownIcon}>⏳</Text>
+                      <AppIcon name="hourglass" size={12} color="#fff" />
                       <Text style={styles.heroCountdownText}>Ends in {formatDaysClock(monthEndSec)}</Text>
                     </View>
                     <View style={styles.heroChips}>
                       <View style={styles.heroChip}>
-                        <Text style={styles.heroChipText}>🎁 {claimableCount} ready</Text>
+                        <AppIcon name="gift" size={12} color="#fff" />
+                        <Text style={styles.heroChipText}>{claimableCount} ready</Text>
                       </View>
                       <TouchableOpacity onPress={() => setTab("rewards")} activeOpacity={0.85} style={styles.heroPassBtn}>
-                        <Text style={styles.heroPassBtnText}>👑 View Pass →</Text>
+                        <AppIcon name="crown" size={12} color="#7C3AED" />
+                        <Text style={styles.heroPassBtnText}>View Pass →</Text>
                       </TouchableOpacity>
                     </View>
                   </View>
-                  <Text style={styles.heroEmoji}>🏆</Text>
+                  <AppIcon name="trophy" size={46} color="#fff" style={{ marginLeft: 8 }} />
                 </LinearGradient>
               </View>
 
@@ -435,7 +439,7 @@ export default function TasksScreen() {
                       <View style={{ flex: 1 }}>
                         <Text style={styles.checkinKicker}>DAILY CHECK-IN</Text>
                         <Text style={styles.checkinTitle}>
-                          {checkinTask.claimable ? `Check in & get +${checkinTask.coins_reward}` : checkinTask.already_claimed ? "Checked in today ✓" : checkinTask.title}
+                          {checkinTask.claimable ? `Check in & get +${checkinTask.coins_reward}` : checkinTask.already_claimed ? "Checked in today" : checkinTask.title}
                         </Text>
                         {checkinTask.already_claimed && checkinTask.cooldown_remaining_sec > 0 ? (
                           <Text style={styles.checkinSub}>Come back in {formatCooldown(checkinTask.cooldown_remaining_sec)}</Text>
@@ -446,8 +450,10 @@ export default function TasksScreen() {
                       <View style={styles.checkinBtn}>
                         {claimingId === checkinTask.id ? (
                           <ActivityIndicator color="#059669" />
+                        ) : checkinTask.claimable ? (
+                          <Text style={styles.checkinBtnText}>Check in</Text>
                         ) : (
-                          <Text style={styles.checkinBtnText}>{checkinTask.claimable ? "Check in" : "✓"}</Text>
+                          <AppIcon name="check" size={18} color="#059669" />
                         )}
                       </View>
                     </LinearGradient>
@@ -498,7 +504,10 @@ export default function TasksScreen() {
               {/* ── Active campaign banners (FOMO) ─────────────────────── */}
               {activeCampaigns.length > 0 && (
                 <View style={styles.section}>
-                  <Text style={[styles.sectionTitle, { color: colors.text }]}>🔥 Limited time</Text>
+                  <View style={styles.sectionTitleRow}>
+                    <AppIcon name="fire" size={16} color="#EF4444" />
+                    <Text style={[styles.sectionTitle, { color: colors.text, marginBottom: 0 }]}>Limited time</Text>
+                  </View>
                   {activeCampaigns.map((c) => (
                     <View key={c.id} style={styles.campaignCardWrap}>
                       <LinearGradient colors={CAMPAIGN_BG as any} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.campaignCard}>
@@ -510,7 +519,7 @@ export default function TasksScreen() {
                           {c.description ? <Text style={styles.campaignDesc}>{c.description}</Text> : null}
                           <Text style={styles.campaignCountdown}>Ends in {formatCooldown(c.ends_in_sec) || "soon"}</Text>
                         </View>
-                        <Text style={styles.campaignEmoji}>⚡</Text>
+                        <AppIcon name="zap" size={34} color="#fff" />
                       </LinearGradient>
                     </View>
                   ))}
@@ -533,7 +542,7 @@ export default function TasksScreen() {
                         </Text>
                         <Text style={styles.spinCardSub}>Win up to 1,000 coins per spin</Text>
                       </View>
-                      <Text style={styles.spinCardEmoji}>🎡</Text>
+                      <AppIcon name="spin" size={42} color="#fff" />
                     </LinearGradient>
                   </TouchableOpacity>
                 </View>
@@ -567,6 +576,7 @@ const styles = StyleSheet.create({
 
   section: { paddingHorizontal: 14, paddingTop: 18 },
   sectionTitle: { fontSize: 15, fontFamily: "Poppins_700Bold", marginBottom: 10 },
+  sectionTitleRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 10 },
   sectionHeaderRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 6 },
   countdownPill: { backgroundColor: "rgba(124,58,237,0.12)", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 },
   countdownPillText: { color: "#7C3AED", fontSize: 11.5, fontFamily: "Poppins_600SemiBold" },
@@ -580,9 +590,9 @@ const styles = StyleSheet.create({
   heroCountdownIcon: { fontSize: 12 },
   heroCountdownText: { color: "#fff", fontSize: 12.5, fontFamily: "Poppins_700Bold" },
   heroChips: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 12 },
-  heroChip: { backgroundColor: "rgba(255,255,255,0.2)", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12 },
+  heroChip: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: "rgba(255,255,255,0.2)", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12 },
   heroChipText: { color: "#fff", fontSize: 12, fontFamily: "Poppins_600SemiBold" },
-  heroPassBtn: { backgroundColor: "#fff", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
+  heroPassBtn: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: "#fff", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
   heroPassBtnText: { color: "#7C3AED", fontSize: 12, fontFamily: "Poppins_700Bold" },
   heroEmoji: { fontSize: 46, marginLeft: 8 },
 
@@ -631,7 +641,7 @@ const styles = StyleSheet.create({
   cardTitleCol: { flex: 1, minWidth: 0 },
   cardTitleRow: { flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" },
   cardTitle: { fontSize: 14, fontFamily: "Poppins_700Bold" },
-  vipTag: { backgroundColor: "#FEF3C7", borderColor: "#F59E0B", borderWidth: 1, paddingHorizontal: 6, paddingVertical: 1, borderRadius: 8 },
+  vipTag: { flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: "#FEF3C7", borderColor: "#F59E0B", borderWidth: 1, paddingHorizontal: 6, paddingVertical: 1, borderRadius: 8 },
   vipTagText: { color: "#B45309", fontSize: 9.5, fontFamily: "Poppins_700Bold" },
   cardDesc: { fontSize: 11.5, fontFamily: "Poppins_400Regular", marginTop: 2, lineHeight: 15 },
   cardRewardCol: { flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: "#FFB800", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 },

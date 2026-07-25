@@ -19,6 +19,7 @@ import {
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
+import { AppIcon } from "@/components/AppIcon";
 import { useColors } from "@/hooks/useColors";
 import { useLanguage } from "@/context/LanguageContext";
 import type { DailyStreakStatus, DailyStreakClaimResult } from "@/hooks/useDailyStreak";
@@ -214,17 +215,17 @@ export default function DailyRewardModal({
             <View pointerEvents="none" style={styles.bokehTop} />
             <View pointerEvents="none" style={styles.bokehBottom} />
             {/* Floating sparkles */}
-            <Text pointerEvents="none" style={styles.sparkleTL}>✨</Text>
-            <Text pointerEvents="none" style={styles.sparkleTR}>✨</Text>
+            <AppIcon name="sparkles" size={15} color="rgba(255,255,255,0.9)" style={styles.sparkleTL} />
+            <AppIcon name="sparkles" size={11} color="rgba(255,255,255,0.75)" style={styles.sparkleTR} />
             {isCelebrating ? <Confetti intense={isMilestone} /> : null}
             <View style={styles.headerEmojiWrap}>
               {/* Slowly rotating sunburst rays behind the icon */}
               <Sunburst />
               <Animated.View pointerEvents="none" style={[styles.emojiHalo, haloStyle]} />
               <View style={styles.emojiInner}>
-                <Animated.Text style={[styles.headerEmoji, !isCelebrating && giftBounce]}>
-                  {isCelebrating ? "🎉" : "🎁"}
-                </Animated.Text>
+                <Animated.View style={!isCelebrating ? giftBounce : undefined}>
+                  <AppIcon name={isCelebrating ? "celebrate" : "gift"} size={38} color="#fff" />
+                </Animated.View>
               </View>
             </View>
             <Text style={styles.headerTitle}>
@@ -237,7 +238,8 @@ export default function DailyRewardModal({
             </Text>
             {/* Streak flame chip */}
             <View style={styles.streakChip}>
-              <Text style={styles.streakChipTxt}>🔥 {streakAfter}</Text>
+              <AppIcon name="fire" size={13} color="#fff" />
+              <Text style={styles.streakChipTxt}>{streakAfter}</Text>
             </View>
           </LinearGradient>
 
@@ -355,12 +357,16 @@ function ClaimableBody({
       <Text style={[styles.bodyHint, { color: colors.mutedForeground }]}>{tr.claimHint}</Text>
       {milestone > 0 ? (
         <View style={[styles.milestoneBadge, isDark && styles.milestoneBadgeDark]}>
+          <AppIcon name="celebrate" size={13} color={isDark ? COIN_GOLD_DARK : "#A56A00"} />
           <Text style={[styles.milestoneTxt, isDark && { color: COIN_GOLD_DARK }]}>
-            🎉 {interpolate(tr.dayBonus, { day: streakAfter, count: milestone })}
+            {interpolate(tr.dayBonus, { day: streakAfter, count: milestone })}
           </Text>
         </View>
       ) : nextMilestoneHint ? (
-        <Text style={[styles.nextMilestoneHint, { color: colors.mutedForeground }]}>⭐ {nextMilestoneHint}</Text>
+        <View style={styles.nextMilestoneRow}>
+          <AppIcon name="star" size={12} color={colors.mutedForeground} />
+          <Text style={[styles.nextMilestoneHint, { color: colors.mutedForeground, marginTop: 0 }]}>{nextMilestoneHint}</Text>
+        </View>
       ) : null}
     </View>
   );
@@ -416,17 +422,20 @@ function CelebrationBody({
       {/* Engagement v2 extras — only render when present (> 0). */}
       {(result.minutes_reward ?? 0) > 0 ? (
         <View style={styles.extraBadge}>
-          <Text style={styles.extraTxt}>📞 {interpolate(tr.freeMinutes, { count: result.minutes_reward ?? 0 })}</Text>
+          <AppIcon name="phone" size={13} color="#6A1B9A" />
+          <Text style={styles.extraTxt}>{interpolate(tr.freeMinutes, { count: result.minutes_reward ?? 0 })}</Text>
         </View>
       ) : null}
       {(result.chest_bonus ?? 0) > 0 ? (
         <View style={[styles.extraBadge, styles.chestBadge]}>
-          <Text style={styles.extraTxt}>🎁 {interpolate(tr.monthlyChest, { count: result.chest_bonus ?? 0 })}</Text>
+          <AppIcon name="gift" size={13} color="#A56A00" />
+          <Text style={styles.extraTxt}>{interpolate(tr.monthlyChest, { count: result.chest_bonus ?? 0 })}</Text>
         </View>
       ) : null}
       {(result.comeback_bonus ?? 0) > 0 ? (
         <View style={styles.extraBadge}>
-          <Text style={styles.extraTxt}>👋 {interpolate(tr.comebackBonus, { count: result.comeback_bonus ?? 0 })}</Text>
+          <AppIcon name="wave" size={13} color="#6A1B9A" />
+          <Text style={styles.extraTxt}>{interpolate(tr.comebackBonus, { count: result.comeback_bonus ?? 0 })}</Text>
         </View>
       ) : null}
     </View>
@@ -519,9 +528,9 @@ function ScheduleStrip({
                 </Text>
               </View>
               {isClaimed && !isToday ? (
-                <Text style={styles.stripCheck}>✓</Text>
+                <AppIcon name="check" size={10} color="#0BAF23" style={styles.stripCheck} />
               ) : milestone > 0 ? (
-                <Text style={styles.stripStar}>★</Text>
+                <AppIcon name="star" size={9} color={COIN_GOLD} style={styles.stripStar} />
               ) : null}
             </View>
           );
@@ -540,7 +549,10 @@ function RepairBanner({
   const cost = status.repair_cost_coins ?? 0;
   return (
     <View style={styles.repairBanner}>
-      <Text style={styles.repairTitle}>💔 {tr.missedDay}</Text>
+      <View style={styles.repairTitleRow}>
+        <AppIcon name="heart-broken" size={14} color="#E23744" />
+        <Text style={styles.repairTitle}>{tr.missedDay}</Text>
+      </View>
       <Text style={styles.repairSub}>
         {hasFreeze
           ? interpolate(tr.restoreWithSaver, { streak: status.streak_days, count: status.freezes_available ?? 0 })
@@ -557,8 +569,8 @@ function RepairBanner({
           {repairing
             ? tr.restoring
             : hasFreeze
-              ? `🛡️ ${tr.useStreakSaver}`
-              : `🔧 ${interpolate(tr.restoreForCoins, { count: cost })}`}
+              ? tr.useStreakSaver
+              : interpolate(tr.restoreForCoins, { count: cost })}
         </Text>
       </TouchableOpacity>
     </View>
@@ -574,7 +586,8 @@ function AtRiskBanner({ status, tr }: { status: DailyStreakStatus; tr: TR }) {
     : tr.atRisk;
   return (
     <View style={styles.atRiskBanner}>
-      <Text style={styles.atRiskTxt}>⚠️ {text}</Text>
+      <AppIcon name="warning" size={13} color="#B26B00" />
+      <Text style={styles.atRiskTxt}>{text}</Text>
     </View>
   );
 }
@@ -822,6 +835,7 @@ const styles = StyleSheet.create({
   },
   headerSub: { fontSize: 12.5, fontFamily: "Poppins_500Medium", color: "rgba(255,255,255,0.9)", marginTop: 3 },
   streakChip: {
+    flexDirection: "row", alignItems: "center", gap: 5,
     marginTop: 12, paddingHorizontal: 14, paddingVertical: 5, borderRadius: 999,
     backgroundColor: "rgba(255,255,255,0.25)",
     borderWidth: 1, borderColor: "rgba(255,255,255,0.35)",
@@ -846,6 +860,7 @@ const styles = StyleSheet.create({
   bodyHint: { fontSize: 13, fontFamily: "Poppins_400Regular", marginTop: 8, textAlign: "center" },
 
   milestoneBadge: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5,
     marginTop: 14, paddingHorizontal: 14, paddingVertical: 8,
     backgroundColor: "rgba(255,201,60,0.15)", borderRadius: 999,
     borderWidth: 1, borderColor: "rgba(255,201,60,0.5)",
@@ -853,6 +868,8 @@ const styles = StyleSheet.create({
   milestoneTxt: { fontSize: 12, fontFamily: "Poppins_600SemiBold", color: "#A56A00", textAlign: "center" },
   milestoneBadgeDark: { backgroundColor: "rgba(255,201,60,0.20)", borderColor: "rgba(255,201,60,0.6)" },
   nextMilestoneHint: { fontSize: 12, fontFamily: "Poppins_500Medium", marginTop: 12, textAlign: "center" },
+  nextMilestoneRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, marginTop: 12 },
+  repairTitleRow: { flexDirection: "row", alignItems: "center", gap: 6 },
 
   celebrationSub: { fontSize: 13, fontFamily: "Poppins_500Medium", marginTop: 6 },
   celebrationBonus: { color: COIN_GOLD, fontFamily: "Poppins_700Bold" },
@@ -911,12 +928,13 @@ const styles = StyleSheet.create({
   atRiskBanner: {
     marginHorizontal: 20, marginBottom: 6, padding: 10, borderRadius: 12,
     backgroundColor: "rgba(255,159,10,0.12)", borderWidth: 1, borderColor: "rgba(255,159,10,0.4)",
-    alignItems: "center",
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5,
   },
   atRiskTxt: { fontSize: 12, fontFamily: "Poppins_600SemiBold", color: "#B26B00", textAlign: "center" },
 
   // Celebration extra reward badges
   extraBadge: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5,
     marginTop: 10, paddingHorizontal: 14, paddingVertical: 7,
     backgroundColor: "rgba(132,0,255,0.10)", borderRadius: 999,
     borderWidth: 1, borderColor: "rgba(132,0,255,0.30)",
