@@ -279,13 +279,13 @@ function RewardBox({
     <View style={styles.minRow}>
       {minutes > 0 ? (
         <View style={styles.minChipRow}>
-          <FreeMinutesCardIcon size={30} />
+          <FreeMinutesCardIcon size={38} />
           <Text style={[styles.minChip, { color }]}>{minutes}m</Text>
         </View>
       ) : null}
       {randomMinutes > 0 ? (
         <View style={styles.minChipRow}>
-          <RandomCardIcon size={30} />
+          <RandomCardIcon size={38} />
           <Text style={[styles.minChip, { color }]}>{randomMinutes}m</Text>
         </View>
       ) : null}
@@ -325,13 +325,13 @@ function RewardBox({
               <View style={styles.minRow}>
                 {minutes > 0 ? (
                   <View style={styles.minChipRow}>
-                    <FreeMinutesCardIcon size={30} />
+                    <FreeMinutesCardIcon size={38} />
                     <Text style={styles.rewardClaimNum}>{minutes}m</Text>
                   </View>
                 ) : null}
                 {randomMinutes > 0 ? (
                   <View style={styles.minChipRow}>
-                    <RandomCardIcon size={30} />
+                    <RandomCardIcon size={38} />
                     <Text style={styles.rewardClaimNum}>{randomMinutes}m</Text>
                   </View>
                 ) : null}
@@ -354,7 +354,7 @@ function RewardBox({
   );
 }
 
-const CELL_H = 82;
+const CELL_H = 100;
 
 const styles = StyleSheet.create({
   loadingWrap: { height: 90, borderRadius: 16, borderWidth: 1, alignItems: "center", justifyContent: "center" },
