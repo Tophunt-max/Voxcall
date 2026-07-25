@@ -1,6 +1,10 @@
-// VoxLink Toast Component — beautiful animated in-app notifications
-// Gradient icon badge, spring entrance, swipe-to-dismiss, auto-dismiss
-// progress bar, and haptic feedback for a premium, attention-grabbing feel.
+// VoxLink Toast Component — centered animated POPUP notifications.
+// Previously these rendered as thin banners sliding down from the top; they
+// now surface as a proper centered popup card over a dimmed backdrop, with a
+// spring/scale/fade entrance, a gradient icon badge, an auto-dismiss progress
+// bar, and haptic feedback. The public API (showSuccessToast, showErrorToast,
+// showWarningToast, showInfoToast, showToast, ToastContainer) is unchanged so
+// every existing call-site keeps working.
 
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import {
@@ -36,7 +40,7 @@ interface ToastProps {
 
 // ─── Per-type visual identity ──────────────────────────────────────────────
 // Each toast type gets a vibrant gradient badge + matching accent so the
-// notification is instantly recognisable and visually delightful.
+// popup is instantly recognisable and visually delightful.
 const TYPE_STYLE: Record<
   ToastType,
   { gradient: [string, string]; icon: keyof typeof Feather.glyphMap; accent: string; defaultTitle: string; glow: string }
@@ -49,7 +53,7 @@ const TYPE_STYLE: Record<
 
 function ToastItem({ toast, onDismiss }: ToastProps) {
   const colors = useColors();
-  const anim = useRef(new Animated.Value(0)).current;       // entrance (0→1)
+  const anim = useRef(new Animated.Value(0)).current;        // entrance (0→1)
   const progress = useRef(new Animated.Value(1)).current;    // countdown bar (1→0)
   const iconPulse = useRef(new Animated.Value(0)).current;   // icon pop
   const dismissedRef = useRef(false);
@@ -57,19 +61,30 @@ function ToastItem({ toast, onDismiss }: ToastProps) {
   const style = TYPE_STYLE[toast.type];
   const duration = toast.duration ?? 4000;
 
+  const dismiss = useCallback(() => {
+    if (dismissedRef.current) return;
+    dismissedRef.current = true;
+    Animated.timing(anim, {
+      toValue: 0,
+      duration: 200,
+      easing: Easing.in(Easing.cubic),
+      useNativeDriver: useNativeDriverValue,
+    }).start(() => onDismiss(toast.id));
+  }, [anim, onDismiss, toast.id]);
+
   useEffect(() => {
-    // Haptic cue matched to severity — makes the toast *felt*, not just seen.
+    // Haptic cue matched to severity — makes the popup *felt*, not just seen.
     if (toast.type === "success") successNotification();
     else if (toast.type === "error") errorNotification();
     else if (toast.type === "warning") warningNotification();
 
-    // Spring the card in from the top + pop the icon slightly after.
+    // Pop the card in from center + bounce the icon a touch after.
     Animated.parallel([
       Animated.spring(anim, {
         toValue: 1,
         useNativeDriver: useNativeDriverValue,
-        tension: 90,
-        friction: 11,
+        tension: 120,
+        friction: 12,
       }),
       Animated.sequence([
         Animated.delay(120),
@@ -90,41 +105,23 @@ function ToastItem({ toast, onDismiss }: ToastProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const dismiss = useCallback(() => {
-    if (dismissedRef.current) return;
-    dismissedRef.current = true;
-    Animated.timing(anim, {
-      toValue: 0,
-      duration: 220,
-      easing: Easing.in(Easing.cubic),
-      useNativeDriver: useNativeDriverValue,
-    }).start(() => onDismiss(toast.id));
-  }, [anim, onDismiss, toast.id]);
-
   const title = toast.title ?? style.defaultTitle;
 
   return (
     <Animated.View
       style={[
-        styles.toast,
+        styles.card,
         {
           backgroundColor: colors.card ?? "#FFFFFF",
           shadowColor: style.glow,
           opacity: anim,
           transform: [
-            {
-              translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [-40, 0] }),
-            },
-            {
-              scale: anim.interpolate({ inputRange: [0, 1], outputRange: [0.92, 1] }),
-            },
+            { scale: anim.interpolate({ inputRange: [0, 1], outputRange: [0.85, 1] }) },
+            { translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }) },
           ],
         },
       ]}
     >
-      {/* Accent edge */}
-      <View style={[styles.accentEdge, { backgroundColor: style.accent }]} />
-
       {/* Gradient icon badge */}
       <Animated.View
         style={{
@@ -139,27 +136,25 @@ function ToastItem({ toast, onDismiss }: ToastProps) {
           end={{ x: 1, y: 1 }}
           style={styles.iconBadge}
         >
-          <Feather name={style.icon} size={20} color="#FFFFFF" />
+          <Feather name={style.icon} size={30} color="#FFFFFF" />
         </LinearGradient>
       </Animated.View>
 
       {/* Text */}
-      <View style={styles.toastContent}>
-        <Text style={[styles.toastTitle, { color: colors.foreground ?? colors.text }]} numberOfLines={1}>
-          {title}
-        </Text>
-        <Text style={[styles.toastMessage, { color: colors.mutedForeground }]} numberOfLines={3}>
-          {toast.message}
-        </Text>
-      </View>
+      <Text style={[styles.title, { color: colors.foreground ?? colors.text }]} numberOfLines={2}>
+        {title}
+      </Text>
+      <Text style={[styles.message, { color: colors.mutedForeground }]} numberOfLines={5}>
+        {toast.message}
+      </Text>
 
-      {/* Close */}
+      {/* Dismiss */}
       <TouchableOpacity
         onPress={dismiss}
-        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        style={styles.closeBtn}
+        activeOpacity={0.85}
+        style={[styles.dismissBtn, { backgroundColor: style.accent }]}
       >
-        <Feather name="x" size={16} color={colors.mutedForeground} />
+        <Text style={styles.dismissText}>Got it</Text>
       </TouchableOpacity>
 
       {/* Auto-dismiss progress bar */}
@@ -202,12 +197,25 @@ export function showInfoToast(message: string, title?: string) {
   showToast({ type: "info", message, title });
 }
 
+function Backdrop() {
+  const fade = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(fade, {
+      toValue: 1,
+      duration: 200,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: useNativeDriverValue,
+    }).start();
+  }, [fade]);
+  return <Animated.View pointerEvents="none" style={[styles.backdrop, { opacity: fade }]} />;
+}
+
 export function ToastContainer() {
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
   const show = useCallback((params: Omit<ToastMessage, "id">) => {
     const id = `toast_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-    setToasts((prev) => [{ id, ...params }, ...prev].slice(0, 4));
+    setToasts((prev) => [{ id, ...params }, ...prev].slice(0, 3));
   }, []);
 
   useEffect(() => {
@@ -222,79 +230,90 @@ export function ToastContainer() {
   if (toasts.length === 0) return null;
 
   return (
-    <View style={styles.container} pointerEvents="box-none">
-      {toasts.map((toast) => (
-        <ToastItem key={toast.id} toast={toast} onDismiss={dismiss} />
-      ))}
+    <View style={styles.overlay} pointerEvents="box-none">
+      <Backdrop />
+      <View style={styles.stack} pointerEvents="box-none">
+        {toasts.map((toast) => (
+          <ToastItem key={toast.id} toast={toast} onDismiss={dismiss} />
+        ))}
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    position: "absolute",
-    top: Platform.OS === "ios" ? 60 : 40,
-    left: 14,
-    right: 14,
-    zIndex: 9999,
-    gap: 10,
-  },
-  toast: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 14,
-    paddingLeft: 18,
-    paddingRight: 12,
-    borderRadius: 18,
-    gap: 12,
-    overflow: "hidden",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.22,
-    shadowRadius: 16,
-    elevation: 10,
-  },
-  accentEdge: {
-    position: "absolute",
-    left: 0,
-    top: 0,
-    bottom: 0,
-    width: 5,
-  },
-  iconBadge: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
     alignItems: "center",
     justifyContent: "center",
+    paddingHorizontal: 28,
+    zIndex: 9999,
+    ...(Platform.OS === "web" ? { position: "fixed" as any } : null),
+  },
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.5)",
+  },
+  stack: {
+    width: "100%",
+    maxWidth: 360,
+    alignItems: "center",
+    gap: 14,
+  },
+  card: {
+    width: "100%",
+    borderRadius: 24,
+    paddingTop: 24,
+    paddingBottom: 22,
+    paddingHorizontal: 22,
+    alignItems: "center",
+    gap: 8,
+    overflow: "hidden",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.28,
+    shadowRadius: 24,
+    elevation: 14,
+  },
+  iconBadge: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 6,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    elevation: 4,
   },
-  toastContent: {
-    flex: 1,
-    gap: 3,
-  },
-  toastTitle: {
-    fontSize: 14,
+  title: {
+    fontSize: 18,
     fontFamily: "Poppins_700Bold",
+    textAlign: "center",
   },
-  toastMessage: {
-    fontSize: 12.5,
+  message: {
+    fontSize: 13.5,
     fontFamily: "Poppins_400Regular",
-    lineHeight: 18,
+    lineHeight: 20,
+    textAlign: "center",
   },
-  closeBtn: {
-    padding: 4,
-    alignSelf: "flex-start",
+  dismissBtn: {
+    marginTop: 12,
+    paddingHorizontal: 34,
+    paddingVertical: 11,
+    borderRadius: 14,
+  },
+  dismissText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontFamily: "Poppins_600SemiBold",
   },
   progressBar: {
     position: "absolute",
     bottom: 0,
     left: 0,
     height: 3,
-    borderBottomLeftRadius: 18,
-    opacity: 0.6,
+    opacity: 0.65,
   },
 });
