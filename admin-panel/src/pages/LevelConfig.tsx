@@ -91,12 +91,7 @@ const DEFAULT_CONFIG: LevelDef[] = [
   { level: 6, name: 'Elite',    badge: '👑', color: '#D97706', min_calls: 150, min_rating: 4.6, min_minutes: 3500, min_earnings: 50000, criteria: [{ metric: 'total_minutes', op: '>=', value: 3500 }, { metric: 'unique_callers', op: '>=', value: 200 }, { metric: 'review_count', op: '>=', value: 150 }, { metric: 'rating', op: '>=', value: 4.6 }, { metric: 'total_earnings', op: '>=', value: 50000 }, { metric: 'answer_rate', op: '>=', value: 0.80 }, { metric: 'kyc_verified', op: '==', value: 1 }], coin_reward: 2000, description: 'Top-tier, verified & in demand',      perks: { max_rate: 500, max_audio_rate: 500, max_video_rate: 500, random_audio_rate: 25, random_video_rate: 40, earning_share: 0.80, rank_boost: 6 } },
 ];
 
-/**
- * Headroom (coins/min) the host app grants on top of the admin-set per-level
- * cap. Mirrors HOST_RATE_BONUS in api-server/src/lib/levels.ts so the admin UI
- * can show the host "effective max" they will actually be allowed to charge.
- */
-const HOST_RATE_BONUS = 5;
+
 
 /**
  * Bounds on the configurable ladder. Mirrors MIN_LEVELS / MAX_LEVELS in
@@ -490,7 +485,7 @@ export default function LevelConfig() {
           <strong>How levels work:</strong> Each level has a list of <strong>criteria</strong> (any number, different per level). Hosts are <strong>auto-promoted in real time</strong> when they meet <strong>ALL</strong> of a level's criteria, and the one-time Coin Reward is credited automatically.
           Available metrics: rated calls, average rating, talk-minutes, coins earned, unique callers, answer rate, followers, daily streak, days on platform, KYC verified, total online-time, active days, avg call length, repeat callers, gifts + tips received, successful referrals &amp; languages spoken.
           Level 1 is the starting level (no criteria). <strong>Perks</strong> per level: Max Audio/Video Rate, Earning Share and Rank Boost.
-          A host can charge up to <strong>+{HOST_RATE_BONUS} coins/min</strong> above each cap.
+          The per-minute rate is <strong>fixed by the level</strong> — hosts are charged exactly the level's Audio/Video rate and <strong>cannot edit it</strong>.
           Use <strong>"Load Recommended"</strong> for a richer quality/trust ladder, then <strong>"Recalculate All Host Levels"</strong> to back-fill existing hosts.
         </div>
       </div>
@@ -681,7 +676,7 @@ export default function LevelConfig() {
                     onChange={v => updatePerk(idx, 'max_audio_rate', v)}
                   />
                   <p className="mt-1 text-[11px] text-muted-foreground">
-                    Host can set up to <strong>{Math.min(500, lvl.perks.max_audio_rate + HOST_RATE_BONUS)}</strong> (cap +{HOST_RATE_BONUS}).
+                    Fixed — host is charged exactly <strong>{lvl.perks.max_audio_rate}</strong> coins/min (not editable).
                   </p>
                 </div>
                 <div>
@@ -694,7 +689,7 @@ export default function LevelConfig() {
                     onChange={v => updatePerk(idx, 'max_video_rate', v)}
                   />
                   <p className="mt-1 text-[11px] text-muted-foreground">
-                    Host can set up to <strong>{Math.min(500, lvl.perks.max_video_rate + HOST_RATE_BONUS)}</strong> (cap +{HOST_RATE_BONUS}).
+                    Fixed — host is charged exactly <strong>{lvl.perks.max_video_rate}</strong> coins/min (not editable).
                   </p>
                 </div>
                 <Field

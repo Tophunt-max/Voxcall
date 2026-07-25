@@ -203,7 +203,10 @@ export const DEFAULT_VIDEO_FHD_RATE = 80;
  * `max_video_rate` so the level cap acts as a soft target rather than a hard
  * lid. Still clamped to ABSOLUTE_MAX_RATE.
  */
-export const HOST_RATE_BONUS = 5;
+// Headroom above the level cap a host may charge. Set to 0: a host's rate is
+// LOCKED to their level's cap — they cannot edit it, and there is no bonus
+// headroom. The rate is always exactly what the level allows.
+export const HOST_RATE_BONUS = 0;
 
 /**
  * Minimum number of rungs a configured ladder may have. Level 1 (the

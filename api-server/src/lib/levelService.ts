@@ -26,7 +26,7 @@
 // ============================================================================
 
 import type { Env } from '../types';
-import { getLevelConfig, evaluateLevel, countLanguages, type LevelDef } from './levels';
+import { getLevelConfig, evaluateLevel, countLanguages, getMaxAudioRate, getMaxVideoRate, type LevelDef } from './levels';
 import { sendFCMPush, getFCMTokens } from './fcm';
 
 export interface LevelUpResult {
@@ -134,6 +134,20 @@ export async function applyLevelUp(
     .bind(target, hostId, target)
     .run();
   if (!claim.meta?.changes) return NO_CHANGE(oldLevel);
+
+  // Lock the host's per-minute rate to the NEW level's cap. Hosts can't edit
+  // their rate, so it must always equal what the level allows. Best-effort —
+  // a failure here never rolls back the promotion.
+  try {
+    const a = getMaxAudioRate(target, cfg);
+    const v = getMaxVideoRate(target, cfg);
+    await db
+      .prepare('UPDATE hosts SET audio_coins_per_minute = ?, video_coins_per_minute = ?, coins_per_minute = ? WHERE id = ?')
+      .bind(a, v, a, hostId)
+      .run();
+  } catch (e) {
+    console.warn('[applyLevelUp] rate-to-level sync failed:', e);
+  }
 
   const ladder = cfg.slice().sort((a, b) => a.level - b.level);
   const targetDef = ladder.find((x) => x.level === target) ?? ladder[ladder.length - 1];
@@ -305,5 +319,41 @@ export async function recalcAllHostLevels(
     if (results.length < take) break; // last page
   }
 
+  // Lock EVERY host's per-minute rate to their level cap — even hosts NOT
+  // promoted this run (and after an admin edited the level caps). This is what
+  // makes "Recalculate levels" also re-sync the whole roster's rates, since
+  // hosts can no longer edit their own rate.
+  try {
+    await syncAllHostRatesToLevel(db, cfg);
+  } catch (e) {
+    console.warn('[recalcAllHostLevels] bulk rate sync failed:', e);
+  }
+
   return { processed, promoted, coinsAwarded };
+}
+
+/**
+ * Bulk-sync every host's per-minute rate columns to their level's cap. Hosts
+ * cannot edit their own rate, so the stored rate must always equal the level
+ * config. Cheap: one UPDATE per level rung. Returns total rows changed.
+ */
+export async function syncAllHostRatesToLevel(db: D1Database, config?: LevelDef[]): Promise<number> {
+  const cfg = config ?? (await getLevelConfig(db));
+  let changed = 0;
+  for (const def of cfg) {
+    const audio = getMaxAudioRate(def.level, cfg);
+    const video = getMaxVideoRate(def.level, cfg);
+    try {
+      const r = await db
+        .prepare(
+          'UPDATE hosts SET audio_coins_per_minute = ?, video_coins_per_minute = ?, coins_per_minute = ?, updated_at = unixepoch() WHERE COALESCE(level, 1) = ?',
+        )
+        .bind(audio, video, audio, def.level)
+        .run();
+      changed += r.meta?.changes ?? 0;
+    } catch (e) {
+      console.warn('[syncAllHostRatesToLevel] failed for level', def.level, e);
+    }
+  }
+  return changed;
 }

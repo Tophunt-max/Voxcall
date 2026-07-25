@@ -470,7 +470,11 @@ hostProtected.patch('/me', zValidator('json', updateProfileSchema), async (c) =>
     MAX_AUDIO = getHostAudioRateCeiling(lvl, cfg);
     MAX_VIDEO = getHostVideoRateCeiling(lvl, cfg);
   }
-  const allowed = ['display_name', 'specialties', 'languages', 'coins_per_minute', 'audio_coins_per_minute', 'video_coins_per_minute', 'accepts_random_calls', 'allows_video', 'payout_method', 'payout_details'];
+  // NOTE: the per-minute rate fields (coins_per_minute, audio_coins_per_minute,
+  // video_coins_per_minute) are intentionally NOT editable by the host. Their
+  // rate is LOCKED to their level's cap (synced by the level engine). Any rate
+  // values in the body are ignored here; only the admin can override rates.
+  const allowed = ['display_name', 'specialties', 'languages', 'accepts_random_calls', 'allows_video', 'payout_method', 'payout_details'];
   const sets: string[] = [];
   const vals: any[] = [];
   // Track the actually-stored (clamped) rate values so the response can echo
