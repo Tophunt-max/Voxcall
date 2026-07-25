@@ -29,6 +29,7 @@ import { useLanguage } from "@/context/LanguageContext";
 import { API, resolveMediaUrl } from "@/services/api";
 import { showSuccessToast, showErrorToast } from "@/components/Toast";
 import { VipBadge } from "@/components/VipBadge";
+import { MinutesBalance } from "@/components/MinutesBalance";
 
 type FeatherName = keyof typeof Feather.glyphMap;
 
@@ -362,6 +363,7 @@ export default function ProfileScreen() {
               <Text style={styles.coinBannerValue}>
                 {(user?.coins ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </Text>
+              <MinutesBalance size={15} color="#fff" pillBg="rgba(255,255,255,0.22)" style={{ marginTop: 6 }} />
             </View>
             <View style={styles.rechargePill}>
               <Text style={styles.rechargeText}>Recharge</Text>

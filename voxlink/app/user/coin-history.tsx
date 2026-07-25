@@ -11,6 +11,7 @@ import { useLanguage } from "@/context/LanguageContext";
 import type { Translations } from "@/localization/en";
 import { API } from "@/services/api";
 import { showErrorToast } from "@/components/Toast";
+import { MinutesBalance } from "@/components/MinutesBalance";
 
 type TxType = "purchase" | "spend" | "bonus" | "refund" | "withdrawal" | "earn";
 
@@ -150,6 +151,7 @@ export default function CoinHistoryScreen() {
             <Image source={require("@/assets/icons/ic_coin.png")} style={styles.summaryIcon} resizeMode="contain" />
             <Text style={styles.summaryAmount}>{(user?.coins ?? 0).toLocaleString()}</Text>
           </View>
+          <MinutesBalance size={16} color="#fff" pillBg="rgba(255,255,255,0.2)" style={{ marginTop: 8 }} />
         </View>
         <View style={styles.summaryDivider} />
         <View style={styles.summaryRight}>

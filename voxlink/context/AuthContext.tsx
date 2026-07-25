@@ -26,6 +26,9 @@ export interface UserProfile {
   bio?: string;
   language?: string;
   coins: number;
+  /** Free-minute card balances (host-call + random-call). Shown wallet-style. */
+  free_call_minutes?: number;
+  free_random_minutes?: number;
   role: UserRole;
   isOnline?: boolean;
   rating?: number;
@@ -52,14 +55,19 @@ interface AuthContextValue extends AuthState {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-async function fetchFreshBalance(): Promise<{ coins: number | null; tokenExpired: boolean }> {
+async function fetchFreshBalance(): Promise<{ coins: number | null; freeCallMinutes: number | null; freeRandomMinutes: number | null; tokenExpired: boolean }> {
   try {
-    const bal = await apiRequest<{ coins: number }>("GET", "/api/coins/balance");
-    return { coins: bal?.coins ?? null, tokenExpired: false };
+    const bal = await apiRequest<{ coins: number; free_call_minutes?: number; free_random_minutes?: number }>("GET", "/api/coins/balance");
+    return {
+      coins: bal?.coins ?? null,
+      freeCallMinutes: bal?.free_call_minutes ?? null,
+      freeRandomMinutes: bal?.free_random_minutes ?? null,
+      tokenExpired: false,
+    };
   } catch (err: any) {
     const msg = (err?.message || "").toLowerCase();
     const tokenExpired = msg.includes("unauthorized") || msg.includes("401") || msg.includes("invalid token") || msg.includes("token expired");
-    return { coins: null, tokenExpired };
+    return { coins: null, freeCallMinutes: null, freeRandomMinutes: null, tokenExpired };
   }
 }
 
@@ -117,7 +125,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (balResult.coins !== null) {
             setState((prev) => {
               if (!prev.user) return prev;
-              const updated = { ...prev.user, coins: balResult.coins! };
+              const updated = {
+                ...prev.user,
+                coins: balResult.coins!,
+                ...(balResult.freeCallMinutes !== null ? { free_call_minutes: balResult.freeCallMinutes } : {}),
+                ...(balResult.freeRandomMinutes !== null ? { free_random_minutes: balResult.freeRandomMinutes } : {}),
+              };
               setItem(StorageKeys.USER, updated);
               return { ...prev, user: updated };
             });
@@ -155,7 +168,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (balResult.coins !== null) {
           setState((p) => {
             if (!p.user) return p;
-            const updated = { ...p.user, coins: balResult.coins! };
+            const updated = {
+              ...p.user,
+              coins: balResult.coins!,
+              ...(balResult.freeCallMinutes !== null ? { free_call_minutes: balResult.freeCallMinutes } : {}),
+              ...(balResult.freeRandomMinutes !== null ? { free_random_minutes: balResult.freeRandomMinutes } : {}),
+            };
             setItem(StorageKeys.USER, updated);
             return { ...p, user: updated };
           });
@@ -275,7 +293,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (balResult.coins !== null) {
       setState((prev) => {
         if (!prev.user) return prev;
-        const updated = { ...prev.user, coins: balResult.coins! };
+        const updated = {
+          ...prev.user,
+          coins: balResult.coins!,
+          ...(balResult.freeCallMinutes !== null ? { free_call_minutes: balResult.freeCallMinutes } : {}),
+          ...(balResult.freeRandomMinutes !== null ? { free_random_minutes: balResult.freeRandomMinutes } : {}),
+        };
         setItem(StorageKeys.USER, updated);
         return { ...prev, user: updated };
       });

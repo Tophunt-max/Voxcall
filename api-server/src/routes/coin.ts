@@ -174,8 +174,23 @@ coin.use('*', authMiddleware);
 // GET /api/coins/balance
 coin.get('/balance', async (c) => {
   const { sub } = c.get('user');
-  const u = await c.env.DB.prepare('SELECT coins FROM users WHERE id = ?').bind(sub).first<any>();
-  return c.json({ coins: u?.coins ?? 0 });
+  // Also return the two free-minute card balances so they can be shown
+  // wallet-style everywhere the coin balance appears. Tolerate a legacy DB
+  // missing the free-minute columns.
+  let u: { coins?: number; free_call_minutes?: number; free_random_minutes?: number } | null = null;
+  try {
+    u = await c.env.DB
+      .prepare('SELECT coins, COALESCE(free_call_minutes,0) AS free_call_minutes, COALESCE(free_random_minutes,0) AS free_random_minutes FROM users WHERE id = ?')
+      .bind(sub)
+      .first();
+  } catch {
+    u = await c.env.DB.prepare('SELECT coins FROM users WHERE id = ?').bind(sub).first();
+  }
+  return c.json({
+    coins: u?.coins ?? 0,
+    free_call_minutes: Number(u?.free_call_minutes) || 0,
+    free_random_minutes: Number(u?.free_random_minutes) || 0,
+  });
 });
 
 // GET /api/coins/history
