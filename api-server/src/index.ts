@@ -30,7 +30,7 @@ import smartRouter from './routes/smart';
 import { ChatRoom } from './durable-objects/ChatRoom';
 import { NotificationHub } from './durable-objects/NotificationHub';
 import { PresenceRegistry } from './durable-objects/PresenceRegistry';
-import { ensureUsersSchema, ensureRandomCallSchema, ensureStreakSchema, ensureHostStreakSchema, ensureFirstCallFreeSchema, ensureCallObservabilitySchema, ensureEngagementSchema, ensureWithdrawalSchema, ensureSmartV2Schema, ensureReferralIntegritySchema, ensureVipSignupBonusSchema, ensureGiftSchema, ensureRewardsPassSchema } from './lib/schemaGuard';
+import { ensureUsersSchema, ensureRandomCallSchema, ensureStreakSchema, ensureHostStreakSchema, ensureFirstCallFreeSchema, ensureCallObservabilitySchema, ensureEngagementSchema, ensureWithdrawalSchema, ensureSmartV2Schema, ensureReferralIntegritySchema, ensureVipSignupBonusSchema, ensureGiftSchema, ensureRewardsPassSchema, ensureHostLevelSchema } from './lib/schemaGuard';
 import { releaseExpiredReferralHolds } from './lib/referral';
 import { raiseAdminAlert } from './lib/alerts';
 import { ensureAllMigrations } from './lib/autoMigrate';
@@ -200,6 +200,7 @@ app.use('/api/*', async (c, next) => {
     ensureVipSignupBonusSchema(c.env.DB),
     ensureGiftSchema(c.env.DB),
     ensureRewardsPassSchema(c.env.DB),
+    ensureHostLevelSchema(c.env.DB),
   ]);
   return next();
 });

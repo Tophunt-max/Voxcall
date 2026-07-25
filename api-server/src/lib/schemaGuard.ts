@@ -246,6 +246,120 @@ export function ensureHostStreakSchema(db: D1Database): Promise<boolean> {
 }
 
 // ============================================================================
+// Host level-up schema guard — auto-heal migrations 0020 / 0025 / 0066–0068.
+// ============================================================================
+//
+// The level-up engine (lib/levelService.applyLevelUp) SELECTs a wide set of
+// denormalized metric columns on `hosts` and writes to `host_level_history`.
+// If ANY of those columns/tables are missing (e.g. the prod migration queue
+// stalled), the single SELECT throws and — because every call site swallows
+// the error (`.catch(() => {})`) — NO host would ever level up, silently.
+//
+// This guard makes level-up production-safe: it ensures every column the
+// engine reads, the audit/idempotency table + its UNIQUE reward index, and the
+// reward-bonus setting exist. Idempotent — mirrors the other ensure* guards.
+
+let hostLevelSchemaReadyPromise: Promise<boolean> | null = null;
+
+const REQUIRED_HOST_LEVEL_COLUMNS: ReadonlyArray<{ name: string; ddl: string }> = [
+  // Core level columns (migrations 0020 + 0025).
+  { name: 'level',            ddl: 'ALTER TABLE hosts ADD COLUMN level INTEGER DEFAULT 1' },
+  { name: 'level_updated_at', ddl: 'ALTER TABLE hosts ADD COLUMN level_updated_at INTEGER' },
+  { name: 'identity_verified', ddl: 'ALTER TABLE hosts ADD COLUMN identity_verified INTEGER DEFAULT 0' },
+  // Denormalized level metrics (migration 0066).
+  { name: 'unique_callers',   ddl: 'ALTER TABLE hosts ADD COLUMN unique_callers INTEGER DEFAULT 0' },
+  { name: 'answered_calls',   ddl: 'ALTER TABLE hosts ADD COLUMN answered_calls INTEGER DEFAULT 0' },
+  { name: 'incoming_calls',   ddl: 'ALTER TABLE hosts ADD COLUMN incoming_calls INTEGER DEFAULT 0' },
+  { name: 'favorite_count',   ddl: 'ALTER TABLE hosts ADD COLUMN favorite_count INTEGER DEFAULT 0' },
+  // Online / activity metrics (migration 0067).
+  { name: 'online_minutes',   ddl: 'ALTER TABLE hosts ADD COLUMN online_minutes INTEGER DEFAULT 0' },
+  { name: 'online_since',     ddl: 'ALTER TABLE hosts ADD COLUMN online_since INTEGER DEFAULT 0' },
+  { name: 'active_days',      ddl: 'ALTER TABLE hosts ADD COLUMN active_days INTEGER DEFAULT 0' },
+  // Gift / referral metrics (migration 0068).
+  { name: 'gifts_received',       ddl: 'ALTER TABLE hosts ADD COLUMN gifts_received INTEGER DEFAULT 0' },
+  { name: 'successful_referrals', ddl: 'ALTER TABLE hosts ADD COLUMN successful_referrals INTEGER DEFAULT 0' },
+  // Also read by the engine; normally added by the host-streak guard, listed
+  // here too so level-up is self-contained even if that guard hasn't run yet.
+  { name: 'streak_max',       ddl: 'ALTER TABLE hosts ADD COLUMN streak_max INTEGER DEFAULT 0' },
+];
+
+const HOST_LEVEL_HISTORY_DDL = `
+  CREATE TABLE IF NOT EXISTS host_level_history (
+    id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+    host_id TEXT NOT NULL REFERENCES hosts(id),
+    old_level INTEGER NOT NULL,
+    new_level INTEGER NOT NULL,
+    reason TEXT NOT NULL DEFAULT 'auto',
+    coins_awarded INTEGER DEFAULT 0,
+    rating REAL,
+    review_count INTEGER,
+    created_at INTEGER DEFAULT (unixepoch())
+  )
+`;
+
+export function ensureHostLevelSchema(db: D1Database): Promise<boolean> {
+  if (hostLevelSchemaReadyPromise) return hostLevelSchemaReadyPromise;
+
+  hostLevelSchemaReadyPromise = (async () => {
+    try {
+      // 1. hosts columns the level engine reads/writes.
+      const info = await db.prepare('PRAGMA table_info(hosts)').all<{ name: string }>();
+      const cols = new Set((info.results ?? []).map((r) => r.name));
+      for (const col of REQUIRED_HOST_LEVEL_COLUMNS) {
+        if (!cols.has(col.name)) {
+          try {
+            await db.prepare(col.ddl).run();
+            console.log(`[schemaGuard] added hosts.${col.name}`);
+          } catch (err) {
+            console.warn(`[schemaGuard] add hosts.${col.name} failed (may be a race):`, err);
+          }
+        }
+      }
+
+      // 2. Audit / idempotency table (IF NOT EXISTS — safe to re-run).
+      try {
+        await db.prepare(HOST_LEVEL_HISTORY_DDL).run();
+      } catch (err) {
+        console.warn('[schemaGuard] host_level_history create failed:', err);
+      }
+
+      // 3. Indexes — including the UNIQUE(host_id,new_level) that makes the
+      //    one-time level reward strictly idempotent.
+      const indexes = [
+        'CREATE INDEX IF NOT EXISTS idx_hosts_unique_callers ON hosts(unique_callers)',
+        'CREATE INDEX IF NOT EXISTS idx_hosts_favorite_count ON hosts(favorite_count)',
+        'CREATE INDEX IF NOT EXISTS idx_host_level_history_host ON host_level_history(host_id)',
+        'CREATE UNIQUE INDEX IF NOT EXISTS idx_host_level_history_reward ON host_level_history(host_id, new_level)',
+      ];
+      for (const ddl of indexes) {
+        try {
+          await db.prepare(ddl).run();
+        } catch (err) {
+          console.warn('[schemaGuard] host-level index creation failed:', err);
+        }
+      }
+
+      // 4. Seed the mystery-box reward-bonus setting (never overwrites).
+      try {
+        await db
+          .prepare("INSERT OR IGNORE INTO app_settings (key, value, updated_at) VALUES ('level_reward_bonus_max_pct', '50', unixepoch())")
+          .run();
+      } catch (err) {
+        console.warn('[schemaGuard] seed level_reward_bonus_max_pct failed:', err);
+      }
+
+      return true;
+    } catch (err) {
+      console.error('[schemaGuard] ensureHostLevelSchema failed:', err);
+      hostLevelSchemaReadyPromise = null;
+      return false;
+    }
+  })();
+
+  return hostLevelSchemaReadyPromise;
+}
+
+// ============================================================================
 // Calling-system observability schema guard — auto-heal migration 0029.
 // ============================================================================
 //
