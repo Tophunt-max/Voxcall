@@ -12,6 +12,10 @@ function blank() {
 
 const EMOJI_SUGGESTIONS = ['🌹', '❤️', '🧸', '🎂', '💎', '👑', '🚀', '🔥', '⭐', '🎁', '💐', '🍫', '🏆', '💋'];
 
+// A gift icon may be an emoji OR an image URL (admin-uploaded art). The apps
+// render an <Image> when it's a URL, else the emoji/text.
+const isImageUrl = (s?: string) => /^https?:\/\//i.test((s || '').trim());
+
 export default function Gifts() {
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -61,7 +65,7 @@ export default function Gifts() {
 
   const save = async () => {
     if (!form.name.trim()) { toast.error('Gift name is required'); return; }
-    if (!form.icon.trim()) { toast.error('Gift icon (emoji) is required'); return; }
+    if (!form.icon.trim()) { toast.error('Gift icon (emoji or image URL) is required'); return; }
     const price = parseInt(form.price_coins);
     if (isNaN(price) || price < 0) { toast.error('Price must be a valid number'); return; }
     setSaving(true);
@@ -149,7 +153,9 @@ export default function Gifts() {
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
           {rows.map(g => (
             <div key={g.id} className={`relative bg-card border rounded-2xl p-4 flex flex-col items-center text-center gap-2 ${g.is_active ? 'border-border' : 'border-border opacity-60'}`}>
-              <div className="text-5xl leading-none mt-1">{g.icon}</div>
+              {isImageUrl(g.icon)
+                ? <img src={g.icon} alt={g.name} className="w-12 h-12 object-contain mt-1" />
+                : <div className="text-5xl leading-none mt-1">{g.icon}</div>}
               <p className="font-bold text-sm">{g.name}</p>
               <span className="flex items-center gap-1 text-xs font-semibold bg-amber-50 text-amber-700 px-2.5 py-1 rounded-full">
                 <Coins size={11} />{Number(g.price_coins).toLocaleString()}
@@ -170,14 +176,17 @@ export default function Gifts() {
       <Modal open={creating || !!editing} onClose={closeModal} title={editing ? 'Edit Gift' : 'New Gift'}>
         <div className="space-y-4">
           <div className="flex flex-col items-center gap-1">
-            <div className="text-6xl leading-none">{form.icon || '🎁'}</div>
+            {isImageUrl(form.icon)
+              ? <img src={form.icon} alt="preview" className="w-16 h-16 object-contain" />
+              : <div className="text-6xl leading-none">{form.icon || '🎁'}</div>}
             <p className="text-xs text-muted-foreground">Preview</p>
           </div>
 
           <div>
-            <label className="text-sm font-semibold block mb-1.5">Icon (emoji)</label>
-            <input maxLength={4} value={form.icon} onChange={e => setForm({ ...form, icon: e.target.value })}
-              className="w-full px-3 py-2.5 border border-border rounded-xl text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30" placeholder="🌹" />
+            <label className="text-sm font-semibold block mb-1.5">Icon (emoji or image URL)</label>
+            <input value={form.icon} onChange={e => setForm({ ...form, icon: e.target.value })}
+              className="w-full px-3 py-2.5 border border-border rounded-xl text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30" placeholder="🌹 or https://…/gift.png" />
+            <p className="text-xs text-muted-foreground mt-1">Paste an image URL (PNG/SVG) for custom art, or tap an emoji below.</p>
             <div className="flex flex-wrap gap-1.5 mt-2">
               {EMOJI_SUGGESTIONS.map(e => (
                 <button key={e} type="button" onClick={() => setForm({ ...form, icon: e })}

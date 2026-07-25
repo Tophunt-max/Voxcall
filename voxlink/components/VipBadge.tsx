@@ -1,6 +1,7 @@
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { AppIcon, type AppIconName } from "@/components/AppIcon";
+import { GiftGlyph } from "@/components/GiftGlyph";
 
 // Reusable VIP indicator. Prefers the admin-configured badge emoji + accent
 // color (from /api/vip/status) when provided; otherwise falls back to a
@@ -38,7 +39,7 @@ export function VipBadge({
   const { custom, icon, color: c } = resolve(tier, badge, color);
   return (
     <View style={[styles.chip, { backgroundColor: `${c}1A`, borderColor: `${c}55` }]}>
-      {custom ? <Text style={styles.glyph}>{custom}</Text> : <AppIcon name={icon} size={11} color={c} />}
+      {custom ? <GiftGlyph icon={custom} size={11} fallback={icon} fallbackColor={c} style={styles.glyph} /> : <AppIcon name={icon} size={11} color={c} />}
       {!compact && <Text style={[styles.label, { color: c }]}>VIP</Text>}
     </View>
   );

@@ -1,6 +1,7 @@
 import React from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Image, Modal, ActivityIndicator } from "react-native";
 import { useColors } from "@/hooks/useColors";
+import { GiftGlyph } from "@/components/GiftGlyph";
 
 export interface GiftCatalogItem {
   id: string;
@@ -59,7 +60,7 @@ export function GiftPickerSheet({
                     {busy ? (
                       <ActivityIndicator size="small" color={colors.primary} style={{ height: 34 }} />
                     ) : (
-                      <Text style={styles.cellEmoji}>{g.icon}</Text>
+                      <GiftGlyph icon={g.icon} size={30} />
                     )}
                     <Text style={[styles.cellName, { color: colors.foreground }]} numberOfLines={1}>{g.name}</Text>
                     <View style={styles.coinRow}>

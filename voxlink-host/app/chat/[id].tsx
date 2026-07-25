@@ -4,6 +4,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SvgIcon } from "@/components/SvgIcon";
 import { AppIcon, type AppIconName } from "@/components/AppIcon";
+import { GiftGlyph } from "@/components/GiftGlyph";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { useChat, Message } from "@/context/ChatContext";
@@ -183,7 +184,7 @@ export default function ChatScreen() {
             </View>
           ) : item.type === "gift" ? (
             <View style={styles.giftInner}>
-              <Text style={styles.giftEmoji}>{item.giftIcon ?? "🎁"}</Text>
+              <GiftGlyph icon={item.giftIcon} size={42} />
               <Text style={[styles.giftName, { color: isMe ? "#fff" : colors.foreground }]} numberOfLines={1}>{item.giftName ?? "Gift"}</Text>
               <Text style={[styles.giftCoins, { color: isMe ? "rgba(255,255,255,0.9)" : colors.accent }]}>+{(item.giftAmount ?? 0).toLocaleString()} coins</Text>
             </View>

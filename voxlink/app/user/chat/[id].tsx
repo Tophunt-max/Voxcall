@@ -11,6 +11,7 @@ import { useLanguage } from "@/context/LanguageContext";
 import { API, resolveMediaUrl } from "@/services/api";
 import { appendFileToFormData } from "@/utils/fileUpload";
 import { GiftAnimation, type GiftAnim } from "@/components/GiftAnimation";
+import { GiftGlyph } from "@/components/GiftGlyph";
 import { alertDialog, confirmDialog } from "@/utils/dialog";
 import * as ImagePicker from "expo-image-picker";
 import { showErrorToast, showSuccessToast } from "@/components/Toast";
@@ -301,7 +302,7 @@ export default function ChatScreen() {
             </View>
           ) : item.type === "gift" ? (
             <View style={styles.giftInner}>
-              <Text style={styles.giftEmoji}>{item.giftIcon ?? "🎁"}</Text>
+              <GiftGlyph icon={item.giftIcon} size={42} />
               <Text style={[styles.giftName, { color: isMe ? "#fff" : colors.foreground }]} numberOfLines={1}>{item.giftName ?? "Gift"}</Text>
               <View style={styles.giftCoinRow}>
                 <Image source={require("@/assets/icons/ic_coin.png")} style={{ width: 12, height: 12 }} resizeMode="contain" />

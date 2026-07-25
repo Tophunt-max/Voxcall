@@ -11,6 +11,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import type { HostLevelResponse } from "@/services/api";
 import { useColors } from "@/hooks/useColors";
 import { AppIcon, type AppIconName } from "@/components/AppIcon";
+import { GiftGlyph } from "@/components/GiftGlyph";
 
 interface LevelCardProps {
   data?: HostLevelResponse;
@@ -104,7 +105,7 @@ export default function LevelCard({ data, loading, onPress }: LevelCardProps) {
       <LinearGradient colors={[accent, shade(accent, -26)]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.headerGrad}>
         <View style={styles.headerRow}>
           <View style={styles.badgeCircle}>
-            <Text style={styles.badgeEmoji}>{current?.badge || "🌱"}</Text>
+            <GiftGlyph icon={current?.badge} size={26} fallback="sprout" fallbackColor="#fff" />
           </View>
           <View style={{ flex: 1 }}>
             <View style={styles.levelTitleRow}>

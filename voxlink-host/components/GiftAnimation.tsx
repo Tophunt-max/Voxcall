@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from "react";
 import { Animated, StyleSheet, Text, View, Easing } from "react-native";
+import { GiftGlyph } from "@/components/GiftGlyph";
 
 // Full-screen gift "reveal" overlay shown when the caller sends a gift during a
 // call: the gift emoji pops in, hangs, then floats up and fades. Pointer-
@@ -40,12 +41,12 @@ export function GiftAnimation({ gift, onDone }: { gift: GiftAnim | null; onDone:
 
   if (!gift) return null;
   const caption = gift.senderName
-    ? `${gift.senderName} sent ${gift.name ?? "a gift"} ${gift.icon}`
+    ? `${gift.senderName} sent ${gift.name ?? "a gift"}`
     : gift.name ?? "";
   return (
     <View pointerEvents="none" style={styles.overlay}>
       <Animated.View style={[styles.box, { opacity, transform: [{ translateY }, { scale }] }]}>
-        <Text style={styles.emoji}>{gift.icon}</Text>
+        <GiftGlyph icon={gift.icon} size={96} fallbackColor="#fff" style={styles.emoji} />
         {!!caption && <Text style={styles.caption}>{caption}</Text>}
       </Animated.View>
     </View>

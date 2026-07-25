@@ -280,7 +280,7 @@ class SocketService {
           sessionId: msg.session_id,
           roomId: msg.room_id,
           senderName: msg.sender_name ?? "Someone",
-          giftIcon: msg.gift_icon ?? "🎁",
+          giftIcon: msg.gift_icon ?? "",
           giftName: msg.gift_name ?? "Gift",
           giftAmount: msg.gift_amount ?? 0,
           timestamp: Date.now(),

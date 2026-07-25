@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { useColors } from "@/hooks/useColors";
 import { AppIcon, type AppIconName } from "@/components/AppIcon";
+import { GiftGlyph } from "@/components/GiftGlyph";
 import { API } from "@/services/api";
 import type { HostLevelResponse, HostLevelDef } from "@/services/api";
 
@@ -169,7 +170,7 @@ export default function LevelBenefitsScreen() {
         <>
           <View style={styles.heroBody}>
             <View style={styles.heroBadge}>
-              <Text style={{ fontSize: 34 }}>{data.current?.badge ?? "🌱"}</Text>
+              <GiftGlyph icon={data.current?.badge} size={34} fallback="sprout" fallbackColor="#fff" />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.heroLevelLabel}>LEVEL {data.level}</Text>

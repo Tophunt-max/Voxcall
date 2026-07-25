@@ -336,7 +336,7 @@ export default function VideoCallScreen() {
     const off = onEvent(SocketEvents.CALL_GIFT, (d: any) => {
       if (d?.sessionId && activeCall?.sessionId && d.sessionId !== activeCall.sessionId) return;
       giftKeyRef.current += 1;
-      setGiftAnim({ icon: d?.giftIcon ?? "🎁", name: d?.giftName, senderName: d?.senderName, key: giftKeyRef.current });
+      setGiftAnim({ icon: d?.giftIcon ?? "", name: d?.giftName, senderName: d?.senderName, key: giftKeyRef.current });
     });
     return off;
   }, [onEvent, activeCall?.sessionId]);
