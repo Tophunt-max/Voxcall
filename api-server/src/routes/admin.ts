@@ -4341,7 +4341,7 @@ admin.get('/monitoring/health', async (c) => {
     // as a proxy for activity in the past hour so the ratio at least tells
     // us "many requests + few errors" vs "no traffic".
     dbA.prepare('SELECT COUNT(*) AS n FROM call_sessions WHERE created_at > ?').bind(now - hour).first<{ n: number }>().catch(() => ({ n: 0 })),
-    dbA.prepare("SELECT value FROM app_settings WHERE key = 'fx_rates_last_updated'").first<{ value: string }>().catch(() => null),
+    dbA.prepare("SELECT value FROM app_settings WHERE key = 'fx_rates_updated'").first<{ value: string }>().catch(() => null),
 
     // Coin reconciliation — issued (all credits) − burned (all debits) = ledger
     // net, which should equal wallet coins ± the acknowledged legacy baseline.
