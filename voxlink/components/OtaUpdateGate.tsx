@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { AppState, Modal, View, Text, ActivityIndicator, StyleSheet } from "react-native";
 import * as Updates from "expo-updates";
+import { AppIcon } from "@/components/AppIcon";
 
 // Self-hosted OTA gate. Checks the update server on launch + whenever the app
 // returns to the foreground.
@@ -54,7 +55,7 @@ export function OtaUpdateGate() {
   return (
     <Modal visible transparent animationType="fade" statusBarTranslucent>
       <View style={styles.overlay}>
-        <Text style={styles.emoji}>🚀</Text>
+        <AppIcon name="rocket" size={52} color="#A00EE7" style={styles.emoji} />
         <Text style={styles.title}>Updating the app</Text>
         <Text style={styles.msg}>{status}</Text>
         <ActivityIndicator size="large" color="#A00EE7" style={{ marginTop: 18 }} />

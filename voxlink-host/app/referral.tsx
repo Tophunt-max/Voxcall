@@ -14,6 +14,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { API } from "@/services/api";
 import { showSuccessToast, showErrorToast } from "@/components/Toast";
+import { AppIcon } from "@/components/AppIcon";
 import { buildInviteUrl } from "@/utils/pendingReferral";
 
 export default function ReferralScreen() {
@@ -87,7 +88,7 @@ export default function ReferralScreen() {
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 32 }]}>
         <View style={[styles.heroCard, { backgroundColor: "#F4E8FD" }]}>
-          <Text style={styles.heroEmoji}>🎁</Text>
+          <AppIcon name="gift" size={52} color={colors.accent} style={styles.heroEmoji} />
           <Text style={[styles.heroTitle, { color: "#6A00B8" }]}>{t.referralScreen.heroTitle}</Text>
           <Text style={[styles.heroSub, { color: "#9A74BD" }]}>
             {t.referralScreen.heroSubA}{newUserReward}{t.referralScreen.coinsAnd}{referrerReward}{t.referralScreen.coinsBang}

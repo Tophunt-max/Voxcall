@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Modal, View, Text, ActivityIndicator, StyleSheet, BackHandler, AppState } from "react-native";
 import { subscribeBanState, getBanState, checkBanStatus, type BanInfo } from "@/services/banState";
+import { AppIcon } from "@/components/AppIcon";
 
 function expiryLine(expires_at?: string | null): string {
   if (!expires_at) return "This is a permanent suspension.";
@@ -45,7 +46,7 @@ export function BanGate() {
     <Modal visible transparent animationType="fade" onRequestClose={() => { /* not dismissable */ }}>
       <View style={styles.overlay}>
         <View style={styles.card}>
-          <Text style={styles.emoji}>🚫</Text>
+          <AppIcon name="blocked" size={52} color="#FF6B6B" style={styles.emoji} />
           <Text style={styles.title}>Account Suspended</Text>
           <Text style={styles.reason}>
             {ban.reason || "Your account has been suspended by the platform."}

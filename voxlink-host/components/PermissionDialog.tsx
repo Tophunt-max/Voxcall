@@ -10,6 +10,7 @@ import {
   ImageSourcePropType,
 } from "react-native";
 import { useColors } from "@/hooks/useColors";
+import { AppIcon } from "@/components/AppIcon";
 
 export type PermissionDialogConfig = {
   icon: string;
@@ -160,7 +161,7 @@ export function PermissionDialog({
 
           {/* Privacy note */}
           <View style={styles.privacyRow}>
-            <Text style={[styles.shieldChar, { color: colors.mutedForeground }]}>🔒</Text>
+            <AppIcon name="lock" size={12} color={colors.mutedForeground} style={styles.shieldChar} />
             <Text style={[styles.privacyText, { color: colors.mutedForeground }]}>
               Your privacy is important. We never share your data.
             </Text>

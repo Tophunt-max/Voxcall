@@ -18,6 +18,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { API } from "@/services/api";
 import { showSuccessToast, showErrorToast } from "@/components/Toast";
+import { AppIcon } from "@/components/AppIcon";
 import { useAppConfig } from "@/hooks/useAppConfig";
 import { buildInviteUrl } from "@/utils/pendingReferral";
 
@@ -110,7 +111,7 @@ export default function ReferralScreen() {
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 32 }]}>
         {/* Hero card */}
         <View style={[styles.heroCard, { backgroundColor: "#F4E8FD" }]}>
-          <Text style={styles.heroEmoji}>🎁</Text>
+          <AppIcon name="gift" size={52} color="#A00EE7" style={styles.heroEmoji} />
           <Text style={[styles.heroTitle, { color: "#6A00B8" }]}>{t.referralScreen.heroTitle}</Text>
           <Text style={[styles.heroSub, { color: "#9A74BD" }]}>
             {t.referralScreen.heroSub
@@ -167,16 +168,23 @@ export default function ReferralScreen() {
         {/* Referral contest leaderboard (admin-toggled) */}
         {contestOn && (
           <>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>🏆 Top Referrers</Text>
+            <View style={styles.sectionTitleRow}>
+              <AppIcon name="trophy" size={16} color="#D97706" />
+              <Text style={[styles.sectionTitle, { color: colors.text, marginTop: 0, marginBottom: 0 }]}>Top Referrers</Text>
+            </View>
             <View style={[styles.lbCard, { backgroundColor: colors.card }]}>
               {leaderboard.length === 0 ? (
                 <Text style={[styles.lbEmpty, { color: colors.mutedForeground }]}>Abhi koi nahi — invite karke #1 ban jaaiye!</Text>
               ) : (
                 leaderboard.map((r) => (
                   <View key={r.rank} style={[styles.lbRow, r.is_me && { backgroundColor: "#F4E8FD" }]}>
-                    <Text style={[styles.lbRank, { color: r.rank <= 3 ? "#A00EE7" : colors.mutedForeground }]}>
-                      {r.rank <= 3 ? ["🥇", "🥈", "🥉"][r.rank - 1] : `#${r.rank}`}
-                    </Text>
+                    {r.rank <= 3 ? (
+                      <View style={[styles.lbRank, { alignItems: "center", justifyContent: "center" }]}>
+                        <AppIcon name="medal" size={17} color={["#F5B301", "#AEB8C6", "#D97B2B"][r.rank - 1]} />
+                      </View>
+                    ) : (
+                      <Text style={[styles.lbRank, { color: colors.mutedForeground }]}>#{r.rank}</Text>
+                    )}
                     <Image source={r.avatar ? { uri: r.avatar } : require("@/assets/images/home_call_person.png")} style={styles.lbAvatar} />
                     <Text style={[styles.lbName, { color: colors.text }]} numberOfLines={1}>{r.is_me ? "You" : r.name}</Text>
                     <Text style={[styles.lbCount, { color: "#A00EE7" }]}>{r.referrals}</Text>
@@ -234,6 +242,7 @@ const styles = StyleSheet.create({
   heroTitle: { fontSize: 20, fontFamily: "Poppins_700Bold", textAlign: "center" },
   heroSub: { fontSize: 13, fontFamily: "Poppins_400Regular", textAlign: "center", lineHeight: 20 },
   sectionTitle: { fontSize: 15, fontFamily: "Poppins_600SemiBold", marginTop: 8, marginBottom: 12 },
+  sectionTitleRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 8, marginBottom: 12 },
   lbCard: { borderRadius: 16, padding: 8, marginBottom: 16, gap: 2 },
   lbEmpty: { fontSize: 13, fontFamily: "Poppins_400Regular", textAlign: "center", paddingVertical: 16 },
   lbRow: { flexDirection: "row", alignItems: "center", paddingVertical: 8, paddingHorizontal: 8, borderRadius: 12, gap: 10 },

@@ -16,6 +16,7 @@ import type { Translations } from "@/localization/en";
 import { confirmDialog } from "@/utils/dialog";
 import { API } from "@/services/api";
 import { showSuccessToast, showErrorToast } from "@/components/Toast";
+import { AppIcon } from "@/components/AppIcon";
 
 interface VipPlan {
   id: string;
@@ -191,7 +192,7 @@ export default function VipScreen() {
                   <Text style={styles.statusPlan}>{status.plan_name ?? t.vip.fallbackName}</Text>
                 </View>
                 <View style={styles.crownBadge}>
-                  <Text style={{ fontSize: 26 }}>👑</Text>
+                  <AppIcon name="crown" size={26} color="#fff" />
                 </View>
               </View>
               <Text style={styles.statusExpiry}>
@@ -222,7 +223,7 @@ export default function VipScreen() {
             </LinearGradient>
           ) : (
             <LinearGradient colors={PURPLE_GRAD} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.heroCard, cardShadow()]}>
-              <Text style={{ fontSize: 34 }}>👑</Text>
+              <AppIcon name="crown" size={34} color="#fff" />
               <Text style={styles.heroTitle}>{t.vip.becomeVip}</Text>
               <Text style={styles.heroSub}>{t.vip.becomeVipSub}</Text>
             </LinearGradient>
@@ -242,7 +243,7 @@ export default function VipScreen() {
                 <View key={plan.id} style={[styles.planCard, { backgroundColor: colors.card, borderColor: accent + "55" }, cardShadow()]}>
                   <View style={styles.planHead}>
                     <View style={[styles.planBadge, { backgroundColor: accent + "22" }]}>
-                      <Text style={{ fontSize: 20 }}>{plan.badge ?? "⭐"}</Text>
+                      {plan.badge ? <Text style={{ fontSize: 20 }}>{plan.badge}</Text> : <AppIcon name="star" size={20} color={accent} />}
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.planName, { color: colors.text }]}>{plan.name}</Text>

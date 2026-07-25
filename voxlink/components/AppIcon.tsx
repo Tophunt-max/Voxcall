@@ -25,7 +25,10 @@ export type AppIconName =
   | "dice" | "spin" | "refresh" | "blocked" | "sprout"
   | "close" | "check" | "warning" | "info" | "camera"
   | "link" | "share" | "users" | "bell" | "shield" | "wrench"
-  | "heart-broken" | "wave" | "thanks";
+  | "heart-broken" | "wave" | "thanks"
+  | "sad" | "search" | "heart" | "heart-outline" | "clock" | "chat"
+  | "ticket" | "edit" | "wand" | "device" | "bank" | "money-send"
+  | "traffic" | "male" | "female" | "card";
 
 type Family = "mci" | "fe" | "fa5";
 
@@ -79,6 +82,22 @@ const ICON_MAP: Record<AppIconName, [Family, string]> = {
   "heart-broken":["mci", "heart-broken"],
   wave:          ["mci", "hand-wave"],
   thanks:        ["mci", "hand-heart"],
+  sad:           ["mci", "emoticon-sad-outline"],
+  search:        ["fe", "search"],
+  heart:         ["mci", "heart"],
+  "heart-outline":["mci", "heart-outline"],
+  clock:         ["mci", "clock-outline"],
+  chat:          ["fe", "message-circle"],
+  ticket:        ["mci", "ticket-outline"],
+  edit:          ["fe", "edit-2"],
+  wand:          ["mci", "auto-fix"],
+  device:        ["mci", "cellphone"],
+  bank:          ["mci", "bank"],
+  "money-send":  ["mci", "bank-transfer"],
+  traffic:       ["mci", "traffic-light"],
+  male:          ["mci", "human-male"],
+  female:        ["mci", "human-female"],
+  card:          ["fe", "credit-card"],
 };
 
 export interface AppIconProps {

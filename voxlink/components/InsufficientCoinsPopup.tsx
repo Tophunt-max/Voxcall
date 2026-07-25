@@ -14,6 +14,7 @@ import { router } from "expo-router";
 import { API } from "@/services/api";
 import { formatLocalAmount } from "@/utils/currency";
 import { showErrorToast } from "@/components/Toast";
+import { AppIcon } from "@/components/AppIcon";
 
 const { width: _SW } = Dimensions.get("window");
 const ACCENT = "#A00EE7";
@@ -76,8 +77,9 @@ export function InsufficientCoinsPopup({ visible, onClose, requiredCoins, curren
           </Text>
 
           {freeMinutes > 0 && (
-            <View style={st.freeHint}>
-              <Text style={st.freeHintTxt}>🎁 You still have {freeMinutes} free {freeMinutes === 1 ? "minute" : "minutes"} — use them on a call!</Text>
+            <View style={[st.freeHint, st.freeHintRow]}>
+              <AppIcon name="gift" size={14} color="#0B8F1C" />
+              <Text style={[st.freeHintTxt, { flex: 1 }]}>You still have {freeMinutes} free {freeMinutes === 1 ? "minute" : "minutes"} — use them on a call!</Text>
             </View>
           )}
 
@@ -209,6 +211,11 @@ const st = StyleSheet.create({
     fontSize: 12,
     fontFamily: "Poppins_600SemiBold",
     textAlign: "center",
+  },
+  freeHintRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
   },
   plansList: {
     width: "100%",

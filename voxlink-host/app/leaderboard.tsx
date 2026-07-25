@@ -10,15 +10,16 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useColors } from "@/hooks/useColors";
 import { API, resolveMediaUrl } from "@/services/api";
 import type { HostLeaderboardEntry } from "@/services/api";
+import { AppIcon } from "@/components/AppIcon";
 
 const HEADER_GRAD: readonly [string, string] = ["#7B2FF7", "#9D4EDD"];
 const ME_GRAD: readonly [string, string] = ["#5B21B6", "#9333EA"];
 
 // place 0 = 1st, 1 = 2nd, 2 = 3rd
 const PODIUM = [
-  { ring: "#F5B301", grad: ["#FFE58A", "#F5B301"] as const, medal: "🥇", h: 116 },
-  { ring: "#AEB8C6", grad: ["#E8EEF5", "#AEB8C6"] as const, medal: "🥈", h: 92 },
-  { ring: "#D97B2B", grad: ["#F6C27A", "#D97B2B"] as const, medal: "🥉", h: 76 },
+  { ring: "#F5B301", grad: ["#FFE58A", "#F5B301"] as const, h: 116 },
+  { ring: "#AEB8C6", grad: ["#E8EEF5", "#AEB8C6"] as const, h: 92 },
+  { ring: "#D97B2B", grad: ["#F6C27A", "#D97B2B"] as const, h: 76 },
 ];
 
 function rankAvatar(entry: HostLeaderboardEntry): string {
@@ -38,16 +39,16 @@ function PodiumColumn({ entry, place, colors }: { entry?: HostLeaderboardEntry; 
   const cfg = PODIUM[place];
   return (
     <View style={styles.podCol}>
-      {place === 0 ? <Text style={styles.crown}>👑</Text> : null}
+      {place === 0 ? <AppIcon name="crown" size={20} color="#F5B301" style={styles.crown} /> : null}
       <View style={[styles.podRing, { borderColor: cfg.ring }]}>
         <Image source={{ uri: rankAvatar(entry) }} style={styles.podAvatar} />
         <View style={[styles.podMedal, { backgroundColor: colors.card }]}>
-          <Text style={{ fontSize: 15 }}>{cfg.medal}</Text>
+          <AppIcon name="medal" size={15} color={cfg.ring} />
         </View>
       </View>
       <Text style={[styles.podName, { color: colors.text }]} numberOfLines={1}>{entry.name}</Text>
       <View style={[styles.podCoins, { backgroundColor: colors.card }]}>
-        <Text style={styles.podCoinEmoji}>🪙</Text>
+        <AppIcon name="coin" size={11} color={colors.coinGold} />
         <Text style={[styles.podCoinText, { color: colors.text }]}>{entry.coins.toLocaleString()}</Text>
       </View>
       <LinearGradient colors={cfg.grad} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={[styles.podStand, { height: cfg.h }]}>
@@ -100,7 +101,10 @@ export default function Leaderboard() {
           <Text style={styles.backIcon}>‹</Text>
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle}>🏆 Leaderboard</Text>
+          <View style={styles.headerTitleRow}>
+            <AppIcon name="trophy" size={19} color="#fff" />
+            <Text style={styles.headerTitle}>Leaderboard</Text>
+          </View>
           <Text style={styles.headerSub}>Top hosts · last 7 days</Text>
         </View>
       </LinearGradient>
@@ -109,7 +113,7 @@ export default function Leaderboard() {
         <View style={styles.center}><ActivityIndicator size="large" color={colors.accent} /></View>
       ) : isError ? (
         <View style={styles.center}>
-          <Text style={{ fontSize: 44 }}>😕</Text>
+          <AppIcon name="sad" size={44} color={colors.mutedForeground} />
           <Text style={[styles.emptyTitle, { color: colors.text }]}>Couldn't load the leaderboard</Text>
           <TouchableOpacity onPress={() => refetch()} style={[styles.retryBtn, { borderColor: colors.border }]}>
             <Text style={[styles.emptyHint, { color: colors.accent }]}>{isRefetching ? "Retrying…" : "Retry"}</Text>
@@ -117,7 +121,7 @@ export default function Leaderboard() {
         </View>
       ) : entries.length === 0 ? (
         <View style={styles.center}>
-          <Text style={{ fontSize: 52 }}>🏆</Text>
+          <AppIcon name="trophy" size={52} color={colors.accent} />
           <Text style={[styles.emptyTitle, { color: colors.text }]}>No rankings yet</Text>
           <Text style={[styles.emptyHint, { color: colors.mutedForeground }]}>Complete calls this week to climb the board!</Text>
         </View>
@@ -164,6 +168,7 @@ export default function Leaderboard() {
 
 const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 16, paddingBottom: 20, borderBottomLeftRadius: 24, borderBottomRightRadius: 24 },
+  headerTitleRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   headerTitle: { fontSize: 20, fontFamily: "Poppins_700Bold", color: "#fff" },
   headerSub: { fontSize: 12.5, fontFamily: "Poppins_400Regular", color: "rgba(255,255,255,0.85)", marginTop: 1 },
   backBtn: { width: 36, height: 36, alignItems: "center", justifyContent: "center", marginLeft: -6 },

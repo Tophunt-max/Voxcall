@@ -21,6 +21,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
 import { API } from "@/services/api";
 import { showErrorToast, showSuccessToast } from "@/components/Toast";
+import { AppIcon } from "@/components/AppIcon";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Lucky Spin Wheel
@@ -352,7 +353,7 @@ export default function RewardsSpinScreen() {
       {/* Last-win banner */}
       {lastWin && (
         <View style={styles.winBanner}>
-          <Text style={styles.winBannerEmoji}>🎉</Text>
+          <AppIcon name="celebrate" size={30} color="#F59E0B" style={styles.winBannerEmoji} />
           <View style={{ flex: 1 }}>
             <Text style={styles.winBannerTitle}>You won +{lastWin.coins} coins!</Text>
             <Text style={styles.winBannerSub}>
