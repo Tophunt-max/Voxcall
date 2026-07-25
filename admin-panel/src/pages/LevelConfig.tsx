@@ -571,7 +571,7 @@ export default function LevelConfig() {
             </div>
 
             {/* Criteria editor */}
-            <div className="px-5 pb-2">
+            <div className="px-5 pb-2 pt-4 border-t border-border/60">
               <div className="flex items-center justify-between mb-2">
                 <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
                   <ListChecks size={13} /> Promotion criteria {idx === 0 ? '(starting level — none)' : '(host must meet ALL)'}
@@ -596,7 +596,7 @@ export default function LevelConfig() {
                     const def = metricByKey(crit.metric);
                     const usedElsewhere = new Set(lvl.criteria.filter((_, x) => x !== ci).map(c => c.metric));
                     return (
-                      <div key={ci} className="flex items-center gap-2 flex-wrap">
+                      <div key={ci} className="flex items-center gap-2 flex-wrap rounded-xl border border-border bg-secondary/30 px-3 py-2">
                         {/* Metric */}
                         <select
                           value={crit.metric}
@@ -662,7 +662,7 @@ export default function LevelConfig() {
             </div>
 
             {/* Perks / benefits grid */}
-            <div className="px-5 pt-3">
+            <div className="px-5 pt-4 mt-3 border-t border-border/60">
               <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
                 <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
                   Perks unlocked at this level
@@ -707,9 +707,9 @@ export default function LevelConfig() {
             </div>
 
             {/* Random call rates per level */}
-            <div className="px-5 pt-3">
+            <div className="px-5 pt-4 mt-3 border-t border-border/60">
               <label className="block text-[11px] font-semibold text-muted-foreground mb-2 uppercase tracking-wide">
-                Random call rates (charged on /match/find)
+                🎲 Random call rates (charged on /match/find)
               </label>
               <div className="grid grid-cols-2 gap-4">
                 <Field
