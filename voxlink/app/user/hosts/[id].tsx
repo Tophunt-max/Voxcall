@@ -13,7 +13,10 @@ import {
   RefreshControl,
   Linking,
   useColorScheme,
+  Animated,
+  Easing,
 } from "react-native";
+import { FreeMinutesCardIcon } from "@/components/MinuteCardIcons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
@@ -132,6 +135,21 @@ function TalkNowSheet({
   const boxBg = isDark ? colors.card : "#fff";
   const txtColor = isDark ? colors.text : "#111329";
   const dividerColor = isDark ? colors.border : "#eee";
+
+  // Gentle pulse for the Free Minutes card badge on the audio row.
+  const cardPulse = React.useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (!visible || !(freeMinutes > 0)) return;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(cardPulse, { toValue: 1.18, duration: 650, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(cardPulse, { toValue: 1, duration: 650, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [visible, freeMinutes, cardPulse]);
+
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <TouchableOpacity style={sht.overlay} activeOpacity={1} onPress={onClose}>
@@ -147,7 +165,17 @@ function TalkNowSheet({
 
           <TouchableOpacity onPress={onAudio} style={sht.row} activeOpacity={0.8}>
             <Image source={require("@/assets/icons/ic_call_gradient.png")} style={sht.ico} resizeMode="contain" />
-            <Text style={[sht.label, { color: txtColor }]}>{t.hosts.audioCall}</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={[sht.label, { color: txtColor }]}>{t.hosts.audioCall}</Text>
+              {freeMinutes > 0 && (
+                <View style={sht.freeCardBadge}>
+                  <Animated.View style={{ transform: [{ scale: cardPulse }] }}>
+                    <FreeMinutesCardIcon size={18} />
+                  </Animated.View>
+                  <Text style={sht.freeCardTxt}>{freeMinutes} free min card{freeMinutes === 1 ? "" : "s"}</Text>
+                </View>
+              )}
+            </View>
             <View style={sht.chip}>
               <Image source={require("@/assets/icons/ic_coin.png")} style={sht.chipIco} resizeMode="contain" />
               <Text style={sht.chipTxt}>{t.hostDetail.coinPerMin.replace("{count}", String(audioRate))}</Text>
@@ -1071,7 +1099,9 @@ const sht = StyleSheet.create({
   title: { fontSize: 16, fontFamily: "Poppins_600SemiBold", color: "#111329", textAlign: "center", paddingBottom: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: "#eee" },
   row: { flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingVertical: 18, gap: 12 },
   ico: { width: 32, height: 32 },
-  label: { flex: 1, fontSize: 16, fontFamily: "Poppins_600SemiBold", color: "#111329" },
+  label: { fontSize: 16, fontFamily: "Poppins_600SemiBold", color: "#111329" },
+  freeCardBadge: { flexDirection: "row", alignItems: "center", gap: 5, marginTop: 4, alignSelf: "flex-start", backgroundColor: "rgba(124,58,237,0.10)", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
+  freeCardTxt: { color: "#7C3AED", fontSize: 11.5, fontFamily: "Poppins_700Bold" },
   divider: { height: StyleSheet.hairlineWidth, backgroundColor: "#eee", marginHorizontal: 20 },
   chip: { flexDirection: "row", alignItems: "center", backgroundColor: "#FFF8E7", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 16, gap: 4 },
   chipIco: { width: 16, height: 16 },
