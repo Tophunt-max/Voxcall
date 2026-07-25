@@ -85,6 +85,8 @@ export default function MonthlyPassCard({ onChanged }: { onChanged?: () => void 
   const points = data?.points ?? 0;
   const maxPoints = data?.max_points ?? 0;
   const progressPct = maxPoints > 0 ? Math.min(100, Math.round((points / maxPoints) * 100)) : 0;
+  const freeCallMin = data?.free_call_minutes ?? 0;
+  const freeRandomMin = data?.free_random_minutes ?? 0;
   const tiers: PassTier[] = useMemo(() => data?.tiers ?? [], [data]);
   // Only show tiers that actually grant a reward on at least one track — drops
   // the empty rows (0-minute tiers) that showed up as big blank gaps.
@@ -154,6 +156,19 @@ export default function MonthlyPassCard({ onChanged }: { onChanged?: () => void 
         </View>
         <View style={styles.progressTrack}>
           <View style={[styles.progressFill, { width: `${progressPct}%` }]} />
+        </View>
+
+        {/* Wallet-style balances: how many free-minute cards the user holds. */}
+        <View style={styles.balanceRow}>
+          <Text style={styles.balanceLabel}>My cards</Text>
+          <View style={styles.balancePill}>
+            <FreeMinutesCardIcon size={18} />
+            <Text style={styles.balanceVal}>{freeCallMin} min</Text>
+          </View>
+          <View style={styles.balancePill}>
+            <RandomCardIcon size={18} />
+            <Text style={styles.balanceVal}>{freeRandomMin} min</Text>
+          </View>
         </View>
       </LinearGradient>
 
@@ -383,6 +398,10 @@ const styles = StyleSheet.create({
   pointsMax: { color: "rgba(255,255,255,0.8)", fontSize: 11.5, fontFamily: "Poppins_500Medium" },
   progressTrack: { height: 8, borderRadius: 4, backgroundColor: "rgba(0,0,0,0.22)", overflow: "hidden", marginTop: 10 },
   progressFill: { height: "100%", backgroundColor: "#FCD34D", borderRadius: 4 },
+  balanceRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 12, flexWrap: "wrap" },
+  balanceLabel: { color: "rgba(255,255,255,0.85)", fontSize: 11, fontFamily: "Poppins_600SemiBold" },
+  balancePill: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: "rgba(255,255,255,0.18)", paddingHorizontal: 9, paddingVertical: 5, borderRadius: 12 },
+  balanceVal: { color: "#fff", fontSize: 13, fontFamily: "Poppins_700Bold" },
 
   // Column headers
   colHeaderRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingTop: 14, paddingBottom: 6, gap: 8 },

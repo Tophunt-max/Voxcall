@@ -778,7 +778,9 @@ export const API = {
       period_key?: string;
       month_end: number;
       server_time: number;
-      coins?: number;
+      // Wallet-style balances of the two free-minute card types.
+      free_call_minutes?: number;
+      free_random_minutes?: number;
       tiers?: Array<{
         level: number;
         points: number;

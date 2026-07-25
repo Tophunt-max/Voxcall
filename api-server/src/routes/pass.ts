@@ -113,6 +113,24 @@ pass.get('/', async (c) => {
 
   const maxPoints = tiers.length ? tiers[tiers.length - 1].points : 0;
 
+  // Current free-minute card balances so the user sees how many they hold
+  // (like a wallet). Tolerate a legacy DB missing the random column.
+  let freeCallMinutes = 0;
+  let freeRandomMinutes = 0;
+  try {
+    const u = await db
+      .prepare('SELECT COALESCE(free_call_minutes,0) AS fm, COALESCE(free_random_minutes,0) AS frm FROM users WHERE id = ?')
+      .bind(sub)
+      .first<{ fm: number; frm: number }>();
+    freeCallMinutes = Number(u?.fm) || 0;
+    freeRandomMinutes = Number(u?.frm) || 0;
+  } catch {
+    try {
+      const u = await db.prepare('SELECT COALESCE(free_call_minutes,0) AS fm FROM users WHERE id = ?').bind(sub).first<{ fm: number }>();
+      freeCallMinutes = Number(u?.fm) || 0;
+    } catch { /* both columns absent on a very old DB */ }
+  }
+
   return c.json({
     enabled: true,
     title: cfg.title,
@@ -126,6 +144,9 @@ pass.get('/', async (c) => {
     period_key: period,
     month_end: monthEnd,
     server_time: now,
+    // Wallet-style balances of the two free-minute card types.
+    free_call_minutes: freeCallMinutes,
+    free_random_minutes: freeRandomMinutes,
     tiers: tierView,
   });
 });
